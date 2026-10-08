@@ -71,7 +71,7 @@ Everything the execution template can do, the order API can do too, plus scaling
 ```text
 Masterplan step 9.2 — Order API and parity tests.
 
-Implement the order API on `ctx`: `buy`, `sell`, `close`, `cancel`, `replace`, market/limit/stop-market with time-in-force, brackets built from the same `ExitPlan` types (stop, targets, breakeven, trailing, time exits), scaling in (adds to a position with per-leg exits), and `ctx.state` for user state (persisted in the run log for `explain`). Document the API in docs/engine-guide.md. Extend parity: for every execution-template feature, an event-strategy rewrite produces identical trades (generated templates, Hypothesis).
+Implement the order API on `ctx`: `buy`, `sell`, `close`, `cancel`, `replace`, market/limit/stop-market with time-in-force, brackets built from the same `ExitPlan` types (stop, targets, breakeven, trailing, time exits), scaling in (adds to a position with per-leg exits), and `ctx.state` for user state (persisted in the run log for `explain`). Document the API in docs/engine-guide.md. Extend parity: for every execution-template feature, an event-strategy rewrite produces identical trades (generated templates, Hypothesis). Event-strategy runs store trade paths and fills like any run, so they can be prop-simulated: add a test that a scale-in run replays in the prop simulator to the same account events as the reference machine fed with its full-resolution path.
 
 Not in this step: reference engine support.
 ```

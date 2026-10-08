@@ -8,6 +8,10 @@ Phase kickoffs and exits are tracked in the second table.
 
 - 2026-10-08 — The private repository [kenny-g-97/fefat](https://github.com/kenny-g-97/fefat) was cloned into this folder, and a preparation commit on `main` added the masterplan, line-ending and ignore rules, editor settings, a bootstrap `CLAUDE.md`, and a short README. Steps 0.2–0.5 were amended to match (see their Amendment sections). Next: step 0.1.
 
+## Plan revisions
+
+- 2026-10-08 — FEFAT provides market data for a curated set of products, and traders can also import their own (D-24); a prop simulation takes prop rules, a prop strategy, and an existing backtest file, and never re-runs the strategy (D-25), so every run stores trade paths (D-26). New steps 1.9, 1.10, 2.13, 5.12, 14.6, and 14.7; steps 7.3 and 7.5 rewritten, and the other prop steps updated; the later steps in Phases 1, 2, 5, and 14 renumbered, before any step had started. 128 → 134 steps.
+
 ## Steps
 
 | Step | Title | Phase | Status | PR | Date | Notes |
@@ -28,7 +32,9 @@ Phase kickoffs and exits are tracked in the second table.
 | 1.6 | Databento importer with cost preview | P1 | todo | | | |
 | 1.7 | Rolls and forward-anchored continuous series | P1 | todo | | | |
 | 1.8 | Data-quality report and SDK data API | P1 | todo | | | |
-| 1.9 | Notebook demo and phase exit prep | P1 | todo | | | |
+| 1.9 | Platform data catalog and managed updates | P1 | todo | | | |
+| 1.10 | Import your own market data | P1 | todo | | | |
+| 1.11 | Notebook demo and phase exit prep | P1 | todo | | | |
 | 2.1 | Fill specification and scenario format | P2 | todo | | | |
 | 2.2 | Python reference engine and the first notebook backtest | P2 | todo | | | |
 | 2.3 | Strategy spec and signal-frame contract | P2 | todo | | | |
@@ -41,8 +47,9 @@ Phase kickoffs and exits are tracked in the second table.
 | 2.10 | Python bindings, `ff.backtest`, run artifacts, run hash | P2 | todo | | | |
 | 2.11 | Metrics and `run.explain` | P2 | todo | | | |
 | 2.12 | Mixed fidelity and `fidelity_check` | P2 | todo | | | |
-| 2.13 | Cross-check against NautilusTrader | P2 | todo | | | |
-| 2.14 | Benchmarks and tutorial | P2 | todo | | | |
+| 2.13 | Trade paths: every run is ready for prop simulation | P2 | todo | | | |
+| 2.14 | Cross-check against NautilusTrader | P2 | todo | | | |
+| 2.15 | Benchmarks and tutorial | P2 | todo | | | |
 | 3.1 | Feature contract and versions | P3 | todo | | | |
 | 3.2 | Runtime, dependencies, multi-timeframe and cross-instrument inputs | P3 | todo | | | |
 | 3.3 | Cache | P3 | todo | | | |
@@ -68,7 +75,8 @@ Phase kickoffs and exits are tracked in the second table.
 | 5.9 | Trade review chart | P5 | todo | | | |
 | 5.10 | Run comparison, version diff, reproduce-run check | P5 | todo | | | |
 | 5.11 | Notifications on completion | P5 | todo | | | |
-| 5.12 | Phone pass, end-to-end suite, demo | P5 | todo | | | |
+| 5.12 | Import wizard for your own market data | P5 | todo | | | |
+| 5.13 | Phone pass, end-to-end suite, demo | P5 | todo | | | |
 | 6.1 | Feature library pages | P6 | todo | | | |
 | 6.2 | Editor and preview run | P6 | todo | | | |
 | 6.3 | Preview chart and statistics panel | P6 | todo | | | |
@@ -80,14 +88,14 @@ Phase kickoffs and exits are tracked in the second table.
 | 6.9 | Builder-to-backtest end to end | P6 | todo | | | |
 | 7.1 | Rule schema, preset format, refresh skill | P7 | todo | | | |
 | 7.2 | Account state machine, reference implementation, first three presets | P7 | todo | | | |
-| 7.3 | Exact mode: drawdowns, daily loss, flat-by, limits | P7 | todo | | | |
+| 7.3 | Backtest-file replay: drawdowns, daily loss, flat-by, limits | P7 | todo | | | |
 | 7.4 | Payouts, consistency, scaling, lifecycle, fees | P7 | todo | | | |
-| 7.5 | Equity-path export and fast replay with equivalence tests | P7 | todo | | | |
-| 7.6 | Policy layer and cash ledger | P7 | todo | | | |
+| 7.5 | Imported trade logs and path enrichment | P7 | todo | | | |
+| 7.6 | Prop strategy layer and cash ledger | P7 | todo | | | |
 | 7.7 | Monte Carlo | P7 | todo | | | |
 | 7.8 | SDK polish, notebook, plan ranking | P7 | todo | | | |
-| 7.9 | Rule and policy pages | P7 | todo | | | |
-| 7.10 | Simulation launch and results pages | P7 | todo | | | |
+| 7.9 | Rule-set and prop-strategy pages | P7 | todo | | | |
+| 7.10 | Backtest files, simulation launch, results pages | P7 | todo | | | |
 | 7.11 | More presets, end to end | P7 | todo | | | |
 | 8.1 | Runtime spike: tool loop, streaming, append-only transcript, caching, compaction | P8 | todo | | | |
 | 8.2 | Sessions, API key storage, usage ledger, budgets, settings page | P8 | todo | | | |
@@ -138,8 +146,10 @@ Phase kickoffs and exits are tracked in the second table.
 | 14.3 | Tauri shell: window, tray, auto-start | P14 | todo | | | |
 | 14.4 | Installers for Windows and macOS, code signing | P14 | todo | | | |
 | 14.5 | Auto-update and release workflow | P14 | todo | | | |
-| 14.6 | First-run experience | P14 | todo | | | |
-| 14.7 | Clean-machine install tests | P14 | todo | | | |
+| 14.6 | Platform data packs and licence gate | P14 | todo | | | |
+| 14.7 | Hosted platform data service | P14 | todo | | | |
+| 14.8 | First-run experience | P14 | todo | | | |
+| 14.9 | Clean-machine install tests | P14 | todo | | | |
 
 ## Phase kickoffs and exits
 
@@ -165,17 +175,20 @@ Phase kickoffs and exits are tracked in the second table.
 
 | Milestone | Step | Reached |
 | --- | --- | --- |
+| Platform data and your own imports, from the command line | 1.10 | |
 | First backtest in a notebook (reference engine) | 2.2 | |
-| Trustworthy tick-level backtests from a notebook | 2.14 | |
+| Every run ready for prop simulation (trade paths) | 2.13 | |
+| Trustworthy tick-level backtests from a notebook | 2.15 | |
 | Feature system complete in notebooks | 3.8 | |
 | App on the phone over Tailscale | 4.6 | |
-| Web MVP | 5.12 | |
+| Web MVP | 5.13 | |
 | Feature lab and builder | 6.9 | |
-| Prop simulator | 7.11 | |
+| Prop simulator on saved backtests and imported trade logs | 7.11 | |
 | In-app agent | 8.11 | |
 | Event strategies | 9.6 | |
 | Alternative data | 10.7 | |
 | Research tools | 11.8 | |
 | Phone polish | 12.5 | |
 | Hardening | 13.7 | |
-| Desktop installers | 14.7 | |
+| Platform data delivered to customers | 14.7 | |
+| Desktop installers tested on clean machines | 14.9 | |

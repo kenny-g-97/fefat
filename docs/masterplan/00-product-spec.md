@@ -5,7 +5,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 ## 1. Who it is for
 
 - **Now:** one trader (you) who is comfortable with Python and notebooks, trades CME futures and crypto, develops intraday and swing strategies, and evaluates prop-firm accounts.
-- **Later:** other traders like you, running FEFAT on their own machines with their own market data and their own Claude API key. Nothing in FEFAT is hosted for them; that is a deliberate product and licensing decision (see `DECISIONS.md`, D-02).
+- **Later:** other traders like you, running FEFAT on their own machines with their own Claude API key, using the platform's data for the products it provides and importing their own data for the rest. Compute stays on their machines (`DECISIONS.md`, D-01); platform data is delivered to them under the licences it requires (D-24).
 
 ## 2. The four pillars
 
@@ -25,23 +25,30 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 - FEFAT has its **own engine** (Rust core, Python interface). It is deterministic: the same inputs always produce identical results.
 - **Strategy versions are immutable.** Every backtest run pins the strategy version, its parameters, the feature versions it uses, the data snapshot, and the engine version. A run can always be reproduced, and every run stays linked to its strategy version forever.
-- **Accuracy:** signals are decided at bar close; orders, stops, targets, and account rules are simulated on the finest data available inside each bar (ticks, else 1-second bars, else 1-minute bars). Every fill carries a fidelity tag. Fill rules are written down in plain language and enforced by tests.
+- **Accuracy:** signals are decided at bar close; orders, stops, and targets are simulated on the finest data available inside each bar (ticks, else 1-second bars, else 1-minute bars, or coarser bars for imported data that has nothing finer). Every fill carries a fidelity tag. Fill rules are written down in plain language and enforced by tests.
 - **Analysis:** metrics, equity curves, distributions, a trade table, and a trade review chart that shows entries, exits, stops, targets, and the indicators the strategy used. Any trade can be "explained": replayed event by event through the readable reference engine.
 - **Comparison:** runs can be compared side by side, and strategy versions can be diffed.
+- **Every run is ready for prop simulation:** besides its trade log, each run stores every trade's intrabar path (how its open profit and loss moved inside the trade), so any saved backtest can be tested against prop rules later without re-running it.
 - The agent can analyse a run with you, propose an edit, and (after your approval) create a new version and start the next backtest.
 
 ### 2.3 Prop-firm simulator
 
+- A **prop simulation** takes three inputs: **prop rules** (a rule set), a **prop strategy**, and an **existing backtest file** with the full trade log. It never re-runs the trading strategy, so it takes seconds, and one backtest can be tested against any number of firms and prop strategies.
 - **Rule sets** describe a prop firm's plan as data: stages (evaluation, funded, live), drawdown type and lock, daily loss, consistency, minimum days, session rules, position limits and scaling, payout rules and caps, fees, lifecycle transitions. Presets are dated, sourced, and tested against the firm's own worked examples. Custom rule sets are supported.
-- **Exact mode** runs a strategy with the account rules enforced inside the engine, including forced liquidation at a breach and flat-by times.
-- **Fast replay** re-uses a compact record of each trade's equity path to evaluate account rules for any size multiplier, start date, and policy without re-running the strategy.
-- A **macro-strategy** (policy) decides how many evaluation and funded accounts to run and when to start, reset, or replace them; how to size per account stage; when to request payouts and how much to reinvest; and how to allocate trades across accounts and firms.
-- **Monte Carlo** runs over every historical start date and over reshuffled trading days, with a real-money cash ledger (fees, resets, activation, payouts after split). Outputs: pass probability and time to pass, probability and time of first payout, net cash distribution, probability of net loss, bankroll drawdown, cost per funded account, failure reasons — and a ranking of plans for a given strategy by median net cash and by probability of net loss.
+- The **backtest file** is a saved FEFAT backtest (its trades and their intrabar paths) or a trade log imported from another platform. Imported logs are simulated at the precision their data allows — exactly when the market data for their trades is in your store, conservatively otherwise — and every result states that precision ("path fidelity").
+- A **prop strategy** decides how many evaluation and funded accounts to run and when to start, reset, or replace them; how to size per account stage; when to request payouts and how much to reinvest; and how to allocate trades across accounts and firms.
+- **Monte Carlo** runs over every historical start date and over reshuffled trading days of the backtest, with a real-money cash ledger (fees, resets, activation, payouts after split). Outputs: pass probability and time to pass, probability and time of first payout, net cash distribution, probability of net loss, bankroll drawdown, cost per funded account, failure reasons — and a ranking of plans for a given backtest by median net cash and by probability of net loss.
+- Because nothing is re-run, the simulation cannot know how a strategy would have reacted to the account's state (for example after a forced cut); such cases are approximated and counted on every result.
 
 ### 2.4 Phone
 
 - The same web app, installed to the phone's home screen, reaches your PC over Tailscale. Everything works: features, strategies, backtests, prop simulations, the agent, notifications when a job finishes.
 - The phone is **agent-first**: typing code is possible but never required.
+
+### 2.5 Market data, under all four pillars
+
+- **Platform data:** FEFAT provides market data for a curated set of products — by default ES, NQ, CL, GC and their micros, and BTC and ETH spot and perpetuals; the list is confirmed at the Phase 1 kickoff. It comes ready to use, with instrument specifications, session calendars, roll rules, and quality reports, and FEFAT keeps it current.
+- **Your own data:** traders can also import market data for any product — files from their own data vendor or trading platform — through saved import profiles and, in the app, a mapping wizard (columns, time zone, bar stamping, instrument specification). Imported data goes through the same validation and quality report, is used exactly like platform data, and never leaves the trader's machine.
 
 ## 3. Research tools (added capabilities)
 
@@ -54,25 +61,26 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 | In | Later (phase) | Not planned |
 | --- | --- | --- |
-| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12), hardening (P13), desktop packaging (P14) | Live or paper trading, broker connections |
-| Signal strategies, backtests, feature lab, strategy builder, prop simulator, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting market data or compute for other users |
+| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as platform data | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12), hardening (P13), desktop packaging and platform data delivery to customers (P14) | Live or paper trading, broker connections |
+| Signal strategies, backtests, feature lab, strategy builder, prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute for other users |
 | One user, one PC, phone over Tailscale | Machine-learning models on features (backlog) | Order-book (L2) strategies, tick-reactive scalping |
-| Databento and Binance archives as data sources | More data vendors, more prop firms | Social features, strategy marketplace |
+| Platform data built from Databento and the crypto archives; imports of your own data from any vendor's files | More platform products, more import presets, more prop firms | Social features, strategy marketplace |
 
 ## 5. Non-goals and constraints
 
-- FEFAT never ships, hosts, or redistributes market data. Licensed data lives under `FEFAT_DATA_DIR` on the user's machine and never enters the repository.
+- Platform data is delivered only where FEFAT has the right to deliver it: in the personal phase it is built from your own Databento subscription and the public crypto archives, for your own use; in the commercial version every platform product needs a distribution licence (Phase 14), and products without one are import-only. Imported data never leaves the trader's machine. No market data of any kind enters the repository; it lives under `FEFAT_DATA_DIR`.
+- A prop simulation never re-runs a strategy; it reads an existing backtest file.
 - FEFAT never executes the agent's edits without an explicit decision by the user.
 - FEFAT never silently changes a saved result: versions and runs are immutable; a changed fill rule is a new engine version.
-- No cloud dependency for core use. The only network calls in normal use are to Anthropic's API (agent, optional), data vendors (imports), and the push-notification services.
+- No cloud dependency for core use. The only network calls in normal use are to Anthropic's API (agent, optional), data vendors and the platform data service (downloads and updates), and the push-notification services.
 
 ## 6. Key journeys (first release)
 
-1. **Import data.** Point FEFAT at your Databento files (or pull with your API key after a cost preview), download the Binance archive for the pairs you trade, and see the catalog with coverage and quality reports.
+1. **Get data.** Bring the platform data for the products you trade up to date (futures from your Databento files or account, with a cost preview before any paid download; crypto from the public archives), import your own files for anything else, and see the catalog with coverage and quality reports.
 2. **Build a feature.** Write ten lines of Python (or ask the agent), preview it on ES 5-minute bars for 2024, read its statistics and leak check, save version 1.
 3. **Build a strategy.** Pick two features, set conditions, choose stop and targets and session window in the builder, look at the generated code, run a backtest on 2021–2025 with tick fills, inspect trades on the chart.
 4. **Iterate with the agent.** Ask why March lost money; the agent queries the trades, suggests a filter, proposes the edit; you accept; version 2 is created and backtested; compare versions.
-5. **Choose a prop plan.** Run the strategy through Topstep, My Funded Futures, and Tradeify presets with a policy of two staggered evaluations and conservative sizing when funded; read the pass probability, expected payouts, cost, and the plan ranking.
+5. **Choose a prop plan.** Pick a saved backtest of the strategy (or import a trade log from another platform), the Topstep, My Funded Futures, and Tradeify presets, and a prop strategy of two staggered evaluations with conservative sizing when funded; read the pass probability, expected payouts, cost, and the plan ranking — in seconds, without re-running the backtest.
 6. **From the phone.** Start a backtest from the train, get a notification when it finishes, review the equity curve and the agent's summary, approve a proposal.
 
 ## 7. Glossary
@@ -81,7 +89,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | --- | --- |
 | Bar | A time bucket of trades (1-second, 1-minute, 5-minute, daily). Signals are decided at bar close. |
 | Tick | One trade print (or trade with the prior best bid/ask, "TBBO"). Fills are simulated on ticks when available. |
-| Fidelity | The finest data used to fill an order on a given day: `tick`, `1s`, or `1m`. |
+| Fidelity | The finest data used to fill an order on a given day: `tick`, `1s`, `1m`, or a coarser bar timeframe for imported data. |
 | Feature | A versioned function from data to aligned time series. |
 | Signal frame | The table of boolean/number columns a signal strategy produces for every bar (`long_entry`, `stop_price`, …). |
 | Execution template | The declarative part of a signal strategy: order types, stops, targets, trailing, time rules, filters, sizing. |
@@ -89,8 +97,14 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | Run | One backtest: a strategy version plus parameters, data snapshot, engine version, and configuration, with its artifacts. |
 | Data snapshot | A content-hashed manifest of the exact data partitions a run used. |
 | Leak (look-ahead) | A feature value at time t that depends on information available only after t. |
+| Platform data | Market data FEFAT provides for its curated products, kept current, with instrument specifications, calendars, and roll rules. |
+| Imported data | Market data a trader brings in from their own files; it never leaves their machine. |
+| Import profile | A saved description of a file layout (columns, time zone, bar stamping, instrument) used to import market data or trade logs. |
 | Rule set | A prop firm plan expressed as data. |
-| Policy (macro-strategy) | Account-level decisions over time: accounts, sizing, payouts, allocation. |
+| Prop strategy | Account-level decisions over time for prop accounts: accounts, sizing, payouts, allocation. |
+| Backtest file | An existing backtest with its full trade log — a saved FEFAT run, or a trade log imported from another platform: the input of a prop simulation. |
+| Trade path | The compact record of how price moved while a trade was open (its favourable and adverse extremes, with a mark every minute and at every fill), stored by every FEFAT run so prop rules can be checked later without re-running. |
+| Path fidelity | How precisely a backtest file describes what happened inside its trades, recorded per trade: `tick`, `1s`, `1m`, or a coarser bar timeframe from FEFAT runs; `enriched`, `excursions`, or `close-only` for imported trade logs. |
 | Proposal | A change suggested by the agent, pending your accept or reject. |
 | Workspace | A folder holding your features, strategies, runs, and uploads. One workspace in the first release. |
 | Step | One unit of the masterplan: one Claude Code session, one pull request. |

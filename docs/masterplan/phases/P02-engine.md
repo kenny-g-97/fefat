@@ -2,7 +2,7 @@
 
 **Goal.** A backtest engine you can trust: its fill rules are written in plain language and in scenario tables you can check by hand, a slow Python reference engine implements them readably, and the fast Rust engine must match the reference exactly on thousands of generated cases. By the end you run tick-accurate backtests from a notebook in seconds.
 
-**You get.** `ff.backtest(strategy, start, end)` with artifacts, metrics, and `run.explain(trade_id)`; a first notebook backtest at step 2.2 (slow, reference engine) and fast ones from step 2.10.
+**You get.** `ff.backtest(strategy, start, end)` with artifacts, metrics, and `run.explain(trade_id)`; a first notebook backtest at step 2.2 (slow, reference engine) and fast ones from step 2.10; and from step 2.13, trade paths in every run, so every saved backtest can later be prop-simulated without re-running.
 
 **Depends on.** Phase 1.
 
@@ -18,7 +18,7 @@
 
 ### 2.1 Fill specification and scenario format
 
-Depends on: 1.9 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
+Depends on: 1.11 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
 
 #### Purpose
 
@@ -33,7 +33,7 @@ The rules that decide every fill are written down before any engine code exists,
 ```text
 Masterplan step 2.1 — Fill specification and scenario format.
 
-Read docs/masterplan/02-engine-and-data.md §3 and §4 (event order, activation latency) and the CME stop-trigger rule it cites. Write `docs/spec/fill-semantics.md`: a plain-language, normative specification of how market, limit, and stop-market orders are activated and filled on each data fidelity (TBBO, trades only, 1-second bars, 1-minute bars), with the conservative defaults, gap handling, same-interval stop/target ambiguity (resolve to the stop, flag ambiguous), latency, slippage classes, commissions and fees for futures and crypto (maker/taker, funding), and the fidelity tag on every fill. Every rule gets an identifier (F-MKT-01 …). Where the design doc is silent, propose a rule and mark it "proposed" for my sign-off.
+Read docs/masterplan/02-engine-and-data.md §3 and §4 (event order, activation latency) and the CME stop-trigger rule it cites. Write `docs/spec/fill-semantics.md`: a plain-language, normative specification of how market, limit, and stop-market orders are activated and filled on each data fidelity (TBBO, trades only, 1-second bars, 1-minute bars), with the conservative defaults, gap handling, same-interval stop/target ambiguity (resolve to the stop, flag ambiguous), latency, slippage classes, commissions and fees for futures and crypto (maker/taker, funding), and the fidelity tag on every fill, and the price open positions are marked at for equity and trade paths (the last trade by default, bar prices on bar-fidelity days). Every rule gets an identifier (F-MKT-01 …). Where the design doc is silent, propose a rule and mark it "proposed" for my sign-off.
 
 Define the scenario-table format in `fixtures/scenarios/README.md` and a YAML schema: a tape (ticks or bars with timestamps), instrument parameters, orders placed at given times, and the expected fills with the rule identifiers they exercise. Scenario ids are stable (`S-fill-001` …) and later steps refer to them. Write the first 30 scenarios covering each order type on each fidelity, including `S-fill-012`: a gap through a stop (stop 4995.00, next trade 4990.25, expected fill 4990.25), a limit touched but not traded through, and a stop and target inside one bar. Expected values must be hand-computable; show the arithmetic in a comment.
 
@@ -267,7 +267,7 @@ Days with only 1-second or 1-minute bars are simulated by the spec's pseudo-tick
 ```text
 Masterplan step 2.7 — Bar-fidelity fills and hierarchical skipping.
 
-Read docs/spec/fill-semantics.md (bar fidelities) and docs/masterplan/02-engine-and-data.md §4 (hierarchical replay). Implement bar-fidelity replay: a bar is replayed as four pseudo-ticks (open, adverse extreme, favourable extreme, close) according to the spec; stop and target inside one bar resolve to the stop and the fill is flagged ambiguous; fills carry the fidelity tag 1s or 1m. Implement hierarchical descent: process the 1-minute bar first and descend to 1-second bars and ticks only when the bar's range can reach a trigger level (a working order, a trailing update, or an account floor), using the cache's offsets.
+Read docs/spec/fill-semantics.md (bar fidelities) and docs/masterplan/02-engine-and-data.md §4 (hierarchical replay). Implement bar-fidelity replay for 1-second, 1-minute, and coarser bars (imported data may have nothing finer than 5-minute or daily bars): a bar is replayed as four pseudo-ticks (open, adverse extreme, favourable extreme, close) according to the spec; stop and target inside one bar resolve to the stop and the fill is flagged ambiguous; fills carry the fidelity tag of the bars used: 1s, 1m, or a coarser timeframe when imported data has nothing finer (for example 5m or 1d). Implement hierarchical descent: process the 1-minute bar first and descend to 1-second bars and ticks only when the bar's range can reach a trigger level (a working order or a trailing update; step 2.13 adds trade-path extremes), using the cache's offsets.
 
 Tests: scenarios for bar fidelities from 2.1 pass; "skip equals no-skip": on synthetic months with mixed fidelity, the skipping engine and a naive full-replay engine produce identical fills and ledgers (property test with random strategies); the reference engine agrees on bar-fidelity scenarios.
 
@@ -305,7 +305,7 @@ Everything the signal-strategy template promises works: multiple targets, breake
 ```text
 Masterplan step 2.8 — Full exit plan, filters, sizing.
 
-Read docs/masterplan/02-engine-and-data.md §2.1 (the v1 table) and docs/spec/fill-semantics.md. Implement `ExitPlan` in `fefat-engine`: up to three targets with fractions (ticks, ATR multiple, R multiple, column), OCO with the stop; breakeven at a profit threshold or after target N; trailing by distance, step, or indicator column, with an activation threshold and intrabar or bar-close updates; max bars or minutes; flat-by time; no-overnight and no-weekend rules; signal exits. Implement entry filters (time windows by time zone and weekday, blackout column, max trades and losses per day, daily loss stop and profit lock, cooldown, fresh-signal requirement) and sizing (fixed units, fixed notional, risk per trade in currency or percent of equity over the stop distance, size_mult column, forced one unit for prop base runs). Extend the spec where necessary, keep the schema current, and extend the reference engine to the same features.
+Read docs/masterplan/02-engine-and-data.md §2.1 (the v1 table) and docs/spec/fill-semantics.md. Implement `ExitPlan` in `fefat-engine`: up to three targets with fractions (ticks, ATR multiple, R multiple, column), OCO with the stop; breakeven at a profit threshold or after target N; trailing by distance, step, or indicator column, with an activation threshold and intrabar or bar-close updates; max bars or minutes; flat-by time; no-overnight and no-weekend rules; signal exits. Implement entry filters (time windows by time zone and weekday, blackout column, max trades and losses per day, daily loss stop and profit lock, cooldown, fresh-signal requirement) and sizing (fixed units, fixed notional, risk per trade in currency or percent of equity over the stop distance, size_mult column). Extend the spec where necessary, keep the schema current, and extend the reference engine to the same features.
 
 Add 60 scenarios for these rules (trailing updates intrabar on ticks, breakeven after the first target, flat-by across a daylight-saving change, cooldown after a loss, risk sizing with rounding) and extend the differential test to random templates.
 
@@ -383,7 +383,7 @@ Read docs/masterplan/02-engine-and-data.md §5 and §7 and docs/masterplan/01-ar
 
 Tests: the bindings return tables identical to fefat-cli output on the same inputs; a second identical call returns the cached run; the artifact folder matches the documented schema; identical hashes on Windows and Linux in CI for a synthetic run.
 
-Not in this step: metrics (2.11), the web app.
+Not in this step: metrics (2.11), trade paths (2.13), the web app.
 ```
 
 #### Done means
@@ -476,9 +476,47 @@ Not in this step: the web pages.
 
 - If the 1-minute rerun differs wildly, check that the strategy's stops are not inside the typical 1-minute range; that is a property of the strategy, not a bug.
 
-### 2.13 Cross-check against NautilusTrader
+### 2.13 Trade paths: every run is ready for prop simulation
 
-Depends on: 2.12 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
+Depends on: 2.12 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
+
+#### Purpose
+
+Every backtest stores, for each trade, the compact intrabar path that prop-firm rules need, so any saved backtest can be used by the prop simulator later without re-running the strategy.
+
+#### Prerequisites
+
+- Step 2.12 merged.
+
+#### Prompt
+
+```text
+Masterplan step 2.13 — Trade paths: every run is ready for prop simulation.
+
+Read docs/masterplan/03-prop-simulator.md §4.1–4.2 (the backtest file and trade paths) and docs/masterplan/02-engine-and-data.md §4 and §7. Make the engine record, for every flat-to-flat trade, a compact path of the price the position is marked at (the marking price from the fill specification): each new favourable extreme, each new adverse extreme since the last favourable extreme, and a mark at every minute boundary and at every fill, where the tracking restarts; plus the trade's data fidelity and a summary (final, MAE, MFE, maximum drawdown from the in-trade peak, initial risk). Store it as the `trade_paths` artifact of every saved run, next to the `fills` (every leg's entry and exit) and the funding payments, so the prop simulator can recompute profit and loss for any size, contract, and commission table, partial exits included. Record the mix of path fidelities in run.json. Bump the artifact-schema version, which is part of the run hash, so runs saved before this step are never returned for new requests; they show "no trade paths". Keep the hierarchical skipping: descend into seconds and ticks only when a bar can make a new extreme of the open trade, or when a working order can trigger. `run_batch` may skip paths for sweep trials; a trial saved as a run gets them.
+
+Add a test-only full-resolution export (every tick while in a position) and a probe test that asks the questions prop rules ask: for random tapes, fills, sizes, thresholds, and reference times on minute boundaries or fills — does equity relative to the reference cross the threshold, does a favourable or an adverse crossing come first, and what is equity at each minute boundary — the compact record must give the same answers as the full path (10,000 cases). Recording paths must not change fills or trades (determinism hashes of fills and trades unchanged with and without recording).
+
+Not in this step: the prop simulator itself (Phase 7), metric changes.
+```
+
+#### Done means
+
+1. Every saved run folder contains `trade_paths` and `fills` with the documented schemas, and run.json records the mix of path fidelities (schema test).
+2. The probe test passes on 10,000 generated cases, including trades that span a session start and trades with partial exits; fills and trades are unchanged by path recording (hash test).
+3. The compressed size and time cost of paths are reported in the PR for a synthetic 5-year intraday run and for a run with multi-day holds.
+
+#### Your checks
+
+- In a notebook, open the trade paths of one real run, pick a losing trade, and plot its path: its most adverse point matches the trade's MAE in the trades table, and the path ends at the trade's exit price.
+
+#### If it fails
+
+- If paths change any fill, the recording code is reading the clock or reordering events; recording must be a pure observer of the loop.
+
+### 2.14 Cross-check against NautilusTrader
+
+Depends on: 2.13 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
 
 #### Purpose
 
@@ -486,12 +524,12 @@ An independent, established engine agrees with FEFAT on the same data under a co
 
 #### Prerequisites
 
-- Step 2.12 merged; the real month chosen at the kickoff.
+- Step 2.13 merged; the real month chosen at the kickoff.
 
 #### Prompt
 
 ```text
-Masterplan step 2.13 — Cross-check against NautilusTrader.
+Masterplan step 2.14 — Cross-check against NautilusTrader.
 
 Read docs/masterplan/02-engine-and-data.md §8 item 5. In a separate test-only uv environment (`python/tests/external/`), install nautilus_trader (pinned) and load the same Databento month through its Databento adapter. Run the same three simple strategies (market entries with a bracket; limit entries; stop entries) in both engines under a compatibility fill profile in FEFAT (last-quote fills, touch fills for limits, zero slippage, zero latency) that matches Nautilus's documented behaviour. Produce a comparison report: trade-by-trade matches, and every differing fill classified into a documented class (bar-boundary convention, aggressor-side limit fills, ts_recv ordering, roll handling) with an explanation. Keep this out of the default `just test` (it is slow and needs real data); add `just xcheck`.
 
@@ -512,9 +550,9 @@ Not in this step: changing FEFAT defaults to match Nautilus — the conservative
 
 - If Nautilus cannot load your DBN files (version mismatch), convert them with the `dbn` CLI in the test environment; do not alter the raw files.
 
-### 2.14 Benchmarks and tutorial
+### 2.15 Benchmarks and tutorial
 
-Depends on: 2.13 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
+Depends on: 2.14 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -522,16 +560,16 @@ Performance is measured and guarded against regression, and you have a tutorial 
 
 #### Prerequisites
 
-- Step 2.13 merged.
+- Step 2.14 merged.
 
 #### Prompt
 
 ```text
-Masterplan step 2.14 — Benchmarks and tutorial.
+Masterplan step 2.15 — Benchmarks and tutorial.
 
-Add criterion benchmarks in `fefat-engine` on a seeded synthetic dataset (one year, mixed fidelity): a single signal-strategy run, a run with the full in-position tick scan, and a 1,000-run batch; record the baseline numbers in `docs/validation/benchmarks.md` with the machine description. In CI, run the benchmarks as a non-blocking job that posts the numbers and warns above a 30% regression against the stored runner baseline (shared runners are too noisy for a hard 15% gate); the local numbers on this PC are the reference. Install `cargo-mutants` and add `just mutants` for the phase exits. Profile and fix the obvious hot spots if targets in docs/masterplan/02-engine-and-data.md §4 are missed by more than 2x; otherwise note the gap for a later pass.
+Add criterion benchmarks in `fefat-engine` on a seeded synthetic dataset (one year, mixed fidelity): a single signal-strategy run with trade-path recording (the default for saved runs), the same run without paths (as sweep trials run), and a 1,000-run batch; record the baseline numbers in `docs/validation/benchmarks.md` with the machine description. In CI, run the benchmarks as a non-blocking job that posts the numbers and warns above a 30% regression against the stored runner baseline (shared runners are too noisy for a hard 15% gate); the local numbers on this PC are the reference. Install `cargo-mutants` and add `just mutants` for the phase exits. Profile and fix the obvious hot spots if targets in docs/masterplan/02-engine-and-data.md §4 are missed by more than 2x; otherwise note the gap for a later pass.
 
-Write `notebooks/02-engine-tutorial.ipynb`: load data, define a feature inline, define a SignalStrategy, run, read metrics, explain a trade, run fidelity_check, run a small batch of parameter variants; and `docs/engine-guide.md` for you: the strategy template reference with every option, the fill rules in brief with a link to the spec, and how to read a run folder.
+Write `notebooks/02-engine-tutorial.ipynb`: load data, define a feature inline, define a SignalStrategy, run, read metrics, explain a trade, plot a trade path, run fidelity_check, run a small batch of parameter variants; and `docs/engine-guide.md` for you: the strategy template reference with every option, the fill rules in brief with a link to the spec, and how to read a run folder (trade paths included).
 
 Not in this step: new engine features.
 ```

@@ -23,6 +23,7 @@ This is the design of the quantitative core: the `fefat` SDK and the `fefat_engi
 - An explicit session table per product group: trade date, open and close as UTC instants, built from IANA time zones and a holiday table, and **validated against observed data** (first and last print of each day).
 - Trade date comes from session membership, not from clock arithmetic. Holiday sessions fold into the next trade date the way CME does.
 - Crypto uses a 24x7 calendar with UTC-day sessions and a funding event stream.
+- A generic session calendar (time zone, daily open and close, weekdays, optional holiday list) covers products imported by traders that fit none of the built-in groups.
 
 ### 1.4 Bars
 
@@ -39,12 +40,20 @@ This is the design of the quantitative core: the `fefat` SDK and the `fefat_engi
 
 ### 1.6 Engine cache and mixed fidelity
 
-- The engine does not read Parquet. `fefat-data` builds an uncompressed, memory-mapped Arrow IPC cache with three levels per contract-month (1-minute, 1-second, ticks) and row offsets for direct descent between levels. Mapped pages are shared by every sweep thread and process. The cache is rebuildable and lives under `cache/`.
+- The engine does not read Parquet. `fefat-data` builds an uncompressed, memory-mapped Arrow IPC cache with up to three levels per contract-month (1-minute, 1-second, ticks) and row offsets for direct descent between levels; a product imported with only coarser bars (for example 5-minute or daily) has that one level, which is then its finest. Mapped pages are shared by every sweep thread and process. The cache is rebuildable and lives under `cache/`.
 - The engine uses the finest level present for each day (TBBO preferred over trades for ticks) and records the fidelity era in every run. `fidelity_check` reruns the tick year at 1-second fidelity; the difference is the error bar quoted for older years.
 
 ### 1.7 Crypto
 
 Same tables and the same engine. Binance USD-M perpetuals and spot from the free archive (1-second spot klines, 1-minute perpetual klines, aggTrades, funding, open interest), Bybit as a cross-check. Funding payments are events with timestamps. Maker/taker fees in basis points.
+
+### 1.8 Platform data and imported data
+
+FEFAT provides market data for a curated set of products and lets traders import their own for anything else (decision D-24). Both kinds land in the same canonical store and are used the same way; every dataset carries its `source` (`platform` or `user`) and licence scope, and every run records the sources it read.
+
+- **Platform data.** A versioned catalog (`python/fefat/data/platform/catalog.yaml`) lists the products FEFAT provides — by default ES, NQ, CL, GC and their micros, and BTC and ETH spot and perpetuals — each with its instrument specification, calendar, roll rule, data sources and schemas, history depth, and update cadence. `fefat data platform sync` keeps them complete, checked, and current: it runs the importers, rebuilds bars and continuous series for the new range, and runs the quality report. It sits behind a `PlatformDataSource` interface: in the personal phase the platform pipeline runs on your machine with your own subscriptions (Databento for futures, the public archives for crypto); in the commercial version FEFAT runs the same pipeline on its side and a hosted service delivers the result as signed, versioned data packs (Phase 14), only for products FEFAT is licensed to distribute.
+- **Your own data.** `fefat data import file` brings in bar and tick files (CSV, TSV, Parquet, zipped or gzipped) through saved import profiles: column mapping, timestamp format and time zone, whether timestamps mark the bar open or close, price scaling, the timeframe (ticks, or bars of any timeframe; bars coarser than 1 minute make backtests fill at that coarser fidelity, and reports say so), the series type (per contract with contract codes, or a continuous series, unadjusted or back-adjusted — continuous imports run as one synthetic contract with roll handling off and a warning on every run that uses them, since back-adjusted prices distort price levels), and the instrument (an existing one, or a new specification entered once, with an existing calendar or a simple custom session calendar). Presets cover common exports (Databento CSV, NinjaTrader, Sierra Chart, TradeStation, TradingView). Vendor-specific importers (Databento files and API with your own key, the crypto archives) are available as well. Imports go through the same bar building, calendar check, and quality report as platform data, keep the original file under `data/raw/user/`, and never leave the machine.
+- **Overlaps.** When platform and imported data cover the same instrument and range, both are kept as separate datasets; loads use platform data unless a source is named, and the catalog shows both.
 
 ## 2. Strategies: two kinds on one engine
 
@@ -63,7 +72,7 @@ A `StrategySpec` JSON document (schema generated from the Rust types with `schem
 | Entry | Market; limit or stop-market at a column price or an offset; time-to-live in bars; long/short stop pair as OCO; one position per strategy; opposite signal ignores, closes, or reverses |
 | Exit | Stop (ticks, %, ATR multiple, column); up to 3 targets with fractions (ticks, ATR, R multiple, column), OCO with the stop; breakeven (at a profit threshold or after target N); trailing (distance, step, or indicator column; activation threshold; intrabar or bar-close updates); max bars or minutes; flat-by time; no overnight/weekend; signal exit |
 | Filters | Entry windows by time zone and weekday; blackout column; max trades and max losses per day; daily loss stop and profit lock; cooldown after a loss; fresh signal required for re-entry |
-| Sizing | Fixed units; fixed notional; risk per trade (currency or % of equity over stop distance); `size_mult` column; prop base runs force one unit |
+| Sizing | Fixed units; fixed notional; risk per trade (currency or % of equity over stop distance); `size_mult` column. (Trade paths record prices and fills, so a run of any sizing can feed the prop simulator at any size.) |
 
 Deferred to event strategies: scaling in, grids, multi-leg or multi-instrument coordination, portfolio logic, reactions to fills, stop-limit orders, account-aware logic.
 
@@ -75,7 +84,7 @@ A Python class with `on_bar(ctx)`. Features are still precomputed and handed ove
 
 Orders decided at a bar close become active at close plus latency (default 100 ms). Buy side shown; sells mirror.
 
-| Order | TBBO | Trades only | 1-second bars | 1-minute bars only |
+| Order | TBBO | Trades only | 1-second bars | 1-minute or coarser bars only |
 | --- | --- | --- | --- | --- |
 | Market | Ask of the first record at or after activation | First trade; +1 tick if seller-initiated or side unknown | Open of the first bar +1 tick | Same, flagged low fidelity |
 | Stop-market at S | Triggers on a trade at or above S; fills at the next record's ask, never below S | max(S, trigger price) +1 tick | High at or above S triggers; max(S, open) +1 tick | Same |
@@ -92,11 +101,12 @@ CME's own rule: a stop triggers when the market trades at or through the stop pr
 - **Crates:** `fefat-core` (types, errors, calendar), `fefat-data` (cache builder and reader; the only `unsafe`, for mmap), `fefat-engine` (orders, `ExitPlan`, fill rules, loop, `TemplateStrategy`, `AccountModel`), `fefat-prop`, `fefat-metrics`, `fefat-py`, `fefat-cli` (spec in, artifacts out; drives golden tests and benchmarks).
 - **Data and time:** prices, quantities, money, and timestamps are `i64` newtypes; market data is column slices. Local-time rules become UTC instants per trade date before the run.
 - **Event order at equal time:** session and timer events, order activations, market events, then the bar-close decision. A bar `[t, t+Δ)` closes after every event before `t+Δ`.
-- **Hierarchical replay:** 1-minute bar first, then 1-second bars, then ticks — descend only when a bar's range can reach a trigger level (working order, trailing update, account floor). Same fills, far less work. A "skip equals no-skip" test guards it.
-- **Determinism:** one thread per run; no wall clock; no hash-map iteration; integer ledger; seeded randomness only on request. Run key = BLAKE3(spec, signal-frame hash, data partition hashes, engine and fill-model versions). Reproducibility is defined from the stored signal frame, since float features can differ in the last bit across platforms.
+- **Hierarchical replay:** 1-minute bar first, then 1-second bars, then ticks — descend only when a bar's range can reach a trigger level (a working order or a trailing update) or, while in a position, can make a new extreme of the trade path. Same fills, far less work. A "skip equals no-skip" test guards it.
+- **Trade paths:** for every flat-to-flat trade, the loop records a compact path of the price the position is marked at — each new favourable extreme, each new adverse extreme since the last favourable extreme, and a mark at every minute boundary and at every fill, where the tracking restarts — with the trade's fidelity and a per-trade summary. With the fills, this lets the prop simulator recompute the position's profit and loss for any size, contract, and commission table without re-running (`03-prop-simulator.md` §4.2). Recording is a pure observer of the loop: fills never depend on it.
+- **Determinism:** one thread per run; no wall clock; no hash-map iteration; integer ledger; seeded randomness only on request. Run key = BLAKE3(spec, signal-frame hash, data partition hashes, engine, fill-model, and artifact-schema versions). Reproducibility is defined from the stored signal frame, since float features can differ in the last bit across platforms.
 - **Errors:** typed (`thiserror`); core crates lint against `unwrap`, `panic`, and unchecked indexing; data anomalies become run-log warnings, fatal under `strict`.
-- **Accounts:** trait `AccountModel` (`pre_trade`, `on_fill`, `on_mark`, `on_time`, `trigger_levels`), implemented by `PlainAccount` and `PropAccount`.
-- **Targets on a 16-core/32-thread machine, warm cache, about 380M ticks behind a 5-year ES run (not yet measured):** a signal strategy under 0.5 s, under 3 s with the full in-position tick scan that envelope export needs; an event strategy under 15 s; 1,000 execution-parameter runs under 30 s, a few minutes when each run needs new features.
+- **Accounts:** trait `AccountModel` (`pre_trade`, `on_fill`, `on_mark`, `on_time`, `trigger_levels`), implemented by `PlainAccount`. Prop accounts are not simulated inside the engine: the prop simulator replays saved runs' trades and trade paths afterwards (`03-prop-simulator.md` §4).
+- **Targets on a 16-core/32-thread machine, warm cache, about 380M ticks behind a 5-year ES run (not yet measured):** a signal strategy under 3 s including trade-path recording (under 0.5 s for sweep trials, which skip paths); an event strategy under 15 s; 1,000 execution-parameter runs under 30 s, a few minutes when each run needs new features.
 - **Sweeps:** `run_batch(specs)` runs Rayon threads over one mapped dataset; event strategies use a process pool.
 
 ## 5. Python boundary
@@ -145,8 +155,9 @@ run.metrics; run.trades; run.equity("1d"); run.explain(trade_id=17)
 Each run stores Parquet tables plus `run.json` (ids, hashes, versions, config, fidelity summary, warnings):
 
 - `orders` and `fills` (fees, slippage against a reference price, fidelity, ambiguity flag);
-- `trades`, one per flat-to-flat episode: net and gross P&L, R multiple, MAE and MFE in ticks, currency and R, maximum drawdown from peak, exit reason, contract, feature values at entry;
-- equity: `equity_daily` always, bar-close equity for single runs, `episode_path` on request (prop replay input); sweeps keep metrics and a daily P&L vector;
+- `trades`, one per flat-to-flat episode: net and gross P&L, R multiple and initial risk per unit, MAE and MFE in ticks, currency and R, maximum drawdown from peak, exit reason, contract, feature values at entry;
+- `trade_paths`: each trade's compact price path (§4), which the prop simulator replays together with `fills`; run.json records the mix of path fidelities;
+- equity: `equity_daily` always, bar-close equity for single runs; sweep trials keep metrics and a daily P&L vector, and get full artifacts, trade paths included, when saved as runs;
 - `signals` (the exact frame used) and `log`.
 
 Metrics: profit factor, expectancy (currency, ticks, R), win rate; maximum drawdown and duration, worst day, daily CVaR; Sharpe and Sortino on daily P&L, probabilistic and deflated Sharpe; MAE/MFE efficiency; breakdowns by exit reason, time of day, year, and fidelity era; P&L at +1 tick; best-day share and frequency of large daily losses for prop use. Currency and R are primary; percentages use a declared reference capital.
@@ -154,7 +165,7 @@ Metrics: profit factor, expectancy (currency, ticks, R), win rate; maximum drawd
 ## 8. Validation strategy
 
 1. **Scenarios:** at least 150 trader-readable cases (ticks or bars plus orders, with expected fills) in `fixtures/scenarios/` by the end of Phase 7 (added in steps 2.1, 2.7, 2.8, 2.9, 7.3, and 9.3), covering each order type at each fidelity, plus gaps, same-bar conflicts, daylight-saving days, rolls, negative CL prices, and funding. Scenario tables are the specification; a test is never fixed by editing an expected value.
-2. **Differential:** Hypothesis generates tick paths, templates, and signals; the Rust engine must equal the Python reference exactly. Likewise skip equals no-skip, and prop replay equals exact mode.
+2. **Differential:** Hypothesis generates tick paths, templates, and signals; the Rust engine must equal the Python reference exactly. Likewise skip equals no-skip, compact trade paths lose nothing a prop rule needs compared with a full tick-by-tick path, and prop replay of compact paths equals the Python reference machine fed with full paths.
 3. **Invariants (proptest):** accounting identities; no fill before activation; stops never better than trigger, limits never worse than limit; long/short mirror symmetry; engine prefix-invariance; identical hashes across runs and operating systems.
 4. **Data:** bars rebuilt from trades equal Databento's bars; the roll calendar matches `ES.v.0`.
 5. **External engine:** NautilusTrader (test-only dependency, LGPL) on the same Databento month under a compatibility fill profile (last quote, touch, zero slippage); every differing fill must fall into a documented class.

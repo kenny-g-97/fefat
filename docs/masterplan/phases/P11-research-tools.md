@@ -71,7 +71,7 @@ Sweeps are jobs in the app with an estimate first, a cap, live progress, cancell
 ```text
 Masterplan step 11.2 — Studies with time and CPU caps.
 
-Implement `studies` (kind sweep for now): `POST /v1/studies` with a spec (strategy version, parameter space, range, config), `POST /v1/studies/{id}/estimate` (a calibration trial, then an estimate of trials, wall time, and CPU time), caps (max trials, max wall minutes) enforced by the orchestrator job which dispatches chunks of trials to the process pool (signal strategies: one `run_batch` call per chunk), `GET /v1/studies/{id}/trials` (sortable, filterable), `POST /v1/studies/{id}/cancel` keeping completed trials. Build the Studies section: launch dialog (parameter space editor from the parameter schema: lists, ranges, steps; estimate shown before launch), study page with live progress and the trials table, and "open run" for top trials (artifacts materialised on demand for a trial).
+Implement `studies` (kind sweep for now): `POST /v1/studies` with a spec (strategy version, parameter space, range, config), `POST /v1/studies/{id}/estimate` (a calibration trial, then an estimate of trials, wall time, and CPU time), caps (max trials, max wall minutes) enforced by the orchestrator job which dispatches chunks of trials to the process pool (signal strategies: one `run_batch` call per chunk), `GET /v1/studies/{id}/trials` (sortable, filterable), `POST /v1/studies/{id}/cancel` keeping completed trials. Build the Studies section: launch dialog (parameter space editor from the parameter schema: lists, ranges, steps; estimate shown before launch), study page with live progress and the trials table, and "save as run" for top trials (full artifacts, trade paths included, materialised on demand, so the trial can also be prop-simulated).
 
 Playwright: launch a 50-trial study on synthetic data with a cap, watch progress, cancel at 50%, see 25 trials kept.
 
@@ -185,7 +185,7 @@ Optimise in a window, test in the next, stitch the out-of-sample results into on
 ```text
 Masterplan step 11.5 — Walk-forward.
 
-Implement walk-forward studies: anchored or rolling in-sample windows with out-of-sample windows, an optimizer per window (reusing 11.3), selection by objective with plateau preference, a stitched out-of-sample run (trades and daily P&L concatenated with the chosen parameters per window) saved as a run with `origin: walk_forward`, and an efficiency ratio (out-of-sample versus in-sample performance). For signal strategies flat at each session end with unit sizing, compute windows from the sweep's daily P&L matrix without re-running; otherwise re-run per window. Build the walk-forward page: windows table, parameters per window, the stitched equity curve against the in-sample curves, and a "use for prop simulation" action that passes the stitched run to Phase 7.
+Implement walk-forward studies: anchored or rolling in-sample windows with out-of-sample windows, an optimizer per window (reusing 11.3), selection by objective with plateau preference, a stitched out-of-sample run (trades and daily P&L concatenated with the chosen parameters per window) saved as a run with `origin: walk_forward`, and an efficiency ratio (out-of-sample versus in-sample performance). For signal strategies flat at each session end with unit sizing, choose each window's parameters from the sweep's daily P&L matrix without re-running; otherwise re-run per window. Either way, backtest each out-of-sample window once with its chosen parameters as a saved run (sweep trials carry no trade paths), so the stitched run has full trades, fills, and trade paths. Build the walk-forward page: windows table, parameters per window, the stitched equity curve against the in-sample curves, and a "use for prop simulation" action that opens the prop simulator with the stitched run as its backtest file (it carries the window runs' trade paths, so the prop simulator re-runs nothing).
 
 Tests: the matrix shortcut equals re-running on synthetic data; the stitched run's trades equal the concatenation of window runs; the prop simulator accepts the stitched run.
 
@@ -196,7 +196,7 @@ Not in this step: Monte Carlo robustness.
 
 1. Equality and stitching tests pass.
 2. Playwright passes on both projects with screenshots.
-3. A stitched run opens in the prop simulator launch dialog as the default input.
+3. A stitched run opens in the prop simulator launch dialog as the default backtest file, with its trade paths and path fidelity.
 
 #### Your checks
 

@@ -303,7 +303,7 @@ Decisions from planning become durable records, and the status table exists for 
 ```text
 Masterplan step 0.7 — Seed the decision records, progress, and backlog.
 
-Create `docs/adr/` with a template (`0000-template.md`: context, decision, consequences, how we would know it is wrong, status) and one ADR per decision marked ADR in docs/masterplan/DECISIONS.md, numbered in order, each a concise record that links back to the decision log. Do not invent decisions; where the log gives little rationale, keep the ADR short.
+Create `docs/adr/` with a template (`0000-template.md`: context, decision, consequences, how we would know it is wrong, status) and one ADR per decision marked ADR in docs/masterplan/DECISIONS.md, numbered in order, each a concise record that links back to the decision log. Superseded decisions (D-02 by D-24, the exact mode of D-13 by D-25) get the status "superseded by …" with a link to their successor. Do not invent decisions; where the log gives little rationale, keep the ADR short.
 
 Verify that `docs/masterplan/PROGRESS.md` lists every step in every phase file (run `uv run python docs/masterplan/tools/check_masterplan.py`) and fix the table if a step is missing. Make sure the `step` skill updates the right row.
 
@@ -320,7 +320,7 @@ Not in this step: any code.
 
 #### Your checks
 
-- Open `docs/adr/0002-local-first.md` (or whichever number it got) and read it: it should match what you decided.
+- Open the ADR for D-24 (platform data and imports of your own data) and the one for D-25 (prop simulation from existing backtest files) and read them: they should match what you decided. The ADR for D-02 should show "superseded by" D-24.
 
 #### If it fails
 

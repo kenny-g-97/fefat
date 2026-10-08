@@ -18,7 +18,7 @@
 
 ### 6.1 Feature library pages
 
-Depends on: 5.12 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.13 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
 
 #### Purpose
 

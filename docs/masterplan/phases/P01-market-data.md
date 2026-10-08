@@ -1,12 +1,12 @@
 # Phase 1 — Market data
 
-**Goal.** Your Databento files and the free crypto archives become one clean, documented, hash-pinned store on disk, with correct session calendars, bars rebuilt and verified, continuous futures series built without look-ahead, and a quality report for every dataset.
+**Goal.** One clean, documented, hash-pinned store on disk with correct session calendars, bars rebuilt and verified, continuous futures series built without look-ahead, and a quality report for every dataset — filled two ways: **platform data** for the curated products FEFAT provides (built from your Databento files and the free crypto archives, and kept current), and **your own data** for any other product, imported from your own files.
 
-**You get.** `ff.data.load("ES", "5m", "2024-01-01", "2024-12-31")` in a notebook returns correct bars; the catalog CLI lists coverage; the importer prices any Databento download before pulling it.
+**You get.** `ff.data.load("ES", "5m", "2024-01-01", "2024-12-31")` in a notebook returns correct bars; `fefat data platform status` shows every platform product with its coverage and quality; `fefat data import file` brings in your own files through saved profiles; the importer prices any Databento download before pulling it.
 
 **Depends on.** Phase 0.
 
-**Open decisions for the kickoff.** Which Databento files you already have (schemas, products, date ranges) and where they are; whether to buy one month of Standard now (`07-tools-and-costs.md` §3); which crypto venue (Binance by default; Kraken/Coinbase/Hyperliquid if you are US-based); the product list (default ES, NQ, CL, GC and their micros; BTCUSDT and ETHUSDT perpetuals and spot).
+**Open decisions for the kickoff.** Which Databento files you already have (schemas, products, date ranges) and where they are; whether to buy one month of Standard now (`07-tools-and-costs.md` §3); which crypto venue (Binance by default; Kraken/Coinbase/Hyperliquid if you are US-based); the platform product list (default ES, NQ, CL, GC and their micros; BTCUSDT and ETHUSDT perpetuals and spot); and which import presets you need first (the platforms whose exports you use).
 
 ## Kickoff
 
@@ -111,7 +111,7 @@ Trade dates, session opens and closes, holidays, and daylight-saving shifts are 
 ```text
 Masterplan step 1.3 — Session calendar and trade date.
 
-Read docs/masterplan/02-engine-and-data.md §1.3 and the calendar pitfalls in docs/masterplan/appendix/research-market-data.md §5. Implement `python/fefat/data/calendar.py`: an explicit session table per product group (CME equity index, CME energy, CME metals, crypto 24x7) giving, for each trade date, the open and close as UTC instants, built from IANA time zones (America/Chicago) and a holiday table (use exchange-calendars where it covers CME Globex, with an override file for the differences). Trade date is assigned by session membership, not clock arithmetic; holiday sessions fold into the next trade date as CME does.
+Read docs/masterplan/02-engine-and-data.md §1.3 and the calendar pitfalls in docs/masterplan/appendix/research-market-data.md §5. Implement `python/fefat/data/calendar.py`: an explicit session table per product group (CME equity index, CME energy, CME metals, crypto 24x7, plus a generic calendar defined by a time zone, daily open and close, weekdays, and an optional holiday list, for products traders import in 1.10) giving, for each trade date, the open and close as UTC instants, built from IANA time zones (America/Chicago) and a holiday table (use exchange-calendars where it covers CME Globex, with an override file for the differences). Trade date is assigned by session membership, not clock arithmetic; holiday sessions fold into the next trade date as CME does.
 
 Add `validate_calendar(store)` that compares the table with observed first and last prints per day in the data and reports mismatches.
 
@@ -330,9 +330,89 @@ Not in this step: the web catalog page (5.4).
 
 - Reports of "out-of-session prints" on real data often point at the calendar (holiday early closes); fix the override file, not the data.
 
-### 1.9 Notebook demo and phase exit prep
+### 1.9 Platform data catalog and managed updates
 
-Depends on: 1.8 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
+Depends on: 1.8 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: yes · Model hint: hard
+
+#### Purpose
+
+FEFAT provides ready-to-use data for a curated set of products: the platform keeps each product's data complete, checked, and current, with its instrument specification, calendar, and roll rule included.
+
+#### Prerequisites
+
+- Step 1.8 merged; the platform product list from the kickoff; your Databento key stored with `fefat secrets` if futures data will be downloaded.
+
+#### Prompt
+
+```text
+Masterplan step 1.9 — Platform data catalog and managed updates.
+
+Read docs/masterplan/02-engine-and-data.md §1.8 and docs/masterplan/00-product-spec.md §2.5. Implement the platform data catalog in `python/fefat/data/platform/`: a versioned `catalog.yaml` listing the products FEFAT provides (from the kickoff; by default ES, NQ, CL, GC and their micros, and BTCUSDT and ETHUSDT spot and perpetuals), each with its instrument specification, calendar, roll rule, data sources and schemas (Databento for futures, the crypto archive provider for crypto), history depth, and update cadence. Add `fefat data platform status` (each product's coverage, last update, and quality) and `fefat data platform sync [--product …]`, which brings products up to date through the existing importers (every Databento download shows the cost preview and needs `--yes`), rebuilds bars and continuous series for the new range, runs the quality report, and records the catalog version on the datasets. Datasets now carry `source: platform | user` and a licence scope; `ff.data.catalog()` and the catalog CLI show the source, and `ff.data.load` takes an optional `source` (platform data is the default where both exist).
+
+Put the sync behind a `PlatformDataSource` interface (`catalog()`, `fetch(product, range)`): the implementation now runs the platform pipeline on this machine with your own subscriptions; the commercial version swaps in a hosted service that delivers ready-built, signed data packs (Phase 14) without changing callers.
+
+Tests: an offline end-to-end sync of a synthetic catalog product (fixtures stand in for vendor files); a re-sync is a no-op; an interrupted sync resumes; the cost-preview gate is respected.
+
+Not in this step: importing your own files (1.10), hosted delivery and licensing (Phase 14), web pages (Phase 5).
+```
+
+#### Done means
+
+1. `fefat data platform sync` on the synthetic product produces bars, continuous series, and a quality report, tagged `source: platform` with the catalog version.
+2. Re-running is a no-op, and an interrupted sync completes when re-run (tests).
+3. `fefat data platform status` lists every catalog product with its coverage, last update, and quality.
+
+#### Your checks
+
+- Run `fefat data platform status`, then sync one crypto product, then run status again: the product shows as up to date with a quality "pass".
+
+#### If it fails
+
+- A futures product shows a download cost you did not expect: stop; the sync must never download without your `--yes`. Shorten the history in the catalog or buy the month of Databento Standard first (`07-tools-and-costs.md` §3).
+
+### 1.10 Import your own market data
+
+Depends on: 1.9 · Plan mode: required · Reviews: step-reviewer, leakage-auditor · Security: yes · Model hint: default
+
+#### Purpose
+
+Traders can bring data for any product — files from their own data vendor or trading platform — mapped into the same canonical store, validated, and used exactly like platform data.
+
+#### Prerequisites
+
+- Step 1.9 merged; one of your own files to try (for example a CSV export of 1-minute bars from your charting platform).
+
+#### Prompt
+
+```text
+Masterplan step 1.10 — Import your own market data.
+
+Read docs/masterplan/02-engine-and-data.md §1.8. Implement `fefat data import file <path> --profile <name>`: a generic importer for bar and tick files (CSV, TSV, Parquet; zipped or gzipped) driven by import profiles of kind `market_data` — column mapping (timestamp; open, high, low, close, volume; or price, size, side), timestamp format and time zone, whether timestamps mark the bar open or the bar close, price scaling, the timeframe (ticks, or bars of any timeframe; bars coarser than 1 minute are accepted, and backtests on them fill at that coarser fidelity), the series type (per contract with contract codes, or a continuous series, unadjusted or back-adjusted; continuous series run as one synthetic contract with roll handling off and a warning on every run that uses them), and the instrument (an existing one, or a new specification with tick size, point value, currency, and calendar — one of the built-in calendars or the generic one from 1.3 — entered once and saved). Profiles are saved and reusable. Ship presets for common exports (Databento CSV, NinjaTrader, Sierra Chart, TradeStation, TradingView, plus those chosen at the kickoff), each documented and tested against a small synthetic sample in its exact layout. `--preview` prints the first rows as they would be stored and the problems detected, and writes nothing.
+
+Imported data lands in the canonical store tagged `source: user`, keeps the original file under `data/raw/user/` with a manifest entry, goes through bar building (for ticks), the calendar check, and the quality report, and is never uploaded anywhere. Where imported and platform data overlap, both are kept as separate datasets.
+
+Tests: each preset imports its sample to the expected canonical frame; a sample with a wrong time zone or bar stamping is flagged by the calendar check with the offset it detected; a 5-minute bar file and a continuous back-adjusted futures file import with the right fidelity and warnings; a new instrument on the generic calendar loads; preview writes nothing; a re-import is idempotent.
+
+Not in this step: the import wizard in the app (5.12), trade logs (Phase 7), alternative non-price data (Phase 10).
+```
+
+#### Done means
+
+1. Every preset imports its synthetic sample, and the result equals the expected canonical frame (tests).
+2. A sample with shifted time zones is flagged by the calendar check, with the offset it detected.
+3. `ff.data.load("<new product>", "5m", start, end, source="user")` works for a product with a new instrument specification.
+
+#### Your checks
+
+- Export a few days of 1-minute bars for any product from your charting platform, run `fefat data import file <file> --profile <closest preset> --preview`, read the preview, then import it and open its quality report.
+
+#### If it fails
+
+- Off-by-one-bar or off-by-hours timestamps are the usual problem: check whether your export stamps bars at the open or the close, and in which time zone, and set both in the profile; the calendar check tells you when they are wrong.
+
+### 1.11 Notebook demo and phase exit prep
+
+Depends on: 1.10 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -340,14 +420,14 @@ A notebook you can rerun any time shows the whole data layer working on your rea
 
 #### Prerequisites
 
-- Step 1.8 merged.
+- Step 1.10 merged.
 
 #### Prompt
 
 ```text
-Masterplan step 1.9 — Notebook demo.
+Masterplan step 1.11 — Notebook demo.
 
-Write `notebooks/01-market-data.ipynb`: catalog, load continuous ES 5-minute bars for a year, show the roll dates and the adj_offset steps, load one real day of ticks and rebuild its 1-minute bars, compare with the vendor bars, load BTCUSDT perpetual 1-minute bars with funding, and show the quality summary. Every cell has a one-line explanation; expected outputs are described in markdown cells (no data is committed; the notebook runs against FEFAT_DATA_DIR). Add `docs/data-guide.md` explaining the store layout, units, calendars, rolls, and how to add data, written for you.
+Write `notebooks/01-market-data.ipynb`: platform status and catalog (with sources), load continuous ES 5-minute bars for a year, show the roll dates and the adj_offset steps, load one real day of ticks and rebuild its 1-minute bars, compare with the vendor bars, load BTCUSDT perpetual 1-minute bars with funding, load one dataset you imported yourself, and show the quality summary. Every cell has a one-line explanation; expected outputs are described in markdown cells (no data is committed; the notebook runs against FEFAT_DATA_DIR). Add `docs/data-guide.md` explaining the store layout, units, calendars, rolls, platform data and how it is kept current, and how to import your own data (profiles and presets), written for you.
 
 Not in this step: anything else.
 ```
@@ -355,7 +435,7 @@ Not in this step: anything else.
 #### Done means
 
 1. The notebook runs top to bottom on your machine without edits.
-2. `docs/data-guide.md` answers: where is my data, how do I add a product, how do I check quality.
+2. `docs/data-guide.md` answers: where is my data, which products the platform provides and how they stay current, how do I import my own data, how do I check quality.
 
 #### Your checks
 

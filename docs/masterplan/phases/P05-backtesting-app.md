@@ -1,8 +1,8 @@
 # Phase 5 — Backtesting in the app
 
-**Goal.** The web MVP: strategies with immutable versions, backtests as jobs, results you can read on desktop and phone, a trade review chart with markers and indicator panes, run comparison, version diffs, and a notification when a run finishes.
+**Goal.** The web MVP: the data catalog with platform data updates and an import wizard for your own data, strategies with immutable versions, backtests as jobs, results you can read on desktop and phone, a trade review chart with markers and indicator panes, run comparison, version diffs, and a notification when a run finishes.
 
-**You get.** Create a strategy from a template, run it, inspect every trade on the chart, compare runs, and get a push notification on your phone.
+**You get.** Keep platform data current and import your own from the app, create a strategy from a template, run it, inspect every trade on the chart, compare runs, and get a push notification on your phone.
 
 **Depends on.** Phase 4.
 
@@ -33,7 +33,7 @@ The database knows about your data and your strategies, and the catalog is fille
 ```text
 Masterplan step 5.1 — Schema and data catalog from the data folder.
 
-Read docs/masterplan/01-architecture.md §5 and §7 (Data). Add a `catalog sync` job that scans FEFAT_DATA_DIR through the SDK store, upserts `datasets`, `dataset_snapshots`, and `instruments`, and records quality status from the Phase 1 reports; run it at server start and on demand. Implement `GET /v1/instruments`, `GET /v1/datasets`, `GET /v1/datasets/{id}/quality`, and `GET /v1/market/bars` (instrument, timeframe, from, to, continuous flag; returns columnar JSON, capped at 20,000 bars per request, with `nextFrom` for paging). Make the strategies and versions tables ready for 5.2 if 4.1 left gaps.
+Read docs/masterplan/01-architecture.md §5 and §7 (Data). Add a `catalog sync` job that scans FEFAT_DATA_DIR through the SDK store, upserts `datasets` (with their source — platform or user — licence scope, and catalog version), `dataset_snapshots`, `instruments`, and `platform_products`, and records quality status from the Phase 1 reports; run it at server start and on demand. Implement `GET /v1/instruments`, `GET /v1/datasets`, `GET /v1/datasets/{id}/quality`, `GET /v1/platform-data` (each catalog product with its status, coverage, and last update), and `GET /v1/market/bars` (instrument, timeframe, from, to, continuous flag, optional source — platform data by default where both exist; returns columnar JSON, capped at 20,000 bars per request, with `nextFrom` for paging). Make the strategies and versions tables ready for 5.2 if 4.1 left gaps.
 
 Tests: sync is idempotent; bars endpoint pages correctly and refuses unknown instruments; quality status flows through.
 
@@ -111,7 +111,7 @@ A backtest is a job: submitted through the API, executed through the executor an
 ```text
 Masterplan step 5.3 — Backtest job.
 
-Read docs/masterplan/01-architecture.md §6 and §7 (Runs). Implement `POST /v1/runs` (strategy version, params, config: instrument, timeframe, range, fidelity, fee table, slippage class, latency, reference capital): compute the run hash, return the existing run with 200 if it exists, otherwise create the run row and a `backtest` job (202). The job runs `ff.backtest.run` inside the executor (so user strategy code never loads in the server), writes artifacts under the workspace, stores metrics and the fidelity summary in `runs`, and emits progress events (data loaded, features computed, engine running with percent, artifacts written). Implement `GET /v1/runs`, `GET /v1/runs/{id}`, `POST /v1/runs/{id}/cancel`.
+Read docs/masterplan/01-architecture.md §6 and §7 (Runs). Implement `POST /v1/runs` (strategy version, params, config: instrument, timeframe, range, fidelity, fee table, slippage class, latency, reference capital): compute the run hash, return the existing run with 200 if it exists, otherwise create the run row and a `backtest` job (202). The job runs `ff.backtest.run` inside the executor (so user strategy code never loads in the server), writes artifacts (trade paths included) under the workspace, stores metrics and the fidelity summary in `runs`, records the data source used for each instrument (platform or imported; a `data_source` field in the config, platform by default where both exist) in the run's config and run.json,, and emits progress events (data loaded, features computed, engine running with percent, artifacts written). Implement `GET /v1/runs`, `GET /v1/runs/{id}`, `POST /v1/runs/{id}/cancel`.
 
 Tests: dedupe by hash; a failing strategy marks the run failed with the error; cancellation mid-run; artifacts match the SDK's own output for the same inputs (byte-identical trades table). Extend the e2e seed from 4.3 so the test server always has a completed run `demo-run-01` on synthetic data (later UI steps rely on it).
 
@@ -149,19 +149,19 @@ You can see your data: what you have, how good it is, and the bars on a chart th
 ```text
 Masterplan step 5.4 — Data catalog page and chart viewer.
 
-Build the Data section of the web app: a catalog page (datasets with provider, range, fidelity coverage by month as a small heat strip, quality status; instruments with tick size and point value), an Import dialog backed by `POST /v1/imports` and an `import` job kind (point at a folder of Databento or crypto archive files — paths validated against the roots allowed in config — or request a Databento download, which shows the cost preview and requires an explicit confirmation before anything is pulled; progress through the jobs drawer), and a chart viewer: Lightweight Charts 5 candlesticks with a volume pane, instrument and timeframe pickers, a continuous/raw toggle, bars loaded by the visible range through `/v1/market/bars` with paging and caching, a crosshair readout, and session shading from the calendar. Wrap Lightweight Charts in a reusable `PriceChart` component with a stable API (series, panes, markers, primitives) that 5.9 and Phase 6 reuse. Phone: the chart is full width, pinch and drag work, pickers collapse into a sheet.
+Build the Data section of the web app: a catalog page in two parts — **Platform data** (each catalog product with coverage by month as a small heat strip, quality status, last update, and an Update action backed by `POST /v1/platform-data/sync` that runs the platform sync from 1.9 as a `platform_sync` job; paid downloads show the cost preview and need an explicit confirmation before anything is pulled; progress in the jobs drawer) and **Your data** (imported datasets with the same columns; the import wizard arrives in 5.12) — plus instruments with tick size and point value, and a chart viewer: Lightweight Charts 5 candlesticks with a volume pane, instrument and timeframe pickers, a continuous/raw toggle, bars loaded by the visible range through `/v1/market/bars` with paging and caching, a crosshair readout, and session shading from the calendar. Wrap Lightweight Charts in a reusable `PriceChart` component with a stable API (series, panes, markers, primitives) that 5.9 and Phase 6 reuse. Phone: the chart is full width, pinch and drag work, pickers collapse into a sheet.
 
-Playwright: open the catalog, import the synthetic fixture folder through the dialog and see it appear, open the chart for the seeded synthetic instrument, scroll back, assert bars are fetched and rendered; desktop and phone.
+Playwright: open the catalog, update a synthetic platform product and see its coverage change, open the chart for the seeded synthetic instrument, scroll back, assert bars are fetched and rendered; desktop and phone.
 
 Not in this step: indicators on the chart, trade markers.
 ```
 
 #### Done means
 
-1. Playwright specs pass on both projects with screenshots attached, including the import flow.
+1. Playwright specs pass on both projects with screenshots attached, including the platform update flow.
 2. Scrolling back on a year of 5-minute bars stays smooth (no request larger than 20,000 bars; requests are cached).
 3. `PriceChart` is documented in `web/src/components/charts/README.md`.
-4. A Databento download request without confirmation never calls the download API (test with a mocked client).
+4. A platform update that needs a paid Databento download never calls the download API without your confirmation (test with a mocked client).
 
 #### Your checks
 
@@ -227,7 +227,7 @@ You can start a backtest from the strategy page and follow it to completion.
 ```text
 Masterplan step 5.6 — Run launch and run list.
 
-Add a "Run backtest" dialog on the strategy page: instrument, timeframe, date range (with the data coverage shown so you cannot pick what you do not have), fidelity (auto by default), fee table, slippage class, parameters (the form from 5.5), and a cost-free "estimate" line (bars and ticks to process). Submitting calls `POST /v1/runs`; a cached run opens immediately with a "cached" badge. Build the Runs section: a list with status, strategy and version, range, key metrics once done, and live progress for running jobs via the stream; filters by strategy and status; cancel. The run page shell shows status and the config until results land (5.7).
+Add a "Run backtest" dialog on the strategy page: instrument, data source (platform or your imported data, where both exist), timeframe, date range (with the data coverage shown so you cannot pick what you do not have), fidelity (auto by default), fee table, slippage class, parameters (the form from 5.5), and a cost-free "estimate" line (bars and ticks to process). Submitting calls `POST /v1/runs`; a cached run opens immediately with a "cached" badge. Build the Runs section: a list with status, strategy and version, range, key metrics once done, and live progress for running jobs via the stream; filters by strategy and status; cancel. The run page shell shows status and the config until results land (5.7).
 
 Playwright: launch a run on synthetic data, watch progress reach 100%, land on the run page.
 
@@ -437,9 +437,47 @@ Not in this step: notification preferences per kind (Phase 12).
 
 - No notification on iOS: the app must be opened from the home screen icon (standalone) and permission requested from a tap; Safari tabs do not receive push.
 
-### 5.12 Phone pass, end-to-end suite, demo
+### 5.12 Import wizard for your own market data
 
-Depends on: 5.10, 5.11 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: yes · Model hint: default
+
+#### Purpose
+
+Traders bring in their own market data from the app, on the PC or the phone: choose a file, map it, preview it, and import it with the same checks as the command line.
+
+#### Prerequisites
+
+- Step 5.4 merged (the wizard builds on its catalog page and on the importer from 1.10).
+
+#### Prompt
+
+```text
+Masterplan step 5.12 — Import wizard for your own market data.
+
+Read docs/masterplan/02-engine-and-data.md §1.8 and the importer and profiles from step 1.10. Implement `POST /v1/uploads` (multipart; size and type limits from config; stored under workspaces/default/uploads/<id>/ with a SHA-256; CSV, TSV, Parquet, and zip or gzip archives of them — Phase 7 reuses it for trade logs and Phase 10 extends it to other file types), `GET/POST /v1/import-profiles`, `POST /v1/imports/preview` (sample rows as they would be stored, the problems detected, and the calendar check's verdict, computed in the executor), and `POST /v1/imports` (an `import` job). Build the wizard in the Data section: choose a file (upload from the PC or the phone, or for large files a path under the import roots allowed in config), pick a preset or a saved profile or start a new one, map columns with a live preview table, set the time zone and bar stamping, pick or define the instrument (tick size, point value, currency, calendar), review the problems and the calendar check, and import with progress in the jobs drawer; the profile is saved for next time. Imported datasets appear under "Your data" in the catalog with their quality report, and charts and backtests can use them.
+
+Playwright: import a synthetic CSV in a NinjaTrader-style layout with a new instrument, fix a deliberately wrong time zone after the preview flags it, finish, and open the dataset's chart; desktop and phone.
+
+Not in this step: trade logs for the prop simulator (Phase 7), alternative non-price data (Phase 10).
+```
+
+#### Done means
+
+1. Playwright passes on both projects with screenshots, including the time-zone correction.
+2. Preview and import run in the executor, never in the server process (test).
+3. A saved profile re-imports a second file in the same layout without any mapping (test).
+
+#### Your checks
+
+- On your PC, import a real export from your own charting platform with the wizard; then open the imported product's chart on your phone.
+
+#### If it fails
+
+- A preview that looks right with a calendar check that fails usually means the time zone or bar stamping is set wrong in the profile; the wizard should say which.
+
+### 5.13 Phone pass, end-to-end suite, demo
+
+Depends on: 5.10, 5.11, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
 
 #### Purpose
 
@@ -447,14 +485,14 @@ The MVP is coherent on the phone, the whole flow is covered by one end-to-end su
 
 #### Prerequisites
 
-- Steps 5.10 and 5.11 merged.
+- Steps 5.10, 5.11, and 5.12 merged.
 
 #### Prompt
 
 ```text
-Masterplan step 5.12 — Phone pass, end-to-end suite, demo.
+Masterplan step 5.13 — Phone pass, end-to-end suite, demo.
 
-Walk every page of the app at 390×844 and at 1280×800 with the ui-verifier and fix layout, touch-target, and contrast issues found. Write one Playwright end-to-end flow: log in, create a strategy from a template, run it on synthetic data, wait for completion, open results, select a trade, see it on the chart, create version 2 with a parameter change, run, compare. Record a 60-second demo video with Playwright and write docs/demo-mvp.md with the click path for me. Update docs/engine-guide.md with an "In the app" section.
+Walk every page of the app at 390×844 and at 1280×800 with the ui-verifier and fix layout, touch-target, and contrast issues found. Write one Playwright end-to-end flow: log in, update a synthetic platform product, import a synthetic CSV through the wizard, create a strategy from a template, run it on synthetic data, wait for completion, open results, select a trade, see it on the chart, create version 2 with a parameter change, run, compare. Record a 60-second demo video with Playwright and write docs/demo-mvp.md with the click path for me. Update docs/engine-guide.md with an "In the app" section.
 
 Not in this step: new features.
 ```

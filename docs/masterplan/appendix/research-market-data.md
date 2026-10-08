@@ -2,7 +2,7 @@
 
 > Provenance: research by a Claude subagent on 2026-10-05 from vendor and exchange pages. A statement with a link is a sourced fact (with the page date where one was visible). **Inference** marks the researcher's reasoning or arithmetic. "Not found" means it was searched for and not located.
 >
-> How FEFAT uses this: Phase 1 (market data) builds the Databento importer and the Binance archive importer described here, and `07-tools-and-costs.md` carries the purchase guidance. The licensing section is why FEFAT is local-first: customers bring their own data and FEFAT never hosts or ships market data.
+> How FEFAT uses this: Phase 1 builds the Databento and crypto-archive importers described here, which feed the platform data (step 1.9), plus a generic importer for traders' own files (step 1.10); `07-tools-and-costs.md` carries the purchase guidance. The licensing section (§3) defines what delivering platform data to customers requires — a distribution licence per product (decision D-24, step 14.6) — while imported data stays on the trader's machine. The "local-first, FEFAT never hosts market data" recommendation in §6 was superseded on 2026-10-08 by D-24 for platform data; it still describes how imported data is handled.
 
 ## Bottom line
 

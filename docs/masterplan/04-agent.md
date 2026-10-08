@@ -28,9 +28,9 @@ All tools come from one registry: `ToolSpec(name, description, input_model, hand
 
 | Group | Tools |
 | --- | --- |
-| Read | `list_documents`, `read_document` (feature or strategy version, rule set, policy), `list_runs`, `get_run_summary`, `query_run_data` (DuckDB SQL over a run's artifacts; read-only; row cap), `compare_runs`, `get_trade_context` (bars and features around a trade), `list_datasets`, `describe_dataset`, `inspect_upload` (Phase 10; schema and samples, labelled as data), `wait_for_job` |
-| Execute | `preview_feature` (runs the executor; returns stats and a chart), `validate_code` (lint, leak check), `run_python` (executor sandbox over an upload or dataset; no network), `run_backtest`, `run_study`, `run_prop_sim` — each returns a job id and, after `wait_for_job`, the summary. Cost-bearing ones above a time threshold use `consent: confirm_cost` |
-| Write | `propose_change` (new version of a feature, strategy, rule set, policy, or recipe: content, diff, validation), `propose_new`, `propose_recipe` and `register_dataset` (Phase 10, both through proposals), `add_note` |
+| Read | `list_documents`, `read_document` (feature or strategy version, rule set, prop strategy), `list_runs`, `list_backtest_files` (saved runs and imported trade logs, with their path fidelity), `get_run_summary`, `query_run_data` (DuckDB SQL over a run's artifacts; read-only; row cap), `compare_runs`, `get_trade_context` (bars and features around a trade), `list_datasets`, `describe_dataset`, `inspect_upload` (Phase 10; schema and samples, labelled as data), `wait_for_job` |
+| Execute | `preview_feature` (runs the executor; returns stats and a chart), `validate_code` (lint, leak check), `run_python` (executor sandbox over an upload or dataset; no network), `run_backtest`, `run_study`, `run_prop_sim` (on an existing backtest file — a saved run or an imported trade log; it never re-runs the strategy) — each returns a job id and, after `wait_for_job`, the summary. Cost-bearing ones above a time threshold use `consent: confirm_cost` |
+| Write | `propose_change` (new version of a feature, strategy, rule set, prop strategy, or recipe: content, diff, validation), `propose_new`, `propose_recipe` and `register_dataset` (Phase 10, both through proposals), `add_note` |
 | Skills | `load_skill(name)` returns the body of a skill |
 
 No shell, no file access, no web browsing in the first release. "Import from URL" is a server feature (Phase 10) that stores an untrusted upload; the agent then inspects it like any upload.
@@ -39,7 +39,7 @@ No shell, no file access, no web browsing in the first release. "Import from URL
 
 - `python/fefat_app/agent/skills/<name>/SKILL.md`, the same format as Claude's Agent Skills (frontmatter `name` and `description`, then the body), plus optional reference files loaded through `load_skill`.
 - The system prompt holds only the index (name + description); the body is loaded on demand. Users can add skills under `workspaces/default/skills/`.
-- First release: `fefat-features` (the feature API, point-in-time rules, examples, pitfalls), `fefat-signal-strategies` (the `SignalStrategy` API, execution templates, common patterns), `backtest-analysis` (what to look at, in what order; using `query_run_data`; overfitting warnings), `alt-data-ingestion` (inspect, align on publication time, lag, register), `prop-rules-and-policies` (the rule schema, how to configure a simulation, what results mean), `optimization-hygiene` (trial counts, holdouts, walk-forward).
+- First release: `fefat-features` (the feature API, point-in-time rules, examples, pitfalls), `fefat-signal-strategies` (the `SignalStrategy` API, execution templates, common patterns), `backtest-analysis` (what to look at, in what order; using `query_run_data`; overfitting warnings), `alt-data-ingestion` (inspect, align on publication time, lag, register), `prop-rules-and-policies` (the rule schema, prop strategies, choosing a backtest file and reading its path fidelity, how to configure a simulation, what results mean), `optimization-hygiene` (trial counts, holdouts, walk-forward).
 
 ## 5. Proposals: consent as a first-class object
 
@@ -58,7 +58,7 @@ Cost-bearing actions (long studies, large imports) use the same object with `con
 
 ## 7. Safety
 
-- Uploaded files, dataset contents, and web-fetched pages are **untrusted data**: tool results that contain them are labelled as data, and the system prompt instructs the model accordingly.
+- Uploaded files, imported market data and trade logs, dataset contents, and web-fetched pages are **untrusted data**: tool results that contain them are labelled as data, and the system prompt instructs the model accordingly.
 - The agent cannot write anything except through proposals; it cannot run arbitrary code outside the executor sandbox (no network, workspace-only file access, time and memory limits).
 - Chat markdown renders without remote images (CSP `img-src 'self' data: blob:`), and links are shown as text.
 - Phase 8 includes consent-bypass tests (a hostile upload instructing the agent to "save this strategy now") and injection tests.

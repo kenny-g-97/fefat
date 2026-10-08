@@ -33,7 +33,7 @@ Files can be uploaded safely, and datasets have a model with vintages and the tw
 ```text
 Masterplan step 10.1 — Uploads and the dataset model.
 
-Implement `POST /v1/uploads` (multipart, size and type limits, stored under workspaces/default/uploads/<id>/ with sha256 and a sniffed type; CSV, TSV, JSON, Parquet, XLSX, PDF, and text allowed) and `GET /v1/uploads/{id}/inspect` (schema, row count, sample rows, encoding, delimiter, detected date columns; produced in the executor, never in the server process). Define the alternative-dataset model in the SDK: long format rows with `entity`, `field`, `value`, `event_time` (when the fact refers to), and `available_at` (when it was known), with a vintage id per ingestion; versioned datasets in the database (`datasets` with `kind: alt`) and Parquet storage under the workspace. Document the model in docs/data-guide.md.
+Extend the upload endpoint from 5.12 (`POST /v1/uploads`: multipart, size and type limits, stored under workspaces/default/uploads/<id>/ with a SHA-256) with a sniffed type and the alternative-data formats (JSON, XLSX, PDF, and text, besides CSV, TSV, and Parquet), and add `GET /v1/uploads/{id}/inspect` (schema, row count, sample rows, encoding, delimiter, detected date columns; produced in the executor, never in the server process). Define the alternative-dataset model in the SDK: long format rows with `entity`, `field`, `value`, `event_time` (when the fact refers to), and `available_at` (when it was known), with a vintage id per ingestion; versioned datasets in the database (`datasets` with `kind: alt`) and Parquet storage under the workspace. Document the model in docs/data-guide.md.
 
 Tests: limits enforced; inspection of each supported type; a dataset vintage is immutable.
 

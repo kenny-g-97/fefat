@@ -18,7 +18,7 @@
 
 ### 3.1 Feature contract and versions
 
-Depends on: 2.14 · Plan mode: required · Reviews: step-reviewer, leakage-auditor · Security: no · Model hint: hard
+Depends on: 2.15 · Plan mode: required · Reviews: step-reviewer, leakage-auditor · Security: no · Model hint: hard
 
 #### Purpose
 
