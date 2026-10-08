@@ -1,0 +1,181 @@
+# Progress
+
+The single status table for the masterplan. Claude Code's `/step` runner updates the step's row when it opens the PR; you update it if you merge by hand. Statuses: `todo`, `in progress`, `pr open`, `done`, `skipped` (with a note), `amended` (see the phase file).
+
+Phase kickoffs and exits are tracked in the second table.
+
+## Preparation
+
+- 2026-10-08 — The private repository [kenny-g-97/fefat](https://github.com/kenny-g-97/fefat) was cloned into this folder, and a preparation commit on `main` added the masterplan, line-ending and ignore rules, editor settings, a bootstrap `CLAUDE.md`, and a short README. Steps 0.2–0.5 were amended to match (see their Amendment sections). Next: step 0.1.
+
+## Steps
+
+| Step | Title | Phase | Status | PR | Date | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.1 | Install the toolchain and write the doctor script | P0 | todo | | | |
+| 0.2 | Scaffold the repository | P0 | todo | | | Amended 2026-10-08: extend the existing repo files |
+| 0.3 | Configure the GitHub repository and protect `main` | P0 | todo | | | Amended 2026-10-08: repository already exists |
+| 0.4 | Configure Claude Code for this repository | P0 | todo | | | Amended 2026-10-08: replace the bootstrap CLAUDE.md |
+| 0.5 | Data policy, synthetic fixtures, commit guard | P0 | todo | | | Amended 2026-10-08: `git add -f` checks; notebooks without outputs |
+| 0.6 | CI on Windows and Linux | P0 | todo | | | |
+| 0.7 | Seed the decision records, progress, and backlog | P0 | todo | | | |
+| 0.8 | Hello-world slice: Rust to Python to a notebook | P0 | todo | | | |
+| 1.1 | Canonical schemas, units, partitions, manifests, snapshot hashes | P1 | todo | | | |
+| 1.2 | Instruments, contract identity, fee tables | P1 | todo | | | |
+| 1.3 | Session calendar and trade date | P1 | todo | | | |
+| 1.4 | Crypto importer | P1 | todo | | | |
+| 1.5 | Bar builder | P1 | todo | | | |
+| 1.6 | Databento importer with cost preview | P1 | todo | | | |
+| 1.7 | Rolls and forward-anchored continuous series | P1 | todo | | | |
+| 1.8 | Data-quality report and SDK data API | P1 | todo | | | |
+| 1.9 | Notebook demo and phase exit prep | P1 | todo | | | |
+| 2.1 | Fill specification and scenario format | P2 | todo | | | |
+| 2.2 | Python reference engine and the first notebook backtest | P2 | todo | | | |
+| 2.3 | Strategy spec and signal-frame contract | P2 | todo | | | |
+| 2.4 | Rust core types and determinism harness | P2 | todo | | | |
+| 2.5 | Memory-mapped data cache | P2 | todo | | | |
+| 2.6 | Rust engine on ticks with differential tests | P2 | todo | | | |
+| 2.7 | Bar-fidelity fills and hierarchical skipping | P2 | todo | | | |
+| 2.8 | Full exit plan, filters, sizing | P2 | todo | | | |
+| 2.9 | Costs, funding, positions across rolls | P2 | todo | | | |
+| 2.10 | Python bindings, `ff.backtest`, run artifacts, run hash | P2 | todo | | | |
+| 2.11 | Metrics and `run.explain` | P2 | todo | | | |
+| 2.12 | Mixed fidelity and `fidelity_check` | P2 | todo | | | |
+| 2.13 | Cross-check against NautilusTrader | P2 | todo | | | |
+| 2.14 | Benchmarks and tutorial | P2 | todo | | | |
+| 3.1 | Feature contract and versions | P3 | todo | | | |
+| 3.2 | Runtime, dependencies, multi-timeframe and cross-instrument inputs | P3 | todo | | | |
+| 3.3 | Cache | P3 | todo | | | |
+| 3.4 | Leak detector | P3 | todo | | | |
+| 3.5 | Indicators, batch 1 | P3 | todo | | | |
+| 3.6 | Indicators, batch 2 and session-aware features | P3 | todo | | | |
+| 3.7 | Combinators and features inside signal strategies | P3 | todo | | | |
+| 3.8 | Feature analytics and notebook demo | P3 | todo | | | |
+| 4.1 | App-state database, workspace folders, settings | P4 | todo | | | |
+| 4.2 | Local server, login, typed client generation | P4 | todo | | | |
+| 4.3 | Web shell, login, phone navigation, UI test harness | P4 | todo | | | |
+| 4.4 | Jobs: local process pool, resumable progress streams, cancel | P4 | todo | | | |
+| 4.5 | Executor: subprocess isolation and limits for user code | P4 | todo | | | |
+| 4.6 | Phone access over Tailscale, installable app, smoke test from the phone | P4 | todo | | | |
+| 5.1 | Schema and data catalog from the data folder | P5 | todo | | | |
+| 5.2 | Strategy versions API | P5 | todo | | | |
+| 5.3 | Backtest job | P5 | todo | | | |
+| 5.4 | Data catalog page and chart viewer | P5 | todo | | | |
+| 5.5 | Strategy page | P5 | todo | | | |
+| 5.6 | Run launch and run list | P5 | todo | | | |
+| 5.7 | Results: metrics, equity, distributions | P5 | todo | | | |
+| 5.8 | Trade table | P5 | todo | | | |
+| 5.9 | Trade review chart | P5 | todo | | | |
+| 5.10 | Run comparison, version diff, reproduce-run check | P5 | todo | | | |
+| 5.11 | Notifications on completion | P5 | todo | | | |
+| 5.12 | Phone pass, end-to-end suite, demo | P5 | todo | | | |
+| 6.1 | Feature library pages | P6 | todo | | | |
+| 6.2 | Editor and preview run | P6 | todo | | | |
+| 6.3 | Preview chart and statistics panel | P6 | todo | | | |
+| 6.4 | Leak results in the app | P6 | todo | | | |
+| 6.5 | Feature analytics page | P6 | todo | | | |
+| 6.6 | Combination builder | P6 | todo | | | |
+| 6.7 | Rule builder | P6 | todo | | | |
+| 6.8 | Execution-template form and code generation | P6 | todo | | | |
+| 6.9 | Builder-to-backtest end to end | P6 | todo | | | |
+| 7.1 | Rule schema, preset format, refresh skill | P7 | todo | | | |
+| 7.2 | Account state machine, reference implementation, first three presets | P7 | todo | | | |
+| 7.3 | Exact mode: drawdowns, daily loss, flat-by, limits | P7 | todo | | | |
+| 7.4 | Payouts, consistency, scaling, lifecycle, fees | P7 | todo | | | |
+| 7.5 | Equity-path export and fast replay with equivalence tests | P7 | todo | | | |
+| 7.6 | Policy layer and cash ledger | P7 | todo | | | |
+| 7.7 | Monte Carlo | P7 | todo | | | |
+| 7.8 | SDK polish, notebook, plan ranking | P7 | todo | | | |
+| 7.9 | Rule and policy pages | P7 | todo | | | |
+| 7.10 | Simulation launch and results pages | P7 | todo | | | |
+| 7.11 | More presets, end to end | P7 | todo | | | |
+| 8.1 | Runtime spike: tool loop, streaming, append-only transcript, caching, compaction | P8 | todo | | | |
+| 8.2 | Sessions, API key storage, usage ledger, budgets, settings page | P8 | todo | | | |
+| 8.3 | Tool registry and read tools | P8 | todo | | | |
+| 8.4 | Chat with resumable streaming | P8 | todo | | | |
+| 8.5 | Proposal model and audit log | P8 | todo | | | |
+| 8.6 | Write tools and proposal review UI | P8 | todo | | | |
+| 8.7 | Execution tools with cost confirmation | P8 | todo | | | |
+| 8.8 | Skills pack | P8 | todo | | | |
+| 8.9 | Evaluation suite | P8 | todo | | | |
+| 8.10 | Consent-bypass and injection tests | P8 | todo | | | |
+| 8.11 | End to end | P8 | todo | | | |
+| 9.1 | The `on_bar` bridge | P9 | todo | | | |
+| 9.2 | Order API and parity tests | P9 | todo | | | |
+| 9.3 | Reference engine support | P9 | todo | | | |
+| 9.4 | Sandboxed execution and process-pool sweeps | P9 | todo | | | |
+| 9.5 | Code editor page for event strategies | P9 | todo | | | |
+| 9.6 | Agent support and performance tests | P9 | todo | | | |
+| 10.1 | Uploads and the dataset model | P10 | todo | | | |
+| 10.2 | Ingestion recipes | P10 | todo | | | |
+| 10.3 | Publication-time joins and datasets as feature inputs | P10 | todo | | | |
+| 10.4 | Import from URL | P10 | todo | | | |
+| 10.5 | Agent ingestion flow | P10 | todo | | | |
+| 10.6 | Pages | P10 | todo | | | |
+| 10.7 | Hostile-file tests | P10 | todo | | | |
+| 11.1 | Batch runs and sweep artifacts | P11 | todo | | | |
+| 11.2 | Studies with time and CPU caps | P11 | todo | | | |
+| 11.3 | Optimization and heatmaps | P11 | todo | | | |
+| 11.4 | Overfitting safeguards | P11 | todo | | | |
+| 11.5 | Walk-forward | P11 | todo | | | |
+| 11.6 | Monte Carlo robustness | P11 | todo | | | |
+| 11.7 | Agent tools for studies | P11 | todo | | | |
+| 11.8 | End to end | P11 | todo | | | |
+| 12.1 | Install and update audit | P12 | todo | | | |
+| 12.2 | Notifications for every job kind, with preferences | P12 | todo | | | |
+| 12.3 | Touch audit of charts and forms | P12 | todo | | | |
+| 12.4 | Speed on the phone | P12 | todo | | | |
+| 12.5 | Offline and reconnect behaviour | P12 | todo | | | |
+| 13.1 | Security review of the local server | P13 | todo | | | |
+| 13.2 | Robustness and resource limits | P13 | todo | | | |
+| 13.3 | Diagnostics and logs | P13 | todo | | | |
+| 13.4 | Backups, export, restore drill | P13 | todo | | | |
+| 13.5 | Performance pass | P13 | todo | | | |
+| 13.6 | Reproducibility audit | P13 | todo | | | |
+| 13.7 | Runbook and product-readiness checklist | P13 | todo | | | |
+| 14.1 | Packaging decision record | P14 | todo | | | |
+| 14.2 | Backend as a sidecar | P14 | todo | | | |
+| 14.3 | Tauri shell: window, tray, auto-start | P14 | todo | | | |
+| 14.4 | Installers for Windows and macOS, code signing | P14 | todo | | | |
+| 14.5 | Auto-update and release workflow | P14 | todo | | | |
+| 14.6 | First-run experience | P14 | todo | | | |
+| 14.7 | Clean-machine install tests | P14 | todo | | | |
+
+## Phase kickoffs and exits
+
+| Phase | Kickoff PR | Kickoff date | Exit PR | Exit date | Tag |
+| --- | --- | --- | --- | --- | --- |
+| P0 | (no kickoff) | | | | |
+| P1 | | | | | |
+| P2 | | | | | |
+| P3 | | | | | |
+| P4 | | | | | |
+| P5 | | | | | |
+| P6 | | | | | |
+| P7 | | | | | |
+| P8 | | | | | |
+| P9 | | | | | |
+| P10 | | | | | |
+| P11 | | | | | |
+| P12 | | | | | |
+| P13 | | | | | |
+| P14 | | | | | |
+
+## Milestones
+
+| Milestone | Step | Reached |
+| --- | --- | --- |
+| First backtest in a notebook (reference engine) | 2.2 | |
+| Trustworthy tick-level backtests from a notebook | 2.14 | |
+| Feature system complete in notebooks | 3.8 | |
+| App on the phone over Tailscale | 4.6 | |
+| Web MVP | 5.12 | |
+| Feature lab and builder | 6.9 | |
+| Prop simulator | 7.11 | |
+| In-app agent | 8.11 | |
+| Event strategies | 9.6 | |
+| Alternative data | 10.7 | |
+| Research tools | 11.8 | |
+| Phone polish | 12.5 | |
+| Hardening | 13.7 | |
+| Desktop installers | 14.7 | |

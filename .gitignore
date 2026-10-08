@@ -1,0 +1,93 @@
+# Licensed market data never enters git: real data lives outside the repository
+# under FEFAT_DATA_DIR. Only generated fixtures under fixtures/synthetic/ are
+# committed. Step 0.5 adds a pre-commit guard that also catches forced adds.
+
+# --- Market data and other data files -----------------------------------------
+*.dbn
+*.dbn.zst
+*.zst
+*.parquet
+*.arrow
+*.feather
+*.ipc
+*.csv.gz
+*.zip
+*.h5
+*.hdf5
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+*.db
+# ...except generated synthetic fixtures (each listed in its MANIFEST.json)
+!fixtures/synthetic/**
+
+# --- Secrets ------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+# the engine extension when `maturin develop` builds it in place
+*.pyd
+*.so
+
+# --- Rust ---------------------------------------------------------------------
+target/
+**/*.rs.bk
+*.pdb
+
+# --- Node and web -------------------------------------------------------------
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+.vite/
+dev-dist/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# --- Claude Code: personal files (shared config under .claude/ is committed) --
+.claude/settings.local.json
+CLAUDE.local.md
+
+# --- Editors and operating systems --------------------------------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs and scratch ---------------------------------------------------------
+*.log
+logs/
+tmp/
+.tmp/
+scratch/

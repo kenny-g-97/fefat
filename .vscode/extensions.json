@@ -1,0 +1,18 @@
+{
+  "recommendations": [
+    "anthropic.claude-code",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "ms-toolsai.jupyter",
+    "rust-lang.rust-analyzer",
+    "tamasfe.even-better-toml",
+    "editorconfig.editorconfig",
+    "davidanson.vscode-markdownlint",
+    "nefrob.vscode-just-syntax",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "ms-playwright.playwright"
+  ]
+}

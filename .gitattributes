@@ -1,0 +1,33 @@
+# LF line endings in the repository and in the working tree on every OS,
+# so goldens and hashes match on Windows and Linux.
+* text=auto eol=lf
+
+# Windows batch files need CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files: never converted or diffed as text
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.xlsx binary
+*.zip binary
+*.gz binary
+*.zst binary
+*.dbn binary
+*.parquet binary
+*.arrow binary
+*.feather binary
+
+# Lockfiles are generated: collapsed in GitHub's pull request view
+uv.lock linguist-generated=true
+Cargo.lock linguist-generated=true
+pnpm-lock.yaml linguist-generated=true

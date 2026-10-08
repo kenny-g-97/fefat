@@ -1,0 +1,26 @@
+feature engineering for algorithmic trading (fefat)
+
+i want to create a webapp to support algo traders in their strategy development.
+
+The app should have the following main functionalities:
+
+~~new strategy development and feature engineering
+- open/create new trading data 'features', and keeping a library of developed features.
+- provide access to historical market data for backtesting. 
+- a feature engineering page, where there is an interactive platform to develop new features, save them, combine them in several ways, and quickly build a strategy using different features. 
+- import of alternative data and processing into a feature using the LLM agent. 
+- open/create new files to write (strategy) code in, with a LLM assistant (claude agent with skills).
+- access to the 'features' library, and option to combine several features to build a strategy. 
+
+~~ backtesting page
+- a backtesting platform, which offers good strategy version control - it saves all the backtests and links them to the strategy and saves the strategy version as well. The user can come back to view all of the backtest data.
+- the strategies are coded in best language (or language combination) for quick and highly accurate backtests. 
+- the app will have its own backtesting engine.
+- backtest analysis tools - ability to check the trades performance close-up by showing the trades on the chart along with the indicators. Ability to chat with LLM agent to help analyze the backtest and trade performance. The chatbot agent can edit the strategy according to the feedback discussion between user and agent (with the consent of the user) and create new strategy versions to backtest and analyze. 
+
+~~ prop trading environment simulator. 
+- the user can choose a prop account rules and prop account macro-strategy to run a prop strategy backtest, which combines the strategy backtest with a prop account strategy (including position sizing choice, # of accounts at any given time, etc.). 
+
+~~ mobile app
+- there will also be a mobile version of the app, that connects and syncs to all the users data.
+- the user can also work on feature engineering, strategy building, strategy and prop backtesting from the phone. 
