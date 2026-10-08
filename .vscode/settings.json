@@ -46,6 +46,8 @@
     "editor.defaultFormatter": "esbenp.prettier-vscode",
     "editor.formatOnSave": true
   },
+  "rust-analyzer.linkedProjects": ["engine/Cargo.toml"],
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
   "python.terminal.activateEnvironment": true,
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,

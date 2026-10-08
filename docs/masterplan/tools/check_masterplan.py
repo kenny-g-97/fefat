@@ -23,7 +23,9 @@ PHASES = ROOT / "phases"
 PROGRESS = ROOT / "PROGRESS.md"
 
 STEP_RE = re.compile(r"^### (\d+)\.(\d+) (.+?)\s*$")
-META_RE = re.compile(r"^Depends on: (.+?) · Plan mode: (required|optional|skip) · Reviews: (.+?) · Security: (yes|no) · Model hint: (default|hard)\s*$")
+META_RE = re.compile(
+    r"^Depends on: (.+?) · Plan mode: (required|optional|skip) · Reviews: (.+?) · Security: (yes|no) · Model hint: (default|hard)\s*$"
+)
 SECTIONS = ["Purpose", "Prerequisites", "Prompt", "Done means", "Your checks", "If it fails"]
 
 
@@ -64,7 +66,11 @@ def parse_phase(path: Path) -> list[Step]:
             deps = mm.group(1).strip()
             current.depends = [] if deps == "none" else [d.strip() for d in deps.split(",")]
             current.plan, current.reviews, current.security, current.model = (
-                mm.group(2), mm.group(3), mm.group(4), mm.group(5))
+                mm.group(2),
+                mm.group(3),
+                mm.group(4),
+                mm.group(5),
+            )
             continue
         if raw.startswith("#### "):
             current.sections.append(raw[5:].strip())
@@ -83,7 +89,9 @@ def main(argv: list[str]) -> int:
     ids = {}
     for s in steps:
         if s.id in ids:
-            errors.append(f"duplicate step id {s.id} in {s.file.name}:{s.line} and {ids[s.id].file.name}:{ids[s.id].line}")
+            errors.append(
+                f"duplicate step id {s.id} in {s.file.name}:{s.line} and {ids[s.id].file.name}:{ids[s.id].line}"
+            )
         ids[s.id] = s
 
     # sequential numbering within each phase
@@ -103,9 +111,11 @@ def main(argv: list[str]) -> int:
                 errors.append(f"{s.id}: depends on unknown step {d}")
             elif ids[d].phase > s.phase or (ids[d].phase == s.phase and ids[d].num >= s.num):
                 errors.append(f"{s.id}: depends on a later or same step {d}")
-        required, extra = s.sections[: len(SECTIONS)], s.sections[len(SECTIONS):]
+        required, extra = s.sections[: len(SECTIONS)], s.sections[len(SECTIONS) :]
         if required != SECTIONS or any(not x.startswith("Amendment") for x in extra):
-            errors.append(f"{s.id} ({s.file.name}:{s.line}): sections {s.sections} != {SECTIONS} (+ optional Amendment)")
+            errors.append(
+                f"{s.id} ({s.file.name}:{s.line}): sections {s.sections} != {SECTIONS} (+ optional Amendment)"
+            )
 
     if "--progress" in argv:
         print("| Step | Title | Phase | Status | PR | Date | Notes |")

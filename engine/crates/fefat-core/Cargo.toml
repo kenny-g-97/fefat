@@ -1,0 +1,12 @@
+[package]
+name = "fefat-core"
+description = "Shared vocabulary of the engine: newtypes, orders, fills, errors, calendar, and the MarketDataReader trait."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

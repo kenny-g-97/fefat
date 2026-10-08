@@ -1,0 +1,12 @@
+[package]
+name = "fefat-cli"
+description = "Command-line driver: spec in, artifacts out; golden tests and benchmarks."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

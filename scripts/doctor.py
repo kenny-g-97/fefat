@@ -263,7 +263,7 @@ def render_table(findings: list[Finding]) -> str:
     widths = [max(len(row[column]) for row in [header, *rows]) for column in range(len(header) - 1)]
     lines = [
         format_row(header, widths),
-        format_row(tuple("-" * width for width in widths) + ("-" * 22,), widths),
+        format_row((*("-" * width for width in widths), "-" * 22), widths),
     ]
     lines.extend(format_row(row, widths) for row in rows)
     return "\n".join(lines)

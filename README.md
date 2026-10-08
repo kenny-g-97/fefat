@@ -6,9 +6,22 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 ## Status
 
-Planning is complete and the build has not started. It follows the masterplan in [docs/masterplan](docs/masterplan/README.md): one step per Claude Code session and one pull request per step, starting with step 0.1 in [Phase 0](docs/masterplan/phases/P00-foundations.md). Progress is tracked in [PROGRESS.md](docs/masterplan/PROGRESS.md).
+The build is in Phase 0 (foundations). It follows the masterplan in [docs/masterplan](docs/masterplan/README.md): one step per Claude Code session and one pull request per step, starting from [Phase 0](docs/masterplan/phases/P00-foundations.md). Progress is tracked in [PROGRESS.md](docs/masterplan/PROGRESS.md).
 
 The original idea is in [raw_app_idea.txt](raw_app_idea.txt).
+
+## Getting started
+
+Install the tools listed in [docs/masterplan/07-tools-and-costs.md](docs/masterplan/07-tools-and-costs.md) §1 (git, GitHub CLI, Node 24, pnpm, uv, Rust via rustup, `just`, and the Microsoft C++ Build Tools), then from the repository root:
+
+```text
+just doctor   # every tool reported OK with its version
+just setup    # uv workspace, Cargo workspace, web app dependencies
+just check    # lint, format check, type check for Python, Rust, TypeScript
+just test     # pytest, cargo test, vitest
+```
+
+On this project, Python always runs through `uv run python` (a bare `python` is a Microsoft Store stub on Windows). The repository is laid out as described in [docs/masterplan/01-architecture.md](docs/masterplan/01-architecture.md) §3; step 0.7 of the masterplan expands this section.
 
 ## Data policy
 

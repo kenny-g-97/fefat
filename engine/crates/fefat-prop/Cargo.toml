@@ -1,0 +1,12 @@
+[package]
+name = "fefat-prop"
+description = "Prop-firm simulation: account state machine, backtest-file replay, prop strategies, Monte Carlo."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

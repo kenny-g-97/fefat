@@ -106,7 +106,7 @@ Not in this step: any real code, CI, GitHub, Claude Code configuration, fixtures
 
 2026-10-08, repository preparation before step 0.1: this folder became a clone of the private repository `kenny-g-97/fefat`, and the preparation commit added `.gitattributes`, `.gitignore`, `.editorconfig`, `.vscode/settings.json`, `.vscode/extensions.json`, a bootstrap `CLAUDE.md`, and a short root README. The prompt now extends these files instead of creating them, and Done means 2 checks the attributes as git reports them for `text=auto eol=lf`.
 
-2026-10-09: the layout in `01-architecture.md` §3 now uses the src layout for the two Python packages (`python/fefat/src/fefat/`, `python/fefat_app/src/fefat_app/`) and the names of D-27; `just check` also runs the import-linter contract that keeps `fefat` from importing `fefat_app` (`08-code-design.md` §1.5); `just test` runs `cargo test` until nextest is adopted (backlog).
+2026-10-09: the layout in `01-architecture.md` §3 now uses the src layout for the two Python packages (`python/fefat/src/fefat/`, `python/fefat_app/src/fefat_app/`) and the names of D-27; `just check` also runs the import-linter contract that keeps `fefat` from importing `fefat_app` (`08-code-design.md` §1.5); `just test` runs `cargo test` until nextest is adopted (backlog). While doing the step: create-vite 9 scaffolds with oxlint rather than ESLint, so `pnpm lint` is oxlint and the import-boundary lint of step 4.3 is chosen at the Phase 4 kickoff; ruff 0.16 formats Python code blocks inside Markdown, so `*.md` is excluded from `ruff format` and the masterplan stays untouched; `.vscode/settings.json` points rust-analyzer at `engine/Cargo.toml` and Python at the workspace `.venv`.
 
 ### 0.3 Configure the GitHub repository and protect `main`
 

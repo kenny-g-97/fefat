@@ -1,0 +1,12 @@
+[package]
+name = "fefat-engine"
+description = "The backtest loop: ExitPlan, fill rules, TemplateStrategy, AccountModel, over fefat-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
