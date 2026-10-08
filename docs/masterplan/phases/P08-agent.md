@@ -11,7 +11,7 @@
 ## Kickoff
 
 ```text
-/phase-kickoff 8 — Read docs/masterplan/phases/P08-agent.md, docs/masterplan/04-agent.md, docs/masterplan/appendix/research-agent-surfaces.md, and then load the bundled `claude-api` skill and read its Python README, tool-use, streaming, and prompt-caching material; note the current SDK version, the compaction and fallback betas, and the preserved-thinking rules in the kickoff PR so every step below cites them. Ask me the open decisions. Reconcile with the executor, jobs, and versions APIs; open the kickoff PR.
+/phase-kickoff 8 — Read docs/masterplan/phases/P08-agent.md, docs/masterplan/04-agent.md, docs/masterplan/appendix/research-agent-surfaces.md, and then load the bundled `claude-api` skill and read its Python README, tool-use, streaming, and prompt-caching material; note the current SDK version, the compaction and fallback betas, and the preserved-thinking rules in the kickoff PR so every step below cites them. Ask me the open decisions. Reconcile with the executor, jobs, and versions APIs; open the kickoff PR. Pull in the D-29 backlog item for 8.8 (the hypothesis and the `backtest-expert` red-flag checklist in the analysis skill).
 ```
 
 ## Steps
@@ -33,7 +33,7 @@ The smallest complete agent turn works end to end and respects the API's rules, 
 ```text
 Masterplan step 8.1 — Runtime spike: tool loop, streaming, append-only transcript, caching, compaction.
 
-Load the `claude-api` skill and follow its Python guidance exactly (SDK version, tool runner or manual loop, adaptive thinking, effort, streaming, prompt caching, server-side compaction, refusal handling and the default server-side fallback, strict tool schemas, no forced tool choice). Implement `python/fefat_app/agent/runtime.py`: the `AgentRuntime` interface from docs/masterplan/04-agent.md §9 and a `MessagesApiRuntime` that runs one turn: loads the session's transcript blocks from `agent_transcript`, appends the user message, streams the model's response, executes tool calls through a registry (one demo tool `echo` for now), appends every content block in order (thinking blocks included, untouched), stores usage, and emits neutral events (`text.delta`, `tool.start`, `tool.end`, `usage`, `turn.end`) to an `emit` callback. The system prompt and tool list are frozen per session (stored at session creation) and cache breakpoints are set on them. Enable compaction for long sessions and store its blocks like any other. Handle `stop_reason` refusal (no tools run; a plain message is emitted). Model, effort, and limits come from config.
+Load the `claude-api` skill and follow its Python guidance exactly (SDK version, tool runner or manual loop, adaptive thinking, effort, streaming, prompt caching, server-side compaction, refusal handling and the default server-side fallback, strict tool schemas, no forced tool choice). Implement `python/fefat_app/src/fefat_app/agent/runtime.py`: the `AgentRuntime` interface from docs/masterplan/04-agent.md §9 and a `MessagesApiRuntime` that runs one turn: loads the session's transcript blocks from `agent_transcript`, appends the user message, streams the model's response, executes tool calls through a registry (one demo tool `echo` for now), appends every content block in order (thinking blocks included, untouched), stores usage, and emits neutral events (`text.delta`, `tool.start`, `tool.end`, `usage`, `turn.end`) to an `emit` callback. The system prompt and tool list are frozen per session (stored at session creation) and cache breakpoints are set on them. Enable compaction for long sessions and store its blocks like any other. Handle `stop_reason` refusal (no tools run; a plain message is emitted). Model, effort, and limits come from config.
 
 Tests: a recorded-response test (fixtures from a real call you make once, then replayed offline) proving the transcript is replayed byte-identical across two turns, including a turn whose page context changed (the new context is appended with the user message; no earlier block is ever rewritten); a test that editing a stored block is impossible through the repository layer; a test that a refusal stop reason runs no tools. A `fefat agent chat` CLI runs a turn from the terminal for your check.
 
@@ -299,7 +299,7 @@ The agent knows how FEFAT works and how to do good quant work, through skills lo
 ```text
 Masterplan step 8.8 — Skills pack.
 
-Read docs/masterplan/04-agent.md §4. Write the six skills under `python/fefat_app/agent/skills/` in the Agent Skills format (frontmatter name and description; body; optional reference files): `fefat-features` (the feature API from docs/engine-guide.md, point-in-time rules, examples, pitfalls), `fefat-signal-strategies` (the SignalStrategy API, execution template options, common patterns, how to propose a change), `backtest-analysis` (what to look at and in what order, how to use query_run_data with example SQL, overfitting warnings), `alt-data-ingestion` (inspect, align on publication time, lag, register — used fully in Phase 10), `prop-rules-and-policies` (the rule schema, prop strategies, choosing a backtest file and reading its path fidelity, how to configure a simulation, what results and replay notes mean), `optimization-hygiene` (trial counts, holdouts, walk-forward). Implement the skill index in the system prompt and the `load_skill` tool; allow user skills under `workspaces/default/skills/`. Keep each skill self-contained and under 2,000 words, with references for long material.
+Read docs/masterplan/04-agent.md §4. Write the six skills under `python/fefat_app/src/fefat_app/agent/skills/` in the Agent Skills format (frontmatter name and description; body; optional reference files): `fefat-features` (the feature API from docs/engine-guide.md, point-in-time rules, examples, pitfalls), `fefat-signal-strategies` (the SignalStrategy API, execution template options, common patterns, how to propose a change), `backtest-analysis` (what to look at and in what order, how to use query_run_data with example SQL, overfitting warnings), `alt-data-ingestion` (inspect, align on publication time, lag, register — used fully in Phase 10), `prop-rules-and-policies` (the rule schema, prop strategies, choosing a backtest file and reading its path fidelity, how to configure a simulation, what results and replay notes mean), `optimization-hygiene` (trial counts, holdouts, walk-forward). Implement the skill index in the system prompt and the `load_skill` tool; allow user skills under `workspaces/default/skills/`. Keep each skill self-contained and under 2,000 words, with references for long material.
 
 Tests: every skill loads; a replayed turn shows the agent loading `backtest-analysis` before answering an analysis question.
 
@@ -314,7 +314,7 @@ Not in this step: the evaluation suite.
 
 #### Your checks
 
-- Ask the agent "how do I write a feature that uses the previous session's high?" The answer should match the pattern in `fefat-features` and `fefat.ta`.
+- Ask the agent "how do I write a feature that uses the previous session's high?" The answer should match the pattern in `fefat-features` and `fefat.indicators`.
 
 #### If it fails
 

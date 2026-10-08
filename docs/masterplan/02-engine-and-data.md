@@ -51,7 +51,7 @@ Same tables and the same engine. Binance USD-M perpetuals and spot from the free
 
 FEFAT provides market data for a curated set of products and lets traders import their own for anything else (decision D-24). Both kinds land in the same canonical store and are used the same way; every dataset carries its `source` (`platform` or `user`) and licence scope, and every run records the sources it read.
 
-- **Platform data.** A versioned catalog (`python/fefat/data/platform/catalog.yaml`) lists the products FEFAT provides — by default ES, NQ, CL, GC and their micros, and BTC and ETH spot and perpetuals — each with its instrument specification, calendar, roll rule, data sources and schemas, history depth, and update cadence. `fefat data platform sync` keeps them complete, checked, and current: it runs the importers, rebuilds bars and continuous series for the new range, and runs the quality report. It sits behind a `PlatformDataSource` interface: in the personal phase the platform pipeline runs on your machine with your own subscriptions (Databento for futures, the public archives for crypto); in the commercial version FEFAT runs the same pipeline on its side and a hosted service delivers the result as signed, versioned data packs (Phase 14), only for products FEFAT is licensed to distribute.
+- **Platform data.** A versioned catalog (`python/fefat/src/fefat/market/platform/catalog.yaml`) lists the products FEFAT provides — by default ES, NQ, CL, GC and their micros, and BTC and ETH spot and perpetuals — each with its instrument specification, calendar, roll rule, data sources and schemas, history depth, and update cadence. `fefat data platform sync` keeps them complete, checked, and current: it runs the importers, rebuilds bars and continuous series for the new range, and runs the quality report. It sits behind a `PlatformDataSource` interface: in the personal phase the platform pipeline runs on your machine with your own subscriptions (Databento for futures, the public archives for crypto); in the commercial version FEFAT runs the same pipeline on its side and a hosted service delivers the result as signed, versioned data packs (Phase 14), only for products FEFAT is licensed to distribute.
 - **Your own data.** `fefat data import file` brings in bar and tick files (CSV, TSV, Parquet, zipped or gzipped) through saved import profiles: column mapping, timestamp format and time zone, whether timestamps mark the bar open or close, price scaling, the timeframe (ticks, or bars of any timeframe; bars coarser than 1 minute make backtests fill at that coarser fidelity, and reports say so), the series type (per contract with contract codes, or a continuous series, unadjusted or back-adjusted — continuous imports run as one synthetic contract with roll handling off and a warning on every run that uses them, since back-adjusted prices distort price levels), and the instrument (an existing one, or a new specification entered once, with an existing calendar or a simple custom session calendar). Presets cover common exports (Databento CSV, NinjaTrader, Sierra Chart, TradeStation, TradingView). Vendor-specific importers (Databento files and API with your own key, the crypto archives) are available as well. Imports go through the same bar building, calendar check, and quality report as platform data, keep the original file under `data/raw/user/`, and never leave the machine.
 - **Overlaps.** When platform and imported data cover the same instrument and range, both are kept as separate datasets; loads use platform data unless a source is named, and the catalog shows both.
 
@@ -98,7 +98,7 @@ CME's own rule: a stop triggers when the market trades at or through the stop pr
 
 ## 4. Engine internals
 
-- **Crates:** `fefat-core` (types, errors, calendar), `fefat-data` (cache builder and reader; the only `unsafe`, for mmap), `fefat-engine` (orders, `ExitPlan`, fill rules, loop, `TemplateStrategy`, `AccountModel`), `fefat-prop`, `fefat-metrics`, `fefat-py`, `fefat-cli` (spec in, artifacts out; drives golden tests and benchmarks).
+- **Crates:** `fefat-core` (types, errors, calendar, orders and fills, and the `MarketDataReader` trait: 1-minute bars, 1-second bars, ticks, and the offsets between levels — the engine's port to market data), `fefat-data` (cache builder and memory-mapped reader implementing `MarketDataReader`; the only `unsafe`, for mmap, and the only engine crate that opens files), `fefat-engine` (`ExitPlan`, fill rules, loop, `TemplateStrategy`, `AccountModel`; pure computation over `fefat-core`, so its tests and the differential suite run on in-memory tapes), `fefat-prop`, `fefat-metrics`, and `fefat-py` and `fefat-cli` (spec in, artifacts out; they wire `fefat-data` into the engine and drive golden tests and benchmarks). The dependency rule and its enforcement: `08-code-design.md` §1.
 - **Data and time:** prices, quantities, money, and timestamps are `i64` newtypes; market data is column slices. Local-time rules become UTC instants per trade date before the run.
 - **Event order at equal time:** session and timer events, order activations, market events, then the bar-close decision. A bar `[t, t+Δ)` closes after every event before `t+Δ`.
 - **Hierarchical replay:** 1-minute bar first, then 1-second bars, then ticks — descend only when a bar's range can reach a trigger level (a working order or a trailing update) or, while in a position, can make a new extreme of the trade path. Same fills, far less work. A "skip equals no-skip" test guards it.
@@ -125,7 +125,7 @@ def rsi(bars: pl.LazyFrame, n: int) -> pl.Expr:
 
 strat = ff.SignalStrategy(
     instrument="ES", timeframe="5m",
-    features={"rsi": rsi(n=14), "atr": ff.ta.atr(14)},
+    features={"rsi": rsi(n=14), "atr": ff.indicators.atr(14)},
     long_entry=pl.col("rsi") < 30, short_entry=pl.col("rsi") > 70,
     execution=ff.Execution(
         entry=ff.Market(), stop=ff.Stop(atr=1.5),
@@ -144,7 +144,7 @@ run.metrics; run.trades; run.equity("1d"); run.explain(trade_id=17)
 
 - **Contract:** a function of a bars `LazyFrame`, typed parameters, and declared inputs (dependencies, other instruments, higher timeframes) that returns named expressions on the same row grid and declares its warm-up. Extra inputs are joined as-of on `ts_close`, so only closed bars are visible.
 - **Polars is the contract;** a pandas adapter is second-class (accepted on return, converted).
-- **Indicators:** a small `fefat.ta` (including session-aware ones such as anchored VWAP and opening range), golden-tested against TA-Lib.
+- **Indicators:** a small `fefat.indicators` (including session-aware ones such as anchored VWAP and opening range), golden-tested against TA-Lib.
 - **Cache key:** code hash including dependencies, parameters, and input-partition hashes; computed per partition with warm-up overlap; chunked results must equal whole-range results.
 - **Leak detector (on save):** recompute on data truncated at random and adversarial cuts (session ends, roll dates), truncating every input by availability time, and require identical values before the cut. A start-invariance check catches unbounded memory. An AST lint warns on negative shifts, back-fill, and centred windows. Catches: look-ahead shifts, full-sample normalisation, repainting pivots, wrong-direction joins, in-progress higher-timeframe bars. Misses: wrong availability timestamps and revised data; parameters chosen on the full sample; leaks in branches the cuts never reach.
 - **Alternative data:** rows carry `event_time` and `available_at` plus a safety lag; backward as-of join on `available_at`; staleness exposed; vintages kept.
@@ -171,6 +171,8 @@ Metrics: profit factor, expectancy (currency, ticks, R), win rate; maximum drawd
 5. **External engine:** NautilusTrader (test-only dependency, LGPL) on the same Databento month under a compatibility fill profile (last quote, touch, zero slippage); every differing fill must fall into a documented class.
 6. **Real fills:** import broker or prop-platform exports, replay each order, compare simulated with actual slippage, calibrate defaults (when you have such exports).
 7. **Test strength and speed:** mutation testing (`cargo-mutants`) on fill and prop crates with a 90% kill target; golden run snapshots whose change requires a fill-model version bump and your approval; benchmarks on a seeded synthetic dataset, with the local machine as the reference and a non-blocking CI job that warns on a 30% regression (shared runners are too noisy for a hard gate).
+
+The `backtest-expert` skill (`.claude/skills/backtest-expert`) is loaded by every engine, prop, and research step: its methodology and red-flag checklist are the review lens for fills, costs, sample sizes, and robustness claims, and its five-dimension robustness summary is part of every run's metrics from step 2.11 (`08-code-design.md` §4).
 
 ## 9. Research tools
 

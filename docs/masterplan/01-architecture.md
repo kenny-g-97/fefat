@@ -11,22 +11,26 @@ This document is the map of the system. `02-engine-and-data.md`, `03-prop-simula
  │        │  HTTPS, JSON + SSE                                                                  │
  │        ▼                                                                                     │
  │  fefat_app  ── FastAPI server, one process (`fefat up`)                                      │
- │     ├── db          SQLite (app state: versions, runs, sessions, jobs)                       │
+ │     ├── http        FastAPI routers and schemas: the typed layer over the SDK                │
+ │     ├── services    application services, one module per area (runs, strategies, prop, …)    │
+ │     ├── ports.py    the seams as Protocols; container.py builds the adapters once            │
+ │     ├── database    SQLite (app state: versions, runs, sessions, jobs)                       │
  │     ├── jobs        local process pool, events table → resumable streams                     │
- │     ├── exec_runner subprocess that runs user code (features, strategies, transforms)        │
+ │     ├── executor    subprocess that runs user code (features, strategies, transforms)        │
  │     ├── agent       Claude Messages API tool loop, proposals, skills                         │
  │     └── push        web push (VAPID) for job completion                                      │
  │        │                                                                                     │
  │        ▼                                                                                     │
  │  fefat  ── Python SDK (also used directly from notebooks)                                    │
- │     ├── data        platform catalog + sync, your imports, calendars, bars, rolls → Parquet  │
- │     ├── features    feature runtime, cache, leak detector, ta      → Polars                  │
+ │     ├── market      platform catalog + sync, your imports, calendars, bars, rolls → Parquet  │
+ │     ├── features    feature runtime, cache, leak detector → Polars                           │
+ │     ├── indicators  indicator library (ATR, RSI, VWAP, …), golden-tested against TA-Lib      │
  │     ├── strategy    SignalStrategy, Execution template, event strategies                     │
  │     ├── backtest    run config, artifacts (incl. trade paths), metrics, run.explain()        │
  │     ├── prop        rule sets, prop strategies, backtest-file replay, Monte Carlo            │
  │     ├── analytics   feature analytics (forward returns, IC, correlations, event studies)     │
  │     ├── research    sweeps, walk-forward, robustness, safeguards                             │
- │     └── ref         slow, readable Python reference engine (the specification)               │
+ │     └── reference   slow, readable Python reference engine (the specification)               │
  │        │                                                                                     │
  │        ▼                                                                                     │
  │  fefat_engine ── Rust extension (PyO3): mmap data cache, engine loop, prop replay, metrics   │
@@ -49,7 +53,7 @@ Three principles hold everything together:
 | SDK and app | Python 3.12 (uv-managed), Polars, PyArrow, DuckDB, Pydantic 2 | Packages `fefat` (SDK) and `fefat_app` (server) in a uv workspace |
 | App state | SQLite (WAL), SQLAlchemy 2, Alembic (batch mode) | One file: `fefat.sqlite` |
 | Server | FastAPI + Uvicorn | `fefat up` starts it; OpenAPI exported to `web/openapi.json` |
-| Web | Vite 8, React 19, TypeScript, Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod, `openapi-typescript` + `openapi-fetch`, `vite-plugin-pwa` | `web/` with pnpm |
+| Web | Vite 8, React 19, TypeScript, Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod, `openapi-typescript` + `openapi-fetch`, `vite-plugin-pwa` | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, made with the `frontend-design` skill (`08-code-design.md` §5) |
 | Charts | TradingView Lightweight Charts 5 (price, markers, indicator panes), ECharts 6 (analytics) | Keep `attributionLogo` on (Apache-2.0 attribution) |
 | Editor | CodeMirror 6 with `@codemirror/merge` (unified on phones, side-by-side on desktop) | Monaco does not support phones |
 | Phone access | Tailscale (personal plan) with its HTTPS certificate; service worker; web push via `pywebpush` | iOS needs 16.4+, home-screen install, and a tap to request permission |
@@ -65,25 +69,34 @@ Three principles hold everything together:
 ```text
 fefat/
   CLAUDE.md                     working agreements for Claude Code
-  .claude/                      settings, rules/, skills/, agents/, hooks/
+  .claude/                      settings, rules/, skills/ (step, verify, …, and the three design skills), agents/, hooks/
   .githooks/                    pre-commit guard (same checks as CI)
   justfile                      setup · check · test · e2e · dev · doctor
-  pyproject.toml                uv workspace root
+  pyproject.toml                uv workspace root: dev tools, ruff, pyright, pytest, import-linter contracts
+  .python-version               3.12
   engine/                       Cargo workspace
     Cargo.toml
     rust-toolchain.toml
-    crates/fefat-core           types, errors, calendar, fixed-point money
-    crates/fefat-data           Arrow IPC cache builder/reader (the only `unsafe`: mmap)
-    crates/fefat-engine         orders, ExitPlan, fill rules, loop, TemplateStrategy, AccountModel
+    crates/fefat-core           newtypes, orders, fills, errors, calendar, the MarketDataReader trait (no I/O)
+    crates/fefat-engine         ExitPlan, fill rules, loop, TemplateStrategy, AccountModel: pure computation over fefat-core
     crates/fefat-prop           account state machine, backtest-file replay, prop strategies, Monte Carlo
-    crates/fefat-metrics        performance metrics
-    crates/fefat-py             PyO3 bindings → Python module `fefat_engine` (maturin)
+    crates/fefat-metrics        performance metrics and the robustness summary
+    crates/fefat-data           Arrow IPC cache builder and mmap reader implementing MarketDataReader (the only `unsafe`)
+    crates/fefat-py             PyO3 bindings → Python module `fefat_engine` (maturin); wires fefat-data into the engine
     crates/fefat-cli            spec in, artifacts out; drives golden tests and benchmarks
   python/
-    fefat/                      the SDK: data/ features/ ta/ analytics/ strategy/ backtest/ prop/ research/ ref/ config.py
-    fefat_app/                  server/ db/ jobs/ exec_runner.py agent/ push/ secrets.py cli.py
-    tests/
+    fefat/                      the SDK package (uv workspace member, src layout)
+      src/fefat/                market/ features/ indicators/ analytics/ strategy/ backtest/ prop/ research/ reference/ config.py
+    fefat_app/                  the server package (uv workspace member, src layout)
+      src/fefat_app/            http/ services/ ports.py container.py database/ jobs/ executor.py agent/ push/ credentials.py cli.py
+    tests/                      pytest for both packages (unit, contract, differential)
   web/                          Vite React app (pnpm)
+    DESIGN.md                   the design system: tokens, type, layout, principles (written in step 4.3)
+    src/app/                    shell, router, providers
+    src/areas/<area>/           lab, strategies, runs, prop, agent, data, settings: routes, components, hooks per area
+    src/ui/                     design-system primitives and tokens (themed shadcn/ui)
+    src/charts/                 chart wrappers (Lightweight Charts, ECharts)
+    src/api/                    generated OpenAPI client and query hooks
   fixtures/synthetic/           generated test data (the only data files allowed in git)
   fixtures/scenarios/           fill-rule scenario tables (YAML)
   notebooks/                    demos and your checks
@@ -93,6 +106,8 @@ fefat/
     adr/                        architecture decision records
     spec/                       fill-semantics.md and other normative specs
 ```
+
+Dependencies point inward: `web → fefat_app.http → fefat_app.services → fefat → fefat_engine`. `fefat` never imports `fefat_app`; the adapters (`database/`, `jobs/`, `executor.py`, `agent/`, `push/`, `credentials.py`) implement the ports in `ports.py` and are built once in `container.py`; in Rust, only `fefat-data`, `fefat-py`, and `fefat-cli` touch the outside world. The rule, its reasons, the names, and how `just check` enforces it are in `08-code-design.md` §1–§3.
 
 ## 4. Runtime layout (the app-data folder)
 
@@ -140,7 +155,7 @@ The schema is created by Alembic migrations from Phase 4. Earlier phases keep SD
 - **Jobs** are rows in `jobs`. Kinds in the first release: `backtest`, `feature_preview`, `feature_validate`, `analytics`, `study`, `prop_sim`, `platform_sync`, `import`, `trade_import`, `catalog_sync`, `reproduce`, `agent_turn`, `ingest`, plus `demo` and `python_snippet` for tests and tooling; later phases add kinds the same way. State machine: `queued → running → succeeded | failed | cancelled | timed_out`; transitions are compare-and-set updates.
 - **Runner.** The server owns a process pool sized from `config.toml` (default: physical cores minus two). Each job runs `run_job(job_id)` in a worker process; progress is written to `events` (stream `job:<id>`) and `jobs.progress`.
 - **Streams.** `GET /v1/streams/{stream_id}` is Server-Sent Events backed by the `events` table: the event id is the row id, the client reconnects with `Last-Event-ID`, heartbeats every 15 s. Agent turns use the same mechanism (stream `turn:<id>`).
-- **Executor.** User code (features, strategies, ingestion transforms) runs through `fefat_app.exec_runner`: a subprocess with a scrubbed environment, a wall-clock timeout, a memory limit (Job Objects on Windows, `RLIMIT_AS` elsewhere), and a result file validated against a Pydantic model before anything is registered. This is crash containment and resource control, not a security boundary — a local app runs the user's own code.
+- **Executor.** User code (features, strategies, ingestion transforms) runs through `fefat_app.executor`: a subprocess with a scrubbed environment, a wall-clock timeout, a memory limit (Job Objects on Windows, `RLIMIT_AS` elsewhere), and a result file validated against a Pydantic model before anything is registered. This is crash containment and resource control, not a security boundary — a local app runs the user's own code.
 - **Cancellation.** The API sets `cancel_requested_at`; workers check it between chunks and trials; after a grace period the runner kills the subprocess.
 - **Idempotency.** `run_hash = sha256(strategy version hash, params, config, snapshot hashes, engine version, fill-model version, seed)` is the app-level identity of a run; the engine's own run key (`02-engine-and-data.md` §4, over the spec and the signal frame) is one of its inputs. Submitting an identical run returns the existing run.
 - **Sweeps** (P11) are a parent `study` job that expands trials, skips hashes already done, and dispatches chunks of trials; signal-strategy chunks run inside one `fefat_engine.run_batch` call that parallelises with Rayon over the shared memory-mapped data.
@@ -191,13 +206,15 @@ CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for
 
 | Seam | Interface | Today | Later |
 | --- | --- | --- | --- |
-| Executor | `Executor.run(ExecSpec) -> ExecResult` | subprocess | containers, if ever needed |
+| Executor | `Executor.run(ExecutionSpec) -> ExecutionResult` | subprocess | containers, if ever needed |
 | Dispatcher | `submit(job_id)`, `cancel(job_id)` | local process pool | remote workers, cloud sync |
 | Blob store | `BlobStore.put/get/list` over workspace paths | local files | optional cloud sync |
 | Agent runtime | `AgentRuntime.run_turn(session, message, tools, emit)` | Messages API loop | Agent SDK or Managed Agents |
 | Platform data source | `PlatformDataSource.catalog()`, `fetch(product, range)` | the platform pipeline on this machine, using your Databento subscription and the public crypto archives | signed data packs from FEFAT's hosted service (Phase 14) |
 | Credential store | `secrets.get/set(name)` | Windows credential store | macOS keychain, Linux secret service |
 | Licensing | `licence.check(product_or_feature, scope)` | always `ok` | signed entitlement tokens for platform data (14.6–14.7); app licence keys (backlog) |
+
+Each seam is a `Protocol` in `python/fefat_app/src/fefat_app/ports.py` (the Rust seams, `MarketDataReader` and `AccountModel`, are traits in `fefat-core`); the adapters are chosen in `container.py` from `config.toml`, so swapping one is a configuration change plus one new module (`08-code-design.md` §1).
 
 ## 11. Conventions
 
@@ -207,3 +224,4 @@ CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for
 - IDs: UUIDv7. Version numbers: integers starting at 1 per feature/strategy.
 - Line endings LF everywhere (`.gitattributes`); paths through `pathlib`; project scripts are Python run through `uv run python` (bare `python` is a Store stub on this PC) plus `just` recipes; Claude Code hooks are Node scripts; the only shell file is the one-line git pre-commit launcher.
 - Python: ruff + pyright strict for `fefat_app`, basic for `fefat`; Rust: clippy with `unwrap_used`, `panic`, `indexing_slicing` denied in core crates; TypeScript: strict.
+- Code design: `08-code-design.md` — the dependency rule (`web → fefat_app.http → services → fefat → fefat_engine`), intention-revealing names (never `data`, `utils`, `helpers`, `manager`, …), fail-fast errors, an enum for every state, injected ports, immutable values, small units; one design system in `web/DESIGN.md`, built with the `frontend-design` skill.

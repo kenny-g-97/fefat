@@ -10,29 +10,34 @@ A short bootstrap `CLAUDE.md` exists since the repository preparation (2026-10-0
 - **Workflow:** one masterplan step per session through `/step`; never commit to `main`; the builder merges; the step protocol lives in `docs/masterplan/05-build-process.md`.
 - **Invariants, each linked to its ADR:** deterministic runs; no look-ahead; licensed data never in the repo; goldens change only with the builder's approval; tests are never weakened to pass; versions and runs are immutable.
 - **Windows notes:** LF endings; `pathlib`; PowerShell and Git Bash both exist; private data through `FEFAT_DATA_DIR`.
-- **Pointers:** architecture docs by path; the `claude-api` skill for any Anthropic API code.
+- **Pointers:** architecture docs by path, including `08-code-design.md` for the dependency rule and the design rules; the `claude-api` skill for any Anthropic API code; which project skill to load per area (`software-design-principles` for all code, `backtest-expert` for engine, prop, results, and research code, `frontend-design` with `web/DESIGN.md` for the web app).
 - **Not in it:** language conventions (rules), procedures (skills), architecture prose (docs).
 
 ## 2. Rules (`.claude/rules/*.md`, each with `paths:` frontmatter)
 
 | Rule file | Paths | Content |
 | --- | --- | --- |
-| `engine.md` | `engine/**` | seeded randomness and an injected clock only; ordered collections wherever order affects output; integer money; every behaviour change comes with a scenario table; `unwrap`/`panic`/indexing lints |
-| `python.md` | `python/**` | uv only; ruff and pyright; Polars first; no network in unit tests; Pydantic models at every boundary |
-| `web.md` | `web/**` | API types generated from OpenAPI; numbers come from the API, never recomputed in the client; every page works at 390 px; stable `data-testid`s; no remote images |
-| `db.md` | `python/fefat_app/db/**` | new migration files only, never edited; versioned rows are insert-only |
+| `engine.md` | `engine/**` | seeded randomness and an injected clock only; ordered collections wherever order affects output; integer money; every behaviour change comes with a scenario table; `unwrap`/`panic`/indexing lints; `08-code-design.md` §1 and §3.2: no I/O outside `fefat-data`, `fefat-py`, `fefat-cli`; enums for every state; `MarketDataReader` and `AccountModel` passed in; load `backtest-expert` |
+| `python.md` | `python/**` | uv only; ruff and pyright; Polars first; no network in unit tests; Pydantic models at every boundary; `08-code-design.md` §3.1 and §3.3: names, fail-fast errors, frozen models, enums for states, ports injected, the SDK never imports the app |
+| `web.md` | `web/**` | API types generated from OpenAPI; numbers come from the API, never recomputed in the client; every page works at 390 px; stable `data-testid`s; no remote images; `08-code-design.md` §3.4 and §5: load the `frontend-design` skill, build from `web/DESIGN.md` and extend it, zod for data the API does not type, no `any` or `as`, areas import only `ui/`, `api/`, `charts/`, `app/` |
+| `database.md` | `python/fefat_app/src/fefat_app/database/**` | new migration files only, never edited; versioned rows are insert-only |
 | `masterplan.md` | `docs/masterplan/**` | stable step IDs; finished steps are not rewritten; amendments are appended |
 
 ## 3. Skills (`.claude/skills/<name>/SKILL.md`)
 
 | Skill | Invocation | Does |
 | --- | --- | --- |
-| `step` | `/step N.M` | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
+| `step` | `/step N.M` | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, loads the skills for the paths the step touches (`08-code-design.md`), runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
 | `phase-kickoff` | `/phase-kickoff N` | the reconciliation procedure in `05-build-process.md` §6 |
 | `phase-exit` | `/phase-exit N` | the exit procedure in `05-build-process.md` §6 |
 | `verify` | model-invoked | tiered checks by changed area (Rust, Python, web, docs), with the UI recipe (Playwright at desktop and phone sizes, screenshots) in a supporting file |
 | `engine-golden` | `paths: engine/**` | how to add scenarios, regenerate goldens with approval, and write the changelog entry |
 | `prop-preset-refresh` | manual (P7) | re-read each firm's published rules from the sources in the preset, propose a new preset version with URL and date; never edit an existing version |
+| `designing-architecture` | model-invoked; installed 2026-10-09 | the architecture workflow behind `08-code-design.md` §1, for any new module, package, crate, or seam |
+| `software-design-principles` | model-invoked; installed 2026-10-09 | the design rules behind `08-code-design.md` §3; loaded for any code |
+| `backtest-expert` | model-invoked; installed 2026-10-09 | backtest methodology, the red-flag checklist, and a standard-library evaluation script (`scripts/evaluate_backtest.py`, run through `uv run --no-project python`); loaded for engine, prop, results, and research steps |
+
+The three design skills were copied verbatim from the builder's `newskills/` folder on 2026-10-09 (only the example command in `backtest-expert` was changed to run through `uv`); the `frontend-design` skill comes from the plugin installed at user scope the same day (§7).
 
 ## 4. Subagents (`.claude/agents/<name>.md`), all read-only reviewers
 
@@ -70,7 +75,11 @@ The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git
 | Playwright | keep from P4: test runner in CI plus the agent-facing CLI for phone emulation and recordings | `pnpm add -D @playwright/test`; `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` |
 | `security-guidance` plugin | keep from P4 | `/plugin install security-guidance@claude-plugins-official` |
 | Library-docs server (Context7) | add only if stale-API mistakes appear | `npx ctx7 setup --claude` |
+| `frontend-design` plugin (`anthropic-plugin-directory`) | keep; installed 2026-10-09 at user scope; every step that touches `web/` loads its skill (D-28) | the plugin directory in the VS Code extension, or `/plugin install frontend-design@anthropic-plugin-directory` |
+| `design` plugin (`design-critique`, `accessibility-review`, `ux-copy`, …) | keep; available since 2026-10-09; used at the exits of phases with UI and for copy reviews | the plugin directory |
 | Skip | GitHub MCP (gh suffices), Chrome DevTools MCP (overlaps Playwright), Databento and Modal servers (community only; licensed data stays out of agent context) | |
+
+The standalone `claude` CLI is not installed, by choice (the VS Code extension is used); anything the docs show as a `claude` command is done from the extension.
 
 The bundled `claude-api` skill is the reference for every Anthropic API call in Phase 8.
 

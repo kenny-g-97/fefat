@@ -6,6 +6,8 @@
 
 **Depends on.** Phase 6 in the written order. Steps 7.1–7.8 need only the SDK and the run artifacts from Phase 2, including the trade paths every run stores since step 2.13; 7.9–7.11 need the app (Phase 6). If you move this phase earlier at a kickoff, amend 7.1's `Depends on` line.
 
+**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `frontend-design` with `web/DESIGN.md` for 7.9–7.11.
+
 **Open decisions for the kickoff.** The first three plans to encode (suggested: Topstep Trading Combine → XFA, My Funded Futures Rapid or Pro, Tradeify Growth or Select); the bankroll and horizon defaults; whether you trade micros or minis in evaluations; which other platforms' trade logs to import first (for example NinjaTrader, Sierra Chart, TradeStation, or TradingView strategy-tester exports).
 
 ## Kickoff
@@ -33,7 +35,7 @@ Every prop rule the research found can be expressed in one schema, presets are f
 ```text
 Masterplan step 7.1 — Rule schema, preset format, refresh skill.
 
-Read docs/masterplan/03-prop-simulator.md §2 and the taxonomy in docs/masterplan/appendix/research-prop-firms.md §1. Define the rule schema as Rust types in `fefat-prop` with serde and schemars (Firm, Plan with fees and commissions, Stage, drawdown, daily loss, consistency, session, position, payout, transitions, conduct), generate `python/fefat/prop/rules.schema.json`, and add Pydantic models in `fefat.prop`. Define the preset file format `python/fefat/prop/presets/<firm>/<plan>@<as-of>.yaml`: the rules plus `sources` (URLs with retrieval dates), `status` (draft, verified, stale), and `examples` — worked examples transcribed from the firm's documentation (for instance Topstep 50K: limit 48,000; 48,500 after +500; unchanged after −500), each a small scenario of balance or equity events and expected rule outcomes. Write a loader and a validator (`fefat prop validate-presets`).
+Read docs/masterplan/03-prop-simulator.md §2 and the taxonomy in docs/masterplan/appendix/research-prop-firms.md §1. Define the rule schema as Rust types in `fefat-prop` with serde and schemars (Firm, Plan with fees and commissions, Stage, drawdown, daily loss, consistency, session, position, payout, transitions, conduct), generate `python/fefat/src/fefat/prop/rules.schema.json`, and add Pydantic models in `fefat.prop`. Define the preset file format `python/fefat/src/fefat/prop/presets/<firm>/<plan>@<as-of>.yaml`: the rules plus `sources` (URLs with retrieval dates), `status` (draft, verified, stale), and `examples` — worked examples transcribed from the firm's documentation (for instance Topstep 50K: limit 48,000; 48,500 after +500; unchanged after −500), each a small scenario of balance or equity events and expected rule outcomes. Write a loader and a validator (`fefat prop validate-presets`).
 
 Write the `prop-preset-refresh` skill under `.claude/skills/`: for a named preset, re-read every source URL, diff the rules against the current page text, and propose a new `@<today>` preset file with updated sources and examples; never edit an existing version.
 
@@ -73,7 +75,7 @@ The rules behave exactly as the firms describe, proven by their own examples, in
 ```text
 Masterplan step 7.2 — Account state machine, reference implementation, first three presets.
 
-Read docs/masterplan/03-prop-simulator.md §3. Implement the account state machine in Python first (`python/fefat/ref/prop.py`, readable, rule by rule, integer money): states and events as specified; drawdown types with high-water-mark sources and lock levels; daily loss (soft and hard) with anchors and resets; consistency windows and effects; minimum and qualifying days; session rules; position limits and scaling; payout gates, amounts, caps, splits, cadence, and effects on the floor; transitions with side effects; fees and expiry. Then implement the same in Rust in `fefat-prop` and add a differential test over generated event sequences (Hypothesis) plus every preset's worked examples as tests of both implementations.
+Read docs/masterplan/03-prop-simulator.md §3. Implement the account state machine in Python first (`python/fefat/src/fefat/reference/prop.py`, readable, rule by rule, integer money): states and events as specified; drawdown types with high-water-mark sources and lock levels; daily loss (soft and hard) with anchors and resets; consistency windows and effects; minimum and qualifying days; session rules; position limits and scaling; payout gates, amounts, caps, splits, cadence, and effects on the floor; transitions with side effects; fees and expiry. Then implement the same in Rust in `fefat-prop` and add a differential test over generated event sequences (Hypothesis) plus every preset's worked examples as tests of both implementations.
 
 Encode the three chosen plans as presets with sources, retrieval dates, and examples (at least one breach and one payout example each), and mark them `verified` only when their examples pass. Record in each preset the automation policy and hold-time rules as feasibility flags.
 

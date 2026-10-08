@@ -2,7 +2,7 @@
 
 **Goal.** One clean, documented, hash-pinned store on disk with correct session calendars, bars rebuilt and verified, continuous futures series built without look-ahead, and a quality report for every dataset — filled two ways: **platform data** for the curated products FEFAT provides (built from your Databento files and the free crypto archives, and kept current), and **your own data** for any other product, imported from your own files.
 
-**You get.** `ff.data.load("ES", "5m", "2024-01-01", "2024-12-31")` in a notebook returns correct bars; `fefat data platform status` shows every platform product with its coverage and quality; `fefat data import file` brings in your own files through saved profiles; the importer prices any Databento download before pulling it.
+**You get.** `ff.market.load("ES", "5m", "2024-01-01", "2024-12-31")` in a notebook returns correct bars; `fefat data platform status` shows every platform product with its coverage and quality; `fefat data import file` brings in your own files through saved profiles; the importer prices any Databento download before pulling it.
 
 **Depends on.** Phase 0.
 
@@ -33,7 +33,7 @@ Every later component reads one layout. Decided once, documented in an ADR, enfo
 ```text
 Masterplan step 1.1 — Canonical schemas, units, partitions, manifests, snapshot hashes.
 
-Read docs/masterplan/02-engine-and-data.md §1.1–1.2 and docs/adr/. Define the canonical on-disk store in `python/fefat/data/schema.py`: Arrow schemas for trades, tbbo, bars (any timeframe), definitions, statistics, funding, and the partition layout `data/<provider>/<schema>/root=…/contract=…/date=…`. Prices are int64 in 1e-9 units; timestamps are int64 nanoseconds UTC with both ts_recv and ts_event; the engine clock is ts_recv. Write `python/fefat/data/store.py` with a `Store` class that resolves `FEFAT_DATA_DIR`, lists partitions, reads them lazily with Polars, writes them atomically (temp file then rename), and maintains `data/raw/MANIFEST.json` (sha256, size, vendor version, download date) for immutable raw files.
+Read docs/masterplan/02-engine-and-data.md §1.1–1.2 and docs/adr/. Define the canonical on-disk store in `python/fefat/src/fefat/market/schema.py`: Arrow schemas for trades, tbbo, bars (any timeframe), definitions, statistics, funding, and the partition layout `data/<provider>/<schema>/root=…/contract=…/date=…`. Prices are int64 in 1e-9 units; timestamps are int64 nanoseconds UTC with both ts_recv and ts_event; the engine clock is ts_recv. Write `python/fefat/src/fefat/market/store.py` with a `Store` class that resolves `FEFAT_DATA_DIR`, lists partitions, reads them lazily with Polars, writes them atomically (temp file then rename), and maintains `data/raw/MANIFEST.json` (sha256, size, vendor version, download date) for immutable raw files.
 
 Define `Snapshot`: a content-hashed list of partition paths and hashes for a (root, schema, range) request, so a backtest can pin exactly what it read. Record the decisions as an ADR.
 
@@ -48,7 +48,7 @@ Tests use `fixtures/synthetic/` only. Not in this step: importers, bars, calenda
 
 #### Your checks
 
-- In a notebook: `from fefat.data import Store; Store().list_partitions()` prints the synthetic fixtures with their sizes.
+- In a notebook: `from fefat.market import Store; Store().list_partitions()` prints the synthetic fixtures with their sizes.
 
 #### If it fails
 
@@ -71,9 +71,9 @@ A contract is identified correctly across decades, with its tick size, point val
 ```text
 Masterplan step 1.2 — Instruments, contract identity, fee tables.
 
-Read docs/masterplan/02-engine-and-data.md §1.2. Implement `python/fefat/data/instruments.py`: an `Instrument` model (root, kind futures|perp|spot, tick size, point value, lot step, currency, calendar id, valid_from/valid_to) and a `Contract` model (root, expiry year-month, first/last trade date, raw symbols seen) resolved from Databento definition records by instrument_id per day, never from the raw symbol alone. Seed a static table for ES, NQ, CL, GC, MES, MNQ, MCL, MGC and for BTCUSDT/ETHUSDT perpetual and spot, with sources in comments.
+Read docs/masterplan/02-engine-and-data.md §1.2. Implement `python/fefat/src/fefat/market/instruments.py`: an `Instrument` model (root, kind futures|perp|spot, tick size, point value, lot step, currency, calendar id, valid_from/valid_to) and a `Contract` model (root, expiry year-month, first/last trade date, raw symbols seen) resolved from Databento definition records by instrument_id per day, never from the raw symbol alone. Seed a static table for ES, NQ, CL, GC, MES, MNQ, MCL, MGC and for BTCUSDT/ETHUSDT perpetual and spot, with sources in comments.
 
-Implement dated fee tables (`python/fefat/data/fees.py`): per-contract per-side futures fees for a generic retail broker and placeholders for prop-firm fee tables; crypto maker/taker basis points. A run config names one table.
+Implement dated fee tables (`python/fefat/src/fefat/market/fees.py`): per-contract per-side futures fees for a generic retail broker and placeholders for prop-firm fee tables; crypto maker/taker basis points. A run config names one table.
 
 Tests: resolution of a reused symbol (ESZ6 in 2016 and 2026) yields two different contracts from synthetic definition records; fee lookup by date picks the right version.
 
@@ -111,7 +111,7 @@ Trade dates, session opens and closes, holidays, and daylight-saving shifts are 
 ```text
 Masterplan step 1.3 — Session calendar and trade date.
 
-Read docs/masterplan/02-engine-and-data.md §1.3 and the calendar pitfalls in docs/masterplan/appendix/research-market-data.md §5. Implement `python/fefat/data/calendar.py`: an explicit session table per product group (CME equity index, CME energy, CME metals, crypto 24x7, plus a generic calendar defined by a time zone, daily open and close, weekdays, and an optional holiday list, for products traders import in 1.10) giving, for each trade date, the open and close as UTC instants, built from IANA time zones (America/Chicago) and a holiday table (use exchange-calendars where it covers CME Globex, with an override file for the differences). Trade date is assigned by session membership, not clock arithmetic; holiday sessions fold into the next trade date as CME does.
+Read docs/masterplan/02-engine-and-data.md §1.3 and the calendar pitfalls in docs/masterplan/appendix/research-market-data.md §5. Implement `python/fefat/src/fefat/market/calendar.py`: an explicit session table per product group (CME equity index, CME energy, CME metals, crypto 24x7, plus a generic calendar defined by a time zone, daily open and close, weekdays, and an optional holiday list, for products traders import in 1.10) giving, for each trade date, the open and close as UTC instants, built from IANA time zones (America/Chicago) and a holiday table (use exchange-calendars where it covers CME Globex, with an override file for the differences). Trade date is assigned by session membership, not clock arithmetic; holiday sessions fold into the next trade date as CME does.
 
 Add `validate_calendar(store)` that compares the table with observed first and last prints per day in the data and reports mismatches.
 
@@ -151,7 +151,7 @@ Free, complete history for the pairs you trade, so the engine can be exercised o
 ```text
 Masterplan step 1.4 — Crypto importer.
 
-Read docs/masterplan/appendix/research-market-data.md §4. Implement `fefat data import binance` (CLI in python/fefat_app/cli.py calling python/fefat/data/importers/binance.py): download monthly archives from data.binance.vision for chosen symbols and ranges (spot klines down to 1s, USD-M perpetual klines, aggTrades, funding rates, open interest), verify the checksums, keep the zips under data/raw/ with manifest entries, and write canonical partitions (trades from aggTrades, bars, funding). Idempotent: re-running skips what exists; resumable after a network failure. Rate-limited and polite.
+Read docs/masterplan/appendix/research-market-data.md §4. Implement `fefat data import binance` (CLI in python/fefat_app/src/fefat_app/cli.py calling python/fefat/src/fefat/market/importers/binance.py): download monthly archives from data.binance.vision for chosen symbols and ranges (spot klines down to 1s, USD-M perpetual klines, aggTrades, funding rates, open interest), verify the checksums, keep the zips under data/raw/ with manifest entries, and write canonical partitions (trades from aggTrades, bars, funding). Idempotent: re-running skips what exists; resumable after a network failure. Rate-limited and polite.
 
 Design the importer around a `Provider` interface so Bybit, Kraken, and Hyperliquid can be added later. Implement Binance now; if the kickoff established that you are US-based (Binance and Bybit block US users), implement Kraken's quarterly archive (OHLCVT bars and trades) as the first provider instead, and Binance second. Record the data terms (non-commercial) in the dataset metadata.
 
@@ -191,7 +191,7 @@ Bars of any timeframe are built from trades with one convention, and they match 
 ```text
 Masterplan step 1.5 — Bar builder.
 
-Read docs/masterplan/02-engine-and-data.md §1.4. Implement `python/fefat/data/bars.py`: build bars of a given timeframe from trades using Polars, bucketing by ts_recv into [t, t+Δ) anchored at the session open from the calendar, storing sparse bars with ts_open and an explicit ts_close plus volume, trade count, and VWAP; and build a dense session-grid view with zero-volume bars flagged for signal use. Daily bars follow the trade date. Resampling from finer bars must give the same result as building from trades.
+Read docs/masterplan/02-engine-and-data.md §1.4. Implement `python/fefat/src/fefat/market/bars.py`: build bars of a given timeframe from trades using Polars, bucketing by ts_recv into [t, t+Δ) anchored at the session open from the calendar, storing sparse bars with ts_open and an explicit ts_close plus volume, trade count, and VWAP; and build a dense session-grid view with zero-volume bars flagged for signal use. Daily bars follow the trade date. Resampling from finer bars must give the same result as building from trades.
 
 Tests: on synthetic fixtures, bars built from trades equal the fixture's 1-second and 1-minute bars; on real data, a `verify_bars(store, root, date)` command compares rebuilt 1-second and 1-minute bars with the vendor bars (Databento OHLCV or Binance klines) and reports differences.
 
@@ -233,7 +233,7 @@ Read docs/masterplan/02-engine-and-data.md §1.1–1.2 and docs/masterplan/appen
 
 Support continuous symbology (`ES.v.0` etc.) for discovery only; stored data is always per contract, resolved by instrument_id. Assert ts_recv is non-decreasing within each file and record any violation.
 
-The credential store does not exist yet: add `python/fefat_app/secrets.py` (a thin layer over `keyring`, backed by the Windows credential store) and a `fefat secrets set|get|list` CLI that never prints secret values; Phase 4 reuses this module unchanged.
+The credential store does not exist yet: add `python/fefat_app/src/fefat_app/credentials.py` (a thin layer over `keyring`, backed by the Windows credential store) and a `fefat secrets set|get|list` CLI that never prints secret values; Phase 4 reuses this module unchanged.
 
 Tests: offline, on a small DBN fixture generated with the dbn library in scripts/gen_fixtures.py; a test that the key never lands on disk in plaintext.
 
@@ -271,7 +271,7 @@ Signals are computed on a continuous series that never uses tomorrow's informati
 ```text
 Masterplan step 1.7 — Rolls and forward-anchored continuous series.
 
-Read docs/masterplan/02-engine-and-data.md §1.5 and docs/adr/ (the forward-anchoring decision). Implement `python/fefat/data/continuous.py`: a roll calendar per root computed from per-contract volume through session d−1 and effective at the open of session d (default rule: volume, no roll-back, forced before expiry; open-interest and calendar rules as options), and continuous signal bars that are forward-anchored: history never changes at a roll; the new contract is shifted to join the old series. Columns: close (and open/high/low) adjusted, close_raw, adj_offset, contract, roll_flag. Provide `to_raw_price(level, at)` for price-level signals and a back-adjusted view for display only.
+Read docs/masterplan/02-engine-and-data.md §1.5 and docs/adr/ (the forward-anchoring decision). Implement `python/fefat/src/fefat/market/continuous.py`: a roll calendar per root computed from per-contract volume through session d−1 and effective at the open of session d (default rule: volume, no roll-back, forced before expiry; open-interest and calendar rules as options), and continuous signal bars that are forward-anchored: history never changes at a roll; the new contract is shifted to join the old series. Columns: close (and open/high/low) adjusted, close_raw, adj_offset, contract, roll_flag. Provide `to_raw_price(level, at)` for price-level signals and a back-adjusted view for display only.
 
 Tests: (1) look-ahead: removing all data after date T does not change any roll decision or any adjusted value on or before T; (2) the roll dates for ES match Databento's ES.v.0 mapping on your real data within the documented convention (session open vs UTC midnight), with differences listed; (3) adjusted differences equal raw differences within a contract; (4) a position held across a roll (engine comes later) has the gap recorded for transfer.
 
@@ -309,9 +309,9 @@ You can trust the data because every dataset has a report, and you can load anyt
 ```text
 Masterplan step 1.8 — Data-quality report and SDK data API.
 
-Implement `python/fefat/data/quality.py`: per dataset and per day, gaps versus the calendar, duplicate records, out-of-session prints, non-monotonic ts_recv, zero or negative prices (except where allowed, e.g. CL in April 2020), bar-versus-tick reconciliation, and coverage by fidelity (tick, 1s, 1m) per day. Output a Parquet report plus a Markdown summary under data/reports/.
+Implement `python/fefat/src/fefat/market/quality.py`: per dataset and per day, gaps versus the calendar, duplicate records, out-of-session prints, non-monotonic ts_recv, zero or negative prices (except where allowed, e.g. CL in April 2020), bar-versus-tick reconciliation, and coverage by fidelity (tick, 1s, 1m) per day. Output a Parquet report plus a Markdown summary under data/reports/.
 
-Implement the SDK data API in `python/fefat/data/api.py`: `ff.data.load(root_or_symbol, timeframe, start, end, continuous=True|False, fidelity="auto")` returning a Polars LazyFrame with the signal-bar schema, `ff.data.catalog()` listing datasets with coverage and quality status, and a `fefat data catalog` CLI. Document the API in the module docstring with examples.
+Implement the SDK data API in `python/fefat/src/fefat/market/api.py`: `ff.market.load(root_or_symbol, timeframe, start, end, continuous=True|False, fidelity="auto")` returning a Polars LazyFrame with the signal-bar schema, `ff.market.catalog()` listing datasets with coverage and quality status, and a `fefat data catalog` CLI. Document the API in the module docstring with examples.
 
 Not in this step: the web catalog page (5.4).
 ```
@@ -319,7 +319,7 @@ Not in this step: the web catalog page (5.4).
 #### Done means
 
 1. The quality report on synthetic fixtures finds the planted anomalies (the generator plants a gap, a duplicate, and an out-of-session print) and nothing else.
-2. `ff.data.load("ES", "5m", "2024-01-01", "2024-03-31")` returns bars with the documented columns in under 2 seconds warm.
+2. `ff.market.load("ES", "5m", "2024-01-01", "2024-03-31")` returns bars with the documented columns in under 2 seconds warm.
 3. `fefat data catalog` prints every dataset with its range, fidelity coverage, and quality status.
 
 #### Your checks
@@ -347,7 +347,7 @@ FEFAT provides ready-to-use data for a curated set of products: the platform kee
 ```text
 Masterplan step 1.9 — Platform data catalog and managed updates.
 
-Read docs/masterplan/02-engine-and-data.md §1.8 and docs/masterplan/00-product-spec.md §2.5. Implement the platform data catalog in `python/fefat/data/platform/`: a versioned `catalog.yaml` listing the products FEFAT provides (from the kickoff; by default ES, NQ, CL, GC and their micros, and BTCUSDT and ETHUSDT spot and perpetuals), each with its instrument specification, calendar, roll rule, data sources and schemas (Databento for futures, the crypto archive provider for crypto), history depth, and update cadence. Add `fefat data platform status` (each product's coverage, last update, and quality) and `fefat data platform sync [--product …]`, which brings products up to date through the existing importers (every Databento download shows the cost preview and needs `--yes`), rebuilds bars and continuous series for the new range, runs the quality report, and records the catalog version on the datasets. Datasets now carry `source: platform | user` and a licence scope; `ff.data.catalog()` and the catalog CLI show the source, and `ff.data.load` takes an optional `source` (platform data is the default where both exist).
+Read docs/masterplan/02-engine-and-data.md §1.8 and docs/masterplan/00-product-spec.md §2.5. Implement the platform data catalog in `python/fefat/src/fefat/market/platform/`: a versioned `catalog.yaml` listing the products FEFAT provides (from the kickoff; by default ES, NQ, CL, GC and their micros, and BTCUSDT and ETHUSDT spot and perpetuals), each with its instrument specification, calendar, roll rule, data sources and schemas (Databento for futures, the crypto archive provider for crypto), history depth, and update cadence. Add `fefat data platform status` (each product's coverage, last update, and quality) and `fefat data platform sync [--product …]`, which brings products up to date through the existing importers (every Databento download shows the cost preview and needs `--yes`), rebuilds bars and continuous series for the new range, runs the quality report, and records the catalog version on the datasets. Datasets now carry `source: platform | user` and a licence scope; `ff.market.catalog()` and the catalog CLI show the source, and `ff.market.load` takes an optional `source` (platform data is the default where both exist).
 
 Put the sync behind a `PlatformDataSource` interface (`catalog()`, `fetch(product, range)`): the implementation now runs the platform pipeline on this machine with your own subscriptions; the commercial version swaps in a hosted service that delivers ready-built, signed data packs (Phase 14) without changing callers.
 
@@ -400,7 +400,7 @@ Not in this step: the import wizard in the app (5.12), trade logs (Phase 7), alt
 
 1. Every preset imports its synthetic sample, and the result equals the expected canonical frame (tests).
 2. A sample with shifted time zones is flagged by the calendar check, with the offset it detected.
-3. `ff.data.load("<new product>", "5m", start, end, source="user")` works for a product with a new instrument specification.
+3. `ff.market.load("<new product>", "5m", start, end, source="user")` works for a product with a new instrument specification.
 
 #### Your checks
 

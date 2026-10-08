@@ -26,7 +26,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 1. Open Claude Code in the repo root and start a **fresh session**. Run `/step N.M` (from step 0.5 on) or paste the step's Prompt. Steps 0.1–0.4 are pasted, because 0.4 is the step that creates the runner.
 2. The step runner reads the step, checks `PROGRESS.md` for prerequisites, and creates or reuses the branch `step/N.M-<slug>`.
 3. **Plan mode** when the meta line says `plan: required` (new subsystems, schemas, public SDK or API surfaces, engine semantics). Read the plan for outcome and risk, then approve. `optional` means Claude Code decides; `skip` means go straight to work.
-4. Claude Code works in auto mode, commits in small logical commits, and never commits to `main`.
+4. Claude Code loads the skills for the step's area before writing code — `software-design-principles` for any code, `designing-architecture` for a new module or seam, `backtest-expert` for engine, prop, results, and research steps, `frontend-design` with `web/DESIGN.md` for anything under `web/` (`08-code-design.md`; the `step` skill does this from the paths a step touches) — then works in auto mode, commits in small logical commits, and never commits to `main`.
 5. Before opening the PR it runs `just check` and `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, and the specialist reviewers the step lists. `/security-review` runs when the step says `security: yes` and at every phase exit.
 6. It opens the PR from the template: what changed, evidence per "Done means" item, deviations from the prompt, follow-ups added to `BACKLOG.md`, and the `PROGRESS.md` row (status, PR number, date, note).
 7. You run "Your checks", wait for CI, and squash-merge. `main` requires a pull request and green checks.
@@ -43,6 +43,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 | `ui-verifier` | UI steps | drives the app at desktop and phone sizes with Playwright; returns pass/fail per criterion with screenshots |
 | `/code-review` | every step (level `medium`; `high` at phase exits) | correctness bugs |
 | `/security-review` | steps marked `security: yes`; phase exits | the local server, uploads, code execution, secrets |
+| `design-critique`, `accessibility-review` (the `design` plugin) | exits of phases with UI (P4–P8, P12) | hierarchy, consistency, copy; WCAG 2.1 AA: contrast, keyboard, touch targets, screen readers |
 
 ## 4. Verification you can do without reading code
 
@@ -63,7 +64,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 
 - **Phase kickoff** (`/phase-kickoff N`, strongest model), delivered as a docs-only PR: read the phase's steps, the ADRs, and the code as it now is; list step assumptions that no longer hold; propose edits to this phase's unstarted steps only, keeping IDs stable; pull in backlog items; ask you the open decisions listed in the phase file.
 - **Change control.** A step changes only through a kickoff PR or an "Amendment" block Claude Code proposes when an assumption breaks mid-step; it then stops instead of deviating silently. Finished steps are never rewritten.
-- **Phase exit** (`/phase-exit N`): full suite from a clean checkout; specialist review of the phase diff; `/security-review`; a demo script you perform; repeated corrections turned into `CLAUDE.md`, rule, or skill edits (including deletions); docs and runbook updated; backlog groomed; Claude Code version and usage logged; tag `phase-N`.
+- **Phase exit** (`/phase-exit N`): full suite from a clean checkout; specialist review of the phase diff; `/security-review`; for phases with UI, `design-critique` and `accessibility-review` over the main pages; a demo script you perform; repeated corrections turned into `CLAUDE.md`, rule, or skill edits (including deletions); docs and runbook updated; backlog groomed; Claude Code version and usage logged; tag `phase-N`.
 - **ADRs** in `docs/adr/`: context, decision, consequences, how we would know it is wrong. Written when a decision affects more than one step; superseded, never edited.
 - **`PROGRESS.md`** is the single status table. **`BACKLOG.md`** takes everything Claude Code notices but must not do now.
 
@@ -73,6 +74,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 | --- | --- |
 | Plan drift | Kickoff reconciliation PRs; immutable step files plus amendments; a "deviations" field in every PR; `step-reviewer` |
 | Over-engineering | "Not in this step" in every prompt; backlog for extras; reviewers report gaps, not style; a new dependency needs an ADR line |
+| Generic, templated code or UI | the rules of `08-code-design.md` in `.claude/rules/`; import-linter and eslint boundaries in `just check`; one design system in `web/DESIGN.md` built with the `frontend-design` skill; `step-reviewer` checks names and state types |
 | Silent numeric errors | Scenario tables as the specification; reference engine; cross-engine and cross-OS goldens; golden changes need a changelog entry and your approval; `engine-accuracy-reviewer`; leak detector |
 | Tests that assert nothing | Each acceptance item maps to a test shown failing before the change; mutation spot-checks on the engine at phase exit; CI flags removed tests and new skip markers |
 | Context loss | One step per session; state in git, the step file, and `PROGRESS.md`; a `SessionStart` hook reprints state after resume and compaction |

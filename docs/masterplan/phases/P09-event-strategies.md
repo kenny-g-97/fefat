@@ -107,7 +107,7 @@ Event strategies have the same oracle as signal strategies: the readable referen
 ```text
 Masterplan step 9.3 — Reference engine support.
 
-Read docs/spec/fill-semantics.md (event order and activation) and the order API documented in docs/engine-guide.md after 9.2. Extend `python/fefat/ref/engine.py` to run `EventStrategy` classes with the same callback and order API (pure Python, slow, readable; the reference stays the specification, so no shortcuts for speed), and extend the differential test to event strategies on generated tapes and generated strategies (random order placement, replacement, and cancellation at bar closes; scale-in legs with their own exits). Make `Run.explain(trade_id)` work for event-strategy runs, including the user state at each callback, and add a scenario file for the callback ordering rules so they are documented like fills.
+Read docs/spec/fill-semantics.md (event order and activation) and the order API documented in docs/engine-guide.md after 9.2. Extend `python/fefat/src/fefat/reference/engine.py` to run `EventStrategy` classes with the same callback and order API (pure Python, slow, readable; the reference stays the specification, so no shortcuts for speed), and extend the differential test to event strategies on generated tapes and generated strategies (random order placement, replacement, and cancellation at bar closes; scale-in legs with their own exits). Make `Run.explain(trade_id)` work for event-strategy runs, including the user state at each callback, and add a scenario file for the callback ordering rules so they are documented like fills.
 
 Not in this step: UI, performance work.
 ```

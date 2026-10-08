@@ -106,6 +106,8 @@ Not in this step: any real code, CI, GitHub, Claude Code configuration, fixtures
 
 2026-10-08, repository preparation before step 0.1: this folder became a clone of the private repository `kenny-g-97/fefat`, and the preparation commit added `.gitattributes`, `.gitignore`, `.editorconfig`, `.vscode/settings.json`, `.vscode/extensions.json`, a bootstrap `CLAUDE.md`, and a short root README. The prompt now extends these files instead of creating them, and Done means 2 checks the attributes as git reports them for `text=auto eol=lf`.
 
+2026-10-09: the layout in `01-architecture.md` §3 now uses the src layout for the two Python packages (`python/fefat/src/fefat/`, `python/fefat_app/src/fefat_app/`) and the names of D-27; `just check` also runs the import-linter contract that keeps `fefat` from importing `fefat_app` (`08-code-design.md` §1.5); `just test` runs `cargo test` until nextest is adopted (backlog).
+
 ### 0.3 Configure the GitHub repository and protect `main`
 
 Depends on: 0.2 · Plan mode: skip · Reviews: none · Security: no · Model hint: default
@@ -172,7 +174,7 @@ Masterplan step 0.4 — Configure Claude Code for this repository.
 
 Read docs/masterplan/06-claude-code-setup.md in full and docs/masterplan/05-build-process.md. First verify, against the Claude Code documentation for the version installed here (`claude --version` or the VS Code extension version), the exact file locations and frontmatter fields for skills, subagents, hooks, rules, and settings; note any difference from the doc in your plan.
 
-Then replace the bootstrap CLAUDE.md with the full version (100–150 lines, content per §1), keeping its facts about this machine and its "Never" rules; create `.claude/rules/` (engine, python, web, db, masterplan) with `paths:` frontmatter; `.claude/settings.json` with the permission rules of §6 (every Bash rule with a PowerShell twin) and the hooks of §5 implemented as Node scripts under `.claude/hooks/` in exec form; the skills `step`, `phase-kickoff`, `phase-exit`, `verify`, and `engine-golden` under `.claude/skills/`; and three read-only reviewer subagents under `.claude/agents/`: `step-reviewer`, `engine-accuracy-reviewer`, and `leakage-auditor`, with the roles described in §4 (the `ui-verifier` arrives with the Playwright harness in 4.3). The `step` skill must find a step by ID inside `docs/masterplan/phases/P*.md` (headings `### N.M Title`), check prerequisites in PROGRESS.md, create or reuse the branch `step/N.M-<slug>`, follow the protocol in 05-build-process.md §2, run the reviewers named in the step's meta line, and finish by opening the PR and updating PROGRESS.md.
+Then replace the bootstrap CLAUDE.md with the full version (100–150 lines, content per §1), keeping its facts about this machine and its "Never" rules; create `.claude/rules/` (engine, python, web, database, masterplan) with `paths:` frontmatter; `.claude/settings.json` with the permission rules of §6 (every Bash rule with a PowerShell twin) and the hooks of §5 implemented as Node scripts under `.claude/hooks/` in exec form; the skills `step`, `phase-kickoff`, `phase-exit`, `verify`, and `engine-golden` under `.claude/skills/`, next to the three design skills already there (leave them as they are); and three read-only reviewer subagents under `.claude/agents/`: `step-reviewer`, `engine-accuracy-reviewer`, and `leakage-auditor`, with the roles described in §4 (the `ui-verifier` arrives with the Playwright harness in 4.3). The `step` skill must find a step by ID inside `docs/masterplan/phases/P*.md` (headings `### N.M Title`), check prerequisites in PROGRESS.md, create or reuse the branch `step/N.M-<slug>`, load the skills for the paths the step touches as docs/masterplan/08-code-design.md says (`software-design-principles` always; `backtest-expert` for engine, prop, results, and research steps; `frontend-design` with web/DESIGN.md for web/), follow the protocol in 05-build-process.md §2, run the reviewers named in the step's meta line, and finish by opening the PR and updating PROGRESS.md.
 
 Add hook smoke tests under `scripts/test_hooks.py` that feed sample JSON to each hook script and assert allow/deny/ask decisions, and wire them into `just test` (through `uv run python`).
 
@@ -203,6 +205,8 @@ Not in this step: the data-policy commit guard (0.5), CI (0.6), the `ui-verifier
 
 2026-10-08: a short bootstrap `CLAUDE.md` exists since the repository preparation, so this step replaces it with the full version and keeps its machine facts and "Never" rules.
 
+2026-10-09: the rules list says `database` instead of `db` (D-27); the three design skills installed on 2026-10-09 stay in `.claude/skills/` untouched; the `step` skill loads skills per area (`08-code-design.md`).
+
 ### 0.5 Data policy, synthetic fixtures, commit guard
 
 Depends on: 0.4 · Plan mode: optional · Reviews: step-reviewer · Security: yes · Model hint: default
@@ -224,7 +228,7 @@ Read docs/masterplan/05-build-process.md §5 and docs/masterplan/02-engine-and-d
 
 1. `scripts/gen_fixtures.py` generates synthetic market data under `fixtures/synthetic/`: a few CME-like sessions of trades with realistic tick sizes, gaps, and a daylight-saving boundary; the derived 1-second and 1-minute bars; a crypto-like 24x7 day; all with a seed and written in the canonical Parquet layout described in 02 §1.1 (prices as int64 1e-9, ns timestamps). Keep total size under 20 MB. Write `fixtures/synthetic/MANIFEST.json` listing each file with generator, seed, and SHA-256.
 2. `scripts/guard_data.py` fails if any tracked or staged file has a market-data extension outside `fixtures/synthetic/`, exceeds 25 MB, or matches secret patterns (API keys, `.env`). Wire it into `.githooks/pre-commit` (git runs hooks through its own sh on Windows, so the hook is a one-line launcher that calls `uv run python scripts/guard_data.py`; this is the one permitted shell file in the repo) and into `just check`.
-3. `FEFAT_DATA_DIR` handling: `python/fefat/config.py` resolves `FEFAT_HOME` and `FEFAT_DATA_DIR` with platformdirs defaults; document in CLAUDE.md that real data is referenced by path only.
+3. `FEFAT_DATA_DIR` handling: `python/fefat/src/fefat/config.py` resolves `FEFAT_HOME` and `FEFAT_DATA_DIR` with platformdirs defaults; document in CLAUDE.md that real data is referenced by path only.
 4. Notebooks are committed without outputs, because outputs can contain licensed data: the guard rejects staged `.ipynb` files that contain outputs, and a `just strip-notebooks` recipe clears them (nbstripout as a dev dependency).
 
 The `.gitignore` from the repository preparation already ignores market-data files; the guard exists for forced adds and for files the ignore rules miss.

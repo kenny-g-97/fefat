@@ -28,3 +28,13 @@ One line per item: what, why, where it came from. Claude Code adds items here in
 - **macOS and Linux credential stores** — `keyring` backends beyond Windows. Needed by P14 for macOS.
 - **GPU or distributed sweeps** — not needed on 16 cores; revisit if studies routinely exceed hours.
 - **Tick-reactive strategies** — out of scope by decision; would need a different callback model.
+
+## From the design-skill review (2026-10-09; pulled in at the kickoff of the phase named)
+
+- **Show the robustness summary** — the five-dimension summary and verdict that step 2.11 computes (sample size against 30/100/200 trades, expectancy, risk, robustness, execution realism, red flags), as a small table at the top of the results page. Target: 5.7. Source: D-29.
+- **Hypothesis on every strategy** — one sentence stating the edge, required before the first run, shown on every result; the agent's analysis skill asks for it. Target: 5.2, 5.5, 8.8. Source: D-29.
+- **Stress profile as one click** — slippage at 1.5× and 2×, worst-case fills (one tick against on every entry and exit), commissions at 1.5×, entry shifted by one bar, run as a batch beside the base run. Target: 5.6, 11.6. Source: D-29.
+- **Regime breakdown** — results by volatility tercile and trend state of the instrument itself, beside the year breakdown. Target: 11.4 (and the metrics of 2.11 if the P2 kickoff prefers). Source: D-29.
+- **Record of abandoned ideas** — a strategy can be marked abandoned with the breaking point and the lesson, following the skill's case-study framework, so the library keeps the failures too. Target: 5.5. Source: D-29.
+- **`ux-copy` pass** — review error messages, empty states, and button labels with the `design` plugin's `ux-copy` skill before the hardening phase. Target: 13.7. Source: D-28.
+- **`cargo nextest`** — faster, isolated Rust test runs once the suite grows; `just test` uses `cargo test` until then. Target: Phase 2 kickoff. Source: step 0.2.

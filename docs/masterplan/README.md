@@ -2,7 +2,7 @@
 
 A step-by-step plan for building FEFAT ("feature engineering for algorithmic trading") with Claude Code. Every step is one Claude Code session and one pull request, with a copy-paste prompt, a definition of done, checks you perform yourself in a few minutes, and what to do if it fails.
 
-Written 2026-10-06 from your idea (`../../raw_app_idea.txt`), four rounds of decisions, three research reports, and three design reviews; revised 2026-10-08 for platform data with imports of your own data, and for prop simulation from existing backtest files. Decisions are logged in `DECISIONS.md`. The code lives in the private repository [kenny-g-97/fefat](https://github.com/kenny-g-97/fefat); this folder is its clone.
+Written 2026-10-06 from your idea (`../../raw_app_idea.txt`), four rounds of decisions, three research reports, and three design reviews; revised 2026-10-08 for platform data with imports of your own data, and for prop simulation from existing backtest files; and on 2026-10-09 for the code architecture, the design rules, and the frontend design process (`08-code-design.md`). Decisions are logged in `DECISIONS.md`. The code lives in the private repository [kenny-g-97/fefat](https://github.com/kenny-g-97/fefat); this folder is its clone.
 
 ## What FEFAT becomes
 
@@ -10,7 +10,7 @@ A local-first research platform for futures and crypto traders that runs on your
 
 ## How to use this plan
 
-1. Read `00-product-spec.md`, `01-architecture.md`, and `05-build-process.md` once. Skim the rest; the phase files point back to the sections they need.
+1. Read `00-product-spec.md`, `01-architecture.md`, `05-build-process.md`, and `08-code-design.md` once. Skim the rest; the phase files point back to the sections they need.
 2. Install the tools in `07-tools-and-costs.md` §1 — step 0.1 walks you through it.
 3. Work through the phases in order. Open Claude Code in the repository root, start a fresh session, and either paste the step's **Prompt** or (from step 0.5 on, once step 0.4 has created the runner) type `/step N.M`.
 4. After each step: run **Your checks**, wait for CI, merge the pull request. `PROGRESS.md` is the status table.
@@ -31,6 +31,7 @@ The session protocol, reviews, verification approach, and test-data policy are i
 | `05-build-process.md` | The step template, session protocol, reviews, verification, test-data policy, guardrails |
 | `06-claude-code-setup.md` | CLAUDE.md, rules, skills, subagents, hooks, permissions, integrations; verified Claude Code facts |
 | `07-tools-and-costs.md` | What to install, accounts and keys, market-data purchases, running and product costs |
+| `08-code-design.md` | How the design skills shape the code: the architecture decision and dependency rule, layout and names, design rules per language, backtest methodology, the frontend design process |
 | `phases/P00` … `phases/P14` | The 134 steps, one file per phase, with kickoff and exit prompts |
 | `PROGRESS.md` | Step status, kickoffs and exits, milestones |
 | `BACKLOG.md` | Future improvements (cloud sync, ML, live trading, store apps, licensing) |

@@ -11,6 +11,7 @@ Phase kickoffs and exits are tracked in the second table.
 ## Plan revisions
 
 - 2026-10-08 — FEFAT provides market data for a curated set of products, and traders can also import their own (D-24); a prop simulation takes prop rules, a prop strategy, and an existing backtest file, and never re-runs the strategy (D-25), so every run stores trade paths (D-26). New steps 1.9, 1.10, 2.13, 5.12, 14.6, and 14.7; steps 7.3 and 7.5 rewritten, and the other prop steps updated; the later steps in Phases 1, 2, 5, and 14 renumbered, before any step had started. 128 → 134 steps.
+- 2026-10-09 — The design skills installed under `.claude/skills/` (`designing-architecture`, `software-design-principles`, `backtest-expert`) and the `frontend-design` plugin were applied to the plan before step 0.2 (D-27, D-28, D-29; `08-code-design.md`): a modular monolith with ports and adapters and its dependency rule, src-layout paths and the renames `fefat.market`, `fefat.indicators`, `fefat.reference`, `fefat_app.http`, `services/`, `database/`, `executor.py`, `credentials.py`, web `areas/`; the `MarketDataReader` trait in `fefat-core` (steps 2.4–2.6); the robustness summary in 2.11; the design brief at the Phase 4 kickoff and `web/DESIGN.md` in 4.3; and the skill-loading rule for every step. No step IDs changed; only unstarted steps were edited.
 
 ## Steps
 

@@ -6,12 +6,14 @@
 
 **Depends on.** Phase 1.
 
+**Skills.** Every step in this phase loads `.claude/skills/backtest-expert` (its methodology and red-flag checklist) and `software-design-principles` before writing code, and `designing-architecture` when it adds a crate or a seam; from step 0.4 on the `step` skill does this from the paths a step touches. Fill rules, costs, sample sizes, and robustness claims are judged with the skill's checklist (`08-code-design.md` §4).
+
 **Open decisions for the kickoff.** The fill defaults you sign off in 2.1 (limit fills need trade-through or touch; stop slippage in ticks; latency); the reference capital used for percentage metrics; which real month and product to use for the NautilusTrader comparison; whether you have real fill exports from a broker or prop platform (used in 2.12 and Phase 13).
 
 ## Kickoff
 
 ```text
-/phase-kickoff 2 — Read docs/masterplan/phases/P02-engine.md and docs/masterplan/02-engine-and-data.md §2–§5 and §8. Ask me the open decisions above. Check the data layer from Phase 1 against what these steps assume (store API, calendar, continuous bars, fidelity coverage per day) and amend the steps if needed. Open the kickoff PR.
+/phase-kickoff 2 — Read docs/masterplan/phases/P02-engine.md, docs/masterplan/02-engine-and-data.md §2–§5 and §8, and docs/masterplan/08-code-design.md §1 and §4; load the `backtest-expert` skill. Ask me the open decisions above. Check the data layer from Phase 1 against what these steps assume (store API, calendar, continuous bars, fidelity coverage per day) and amend the steps if needed; pull in the D-29 backlog items that target this phase. Open the kickoff PR.
 ```
 
 ## Steps
@@ -33,7 +35,7 @@ The rules that decide every fill are written down before any engine code exists,
 ```text
 Masterplan step 2.1 — Fill specification and scenario format.
 
-Read docs/masterplan/02-engine-and-data.md §3 and §4 (event order, activation latency) and the CME stop-trigger rule it cites. Write `docs/spec/fill-semantics.md`: a plain-language, normative specification of how market, limit, and stop-market orders are activated and filled on each data fidelity (TBBO, trades only, 1-second bars, 1-minute bars), with the conservative defaults, gap handling, same-interval stop/target ambiguity (resolve to the stop, flag ambiguous), latency, slippage classes, commissions and fees for futures and crypto (maker/taker, funding), and the fidelity tag on every fill, and the price open positions are marked at for equity and trade paths (the last trade by default, bar prices on bar-fidelity days). Every rule gets an identifier (F-MKT-01 …). Where the design doc is silent, propose a rule and mark it "proposed" for my sign-off.
+Read docs/masterplan/02-engine-and-data.md §3 and §4 (event order, activation latency) and the CME stop-trigger rule it cites, and load the `backtest-expert` skill: its friction and worst-case-fill guidance informs the conservative defaults, and its red-flag checklist belongs in the sign-off table. Write `docs/spec/fill-semantics.md`: a plain-language, normative specification of how market, limit, and stop-market orders are activated and filled on each data fidelity (TBBO, trades only, 1-second bars, 1-minute bars), with the conservative defaults, gap handling, same-interval stop/target ambiguity (resolve to the stop, flag ambiguous), latency, slippage classes, commissions and fees for futures and crypto (maker/taker, funding), and the fidelity tag on every fill, and the price open positions are marked at for equity and trade paths (the last trade by default, bar prices on bar-fidelity days). Every rule gets an identifier (F-MKT-01 …). Where the design doc is silent, propose a rule and mark it "proposed" for my sign-off.
 
 Define the scenario-table format in `fixtures/scenarios/README.md` and a YAML schema: a tape (ticks or bars with timestamps), instrument parameters, orders placed at given times, and the expected fills with the rule identifiers they exercise. Scenario ids are stable (`S-fill-001` …) and later steps refer to them. Write the first 30 scenarios covering each order type on each fidelity, including `S-fill-012`: a gap through a stop (stop 4995.00, next trade 4990.25, expected fill 4990.25), a limit touched but not traded through, and a stop and target inside one bar. Expected values must be hand-computable; show the arithmetic in a comment.
 
@@ -71,11 +73,11 @@ A slow, readable implementation of the specification that you (and the tests) ca
 ```text
 Masterplan step 2.2 — Python reference engine and the first notebook backtest.
 
-Read docs/spec/fill-semantics.md and the scenarios. Implement `python/fefat/ref/engine.py`: a pure-Python, deliberately simple event-driven engine over ticks or bars that implements every rule by its identifier (each rule is a small function or a clearly commented block naming the rule id), with market, stop-market, and limit orders, a bracket (stop + target, OCO), one position per strategy, integer prices and money, and an event log that records every decision. Clarity beats speed: no vectorisation, no cleverness.
+Read docs/spec/fill-semantics.md and the scenarios, and load the `backtest-expert` skill. Implement `python/fefat/src/fefat/reference/engine.py`: a pure-Python, deliberately simple event-driven engine over ticks or bars that implements every rule by its identifier (each rule is a small function named after its rule id), with market, stop-market, and limit orders, a bracket (stop + target, OCO), one position per strategy, integer prices and money, and an event log that records every decision. Clarity beats speed: no vectorisation, no cleverness.
 
 Add a scenario runner that executes every YAML scenario through the reference engine and compares fills exactly. Add a minimal strategy protocol for the reference engine: a Python callable `on_bar(bar, ctx)` that may submit a market order with a bracket.
 
-Then `notebooks/02-first-backtest.ipynb`: load one month of ES 5-minute bars and ticks via ff.data, run a trivial strategy (for example: buy when the 5-minute close crosses above the 20-bar mean, stop 12 ticks, target 24 ticks, flat by 15:05 Chicago time) through the reference engine on tick fills, and print the trade list and total P&L. It will be slow (minutes are fine); say so in the notebook.
+Then `notebooks/02-first-backtest.ipynb`: load one month of ES 5-minute bars and ticks via ff.market, run a trivial strategy (for example: buy when the 5-minute close crosses above the 20-bar mean, stop 12 ticks, target 24 ticks, flat by 15:05 Chicago time) through the reference engine on tick fills, and print the trade list and total P&L. It will be slow (minutes are fine); say so in the notebook.
 
 Not in this step: Rust, the full execution template, metrics beyond totals.
 ```
@@ -83,7 +85,7 @@ Not in this step: Rust, the full execution template, metrics beyond totals.
 #### Done means
 
 1. All 30 scenarios pass through the reference engine; the runner prints the rule coverage.
-2. `python/fefat/ref/engine.py` is under 600 lines, every rule id from the spec appears in it, and a reviewer unfamiliar with the code can follow one fill from tape to log.
+2. `python/fefat/src/fefat/reference/engine.py` is under 600 lines, every rule id from the spec appears in it, and a reviewer unfamiliar with the code can follow one fill from tape to log.
 3. The notebook runs on your data and prints a trade list with entry and exit times, prices, and reasons.
 
 #### Your checks
@@ -111,9 +113,9 @@ The declarative language of signal strategies is fixed: what the builder emits, 
 ```text
 Masterplan step 2.3 — Strategy spec and signal-frame contract.
 
-Read docs/masterplan/02-engine-and-data.md §2.1. Define `StrategySpec` as Rust types in `engine/crates/fefat-core` with serde and schemars, covering the v1 table (entries, exits, filters, sizing) and generate `python/fefat/strategy/strategy_spec.schema.json` from them in the build (a `just gen-schema` recipe and a CI check that the committed schema is current). Define the signal-frame contract: required boolean columns long_entry, short_entry, long_exit, short_exit; optional entry_price, stop_price, target_price, trail_ref, size_mult, wake; all aligned to the signal bars' ts_close.
+Read docs/masterplan/02-engine-and-data.md §2.1. Define `StrategySpec` as Rust types in `engine/crates/fefat-core` with serde and schemars, covering the v1 table (entries, exits, filters, sizing) and generate `python/fefat/src/fefat/strategy/strategy_spec.schema.json` from them in the build (a `just gen-schema` recipe and a CI check that the committed schema is current). Define the signal-frame contract: required boolean columns long_entry, short_entry, long_exit, short_exit; optional entry_price, stop_price, target_price, trail_ref, size_mult, wake; all aligned to the signal bars' ts_close.
 
-In Python, add `fefat.strategy.SignalStrategy`, `Execution`, and the helper classes shown in 02 §5 (Market, Stop, Target, Breakeven, TimeRules, Limits, Fixed, …) as Pydantic models that validate against the schema and serialise to the spec. In this phase `features` are plain Polars expressions over the bars frame (for example `pl.col("close").ewm_mean(span=20)`); the `@ff.feature` decorator and `fefat.ta` arrive in Phase 3 and plug into the same slot. Add `SignalStrategy.signals(bars) -> LazyFrame` that evaluates the expressions into a signal frame and validates it (types, alignment, no NaN in booleans).
+In Python, add `fefat.strategy.SignalStrategy`, `Execution`, and the helper classes shown in 02 §5 (Market, Stop, Target, Breakeven, TimeRules, Limits, Fixed, …) as Pydantic models that validate against the schema and serialise to the spec. In this phase `features` are plain Polars expressions over the bars frame (for example `pl.col("close").ewm_mean(span=20)`); the `@ff.feature` decorator and `fefat.indicators` arrive in Phase 3 and plug into the same slot. Add `SignalStrategy.signals(bars) -> LazyFrame` that evaluates the expressions into a signal frame and validates it (types, alignment, no NaN in booleans).
 
 Extend the reference engine to execute a StrategySpec's basic subset (market entry, stop, one target, flat-by) from a signal frame, so later Rust steps have an oracle for templates too.
 
@@ -128,7 +130,7 @@ Not in this step: trailing, breakeven, multiple targets in the reference engine 
 
 #### Your checks
 
-- In a notebook, construct the example strategy from `02-engine-and-data.md` §5 with inline Polars expressions in place of `rsi(n=14)` and `ff.ta.atr(14)` (those arrive in Phase 3) and print `strat.to_spec()`; it reads like the builder form you expect.
+- In a notebook, construct the example strategy from `02-engine-and-data.md` §5 with inline Polars expressions in place of `rsi(n=14)` and `ff.indicators.atr(14)` (those arrive in Phase 3) and print `strat.to_spec()`; it reads like the builder form you expect.
 
 #### If it fails
 
@@ -151,7 +153,7 @@ The engine's foundations: fixed-point money, newtype timestamps, orders, positio
 ```text
 Masterplan step 2.4 — Rust core types and determinism harness.
 
-Read docs/masterplan/02-engine-and-data.md §4. In `fefat-core` implement the i64 newtypes (Price in 1e-9 units, Qty, Money in micro-units, Ts in ns), instrument parameters, the order model (market, stop-market, limit; side; time-in-force; activation time; OCO group), fills, positions, and a Ledger whose accounting identity (cash + position value = equity) is checked in debug builds and by proptest. Typed errors with thiserror; deny unwrap, panic, and unchecked indexing via clippy lints in the workspace; no HashMap iteration where order affects output (use BTreeMap or sorted vectors).
+Read docs/masterplan/02-engine-and-data.md §4. In `fefat-core` implement the i64 newtypes (Price in 1e-9 units, Qty, Money in micro-units, Ts in ns), instrument parameters, the order model (market, stop-market, limit; side; time-in-force; activation time; OCO group), fills, positions, the `MarketDataReader` trait (1-minute bars, 1-second bars, ticks, and the offsets between levels — the engine's port to market data, docs/masterplan/08-code-design.md §1) with an in-memory implementation for tests, and a Ledger whose accounting identity (cash + position value = equity) is checked in debug builds and by proptest. Typed errors with thiserror; deny unwrap, panic, and unchecked indexing via clippy lints in the workspace; no HashMap iteration where order affects output (use BTreeMap or sorted vectors).
 
 Add a determinism harness in `fefat-cli`: run the same synthetic input twice (and across two processes) and compare BLAKE3 hashes of the outputs; make it a test. Add the run-key function (BLAKE3 over spec, signal-frame hash, data partition hashes, engine and fill-model versions) and expose engine and fill-model version constants.
 
@@ -163,6 +165,7 @@ Not in this step: fills, the loop, data cache.
 1. proptest invariants pass: accounting identity under random fills; no negative quantities from well-formed fills; long/short mirror symmetry of P&L.
 2. The determinism test passes and runs in CI on both platforms with the same hash.
 3. `cargo clippy -D warnings` passes with the lints enabled in the workspace.
+4. The in-memory `MarketDataReader` serves a hand-written tape in a unit test, and its conformance tests are written so the cache reader of 2.5 can run them unchanged.
 
 #### Your checks
 
@@ -189,7 +192,7 @@ The engine reads market data at memory speed, shared across threads, without dec
 ```text
 Masterplan step 2.5 — Memory-mapped data cache.
 
-Read docs/masterplan/02-engine-and-data.md §1.6. In `fefat-data` implement a cache builder that converts canonical Parquet partitions into uncompressed Arrow IPC files under FEFAT_HOME/cache/engine/<root>/<contract>/<month>/ with three levels (1-minute bars, 1-second bars, ticks) and an index of row offsets so the engine can descend from a bar to its seconds and ticks directly. The reader memory-maps the files (memmap2; the only unsafe in the workspace, documented) and exposes column slices. The cache is keyed by the partition content hashes and rebuilt when they change; `fefat cache build` and `fefat cache status` CLI commands drive it from Python.
+Read docs/masterplan/02-engine-and-data.md §1.6. In `fefat-data` implement a cache builder that converts canonical Parquet partitions into uncompressed Arrow IPC files under FEFAT_HOME/cache/engine/<root>/<contract>/<month>/ with three levels (1-minute bars, 1-second bars, ticks) and an index of row offsets so the engine can descend from a bar to its seconds and ticks directly. The reader memory-maps the files (memmap2; the only unsafe in the workspace, documented) and implements the `MarketDataReader` trait from `fefat-core` over the mapped columns. The cache is keyed by the partition content hashes and rebuilt when they change; `fefat cache build` and `fefat cache status` CLI commands drive it from Python.
 
 Tests: round-trip equality with the Parquet source on synthetic fixtures; a missing level (ticks absent for a day) is represented explicitly; offsets map every bar to the right second and tick ranges (property test).
 
@@ -201,6 +204,7 @@ Not in this step: the engine loop.
 1. Round-trip and offset property tests pass.
 2. Building the cache for one year of ES 1-minute, 1-second, and tick data takes under 3 minutes on this PC and the result size is reported (PR).
 3. `fefat cache status` shows which levels exist per contract-month.
+4. The cache reader passes the `MarketDataReader` conformance tests from 2.4.
 
 #### Your checks
 
@@ -227,7 +231,7 @@ Realistic market, stop, and limit fills on ticks, proven identical to the refere
 ```text
 Masterplan step 2.6 — Rust engine on ticks with differential tests.
 
-Read docs/spec/fill-semantics.md, fixtures/scenarios/README.md, and how python/fefat/ref/engine.py fills orders. In `fefat-engine` implement the event loop over the tick level of the cache for one instrument: session and timer events, order activations (placed at a bar close, active at close plus latency), market events, then the bar-close decision; market, stop-market, and limit orders; a bracket with OCO; one position per strategy; fills by the rule identifiers in the spec, each fill tagged with its rule id and fidelity; the ledger from 2.4. Add a `fefat-cli run` that takes a spec, a signal frame (Arrow IPC), and a cache path and writes orders, fills, and an event log as Arrow IPC.
+Read docs/spec/fill-semantics.md, fixtures/scenarios/README.md, and how python/fefat/src/fefat/reference/engine.py fills orders; load the `backtest-expert` skill. In `fefat-engine` implement the event loop over the tick level of a `MarketDataReader` (the cache in production, in-memory tapes in tests) for one instrument: session and timer events, order activations (placed at a bar close, active at close plus latency), market events, then the bar-close decision; market, stop-market, and limit orders; a bracket with OCO; one position per strategy; fills by the rule identifiers in the spec, each fill tagged with its rule id and fidelity; the ledger from 2.4. Add a `fefat-cli run` that takes a spec, a signal frame (Arrow IPC), and a cache path or a tape file (Arrow IPC, served through the in-memory reader) and writes orders, fills, and an event log as Arrow IPC.
 
 Follow the specification for gaps and same-tick ties; where it is silent, stop and ask rather than guess. Add the differential test: a Python test drives both engines on every YAML scenario and on 10,000 Hypothesis-generated tapes (random walks with gaps, random orders) and asserts identical fills; failures print the smallest failing tape. The Python bindings arrive in 2.10, so this test drives Rust through `fefat-cli`: batch many tapes into one invocation (one input file, one output file) so the suite runs in minutes, and record the runtime in the PR.
 
@@ -421,6 +425,8 @@ Read docs/masterplan/02-engine-and-data.md §7. Implement `fefat-metrics`: profi
 
 Implement `Run.explain(trade_id)`: replay the trade's episode through the Python reference engine on the same tape and print each event (activation, triggers, fills, exits) with the rule ids, and assert the reference's fills equal the Rust fills for that episode.
 
+Load the `backtest-expert` skill and add its robustness summary to `Run.metrics`: the trade count against the 30, 100, and 200 thresholds, years and regimes covered, the number of parameters, whether friction was tested, the red flags that fire, and a plain verdict (deploy-grade evidence, refine, abandon), ported from the skill's `evaluate_backtest.py` and verified against it.
+
 Not in this step: charts, the web app.
 ```
 
@@ -429,6 +435,7 @@ Not in this step: charts, the web app.
 1. Metric parity tests pass against the Python implementation on 1,000 random trade lists.
 2. `Run.explain` prints the event list for a trade and asserts agreement with Rust.
 3. `Run.metrics` serialises to JSON and is stored in run.json.
+4. `Run.metrics.robustness` carries the five-dimension summary and verdict, checked on three planted runs (too few trades; fragile to slippage; a clean run) and equal to the skill's script on the same inputs.
 
 #### Your checks
 

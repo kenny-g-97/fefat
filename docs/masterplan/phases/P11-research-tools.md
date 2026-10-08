@@ -6,12 +6,14 @@
 
 **Depends on.** Phase 10 in the written order. If you move this phase earlier at a kickoff: 11.1–11.4 need only Phase 5; 11.5 needs the prop simulator (P7); 11.7 needs the agent (P8); event-strategy sweeps in 11.1 need P9 — amend the `Depends on` lines accordingly.
 
+**Skills.** `backtest-expert` for every step — this phase is the skill's methodology made into tools (plateaus over peaks, walk-forward, stress, trial counting); `frontend-design` with `web/DESIGN.md` for the pages.
+
 **Open decisions for the kickoff.** The locked holdout period (the latest 12 months is natural and matches the tick-fidelity year); the default study budget (time) before confirmation; which strategy to use as the running example.
 
 ## Kickoff
 
 ```text
-/phase-kickoff 11 — Read docs/masterplan/phases/P11-research-tools.md, docs/masterplan/02-engine-and-data.md §9 (research tools), and docs/masterplan/01-architecture.md §6 (sweeps). Ask me the open decisions. Reconcile with run_batch, the jobs runner, and the prop Monte Carlo (shared bootstrap code); open the kickoff PR.
+/phase-kickoff 11 — Read docs/masterplan/phases/P11-research-tools.md, docs/masterplan/02-engine-and-data.md §9 (research tools), and docs/masterplan/01-architecture.md §6 (sweeps). Ask me the open decisions. Load the `backtest-expert` skill and pull in the D-29 backlog items that target this phase (the stress profile in 11.6, the regime breakdown in 11.4). Reconcile with run_batch, the jobs runner, and the prop Monte Carlo (shared bootstrap code); open the kickoff PR.
 ```
 
 ## Steps

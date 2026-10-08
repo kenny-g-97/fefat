@@ -2,9 +2,11 @@
 
 **Goal.** The feature system of the SDK: a clear contract for feature functions, a runtime that resolves dependencies and multiple timeframes, a cache that makes previews instant, a leak detector that catches look-ahead on save, an indicator library verified against TA-Lib, combinators, and feature analytics — all usable from notebooks and feeding signal strategies.
 
-**You get.** `@ff.feature` functions with versions, `ff.features.validate(f)` leak checks, `ff.ta.*`, `ff.analytics.*`, and strategies that reference library features.
+**You get.** `@ff.feature` functions with versions, `ff.features.validate(f)` leak checks, `ff.indicators.*`, `ff.analytics.*`, and strategies that reference library features.
 
 **Depends on.** Phase 2.
+
+**Skills.** `software-design-principles` for every step; `backtest-expert` for 3.4 (leak detector) and 3.8 (analytics), whose look-ahead and data-mining sections apply.
 
 **Open decisions for the kickoff.** Your first indicator list (the defaults are the usual 30: moving averages, RSI, ATR, Bollinger, MACD, stochastic, ADX, VWAP, anchored VWAP, opening range, volume profile basics); whether you already have feature code from notebooks to port.
 
@@ -44,7 +46,7 @@ Not in this step: runtime for dependencies (3.2), cache, leak detector.
 
 1. A feature defined in a notebook round-trips through `FeatureVersion` (save, load, identical hash); changing a default parameter or one character of code changes the hash.
 2. Parameter validation rejects wrong types with a readable message.
-3. Three example features (RSI, ATR, a session-time flag) live in `python/fefat/features/examples.py` with tests.
+3. Three example features (RSI, ATR, a session-time flag) live in `python/fefat/src/fefat/features/examples.py` with tests.
 
 #### Your checks
 
@@ -185,7 +187,7 @@ The common indicators exist as FEFAT features with verified numerics.
 ```text
 Masterplan step 3.5 — Indicators, batch 1.
 
-Implement `fefat.ta` as FeatureDefs built from Polars expressions: SMA, EMA, WMA, RSI, ATR (Wilder), true range, Bollinger bands (middle, upper, lower, width, %b), MACD (line, signal, histogram), stochastic (%K, %D), ADX with +DI/−DI, ROC, momentum, standard deviation, z-score over a window, Donchian channels, Keltner channels, OBV. Each declares its warm-up. Golden-test every one against TA-Lib (installed as a test dependency; Windows wheels exist) on the synthetic fixtures and on random series, with the documented tolerance and TA-Lib's seeding conventions reproduced exactly.
+Implement `fefat.indicators` as FeatureDefs built from Polars expressions: SMA, EMA, WMA, RSI, ATR (Wilder), true range, Bollinger bands (middle, upper, lower, width, %b), MACD (line, signal, histogram), stochastic (%K, %D), ADX with +DI/−DI, ROC, momentum, standard deviation, z-score over a window, Donchian channels, Keltner channels, OBV. Each declares its warm-up. Golden-test every one against TA-Lib (installed as a test dependency; Windows wheels exist) on the synthetic fixtures and on random series, with the documented tolerance and TA-Lib's seeding conventions reproduced exactly.
 
 Not in this step: session-aware indicators (3.6), the agent.
 ```
@@ -194,11 +196,11 @@ Not in this step: session-aware indicators (3.6), the agent.
 
 1. Every indicator in the list has a TA-Lib golden test that passes within the tolerance stated in the test file.
 2. Each indicator's warm-up is tested: no NaN after warm-up on a clean series.
-3. `ff.ta` has a module docstring table of indicators with parameters.
+3. `ff.indicators` has a module docstring table of indicators with parameters.
 
 #### Your checks
 
-- In a notebook, compute `ff.ta.rsi(14)` on a month of ES 5-minute bars and compare three values against your charting platform's RSI: they match to the second decimal.
+- In a notebook, compute `ff.indicators.rsi(14)` on a month of ES 5-minute bars and compare three values against your charting platform's RSI: they match to the second decimal.
 
 #### If it fails
 
@@ -221,7 +223,7 @@ Indicators that depend on the trading session — the ones intraday futures trad
 ```text
 Masterplan step 3.6 — Indicators, batch 2 and session-aware features.
 
-Add to `fefat.ta`: session VWAP and anchored VWAP (anchors: session open, week open, a boolean column), opening range (high, low, width for a configurable window after the open), previous session high/low/close, session high/low so far, distance from VWAP in ATRs and in ticks, time since session open, bars since an event (boolean column), rolling realised volatility, relative volume versus the same time-of-day average over N sessions, cumulative delta from TBBO aggressor sides (tick-level input aggregated to bars), and a swing high/low detector that only confirms after N bars (no repainting). All are built on the calendar's trade dates and pass the leak detector.
+Add to `fefat.indicators`: session VWAP and anchored VWAP (anchors: session open, week open, a boolean column), opening range (high, low, width for a configurable window after the open), previous session high/low/close, session high/low so far, distance from VWAP in ATRs and in ticks, time since session open, bars since an event (boolean column), rolling realised volatility, relative volume versus the same time-of-day average over N sessions, cumulative delta from TBBO aggressor sides (tick-level input aggregated to bars), and a swing high/low detector that only confirms after N bars (no repainting). All are built on the calendar's trade dates and pass the leak detector.
 
 Tests: hand-computed expectations on a synthetic session; leak-detector pass for every feature in this batch; the swing detector is tested to confirm only after N bars.
 

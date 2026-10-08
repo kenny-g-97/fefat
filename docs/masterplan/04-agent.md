@@ -37,7 +37,7 @@ No shell, no file access, no web browsing in the first release. "Import from URL
 
 ## 4. Skills
 
-- `python/fefat_app/agent/skills/<name>/SKILL.md`, the same format as Claude's Agent Skills (frontmatter `name` and `description`, then the body), plus optional reference files loaded through `load_skill`.
+- `python/fefat_app/src/fefat_app/agent/skills/<name>/SKILL.md`, the same format as Claude's Agent Skills (frontmatter `name` and `description`, then the body), plus optional reference files loaded through `load_skill`.
 - The system prompt holds only the index (name + description); the body is loaded on demand. Users can add skills under `workspaces/default/skills/`.
 - First release: `fefat-features` (the feature API, point-in-time rules, examples, pitfalls), `fefat-signal-strategies` (the `SignalStrategy` API, execution templates, common patterns), `backtest-analysis` (what to look at, in what order; using `query_run_data`; overfitting warnings), `alt-data-ingestion` (inspect, align on publication time, lag, register), `prop-rules-and-policies` (the rule schema, prop strategies, choosing a backtest file and reading its path fidelity, how to configure a simulation, what results mean), `optimization-hygiene` (trial counts, holdouts, walk-forward).
 

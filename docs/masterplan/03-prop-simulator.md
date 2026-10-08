@@ -14,7 +14,7 @@ Because the strategy is never re-run, a simulation of thousands of account lifet
 
 ## 2. Rules as data
 
-A rule set is a versioned YAML file under `python/fefat/prop/presets/<firm>/<plan>@<as-of>.yaml`, plus user-defined rule sets stored in the database with the same schema. Every preset carries source URLs, retrieval dates, and worked examples transcribed from the firm's own documentation. A preset is not `verified` until its examples pass, including one breach and one payout. Results show the preset's status (`verified`, `draft`, `stale`).
+A rule set is a versioned YAML file under `python/fefat/src/fefat/prop/presets/<firm>/<plan>@<as-of>.yaml`, plus user-defined rule sets stored in the database with the same schema. Every preset carries source URLs, retrieval dates, and worked examples transcribed from the firm's own documentation. A preset is not `verified` until its examples pass, including one breach and one payout. Results show the preset's status (`verified`, `draft`, `stale`).
 
 Schema shape (refined in step 7.1; types generated from Rust with `schemars`):
 
@@ -48,7 +48,7 @@ States: `EvalActive`, `EvalPassed`, `FundedActive`, `Live`, `LockedUntil(t)`, `P
 
 Events: `Mark` (equity inside a trade, from its path), `TradeEnd` (trade closed), `DayAnchor` (firm day boundary, for crypto-style snapshots), `SessionEnd` (end-of-day high-water mark, minimum-day tally, consistency, target check), `FlatBy`, `PayoutRequest`, `PayoutApproved`, `FeeDue`, `Expiry`, `Reset`.
 
-Each rule is a pure function from `(state, event)` to `(state, actions)` in integer money. The Python reference implementation (`fefat/ref/prop.py`) is the oracle for the Rust one.
+Each rule is a pure function from `(state, event)` to `(state, actions)` in integer money. The Python reference implementation (`fefat/reference/prop.py`) is the oracle for the Rust one.
 
 ### Drawdown types, precisely
 
@@ -120,7 +120,7 @@ These limits are shown as a note on every result.
 
 ### 4.6 Correctness
 
-- The Python reference account machine (`fefat/ref/prop.py`) is the oracle.
+- The Python reference account machine (`fefat/reference/prop.py`) is the oracle.
 - Replay of compact paths must equal the reference fed with test-only full-resolution paths (every tick while in a position), with forced liquidations priced the same way in both, on generated tapes, fills, sizes, and rule sets.
 - Every preset's worked examples pass in both implementations.
 

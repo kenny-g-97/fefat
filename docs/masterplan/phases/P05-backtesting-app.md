@@ -11,7 +11,7 @@
 ## Kickoff
 
 ```text
-/phase-kickoff 5 — Read docs/masterplan/phases/P05-backtesting-app.md, docs/masterplan/01-architecture.md §5–§7, and docs/masterplan/02-engine-and-data.md §7. Ask me the open decisions. Reconcile the steps with the Phase 4 server, jobs, and executor; pin Lightweight Charts 5 and ECharts 6 versions; open the kickoff PR.
+/phase-kickoff 5 — Read docs/masterplan/phases/P05-backtesting-app.md, docs/masterplan/01-architecture.md §5–§7, and docs/masterplan/02-engine-and-data.md §7. Ask me the open decisions. Reconcile the steps with the Phase 4 server, jobs, and executor; pin Lightweight Charts 5 and ECharts 6 versions; open the kickoff PR. Pull in the D-29 backlog items that target this phase (the robustness summary on the results page, the hypothesis field, the stress profile, the record of abandoned ideas), and load the `frontend-design` skill with `web/DESIGN.md` for the page steps.
 ```
 
 ## Steps
@@ -71,7 +71,7 @@ Strategies and their immutable versions live in the app, with history and diffs,
 ```text
 Masterplan step 5.2 — Strategy versions API.
 
-Read docs/masterplan/01-architecture.md §5 (Code) and §7 (Strategies). Implement `GET/POST /v1/strategies`, `GET /v1/strategies/{id}/versions`, `POST /v1/strategies/{id}/versions` (code, optional builder spec, changelog; validates the code by importing it in the executor, extracts the parameter schema and pinned feature versions, computes the content hash; rejects edits to existing versions), `GET /v1/strategies/{id}/versions/{n}`, and `GET /v1/strategies/{id}/diff?from&to` (unified diff of code and a structured diff of the builder spec). Mirror the same for features (`/v1/features...`) so Phase 6 can build on it. Keep the SDK able to read and write versions through the same repository layer (`fefat_app.db.repo`) so notebooks and the app never diverge.
+Read docs/masterplan/01-architecture.md §5 (Code) and §7 (Strategies). Implement `GET/POST /v1/strategies`, `GET /v1/strategies/{id}/versions`, `POST /v1/strategies/{id}/versions` (code, optional builder spec, changelog; validates the code by importing it in the executor, extracts the parameter schema and pinned feature versions, computes the content hash; rejects edits to existing versions), `GET /v1/strategies/{id}/versions/{n}`, and `GET /v1/strategies/{id}/diff?from&to` (unified diff of code and a structured diff of the builder spec). Mirror the same for features (`/v1/features...`) so Phase 6 can build on it. Keep the SDK able to read and write versions through the same repository layer (`fefat_app.database.repositories`) so notebooks and the app never diverge.
 
 Seed a "templates" set: two or three signal strategies from docs/engine-guide.md as starting points, served by `GET /v1/strategies/templates` (declare this literal route before the `/{id}` route, or FastAPI will treat "templates" as an id; test it).
 
@@ -160,7 +160,7 @@ Not in this step: indicators on the chart, trade markers.
 
 1. Playwright specs pass on both projects with screenshots attached, including the platform update flow.
 2. Scrolling back on a year of 5-minute bars stays smooth (no request larger than 20,000 bars; requests are cached).
-3. `PriceChart` is documented in `web/src/components/charts/README.md`.
+3. `PriceChart` is documented in `web/src/charts/README.md`.
 4. A platform update that needs a paid Databento download never calls the download API without your confirmation (test with a mocked client).
 
 #### Your checks
