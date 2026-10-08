@@ -16,7 +16,7 @@ Phase kickoffs and exits are tracked in the second table.
 
 | Step | Title | Phase | Status | PR | Date | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.1 | Install the toolchain and write the doctor script | P0 | todo | | | |
+| 0.1 | Install the toolchain and write the doctor script | P0 | done | main | 2026-10-09 | Installs verified 2026-10-08; `scripts/doctor.py` and the `justfile` committed straight to `main`; 07 §1 commands amended |
 | 0.2 | Scaffold the repository | P0 | todo | | | Amended 2026-10-08: extend the existing repo files |
 | 0.3 | Configure the GitHub repository and protect `main` | P0 | todo | | | Amended 2026-10-08: repository already exists |
 | 0.4 | Configure Claude Code for this repository | P0 | todo | | | Amended 2026-10-08: replace the bootstrap CLAUDE.md |

@@ -54,6 +54,10 @@ Not in this step: the repository scaffold, git initialisation, CI, or any Rust o
 - `just` not found after install: close and reopen the terminal (PATH changes need a new shell).
 - If Claude Code loops on an installer, stop, do the install by hand, and resume with "the installer is done; continue".
 
+#### Amendment
+
+2026-10-08, while doing the step: three install commands in `07-tools-and-costs.md` §1 failed as written on this PC, and its table now shows the ones that worked — `winget install Microsoft.VisualStudio.2022.BuildTools` installs no C++ workload unless `--override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` is passed; `corepack enable` needs administrator rights because Node lives in Program Files (`--install-directory "$env:APPDATA\npm"` avoids that); corepack 0.35 has no `corepack prepare` (`corepack install -g pnpm@latest` replaces it). `just` on Windows looks for `sh`, which PowerShell does not have on its PATH, so the `justfile` sets `windows-shell` to `cmd.exe` and every recipe line is a plain command that also runs under `sh`. The optional Claude Code CLI was not installed, by choice; the VS Code extension is used.
+
 ### 0.2 Scaffold the repository
 
 Depends on: 0.1 · Plan mode: optional · Reviews: none · Security: no · Model hint: default

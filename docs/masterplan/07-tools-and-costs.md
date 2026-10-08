@@ -6,9 +6,9 @@ Already present on 2026-10-05: git 2.55, GitHub CLI 2.97 (signed in), Node 24 + 
 
 | Tool | Why | How |
 | --- | --- | --- |
-| Microsoft C++ Build Tools (Desktop development with C++) | Rust's MSVC toolchain links with them | `winget install Microsoft.VisualStudio.2022.BuildTools` with the "Desktop development with C++" workload, or the Visual Studio Installer; one-time, several GB |
+| Microsoft C++ Build Tools (Desktop development with C++) | Rust's MSVC toolchain links with them | `winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"` (without `--override`, winget installs the bare installer and no C++ workload), or tick "Desktop development with C++" in the Visual Studio Installer; one-time, several GB |
 | Rust (stable) via rustup | the engine | `winget install Rustlang.Rustup`, then `rustup default stable`; pinned by `engine/rust-toolchain.toml` |
-| pnpm | the web app | `corepack enable` (Node ships corepack) then `corepack prepare pnpm@latest --activate`, or `npm install -g pnpm` |
+| pnpm | the web app | `corepack enable --install-directory "$env:APPDATA\npm"` (Node ships corepack; the install directory keeps the shims out of Program Files, which needs administrator rights) then `corepack install -g pnpm@latest` (corepack 0.35 has no `prepare` command), or `npm install -g pnpm` |
 | `just` | the task runner | `winget install Casey.Just` or `cargo install just` |
 | Python 3.12 | SDK and server | already installed by uv; `.python-version` pins it |
 | Playwright browsers (P4) | UI tests | `pnpm exec playwright install chromium` |
