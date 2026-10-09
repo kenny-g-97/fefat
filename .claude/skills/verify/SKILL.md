@@ -17,7 +17,7 @@ Otherwise collect the changed files, from `git status --porcelain` (staged, unst
 
 | Changed | Run |
 | --- | --- |
-| `engine/**` | `cargo fmt --manifest-path engine/Cargo.toml --all --check`; `cargo clippy --manifest-path engine/Cargo.toml --workspace --all-targets --all-features -- -D warnings`; `cargo test --manifest-path engine/Cargo.toml --workspace` |
+| `engine/**` | `just check-engine`; `just test-engine` (cargo runs in `engine/`, where the pinned toolchain applies) |
 | `python/**`, `scripts/**`, `pyproject.toml`, `uv.lock` | `uv run ruff check .`; `uv run ruff format --check .`; `uv run pyright`; `uv run lint-imports`; `uv run pytest` |
 | `web/**` | `pnpm --dir web lint`; `pnpm --dir web typecheck`; `pnpm --dir web test` |
 | `.claude/hooks/**`, `.claude/settings.json`, `scripts/test_hooks.py` | `node --check` on each changed `.mjs` file; `uv run python scripts/test_hooks.py` |
