@@ -9,9 +9,14 @@ or a clean exit for the hooks that never block. Run it through uv (bare
     uv run python scripts/test_hooks.py             # every case
     uv run python scripts/test_hooks.py -k push     # the cases whose name contains "push"
     uv run python scripts/test_hooks.py --verbose   # also print what each hook printed
+    uv run python scripts/test_hooks.py --hooks <folder>   # test a changed copy first
 
 `just test` runs it, and it exits 1 when a case fails. It needs node and git
-on PATH. It makes two throwaway git repositories (one on main, one on a step
+on PATH, and ruff and rustfmt for the formatter cases (`just setup` installs
+both). Test a changed copy of the hooks with --hooks before putting it in
+.claude/hooks/: the live guards check every command of the session, so a
+broken one blocks the session's own work. It makes two throwaway git
+repositories (one on main, one on a step
 branch) in a temporary folder, and the formatter cases write their files
 under .tmp/, which git ignores. Standard library only.
 """
@@ -134,6 +139,14 @@ def edit(path: Path | str) -> str:
 
 def write(path: Path | str) -> str:
     return tool_call("Write", {"file_path": str(path), "content": "x"})
+
+
+def write_text(path: Path | str, content: str) -> str:
+    return tool_call("Write", {"file_path": str(path), "content": content})
+
+
+def edit_text(path: Path | str, new_string: str) -> str:
+    return tool_call("Edit", {"file_path": str(path), "old_string": "a", "new_string": new_string})
 
 
 def bash(command: str, directory: Path) -> str:
@@ -286,6 +299,24 @@ def file_guard_cases() -> list[Case]:
         case(
             "an Edit without a file_path is left to the permission rules",
             tool_call("Edit", {"old_string": "a"}),
+            Expect.ALLOW,
+        ),
+        case(
+            "setting INSTA_UPDATE in engine/.cargo/config.toml asks",
+            write_text(
+                ROOT / "engine" / ".cargo" / "config.toml", '[env]\nINSTA_UPDATE = "always"\n'
+            ),
+            Expect.ASK,
+            "engine-golden",
+        ),
+        case(
+            "adding --snapshot-update to pyproject.toml asks",
+            edit_text(ROOT / "pyproject.toml", 'addopts = "--snapshot-update"'),
+            Expect.ASK,
+        ),
+        case(
+            "an ordinary pyproject.toml edit is allowed",
+            edit_text(ROOT / "pyproject.toml", "line-length = 100"),
             Expect.ALLOW,
         ),
     ]
@@ -540,6 +571,93 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.ASK,
         ),
         case("gh pr view is allowed", "gh pr view 12", Expect.ALLOW),
+        case("git switch main && git push is denied", "git switch main && git push", Expect.DENY),
+        case(
+            "git switch main && git commit asks", "git switch main && git commit -am x", Expect.ASK
+        ),
+        case(
+            "a push after switching to a new step branch is allowed",
+            "git switch -c step/0.6-ci origin/main && git push -u origin HEAD",
+            Expect.ALLOW,
+        ),
+        case(
+            "uv run bash -c with a force push is denied",
+            "uv run bash -c 'git push --force origin main'",
+            Expect.DENY,
+        ),
+        case(
+            "bash -o pipefail -c with a force push is denied",
+            "bash -o pipefail -c 'git push --force'",
+            Expect.DENY,
+        ),
+        case(
+            "find -exec sh -c with a force push is denied",
+            "find . -exec sh -c 'git push -f' \\;",
+            Expect.DENY,
+        ),
+        case(
+            "$( ) inside an unquoted heredoc is read",
+            "cat <<EOF\n$(git push --force)\nEOF",
+            Expect.DENY,
+        ),
+        case(
+            "$( ) inside a quoted heredoc is text",
+            "cat <<'EOF'\n$(git push --force)\nEOF",
+            Expect.ALLOW,
+        ),
+        case(
+            "a <<EOF inside quotes starts no heredoc",
+            'echo "a <<EOF"\ngit push --force',
+            Expect.DENY,
+        ),
+        case(
+            "a heredoc that writes a .sh file is not run",
+            "cat > docs/run.sh <<'EOF'\n# never: git push origin main\ngit push origin main\nEOF",
+            Expect.ALLOW,
+        ),
+        case(
+            "a heredoc piped into bash is read",
+            "cat <<'EOF' | bash\ngit push --force\nEOF",
+            Expect.DENY,
+        ),
+        case(
+            "a comment that mentions git push --force is ignored",
+            "echo hi # git push --force",
+            Expect.ALLOW,
+        ),
+        case(
+            "a commit message in $(cat <<'EOF') is text",
+            "git commit -m \"$(cat <<'EOF'\nNever git push --force.\nEOF\n)\"",
+            Expect.ALLOW,
+        ),
+        case(
+            'a PowerShell @" here-string runs its $( )',
+            '@"\n$(git push -f)\n"@ | Out-Null',
+            Expect.DENY,
+            tool="PowerShell",
+        ),
+        case(
+            "writing .claude/settings.json from the shell asks",
+            "echo '{}' > .claude/settings.json",
+            Expect.ASK,
+            reason="guardrails",
+        ),
+        case(
+            "copying over a hook asks", "cp new.mjs .claude/hooks/guard-file-paths.mjs", Expect.ASK
+        ),
+        case(
+            "a generator writing into fixtures/goldens asks",
+            "cargo run -p fefat-cli -- golden es --out fixtures/goldens/es",
+            Expect.ASK,
+            reason="engine-golden",
+        ),
+        case("reading a golden is allowed", "cat fixtures/goldens/es/run.json", Expect.ALLOW),
+        case(
+            "cargo insta test --unreferenced=delete asks",
+            "cargo insta test --unreferenced=delete",
+            Expect.ASK,
+        ),
+        case("setx INSTA_UPDATE asks", "setx INSTA_UPDATE always", Expect.ASK, tool="PowerShell"),
         case(
             "an encoded PowerShell command asks",
             "powershell -EncodedCommand ZwBpAHQAIABzAHQAYQB0AHUAcwA=",
@@ -566,10 +684,6 @@ def formatter_cases() -> list[Case]:
     python_file.write_text("x=1\n", encoding="utf-8")
     rust_file = SCRATCH / "spacing.rs"
     rust_file.write_text("fn main(){}\n", encoding="utf-8")
-    python_check = (file_reads(python_file, "x = 1\n"),) if RUFF.exists() else ()
-    python_note = "" if RUFF.exists() else " (ruff not installed: exit code only)"
-    rust_check = (file_reads(rust_file, "fn main() {}\n"),) if shutil.which("rustfmt") else ()
-    rust_note = "" if shutil.which("rustfmt") else " (rustfmt not installed: exit code only)"
     web_check = () if PRETTIER.exists() else (file_unchanged(WEB_SOURCE, WEB_SOURCE.read_bytes()),)
 
     def case(name: str, stdin: str, checks: tuple[Check, ...] = ()) -> Case:
@@ -588,11 +702,15 @@ def formatter_cases() -> list[Case]:
             (file_unchanged(DESIGN_SKILL_SCRIPT, DESIGN_SKILL_SCRIPT.read_bytes()),),
         ),
         case(
-            f"a Python file is formatted by ruff{python_note}",
+            "a Python file is formatted by ruff",
             after_write(python_file),
-            python_check,
+            (file_reads(python_file, "x = 1\n"),),
         ),
-        case(f"a Rust file is formatted by rustfmt{rust_note}", after_write(rust_file), rust_check),
+        case(
+            "a Rust file is formatted by rustfmt",
+            after_write(rust_file),
+            (file_reads(rust_file, "fn main() {}\n"), output_contains("read them again")),
+        ),
         case(
             "a web file waits for the formatter the Phase 4 kickoff chooses",
             after_write(WEB_SOURCE),
@@ -641,7 +759,15 @@ def reviewer_cases() -> list[Case]:
         "rg -n hooksPath docs",
         "git branch --list 'step/*'",
     ]
+    allowed += ["git --no-pager log -3", "sort -r notes.txt", "git grep -n hooksPath"]
     denied = [
+        "git -c core.pager=less log",
+        "GIT_EXTERNAL_DIFF=./x.sh git diff",
+        "env FOO=1 git status",
+        "git --exec-path=/tmp status",
+        "rg --pre ./x.sh pattern",
+        "sort -oout.txt notes.txt",
+        "git grep -Ovim foo",
         "git stash",
         "git checkout -- .",
         "echo x > notes.txt",
@@ -689,10 +815,10 @@ def all_cases(repositories: Repositories, branch: str) -> list[Case]:
     ]
 
 
-def run_hook(case: Case, node: str) -> Outcome:
+def run_hook(case: Case, node: str, hooks: Path) -> Outcome:
     environment = {**os.environ, "CLAUDE_PROJECT_DIR": str(case.directory)}
     completed = subprocess.run(
-        [node, str(HOOKS / case.hook.value)],
+        [node, str(hooks / case.hook.value)],
         input=case.stdin,
         capture_output=True,
         text=True,
@@ -825,6 +951,12 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
         "-k", dest="keyword", default="", help="run the cases whose name contains this text"
     )
     parser.add_argument("--verbose", action="store_true", help="print what each hook printed")
+    parser.add_argument(
+        "--hooks",
+        type=Path,
+        default=HOOKS,
+        help="the hooks folder to test (default: .claude/hooks)",
+    )
     return parser.parse_args(argv)
 
 
@@ -834,6 +966,13 @@ def main(argv: Sequence[str]) -> int:
     git = shutil.which("git")
     if node is None or git is None:
         print(f"Expected node and git on PATH, got node={node!r} and git={git!r}.", file=sys.stderr)
+        return 1
+    hooks = arguments.hooks.resolve()
+    if not (hooks / Hook.SHELL_GUARD.value).exists():
+        print(
+            f"Expected the hook scripts in {hooks}, got no {Hook.SHELL_GUARD.value}.",
+            file=sys.stderr,
+        )
         return 1
     try:
         with throwaway_repositories(git) as repositories:
@@ -848,7 +987,7 @@ def main(argv: Sequence[str]) -> int:
                 )
                 return 1
             with ThreadPoolExecutor(max_workers=PARALLEL_HOOKS) as pool:
-                outcomes = list(pool.map(lambda case: run_hook(case, node), cases))
+                outcomes = list(pool.map(lambda case: run_hook(case, node, hooks), cases))
             results = [
                 Result(case, outcome, failure_of(case, outcome))
                 for case, outcome in zip(cases, outcomes, strict=True)

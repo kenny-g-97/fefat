@@ -19,6 +19,7 @@ import {
   BASH,
   POWERSHELL,
   commandsIn,
+  gitInvocationsIn,
   isDiscardedOutput,
   parseGitInvocation,
   programIndex,
@@ -30,6 +31,7 @@ const BRANCH_CHANGING_OPTIONS = new Set([
 ]);
 const BRANCH_CHANGING_LETTERS = /^-[A-Za-z]*[dDmMcCfut]/;
 const BRANCH_LISTING_OPTIONS = new Set(["--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"]);
+const SAFE_GIT_GLOBAL_OPTIONS = new Set(["-C", "--no-pager", "-P", "--paginate", "-p", "--no-optional-locks", "--literal-pathspecs"]);
 
 function readOnly(pattern, { forbids = [], requiresOneOf = [], accepts = () => true } = {}) {
   return { words: pattern.split(" "), forbids, requiresOneOf, accepts };
@@ -47,7 +49,8 @@ const READ_ONLY_COMMANDS = [
   readOnly("git diff", { forbids: ["--output"] }),
   readOnly("git log", { forbids: ["--output"] }),
   readOnly("git show", { forbids: ["--output"] }),
-  ...["status", "blame", "rev-parse", "rev-list", "ls-files", "grep", "merge-base", "describe", "cat-file", "for-each-ref", "shortlog"].map(
+  readOnly("git grep", { forbids: [/^-O/, "--open-files-in-pager"] }),
+  ...["status", "blame", "rev-parse", "rev-list", "ls-files", "merge-base", "describe", "cat-file", "for-each-ref", "shortlog"].map(
     (subcommand) => readOnly(`git ${subcommand}`),
   ),
   readOnly("git branch", { accepts: listsBranchesOnly }),
@@ -73,14 +76,14 @@ const READ_ONLY_COMMANDS = [
   readOnly("pnpm --dir web typecheck"),
   readOnly("pnpm --dir web test", { forbids: ["-u", "--update"] }),
   readOnly("node --check"),
-  readOnly("find", { forbids: ["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"] }),
-  readOnly("sort", { forbids: ["-o", "--output"] }),
+  readOnly("find", { forbids: ["-delete", "-exec", "-execdir", "-ok", "-okdir", /^-fprint/, "-fls"] }),
+  readOnly("sort", { forbids: [/^-[A-Za-z]*o/, "--output"] }),
+  readOnly("rg", { forbids: ["--pre"] }),
   ...[
-    "rg", "grep", "ls", "cat", "head", "tail", "wc", "diff", "echo", "pwd", "cd", "which", "file", "stat",
-    "tree", "uniq", "cut", "basename", "dirname", "realpath", "true",
+    "grep", "ls", "cat", "head", "tail", "wc", "diff", "echo", "pwd", "cd", "which", "file", "stat",
+    "basename", "dirname", "realpath", "true",
     "get-content", "gc", "get-childitem", "gci", "dir", "select-string", "sls", "get-location",
-    "set-location", "test-path", "measure-object", "select-object", "where-object", "sort-object",
-    "format-table", "format-list", "get-item", "resolve-path", "split-path", "join-path", "write-output",
+    "set-location", "test-path", "get-item", "resolve-path", "split-path", "join-path", "write-output",
   ].map((program) => readOnly(program)),
 ];
 
@@ -103,13 +106,27 @@ function matchesReadOnly(rule, words) {
     }
   }
   const rest = words.slice(rule.words.length);
-  if (rest.some((word) => rule.forbids.some((option) => word === option || word.startsWith(`${option}=`)))) {
+  if (rest.some((word) => rule.forbids.some((option) => forbidden(option, word)))) {
     return false;
   }
   if (rule.requiresOneOf.length > 0 && !rest.some((word) => rule.requiresOneOf.includes(word))) {
     return false;
   }
   return rule.accepts(rest);
+}
+
+function forbidden(option, word) {
+  if (option instanceof RegExp) {
+    return option.test(word);
+  }
+  return word === option || word.startsWith(`${option}=`);
+}
+
+function gitProblem(command) {
+  const unsafe = gitInvocationsIn(command).some(
+    (git) => git.configs.length > 0 || git.globalOptions.some((option) => !SAFE_GIT_GLOBAL_OPTIONS.has(option)),
+  );
+  return unsafe ? `"${command.text}" passes git options that can run programs (-c, --exec-path, and the like)` : null;
 }
 
 function problemsWith(commands) {
@@ -120,7 +137,12 @@ function problemsWith(commands) {
       continue;
     }
     const targets = command.outputTargets.filter((target) => !isDiscardedOutput(target));
-    if (targets.length > 0) {
+    const unsafeGit = gitProblem(command);
+    if (programIndex(command.words) > 0) {
+      problems.push(`"${command.text}" sets environment variables or starts with a prefix such as env or sudo`);
+    } else if (unsafeGit !== null) {
+      problems.push(unsafeGit);
+    } else if (targets.length > 0) {
       problems.push(`"${command.text}" writes to ${targets.join(", ")}`);
     } else if (!READ_ONLY_COMMANDS.some((rule) => matchesReadOnly(rule, commandWords(command)))) {
       problems.push(`"${command.text}" is not on the read-only list`);

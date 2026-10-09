@@ -26,6 +26,10 @@ const MARKET_DATA_SUFFIXES = [
 const KEY_SUFFIXES = [".pem", ".key", ".pfx", ".p12"];
 const SSH_PRIVATE_KEY = /^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$/;
 const SNAPSHOT_SUFFIXES = [".snap", ".snap.new", ".pending-snap"];
+const SNAPSHOT_CONFIG_FILE =
+  /(^|\/)(\.cargo\/config(\.toml)?|insta\.yaml|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|package\.json|justfile|vitest\.config\.[cm]?[jt]s|playwright\.config\.[cm]?[jt]s)$|(^|\/)\.github\/workflows\//;
+const SNAPSHOT_UPDATE_SETTING =
+  /\b(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\b|--snapshot-update|--update-snapshots|--force-update-snapshots|^\s*update\s*:\s*(always|unseen|new)\b/im;
 
 const RULES = [
   {
@@ -57,12 +61,28 @@ const RULES = [
       `${file.absolute} has the market-data extension ${marketDataSuffix(file)}. Licensed market data lives outside the repository under FEFAT_DATA_DIR, and only generated fixtures under fixtures/synthetic/ are data files in git (docs/masterplan/05-build-process.md section 5).`,
   },
   {
+    applies: (file, toolInput) =>
+      file.inProjectFolded !== null &&
+      SNAPSHOT_CONFIG_FILE.test(file.inProjectFolded) &&
+      SNAPSHOT_UPDATE_SETTING.test(newText(toolInput)),
+    decision: "ask",
+    reason: (file) =>
+      `${file.inProject} would make goldens or snapshots update by themselves (INSTA_UPDATE, --snapshot-update, or the like). Goldens change only with the builder's approval and a changelog entry (the engine-golden skill).`,
+  },
+  {
     applies: isGoldenFile,
     decision: "ask",
     reason: (file) =>
       `${file.inProject} is a golden or snapshot file. Goldens change only with the builder's approval, a fill-model version bump where fills change, and a changelog entry (the engine-golden skill).`,
   },
 ];
+
+function newText(toolInput) {
+  return ["content", "new_string", "new_source"]
+    .map((field) => toolInput[field])
+    .filter((value) => typeof value === "string")
+    .join("\n");
+}
 
 function marketDataSuffix(file) {
   return MARKET_DATA_SUFFIXES.find((suffix) => file.nameFolded.endsWith(suffix)) ?? null;
@@ -106,7 +126,7 @@ async function main() {
     return;
   }
   const file = describeFilePath(rawPath, reading.input, projectDirectory(reading.input));
-  const rule = RULES.find((candidate) => candidate.applies(file));
+  const rule = RULES.find((candidate) => candidate.applies(file, reading.input.tool_input));
   if (rule === undefined || rule.decision === null) {
     leaveToolCallToPermissionRules();
   } else if (rule.decision === "deny") {

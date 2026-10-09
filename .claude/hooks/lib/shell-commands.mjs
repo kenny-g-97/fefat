@@ -5,10 +5,14 @@
  * runs in; the guards judge the result.
  *
  * It is a guard's reader, not a shell. It follows `&&`, `||`, `;`, pipes,
- * subshells, `$(...)`, `bash -c`, `powershell -Command`, `cmd /c`,
- * `Invoke-Expression`, heredocs, and `cd`. Where it cannot follow a command
- * (an encoded PowerShell command, a command held in a variable), it marks the
- * command as opaque so a guard can ask instead of guessing.
+ * subshells, `$(...)` (also inside double quotes and inside the body of an
+ * unquoted heredoc), `bash -c` and `powershell -Command` wherever they appear
+ * in a command (also after `uv run`, `xargs`, or `find -exec`), `cmd /c`,
+ * `Invoke-Expression`, heredocs and here-strings fed to a shell, comments,
+ * and `cd`. Heredocs that only feed text to a program (a commit message, a
+ * file) are skipped. Where it cannot follow a command (an encoded PowerShell
+ * command, a command held in a variable), it marks the command as opaque so
+ * a guard can ask instead of guessing.
  */
 import os from "node:os";
 import { absolutePath, isAbsolutePath, withForwardSlashes } from "./project-paths.mjs";
@@ -21,14 +25,17 @@ const BASH_PROGRAMS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 const POWERSHELL_PROGRAMS = new Set(["powershell", "pwsh"]);
 const CMD_PROGRAMS = new Set(["cmd"]);
 const EXPRESSION_PROGRAMS = new Set(["invoke-expression", "iex"]);
+const SHELL_PROGRAMS = new Set([...BASH_PROGRAMS, ...POWERSHELL_PROGRAMS, ...EXPRESSION_PROGRAMS]);
 const DIRECTORY_PROGRAMS = new Set(["cd", "chdir", "pushd", "set-location", "sl"]);
 const UNKNOWN_DIRECTORY_PROGRAMS = new Set(["popd", "pop-location"]);
 const COMMAND_PREFIXES = new Set(["sudo", "env", "command", "exec", "time", "nohup", "&", "."]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const HEREDOC_START = /(?<!<)<<(?!<)(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/;
-const HERE_STRING_START = /@(['"])\s*$/;
-const SHELL_NAME = /\b(bash|sh|zsh|dash|ksh|pwsh|powershell)(\.exe)?\b/i;
+const HEREDOC_AT = /<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/y;
+const HERE_STRING_AT = /^@(['"])\s*$/;
+const PIPED_INTO_SHELL = /\|\s*(?:\S*[\\/])?(bash|sh|zsh|dash|ksh|pwsh|powershell|iex|invoke-expression)(\.exe)?(\s|$)/i;
+const WORD_BOUNDARY = /[\s;&|()]/;
 const FILE_DESCRIPTOR_PREFIX = /^(\d+|&|\*)$/;
+const BASH_OPTIONS_WITH_VALUE = new Set(["-o", "+o", "-O", "+O", "--rcfile", "--init-file"]);
 const POWERSHELL_COMMAND_PARAMETER = /^-c(o(m(m(a(n(d)?)?)?)?)?)?$/;
 const POWERSHELL_PARAMETERS_WITH_VALUE = new Set([
   "-executionpolicy", "-ex", "-ep", "-windowstyle", "-w", "-version", "-v", "-workingdirectory",
@@ -76,9 +83,14 @@ export function gitInvocationsIn(command) {
 /** `git` arguments split into global options, the subcommand, and its arguments. */
 export function parseGitInvocation(args, directory) {
   const configs = [];
+  const globalOptions = [];
   let workingDirectory = directory;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (!arg.startsWith("-")) {
+      return { subcommand: arg, args: args.slice(index + 1), configs, globalOptions, directory: workingDirectory };
+    }
+    globalOptions.push(arg.split("=")[0]);
     if (arg === "-C") {
       workingDirectory = resolvedDirectory(args[index + 1], workingDirectory);
       index += 1;
@@ -89,8 +101,6 @@ export function parseGitInvocation(args, directory) {
       configs.push(arg.slice("--config-env=".length));
     } else if (GIT_GLOBAL_OPTIONS_WITH_VALUE.has(arg)) {
       index += 1;
-    } else if (!arg.startsWith("-")) {
-      return { subcommand: arg, args: args.slice(index + 1), configs, directory: workingDirectory };
     }
   }
   return null;
@@ -146,52 +156,161 @@ function segmentsOf(text, shell) {
   return splitSegments(joinContinuations(withoutDocuments, shell), shell);
 }
 
+/**
+ * The command text with heredoc and here-string bodies replaced by what a
+ * shell would run from them: the whole body when it feeds a shell, the
+ * `$(...)` substitutions when the body is expanded, and nothing otherwise.
+ * Quotes and `$(...)` nesting are tracked across lines, so a `<<word` inside
+ * a quoted string starts nothing.
+ */
 function withoutHereDocuments(text, shell) {
   const kept = [];
+  let stack = [{ quote: null, closer: null, depth: 0 }];
   let document = null;
   for (const line of text.split("\n")) {
-    if (document === null) {
-      const started = hereDocumentStartedBy(line, shell);
-      kept.push(started === null ? line : started.openingLine);
-      document = started;
+    if (document !== null) {
+      const remainder = document.remainderAfterEnd(line);
+      if (remainder === null) {
+        document.body.push(line);
+        continue;
+      }
+      kept.push(...linesToRead(document, remainder, shell), remainder);
+      document = null;
       continue;
     }
-    const remainder = document.remainderAfterEnd(line);
-    if (remainder !== null) {
-      kept.push(remainder);
-      document = null;
-    } else if (document.keepBody) {
-      kept.push(line);
-    }
+    const scan = scanLine(line, shell, stack);
+    stack = scan.stack;
+    document = scan.document;
+    kept.push(document === null ? line : document.openingLine);
+  }
+  if (document !== null) {
+    kept.push(...linesToRead(document, "", shell));
   }
   return kept.join("\n");
 }
 
-function hereDocumentStartedBy(line, shell) {
-  const keepBody = SHELL_NAME.test(line);
-  if (shell === BASH) {
-    const match = HEREDOC_START.exec(line);
-    if (match === null) {
-      return null;
-    }
-    const indented = match[1] === "-";
-    const word = match[3];
-    return {
-      openingLine: line,
-      keepBody,
-      remainderAfterEnd: (candidate) => ((indented ? candidate.replace(/^\t+/, "") : candidate) === word ? "" : null),
-    };
+function linesToRead(document, remainder, shell) {
+  if (document.feedsShell || PIPED_INTO_SHELL.test(remainder)) {
+    return document.body;
   }
-  const match = HERE_STRING_START.exec(line);
-  if (match === null) {
+  return document.expands ? document.body.flatMap((line) => substitutionsInLine(line, shell)) : [];
+}
+
+function scanLine(line, shell, stackBefore) {
+  const stack = stackBefore.map((context) => ({ ...context }));
+  const escape = shell === POWERSHELL ? "`" : "\\";
+  for (let index = 0; index < line.length; index += 1) {
+    const context = stack[stack.length - 1];
+    const char = line[index];
+    if (context.quote === "'") {
+      context.quote = char === "'" ? null : "'";
+      continue;
+    }
+    if (char === escape) {
+      index += 1;
+      continue;
+    }
+    if (char === "$" && line[index + 1] === "(") {
+      stack.push({ quote: null, closer: ")", depth: 0 });
+      index += 1;
+      continue;
+    }
+    if (char === "`" && shell === BASH) {
+      if (context.quote === null && context.closer === "`") {
+        stack.pop();
+      } else {
+        stack.push({ quote: null, closer: "`", depth: 0 });
+      }
+      continue;
+    }
+    if (context.quote === '"') {
+      context.quote = char === '"' ? null : '"';
+      continue;
+    }
+    const document = documentStartingAt(line, index, shell);
+    if (document !== null) {
+      return { stack, document };
+    }
+    if (char === "'" || char === '"') {
+      context.quote = char;
+    } else if (char === "#" && startsWord(line, index)) {
+      break;
+    } else if (char === "(") {
+      context.depth += 1;
+    } else if (char === ")") {
+      closeParenthesis(stack, context);
+    }
+  }
+  return { stack, document: null };
+}
+
+function closeParenthesis(stack, context) {
+  if (context.depth > 0) {
+    context.depth -= 1;
+  } else if (context.closer === ")" && stack.length > 1) {
+    stack.pop();
+  }
+}
+
+function startsWord(text, index) {
+  return index === 0 || WORD_BOUNDARY.test(text[index - 1]);
+}
+
+function documentStartingAt(line, index, shell) {
+  if (shell === POWERSHELL) {
+    const match = line[index] === "@" ? HERE_STRING_AT.exec(line.slice(index)) : null;
+    return match === null ? null : hereString(line, index, match[1]);
+  }
+  if (line[index] !== "<" || line[index + 1] !== "<" || line[index + 2] === "<" || line[index - 1] === "<") {
     return null;
   }
-  const closing = `${match[1]}@`;
+  HEREDOC_AT.lastIndex = index;
+  const match = HEREDOC_AT.exec(line);
+  return match === null ? null : heredoc(line, index, match);
+}
+
+function heredoc(line, index, match) {
+  const indented = match[1] === "-";
+  const word = match[3];
   return {
-    openingLine: line.slice(0, match.index),
-    keepBody,
+    openingLine: line,
+    body: [],
+    expands: match[2] === "",
+    feedsShell: feedsShell(line.slice(0, index), line.slice(index + match[0].length)),
+    remainderAfterEnd: (candidate) => ((indented ? candidate.replace(/^\t+/, "") : candidate) === word ? "" : null),
+  };
+}
+
+function hereString(line, index, quote) {
+  const closing = `${quote}@`;
+  return {
+    openingLine: line.slice(0, index),
+    body: [],
+    expands: quote === '"',
+    feedsShell: feedsShell(line.slice(0, index), ""),
     remainderAfterEnd: (candidate) => (candidate.startsWith(closing) ? candidate.slice(closing.length) : null),
   };
+}
+
+function feedsShell(before, after) {
+  const lastCommand = before.split(/&&|\|\||[;|]/).pop().trim();
+  const words = lastCommand.split(/\s+/).filter((word) => word !== "");
+  const index = programIndex(words);
+  return (index < words.length && SHELL_PROGRAMS.has(programName(words[index]))) || PIPED_INTO_SHELL.test(after);
+}
+
+function substitutionsInLine(line, shell) {
+  const found = [];
+  for (let index = line.indexOf("$("); index !== -1; index = line.indexOf("$(", index + 2)) {
+    found.push(line.slice(index + 2));
+  }
+  if (shell === BASH) {
+    const pieces = line.split("`");
+    for (let index = 1; index < pieces.length; index += 2) {
+      found.push(pieces[index]);
+    }
+  }
+  return found;
 }
 
 function joinContinuations(text, shell) {
@@ -223,6 +342,14 @@ function splitSegments(text, shell) {
     if (isEscape(char, shell) && next !== undefined) {
       current += char + next;
       index += 1;
+      continue;
+    }
+    if (char === "#" && startsWord(text, index)) {
+      const lineEnd = text.indexOf("\n", index);
+      if (lineEnd === -1) {
+        break;
+      }
+      index = lineEnd - 1;
       continue;
     }
     const length = separatorLength(text, index, shell);
@@ -362,12 +489,16 @@ function substitutionsIn(tokens, shell) {
 }
 
 function nestedCommand(words) {
-  const index = programIndex(words);
-  if (index >= words.length) {
-    return null;
+  for (let index = 0; index < words.length; index += 1) {
+    const nested = nestedCommandAt(programName(words[index]), words.slice(index + 1));
+    if (nested !== null) {
+      return nested;
+    }
   }
-  const program = programName(words[index]);
-  const args = words.slice(index + 1);
+  return null;
+}
+
+function nestedCommandAt(program, args) {
   if (BASH_PROGRAMS.has(program)) {
     return bashInline(args);
   }
@@ -390,7 +521,9 @@ function bashInline(args) {
     if (/^-[A-Za-z]*c[A-Za-z]*$/.test(arg)) {
       return inlineCommand(BASH, args.slice(index + 1, index + 2));
     }
-    if (!arg.startsWith("-")) {
+    if (BASH_OPTIONS_WITH_VALUE.has(arg)) {
+      index += 1;
+    } else if (!arg.startsWith("-") && !arg.startsWith("+")) {
       return null;
     }
   }

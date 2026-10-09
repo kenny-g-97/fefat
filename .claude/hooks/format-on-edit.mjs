@@ -57,7 +57,14 @@ function rustFormatter(file, project) {
   if (edition === null) {
     return { problem: "the Rust edition could not be read from engine/Cargo.toml, so the file was not formatted" };
   }
-  return { name: "rustfmt", program: "rustfmt", args: ["--edition", edition, "--quiet", file.absolute], directory: project };
+  const engine = `${project}/engine`;
+  return {
+    name: "rustfmt",
+    program: "rustfmt",
+    args: ["--edition", edition, "--quiet", file.absolute],
+    directory: fs.existsSync(engine) ? engine : project,
+    alsoChanges: " and any modules it declares",
+  };
 }
 
 function rustEdition(project) {
@@ -126,7 +133,10 @@ function format(file, formatter) {
   }
   const after = contentsIfSmall(file.absolute);
   if (after !== null && !after.equals(before)) {
-    addContextAfterToolCall(`format-on-edit: ${formatter.name} reformatted ${file.inProject}; read it again before the next edit.`);
+    const modules = formatter.alsoChanges ?? "";
+    addContextAfterToolCall(
+      `format-on-edit: ${formatter.name} reformatted ${file.inProject}${modules}; read them again before the next edit.`,
+    );
   }
 }
 

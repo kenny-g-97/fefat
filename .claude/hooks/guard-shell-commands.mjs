@@ -17,7 +17,7 @@
 import { readHookInput } from "./lib/hook-input.mjs";
 import { askBeforeToolCall, denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
 import { currentBranch } from "./lib/git-facts.mjs";
-import { absolutePath, projectDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
+import { absolutePath, foldCase, projectDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
 import {
   BASH,
   POWERSHELL,
@@ -31,6 +31,7 @@ import {
 const MAIN = "main";
 const CURRENT_BRANCH = Symbol("the current branch");
 const MATCHING_BRANCHES = Symbol("all matching branches");
+const NOT_SWITCHED = Symbol("no branch switch so far");
 
 const REASONS = {
   noVerify:
@@ -51,6 +52,8 @@ const REASONS = {
   commitOnMain:
     "This commit lands on main, but steps work on step/N.M-<slug> branches (docs/masterplan/05-build-process.md section 2); confirm, or switch branches first.",
   commitGate: "This changes the commit gate in .githooks/; confirm the change.",
+  guardrails:
+    "This writes to Claude Code's own guardrails (.claude/settings.json, .claude/hooks/, or a design skill under .claude/skills/); confirm the change.",
   goldens:
     "This regenerates or overwrites goldens or snapshots, which change only with the builder's approval and a changelog entry (the engine-golden skill).",
   github:
@@ -72,9 +75,21 @@ const WRITING_PROGRAMS = new Set([
 ]);
 const IN_PLACE_EDITORS = new Set(["sed", "perl"]);
 const SNAPSHOT_UPDATE_OPTIONS = ["--snapshot-update", "--update-snapshots", "--update-goldens", "--force-regen"];
-const INSTA_UPDATES = new Set(["accept", "review", "reject", "--accept", "--review", "--force-update-snapshots", "--accept-unseen"]);
+const INSTA_SUBCOMMANDS = new Set(["accept", "review", "reject"]);
+const INSTA_UPDATE_OPTIONS = ["--accept", "--review", "--force-update-snapshots", "--accept-unseen", "--unreferenced"];
 const JAVASCRIPT_RUNNERS = new Set(["pnpm", "npm", "npx", "yarn", "vitest", "bun", "bunx", "playwright"]);
-const GOLDEN_ENVIRONMENT = /\b(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\s*=/i;
+const GOLDEN_ENVIRONMENT =
+  /\b(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\s*=|\bsetx\s+(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\b/i;
+const GUARDRAIL_PATH =
+  /(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(backtest-expert|designing-architecture|software-design-principles)(\/|$)/;
+const READING_PROGRAMS = new Set([
+  "cat", "head", "tail", "less", "more", "rg", "grep", "ls", "dir", "wc", "diff", "file", "stat", "tree",
+  "echo", "type", "get-content", "gc", "get-childitem", "gci", "select-string", "sls", "test-path",
+]);
+const READING_GIT_SUBCOMMANDS = new Set(["diff", "log", "show", "status", "ls-files", "blame", "grep", "add"]);
+const FIND_ACTIONS_THAT_CHANGE_FILES = new Set(["-delete", "-exec", "-execdir", "-ok", "-okdir"]);
+const BRANCH_CREATING_OPTIONS = new Set(["-c", "-C", "--create", "--force-create", "-b", "-B", "--orphan"]);
+const TRACKING_OPTIONS = new Set(["-t", "--track"]);
 const GIT_CONFIG_ENVIRONMENT = /^(\$env:)?GIT_CONFIG\w*/i;
 
 function deny(reason) {
@@ -90,28 +105,76 @@ function isMain(branch) {
 }
 
 function findingsFor(commandLine, shell, startDirectory) {
-  const branchAt = branchLookup();
+  const branches = branchTracker();
   const findings = [];
   for (const command of commandsIn(commandLine, shell, startDirectory)) {
     findings.push(...commandFindings(command));
     for (const git of gitInvocationsIn(command)) {
-      findings.push(...gitFindings(git, branchAt));
+      findings.push(...gitFindings(git, branches.branchAt));
+      branches.follow(git);
     }
   }
   return findings;
 }
 
-function branchLookup() {
+/**
+ * The branch each git call works on: what git reports before the command
+ * runs, until a `git switch` or `git checkout` earlier in the same command
+ * line changes it (unknown when the target cannot be read).
+ */
+function branchTracker() {
   const known = new Map();
-  return (directory) => {
-    if (directory === null) {
+  let switchedTo = NOT_SWITCHED;
+  return {
+    branchAt(directory) {
+      if (switchedTo !== NOT_SWITCHED) {
+        return switchedTo;
+      }
+      if (directory === null) {
+        return null;
+      }
+      const key = foldCase(directory);
+      if (!known.has(key)) {
+        known.set(key, currentBranch(directory));
+      }
+      return known.get(key);
+    },
+    follow(git) {
+      if (git.subcommand !== "switch" && git.subcommand !== "checkout") {
+        return;
+      }
+      const target = switchTarget(git);
+      if (target !== NOT_SWITCHED) {
+        switchedTo = target;
+      }
+    },
+  };
+}
+
+function switchTarget(git) {
+  if (git.subcommand === "checkout" && git.args.includes("--")) {
+    return NOT_SWITCHED;
+  }
+  for (let index = 0; index < git.args.length; index += 1) {
+    const arg = git.args[index];
+    if (BRANCH_CREATING_OPTIONS.has(arg)) {
+      return git.args[index + 1] ?? null;
+    }
+    if (TRACKING_OPTIONS.has(arg)) {
+      const upstream = git.args[index + 1];
+      return upstream === undefined ? null : upstream.replace(/^[^/]+\//, "");
+    }
+    if (arg === "--detach" || arg === "-d") {
+      return "HEAD";
+    }
+    if (arg === "-") {
       return null;
     }
-    if (!known.has(directory)) {
-      known.set(directory, currentBranch(directory));
+    if (!arg.startsWith("-")) {
+      return arg;
     }
-    return known.get(directory);
-  };
+  }
+  return NOT_SWITCHED;
 }
 
 function commandFindings(command) {
@@ -129,7 +192,11 @@ function commandFindings(command) {
   if (written.some((target) => /(^|\/)\.githooks(\/|$)/.test(target))) {
     findings.push(ask(REASONS.commitGate));
   }
-  if (written.some(isGoldenPath) || regeneratesGoldens(command.words) || GOLDEN_ENVIRONMENT.test(command.text)) {
+  if (written.some((target) => GUARDRAIL_PATH.test(target))) {
+    findings.push(ask(REASONS.guardrails));
+  }
+  const touchesGoldens = written.some(isGoldenPath) || mentionsGoldensOutsideReading(command.words);
+  if (touchesGoldens || regeneratesGoldens(command.words) || GOLDEN_ENVIRONMENT.test(command.text)) {
     findings.push(ask(REASONS.goldens));
   }
   if (changesGitHub(command.words)) {
@@ -167,6 +234,25 @@ function writtenPaths(command) {
     .map((target) => withForwardSlashes(target).toLowerCase());
 }
 
+/** A program other than a reader that names a path under fixtures/goldens/, such as a generator's output folder. */
+function mentionsGoldensOutsideReading(words) {
+  const index = programIndex(words);
+  if (index >= words.length || readsOnly(programName(words[index]), words.slice(index + 1))) {
+    return false;
+  }
+  return words.slice(index + 1).some((word) => withForwardSlashes(word).toLowerCase().includes("fixtures/goldens"));
+}
+
+function readsOnly(program, args) {
+  if (program === "git") {
+    return READING_GIT_SUBCOMMANDS.has(args.find((arg) => !arg.startsWith("-")));
+  }
+  if (program === "find") {
+    return !args.some((arg) => FIND_ACTIONS_THAT_CHANGE_FILES.has(arg));
+  }
+  return READING_PROGRAMS.has(program);
+}
+
 function isGoldenPath(target) {
   return target.includes("fixtures/goldens") || /\.snap(\.new)?$/.test(target) || target.includes("__snapshots__");
 }
@@ -182,7 +268,11 @@ function regeneratesGoldens(words) {
     return true;
   }
   if (program === "cargo" && args[0] === "insta") {
-    return args.slice(1).some((arg) => INSTA_UPDATES.has(arg));
+    const instaArgs = args.slice(1);
+    const updatesByOption = instaArgs.some((arg) =>
+      INSTA_UPDATE_OPTIONS.some((option) => arg === option || arg.startsWith(`${option}=`)),
+    );
+    return INSTA_SUBCOMMANDS.has(instaArgs[0]) || updatesByOption;
   }
   if (program === "just") {
     return args.some((arg) => /golden/i.test(arg));
