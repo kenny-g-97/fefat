@@ -10,7 +10,6 @@ publish.workspace = true
 crate-type = ["cdylib"]
 # Tested from Python through the built module: a cargo test binary would have to load libpython.
 test = false
-doctest = false
 
 [lints]
 workspace = true
