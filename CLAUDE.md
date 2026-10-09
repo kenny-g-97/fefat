@@ -42,7 +42,7 @@ just dev      # local server and web dev server (from Phase 4)
 - The step's meta line decides the mode: `Plan mode: required` means a plan the builder approves before any edit, and `Model hint: hard` asks for the strongest model.
 - Stay inside the step and put anything else in `docs/masterplan/BACKLOG.md`. If a step's assumption no longer holds, stop and propose an Amendment block instead of deviating silently.
 - Each acceptance item gets a test that fails without the change, shown failing first.
-- Before the pull request: `just check`, `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, the reviewers on the step's meta line, and `/security-review` when it says `Security: yes`.
+- Before the pull request: `just check`, `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, `/ponytail-review` (the ponytail plugin, D-32), the reviewers on the step's meta line, and `/security-review` when it says `Security: yes`.
 - The pull request writes the step's `PROGRESS.md` row as `done` with its number; the row becomes true when it is merged.
 - After an interruption, resume from git, the step file, and `PROGRESS.md`, not from memory; the session-start hook prints where the work stands.
 - Commits have an imperative subject under 72 characters ending in `(step N.M)`, and a body that says why.
@@ -65,6 +65,7 @@ Each is a decision in `docs/masterplan/DECISIONS.md`; step 0.7 turns them into r
 - Intention-revealing names from the glossary in `00-product-spec.md` §7 (never `data`, `utils`, `helpers`, `manager`), fail-fast errors that say "Expected …, got …", an enum for every state, injected dependencies, immutable values, and small units (`08-code-design.md` §3).
 - Skills per area, which the `step` skill loads: `software-design-principles` for any code; `designing-architecture` for a new module, package, crate, or seam; `backtest-expert` for engine, prop, results, and research work; `frontend-design:frontend-design` with `web/DESIGN.md` for anything under `web/`; the bundled `claude-api` skill for any code that calls the Anthropic API.
 - Read-only reviewer subagents: `step-reviewer` for every step; `engine-accuracy-reviewer` for engine, data, and prop steps; `leakage-auditor` for feature, data, and research steps; `ui-verifier` for UI steps (from step 4.3).
+- Code reviewers on every branch and every phase diff: `/code-review` for correctness, and the ponytail plugin's `/ponytail-review` for code that need not exist, besides bugs, safety, load, tests, and speed (D-32; installed per machine, `06-claude-code-setup.md` §7).
 
 ## This machine
 
