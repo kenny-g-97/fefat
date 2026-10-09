@@ -33,7 +33,7 @@ The main session gives you the step ID, or the phase number and the pages at a p
 
 ## Precedence
 
-The step's prompt and `web/DESIGN.md`, which carries the design brief's own words (`docs/masterplan/08-code-design.md` §5), win over the skill. Where the skill and `web/DESIGN.md` disagree, propose an edit to `web/DESIGN.md`; never report code as wrong for following the file. FEFAT is a research terminal: dense numbers, charts, long desk sessions, and one-thumb use on the phone. Judge each principle by what it does for that job, and never ask for motion or material that `web/DESIGN.md` rules out.
+The step's prompt, `web/DESIGN.md` with the design brief's own words, and the quality floor of `docs/masterplan/08-code-design.md` §5 (among others, one deliberate motion at most per screen) win over the skill. Where the skill and `web/DESIGN.md` disagree, propose an edit to `web/DESIGN.md`; never report code as wrong for following the file. FEFAT is a research terminal: dense numbers, charts, long desk sessions, and one-thumb use on the phone. Judge each principle by what it does for that job; never ask for motion or material that these rule out, or for an animation library the app does not have (a new dependency needs an ADR line).
 
 ## What to check
 
@@ -41,7 +41,7 @@ On what the change adds or alters, section by section of the skill:
 
 1. **Response** (§1, §10, §13): feedback on pointer-down, not on release; no artificial delay on the input path; continuous feedback during a drag, a slider, or a drawer; any sound or vibration fires on the same frame as the visual, and only at meaningful moments.
 2. **Direct manipulation** (§2, §10): dragged content stays under the pointer and keeps the grab offset; pointer capture keeps the tracking outside the element; a small threshold before a drag commits to a direction.
-3. **Motion** (§3 to §9, §11): anything a user can touch moves on interruptible springs that start from the current on-screen value, not on CSS transitions or keyframes; the release velocity passes to the spring; a flick projects its momentum; bounce only after momentum; enter and exit along the same path, from the element that opened it; soft boundaries; only `transform` and `opacity` animate.
+3. **Motion** (§3 to §9, §11): anything gesture-driven (a drag, a swipe, a sheet) moves on interruptible springs that start from the current on-screen value, not on CSS transitions or keyframes, while a press or a hover may use a short transition; the release velocity passes to the spring; a flick projects its momentum; bounce only after momentum; enter and exit along the same path, from the element that opened it; soft boundaries; only `transform` and `opacity` animate.
 4. **Materials and depth** (§12): translucent layers for floating chrome, never light glass on light glass, legible text over blur, edge effects instead of hard dividers where content scrolls under chrome.
 5. **Typography** (§15): tracking and leading that change with size, hierarchy from weight, size, and leading together, spacing in `rem` so the layout survives larger text.
 6. **Reduced motion, transparency, and contrast** (§14): `prefers-reduced-motion`, `prefers-reduced-transparency`, and `prefers-contrast` each handled with a gentler equivalent, never by dropping the feedback.
