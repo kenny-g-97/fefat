@@ -2,7 +2,7 @@
 
 **Goal.** A repository, a toolchain, and a Claude Code setup that make every later step repeatable: one command to check, one to test, guards against committing secrets or licensed data, and a proof that Rust code can be called from a notebook on this PC.
 
-**You get.** `just doctor`, `just check`, `just test` all green on Windows and in CI; a private GitHub repo with branch protection; `/step`, `/phase-kickoff`, `/phase-exit` working; a notebook cell that calls a Rust function.
+**You get.** `just doctor`, `just check`, `just test` all green on Windows and in CI; a private GitHub repo with squash-only pull requests and a written merge routine; `/step`, `/phase-kickoff`, `/phase-exit` working; a notebook cell that calls a Rust function.
 
 **Depends on.** Nothing. Steps 0.1–0.4 are pasted into Claude Code (0.4 is the step that creates the `/step` runner); 0.1–0.3 may commit straight to `main`; from 0.4 on, every step is a branch and a pull request. On this PC, bare `python` is a Microsoft Store stub: every command goes through `uv run python` (or `python3.12`).
 
@@ -108,51 +108,56 @@ Not in this step: any real code, CI, GitHub, Claude Code configuration, fixtures
 
 2026-10-09: the layout in `01-architecture.md` §3 now uses the src layout for the two Python packages (`python/fefat/src/fefat/`, `python/fefat_app/src/fefat_app/`) and the names of D-27; `just check` also runs the import-linter contract that keeps `fefat` from importing `fefat_app` (`08-code-design.md` §1.5); `just test` runs `cargo test` until nextest is adopted (backlog). While doing the step: create-vite 9 scaffolds with oxlint rather than ESLint, so `pnpm lint` is oxlint and the import-boundary lint of step 4.3 is chosen at the Phase 4 kickoff; ruff 0.16 formats Python code blocks inside Markdown, so `*.md` is excluded from `ruff format` and the masterplan stays untouched; `.vscode/settings.json` points rust-analyzer at `engine/Cargo.toml` and Python at the workspace `.venv`.
 
-### 0.3 Configure the GitHub repository and protect `main`
+### 0.3 Configure the GitHub repository for pull requests
 
 Depends on: 0.2 · Plan mode: skip · Reviews: none · Security: no · Model hint: default
 
 #### Purpose
 
-Work happens on branches with pull requests from now on, and nothing reaches `main` without passing checks.
+Work happens on branches with pull requests from now on, merged one way only. GitHub's free plan cannot protect `main` on a private repository, so a written merge routine (`05-build-process.md` §8) and Claude Code's hooks (step 0.4) keep `main` clean instead.
 
 #### Prerequisites
 
 - GitHub CLI signed in (`gh auth status`).
-- The private repository `kenny-g-97/fefat` exists and this folder is its clone (done on 2026-10-08).
+- The private repository `kenny-g-97/fefat` exists and this folder is its clone (done on 2026-10-08); `main` is pushed (done on 2026-10-09).
 
 #### Prompt
 
 ```text
-Masterplan step 0.3 — Configure the GitHub repository and protect main.
+Masterplan step 0.3 — Configure the GitHub repository for pull requests.
 
-The private GitHub repository `kenny-g-97/fefat` already exists and this folder is its clone (remote `origin`), so do not create a repository. Confirm with `gh repo view` that it is private (if it is not, stop and ask me), push `main`, and configure branch protection on `main`: pull request required, at least the CI status check required once it exists (step 0.6 will add it), no force pushes, no deletions, linear history. Add a pull request template at `.github/pull_request_template.md` with the sections from docs/masterplan/05-build-process.md §8 (Summary, Done means with evidence per item, Deviations, Follow-ups, Progress row, Screenshots or recordings for UI).
+The private GitHub repository `kenny-g-97/fefat` already exists, this folder is its clone (remote `origin`), and `main` is pushed, so do not create a repository. Confirm with `gh repo view` that it is private (if it is not, stop and ask me) and that `origin/main` matches the local `main`. The account is on GitHub's free plan, which offers neither branch protection nor rulesets for private repositories (both APIs answer 403), so configure neither. Set the merge options with `gh repo edit`: squash merging only (merge commits and rebase merging off), and head branches deleted after merge.
+
+Add a pull request template at `.github/pull_request_template.md` with the sections from docs/masterplan/05-build-process.md §8 (Summary, Done means with evidence per item, Deviations, Follow-ups, Progress row, Screenshots or recordings for UI), and push it to `main`, since GitHub only uses a template that is on the default branch.
 
 Set `git config core.hooksPath .githooks` locally and create an empty `.githooks/pre-commit` placeholder (Python-invoking, executable bit irrelevant on Windows; document how it is run) that step 0.5 fills in.
 
-Confirm the protection with `gh api` and show me the output.
+Finally open one small test pull request from a branch `step/0.3-pull-requests`: a one-line pointer in the root README's Getting started section to the merge routine in 05-build-process.md §8. Leave it open; I merge it with that routine as my check.
 
 Not in this step: CI workflows, hooks logic, Claude Code configuration.
 ```
 
 #### Done means
 
-1. `gh repo view` shows a private repository; `git remote -v` points at it; `main` is pushed.
-2. `gh api repos/{owner}/fefat/branches/main/protection` shows PR required, no force pushes, no deletions.
-3. The PR template exists and renders on a test PR (opened and closed).
+1. `gh repo view` shows a private repository; `git remote -v` points at it; `origin/main` equals the local `main`.
+2. `gh repo view --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed,deleteBranchOnMerge` shows squash merging only and branches deleted after merge.
+3. The test pull request shows the template's sections, and `git config core.hooksPath` prints `.githooks`.
 
 #### Your checks
 
-- Open the repository on github.com: it is private, the template appears when you click "New pull request".
-- Try `git push --force origin main` from a terminal: GitHub refuses.
+- Open the repository on github.com: it is private, and under Settings → General → Pull Requests only "Allow squash merging" is ticked, with "Automatically delete head branches" ticked as well.
+- Merge the test pull request with the commands in `05-build-process.md` §8. Afterwards `git log --oneline -3` shows its squash commit on top, and `gh pr list` shows no open pull request.
 
 #### If it fails
 
-- Branch protection on private repos requires a GitHub plan that supports it for private repositories; if the API refuses, use a ruleset (`gh api repos/.../rulesets`) which is available on free plans, and note it in the PR.
+- `gh repo edit` refuses a setting: set it by hand under Settings → General → Pull Requests and say so in the summary.
+- The test pull request has an empty description: the template was not on `main` when it was opened; push `main`, then fill the description from the template or open the pull request again.
 
 #### Amendment
 
 2026-10-08: you created the private repository `kenny-g-97/fefat` on GitHub, and this folder became its clone during the repository preparation. The step no longer creates a repository; it confirms the repository is private, pushes `main`, and adds the protection, the pull request template, and the hook placeholder. Title updated to match.
+
+2026-10-09: GitHub's free plan offers neither branch protection nor rulesets for private repositories — `gh api repos/kenny-g-97/fefat/branches/main/protection` and `.../rulesets` both returned 403 ("Upgrade to GitHub Pro or make this repository public to enable this feature") — and you chose to stay on the free plan (D-30). The step therefore sets squash-only merging instead of protection and ends with a test pull request that you merge with the routine now written in `05-build-process.md` §8; the template and the hook placeholder are unchanged, and Claude Code's hooks from step 0.4 deny its own pushes to `main` and force pushes. `main` was pushed on 2026-10-09. Title, purpose, prerequisites, prompt, done means, checks, and failure notes updated; the old note that rulesets work on the free plan was wrong for private repositories.
 
 ### 0.4 Configure Claude Code for this repository
 
@@ -274,7 +279,7 @@ Masterplan step 0.6 — CI on Windows and Linux.
 
 Create `.github/workflows/ci.yml` that runs on pull requests and on pushes to main, with a matrix of windows-latest and ubuntu-latest: install the pinned toolchains (uv with .python-version, rustup from engine/rust-toolchain.toml, pnpm from packageManager), cache dependencies, run `just check` and `just test`, run `scripts/guard_data.py`, and build the `fefat_engine` wheel with maturin from `engine/crates/fefat-py` (an empty PyO3 module for now) as an artifact. Keep total runtime under 15 minutes by caching; no network calls in tests.
 
-Make the CI job a required status check on main (update the protection from 0.3). Add a status badge to the README.
+GitHub's free plan cannot require the check on `main` (step 0.3), so give the jobs names that say which system they run on: the merge routine in docs/masterplan/05-build-process.md §8 waits for them with `gh pr checks --watch`. Add a status badge to the README.
 
 Not in this step: release workflows, macOS runners, deployment of anything.
 ```
@@ -283,7 +288,7 @@ Not in this step: release workflows, macOS runners, deployment of anything.
 
 1. The workflow passes on both runners for the PR that introduces it.
 2. The wheel artifact for each platform is attached to the run and installs into a fresh venv (`uv pip install <wheel>` in the workflow, then `python -c "import fefat_engine"`).
-3. The required-check setting on `main` references the workflow job.
+3. `gh pr checks` on this step's pull request lists one passing check per system, as the merge routine in 05 §8 expects.
 
 #### Your checks
 
@@ -293,6 +298,10 @@ Not in this step: release workflows, macOS runners, deployment of anything.
 
 - Windows runners lack `just`: install it in the workflow with the official action or `cargo install just` (cached).
 - maturin cannot find Python on Windows: pass `--interpreter` with the uv-managed path, or build with `uv run maturin build`.
+
+#### Amendment
+
+2026-10-09: required status checks need branch protection, which GitHub's free plan does not offer for private repositories (step 0.3, D-30); the merge routine in `05-build-process.md` §8 waits for the checks instead, so the prompt and Done means 3 no longer set a required check.
 
 ### 0.7 Seed the decision records, progress, and backlog
 

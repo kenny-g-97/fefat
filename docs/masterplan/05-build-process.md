@@ -29,7 +29,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 4. Claude Code loads the skills for the step's area before writing code — `software-design-principles` for any code, `designing-architecture` for a new module or seam, `backtest-expert` for engine, prop, results, and research steps, `frontend-design` with `web/DESIGN.md` for anything under `web/` (`08-code-design.md`; the `step` skill does this from the paths a step touches) — then works in auto mode, commits in small logical commits, and never commits to `main`.
 5. Before opening the PR it runs `just check` and `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, and the specialist reviewers the step lists. `/security-review` runs when the step says `security: yes` and at every phase exit.
 6. It opens the PR from the template: what changed, evidence per "Done means" item, deviations from the prompt, follow-ups added to `BACKLOG.md`, and the `PROGRESS.md` row (status, PR number, date, note).
-7. You run "Your checks", wait for CI, and squash-merge. `main` requires a pull request and green checks.
+7. You run "Your checks", wait for CI, and squash-merge with the routine in §8. GitHub's free plan cannot protect `main` on a private repository (D-30), so nothing on GitHub's side stops a merge with failing checks or a direct push: the routine protects your merges, and Claude Code's hooks block its own pushes to `main` (step 0.4).
 8. **Resume after an interruption:** rely on git, the step file, and `PROGRESS.md`, not on the conversation. Same day: continue the session. Otherwise: fresh session, `/step N.M` again; the runner continues from the first unproven "Done means" item.
 9. **Two-corrections rule:** if the same problem survives two corrections in one session, start a new session with a sharper prompt (or ask the agent for the smallest failing case first).
 
@@ -87,7 +87,26 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 - Branches `step/N.M-<slug>`, `kickoff/PN`, `exit/PN`. Squash-merge into `main`. Tags `phase-N` at phase exits.
 - Commit messages: imperative subject under 72 characters, body explains why. Claude Code's attribution line as configured.
 - PR template sections: Summary · Done means (evidence per item) · Deviations · Follow-ups · Progress row · Screenshots/recordings (UI).
-- `main` is protected: PR required, CI green, no force pushes.
+- `main` is not protected on GitHub's side: the free plan offers no branch protection for private repositories, and you chose to stay on it (D-30). The repository allows squash merging only and deletes branches after merge (step 0.3); the routine below protects your merges, and Claude Code's hooks block its own pushes to `main` (step 0.4).
+
+### Merging a pull request
+
+From the repository folder, in PowerShell or Git Bash (12 stands for the pull request's number):
+
+```text
+gh pr list                               # open pull requests and their numbers
+gh pr view 12 --web                      # read it in the browser
+gh pr checks 12 --watch                  # from step 0.6 on: wait for CI; every check must pass
+gh pr checkout 12                        # try the branch locally for "Your checks"
+git switch main                          # back to main when your checks are done
+gh pr merge 12 --squash --delete-branch  # squash-merge on GitHub and delete the branch
+git pull --ff-only                       # bring the merged commit to this PC
+```
+
+- In the browser instead: "Squash and merge", then "Confirm squash and merge"; afterwards `git switch main` and `git pull --ff-only`.
+- A failing check means no merge: tell Claude Code which check failed and paste what it printed.
+- Never `git push origin main` or `git push --force`: on the free plan GitHub accepts both.
+- Claude Code opens the pull requests from step 0.4 on. To open one by hand from a step branch: `git push -u origin HEAD`, then `gh pr create --base main --web` (the browser form starts from the template).
 
 ## 9. Worked examples
 

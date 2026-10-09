@@ -12,6 +12,7 @@ Phase kickoffs and exits are tracked in the second table.
 
 - 2026-10-08 — FEFAT provides market data for a curated set of products, and traders can also import their own (D-24); a prop simulation takes prop rules, a prop strategy, and an existing backtest file, and never re-runs the strategy (D-25), so every run stores trade paths (D-26). New steps 1.9, 1.10, 2.13, 5.12, 14.6, and 14.7; steps 7.3 and 7.5 rewritten, and the other prop steps updated; the later steps in Phases 1, 2, 5, and 14 renumbered, before any step had started. 128 → 134 steps.
 - 2026-10-09 — The design skills installed under `.claude/skills/` (`designing-architecture`, `software-design-principles`, `backtest-expert`) and the `frontend-design` plugin were applied to the plan before step 0.2 (D-27, D-28, D-29; `08-code-design.md`): a modular monolith with ports and adapters and its dependency rule, src-layout paths and the renames `fefat.market`, `fefat.indicators`, `fefat.reference`, `fefat_app.http`, `services/`, `database/`, `executor.py`, `credentials.py`, web `areas/`; the `MarketDataReader` trait in `fefat-core` (steps 2.4–2.6); the robustness summary in 2.11; the design brief at the Phase 4 kickoff and `web/DESIGN.md` in 4.3; and the skill-loading rule for every step. No step IDs changed; only unstarted steps were edited.
+- 2026-10-09 — GitHub's free plan has no branch protection or rulesets for private repositories, and you chose to stay on it (D-30): steps 0.3 and 0.6 amended, and the merge routine written into `05-build-process.md` §8.
 
 ## Steps
 
@@ -19,10 +20,10 @@ Phase kickoffs and exits are tracked in the second table.
 | --- | --- | --- | --- | --- | --- | --- |
 | 0.1 | Install the toolchain and write the doctor script | P0 | done | main | 2026-10-09 | Installs verified 2026-10-08; `scripts/doctor.py` and the `justfile` committed straight to `main`; 07 §1 commands amended |
 | 0.2 | Scaffold the repository | P0 | done | main | 2026-10-09 | Amended 2026-10-08 and 2026-10-09; uv workspace (src layout), Cargo workspace (7 crates), Vite app (oxlint); `just setup`, `check`, `test` green on Windows |
-| 0.3 | Configure the GitHub repository and protect `main` | P0 | todo | | | Amended 2026-10-08: repository already exists |
+| 0.3 | Configure the GitHub repository for pull requests | P0 | todo | | | Amended 2026-10-08 (repository exists) and 2026-10-09 (free plan: no branch protection; merge routine in 05 §8) |
 | 0.4 | Configure Claude Code for this repository | P0 | todo | | | Amended 2026-10-08: replace the bootstrap CLAUDE.md |
 | 0.5 | Data policy, synthetic fixtures, commit guard | P0 | todo | | | Amended 2026-10-08: `git add -f` checks; notebooks without outputs |
-| 0.6 | CI on Windows and Linux | P0 | todo | | | |
+| 0.6 | CI on Windows and Linux | P0 | todo | | | Amended 2026-10-09: no required check on the free plan |
 | 0.7 | Seed the decision records, progress, and backlog | P0 | todo | | | |
 | 0.8 | Hello-world slice: Rust to Python to a notebook | P0 | todo | | | |
 | 1.1 | Canonical schemas, units, partitions, manifests, snapshot hashes | P1 | todo | | | |

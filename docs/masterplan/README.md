@@ -13,7 +13,7 @@ A local-first research platform for futures and crypto traders that runs on your
 1. Read `00-product-spec.md`, `01-architecture.md`, `05-build-process.md`, and `08-code-design.md` once. Skim the rest; the phase files point back to the sections they need.
 2. Install the tools in `07-tools-and-costs.md` §1 — step 0.1 walks you through it.
 3. Work through the phases in order. Open Claude Code in the repository root, start a fresh session, and either paste the step's **Prompt** or (from step 0.5 on, once step 0.4 has created the runner) type `/step N.M`.
-4. After each step: run **Your checks**, wait for CI, merge the pull request. `PROGRESS.md` is the status table.
+4. After each step: run **Your checks**, wait for CI, and merge the pull request with the routine in `05-build-process.md` §8. `PROGRESS.md` is the status table.
 5. At the start of each phase run `/phase-kickoff N`; at the end, `/phase-exit N`. The kickoff asks you the phase's open decisions and reconciles the steps with the code as it then stands.
 6. Keep `uv run python docs/masterplan/tools/check_masterplan.py` green whenever a step file is edited. (On this PC, bare `python` is a Microsoft Store stub; always go through `uv run python` or `python3.12`.)
 
