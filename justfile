@@ -40,6 +40,10 @@ test:
     cargo test --manifest-path engine/Cargo.toml --workspace
     pnpm --dir web test
 
+# Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
+strip-notebooks:
+    uv run python scripts/strip_notebooks.py
+
 # Start the local server and the web dev server (arrives with Phase 4, step 4.3)
 dev:
     uv run python -c "print('just dev arrives with the local app in Phase 4 (step 4.3); nothing to start yet')"

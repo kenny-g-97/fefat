@@ -1,0 +1,76 @@
+import json
+from itertools import takewhile
+from pathlib import Path
+
+import guard_data
+import strip_notebooks
+from git_repository import GitRepository
+
+ROOT = Path(__file__).resolve().parents[2]
+STRIP_COMMAND = "uv run python scripts/strip_notebooks.py"
+NOTEBOOK_WITH_OUTPUTS = {
+    "cells": [
+        {
+            "cell_type": "code",
+            "execution_count": 1,
+            "metadata": {},
+            "outputs": [{"name": "stdout", "output_type": "stream", "text": ["6850.25\n"]}],
+            "source": ["print(close)"],
+        }
+    ],
+    "metadata": {},
+    "nbformat": 4,
+    "nbformat_minor": 5,
+}
+
+
+def notebook_bytes() -> bytes:
+    return json.dumps(NOTEBOOK_WITH_OUTPUTS).encode()
+
+
+def test_a_staged_notebook_with_outputs_passes_after_strip_notebooks_and_git_add(
+    tmp_path: Path,
+) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    repository.stage("notebooks/demo.ipynb", notebook_bytes())
+    refused = guard_data.find_problems(tmp_path)
+
+    stripped = strip_notebooks.strip(tmp_path)
+    repository.git("add", "notebooks/demo.ipynb")
+
+    assert [problem.rule for problem in refused] == [guard_data.Rule.NOTEBOOK_WITH_OUTPUTS]
+    assert stripped == [Path("notebooks/demo.ipynb")]
+    assert guard_data.find_problems(tmp_path) == []
+    cell = json.loads((tmp_path / "notebooks" / "demo.ipynb").read_text(encoding="utf-8"))["cells"][
+        0
+    ]
+    assert cell["outputs"] == []
+    assert cell["source"] == ["print(close)"]
+
+
+def test_untracked_notebooks_are_stripped_and_ignored_ones_are_left_alone(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    repository.write(".gitignore", b".ipynb_checkpoints/\n")
+    repository.write("notebooks/draft.ipynb", notebook_bytes())
+    repository.write("notebooks/.ipynb_checkpoints/draft-checkpoint.ipynb", notebook_bytes())
+
+    stripped = strip_notebooks.strip(tmp_path)
+
+    assert stripped == [Path("notebooks/draft.ipynb")]
+    checkpoint = tmp_path / "notebooks" / ".ipynb_checkpoints" / "draft-checkpoint.ipynb"
+    assert checkpoint.read_bytes() == notebook_bytes()
+
+
+def test_a_repository_without_notebooks_strips_nothing(tmp_path: Path) -> None:
+    GitRepository.initialized(tmp_path)
+
+    assert strip_notebooks.strip(tmp_path) == []
+
+
+def test_just_strip_notebooks_runs_the_strip_script() -> None:
+    lines = (ROOT / "justfile").read_text(encoding="utf-8").splitlines()
+    recipe = takewhile(
+        lambda line: line.startswith("    "), lines[lines.index("strip-notebooks:") + 1 :]
+    )
+
+    assert [line.strip() for line in recipe] == [STRIP_COMMAND]
