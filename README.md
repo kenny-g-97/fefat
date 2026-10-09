@@ -23,6 +23,8 @@ just test     # pytest, cargo test, vitest
 
 On this project, Python always runs through `uv run python` (a bare `python` is a Microsoft Store stub on Windows). The repository is laid out as described in [docs/masterplan/01-architecture.md](docs/masterplan/01-architecture.md) §3; step 0.7 of the masterplan expands this section.
 
+Changes reach `main` through pull requests, squash-merged with the routine in [docs/masterplan/05-build-process.md](docs/masterplan/05-build-process.md#merging-a-pull-request) §8.
+
 ## Data policy
 
 Licensed market data never enters this repository. Real data lives outside it, under `FEFAT_DATA_DIR`; only generated test fixtures are committed.

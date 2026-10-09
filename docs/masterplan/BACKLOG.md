@@ -28,6 +28,7 @@ One line per item: what, why, where it came from. Claude Code adds items here in
 - **macOS and Linux credential stores** — `keyring` backends beyond Windows. Needed by P14 for macOS.
 - **GPU or distributed sweeps** — not needed on 16 cores; revisit if studies routinely exceed hours.
 - **Tick-reactive strategies** — out of scope by decision; would need a different callback model.
+- **`core.hooksPath` in every clone** — a new clone does not copy this git setting, so it runs no pre-commit guard until `git config core.hooksPath .githooks` is run there; `just setup` could set it, or the README's setup section could say so. Target: 0.5 or 0.7. Source: step 0.3.
 
 ## From the design-skill review (2026-10-09; pulled in at the kickoff of the phase named)
 
