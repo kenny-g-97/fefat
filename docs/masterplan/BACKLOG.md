@@ -28,6 +28,9 @@ One line per item: what, why, where it came from. Claude Code adds items here in
 - **macOS and Linux credential stores** — `keyring` backends beyond Windows. Needed by P14 for macOS.
 - **GPU or distributed sweeps** — not needed on 16 cores; revisit if studies routinely exceed hours.
 - **Tick-reactive strategies** — out of scope by decision; would need a different callback model.
+- **Formatter for web files** — the `format-on-edit` hook formats Rust and Python; web files wait for the choice between prettier and oxfmt (create-vite 9 scaffolds oxlint, while `.vscode/settings.json` names the Prettier extension). Target: Phase 4 kickoff. Source: step 0.4.
+- **TypeScript language server on Windows** — `typescript-language-server` is an npm `.cmd` shim, which a program can start only through a shell; if Claude Code reports that the `typescript-lsp` server failed to start, add a project plugin that runs its `lib/cli.mjs` through `node`. Target: Phase 4 kickoff. Source: step 0.4.
+- **Language servers in the doctor** — `just doctor` could report `rust-analyzer`, `pyright-langserver`, and `typescript-language-server`, which the language-server plugins need on PATH. Target: 0.7 or a phase exit. Source: step 0.4.
 - **`core.hooksPath` in every clone** — a new clone does not copy this git setting, so it runs no pre-commit guard until `git config core.hooksPath .githooks` is run there; `just setup` could set it, or the README's setup section could say so. Target: 0.5 or 0.7. Source: step 0.3.
 
 ## From the design-skill review (2026-10-09; pulled in at the kickoff of the phase named)
