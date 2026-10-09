@@ -8,6 +8,10 @@
 
 set windows-shell := ["cmd.exe", "/c"]
 
+# Python writes UTF-8 wherever its output goes: import-linter's box-drawing
+# characters fail in cp1252 when Windows output goes to NUL.
+export PYTHONUTF8 := "1"
+
 # List the recipes
 default:
     @just --list --unsorted
