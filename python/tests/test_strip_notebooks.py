@@ -2,6 +2,8 @@ import json
 from itertools import takewhile
 from pathlib import Path
 
+import pytest
+
 import guard_data
 import strip_notebooks
 from git_repository import GitRepository
@@ -59,6 +61,26 @@ def test_untracked_notebooks_are_stripped_and_ignored_ones_are_left_alone(tmp_pa
     assert stripped == [Path("notebooks/draft.ipynb")]
     checkpoint = tmp_path / "notebooks" / ".ipynb_checkpoints" / "draft-checkpoint.ipynb"
     assert checkpoint.read_bytes() == notebook_bytes()
+
+
+def test_a_notebook_with_a_non_ascii_name_is_stripped(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    repository.stage("notebooks/análisis.ipynb", notebook_bytes())
+
+    stripped = strip_notebooks.strip(tmp_path)
+
+    assert stripped == [Path("notebooks/análisis.ipynb")]
+    assert not strip_notebooks.has_outputs(tmp_path / "notebooks" / "análisis.ipynb")
+
+
+def test_outputs_that_nbstripout_keeps_on_purpose_are_reported(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    cell = {**NOTEBOOK_WITH_OUTPUTS["cells"][0], "metadata": {"keep_output": True}}
+    kept = json.dumps({**NOTEBOOK_WITH_OUTPUTS, "cells": [cell]}).encode()
+    repository.write("notebooks/kept.ipynb", kept)
+
+    with pytest.raises(strip_notebooks.StripError, match="keep_output"):
+        strip_notebooks.strip(tmp_path)
 
 
 def test_a_repository_without_notebooks_strips_nothing(tmp_path: Path) -> None:

@@ -14,6 +14,7 @@ staged notebooks with outputs (docs/masterplan/05-build-process.md section 5).
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,7 +26,7 @@ class StripError(Exception):
 
 def git_output(repository: Path, *arguments: str) -> str:
     completed = subprocess.run(
-        ["git", *arguments], cwd=repository, capture_output=True, text=True, check=False
+        ["git", *arguments], cwd=repository, capture_output=True, encoding="utf-8", check=False
     )
     if completed.returncode != 0:
         raise StripError(
@@ -49,14 +50,33 @@ def strip(repository: Path) -> list[Path]:
     paths = notebooks(repository)
     if not paths:
         return []
-    command = [sys.executable, "-m", "nbstripout", *(str(path) for path in paths)]
-    completed = subprocess.run(command, cwd=repository, capture_output=True, text=True, check=False)
+    command = [sys.executable, "-m", "nbstripout", "--", *(str(path) for path in paths)]
+    completed = subprocess.run(
+        command,
+        cwd=repository,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if completed.returncode != 0:
         raise StripError(
             f"Expected nbstripout to clear {len(paths)} notebooks, got exit code "
             f"{completed.returncode}: {completed.stderr.strip()} {completed.stdout.strip()}"
         )
+    kept = [path.as_posix() for path in paths if has_outputs(repository / path)]
+    if kept:
+        raise StripError(
+            f"Expected no outputs after nbstripout, got outputs still in {', '.join(kept)}. "
+            "nbstripout keeps cells marked `keep_output` (in the cell's metadata or tags), and the "
+            "commit guard refuses any output: remove that mark, then run `just strip-notebooks` again."
+        )
     return paths
+
+
+def has_outputs(notebook: Path) -> bool:
+    cells = json.loads(notebook.read_text(encoding="utf-8"))["cells"]
+    return any(cell.get("outputs") for cell in cells)
 
 
 def main() -> int:
