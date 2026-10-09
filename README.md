@@ -1,5 +1,7 @@
 # fefat
 
+[![CI](https://github.com/kenny-g-97/fefat/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kenny-g-97/fefat/actions/workflows/ci.yml)
+
 Feature and strategy building for algorithmic trading.
 
 FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for futures and crypto traders. It runs on your own PC and is used from the browser and the phone: a feature lab and strategy workspace with a Claude agent, a backtester with its own Rust engine and strict strategy versioning, and a prop-firm simulator that tests saved backtests against prop rules and a prop strategy. FEFAT provides market data for a curated set of products, and traders can import their own data for anything else.
