@@ -12,7 +12,7 @@ Runs are deterministic, their inputs are pinned, and each run is hashed. Version
 
 ## Consequences
 
-The run hash detects duplicate submissions. Goldens change only with the builder's approval.
+The run hash dedupes submissions: an identical submission returns the existing run. Goldens change only with the builder's approval.
 
 ## How we would know it is wrong
 

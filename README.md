@@ -17,7 +17,7 @@ The original idea is in [raw_app_idea.txt](raw_app_idea.txt).
 Install the tools listed in [docs/masterplan/07-tools-and-costs.md](docs/masterplan/07-tools-and-costs.md) §1 (git, GitHub CLI, Node 24, pnpm, uv, Rust via rustup, `just`, and the Microsoft C++ Build Tools), then from the repository root:
 
 ```text
-just doctor   # every tool reported OK with its version
+just doctor   # each tool reported as OK, OLD, or MISSING
 just setup    # uv workspace, Cargo workspace, web app dependencies
 just check    # data guard; lint, format and type checks for Python, Rust, TypeScript; masterplan shape
 just test     # pytest, the Claude Code hook smoke tests, cargo test, vitest
@@ -37,7 +37,7 @@ Changes reach `main` through pull requests, squash-merged with the routine in [d
 - `python/tests/`: the tests of both Python packages.
 - `web/`: the web app (Vite, React, TypeScript).
 - `fixtures/synthetic/`: generated market data for the tests, the only data files in git.
-- `scripts/`: the project scripts, in Python: the doctor, the fixture generator, the commit guard.
+- `scripts/`: the project scripts, in Python.
 - `docs/masterplan/`: the build plan, with its progress table, backlog, and decision log.
 - `docs/adr/`: the architecture decision records.
 - `.claude/`, `.githooks/`, `.github/`: Claude Code's configuration, the pre-commit hook, and the CI workflow with the pull request template.

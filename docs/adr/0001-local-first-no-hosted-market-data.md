@@ -20,4 +20,4 @@ If traders needed ready-to-use data for the main products to get started, and th
 
 ## Status
 
-Superseded by [ADR-0013](0013-platform-data-and-own-imports.md) (D-24, 2026-10-08): FEFAT now provides market data for a curated set of products, and compute stays local. Recorded in step 0.7.
+Accepted 2026-10-05/06 (planning). Superseded by [ADR-0013](0013-platform-data-and-own-imports.md) (D-24, 2026-10-08): FEFAT now provides market data for a curated set of products, and compute stays local. Recorded in step 0.7.

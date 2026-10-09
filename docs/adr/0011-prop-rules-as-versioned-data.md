@@ -20,4 +20,4 @@ If a firm's rule could not be written as data, or if the exact mode and the fast
 
 ## Status
 
-Partly superseded: the exact mode is superseded by [ADR-0014](0014-prop-simulation-from-backtest-files.md) (D-25, 2026-10-08), under which a prop simulation replays an existing backtest file and never re-runs the strategy. Rules as versioned data and the fast replay stand. Recorded in step 0.7.
+Accepted 2026-10-05/06 (planning). Partly superseded: the exact mode, and with it the equivalence tests between the exact mode and the fast replay, is superseded by [ADR-0014](0014-prop-simulation-from-backtest-files.md) (D-25, 2026-10-08), under which a prop simulation replays an existing backtest file and never re-runs the strategy. Rules as versioned data and the fast replay stand. Recorded in step 0.7.
