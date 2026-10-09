@@ -17,9 +17,12 @@ fefat-app = { workspace = true }
 [dependency-groups]
 dev = [
     "import-linter",
+    "nbstripout",
+    "pyarrow",
     "pyright",
     "pytest",
     "ruff",
+    "tzdata",
 ]
 
 [tool.ruff]
