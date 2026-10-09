@@ -20,8 +20,9 @@ setup:
     cargo fetch --manifest-path engine/Cargo.toml
     pnpm --dir web install --frozen-lockfile
 
-# Lint, format-check, and type-check Python, Rust, and TypeScript; check the masterplan's shape
+# Run the data guard; lint, format-check, and type-check Python, Rust, and TypeScript; check the masterplan's shape
 check:
+    uv run --no-project python scripts/guard_data.py
     uv run ruff check .
     uv run ruff format --check .
     uv run pyright
