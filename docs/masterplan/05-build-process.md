@@ -41,6 +41,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 | `engine-accuracy-reviewer` | engine, data, prop steps | tries to refute fills, costs, accounting, rounding, determinism; every finding carries a reproducing scenario |
 | `leakage-auditor` | feature, data, research steps | as-of joins, bar labelling, cache keys, walk-forward splits; runs the truncation test |
 | `ui-verifier` | UI steps | drives the app at desktop and phone sizes with Playwright; returns pass/fail per criterion with screenshots |
+| `design-reviewer` (the `apple-design` skill) | UI steps (every step that changes `web/`, from step 4.3); exits of phases with UI | the diff and the screenshots against Apple's interface principles: feedback on press, interruptible spring motion, spatial consistency, materials and depth, tracking and leading by size, reduced motion, transparency, and contrast, and the eight design principles; `web/DESIGN.md` and the brief's own words win where they differ (D-34) |
 | `/code-review` | every step (level `medium`; `high` at phase exits) | correctness bugs |
 | `/ponytail-review` (the `ponytail` plugin) | every step; phase exits, over the phase diff | code that need not exist: speculative options, abstractions with one use, near-copies, a new dependency for a few lines, a helper the repository already has; also logic, safety, load, missing tests, and speed, each finding with a concrete case in plain English (D-32) |
 | `/security-review` | steps marked `security: yes`; phase exits | the local server, uploads, code execution, secrets |

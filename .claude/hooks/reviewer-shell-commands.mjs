@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * PreToolUse hook for the read-only reviewer subagents (step-reviewer,
- * engine-accuracy-reviewer, leakage-auditor), registered in each one's
- * frontmatter for its shell tool.
+ * engine-accuracy-reviewer, leakage-auditor, design-reviewer), registered
+ * in each one's frontmatter for its shell tool.
  *
  * A reviewer may read the repository and run the checks and tests; it may
  * not change anything. Every command in a call must match the read-only list
