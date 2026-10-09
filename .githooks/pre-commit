@@ -1,0 +1,21 @@
+#!/bin/sh
+# Git runs this file before every commit and stops the commit when it exits
+# non-zero. Git looks for it here because `core.hooksPath` is `.githooks`, a
+# setting that a clone does not copy: in a fresh clone run
+#     git config core.hooksPath .githooks
+# once; afterwards `git config core.hooksPath` prints `.githooks`.
+#
+# On Windows, Git for Windows runs it with its own sh and recognises it as a
+# script by the `#!/bin/sh` first line, so the executable bit does not matter
+# there; git records the file as executable for Linux and macOS clones.
+# Python always runs through uv (bare `python` is a Microsoft Store stub on
+# this PC); `--no-project` keeps a commit from syncing `.venv` or relocking
+# `uv.lock`.
+#
+# To run it by hand, in PowerShell or Git Bash, the way a commit runs it:
+#     git hook run pre-commit
+#
+# Placeholder until step 0.5: Python starts and exits at once, so every commit
+# passes. Step 0.5 replaces `-c pass` with the data-policy guard,
+# `scripts/guard_data.py`.
+exec uv run --no-project python -c pass
