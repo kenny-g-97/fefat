@@ -83,6 +83,58 @@ def test_outputs_that_nbstripout_keeps_on_purpose_are_reported(tmp_path: Path) -
         strip_notebooks.strip(tmp_path)
 
 
+def test_a_notebook_marked_keep_output_as_a_whole_is_reported_by_where_the_mark_is(
+    tmp_path: Path,
+) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    kept = {**NOTEBOOK_WITH_OUTPUTS, "metadata": {"keep_output": True}}
+    repository.write("notebooks/kept.ipynb", json.dumps(kept).encode())
+
+    with pytest.raises(strip_notebooks.StripError, match="notebook's own metadata"):
+        strip_notebooks.strip(tmp_path)
+
+
+def test_init_cells_are_stripped_too(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    cell = {**NOTEBOOK_WITH_OUTPUTS["cells"][0], "metadata": {"init_cell": True}}
+    repository.write(
+        "notebooks/init.ipynb", json.dumps({**NOTEBOOK_WITH_OUTPUTS, "cells": [cell]}).encode()
+    )
+
+    assert strip_notebooks.strip(tmp_path) == [Path("notebooks/init.ipynb")]
+    assert not strip_notebooks.has_outputs(tmp_path / "notebooks" / "init.ipynb")
+
+
+def test_a_notebook_whose_name_starts_with_a_dash_is_stripped(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    repository.write("-draft.ipynb", notebook_bytes())
+
+    assert strip_notebooks.strip(tmp_path) == [Path("-draft.ipynb")]
+    assert not strip_notebooks.has_outputs(tmp_path / "-draft.ipynb")
+
+
+def test_an_nbformat_3_notebook_stops_with_a_message_instead_of_a_crash(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    old_cell = {
+        "cell_type": "code",
+        "input": ["print(close)"],
+        "language": "python",
+        "metadata": {},
+        "outputs": [{"output_type": "stream", "stream": "stdout", "text": ["6850.25\n"]}],
+        "prompt_number": 1,
+    }
+    old_notebook = {
+        "metadata": {},
+        "nbformat": 3,
+        "nbformat_minor": 0,
+        "worksheets": [{"cells": [old_cell], "metadata": {}}],
+    }
+    repository.write("notebooks/old.ipynb", json.dumps(old_notebook).encode())
+
+    with pytest.raises(strip_notebooks.StripError, match="nbformat 4"):
+        strip_notebooks.strip(tmp_path)
+
+
 def test_a_repository_without_notebooks_strips_nothing(tmp_path: Path) -> None:
     GitRepository.initialized(tmp_path)
 

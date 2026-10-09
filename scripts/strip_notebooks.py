@@ -50,7 +50,14 @@ def strip(repository: Path) -> list[Path]:
     paths = notebooks(repository)
     if not paths:
         return []
-    command = [sys.executable, "-m", "nbstripout", "--", *(str(path) for path in paths)]
+    command = [
+        sys.executable,
+        "-m",
+        "nbstripout",
+        "--strip-init-cells",
+        "--",
+        *(str(path) for path in paths),
+    ]
     completed = subprocess.run(
         command,
         cwd=repository,
@@ -68,15 +75,21 @@ def strip(repository: Path) -> list[Path]:
     if kept:
         raise StripError(
             f"Expected no outputs after nbstripout, got outputs still in {', '.join(kept)}. "
-            "nbstripout keeps cells marked `keep_output` (in the cell's metadata or tags), and the "
+            "nbstripout keeps the outputs of cells marked `keep_output` (in a cell's metadata or "
+            "tags) and of every cell when the notebook's own metadata says `keep_output`, and the "
             "commit guard refuses any output: remove that mark, then run `just strip-notebooks` again."
         )
     return paths
 
 
 def has_outputs(notebook: Path) -> bool:
-    cells = json.loads(notebook.read_text(encoding="utf-8"))["cells"]
-    return any(cell.get("outputs") for cell in cells)
+    content = json.loads(notebook.read_text(encoding="utf-8"))
+    if "cells" not in content:
+        raise StripError(
+            f"Expected an nbformat 4 notebook (a list of cells) in {notebook.name}, got nbformat "
+            f"{content.get('nbformat')}. Open it in Jupyter and save it, which upgrades it to nbformat 4."
+        )
+    return any(cell.get("outputs") for cell in content["cells"])
 
 
 def main() -> int:
