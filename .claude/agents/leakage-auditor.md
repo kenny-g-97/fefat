@@ -26,16 +26,18 @@ The step ID from the main session; `uv run --no-project python scripts/masterpla
 
 ## What to check
 
-- **As-of joins.** Backward direction only; keyed on `ts_close` for bars and on `available_at` (with its safety lag) for alternative data, never on `event_time`; tolerance and ties handled.
-- **Bar labelling.** A bar `[t, t+Δ)` becomes visible only at `t+Δ`; a higher-timeframe bar only once it has closed.
-- **Feature code.** Negative shifts, centred or forward windows, back-fill, normalisation or ranking over the full sample, repainting pivots, window functions over the whole history.
+- **As-of joins.** Backward direction only (`strategy="forward"` and `"nearest"` are leaks); the left key is the decision time, the left bar's `ts_close`; the right key is `ts_close` for bars, `available_at` plus its safety lag for alternative data (never `event_time`), and the availability time for daily settlements, which comes after the close (02 §1.4). An exact match is allowed only when the right row is available at that instant.
+- **Bar labelling and the clock.** Bars are bucketed on `ts_recv` (D-08), never `ts_event`; a bar `[t, t+Δ)` becomes visible only at `t+Δ`; a higher-timeframe bar only once it has closed.
+- **Feature code.** Negative shifts, centred or forward windows, back-fill, normalisation or ranking over the full sample, repainting pivots, window functions over the whole history, and aggregates over a whole session (`.over("trade_date")`) read before the session ends.
+- **Rolls and metadata.** Roll decisions use volume only through session d−1 and take effect at the open of session d (02 §1.5); instrument and fee lookups are as of the bar's date (`valid_from`, `valid_to`).
+- **Imported data** (02 §1.8). The import profile's "timestamps mark the bar open or close" choice (a wrong one is a one-bar look-ahead that truncation cannot see); back-adjusted imports flagged with their warning.
 - **Cache keys.** The code hash including dependencies, the parameters, and the input partition hashes; results computed in chunks with warm-up overlap equal the results over the whole range.
-- **Splits.** Walk-forward windows in time order, purge and embargo around their boundaries, the locked holdout untouched, `Label` columns never used as inputs.
+- **Research** (02 §6, §9). Labels start at the next bar's first tradable price; walk-forward windows in time order, with purge at least the label horizon and an embargo; selection on in-sample data only; the trial count feeds the deflated Sharpe ratio; holdout unlocks are logged; walk-forward from the sweep matrix only for strategies flat at each session end with unit sizing; prop simulations take stitched out-of-sample trades; `Label` columns never used as inputs.
 - **Continuous series.** Forward-anchored, with no back-adjusted values in anything the engine or a feature reads (D-09).
 
 ## The truncation test
 
-Compute the feature or result on data cut at several points (session ends, roll dates, random cuts) and compare every value before each cut with the full-data value. Run `uv run pytest -k "truncation or leak"` once those tests exist (step 3.4 adds the leak detector); before that, describe the minimal check and the frame it needs.
+Compute the feature or result on data cut at several points (session ends, roll dates, random cuts), cutting each input by its own availability time (bars at `ts_close <= T`, alternative data at `available_at` plus lag `<= T`, settlements at their availability), and compare every value before each cut with the full-data value. Then move the start instead of the end and compare after the warm-up (start invariance). By reading, check what the detector cannot see (02 §6): wrong availability timestamps, revised data, parameters chosen on the full sample, and branches the cuts never reach. Run `uv run pytest -k "truncation or leak"` once those tests exist (step 3.4 adds the leak detector); before that, describe the minimal check and the frame it needs.
 
 ## Report
 

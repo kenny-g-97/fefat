@@ -14,7 +14,10 @@ def test_step_0_4_is_read_with_its_meta_line_and_done_means() -> None:
     step = masterplan_step.find_step("0.4")
 
     assert step.title == "Configure Claude Code for this repository"
-    assert step.location == "docs/masterplan/phases/P00-foundations.md:162"
+    path, line = step.location.split(":")
+    assert path == "docs/masterplan/phases/P00-foundations.md"
+    heading = (ROOT / path).read_text(encoding="utf-8").splitlines()[int(line) - 1]
+    assert heading == "### 0.4 Configure Claude Code for this repository"
     assert step.depends_on == ("0.3",)
     assert step.plan_mode == "required"
     assert step.reviews == ("step-reviewer",)
@@ -81,6 +84,11 @@ def test_progress_rows_keep_empty_cells_and_the_phase_table() -> None:
     assert not progress.kickoff_recorded(1)
 
 
+def test_a_status_outside_the_list_in_progress_md_is_rejected() -> None:
+    with pytest.raises(masterplan_step.MasterplanError, match="'Done'"):
+        masterplan_step.parse_progress("| 0.4 | Configure Claude Code | P0 | Done | | | |\n")
+
+
 def progress_table(rows: list[tuple[str, str, str]], phases: list[str]) -> str:
     step_lines = [
         f"| {step} | Title {step} | {phase} | {status} | | | |" for step, phase, status in rows
@@ -128,6 +136,20 @@ def test_the_next_action_is_the_first_step_still_to_do() -> None:
 
     assert action is not None
     assert action.command == "/step 0.5"
+
+
+def test_the_next_action_continues_an_open_or_amended_step_first() -> None:
+    progress = masterplan_step.parse_progress(
+        progress_table(
+            [("0.8", "P0", "amended"), ("1.1", "P1", "todo")],
+            ["| P0 | (no kickoff) | | | | |", "| P1 | | | | | |"],
+        )
+    )
+
+    action = masterplan_step.next_action(progress)
+
+    assert action is not None
+    assert action.command == "/step 0.8"
 
 
 def skills_for(step_id: str) -> list[str]:

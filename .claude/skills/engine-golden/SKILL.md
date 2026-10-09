@@ -24,11 +24,11 @@ Golden runs live in `fixtures/goldens/<name>/`, each with a `MANIFEST.json`: the
 When a change makes a golden differ:
 
 1. Show the builder the difference: which runs, which fills or numbers moved, from what to what, and how the change explains it.
-2. If fills or costs change, bump the fill-model version (02 §4); if the artifact layout changes, bump the artifact-schema version.
+2. Bump the fill-model version for every golden change (02 §8: golden snapshots change only with a fill-model version bump and the builder's approval), so the run key changes with the output (02 §4); if the artifact layout changes, bump the artifact-schema version as well.
 3. Ask for approval in the conversation. Only after an explicit yes, run `just regenerate-goldens` (the recipe arrives with the first golden in Phase 2), or `cargo insta review` for snapshots; never `INSTA_UPDATE=always`, and never edit a golden by hand.
 4. Add an entry to `fixtures/goldens/CHANGELOG.md`: date, pull request, reason, the scenarios and goldens affected, and the version bumped.
 5. CI asserts identical golden hashes on Windows and Linux. A golden that differs between the two systems is a determinism bug to fix, not a golden to regenerate.
 
 ## Never
 
-Accept a snapshot to make a failing test pass without understanding the difference; regenerate goldens in a step whose prompt does not call for a behaviour change; edit a golden or a scenario's expected value by hand.
+Write inline snapshots (`assert_snapshot!(value, @"…")`): snapshots live in `.snap` files, where the guards see every change. Accept a snapshot to make a failing test pass without understanding the difference; regenerate goldens in a step whose prompt does not call for a behaviour change; edit a golden or a scenario's expected value by hand.

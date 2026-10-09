@@ -14,6 +14,7 @@ From `docs/masterplan/08-code-design.md` §1, §3.1, §3.3, and §6.
 - **Boundaries.** Frozen Pydantic models at every boundary: API, files, configuration, executor results. Parse and validate there, then trust the types.
 - **States.** `StrEnum` and discriminated unions for every state and kind (job status, run origin, proposal status, fidelity, dataset source, strategy kind); never free strings or combinations of optional fields.
 - **Ports.** Seams are `typing.Protocol`s in `fefat_app/ports.py`; adapters are built once in `container.py` and injected. No service or function creates an adapter inside itself.
+- **Features** (D-12, D-09). Prefix-invariant: as-of joins look backward on `ts_close` (alternative data on `available_at` plus its lag); no `shift(-n)`, backward fills, centred windows, full-sample ranks or normalisation, or aggregates over a session that has not ended; forward-anchored continuous series only; `Label` columns never feed a strategy.
 - **Data.** Polars expressions over Python loops; frames are never mutated. Paths through `pathlib`; real data by path under `FEFAT_DATA_DIR`, never a hard-coded folder.
 - **Fail fast.** Exceptions carry the expected value, the actual value, and the identifying context (instrument, run id, file name). No fallback chains such as `a or b or "unknown"`; a default exists only where the product defines one, and the run record shows it.
 - **Tests.** No network in unit tests; tests run on the synthetic fixtures; Hypothesis for properties. Each acceptance item gets a test that fails without the change.

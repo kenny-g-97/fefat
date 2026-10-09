@@ -11,7 +11,7 @@ Arguments: `$ARGUMENTS`
 
 ## Which checks
 
-With `--full`, run `just check` and then `just test`, and go to the report.
+With `--full`, run `just check` (which includes the masterplan checker) and then `just test`, and go to the report.
 
 Otherwise collect the changed files, from `git status --porcelain` (staged, unstaged, and untracked) and `git diff --name-only origin/main...HEAD`, and run every row whose paths match, in this order:
 

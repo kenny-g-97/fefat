@@ -62,7 +62,8 @@ EXIT_HEADING = "## Phase exit"
 PLAN_REQUIRED = "required"
 TODO_STATUS = "todo"
 SATISFIED_STATUSES = frozenset({"done", "skipped"})
-OPEN_STATUSES = frozenset({"in progress", "pr open"})
+OPEN_STATUSES = frozenset({"in progress", "pr open", "amended"})
+KNOWN_STATUSES = SATISFIED_STATUSES | OPEN_STATUSES | {TODO_STATUS}
 
 SLUG_STOP_WORDS = frozenset(
     {"a", "an", "and", "at", "by", "for", "from", "in", "its", "of", "on", "the", "this", "to"}
@@ -389,6 +390,11 @@ def parse_progress(text: str) -> Progress:
 
 def progress_row(cells: list[str]) -> ProgressRow:
     phase_match = PHASE_LABEL_PATTERN.fullmatch(cells[2])
+    if cells[3] not in KNOWN_STATUSES:
+        raise MasterplanError(
+            f"Expected a status from {sorted(KNOWN_STATUSES)} in the PROGRESS.md row of step "
+            f"{cells[0]}, got {cells[3]!r}."
+        )
     if phase_match is None:
         raise MasterplanError(
             f"Expected a phase like P0 in the PROGRESS.md row of step {cells[0]}, got {cells[2]!r}."
@@ -560,6 +566,10 @@ def branch_advice(step: MasterplanStep, branches: list[str]) -> str:
 
 
 def next_action(progress: Progress) -> NextAction | None:
+    unfinished = open_rows(progress)
+    if unfinished:
+        row = unfinished[0]
+        return NextAction(f"/step {row.step_id}", f"continue {row.title} ({row.status})")
     first_todo = next((row for row in progress.steps.values() if row.status == TODO_STATUS), None)
     if first_todo is None:
         return None
