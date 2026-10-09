@@ -262,6 +262,8 @@ Not in this step: the real importers (Phase 1), CI (0.6).
 
 2026-10-08: `.gitignore` already ignores market-data files since the repository preparation, so the checks force-stage with `git add -f` to test the guard itself. Added item 4: notebooks are committed without outputs, because outputs can contain licensed data.
 
+2026-10-09, while doing the step: the hook and `just check` run `uv run --no-project python scripts/guard_data.py`, because the guard uses only the standard library and a commit should not sync `.venv` (as the step 0.3 placeholder did). The guard reads git's index, which is what a commit takes, so after `just strip-notebooks` the notebook is staged again with `git add` before it passes (Done means 4). `fixtures/synthetic/` is itself the provider folder `synthetic` of the canonical layout, with 1-minute bars per month as `month=2026-03` and the crypto day as `root=BTC/contract=BTCUSDT-PERP`; step 1.1 fixes the official schema in its ADR. `fefat.config` is a frozen dataclass until the Phase 4 settings model brings Pydantic. The new dependencies are D-31; pyarrow is pinned at 26.0.0 because its version is written into every fixture.
+
 ### 0.6 CI on Windows and Linux
 
 Depends on: 0.5 · Plan mode: optional · Reviews: step-reviewer · Security: no · Model hint: default

@@ -3,7 +3,9 @@ name = "fefat"
 version = "0.0.1"
 description = "FEFAT SDK: market data, features, strategies, backtests, prop simulation, research"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "platformdirs>=4.12.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]

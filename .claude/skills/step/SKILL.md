@@ -59,7 +59,8 @@ Before the pull request, run these in order, fix what they find, and re-run what
 3. The `step-reviewer` subagent, given the step ID and the range `origin/main...HEAD`.
 4. The reviewers on the meta line: the `engine-accuracy-reviewer` and `leakage-auditor` subagents; `code-review` there means step 5 runs at `high`; `ui-verifier` arrives with step 4.3 (until then, note it under Deviations).
 5. `/code-review medium` (or `high`, see above).
-6. `/security-review` when the meta line says `Security: yes`.
+6. `/ponytail-review` (the ponytail plugin's `ponytail:ponytail-review` skill) over the branch, `origin/main...HEAD` (D-32).
+7. `/security-review` when the meta line says `Security: yes`.
 
 ## 6. Pull request and PROGRESS.md
 

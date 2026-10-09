@@ -15,7 +15,10 @@
 # To run it by hand, in PowerShell or Git Bash, the way a commit runs it:
 #     git hook run pre-commit
 #
-# Placeholder until step 0.5: Python starts and exits at once, so every commit
-# passes. Step 0.5 replaces `-c pass` with the data-policy guard,
-# `scripts/guard_data.py`.
-exec uv run --no-project python -c pass
+# It runs the data guard, `scripts/guard_data.py` (standard library only),
+# which `just check` runs too. The commit stops when what it would contain
+# holds market-data files outside fixtures/synthetic/, fixtures missing from
+# their manifest, files over 25 MB, secrets, or notebooks with outputs
+# (docs/masterplan/05-build-process.md section 5). This is the one shell file
+# in the repository (D-22).
+exec uv run --no-project python scripts/guard_data.py
