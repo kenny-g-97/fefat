@@ -5,11 +5,12 @@
  * runs in; the guards judge the result.
  *
  * It is a guard's reader, not a shell. It follows `&&`, `||`, `;`, pipes,
- * subshells, `$(...)` (also inside double quotes and inside the body of an
- * unquoted heredoc), `bash -c` and `powershell -Command` wherever they appear
- * in a command (also after `uv run`, `xargs`, or `find -exec`), `cmd /c`,
- * `Invoke-Expression`, heredocs and here-strings fed to a shell, comments,
- * and `cd`. Heredocs that only feed text to a program (a commit message, a
+ * subshells, PowerShell script blocks, `$(...)` (also inside double quotes
+ * and inside the body of an unquoted heredoc), `bash -c` and
+ * `powershell -Command` wherever they appear in a command (also after
+ * `uv run`, `xargs`, or `find -exec`), `eval`, `cmd /c`, `Invoke-Expression`,
+ * `Start-Process`, heredocs and here-strings fed to a shell, comments, and
+ * `cd`. Heredocs that only feed text to a program (a commit message, a
  * file) are skipped. Where it cannot follow a command (an encoded PowerShell
  * command, a command held in a variable), it marks the command as opaque so
  * a guard can ask instead of guessing.
@@ -25,6 +26,11 @@ const BASH_PROGRAMS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 const POWERSHELL_PROGRAMS = new Set(["powershell", "pwsh"]);
 const CMD_PROGRAMS = new Set(["cmd"]);
 const EXPRESSION_PROGRAMS = new Set(["invoke-expression", "iex"]);
+const START_PROCESS_PROGRAMS = new Set(["start-process", "saps"]);
+const START_PROCESS_PARAMETERS_WITH_VALUE = new Set([
+  "-workingdirectory", "-credential", "-redirectstandardoutput", "-redirectstandardinput",
+  "-redirectstandarderror", "-windowstyle", "-verb",
+]);
 const SHELL_PROGRAMS = new Set([...BASH_PROGRAMS, ...POWERSHELL_PROGRAMS, ...EXPRESSION_PROGRAMS]);
 const DIRECTORY_PROGRAMS = new Set(["cd", "chdir", "pushd", "set-location", "sl"]);
 const UNKNOWN_DIRECTORY_PROGRAMS = new Set(["popd", "pop-location"]);
@@ -34,6 +40,7 @@ const HEREDOC_AT = /<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\2/y;
 const HERE_STRING_AT = /^@(['"])\s*$/;
 const PIPED_INTO_SHELL = /\|\s*(?:\S*[\\/])?(bash|sh|zsh|dash|ksh|pwsh|powershell|iex|invoke-expression)(\.exe)?(\s|$)/i;
 const WORD_BOUNDARY = /[\s;&|()]/;
+const VARIABLE_REFERENCE = /^\$(\{|[A-Za-z_])/;
 const FILE_DESCRIPTOR_PREFIX = /^(\d+|&|\*)$/;
 const BASH_OPTIONS_WITH_VALUE = new Set(["-o", "+o", "-O", "+O", "--rcfile", "--init-file"]);
 const POWERSHELL_COMMAND_PARAMETER = /^-c(o(m(m(a(n(d)?)?)?)?)?)?$/;
@@ -135,9 +142,13 @@ function collectCommands(text, shell, startDirectory, depth, commands) {
     if (words.length === 0) {
       continue;
     }
-    const nested = nestedCommand(words);
+    const nested = nestedCommand(words, shell);
     const tooDeep = nested !== null && depth >= MAX_NESTING;
-    const opaque = tooDeep ? "a command nested too deeply" : nested?.kind === "opaque" ? nested.reason : null;
+    const opaque = tooDeep
+      ? "a command nested too deeply"
+      : nested?.kind === "opaque"
+        ? nested.reason
+        : runsVariable(words, shell);
     commands.push({ words, outputTargets, directory, text: segment, opaque });
     if (nested?.kind === "command" && !tooDeep) {
       collectCommands(nested.text, nested.shell, directory, depth + 1, commands);
@@ -149,6 +160,16 @@ function collectCommands(text, shell, startDirectory, depth, commands) {
     }
     directory = directoryAfter(words, directory);
   }
+}
+
+/** A command whose program is a variable (`$cmd args`, `& $cmd`): its text is not known before it runs. */
+function runsVariable(words, shell) {
+  const index = programIndex(words);
+  if (index >= words.length || !VARIABLE_REFERENCE.test(words[index])) {
+    return null;
+  }
+  const called = shell === BASH ? words[index + 1] !== "=" : ["&", "."].includes(words[index - 1]);
+  return called ? "a command held in a variable" : null;
 }
 
 function segmentsOf(text, shell) {
@@ -375,6 +396,9 @@ function separatorLength(text, index, shell) {
   if (char === "\n" || char === ";" || char === "(" || char === ")") {
     return 1;
   }
+  if ((char === "{" || char === "}") && shell === POWERSHELL) {
+    return 1;
+  }
   if (char === "`" && shell === BASH) {
     return 1;
   }
@@ -382,6 +406,9 @@ function separatorLength(text, index, shell) {
     return 2;
   }
   if (char === "|") {
+    if (text[index - 1] === ">") {
+      return 0;
+    }
     return next === "&" ? 2 : 1;
   }
   if (char === "&") {
@@ -488,9 +515,9 @@ function substitutionsIn(tokens, shell) {
     .map((token) => token.text);
 }
 
-function nestedCommand(words) {
+function nestedCommand(words, shell) {
   for (let index = 0; index < words.length; index += 1) {
-    const nested = nestedCommandAt(programName(words[index]), words.slice(index + 1));
+    const nested = nestedCommandAt(programName(words[index]), words.slice(index + 1), shell);
     if (nested !== null) {
       return nested;
     }
@@ -498,9 +525,17 @@ function nestedCommand(words) {
   return null;
 }
 
-function nestedCommandAt(program, args) {
+function nestedCommandAt(program, args, shell) {
   if (BASH_PROGRAMS.has(program)) {
     return bashInline(args);
+  }
+  if (program === "eval" && shell === BASH) {
+    return args.some((arg) => arg.includes("$"))
+      ? { kind: "opaque", reason: "a command eval builds at run time" }
+      : inlineCommand(BASH, args);
+  }
+  if (START_PROCESS_PROGRAMS.has(program)) {
+    return startProcessInline(args);
   }
   if (POWERSHELL_PROGRAMS.has(program)) {
     return powershellInline(args);
@@ -560,6 +595,25 @@ function expressionInline(args) {
     return { kind: "opaque", reason: "a command held in a variable" };
   }
   return inlineCommand(POWERSHELL, [command]);
+}
+
+function startProcessInline(args) {
+  const words = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const lower = args[index].toLowerCase();
+    if (lower === "-argumentlist" || lower === "-args") {
+      words.push(...String(args[index + 1]).split(","));
+      index += 1;
+    } else if (lower === "-filepath") {
+      words.unshift(String(args[index + 1]));
+      index += 1;
+    } else if (START_PROCESS_PARAMETERS_WITH_VALUE.has(lower)) {
+      index += 1;
+    } else if (!lower.startsWith("-")) {
+      words.push(...args[index].split(","));
+    }
+  }
+  return inlineCommand(POWERSHELL, words);
 }
 
 function inlineCommand(shell, words) {

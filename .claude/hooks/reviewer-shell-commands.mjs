@@ -14,7 +14,7 @@
  */
 import { readHookInput } from "./lib/hook-input.mjs";
 import { denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
-import { absolutePath, projectDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
+import { commandStartDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
 import {
   BASH,
   POWERSHELL,
@@ -62,19 +62,21 @@ const READ_ONLY_COMMANDS = [
   readOnly("cargo tree"),
   readOnly("cargo clippy", { forbids: ["--fix"] }),
   readOnly("cargo fmt", { requiresOneOf: ["--check"] }),
-  readOnly("uv run pytest", { forbids: ["--snapshot-update", "--force-regen"] }),
-  readOnly("uv run pyright"),
+  readOnly("uv run pytest", {
+    forbids: ["--snapshot-update", "--force-regen", "--junitxml", "--junit-xml", "--result-log", "--html", "--basetemp"],
+  }),
+  readOnly("uv run pyright", { forbids: ["--createstub", "--writebaseline"] }),
   readOnly("uv run lint-imports"),
-  readOnly("uv run ruff check", { forbids: ["--fix", "--unsafe-fixes", "--add-noqa"] }),
+  readOnly("uv run ruff check", { forbids: ["--fix", "--fix-only", "--unsafe-fixes", "--add-noqa", "--output-file", "-o"] }),
   readOnly("uv run ruff format", { requiresOneOf: ["--check", "--diff"] }),
   readOnly("uv run python docs/masterplan/tools/check_masterplan.py"),
   readOnly("uv run python scripts/test_hooks.py"),
   readOnly("uv run python scripts/masterplan_step.py"),
   readOnly("uv run --no-project python docs/masterplan/tools/check_masterplan.py"),
   readOnly("uv run --no-project python scripts/masterplan_step.py"),
-  readOnly("pnpm --dir web lint"),
+  readOnly("pnpm --dir web lint", { forbids: ["--fix", "--fix-suggestions", "--fix-dangerously"] }),
   readOnly("pnpm --dir web typecheck"),
-  readOnly("pnpm --dir web test", { forbids: ["-u", "--update"] }),
+  readOnly("pnpm --dir web test", { forbids: ["-u", "--update", "--outputFile"] }),
   readOnly("node --check"),
   readOnly("find", { forbids: ["-delete", "-exec", "-execdir", "-ok", "-okdir", /^-fprint/, "-fls"] }),
   readOnly("sort", { forbids: [/^-[A-Za-z]*o/, "--output"] }),
@@ -151,13 +153,6 @@ function problemsWith(commands) {
   return problems;
 }
 
-function startDirectory(input) {
-  if (typeof input.cwd === "string" && input.cwd !== "") {
-    return absolutePath(input.cwd, input.cwd);
-  }
-  return projectDirectory(input);
-}
-
 async function main() {
   const reading = await readHookInput();
   if (!reading.ok) {
@@ -170,7 +165,7 @@ async function main() {
     return;
   }
   const shell = reading.input.tool_name === "PowerShell" ? POWERSHELL : BASH;
-  const problems = problemsWith(commandsIn(commandLine, shell, startDirectory(reading.input)));
+  const problems = problemsWith(commandsIn(commandLine, shell, commandStartDirectory(reading.input)));
   if (problems.length === 0) {
     leaveToolCallToPermissionRules();
     return;

@@ -17,7 +17,7 @@
 import { readHookInput } from "./lib/hook-input.mjs";
 import { askBeforeToolCall, denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
 import { currentBranch } from "./lib/git-facts.mjs";
-import { absolutePath, foldCase, projectDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
+import { commandStartDirectory, foldCase, withForwardSlashes } from "./lib/project-paths.mjs";
 import {
   BASH,
   POWERSHELL,
@@ -32,6 +32,7 @@ const MAIN = "main";
 const CURRENT_BRANCH = Symbol("the current branch");
 const MATCHING_BRANCHES = Symbol("all matching branches");
 const NOT_SWITCHED = Symbol("no branch switch so far");
+const UNKNOWN_DESTINATION = Symbol("a destination computed when the command runs");
 
 const REASONS = {
   noVerify:
@@ -49,6 +50,7 @@ const REASONS = {
   unknownBranch:
     "The guard cannot tell which branch this push would update; confirm that it is not main.",
   deleteBranch: "This push deletes a branch on GitHub; confirm that it is the right one.",
+  pushAsks: "Every git push waits for the builder's approval (CLAUDE.md, docs/masterplan/05-build-process.md section 8).",
   commitOnMain:
     "This commit lands on main, but steps work on step/N.M-<slug> branches (docs/masterplan/05-build-process.md section 2); confirm, or switch branches first.",
   commitGate: "This changes the commit gate in .githooks/; confirm the change.",
@@ -71,7 +73,8 @@ const PUSH_OPTIONS_WITH_VALUE = new Set(["--repo", "--receive-pack", "--exec", "
 const WRITING_PROGRAMS = new Set([
   "cp", "mv", "rm", "tee", "touch", "copy", "move", "del", "erase", "xcopy", "robocopy", "ren",
   "rename", "copy-item", "move-item", "remove-item", "rename-item", "new-item", "set-content",
-  "add-content", "out-file", "clear-content", "cpi", "mi", "ri", "ni", "sc", "ac",
+  "add-content", "out-file", "clear-content", "cpi", "mi", "ri", "ni", "sc", "ac", "ln", "install",
+  "dd", "rsync", "mklink",
 ]);
 const IN_PLACE_EDITORS = new Set(["sed", "perl"]);
 const SNAPSHOT_UPDATE_OPTIONS = ["--snapshot-update", "--update-snapshots", "--update-goldens", "--force-regen"];
@@ -231,7 +234,7 @@ function writtenPaths(command) {
   }
   return targets
     .filter((target) => !isDiscardedOutput(target))
-    .map((target) => withForwardSlashes(target).toLowerCase());
+    .map((target) => withForwardSlashes(target).toLowerCase().replace(/^of=/, ""));
 }
 
 /** A program other than a reader that names a path under fixtures/goldens/, such as a generator's output folder. */
@@ -288,7 +291,7 @@ function changesGitHub(words) {
   if (index === -1) {
     return false;
   }
-  const [area, action] = words.slice(index + 1);
+  const [area, action] = ghSubcommand(words.slice(index + 1));
   if (area === "pr" && action === "merge") {
     return true;
   }
@@ -296,6 +299,18 @@ function changesGitHub(words) {
     return true;
   }
   return area === "api" && apiWrites(words.slice(index + 2));
+}
+
+function ghSubcommand(args) {
+  const positionals = [];
+  for (let index = 0; index < args.length && positionals.length < 2; index += 1) {
+    if (args[index] === "-R" || args[index] === "--repo" || args[index] === "--hostname") {
+      index += 1;
+    } else if (!args[index].startsWith("-")) {
+      positionals.push(args[index]);
+    }
+  }
+  return positionals;
 }
 
 function apiWrites(args) {
@@ -411,11 +426,13 @@ function pushFindings(git, branchAt) {
       findings.push(deny(REASONS.pushEverything));
     } else if (destination === CURRENT_BRANCH) {
       findings.push(...currentBranchPushFindings(git.directory, branchAt));
+    } else if (destination === UNKNOWN_DESTINATION) {
+      findings.push(ask(REASONS.unknownBranch));
     } else if (isMain(destination)) {
       findings.push(deny(REASONS.pushToMain));
     }
   }
-  return findings;
+  return findings.some((finding) => finding.decision === "deny") ? findings : [...findings, ask(REASONS.pushAsks)];
 }
 
 function parsePushArguments(args) {
@@ -468,6 +485,9 @@ function applyShortPushOptions(push, cluster) {
 }
 
 function refspecDestination(refspec) {
+  if (/[$`%]/.test(refspec)) {
+    return UNKNOWN_DESTINATION;
+  }
   const spec = refspec.replace(/^\+/, "");
   if (spec === ":") {
     return MATCHING_BRANCHES;
@@ -503,13 +523,6 @@ function reply(findings) {
   leaveToolCallToPermissionRules();
 }
 
-function startDirectory(input) {
-  if (typeof input.cwd === "string" && input.cwd !== "") {
-    return absolutePath(input.cwd, input.cwd);
-  }
-  return projectDirectory(input);
-}
-
 async function main() {
   const reading = await readHookInput();
   if (!reading.ok) {
@@ -522,7 +535,7 @@ async function main() {
     return;
   }
   const shell = reading.input.tool_name === "PowerShell" ? POWERSHELL : BASH;
-  reply(findingsFor(commandLine, shell, startDirectory(reading.input)));
+  reply(findingsFor(commandLine, shell, commandStartDirectory(reading.input)));
 }
 
 main().catch((error) => {

@@ -56,6 +56,14 @@ export function projectDirectory(input) {
   throw new Error("expected CLAUDE_PROJECT_DIR or the input's cwd, got neither");
 }
 
+/** The folder a shell command starts in: the input's cwd, else the project root. */
+export function commandStartDirectory(input) {
+  if (typeof input.cwd === "string" && input.cwd !== "") {
+    return absolutePath(input.cwd, input.cwd);
+  }
+  return projectDirectory(input);
+}
+
 /** The path relative to the project root, or null when it lies outside the project. */
 export function pathInProject(absolute, project) {
   const folded = foldCase(absolute);

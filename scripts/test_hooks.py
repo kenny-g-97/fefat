@@ -414,17 +414,18 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
         ),
         case("a push inside $( ) is denied", "echo $(git push --force)", Expect.DENY),
         case(
-            "git push -u origin step/0.5-x is allowed",
+            "git push -u origin step/0.5-x asks, like every push",
             "git push -u origin step/0.5-x",
-            Expect.ALLOW,
+            Expect.ASK,
+            reason="approval",
         ),
         case(
-            "git push -u origin HEAD on a step branch is allowed",
-            "git push -u origin HEAD",
-            Expect.ALLOW,
+            "git push -u origin HEAD on a step branch asks", "git push -u origin HEAD", Expect.ASK
         ),
-        case("git push on a step branch is allowed", "git push", Expect.ALLOW),
-        case("git push --tags is allowed", "git push --tags", Expect.ALLOW),
+        case("git push on a step branch asks", "git push", Expect.ASK),
+        case("git push --tags asks", "git push --tags", Expect.ASK),
+        case("uv run git push asks", "uv run git push origin HEAD", Expect.ASK, reason="approval"),
+        case("git -C <folder> push asks", "git -C engine push origin step/0.5-x", Expect.ASK),
         case("git push --all is denied", "git push --all origin", Expect.DENY),
         case("git push --mirror is denied", "git push --mirror origin", Expect.DENY),
         case(
@@ -576,9 +577,9 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             "git switch main && git commit asks", "git switch main && git commit -am x", Expect.ASK
         ),
         case(
-            "a push after switching to a new step branch is allowed",
+            "a push after switching to a new step branch asks",
             "git switch -c step/0.6-ci origin/main && git push -u origin HEAD",
-            Expect.ALLOW,
+            Expect.ASK,
         ),
         case(
             "uv run bash -c with a force push is denied",
@@ -658,6 +659,43 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.ASK,
         ),
         case("setx INSTA_UPDATE asks", "setx INSTA_UPDATE always", Expect.ASK, tool="PowerShell"),
+        case("eval with a force push is denied", 'eval "git push --force"', Expect.DENY),
+        case(
+            "a command held in a variable asks",
+            'x="git push -f"; $x',
+            Expect.ASK,
+            reason="held in a variable",
+        ),
+        case(
+            "a PowerShell script block with a force push is denied",
+            "if ($true) {git push -f origin x}",
+            Expect.DENY,
+            tool="PowerShell",
+        ),
+        case(
+            "Start-Process git with a force push is denied",
+            'Start-Process git -ArgumentList "push -f"',
+            Expect.DENY,
+            tool="PowerShell",
+        ),
+        case(
+            "a push to a branch computed at run time asks why",
+            "git push origin $(git branch --show-current)",
+            Expect.ASK,
+            directory=on_main,
+            reason="cannot tell which branch",
+        ),
+        case("a clobber redirect into .git/config is denied", "echo x >| .git/config", Expect.DENY),
+        case("ln -sf into .git/config is denied", "ln -sf x .git/config", Expect.DENY),
+        case(
+            "install into .claude/settings.json asks", "install x .claude/settings.json", Expect.ASK
+        ),
+        case(
+            "gh --repo before pr merge still asks",
+            "gh --repo kenny-g-97/fefat pr merge 12",
+            Expect.ASK,
+            reason="builder's routine",
+        ),
         case(
             "an encoded PowerShell command asks",
             "powershell -EncodedCommand ZwBpAHQAIABzAHQAYQB0AHUAcwA=",
@@ -768,6 +806,10 @@ def reviewer_cases() -> list[Case]:
         "rg --pre ./x.sh pattern",
         "sort -oout.txt notes.txt",
         "git grep -Ovim foo",
+        "uv run ruff check --fix-only .",
+        "pnpm --dir web lint --fix",
+        "uv run pytest --junitxml=out.xml",
+        "uv run pyright --createstub requests",
         "git stash",
         "git checkout -- .",
         "echo x > notes.txt",
