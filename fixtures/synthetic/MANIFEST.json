@@ -1,0 +1,84 @@
+{
+  "files": [
+    {
+      "bytes": 30577,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1m/root=BTC/contract=BTCUSDT-PERP/month=2026-03/part.parquet",
+      "rows": 1440,
+      "seed": 20260308,
+      "sha256": "010c132acfd2c3ffcc131d9b1888274d0f3ed4bbed54cfc81c81a94943d3a875"
+    },
+    {
+      "bytes": 82367,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet",
+      "rows": 4140,
+      "seed": 20260308,
+      "sha256": "f46c504404673df4c5640ef4fd6c172fdb39d08e24f2f2cdccaea45d6c268559"
+    },
+    {
+      "bytes": 505615,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=BTC/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
+      "rows": 34583,
+      "seed": 20260308,
+      "sha256": "833173fbc54e6f1889c71588b108a8f6556df990f55669f2639703fe67a78ce4"
+    },
+    {
+      "bytes": 426587,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/contract=ESH6/date=2026-03-05/part.parquet",
+      "rows": 30588,
+      "seed": 20260308,
+      "sha256": "6c8605493e31551a9137a50450cc640d42e92dbfe010f3cd51cad4ca103f4040"
+    },
+    {
+      "bytes": 426289,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/contract=ESH6/date=2026-03-06/part.parquet",
+      "rows": 30632,
+      "seed": 20260308,
+      "sha256": "111553a82be46a3e3ff030c8a9fb3c4b728693ae15310642028cf2844fb00e72"
+    },
+    {
+      "bytes": 443686,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/contract=ESH6/date=2026-03-09/part.parquet",
+      "rows": 30664,
+      "seed": 20260308,
+      "sha256": "c078e3fa4e4c8abdfa27d0a47f2d091e5c10db37b237e159db12838bf8596ad6"
+    },
+    {
+      "bytes": 1141000,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=BTC/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
+      "rows": 60798,
+      "seed": 20260308,
+      "sha256": "f63e0a328941ae01d2cfa7d96bf5d15a512961707f1452f23a54c244578768e5"
+    },
+    {
+      "bytes": 1271033,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/contract=ESH6/date=2026-03-05/part.parquet",
+      "rows": 71295,
+      "seed": 20260308,
+      "sha256": "c051365311535742ded1150c780a1094534ab857fd62102706d5926e30008bed"
+    },
+    {
+      "bytes": 1304210,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/contract=ESH6/date=2026-03-06/part.parquet",
+      "rows": 71071,
+      "seed": 20260308,
+      "sha256": "c9824d82bb075ddc0eacec6a62e09814da514f68f31d4a679ca32a2bd81936df"
+    },
+    {
+      "bytes": 1286583,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/contract=ESH6/date=2026-03-09/part.parquet",
+      "rows": 70847,
+      "seed": 20260308,
+      "sha256": "f3744f4147821dbaffbcd71fc13ae403147105ceea4f27e43fcdf4d7162d96be"
+    }
+  ]
+}
