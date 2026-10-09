@@ -19,13 +19,16 @@ Trades carry `ts_recv`, `ts_event`, `instrument_id`, `price`, `size` (contracts
 for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
 `N` for the opening print), and `sequence`. MANIFEST.json lists every file with
 the generator, the seed, and its SHA-256. Each session draws from its own
-`random.Random`, seeded with "<seed>/<root>/<trade date>".
+`random.Random`, seeded with "<seed>/<root>/<trade date>". Times and durations
+here are integer nanoseconds; instants count from the Unix epoch in UTC.
 
-The same seed gives byte-identical files on every platform: the randomness uses
-`random.Random` draws, comparisons, and integer arithmetic only (no `gauss` or
-`expovariate`, whose results depend on the platform's maths library), and the
-writer options are fixed. pyarrow writes its version into every file, so after
-a pyarrow upgrade the fixtures are regenerated and committed with the manifest.
+The same seed gives byte-identical files: the randomness uses `random.Random`
+draws, comparisons, and integer arithmetic only (no `gauss` or `expovariate`,
+whose results depend on the platform's maths library), and the writer options
+are fixed, so the files should match on every platform; Windows is shown, and
+CI on Linux (step 0.6) is the first check elsewhere. pyarrow writes its version
+into every file and is pinned for that reason: after a pyarrow upgrade the
+fixtures are regenerated and committed with the manifest.
 """
 
 from __future__ import annotations
@@ -53,11 +56,11 @@ MANIFEST_NAME = "MANIFEST.json"
 
 NANOSECONDS_PER_SECOND = 1_000_000_000
 NANOSECONDS_PER_MINUTE = 60 * NANOSECONDS_PER_SECOND
-SLOT_NS = 100_000_000
-QUIET_BEFORE_CLOSE_NS = NANOSECONDS_PER_SECOND
-OPENING_PRINT_DELAY_NS = (1_000_000, 50_000_000)
+SLOT_LENGTH = 100_000_000
+QUIET_BEFORE_CLOSE = NANOSECONDS_PER_SECOND
+OPENING_PRINT_DELAY = (1_000_000, 50_000_000)
 OPENING_PRINT_SIZE = (50, 400)
-RECEIVE_LATENCY_NS = (20_000, 400_000)
+RECEIVE_LATENCY = (20_000, 400_000)
 WEEKEND_GAP_FACTOR = 3
 SUNDAY = 6
 
@@ -200,27 +203,29 @@ class Session:
             return self.trade_date - timedelta(days=1)
         return self.trade_date
 
-    def open_ns(self) -> int:
+    def open_time(self) -> int:
         local_open = datetime.combine(
             self.opening_day(), self.product.opens_at, tzinfo=self.product.time_zone
         )
         return int(local_open.timestamp()) * NANOSECONDS_PER_SECOND
 
-    def close_ns(self) -> int:
-        return self.open_ns() + self.product.session_minutes * NANOSECONDS_PER_MINUTE
+    def close_time(self) -> int:
+        return self.open_time() + self.product.session_minutes * NANOSECONDS_PER_MINUTE
 
     def opens_after_weekend(self) -> bool:
         return self.opening_day().weekday() == SUNDAY
 
     def trading_slots(self) -> Iterator[tuple[int, float]]:
         """Yield each 100 ms slot after the opening print with the chance of a trade in it."""
-        first_slot_ns = self.open_ns() + SLOT_NS
-        last_slot_ns = self.close_ns() - QUIET_BEFORE_CLOSE_NS
+        first_slot = self.open_time() + SLOT_LENGTH
+        last_slot = self.close_time() - QUIET_BEFORE_CLOSE
         for window in self.product.activity:
-            start_ns = self.open_ns() + window.start_minute * NANOSECONDS_PER_MINUTE
-            end_ns = self.open_ns() + window.end_minute * NANOSECONDS_PER_MINUTE
-            for slot_ns in range(max(start_ns, first_slot_ns), min(end_ns, last_slot_ns), SLOT_NS):
-                yield slot_ns, window.trade_chance
+            window_start = self.open_time() + window.start_minute * NANOSECONDS_PER_MINUTE
+            window_end = self.open_time() + window.end_minute * NANOSECONDS_PER_MINUTE
+            for slot_start in range(
+                max(window_start, first_slot), min(window_end, last_slot), SLOT_LENGTH
+            ):
+                yield slot_start, window.trade_chance
 
 
 class TapeRecorder:
@@ -229,16 +234,16 @@ class TapeRecorder:
     def __init__(self, product: FixtureProduct) -> None:
         self._product = product
         self._columns: dict[str, list[int | str]] = {name: [] for name in TRADES_SCHEMA.names}
-        self._last_receive_ns = 0
+        self._last_receive_time = 0
 
     def record(
-        self, event_ns: int, latency_ns: int, price_ticks: int, side: str, sizes: Sequence[int]
+        self, event_time: int, latency: int, price_ticks: int, side: str, sizes: Sequence[int]
     ) -> None:
-        receive_ns = max(self._last_receive_ns, event_ns + latency_ns)
+        receive_time = max(self._last_receive_time, event_time + latency)
         for size in sizes:
             print_row = {
-                "ts_recv": receive_ns,
-                "ts_event": event_ns,
+                "ts_recv": receive_time,
+                "ts_event": event_time,
                 "instrument_id": self._product.instrument_id,
                 "price": price_ticks * self._product.tick,
                 "size": size,
@@ -247,20 +252,20 @@ class TapeRecorder:
             }
             for name, value in print_row.items():
                 self._columns[name].append(value)
-        self._last_receive_ns = receive_ns
+        self._last_receive_time = receive_time
 
     def tape(self) -> pa.Table:
         return pa.table(self._columns, schema=TRADES_SCHEMA)
 
 
-def drawn_from(table: Sequence[tuple[int, float]], rng: random.Random) -> int:
+def drawn_from(table: Sequence[tuple[int, float]], random_source: random.Random) -> int:
     """Draw a value from a table of (value, cumulative chance) rows ending at 1.0."""
-    chance = rng.random()
+    chance = random_source.random()
     return next(value for value, cumulative in table if chance < cumulative)
 
 
-def price_move(rng: random.Random) -> int:
-    chance = rng.random()
+def price_move(random_source: random.Random) -> int:
+    chance = random_source.random()
     if chance < UPTICK_BELOW:
         return 1
     if chance < DOWNTICK_BELOW:
@@ -268,53 +273,60 @@ def price_move(rng: random.Random) -> int:
     return 0
 
 
-def aggressor(move: int, rng: random.Random) -> str:
+def aggressor(move: int, random_source: random.Random) -> str:
     if move > 0:
         return BUYER
     if move < 0:
         return SELLER
-    return BUYER if rng.random() < 0.5 else SELLER
+    return BUYER if random_source.random() < 0.5 else SELLER
 
 
-def opening_price_ticks(previous_close_ticks: int, session: Session, rng: random.Random) -> int:
+def opening_price_ticks(
+    previous_close_ticks: int, session: Session, random_source: random.Random
+) -> int:
     gap_ticks = session.product.opening_gap_ticks
     if session.opens_after_weekend():
         gap_ticks *= WEEKEND_GAP_FACTOR
-    return previous_close_ticks + rng.randrange(-gap_ticks, gap_ticks + 1)
+    return previous_close_ticks + random_source.randrange(-gap_ticks, gap_ticks + 1)
 
 
 def simulate_session(
-    session: Session, rng: random.Random, price_ticks: int
+    session: Session, random_source: random.Random, price_ticks: int
 ) -> tuple[pa.Table, int]:
     """Return the session's trades and its last price in ticks."""
     product = session.product
     recorder = TapeRecorder(product)
     if product.opening_auction:
-        opening_ns = session.open_ns() + rng.randrange(*OPENING_PRINT_DELAY_NS)
-        opening_size = rng.randrange(*OPENING_PRINT_SIZE)
+        opening_time = session.open_time() + random_source.randrange(*OPENING_PRINT_DELAY)
+        opening_size = random_source.randrange(*OPENING_PRINT_SIZE)
         recorder.record(
-            opening_ns,
-            rng.randrange(*RECEIVE_LATENCY_NS),
+            opening_time,
+            random_source.randrange(*RECEIVE_LATENCY),
             price_ticks,
             NO_AGGRESSOR,
             (opening_size,),
         )
-    for slot_ns, trade_chance in session.trading_slots():
-        if rng.random() >= trade_chance:
+    for slot_start, trade_chance in session.trading_slots():
+        if random_source.random() >= trade_chance:
             continue
-        move = price_move(rng)
+        move = price_move(random_source)
         price_ticks += move
         sizes = [
-            drawn_from(product.trade_sizes, rng) for _ in range(drawn_from(PRINTS_PER_EVENT, rng))
+            drawn_from(product.trade_sizes, random_source)
+            for _ in range(drawn_from(PRINTS_PER_EVENT, random_source))
         ]
-        event_ns = slot_ns + rng.randrange(SLOT_NS)
+        event_time = slot_start + random_source.randrange(SLOT_LENGTH)
         recorder.record(
-            event_ns, rng.randrange(*RECEIVE_LATENCY_NS), price_ticks, aggressor(move, rng), sizes
+            event_time,
+            random_source.randrange(*RECEIVE_LATENCY),
+            price_ticks,
+            aggressor(move, random_source),
+            sizes,
         )
     return recorder.tape(), price_ticks
 
 
-def bars_from_trades(trades: pa.Table, anchor_ns: int, width_ns: int) -> pa.Table:
+def bars_from_trades(trades: pa.Table, anchor: int, width: int) -> pa.Table:
     """Bucket trades by `ts_recv` into [t, t + width) from the anchor; only buckets with trades."""
     received = trades.column("ts_recv").to_pylist()
     prices = trades.column("price").to_pylist()
@@ -322,14 +334,14 @@ def bars_from_trades(trades: pa.Table, anchor_ns: int, width_ns: int) -> pa.Tabl
     instrument_ids = trades.column("instrument_id").to_pylist()
     columns: dict[str, list[int]] = {name: [] for name in BARS_SCHEMA.names}
     for bucket, rows in groupby(
-        range(len(received)), key=lambda row: (received[row] - anchor_ns) // width_ns
+        range(len(received)), key=lambda row: (received[row] - anchor) // width
     ):
         members = list(rows)
         bucket_prices = [prices[row] for row in members]
-        ts_open = anchor_ns + bucket * width_ns
+        ts_open = anchor + bucket * width
         bar = {
             "ts_open": ts_open,
-            "ts_close": ts_open + width_ns,
+            "ts_close": ts_open + width,
             "instrument_id": instrument_ids[members[0]],
             "open": bucket_prices[0],
             "high": max(bucket_prices),
@@ -387,19 +399,19 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
     price_ticks = product.first_price_ticks
     for trade_date in product.trade_dates:
         session = Session(product, trade_date)
-        rng = random.Random(f"{seed}/{product.root}/{trade_date.isoformat()}")
+        random_source = random.Random(f"{seed}/{product.root}/{trade_date.isoformat()}")
         trades, price_ticks = simulate_session(
-            session, rng, opening_price_ticks(price_ticks, session, rng)
+            session, random_source, opening_price_ticks(price_ticks, session, random_source)
         )
         day = f"date={trade_date.isoformat()}"
-        second_bars = bars_from_trades(trades, session.open_ns(), NANOSECONDS_PER_SECOND)
+        second_bars = bars_from_trades(trades, session.open_time(), NANOSECONDS_PER_SECOND)
         entries.append(
             written_partition(trades, partition_path(out, "trades", product, day), out, seed)
         )
         entries.append(
             written_partition(second_bars, partition_path(out, "ohlcv-1s", product, day), out, seed)
         )
-        minute_bars.append(bars_from_trades(trades, session.open_ns(), NANOSECONDS_PER_MINUTE))
+        minute_bars.append(bars_from_trades(trades, session.open_time(), NANOSECONDS_PER_MINUTE))
     month = f"month={month_of(product)}"
     month_path = partition_path(out, "ohlcv-1m", product, month)
     entries.append(written_partition(pa.concat_tables(minute_bars), month_path, out, seed))

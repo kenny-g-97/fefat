@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures" / "synthetic"
 MANIFEST = FIXTURES / "MANIFEST.json"
 NANOSECONDS_PER_SECOND = 1_000_000_000
-MINUTE_NS = 60 * NANOSECONDS_PER_SECOND
+NANOSECONDS_PER_MINUTE = 60 * NANOSECONDS_PER_SECOND
 ES_TICK = 250_000_000
 BTC_TICK = 100_000_000
 ES_SESSION_LENGTH = timedelta(hours=23)
@@ -88,12 +88,12 @@ def test_each_es_session_runs_from_17_00_to_16_00_chicago_across_the_clock_chang
     trade_date: date, open_utc: datetime
 ) -> None:
     trades = rows(partition("trades", "ES", "ESH6", f"date={trade_date.isoformat()}"))
-    open_ns = nanoseconds(open_utc)
-    close_ns = nanoseconds(open_utc + ES_SESSION_LENGTH)
+    open_time = nanoseconds(open_utc)
+    close_time = nanoseconds(open_utc + ES_SESSION_LENGTH)
 
     assert trades[0]["side"] == "N"
-    assert open_ns <= int(trades[0]["ts_event"]) < open_ns + NANOSECONDS_PER_SECOND
-    assert int(trades[-1]["ts_recv"]) < close_ns
+    assert open_time <= int(trades[0]["ts_event"]) < open_time + NANOSECONDS_PER_SECOND
+    assert int(trades[-1]["ts_recv"]) < close_time
 
 
 def test_the_crypto_day_trades_around_the_clock_on_a_saturday() -> None:
@@ -137,6 +137,6 @@ def test_minute_bars_carry_exactly_the_volume_of_their_trades(root: str, contrac
     )
 
     assert sum(int(bar["volume"]) for bar in bars) == traded
-    assert all(int(bar["ts_close"]) - int(bar["ts_open"]) == MINUTE_NS for bar in bars)
+    assert all(int(bar["ts_close"]) - int(bar["ts_open"]) == NANOSECONDS_PER_MINUTE for bar in bars)
     assert all(int(bar["low"]) <= int(bar["open"]) <= int(bar["high"]) for bar in bars)
     assert all(int(bar["low"]) <= int(bar["close"]) <= int(bar["high"]) for bar in bars)

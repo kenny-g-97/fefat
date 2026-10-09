@@ -89,7 +89,7 @@ dev = [
 dev = [
     { name = "import-linter" },
     { name = "nbstripout" },
-    { name = "pyarrow" },
+    { name = "pyarrow", specifier = "==26.0.0" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
