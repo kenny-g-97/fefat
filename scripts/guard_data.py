@@ -69,7 +69,19 @@ SSH_PRIVATE_KEY = re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$")
 ENV_FILE = ".env"
 ENV_EXAMPLE = ".env.example"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
-SECRET_VALUE = r"(?=[A-Za-z0-9/+_.=-]*[0-9])(?=[A-Za-z0-9/+_.=-]*[A-Za-z])[A-Za-z0-9/+_.=-]{16,}"
+QUOTE = r"\\?['\"]"
+VALUE_CHARACTER = r"[A-Za-z0-9/+_.=-]"
+QUOTED_CHARACTER = r"[^\s'\"\\]"
+UNQUOTED_VALUE = (
+    rf"(?!{VALUE_CHARACTER}*\.\.\.)(?={VALUE_CHARACTER}*[0-9])(?={VALUE_CHARACTER}*[A-Za-z])"
+    rf"{VALUE_CHARACTER}{{16,}}"
+)
+QUOTED_VALUE = (
+    rf"{QUOTE}(?!{QUOTED_CHARACTER}*\.\.\.)(?={QUOTED_CHARACTER}*[0-9])"
+    rf"(?={QUOTED_CHARACTER}*[A-Za-z]){QUOTED_CHARACTER}{{16,}}{QUOTE}"
+)
+SECRET_NAME = r"(?:API_?KEY|(?:SECRET|PRIVATE|ACCESS)_?KEY|SECRET|TOKEN|PASSWORD)"
+ASSIGNMENT = rf"{QUOTE}?\]?(?:[ \t]*:[ \t]*[A-Za-z_][\w.\[\], |]*?)?[ \t]*[=:][ \t]*"
 PLAIN_TEXT_SECRET = "a key, token, or password written in plain text"
 
 
@@ -91,17 +103,12 @@ SECRET_PATTERNS = (
     SecretPattern(
         PLAIN_TEXT_SECRET,
         re.compile(
-            r"(?<![A-Za-z0-9_])[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)['\"]?[ \t]*[=:][ \t]*['\"]?"
-            + SECRET_VALUE
+            rf"(?<![A-Za-z0-9_])[A-Z0-9_]*{SECRET_NAME}{ASSIGNMENT}(?:{QUOTED_VALUE}|{UNQUOTED_VALUE})"
         ),
     ),
     SecretPattern(
         PLAIN_TEXT_SECRET,
-        re.compile(
-            r"(?i)(?<![a-z0-9_])[a-z0-9_]*(?:api_?key|secret|token|password)['\"]?[ \t]*[=:][ \t]*['\"]"
-            + SECRET_VALUE
-            + r"['\"]"
-        ),
+        re.compile(rf"(?i)(?<![a-z0-9_])[a-z0-9_]*{SECRET_NAME}{ASSIGNMENT}{QUOTED_VALUE}"),
     ),
 )
 

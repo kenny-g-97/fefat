@@ -185,6 +185,15 @@ def test_key_and_certificate_files_are_refused(repository: GitRepository, path: 
         "DATABENTO" + "_API_KEY: " + "x9" * 10,
         '{"API' + '_KEY": "' + "k3" * 10 + '"}',
         "api" + "_key = '" + "abcd1234" * 3 + "'",
+        "SECRET" + '_KEY = "' + "a1b2c3d4e5" * 2 + '"',
+        "AWS_SECRET" + "_ACCESS_KEY=" + "wJalrXUtnFEMI/K7MDENG/" + "bPxRfiCYEXAMPLEKEY",
+        "secret" + 'Key: "' + "Zz9" * 7 + '"',
+        "webpush(info, payload, vapid_private" + '_key="' + "Xk2b" * 6 + '")',
+        'os.environ["PUSH' + '_TOKEN"] = "' + "azGD9" * 5 + '"',
+        "PUSH" + '_TOKEN: Final = "' + "azGD9" * 5 + '"',
+        "api" + '_token: str = "' + "azGD9" * 5 + '"',
+        "PASS" + 'WORD="' + "Tr4d3r!Pass#" + "2026xyz" + '"',
+        "pass" + "word = '" + "S3cure@Fefat#" + "2026!" + "'",
     ],
 )
 def test_a_secret_in_a_text_file_is_refused(repository: GitRepository, secret_line: str) -> None:
@@ -210,6 +219,9 @@ def test_a_key_in_a_utf_16_text_file_is_refused(repository: GitRepository) -> No
         "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
         'password = "<your password here>"',
         "ANTHROPIC_API_KEY=",
+        "ANTHROPIC_API_KEY=sk-ant-api03-...",
+        'CACHE_KEY = "features/v1/ES/2024"',
+        "MAX_TOKENS = 16000",
     ],
 )
 def test_names_and_placeholders_that_only_look_like_secrets_pass(
@@ -218,6 +230,28 @@ def test_names_and_placeholders_that_only_look_like_secrets_pass(
     repository.stage("notes/setup.md", f"# Setup\n\n{line}\n".encode())
 
     assert guard_data.find_problems(repository.folder) == []
+
+
+def test_a_key_in_a_notebook_cell_is_refused_though_json_escapes_its_quotes(
+    repository: GitRepository,
+) -> None:
+    source = "PUSHOVER" + '_TOKEN = "' + "azGDORePK8gMaC0Q" + "OYAMyEEuzJnyUi" + '"\n'
+    cell = {**NOTEBOOK_WITH_OUTPUTS["cells"][0], "outputs": [], "source": [source]}
+    notebook = {**NOTEBOOK_WITH_OUTPUTS, "cells": [cell]}
+    repository.stage("notebooks/keys.ipynb", json.dumps(notebook).encode())
+
+    assert rules_by_path(repository) == {"notebooks/keys.ipynb": [guard_data.Rule.SECRET_IN_TEXT]}
+
+
+def test_a_line_that_matches_several_patterns_names_its_kind_once(
+    repository: GitRepository,
+) -> None:
+    repository.stage("config/settings.json", ('{"API' + '_KEY": "' + "k3" * 10 + '"}\n').encode())
+
+    problems = guard_data.find_problems(repository.folder)
+
+    assert len(problems) == 1
+    assert problems[0].describe().count(guard_data.PLAIN_TEXT_SECRET) == 1
 
 
 def test_a_staged_notebook_with_outputs_is_refused(repository: GitRepository) -> None:
@@ -247,6 +281,16 @@ def test_ordinary_files_pass(repository: GitRepository) -> None:
     repository.stage("python/fefat/src/fefat/__init__.py", b'__version__ = "0.0.1"\n')
 
     assert guard_data.find_problems(repository.folder) == []
+
+
+def test_main_refuses_with_exit_2_when_git_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    monkeypatch.chdir(tmp_path)
+
+    assert guard_data.main() == 2
+    assert "could not read git's index" in capsys.readouterr().err
 
 
 def test_main_lists_every_problem_and_exits_1(
