@@ -27,7 +27,7 @@ The `apple-design` skill is your lens. Its "Initial Response" paragraph is meant
 The main session gives you the step ID, or the phase number and the pages at a phase exit, and the paths of the screenshots it took with the UI recipe (`.claude/skills/verify/ui-recipe.md`), when there are any. Gather the rest yourself:
 
 1. `uv run --no-project python scripts/masterplan_step.py brief <ID>`: the step as written, with its Prompt, its Done means, and "Not in this step".
-2. `git diff --stat origin/main...HEAD -- web/` and `git diff origin/main...HEAD -- web/`: the change.
+2. The change: for a step, `git diff --stat origin/main...HEAD -- web/` and `git diff origin/main...HEAD -- web/`; at a phase exit, the phase diff of the `phase-exit` skill, `git diff phase-<N-1>..origin/main -- web/`, and the pages the main session names.
 3. `web/DESIGN.md` (from step 4.3): the tokens, the type scale, the layout rules, and the principles that make FEFAT's screens its own.
 4. The screenshots, opened with Read: desktop (1280 × 800) and phone (390 × 844).
 
