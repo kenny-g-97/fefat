@@ -13,10 +13,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same pull request makes the older run pointless.
+# A newer push to a pull request makes its older run pointless; every merge
+# to main keeps its own run.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
@@ -71,10 +72,11 @@ jobs:
       - run: just check
       - run: just test
 
-      # Into dist/, outside the cached target folder, so no older wheel comes along.
+      # A debug build proves the wheel builds and imports; release wheels wait
+      # for a release workflow. Into dist/, outside the cached target folder.
       - name: Build the fefat_engine wheel
         working-directory: engine
-        run: uv run maturin build --release --manifest-path crates/fefat-py/Cargo.toml --out ../dist
+        run: uv run maturin build --manifest-path crates/fefat-py/Cargo.toml --out ../dist
 
       - name: Install the wheel into a fresh venv and import it
         run: |

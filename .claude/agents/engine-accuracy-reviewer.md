@@ -33,7 +33,7 @@ The step ID from the main session; `uv run --no-project python scripts/masterpla
 - **Data.** The `ts_recv` clock; session boundaries, daylight-saving days, rolls, negative prices.
 - **Prop steps.** Drawdown kinds, daily-loss reset times, path fidelity, the order of extremes inside a minute.
 
-Run the scenario and differential tests when they exist (`uv run pytest`, `cargo test --manifest-path engine/Cargo.toml`), and quote what they print.
+Run the scenario and differential tests when they exist (`just test`, which runs cargo in `engine/` with the pinned toolchain), and quote what they print.
 
 ## Report
 
