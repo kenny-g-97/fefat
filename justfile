@@ -20,7 +20,7 @@ setup:
     cargo fetch --manifest-path engine/Cargo.toml
     pnpm --dir web install --frozen-lockfile
 
-# Lint, format-check, and type-check Python, Rust, and TypeScript
+# Lint, format-check, and type-check Python, Rust, and TypeScript; check the masterplan's shape
 check:
     uv run ruff check .
     uv run ruff format --check .
@@ -30,10 +30,12 @@ check:
     cargo clippy --manifest-path engine/Cargo.toml --workspace --all-targets --all-features -- -D warnings
     pnpm --dir web lint
     pnpm --dir web typecheck
+    uv run python docs/masterplan/tools/check_masterplan.py
 
-# Run every test suite: pytest, cargo test, vitest
+# Run every test suite: pytest, the Claude Code hook smoke tests, cargo test, vitest
 test:
     uv run pytest
+    uv run python scripts/test_hooks.py
     cargo test --manifest-path engine/Cargo.toml --workspace
     pnpm --dir web test
 

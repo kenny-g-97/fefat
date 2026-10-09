@@ -57,6 +57,8 @@ Hooks are Node scripts in exec form (`"command": "node", "args": [...]`) because
 - `PreToolUse` on `Bash|PowerShell`: deny `--no-verify`, changes to `core.hooksPath`, force pushes, and `git push` to `main`.
 - `SessionStart` (`startup|resume|compact`): print the current step, branch, and unproven acceptance items from `PROGRESS.md`.
 
+As built in step 0.4: `format-on-edit.mjs`, `guard-file-paths.mjs` (matcher `Edit|Write|NotebookEdit`), `guard-shell-commands.mjs`, and `session-brief.mjs` (also on `clear`; it prints the step's Done means through `scripts/masterplan_step.py`), plus `reviewer-shell-commands.mjs`, which the three reviewers register in their own frontmatter to keep their shell read-only. The guards never answer `allow`, so the permission rules still decide everything a guard does not forbid, and they fail closed (`onFailure: "block"`, and `ask` on unreadable input). Prettier is not installed, so the formatter covers Rust and Python; web files wait until the Phase 4 kickoff chooses prettier or oxfmt. `scripts/test_hooks.py` is the hooks' smoke test, run by `just test`.
+
 The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git config core.hooksPath .githooks`), which runs the same checks as CI, because Claude Code hooks do not see the builder's own commits.
 
 ## 6. Permissions (`.claude/settings.json`)
@@ -71,7 +73,7 @@ The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git
 | Integration | Verdict | Install |
 | --- | --- | --- |
 | GitHub via `gh` | keep (already signed in) | none |
-| Language-server plugins | keep; Claude sees type errors after each edit | `/plugin install rust-analyzer-lsp@claude-plugins-official`, `pyright-lsp`, `typescript-lsp`, with the server binaries on PATH |
+| Language-server plugins | keep; Claude sees type errors after each edit; installed at project scope on 2026-10-09 (step 0.4) | `/plugins` in the VS Code extension, or its bundled CLI: `claude plugin install rust-analyzer-lsp@anthropic-plugin-directory --scope project`, likewise `pyright-lsp` and `typescript-lsp`; each clone installs them once. Servers on PATH: `rustup component add rust-analyzer`, `pyright-langserver` from the uv environment, `npm install -g typescript-language-server typescript@6` (TypeScript 7 ships no `tsserver`) |
 | Playwright | keep from P4: test runner in CI plus the agent-facing CLI for phone emulation and recordings | `pnpm add -D @playwright/test`; `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` |
 | `security-guidance` plugin | keep from P4 | `/plugin install security-guidance@claude-plugins-official` |
 | Library-docs server (Context7) | add only if stale-API mistakes appear | `npx ctx7 setup --claude` |
@@ -100,3 +102,19 @@ The bundled `claude-api` skill is the reference for every Anthropic API call in 
 | Windows | no Bash sandbox natively; PowerShell is primary when its tool is on; hook `file_path` uses backslashes; exec-form hooks cannot spawn `.cmd` shims | `setup`, `sandboxing`, `tools-reference`, `hooks` | |
 
 On this machine on 2026-10-05: the VS Code extension was 2.1.289; the standalone `claude` CLI was not on PATH on Windows (it is in WSL); `python` and `python3` were Microsoft Store stubs while `python3.12` ran (uv-managed); no `jq`, `pwsh`, `rustc`, or `just`.
+
+### Re-verified on 2026-10-09 (VS Code extension 2.1.295, step 0.4)
+
+Checked against the extension's bundled CLI (`resources/native-binary/claude.exe`) and settings schema, and the docs at code.claude.com. The table above still holds, with these differences:
+
+1. The plugin marketplace on this PC is the built-in `anthropic-plugin-directory`, which serves the plugins of `anthropics/claude-plugins-official`, the id the docs use. In VS Code the plugin manager opens with `/plugins`. Committed `enabledPlugins` switches plugins on in every clone, but each machine still runs the install once.
+2. A project skill named `verify` does not run by itself: Claude Code's commit instructions tell Claude to run it before each commit except docs-only and tests-only ones, so the skill must stay model-invocable.
+3. A hook that exits 0 without output makes no decision, and the permission rules then apply; only `deny`, `ask`, `allow`, or `defer` decide. PostToolUse cannot block. Handlers gained `if`, `onFailure`, `shell`, and `asyncRewake`; SessionStart also matches `clear` and `fork`.
+4. `MultiEdit` no longer exists; `NotebookEdit` is matched separately and sends `notebook_path`.
+5. `Edit(...)` rules cover Write and NotebookEdit (there is no `Write(...)` rule); a `Read` deny also blocks writing that file, before any hook runs; `*` may appear anywhere in a Bash rule.
+6. Subagent `model` also accepts `fable` and full model IDs, and a subagent can carry its own hooks.
+7. `bypassPermissions` is ignored in project settings, like `auto`; the auto-mode classifier reads `autoMode` only from user or managed settings.
+
+Confirmed unchanged: the locations and fields of skills, rules, subagents, hooks, and settings; `paths` on skills as well as rules; `${CLAUDE_PROJECT_DIR}` substituted in exec-form `args`; backslashed `file_path` on Windows; no Bash sandbox on native Windows; a `Bash` deny rule turning off the PowerShell tool unless a `PowerShell` rule exists; the Stop-hook cap of eight consecutive continuations.
+
+On this machine on 2026-10-09: Node 24.18, uv 0.11.33, Rust 1.99.0 with `rust-analyzer`, `just` 1.58, `pyright-langserver` in the uv environment, `typescript-language-server` 6.0.2 with TypeScript 6.0.3 installed globally; no prettier. The standalone `claude` CLI is still not installed.

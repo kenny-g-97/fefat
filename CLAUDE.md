@@ -1,27 +1,101 @@
-# FEFAT — working agreements (bootstrap)
+# FEFAT — working agreements
 
-This is the bootstrap version. Masterplan step 0.4 replaces it with the full file and keeps the facts below.
+FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for futures and crypto traders: a feature lab, a Rust backtesting engine with strict versioning, a prop-firm simulator, an in-app Claude agent, and phone access. It is built step by step from the masterplan: start at [docs/masterplan/README.md](docs/masterplan/README.md). How a step runs is in [05-build-process.md](docs/masterplan/05-build-process.md); how code is shaped is in [08-code-design.md](docs/masterplan/08-code-design.md).
 
-## What this repository is
+This file holds what every session needs. Language conventions live in `.claude/rules/` (loaded by path), procedures in `.claude/skills/`, architecture in the docs, and the hard limits in the hooks under `.claude/hooks/`, registered in `.claude/settings.json`.
 
-FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for futures and crypto traders: feature lab, Rust backtesting engine with strict versioning, prop-firm simulator, in-app Claude agent, phone access. The build follows the masterplan in `docs/masterplan/` — start at `docs/masterplan/README.md`; the build process is in `docs/masterplan/05-build-process.md`.
+## Repository map
+
+- `engine/`: the Cargo workspace. `fefat-core` holds the types and the `MarketDataReader` trait, with no I/O; `fefat-engine`, `fefat-prop`, and `fefat-metrics` are pure computation; `fefat-data` is the only crate that opens files; `fefat-py` builds the Python module `fefat_engine`; `fefat-cli` drives goldens and benchmarks.
+- `python/fefat/src/fefat/`: the SDK (`import fefat as ff`), with `market`, `features`, `indicators`, `strategy`, `backtest`, `prop`, `analytics`, `research`, and `reference`.
+- `python/fefat_app/src/fefat_app/`: the local server, with `http/`, `services/`, `ports.py`, `container.py`, and the adapters (`database/`, `jobs/`, `executor.py`, `agent/`, `push/`, `credentials.py`).
+- `python/tests/`: pytest for both packages.
+- `web/`: the Vite, React, and TypeScript app (pnpm), organised by product area; its design system is `web/DESIGN.md` (from step 4.3).
+- `fixtures/synthetic/`: generated market data, the only data files in git. `fixtures/scenarios/`: the fill-rule scenario tables. `fixtures/goldens/`: golden runs (from Phase 2).
+- `notebooks/`: demos and checks, committed without outputs.
+- `scripts/`: `doctor.py`, `masterplan_step.py` (reads steps for `/step` and the session hook), `test_hooks.py`, and the fixture generators.
+- `docs/masterplan/`: the plan with `PROGRESS.md`, `BACKLOG.md`, and `DECISIONS.md`. [docs/adr/](docs/adr/): the decision records (from step 0.7). `docs/spec/`: normative specifications.
+- `.github/`: the pull request template (and the CI workflow from step 0.6).
+- `.claude/`: `settings.json`, `hooks/`, `rules/`, `skills/`, `agents/`. `.githooks/pre-commit`: the commit gate, active once `git config core.hooksPath .githooks` has run in the clone.
+
+## Commands
+
+The same in PowerShell, Git Bash, CI, and macOS:
+
+```text
+just doctor   # the tools FEFAT needs, each OK or MISSING
+just setup    # uv workspace, Cargo workspace, web dependencies
+just check    # ruff, pyright, import-linter, cargo fmt and clippy, oxlint, tsc
+just test     # pytest, the hook smoke tests, cargo test, vitest
+just dev      # local server and web dev server (from Phase 4)
+```
+
+`just e2e` and `just up` arrive with Phases 4 and 5. Single checks: `uv run python scripts/test_hooks.py`, `uv run python docs/masterplan/tools/check_masterplan.py`, and `uv run --no-project python scripts/masterplan_step.py next` for where the plan stands.
 
 ## How work happens
 
-- One masterplan step per session. Each step's prompt is in `docs/masterplan/phases/P*.md`; status is in `docs/masterplan/PROGRESS.md`.
-- Steps 0.1–0.3 may commit to `main`. From step 0.4 on, every step works on a branch `step/N.M-<slug>` and ends with a pull request; never commit to `main` after that.
-- Stay inside the current step. Note anything else in `docs/masterplan/BACKLOG.md` instead of doing it.
-- If a step's assumption no longer holds, stop and propose an amendment rather than deviating silently.
+- One masterplan step per session: `/step N.M` (`/step N.M --dry-run` only previews it). A phase opens with `/phase-kickoff N` and closes with `/phase-exit N`.
+- Every step works on a branch `step/N.M-<slug>` and ends with a pull request from `.github/pull_request_template.md`. Never commit to `main`: the builder squash-merges with the routine in `05-build-process.md` §8.
+- GitHub's free plan cannot protect `main` (D-30), so the hooks and the merge routine are the only guard: never work around them.
+- `git push`, `gh pr merge`, golden regeneration, new dependencies, and anything mentioning Databento always ask the builder first (`.claude/settings.json`).
+- The step's meta line decides the mode: `Plan mode: required` means a plan the builder approves before any edit, and `Model hint: hard` asks for the strongest model.
+- Stay inside the step and put anything else in `docs/masterplan/BACKLOG.md`. If a step's assumption no longer holds, stop and propose an Amendment block instead of deviating silently.
+- Each acceptance item gets a test that fails without the change, shown failing first.
+- Before the pull request: `just check`, `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, the reviewers on the step's meta line, and `/security-review` when it says `Security: yes`.
+- The pull request writes the step's `PROGRESS.md` row as `done` with its number; the row becomes true when it is merged.
+- After an interruption, resume from git, the step file, and `PROGRESS.md`, not from memory; the session-start hook prints where the work stands.
+- Commits have an imperative subject under 72 characters ending in `(step N.M)`, and a body that says why.
+
+## Invariants
+
+Each is a decision in `docs/masterplan/DECISIONS.md`; step 0.7 turns them into records under [docs/adr/](docs/adr/).
+
+- Runs are deterministic, pinned, and hashed; versions and runs are immutable (D-11).
+- No look-ahead: features are prefix-invariant and pass the leak detector (D-12).
+- Licensed market data never enters the repository, a pull request, or a prompt (D-21, D-24).
+- Scenario tables specify the fills, and the Python reference engine is the oracle the Rust engine matches exactly (D-07, D-10).
+- Goldens change only with the builder's approval, a fill-model version bump when fills change, and a changelog entry (the `engine-golden` skill).
+- Tests are never weakened, skipped, or deleted to make them pass.
+- Dependencies point inward, `web → fefat_app.http → services → fefat → fefat_engine`, and a new dependency needs an ADR line (D-27, `08-code-design.md` §1).
+
+## Code design, skills, and reviewers
+
+- The SDK is the core; everything that touches the outside world is an adapter behind a named port (`fefat_app/ports.py`, and the `MarketDataReader` and `AccountModel` traits in Rust), built once and injected (D-27).
+- Intention-revealing names from the glossary in `00-product-spec.md` §7 (never `data`, `utils`, `helpers`, `manager`), fail-fast errors that say "Expected …, got …", an enum for every state, injected dependencies, immutable values, and small units (`08-code-design.md` §3).
+- Skills per area, which the `step` skill loads: `software-design-principles` for any code; `designing-architecture` for a new module, package, crate, or seam; `backtest-expert` for engine, prop, results, and research work; `frontend-design:frontend-design` with `web/DESIGN.md` for anything under `web/`; the bundled `claude-api` skill for any code that calls the Anthropic API.
+- Read-only reviewer subagents: `step-reviewer` for every step; `engine-accuracy-reviewer` for engine, data, and prop steps; `leakage-auditor` for feature, data, and research steps; `ui-verifier` for UI steps (from step 4.3).
 
 ## This machine
 
 - Native Windows 11 (no WSL for this project). PowerShell and Git Bash are both available.
 - Bare `python` and `python3` are Microsoft Store stubs here: always run Python through `uv run python` (or `python3.12`).
 - Line endings are LF everywhere (`.gitattributes`, `.editorconfig`); use `pathlib` for paths.
+- `just` runs recipe lines in `cmd.exe` on Windows, so a recipe line is one plain command: no `&&`, pipes, or environment prefixes.
+- Node 24 runs the Claude Code hooks. The settings call them in exec form (`node` and its arguments), never through a shell, and their smoke tests are `scripts/test_hooks.py`.
+- The standalone `claude` CLI is not installed, by choice: Claude Code runs in the VS Code extension, plugins come from `/plugins`, and the extension's own CLI sits in `~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/`.
+- The language-server plugins (`rust-analyzer-lsp`, `pyright-lsp`, `typescript-lsp`) report type errors after each edit; their servers must be on PATH (`06-claude-code-setup.md` §7).
 - The builder knows Python and notebooks well and is new to web, mobile, and DevOps: explain those parts plainly and prefer checks they can run or click over code they must read.
 
 ## Never
 
-- Commit, attach, or paste licensed market data. Real data lives outside the repository under `FEFAT_DATA_DIR`; only generated fixtures under `fixtures/synthetic/` are committed.
+- Commit, attach, or paste licensed market data. Real data lives outside the repository under `FEFAT_DATA_DIR` and is referenced by path; only generated fixtures under `fixtures/synthetic/` are committed. Read aggregates (counts, statistics, a few sample rows) into the conversation, never raw data.
 - Commit secrets (`.env*`, API keys, certificates). Keys go in the operating system's credential store.
 - Weaken, skip, or delete a test to make it pass, or change a scenario's expected value to match the code.
+- Commit on or push to `main`, force-push, pass `--no-verify`, or change `core.hooksPath`. The shell hook refuses all of these except the commit on `main`, before which it asks.
+- Merge a pull request: the builder merges, after running the step's checks.
+
+## Where things are
+
+| Document | Holds |
+| --- | --- |
+| `docs/masterplan/00-product-spec.md` | what FEFAT is, scope, journeys, glossary |
+| `docs/masterplan/01-architecture.md` | system overview, stack, layout, data model, API, local server security |
+| `docs/masterplan/02-engine-and-data.md` | market data, engine, fills and costs, trade paths, features, results, validation |
+| `docs/masterplan/03-prop-simulator.md` | prop rules, prop strategies, backtest-file replay, Monte Carlo |
+| `docs/masterplan/04-agent.md` | the in-app agent |
+| `docs/masterplan/05-build-process.md` | the step shape, session protocol, reviews, test-data policy, merge routine |
+| `docs/masterplan/06-claude-code-setup.md` | this configuration and the Claude Code facts it was verified against |
+| `docs/masterplan/07-tools-and-costs.md` | tools to install, accounts, market data, costs |
+| `docs/masterplan/08-code-design.md` | the dependency rule, names, design rules per language, the frontend process |
+| `docs/masterplan/phases/P*.md` | the steps, with each phase's kickoff and exit prompts |
+| `docs/masterplan/PROGRESS.md`, `BACKLOG.md`, `DECISIONS.md` | status, deferred work, the decision log |

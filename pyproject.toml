@@ -36,6 +36,7 @@ exclude = ["*.md"]
 
 [tool.pyright]
 include = ["python", "scripts"]
+extraPaths = ["scripts", "docs/masterplan/tools"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 venvPath = "."
 venv = ".venv"
@@ -45,6 +46,7 @@ strict = ["python/fefat_app"]
 
 [tool.pytest.ini_options]
 testpaths = ["python/tests"]
+pythonpath = ["scripts"]
 
 [tool.importlinter]
 root_packages = ["fefat", "fefat_app"]

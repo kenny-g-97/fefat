@@ -212,6 +212,8 @@ Not in this step: the data-policy commit guard (0.5), CI (0.6), the `ui-verifier
 
 2026-10-09: the rules list says `database` instead of `db` (D-27); the three design skills installed on 2026-10-09 stay in `.claude/skills/` untouched; the `step` skill loads skills per area (`08-code-design.md`).
 
+2026-10-09, while doing the step: the installed Claude Code (2.1.295) differs from `06-claude-code-setup.md` §8 in seven points, now listed there under "Re-verified on 2026-10-09"; the most visible are the plugin marketplace id (`anthropic-plugin-directory` on this PC) and the `verify` skill, which runs through Claude's commit instructions rather than by itself. The step added `scripts/masterplan_step.py`, the one reader of the masterplan for `/step` and the session hook, which imports the patterns of `check_masterplan.py`, and a fifth hook that keeps the reviewer subagents read-only. Prettier is not installed, so the formatter hook covers Rust and Python, and web files wait for the Phase 4 kickoff's choice between prettier and oxfmt. A `Read` deny rule on `.env*` also blocks writes and fires before any hook, so in Your checks the refusal shows the permission message; `scripts/test_hooks.py` covers the hook's own message. The global TypeScript for the TypeScript language server is pinned to 6, because TypeScript 7 ships no `tsserver`.
+
 ### 0.5 Data policy, synthetic fixtures, commit guard
 
 Depends on: 0.4 · Plan mode: optional · Reviews: step-reviewer · Security: yes · Model hint: default
