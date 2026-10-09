@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+/**
+ * PreToolUse hook for the read-only reviewer subagents (step-reviewer,
+ * engine-accuracy-reviewer, leakage-auditor), registered in each one's
+ * frontmatter for its shell tool.
+ *
+ * A reviewer may read the repository and run the checks and tests; it may
+ * not change anything. Every command in a call must match the read-only list
+ * below, and no output may go into a file; anything else is denied with a
+ * message that tells the reviewer to describe the change instead. The main
+ * session's guards (guard-shell-commands.mjs) still apply on top.
+ *
+ * Its cases are in scripts/test_hooks.py.
+ */
+import { readHookInput } from "./lib/hook-input.mjs";
+import { denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
+import { absolutePath, projectDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
+import {
+  BASH,
+  POWERSHELL,
+  commandsIn,
+  isDiscardedOutput,
+  parseGitInvocation,
+  programIndex,
+  programName,
+} from "./lib/shell-commands.mjs";
+
+const BRANCH_CHANGING_OPTIONS = new Set([
+  "--delete", "--move", "--copy", "--force", "--unset-upstream", "--edit-description", "--track", "--no-track",
+]);
+const BRANCH_CHANGING_LETTERS = /^-[A-Za-z]*[dDmMcCfut]/;
+const BRANCH_LISTING_OPTIONS = new Set(["--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"]);
+
+function readOnly(pattern, { forbids = [], requiresOneOf = [], accepts = () => true } = {}) {
+  return { words: pattern.split(" "), forbids, requiresOneOf, accepts };
+}
+
+function listsBranchesOnly(rest) {
+  if (rest.some((word) => BRANCH_CHANGING_OPTIONS.has(word) || word.startsWith("--set-upstream-to") || BRANCH_CHANGING_LETTERS.test(word))) {
+    return false;
+  }
+  const positionals = rest.filter((word) => !word.startsWith("-"));
+  return positionals.length === 0 || rest.some((word) => BRANCH_LISTING_OPTIONS.has(word));
+}
+
+const READ_ONLY_COMMANDS = [
+  readOnly("git diff", { forbids: ["--output"] }),
+  readOnly("git log", { forbids: ["--output"] }),
+  readOnly("git show", { forbids: ["--output"] }),
+  ...["status", "blame", "rev-parse", "rev-list", "ls-files", "grep", "merge-base", "describe", "cat-file", "for-each-ref", "shortlog"].map(
+    (subcommand) => readOnly(`git ${subcommand}`),
+  ),
+  readOnly("git branch", { accepts: listsBranchesOnly }),
+  readOnly("just check"),
+  readOnly("just test"),
+  readOnly("cargo test"),
+  readOnly("cargo check"),
+  readOnly("cargo metadata"),
+  readOnly("cargo tree"),
+  readOnly("cargo clippy", { forbids: ["--fix"] }),
+  readOnly("cargo fmt", { requiresOneOf: ["--check"] }),
+  readOnly("uv run pytest", { forbids: ["--snapshot-update", "--force-regen"] }),
+  readOnly("uv run pyright"),
+  readOnly("uv run lint-imports"),
+  readOnly("uv run ruff check", { forbids: ["--fix", "--unsafe-fixes", "--add-noqa"] }),
+  readOnly("uv run ruff format", { requiresOneOf: ["--check", "--diff"] }),
+  readOnly("uv run python docs/masterplan/tools/check_masterplan.py"),
+  readOnly("uv run python scripts/test_hooks.py"),
+  readOnly("uv run python scripts/masterplan_step.py"),
+  readOnly("uv run --no-project python docs/masterplan/tools/check_masterplan.py"),
+  readOnly("uv run --no-project python scripts/masterplan_step.py"),
+  readOnly("pnpm --dir web lint"),
+  readOnly("pnpm --dir web typecheck"),
+  readOnly("pnpm --dir web test", { forbids: ["-u", "--update"] }),
+  readOnly("node --check"),
+  readOnly("find", { forbids: ["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"] }),
+  readOnly("sort", { forbids: ["-o", "--output"] }),
+  ...[
+    "rg", "grep", "ls", "cat", "head", "tail", "wc", "diff", "echo", "pwd", "cd", "which", "file", "stat",
+    "tree", "uniq", "cut", "basename", "dirname", "realpath", "true",
+    "get-content", "gc", "get-childitem", "gci", "dir", "select-string", "sls", "get-location",
+    "set-location", "test-path", "measure-object", "select-object", "where-object", "sort-object",
+    "format-table", "format-list", "get-item", "resolve-path", "split-path", "join-path", "write-output",
+  ].map((program) => readOnly(program)),
+];
+
+function commandWords(command) {
+  const words = command.words.slice(programIndex(command.words));
+  if (words.length > 0 && programName(words[0]) === "git") {
+    const invocation = parseGitInvocation(words.slice(1), command.directory);
+    return invocation === null ? words : ["git", invocation.subcommand, ...invocation.args];
+  }
+  return words;
+}
+
+function matchesReadOnly(rule, words) {
+  if (words.length < rule.words.length || programName(words[0]) !== rule.words[0]) {
+    return false;
+  }
+  for (let index = 1; index < rule.words.length; index += 1) {
+    if (withForwardSlashes(words[index]) !== rule.words[index]) {
+      return false;
+    }
+  }
+  const rest = words.slice(rule.words.length);
+  if (rest.some((word) => rule.forbids.some((option) => word === option || word.startsWith(`${option}=`)))) {
+    return false;
+  }
+  if (rule.requiresOneOf.length > 0 && !rest.some((word) => rule.requiresOneOf.includes(word))) {
+    return false;
+  }
+  return rule.accepts(rest);
+}
+
+function problemsWith(commands) {
+  const problems = [];
+  for (const command of commands) {
+    if (command.opaque !== null) {
+      problems.push(`it cannot read ${command.opaque}`);
+      continue;
+    }
+    const targets = command.outputTargets.filter((target) => !isDiscardedOutput(target));
+    if (targets.length > 0) {
+      problems.push(`"${command.text}" writes to ${targets.join(", ")}`);
+    } else if (!READ_ONLY_COMMANDS.some((rule) => matchesReadOnly(rule, commandWords(command)))) {
+      problems.push(`"${command.text}" is not on the read-only list`);
+    }
+  }
+  return problems;
+}
+
+function startDirectory(input) {
+  if (typeof input.cwd === "string" && input.cwd !== "") {
+    return absolutePath(input.cwd, input.cwd);
+  }
+  return projectDirectory(input);
+}
+
+async function main() {
+  const reading = await readHookInput();
+  if (!reading.ok) {
+    denyToolCall(`Reviewers are read-only, and this command could not be checked (${reading.reason}).`);
+    return;
+  }
+  const commandLine = reading.input.tool_input?.command;
+  if (typeof commandLine !== "string") {
+    leaveToolCallToPermissionRules();
+    return;
+  }
+  const shell = reading.input.tool_name === "PowerShell" ? POWERSHELL : BASH;
+  const problems = problemsWith(commandsIn(commandLine, shell, startDirectory(reading.input)));
+  if (problems.length === 0) {
+    leaveToolCallToPermissionRules();
+    return;
+  }
+  denyToolCall(
+    `Reviewers are read-only: ${problems.join("; ")}. Use read-only commands (git diff, git log, git show, just check, just test, cargo test, uv run pytest, rg, cat) and describe any change or experiment for the main session instead.`,
+  );
+}
+
+main().catch((error) => {
+  denyToolCall(`Reviewers are read-only, and this command could not be checked (${error.message}).`);
+});

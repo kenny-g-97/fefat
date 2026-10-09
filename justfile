@@ -31,9 +31,10 @@ check:
     pnpm --dir web lint
     pnpm --dir web typecheck
 
-# Run every test suite: pytest, cargo test, vitest
+# Run every test suite: pytest, the Claude Code hook smoke tests, cargo test, vitest
 test:
     uv run pytest
+    uv run python scripts/test_hooks.py
     cargo test --manifest-path engine/Cargo.toml --workspace
     pnpm --dir web test
 
