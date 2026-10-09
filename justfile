@@ -22,14 +22,14 @@ doctor:
 
 # Install every dependency: the uv workspace, the Cargo workspace, the web app
 setup:
-    uv sync --all-packages
+    uv sync --locked --all-packages
     just setup-engine
     pnpm --dir web install --frozen-lockfile
 
 # Fetch the Cargo workspace's crates
 [working-directory("engine")]
 setup-engine:
-    cargo fetch
+    cargo fetch --locked
 
 # Run the data guard; lint, format-check, and type-check Python, Rust, and TypeScript; check the masterplan's shape
 check:

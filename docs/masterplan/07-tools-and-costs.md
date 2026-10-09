@@ -53,6 +53,7 @@ Details and sources: `appendix/research-market-data.md`.
 | Electricity | a few dollars a month under heavy sweeps | 9950X at full load is about 200 W |
 | In-app agent | pay as you go; set a monthly cap in Settings | Opus 5.5: $4 / $20 per million tokens in / out; Sonnet 5.5: $2 / $10; cache reads are much cheaper |
 | Claude Code during the build | your plan | each step carries a model hint; heavy multi-agent workflows are off by default |
+| CI (GitHub Actions, step 0.6) | $0 within the free plan | the private repository gets 2,000 minutes and 500 MB of artifact storage a month; every push to a pull request runs a Windows and a Linux job, and Windows minutes are priced higher; without a payment method on file, runs stop when the minutes are used up |
 | Market data | $199 for the history, up to ~$2.5k for five years of ticks (§3); then a recurring cost to keep the futures platform data current: pay-as-you-go downloads, priced by the sync before each one (at the 2024 rates, daily ticks for the eight products come to tens of dollars a month; bars only, a few dollars), or the $199 plan in months you need more | crypto updates are free |
 
 ## 5. Product-phase costs (P14 and beyond)
