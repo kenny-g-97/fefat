@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fefat-engine"
+description = "The FEFAT engine: the Rust extension module fefat_engine."
+requires-python = ">=3.12"
+dynamic = ["version"]
+
+[tool.maturin]
+module-name = "fefat_engine"
