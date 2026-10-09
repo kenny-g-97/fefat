@@ -151,12 +151,14 @@ def test_the_size_limit_is_25_mb() -> None:
 
 
 def test_env_files_are_refused_and_the_example_passes(repository: GitRepository) -> None:
-    for path in [".env", "python/.env.local", ".env.example"]:
+    for path in [".env", "python/.env.local", ".envrc", "config/prod.env", ".env.example"]:
         repository.stage(path, b"FEFAT_HOME=\n")
 
     assert rules_by_path(repository) == {
         ".env": [guard_data.Rule.SECRET_FILE],
         "python/.env.local": [guard_data.Rule.SECRET_FILE],
+        ".envrc": [guard_data.Rule.SECRET_FILE],
+        "config/prod.env": [guard_data.Rule.SECRET_FILE],
     }
 
 
@@ -177,13 +179,45 @@ def test_key_and_certificate_files_are_refused(repository: GitRepository, path: 
         "token: " + "ghp" + "_" + "Z9" * 20,
         "aws_access_key_id = " + "AKIA" + "ABCDEFGHIJKLMNOP",
         "-----BEGIN " + "OPENSSH PRIVATE KEY-----",
-        "DATABENTO" + "_API_KEY=" + "q" * 32,
+        "DATABENTO" + "_API_KEY=" + "q7" * 16,
+        "API" + "_KEY=" + "a1b2" * 5,
+        "PASS" + "WORD=" + "Hunter2" * 3,
+        "DATABENTO" + "_API_KEY: " + "x9" * 10,
+        '{"API' + '_KEY": "' + "k3" * 10 + '"}',
+        "api" + "_key = '" + "abcd1234" * 3 + "'",
     ],
 )
 def test_a_secret_in_a_text_file_is_refused(repository: GitRepository, secret_line: str) -> None:
     repository.stage("notes/setup.md", f"# Setup\n\n{secret_line}\n".encode())
 
     assert rules_by_path(repository) == {"notes/setup.md": [guard_data.Rule.SECRET_IN_TEXT]}
+
+
+def test_a_key_in_a_utf_16_text_file_is_refused(repository: GitRepository) -> None:
+    text = "ANTHROPIC = '" + "sk-ant-" + "Q" * 40 + "'\r\n"
+    repository.stage("notes/powershell-output.txt", text.encode("utf-16"))
+
+    assert rules_by_path(repository) == {
+        "notes/powershell-output.txt": [guard_data.Rule.SECRET_IN_TEXT]
+    }
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'DATABENTO_API_KEY = "databento-api-key"',
+        "token = credential_store.read_token()",
+        "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+        'password = "<your password here>"',
+        "ANTHROPIC_API_KEY=",
+    ],
+)
+def test_names_and_placeholders_that_only_look_like_secrets_pass(
+    repository: GitRepository, line: str
+) -> None:
+    repository.stage("notes/setup.md", f"# Setup\n\n{line}\n".encode())
+
+    assert guard_data.find_problems(repository.folder) == []
 
 
 def test_a_staged_notebook_with_outputs_is_refused(repository: GitRepository) -> None:

@@ -12,9 +12,12 @@ the tracked files plus everything staged, including files forced past
 
 - market-data files (.parquet, .dbn, .zip, ...) anywhere outside fixtures/synthetic/;
 - data files under fixtures/synthetic/ that its MANIFEST.json does not list with
-  their exact SHA-256, so real data cannot pass for a generated fixture;
+  their exact SHA-256, so a file dropped there cannot pass for a generated
+  fixture (a hand-written manifest entry is caught by the regeneration test in
+  `just test`, python/tests/test_gen_fixtures.py, not here);
 - files over 25 MB;
-- .env files, keys, and certificates, and API keys or private keys inside text files;
+- .env files (`.env*`, `*.env`), keys, and certificates, and API keys, tokens,
+  passwords, or private keys inside text files (UTF-8, or UTF-16 with a byte-order mark);
 - notebooks with cell outputs, which can hold licensed data.
 
 Exits 0 when the index is clean, 1 with every problem listed, and 2 when git's
@@ -23,6 +26,7 @@ index cannot be read; a commit stops on anything but 0. Standard library only.
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import io
 import json
@@ -65,6 +69,8 @@ SSH_PRIVATE_KEY = re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$")
 ENV_FILE = ".env"
 ENV_EXAMPLE = ".env.example"
 SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+SECRET_VALUE = r"(?=[A-Za-z0-9/+_.=-]*[0-9])(?=[A-Za-z0-9/+_.=-]*[A-Za-z])[A-Za-z0-9/+_.=-]{16,}"
+PLAIN_TEXT_SECRET = "a key, token, or password written in plain text"
 
 
 @dataclass(frozen=True)
@@ -83,10 +89,18 @@ SECRET_PATTERNS = (
     SecretPattern("an AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     SecretPattern("a private key", re.compile(r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----")),
     SecretPattern(
-        "a key or password assigned in plain text",
+        PLAIN_TEXT_SECRET,
         re.compile(
-            r"(?m)^[ \t]*(?:export[ \t]+)?[A-Z][A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)"
-            r"[ \t]*=[ \t]*['\"]?[A-Za-z0-9/+_.=-]{16,}"
+            r"(?<![A-Za-z0-9_])[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)['\"]?[ \t]*[=:][ \t]*['\"]?"
+            + SECRET_VALUE
+        ),
+    ),
+    SecretPattern(
+        PLAIN_TEXT_SECRET,
+        re.compile(
+            r"(?i)(?<![a-z0-9_])[a-z0-9_]*(?:api_?key|secret|token|password)['\"]?[ \t]*[=:][ \t]*['\"]"
+            + SECRET_VALUE
+            + r"['\"]"
         ),
     ),
 )
@@ -141,7 +155,7 @@ class IndexedFile:
         name = self.name()
         if name == ENV_EXAMPLE:
             return False
-        is_env_file = name == ENV_FILE or name.startswith(ENV_FILE + ".")
+        is_env_file = name.startswith(ENV_FILE) or name.endswith(ENV_FILE)
         return is_env_file or name.endswith(KEY_SUFFIXES) or SSH_PRIVATE_KEY.match(name) is not None
 
 
@@ -255,15 +269,26 @@ def notebook_problems(file: IndexedFile, content: bytes) -> Iterator[Problem]:
 
 
 def secret_kinds(text: str) -> list[str]:
-    return [secret.kind for secret in SECRET_PATTERNS if secret.pattern.search(text)]
+    found = [secret.kind for secret in SECRET_PATTERNS if secret.pattern.search(text)]
+    return list(dict.fromkeys(found))
+
+
+def readable_text(content: bytes) -> str | None:
+    """The text of a file, or None when it is binary; UTF-16 text is read through its byte-order mark."""
+    if content.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return content.decode("utf-16", errors="replace")
+    if b"\0" in content[:BINARY_SNIFF_BYTES]:
+        return None
+    return content.decode("utf-8", errors="replace")
 
 
 def content_problems(file: IndexedFile, content: bytes) -> Iterator[Problem]:
     if file.name().endswith(".ipynb"):
         yield from notebook_problems(file, content)
-    if b"\0" in content[:BINARY_SNIFF_BYTES]:
+    text = readable_text(content)
+    if text is None:
         return
-    kinds = secret_kinds(content.decode("utf-8", errors="replace"))
+    kinds = secret_kinds(text)
     if kinds:
         yield Problem(
             file.path,
@@ -392,8 +417,9 @@ def report(problems: Sequence[Problem]) -> str:
 
 
 def main() -> int:
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="replace")
     try:
         repository = Path(git_output(Path.cwd(), ["rev-parse", "--show-toplevel"]).decode().strip())
         problems = find_problems(repository)
