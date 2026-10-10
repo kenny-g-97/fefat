@@ -57,7 +57,7 @@ Before the pull request, run these in order, fix what they find, and re-run what
 1. `just check` and `just test`.
 2. The `verify` skill with `--full`.
 3. The `step-reviewer` subagent, given the step ID and the range `origin/main...HEAD`.
-4. The reviewers on the meta line: the `engine-accuracy-reviewer` and `leakage-auditor` subagents; `code-review` there means step 5 runs at `high`; `ui-verifier` arrives with step 4.3 (until then, note it under Deviations).
+4. The reviewers on the meta line: the `engine-accuracy-reviewer` and `leakage-auditor` subagents; `code-review` there means step 5 runs at `high`; `ui-verifier` arrives with step 4.3 (until then, note it under Deviations). The `design-reviewer` subagent reviews every step that changes `web/` from step 4.3 on, whether or not the meta line names it; give it the screenshots of the UI recipe (D-34).
 5. `/code-review medium` (or `high`, see above).
 6. `/ponytail-review` (the ponytail plugin's `ponytail:ponytail-review` skill) over the branch, `origin/main...HEAD` (D-32).
 7. `/security-review` when the meta line says `Security: yes`.

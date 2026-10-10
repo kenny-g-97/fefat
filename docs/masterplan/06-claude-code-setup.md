@@ -36,8 +36,9 @@ A short bootstrap `CLAUDE.md` exists since the repository preparation (2026-10-0
 | `designing-architecture` | model-invoked; installed 2026-10-09 | the architecture workflow behind `08-code-design.md` §1, for any new module, package, crate, or seam |
 | `software-design-principles` | model-invoked; installed 2026-10-09 | the design rules behind `08-code-design.md` §3; loaded for any code |
 | `backtest-expert` | model-invoked; installed 2026-10-09 | backtest methodology, the red-flag checklist, and a standard-library evaluation script (`scripts/evaluate_backtest.py`, run through `uv run --no-project python`); loaded for engine, prop, results, and research steps |
+| `apple-design` | model-invoked; installed 2026-10-10 | Apple's interface and motion principles translated for the web (response, direct manipulation, interruptible springs, spatial consistency, materials, typography, reduced motion, the eight design principles); the lens of the `design-reviewer` subagent (D-34) |
 
-The three design skills were copied verbatim from the builder's `newskills/` folder on 2026-10-09 (only the example command in `backtest-expert` was changed to run through `uv`); the `frontend-design` skill comes from the plugin installed at user scope the same day (§7).
+The three design skills were copied verbatim from the builder's `newskills/` folder on 2026-10-09 (only the example command in `backtest-expert` was changed to run through `uv`); the `frontend-design` skill comes from the plugin installed at user scope the same day (§7). The `apple-design` skill was placed in `.claude/skills/apple-design/` by the builder on 2026-10-10 and committed verbatim (D-34).
 
 ## 4. Subagents (`.claude/agents/<name>.md`), all read-only reviewers
 
@@ -47,6 +48,7 @@ The three design skills were copied verbatim from the builder's `newskills/` fol
 | `engine-accuracy-reviewer` | P0 (step 0.4) | tries to refute fills, costs, accounting, rounding, and determinism; every finding carries a reproducing scenario |
 | `leakage-auditor` | P0 (step 0.4) | as-of joins, bar labelling, cache keys, walk-forward splits; runs the truncation test |
 | `ui-verifier` | P4 (step 4.3, `model: sonnet`) | drives the app at desktop and phone sizes and returns pass or fail per criterion with screenshots |
+| `design-reviewer` | P0 (2026-10-10, D-34) | reviews every step that changes `web/` (from step 4.3) and the main pages at the exits of phases with UI through the `apple-design` skill; `web/DESIGN.md` wins where they differ |
 
 ## 5. Hooks (`.claude/settings.json`, scripts in `.claude/hooks/*.mjs`)
 
