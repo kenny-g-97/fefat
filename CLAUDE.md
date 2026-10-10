@@ -24,9 +24,10 @@ The same in PowerShell, Git Bash, CI, and macOS:
 
 ```text
 just doctor   # the tools FEFAT needs, each OK or MISSING
-just setup    # uv workspace, Cargo workspace, web dependencies
+just setup    # uv workspace, Cargo workspace, web dependencies, and the engine build
 just check    # the data guard, ruff, pyright, import-linter, cargo fmt and clippy, oxlint, tsc
-just test     # pytest, the hook smoke tests, cargo test, vitest
+just test     # the engine build, then pytest, the hook smoke tests, cargo test, vitest
+just build-engine  # compile the engine into .venv, where `import fefat` finds it
 just strip-notebooks  # clear notebook outputs; then git add the notebooks again
 just dev      # local server and web dev server (from Phase 4)
 ```

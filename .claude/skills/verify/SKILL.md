@@ -17,8 +17,8 @@ Otherwise collect the changed files, from `git status --porcelain` (staged, unst
 
 | Changed | Run |
 | --- | --- |
-| `engine/**` | `just check-engine`; `just test-engine` (cargo runs in `engine/`, where the pinned toolchain applies) |
-| `python/**`, `scripts/**`, `pyproject.toml`, `uv.lock` | `uv run ruff check .`; `uv run ruff format --check .`; `uv run pyright`; `uv run lint-imports`; `uv run pytest` |
+| `engine/**` | `just check-engine`; `just test-engine` (cargo runs in `engine/`, where the pinned toolchain applies); `just build-engine` and `uv run pytest`, because the Python tests import the built engine |
+| `python/**`, `scripts/**`, `pyproject.toml`, `uv.lock` | `uv run ruff check .`; `uv run ruff format --check .`; `uv run pyright`; `uv run lint-imports`; `just build-engine` and `uv run pytest` |
 | `web/**` | `pnpm --dir web lint`; `pnpm --dir web typecheck`; `pnpm --dir web test` |
 | `.claude/hooks/**`, `.claude/settings.json`, `scripts/test_hooks.py` | `node --check` on each changed `.mjs` file; `uv run python scripts/test_hooks.py` |
 | `docs/masterplan/**` | `uv run python docs/masterplan/tools/check_masterplan.py` |

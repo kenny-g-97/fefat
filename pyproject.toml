@@ -16,7 +16,9 @@ fefat-app = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.168.5",
     "import-linter",
+    "ipykernel>=7.4.0",
     "maturin>=1.15.0",
     "nbstripout",
     "pyarrow==26.0.0",
@@ -40,7 +42,7 @@ exclude = ["*.md"]
 
 [tool.pyright]
 include = ["python", "scripts"]
-extraPaths = ["scripts", "docs/masterplan/tools"]
+extraPaths = ["scripts", "docs/masterplan/tools", "engine/crates/fefat-py"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 venvPath = "."
 venv = ".venv"

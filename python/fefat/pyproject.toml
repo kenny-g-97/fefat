@@ -5,6 +5,7 @@ description = "FEFAT SDK: market data, features, strategies, backtests, prop sim
 requires-python = ">=3.12"
 dependencies = [
     "platformdirs>=4.12.4",
+    "polars>=1.44.2,<2",
 ]
 
 [build-system]
