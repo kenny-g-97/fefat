@@ -8,14 +8,16 @@ use std::fmt;
 pub struct DrawdownOverflow {
     /// The zero-based position of the value that overflowed.
     pub index: usize,
+    /// The value that overflowed.
+    pub value: i64,
 }
 
 impl fmt::Display for DrawdownOverflow {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "Expected the cumulative sum and its drawdown to fit in int64, got an overflow at index {}",
-            self.index
+            "Expected the cumulative sum and its drawdown to fit in int64, got an overflow at index {} (value {})",
+            self.index, self.value
         )
     }
 }
@@ -35,7 +37,7 @@ pub fn max_drawdown(values: impl IntoIterator<Item = i64>) -> Result<i64, Drawdo
     let mut peak: i64 = 0;
     let mut deepest: i64 = 0;
     for (index, value) in values.into_iter().enumerate() {
-        let overflow = DrawdownOverflow { index };
+        let overflow = DrawdownOverflow { index, value };
         equity = equity.checked_add(value).ok_or(overflow)?;
         peak = peak.max(equity);
         deepest = deepest.max(peak.checked_sub(equity).ok_or(overflow)?);
@@ -72,13 +74,19 @@ mod tests {
     fn a_sum_beyond_i64_names_the_value_that_overflowed() {
         assert_eq!(
             max_drawdown([i64::MAX, 1]),
-            Err(DrawdownOverflow { index: 1 })
+            Err(DrawdownOverflow { index: 1, value: 1 })
         );
     }
 
     #[test]
     fn a_drawdown_beyond_i64_names_the_value_that_overflowed() {
-        assert_eq!(max_drawdown([i64::MIN]), Err(DrawdownOverflow { index: 0 }));
+        assert_eq!(
+            max_drawdown([i64::MIN]),
+            Err(DrawdownOverflow {
+                index: 0,
+                value: i64::MIN
+            })
+        );
     }
 
     fn profits_and_losses() -> impl Strategy<Value = Vec<i64>> {

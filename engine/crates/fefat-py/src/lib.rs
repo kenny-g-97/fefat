@@ -8,7 +8,7 @@ mod fefat_engine {
     use std::collections::BTreeMap;
 
     use arrow_array::cast::AsArray;
-    use arrow_array::types::Int64Type;
+    use arrow_array::types::{ArrowPrimitiveType, Int64Type};
     use arrow_array::{Array, PrimitiveArray};
     use fefat_core::drawdown::{self, DrawdownOverflow};
     use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
@@ -34,8 +34,9 @@ mod fefat_engine {
         .map_err(overflow_error)
     }
 
-    /// The memory address of each chunk's values where the engine reads them: the
-    /// addresses Python reports for the same buffers when nothing was copied.
+    /// The memory address of each chunk's first value where the engine reads it, the
+    /// witness for tests that the import copied nothing: for an unsliced array it equals
+    /// the buffer address that PyArrow reports.
     #[pyfunction]
     fn arrow_values_addresses(values: AnyArray) -> PyResult<Vec<usize>> {
         let chunks = int64_chunks(values)?;
@@ -47,7 +48,7 @@ mod fefat_engine {
 
     /// The engine's version, the system it was compiled for, and its build profile.
     #[pyfunction]
-    fn build_info() -> BTreeMap<&'static str, &'static str> {
+    fn build_details() -> BTreeMap<&'static str, &'static str> {
         let profile = if cfg!(debug_assertions) {
             "debug"
         } else {
@@ -63,24 +64,33 @@ mod fefat_engine {
 
     fn int64_chunks(values: AnyArray) -> PyResult<Vec<PrimitiveArray<Int64Type>>> {
         let (chunks, field) = values.into_chunked_array()?.into_inner();
-        chunks
+        let not_int64 = || {
+            PyTypeError::new_err(format!(
+                "Expected an int64 Arrow array, got {} in field {:?}",
+                field.data_type(),
+                field.name()
+            ))
+        };
+        if field.data_type() != &Int64Type::DATA_TYPE {
+            return Err(not_int64());
+        }
+        let chunks = chunks
             .iter()
             .map(|chunk| {
-                let int64 = chunk.as_primitive_opt::<Int64Type>().ok_or_else(|| {
-                    PyTypeError::new_err(format!(
-                        "Expected an int64 Arrow array, got {}",
-                        field.data_type()
-                    ))
-                })?;
-                if int64.null_count() > 0 {
-                    return Err(PyValueError::new_err(format!(
-                        "Expected an int64 Arrow array without nulls, got {} nulls",
-                        int64.null_count()
-                    )));
-                }
-                Ok(int64.clone())
+                chunk
+                    .as_primitive_opt::<Int64Type>()
+                    .cloned()
+                    .ok_or_else(not_int64)
             })
-            .collect()
+            .collect::<PyResult<Vec<_>>>()?;
+        let nulls: usize = chunks.iter().map(|chunk| chunk.null_count()).sum();
+        if nulls > 0 {
+            return Err(PyValueError::new_err(format!(
+                "Expected an int64 Arrow array without nulls, got {nulls} nulls in field {:?}",
+                field.name()
+            )));
+        }
+        Ok(chunks)
     }
 
     fn overflow_error(overflow: DrawdownOverflow) -> PyErr {
