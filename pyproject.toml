@@ -16,6 +16,7 @@ fefat-app = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.168.5",
     "import-linter",
     "maturin>=1.15.0",
     "nbstripout",
