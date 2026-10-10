@@ -18,10 +18,12 @@ Install the tools listed in [docs/masterplan/07-tools-and-costs.md](docs/masterp
 
 ```text
 just doctor   # each tool reported as OK, OLD, or MISSING
-just setup    # uv workspace, Cargo workspace, web app dependencies
+just setup    # uv workspace, Cargo workspace, web app dependencies, and the engine build
 just check    # data guard; lint, format and type checks for Python, Rust, TypeScript; masterplan shape
-just test     # pytest, the Claude Code hook smoke tests, cargo test, vitest
+just test     # the engine build, then pytest, the Claude Code hook smoke tests, cargo test, vitest
 ```
+
+Python imports the Rust engine as `fefat_engine`, compiled into the workspace environment (`.venv`). After changing code under `engine/`, `just build-engine` rebuilds it; `just setup` and `just test` run it too. The notebooks in `notebooks/` run in VS Code on the `.venv` kernel, starting with `00-hello-engine.ipynb`.
 
 Once per clone, also run `git config core.hooksPath .githooks`. A clone copies no git settings, so without it the pre-commit guard, which refuses market data, secrets, and notebook outputs, never runs.
 
@@ -37,6 +39,7 @@ Changes reach `main` through pull requests, squash-merged with the routine in [d
 - `python/tests/`: the tests of both Python packages.
 - `web/`: the web app (Vite, React, TypeScript).
 - `fixtures/synthetic/`: generated market data for the tests, the only data files in git.
+- `notebooks/`: demos and checks, committed without outputs.
 - `scripts/`: the project scripts, in Python.
 - `docs/masterplan/`: the build plan, with its progress table, backlog, and decision log.
 - `docs/adr/`: the architecture decision records.
