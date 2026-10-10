@@ -1,8 +1,10 @@
 # Checks every pull request and every push to main on Windows and Linux with
-# the same just recipes as on the PC, then builds and imports the fefat_engine
-# wheel. One job per system, so `gh pr checks` lists one check each: the merge
-# routine in docs/masterplan/05-build-process.md section 8 waits for them.
-# Actions are pinned to commits (D-33); the comment names the release.
+# the same just recipes as on the PC (`just setup` builds the engine, so the
+# checks and tests run on the real extension), then builds and imports the
+# fefat_engine wheel. One job per system, so `gh pr checks` lists one check
+# each: the merge routine in docs/masterplan/05-build-process.md section 8
+# waits for them. Actions are pinned to commits (D-33); the comment names
+# the release.
 name: CI
 
 on:
@@ -73,11 +75,12 @@ jobs:
       - run: just check
       - run: just test
 
-      # A debug build proves the wheel builds and imports; release wheels wait
-      # for a release workflow. Into dist/, outside the cached target folder.
+      # A release build, like `just build-engine`, so it reuses the compiled
+      # crates; publishing wheels waits for a release workflow. Into dist/,
+      # outside the cached target folder.
       - name: Build the fefat_engine wheel
         working-directory: engine
-        run: uv run maturin build --manifest-path crates/fefat-py/Cargo.toml --out ../dist
+        run: uv run maturin build --release --manifest-path crates/fefat-py/Cargo.toml --out ../dist
 
       - name: Install the wheel into a fresh venv and import it
         run: |
