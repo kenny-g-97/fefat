@@ -40,7 +40,7 @@ exclude = ["*.md"]
 
 [tool.pyright]
 include = ["python", "scripts"]
-extraPaths = ["scripts", "docs/masterplan/tools"]
+extraPaths = ["scripts", "docs/masterplan/tools", "engine/crates/fefat-py"]
 exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
 venvPath = "."
 venv = ".venv"

@@ -20,16 +20,22 @@ default:
 doctor:
     uv run --no-project python scripts/doctor.py
 
-# Install every dependency: the uv workspace, the Cargo workspace, the web app
+# Install every dependency (the uv workspace, the Cargo workspace, the web app) and build the engine
 setup:
     uv sync --locked --all-packages
     just setup-engine
+    just build-engine
     pnpm --dir web install --frozen-lockfile
 
 # Fetch the Cargo workspace's crates
 [working-directory("engine")]
 setup-engine:
     cargo fetch --locked
+
+# Compile the engine (release) and install fefat_engine into the workspace environment, where `import fefat` finds it
+[working-directory("engine")]
+build-engine:
+    uv run maturin develop --release --uv --manifest-path crates/fefat-py/Cargo.toml
 
 # Run the data guard; lint, format-check, and type-check Python, Rust, and TypeScript; check the masterplan's shape
 check:
@@ -49,8 +55,9 @@ check-engine:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Run every test suite: pytest, the Claude Code hook smoke tests, cargo test, vitest
+# Build the engine, then run every test suite: pytest, the Claude Code hook smoke tests, cargo test, vitest
 test:
+    just build-engine
     uv run pytest
     uv run python scripts/test_hooks.py
     just test-engine
