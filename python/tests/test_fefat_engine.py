@@ -39,7 +39,7 @@ def test_a_polars_series_is_read_in_place() -> None:
 
 def test_a_buffer_that_is_not_an_arrow_array_is_refused() -> None:
     with pytest.raises(ValueError, match="__arrow_c_array__ or __arrow_c_stream__"):
-        fefat_engine.max_drawdown_arrow(array.array("q", PNL))
+        fefat_engine.max_drawdown_arrow(array.array("q", PNL))  # pyright: ignore[reportArgumentType]
 
 
 def test_an_array_that_is_not_int64_is_refused_with_its_type() -> None:
