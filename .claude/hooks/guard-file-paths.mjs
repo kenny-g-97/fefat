@@ -50,10 +50,11 @@ const RULES = [
       `${file.absolute} looks like a private key or certificate. Keys live in the operating system's credential store, never in files Claude Code writes (CLAUDE.md, Never).`,
   },
   {
-    applies: (file) => file.inProjectFolded !== null && file.inProjectFolded.split("/").includes(".git"),
+    // Any .git folder on the path, so a short-named parent (DOCUME~1) cannot hide the project's own.
+    applies: (file) => file.absolute.toLowerCase().split("/").includes(".git"),
     decision: "deny",
     reason: (file) =>
-      `${file.inProject} is inside .git/. Git's own files change only through git commands, so core.hooksPath and the commit gate cannot be bypassed.`,
+      `${file.absolute} is inside a .git folder. Git's own files change only through git commands, so core.hooksPath and the commit gate cannot be bypassed.`,
   },
   {
     applies: (file) => marketDataSuffix(file) !== null && !isSyntheticFixture(file),

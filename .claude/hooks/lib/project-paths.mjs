@@ -44,17 +44,25 @@ export function absolutePath(text, baseDirectory) {
 
 /**
  * True when a path names .git, .claude, or .githooks by another name Windows
- * accepts: the 8.3 short name (GIT~1, CLAUDE~1, GITHOO~1) or the name with
- * trailing dots or spaces, which Windows drops (.git.).
+ * accepts: the 8.3 short name (GIT~1, CLAUDE~1, GITHOO~1), the name with the
+ * trailing dots or spaces Windows drops (.git.), or an NTFS stream of it
+ * (.git::$INDEX_ALLOCATION); or names something inside one of them by its
+ * short name (.claude/SETTIN~1.JSO for settings.json).
  */
 export function usesWindowsAlias(text) {
-  return withForwardSlashes(text)
-    .split("/")
-    .some((segment) => {
-      const trimmed = segment.replace(/[. ]+$/, "").toLowerCase();
-      const dropsCharacters = trimmed !== segment.toLowerCase() && GUARDED_FOLDERS.has(trimmed);
-      return SHORT_NAME_OF_GUARDED_FOLDER.test(segment) || dropsCharacters;
-    });
+  let insideGuardedFolder = false;
+  for (const segment of withForwardSlashes(text).split("/")) {
+    const name = segment.split(":")[0].replace(/[. ]+$/, "").toLowerCase();
+    const guarded = GUARDED_FOLDERS.has(name);
+    if (SHORT_NAME_OF_GUARDED_FOLDER.test(segment) || (guarded && name !== segment.toLowerCase())) {
+      return true;
+    }
+    if (insideGuardedFolder && /~\d/.test(segment)) {
+      return true;
+    }
+    insideGuardedFolder ||= guarded;
+  }
+  return false;
 }
 
 export function foldCase(text) {

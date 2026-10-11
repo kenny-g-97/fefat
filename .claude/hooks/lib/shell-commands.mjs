@@ -55,7 +55,7 @@ const POWERSHELL_PARAMETERS_WITH_VALUE = new Set([
 ]);
 const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
   "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--exec-path", "--list-cmds",
-  "--attr-source",
+  "--attr-source", "--shallow-file",
 ]);
 const DISCARDED_OUTPUTS = new Set(["/dev/null", "$null", "nul", "nul:"]);
 // Bash runs ( ... ) and $( ... ) in a subshell, so a cd inside ends at the ")"; PowerShell's parentheses keep the location.

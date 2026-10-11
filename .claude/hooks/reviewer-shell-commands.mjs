@@ -62,8 +62,9 @@ const READ_ONLY_COMMANDS = [
     (subcommand) => readOnly(`git ${subcommand}`),
   ),
   readOnly("git branch", { accepts: listsBranchesOnly }),
-  readOnly("just check"),
-  readOnly("just test"),
+  // just runs every recipe named after the first, so `just check strip-notebooks` would write.
+  readOnly("just check", { accepts: (rest) => rest.length === 0 }),
+  readOnly("just test", { accepts: (rest) => rest.length === 0 }),
   readOnly("cargo test", { forbids: [...CARGO_RUNNER_OPTIONS, "--logfile"] }),
   readOnly("cargo check", { forbids: CARGO_RUNNER_OPTIONS }),
   readOnly("cargo metadata", { forbids: CARGO_RUNNER_OPTIONS }),
@@ -92,7 +93,7 @@ const READ_ONLY_COMMANDS = [
   readOnly("pnpm --dir web test", { forbids: ["-u", "--update", /^--outputFile/, /^--coverage/, /^--reporter/] }),
   readOnly("node --check", { accepts: (rest) => rest.every((word) => !word.startsWith("-")) }),
   readOnly("find", { forbids: FIND_ACTIONS_THAT_WRITE }),
-  readOnly("sort", { forbids: [/^-[A-Za-z]*o/, "--output"] }),
+  readOnly("sort", { forbids: [/^-[A-Za-z]*o/, /^--o/] }),
   readOnly("rg", { forbids: ["--pre"] }),
   ...[
     "grep", "ls", "cat", "head", "tail", "wc", "diff", "echo", "pwd", "cd", "which", "file", "stat",

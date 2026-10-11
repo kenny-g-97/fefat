@@ -230,6 +230,21 @@ def file_guard_cases() -> list[Case]:
             Expect.ASK,
         ),
         case(
+            "a short name of a file in .claude asks",
+            write(ROOT / ".claude" / "SETTIN~1.JSO"),
+            Expect.ASK,
+        ),
+        case(
+            "the NTFS stream form of .git asks",
+            write(f"{ROOT.as_posix()}/.git::$INDEX_ALLOCATION/config"),
+            Expect.ASK,
+        ),
+        case(
+            "a .git folder reached through a short-named parent is denied",
+            write(f"{ROOT.parent.parent.as_posix()}/DOCUME~1/{ROOT.name}/.git/config"),
+            Expect.DENY,
+        ),
+        case(
             "a short name of another folder is left to the permission rules",
             write(outside / "PROGRA~1" / "notes.txt"),
             Expect.ALLOW,
@@ -858,6 +873,17 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.ALLOW,
         ),
         case(
+            "an unknown git option with a value does not hide --no-verify",
+            "git --shallow-file log commit --no-verify -m x",
+            Expect.DENY,
+        ),
+        case(
+            "removing the .claude folder through a .. asks",
+            "rm -rf .claude/hooks/..",
+            Expect.ASK,
+            reason="guardrails",
+        ),
+        case(
             "text that ends in a dot is not a Windows path",
             'Set-Content notes.md "Done."',
             Expect.ALLOW,
@@ -1006,6 +1032,9 @@ def reviewer_cases() -> list[Case]:
         "uv run pytest --debug=CLAUDE.md",
         "uv run pytest -o log_file=probe.txt",
         "node --check --import ./x.mjs y.mjs",
+        "sort --ou=out.txt notes.txt",
+        "just check strip-notebooks",
+        "just test strip-notebooks",
     ]
 
     def reviewer_bash(command: str) -> str:
