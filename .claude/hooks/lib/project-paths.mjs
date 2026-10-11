@@ -40,6 +40,16 @@ export function absolutePath(text, baseDirectory) {
   return resolved.length > 1 && resolved.endsWith("/") ? resolved.slice(0, -1) : resolved;
 }
 
+/**
+ * True when a path uses a Windows short name (GIT~1) or a segment ending in a
+ * dot or a space, which Windows drops: other names for .git or .claude.
+ */
+export function usesWindowsAlias(text) {
+  return withForwardSlashes(text)
+    .split("/")
+    .some((segment) => /~\d/.test(segment) || (/[. ]$/.test(segment) && segment !== "." && segment !== ".."));
+}
+
 export function foldCase(text) {
   return CASE_INSENSITIVE_PLATFORMS.has(process.platform) ? text.toLowerCase() : text;
 }
