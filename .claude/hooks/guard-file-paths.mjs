@@ -15,7 +15,7 @@
  */
 import { readHookInput } from "./lib/hook-input.mjs";
 import { askBeforeToolCall, denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
-import { describeFilePath, projectDirectory } from "./lib/project-paths.mjs";
+import { describeFilePath, projectDirectory, usesWindowsAlias } from "./lib/project-paths.mjs";
 
 const SYNTHETIC_FIXTURES = "fixtures/synthetic/";
 const GOLDENS = "fixtures/goldens/";
@@ -37,7 +37,8 @@ const RULES = [
     decision: null,
   },
   {
-    applies: (file) => file.nameFolded === ".env" || file.nameFolded.startsWith(".env."),
+    // The names scripts/guard_data.py refuses: .env*, such as .envrc, and *.env, such as prod.env.
+    applies: (file) => file.nameFolded.startsWith(".env") || file.nameFolded.endsWith(".env"),
     decision: "deny",
     reason: (file) =>
       `${file.absolute} is an .env file. Secrets never go into files here: keys live in the operating system's credential store (CLAUDE.md, Never).`,
@@ -49,16 +50,23 @@ const RULES = [
       `${file.absolute} looks like a private key or certificate. Keys live in the operating system's credential store, never in files Claude Code writes (CLAUDE.md, Never).`,
   },
   {
-    applies: (file) => file.inProjectFolded !== null && file.inProjectFolded.split("/").includes(".git"),
+    // Any .git folder on the path, so a short-named parent (DOCUME~1) cannot hide the project's own.
+    applies: (file) => file.absolute.toLowerCase().split("/").includes(".git"),
     decision: "deny",
     reason: (file) =>
-      `${file.inProject} is inside .git/. Git's own files change only through git commands, so core.hooksPath and the commit gate cannot be bypassed.`,
+      `${file.absolute} is inside a .git folder. Git's own files change only through git commands, so core.hooksPath and the commit gate cannot be bypassed.`,
   },
   {
     applies: (file) => marketDataSuffix(file) !== null && !isSyntheticFixture(file),
     decision: "deny",
     reason: (file) =>
       `${file.absolute} has the market-data extension ${marketDataSuffix(file)}. Licensed market data lives outside the repository under FEFAT_DATA_DIR, and only generated fixtures under fixtures/synthetic/ are data files in git (docs/masterplan/05-build-process.md section 5).`,
+  },
+  {
+    applies: (file) => usesWindowsAlias(file.absolute),
+    decision: "ask",
+    reason: (file) =>
+      `${file.absolute} names .git, .claude, or .githooks under another name Windows accepts (a short name such as GIT~1, or a trailing dot or space), which the other checks would not recognise; check the path.`,
   },
   {
     applies: (file, toolInput) =>

@@ -25,7 +25,7 @@ just test     # the engine build, then pytest, the Claude Code hook smoke tests,
 
 Python imports the Rust engine as `fefat_engine`, compiled into the workspace environment (`.venv`). After changing code under `engine/`, `just build-engine` rebuilds it; `just setup` and `just test` run it too, and a plain `uv sync` removes it, because it is not in `uv.lock`. The notebooks in `notebooks/` run in VS Code on the `.venv` kernel, starting with `00-hello-engine.ipynb`; a running kernel keeps the engine it loaded until you restart it.
 
-Once per clone, also run `git config core.hooksPath .githooks`. A clone copies no git settings, so without it the pre-commit guard, which refuses market data, secrets, and notebook outputs, never runs.
+`just setup` also runs `git config core.hooksPath .githooks`: a clone copies no git settings, and without that one the pre-commit guard, which refuses market data, secrets, and notebook outputs, never runs.
 
 On this project, Python always runs through `uv run python` (a bare `python` is a Microsoft Store stub on Windows).
 

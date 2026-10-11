@@ -10,7 +10,9 @@ the tracked files plus everything staged, including files forced past
 .gitignore with `git add -f`. Following the test-data policy
 (docs/masterplan/05-build-process.md section 5, decision D-21), it refuses:
 
-- market-data files (.parquet, .dbn, .zip, ...) anywhere outside fixtures/synthetic/;
+- market-data files (.parquet, .dbn, .zip, ...) anywhere outside fixtures/synthetic/,
+  and files under any other name whose first bytes are a data format (Parquet,
+  Arrow, DBN, zstd, gzip, zip, SQLite, HDF5, NumPy, pickle);
 - data files under fixtures/synthetic/ that its MANIFEST.json does not list with
   their exact SHA-256, so a file dropped there cannot pass for a generated
   fixture (a hand-written manifest entry is caught by the regeneration test in
@@ -64,6 +66,18 @@ MARKET_DATA_SUFFIXES = (
     ".sqlite3",
     ".db",
 )
+DATA_SIGNATURES = (
+    (b"PAR1", "Parquet"),
+    (b"ARROW1", "Arrow"),
+    *((b"DBN" + bytes([version]), "DBN") for version in (1, 2, 3)),
+    (b"\x28\xb5\x2f\xfd", "zstd"),
+    (b"\x1f\x8b", "gzip"),
+    (b"PK\x03\x04", "zip"),
+    (b"SQLite format 3\x00", "SQLite"),
+    (b"\x89HDF\r\n\x1a\n", "HDF5"),
+    (b"\x93NUMPY", "NumPy"),
+    *((bytes([0x80, protocol]), "pickle") for protocol in (2, 3, 4, 5)),
+)
 KEY_SUFFIXES = (".pem", ".key", ".pfx", ".p12")
 SSH_PRIVATE_KEY = re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$")
 ENV_FILE = ".env"
@@ -109,6 +123,10 @@ SECRET_PATTERNS = (
     SecretPattern(
         PLAIN_TEXT_SECRET,
         re.compile(rf"(?i)(?<![a-z0-9_])[a-z0-9_]*{SECRET_NAME}{ASSIGNMENT}{QUOTED_VALUE}"),
+    ),
+    SecretPattern(
+        PLAIN_TEXT_SECRET,
+        re.compile(rf"(?im)^[ \t]*[a-z0-9_]*{SECRET_NAME}[ \t]*:[ \t]*{UNQUOTED_VALUE}[ \t\r]*$"),
     ),
 )
 
@@ -228,16 +246,20 @@ def object_contents(repository: Path, object_ids: Sequence[str]) -> dict[str, by
     return contents
 
 
+def market_data_outside_fixtures(file: IndexedFile, found: str) -> Problem:
+    return Problem(
+        file.path,
+        Rule.MARKET_DATA_OUTSIDE_FIXTURES,
+        f"expected market-data files only under {FIXTURES}, got {found} outside it. "
+        "Licensed data stays outside the repository under FEFAT_DATA_DIR and is referenced by "
+        f'path. Take it out of the commit (your copy stays on disk): git rm --cached "{file.path}"',
+    )
+
+
 def path_problems(file: IndexedFile) -> Iterator[Problem]:
     suffix = file.market_data_suffix()
     if suffix is not None and not file.is_fixture():
-        yield Problem(
-            file.path,
-            Rule.MARKET_DATA_OUTSIDE_FIXTURES,
-            f"expected market-data files ({suffix}) only under {FIXTURES}, got this one outside it. "
-            "Licensed data stays outside the repository under FEFAT_DATA_DIR and is referenced by "
-            f'path. Take it out of the commit (your copy stays on disk): git rm --cached "{file.path}"',
-        )
+        yield market_data_outside_fixtures(file, f"this {suffix} file")
     if file.is_secret_file():
         yield Problem(
             file.path,
@@ -289,7 +311,16 @@ def readable_text(content: bytes) -> str | None:
     return content.decode("utf-8", errors="replace")
 
 
+def data_format(content: bytes) -> str | None:
+    return next(
+        (name for signature, name in DATA_SIGNATURES if content.startswith(signature)), None
+    )
+
+
 def content_problems(file: IndexedFile, content: bytes) -> Iterator[Problem]:
+    found_format = data_format(content)
+    if found_format is not None and not file.is_fixture() and file.market_data_suffix() is None:
+        yield market_data_outside_fixtures(file, f"{found_format} data under another name")
     if file.name().endswith(".ipynb"):
         yield from notebook_problems(file, content)
     text = readable_text(content)
@@ -355,7 +386,13 @@ def fixture_problem(
 
 def manifest_problems(files: Sequence[IndexedFile], contents: dict[str, bytes]) -> list[Problem]:
     data_files = [
-        file for file in files if file.is_fixture() and file.market_data_suffix() is not None
+        file
+        for file in files
+        if file.is_fixture()
+        and (
+            file.market_data_suffix() is not None
+            or data_format(contents.get(file.object_id, b"")) is not None
+        )
     ]
     manifest = next((file for file in files if file.path == MANIFEST), None)
     if manifest is None or manifest.object_id not in contents:

@@ -27,7 +27,7 @@ A short bootstrap `CLAUDE.md` exists since the repository preparation (2026-10-0
 
 | Skill | Invocation | Does |
 | --- | --- | --- |
-| `step` | `/step N.M` | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, loads the skills for the paths the step touches (`08-code-design.md`), runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
+| `step` | `/step N.M`, or the builder's plain words ("plan the next step") | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, loads the skills for the paths the step touches (`08-code-design.md`), runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
 | `phase-kickoff` | `/phase-kickoff N` | the reconciliation procedure in `05-build-process.md` §6 |
 | `phase-exit` | `/phase-exit N` | the exit procedure in `05-build-process.md` §6 |
 | `verify` | model-invoked | tiered checks by changed area (Rust, Python, web, docs), with the UI recipe (Playwright at desktop and phone sizes, screenshots) in a supporting file |
@@ -59,7 +59,7 @@ Hooks are Node scripts in exec form (`"command": "node", "args": [...]`) because
 - `PreToolUse` on `Bash|PowerShell`: deny `--no-verify`, changes to `core.hooksPath`, force pushes, and `git push` to `main`.
 - `SessionStart` (`startup|resume|compact`): print the current step, branch, and unproven acceptance items from `PROGRESS.md`.
 
-As built in step 0.4: `format-on-edit.mjs`, `guard-file-paths.mjs` (matcher `Edit|Write|NotebookEdit`), `guard-shell-commands.mjs`, and `session-brief.mjs` (also on `clear`; it prints the step's Done means through `scripts/masterplan_step.py`), plus `reviewer-shell-commands.mjs`, which the three reviewers register in their own frontmatter to keep their shell read-only. The guards never answer `allow`, so the permission rules still decide everything a guard does not forbid, and they fail closed (`onFailure: "block"`, and `ask` on unreadable input). Prettier is not installed, so the formatter covers Rust and Python; web files wait until the Phase 4 kickoff chooses prettier or oxfmt. `scripts/test_hooks.py` is the hooks' smoke test, run by `just test`.
+As built in step 0.4: `format-on-edit.mjs`, `guard-file-paths.mjs` (matcher `Edit|Write|NotebookEdit`), `guard-shell-commands.mjs`, and `session-brief.mjs` (also on `clear`; it prints the step's Done means through `scripts/masterplan_step.py`), plus `reviewer-shell-commands.mjs`, which keeps the reviewers' shell read-only: it is registered for `Bash|PowerShell` next to the shell guard and acts only when the hook input's `agent_type` names an agent in `.claude/agents/`, because Claude Code does not run hooks declared in an agent's frontmatter (Phase 0 exit). The guards never answer `allow`, so the permission rules still decide everything a guard does not forbid, and they fail closed (`onFailure: "block"`, and `ask` on unreadable input). Prettier is not installed, so the formatter covers Rust and Python; web files wait until the Phase 4 kickoff chooses prettier or oxfmt. `scripts/test_hooks.py` is the hooks' smoke test, run by `just test`.
 
 The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git config core.hooksPath .githooks`), which runs the same checks as CI, because Claude Code hooks do not see the builder's own commits.
 
@@ -68,7 +68,7 @@ The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git
 - `ask` rules for `git push`, `gh pr merge`, golden regeneration, and any `databento` download command.
 - `deny` for reading `.env*` and the credential store.
 - Every `Bash(...)` rule is paired with a `PowerShell(...)` twin; a `Bash` deny rule alone silently disables the PowerShell tool.
-- Auto mode is the working mode; its classifier already blocks production-style actions. There is no command sandbox on native Windows, so the permission rules and hooks are the guardrails.
+- Auto mode is the working mode; its classifier already blocks production-style actions. There is no command sandbox on native Windows, so the permission rules and hooks are the guardrails. The guards read each command line: what an allowed program does by itself (a Python script that calls git, for example) and a git alias set in a config file are outside their sight, so they catch mistakes in commands, not a program written to get around them (the security review of the Phase 0 exit).
 
 ## 7. Integrations
 
@@ -121,3 +121,9 @@ Checked against the extension's bundled CLI (`resources/native-binary/claude.exe
 Confirmed unchanged: the locations and fields of skills, rules, subagents, hooks, and settings; `paths` on skills as well as rules; `${CLAUDE_PROJECT_DIR}` substituted in exec-form `args`; backslashed `file_path` on Windows; no Bash sandbox on native Windows; a `Bash` deny rule turning off the PowerShell tool unless a `PowerShell` rule exists; the Stop-hook cap of eight consecutive continuations.
 
 On this machine on 2026-10-09: Node 24.18, uv 0.11.33, Rust 1.99.0 with `rust-analyzer`, `just` 1.58, `pyright-langserver` in the uv environment, `typescript-language-server` 6.0.2 with TypeScript 6.0.3 installed globally; no prettier. The standalone `claude` CLI is still not installed.
+
+### Re-verified on 2026-10-11 (VS Code extension 2.1.296, Phase 0 exit)
+
+1. Hooks declared in a subagent's frontmatter do not run, on 2.1.295 and on 2.1.296, although the docs list `hooks` among the subagent fields (item 6 above): a `step-reviewer` wrote a probe file through its shell. A hook registered in `.claude/settings.json` runs for subagents' tool calls as well, with the agent's name in `agent_type` and an `agent_id` in its input, and a change to the settings applies to the running session; the reviewers' guard is registered there now (§5).
+
+On this machine on 2026-10-11: git 2.55.0, gh 2.97.0, Node 24.18.0, pnpm 12.10.1, uv 0.11.33, Python 3.12.13, Rust 1.99.0, `just` 1.58.0, MSVC linker 14.44.35207.

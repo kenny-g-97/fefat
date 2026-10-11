@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
  * PreToolUse hook for the read-only reviewer subagents (step-reviewer,
- * engine-accuracy-reviewer, leakage-auditor, design-reviewer), registered
- * in each one's frontmatter for its shell tool.
+ * engine-accuracy-reviewer, leakage-auditor, design-reviewer), registered in
+ * .claude/settings.json for the Bash and PowerShell tools of every session.
+ * It acts only on calls whose agent_type names a reviewer, because Claude
+ * Code (2.1.295 and 2.1.296) does not run hooks declared in an agent's
+ * frontmatter.
  *
  * A reviewer may read the repository and run the checks and tests; it may
  * not change anything. Every command in a call must match the read-only list
@@ -17,6 +20,7 @@ import { denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.m
 import { commandStartDirectory, withForwardSlashes } from "./lib/project-paths.mjs";
 import {
   BASH,
+  FIND_ACTIONS_THAT_WRITE,
   POWERSHELL,
   commandsIn,
   gitInvocationsIn,
@@ -26,11 +30,15 @@ import {
   programName,
 } from "./lib/shell-commands.mjs";
 
+/** The agents in .claude/agents/; scripts/test_hooks.py probes each one. */
+const REVIEWERS = new Set(["design-reviewer", "engine-accuracy-reviewer", "leakage-auditor", "step-reviewer"]);
 const BRANCH_CHANGING_OPTIONS = new Set([
   "--delete", "--move", "--copy", "--force", "--unset-upstream", "--edit-description", "--track", "--no-track",
 ]);
 const BRANCH_CHANGING_LETTERS = /^-[A-Za-z]*[dDmMcCfut]/;
 const BRANCH_LISTING_OPTIONS = new Set(["--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"]);
+// --config can set a runner program for cargo to start, and -Z flags switch on unstable behaviour.
+const CARGO_RUNNER_OPTIONS = ["--config", /^-Z/];
 const SAFE_GIT_GLOBAL_OPTIONS = new Set(["-C", "--no-pager", "-P", "--paginate", "-p", "--no-optional-locks", "--literal-pathspecs"]);
 
 function readOnly(pattern, { forbids = [], requiresOneOf = [], accepts = () => true } = {}) {
@@ -49,25 +57,32 @@ const READ_ONLY_COMMANDS = [
   readOnly("git diff", { forbids: ["--output"] }),
   readOnly("git log", { forbids: ["--output"] }),
   readOnly("git show", { forbids: ["--output"] }),
-  readOnly("git grep", { forbids: [/^-O/, "--open-files-in-pager"] }),
+  // A short option counts inside a cluster too (-nO, -qo): /^-[A-Za-z]*O/ and the like.
+  readOnly("git grep", { forbids: [/^-[A-Za-z]*O/, /^--op/] }),
   ...["status", "blame", "rev-parse", "rev-list", "ls-files", "merge-base", "describe", "cat-file", "for-each-ref", "shortlog"].map(
     (subcommand) => readOnly(`git ${subcommand}`),
   ),
   readOnly("git branch", { accepts: listsBranchesOnly }),
-  readOnly("just check"),
-  readOnly("just test"),
-  readOnly("cargo test"),
-  readOnly("cargo check"),
-  readOnly("cargo metadata"),
-  readOnly("cargo tree"),
-  readOnly("cargo clippy", { forbids: ["--fix"] }),
+  // just runs every recipe named after the first, so `just check strip-notebooks` would write.
+  readOnly("just check", { accepts: (rest) => rest.length === 0 }),
+  readOnly("just test", { accepts: (rest) => rest.length === 0 }),
+  readOnly("cargo test", { forbids: [...CARGO_RUNNER_OPTIONS, "--logfile"] }),
+  readOnly("cargo check", { forbids: CARGO_RUNNER_OPTIONS }),
+  readOnly("cargo metadata", { forbids: CARGO_RUNNER_OPTIONS }),
+  readOnly("cargo tree", { forbids: CARGO_RUNNER_OPTIONS }),
+  readOnly("cargo clippy", { forbids: ["--fix", ...CARGO_RUNNER_OPTIONS] }),
   readOnly("cargo fmt", { requiresOneOf: ["--check"] }),
   readOnly("uv run pytest", {
-    forbids: ["--snapshot-update", "--force-regen", "--junitxml", "--junit-xml", "--result-log", "--html", "--basetemp"],
+    forbids: [
+      "--snapshot-update", "--force-regen", "--junitxml", "--junit-xml", "--result-log", "--html", "--basetemp",
+      "--log-file", "--debug", /^-[A-Za-z]*o/, "--override-ini",
+    ],
   }),
   readOnly("uv run pyright", { forbids: ["--createstub", "--writebaseline"] }),
   readOnly("uv run lint-imports"),
-  readOnly("uv run ruff check", { forbids: ["--fix", "--fix-only", "--unsafe-fixes", "--add-noqa", "--output-file", "-o"] }),
+  readOnly("uv run ruff check", {
+    forbids: ["--fix", "--fix-only", "--unsafe-fixes", "--add-noqa", "--output-file", /^-[A-Za-z]*o/, "--config"],
+  }),
   readOnly("uv run ruff format", { requiresOneOf: ["--check", "--diff"] }),
   readOnly("uv run python docs/masterplan/tools/check_masterplan.py"),
   readOnly("uv run python scripts/test_hooks.py"),
@@ -76,10 +91,10 @@ const READ_ONLY_COMMANDS = [
   readOnly("uv run --no-project python scripts/masterplan_step.py"),
   readOnly("pnpm --dir web lint", { forbids: ["--fix", "--fix-suggestions", "--fix-dangerously"] }),
   readOnly("pnpm --dir web typecheck"),
-  readOnly("pnpm --dir web test", { forbids: ["-u", "--update", "--outputFile"] }),
-  readOnly("node --check"),
-  readOnly("find", { forbids: ["-delete", "-exec", "-execdir", "-ok", "-okdir", /^-fprint/, "-fls"] }),
-  readOnly("sort", { forbids: [/^-[A-Za-z]*o/, "--output"] }),
+  readOnly("pnpm --dir web test", { forbids: ["-u", "--update", /^--outputFile/, /^--coverage/, /^--reporter/] }),
+  readOnly("node --check", { accepts: (rest) => rest.every((word) => !word.startsWith("-")) }),
+  readOnly("find", { forbids: FIND_ACTIONS_THAT_WRITE }),
+  readOnly("sort", { forbids: [/^-[A-Za-z]*o/, /^--o/] }),
   readOnly("rg", { forbids: ["--pre"] }),
   ...[
     "grep", "ls", "cat", "head", "tail", "wc", "diff", "echo", "pwd", "cd", "which", "file", "stat",
@@ -153,10 +168,16 @@ function problemsWith(commands) {
   return problems;
 }
 
+/** The agent's own name, without a prefix such as "project:" that a later Claude Code might add. */
+function agentName(agentType) {
+  return typeof agentType === "string" ? agentType.slice(agentType.lastIndexOf(":") + 1) : "";
+}
+
 async function main() {
   const reading = await readHookInput();
-  if (!reading.ok) {
-    denyToolCall(`Reviewers are read-only, and this command could not be checked (${reading.reason}).`);
+  // The main session and other agents are not this guard's business; the shell guard asks about input it cannot read.
+  if (!reading.ok || !REVIEWERS.has(agentName(reading.input.agent_type))) {
+    leaveToolCallToPermissionRules();
     return;
   }
   const commandLine = reading.input.tool_input?.command;

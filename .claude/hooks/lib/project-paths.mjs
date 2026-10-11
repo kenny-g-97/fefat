@@ -13,6 +13,8 @@ const WINDOWS_DRIVE_PATH = /^[a-zA-Z]:\//;
 const GIT_BASH_DRIVE_PATH = /^\/([a-zA-Z])\//;
 const LONG_PATH_PREFIX = /^\/\/\?\//;
 const CASE_INSENSITIVE_PLATFORMS = new Set(["win32", "darwin"]);
+const GUARDED_FOLDERS = new Set([".git", ".claude", ".githooks"]);
+const SHORT_NAME_OF_GUARDED_FOLDER = /^(git|claude|githoo)~\d+$/i;
 
 export function withForwardSlashes(text) {
   return text.replaceAll("\\", "/").replace(LONG_PATH_PREFIX, "");
@@ -38,6 +40,29 @@ export function absolutePath(text, baseDirectory) {
   const joined = isAbsolutePath(normalized) ? normalized : `${baseDirectory}/${normalized}`;
   const resolved = path.posix.normalize(joined);
   return resolved.length > 1 && resolved.endsWith("/") ? resolved.slice(0, -1) : resolved;
+}
+
+/**
+ * True when a path names .git, .claude, or .githooks by another name Windows
+ * accepts: the 8.3 short name (GIT~1, CLAUDE~1, GITHOO~1), the name with the
+ * trailing dots or spaces Windows drops (.git.), or an NTFS stream of it
+ * (.git::$INDEX_ALLOCATION); or names something inside one of them by its
+ * short name (.claude/SETTIN~1.JSO for settings.json).
+ */
+export function usesWindowsAlias(text) {
+  let insideGuardedFolder = false;
+  for (const segment of withForwardSlashes(text).split("/")) {
+    const name = segment.split(":")[0].replace(/[. ]+$/, "").toLowerCase();
+    const guarded = GUARDED_FOLDERS.has(name);
+    if (SHORT_NAME_OF_GUARDED_FOLDER.test(segment) || (guarded && name !== segment.toLowerCase())) {
+      return true;
+    }
+    if (insideGuardedFolder && /~\d/.test(segment)) {
+      return true;
+    }
+    insideGuardedFolder ||= guarded;
+  }
+  return false;
 }
 
 export function foldCase(text) {

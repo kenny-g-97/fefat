@@ -52,7 +52,7 @@ strict = ["python/fefat_app"]
 
 [tool.pytest.ini_options]
 testpaths = ["python/tests"]
-pythonpath = ["scripts"]
+pythonpath = ["scripts", "docs/masterplan/tools"]
 
 [tool.importlinter]
 root_packages = ["fefat", "fefat_app"]

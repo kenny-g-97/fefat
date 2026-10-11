@@ -18,8 +18,8 @@ status   its prerequisites as PROGRESS.md records them here and on origin/main,
 next     the steps still open and the next command to run
 session  the short summary the SessionStart hook adds to every session
 
-`brief`, `status`, and `next` also take --json. Exit codes: 0 done, 1 the
-masterplan or git could not be read, 2 no such step. Standard library only;
+Exit codes: 0 done, 1 the masterplan or git could not be read, 2 no such
+step. Standard library only;
 git is the one program it runs, and it never fetches, so run
 `git fetch origin` first when origin/main matters. Output is UTF-8.
 """
@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import io
-import json
 import re
 import subprocess
 import sys
@@ -117,7 +116,6 @@ class MasterplanStep:
 
     step_id: str
     phase: int
-    number: int
     title: str
     file: Path
     line: int
@@ -164,7 +162,6 @@ class ProgressRow:
     status: str
     pull_request: str
     date: str
-    notes: str
 
     def describe(self) -> str:
         details = [detail for detail in (self.pull_request, self.date) if detail]
@@ -276,7 +273,6 @@ def read_step(parsed: check_masterplan.Step) -> MasterplanStep:
     return MasterplanStep(
         step_id=parsed.id,
         phase=parsed.phase,
-        number=parsed.num,
         title=parsed.title,
         file=parsed.file,
         line=parsed.line,
@@ -406,7 +402,6 @@ def progress_row(cells: list[str]) -> ProgressRow:
         status=cells[3],
         pull_request=cells[4],
         date=cells[5],
-        notes=" | ".join(cells[6:]),
     )
 
 
@@ -626,32 +621,6 @@ def render_brief(step: MasterplanStep, row: ProgressRow | None, branches: list[s
     return lines
 
 
-def brief_payload(
-    step: MasterplanStep, row: ProgressRow | None, branches: list[str]
-) -> dict[str, object]:
-    return {
-        "step_id": step.step_id,
-        "title": step.title,
-        "phase": step.phase,
-        "location": step.location,
-        "depends_on": list(step.depends_on),
-        "plan_mode": step.plan_mode,
-        "reviews": list(step.reviews),
-        "security": step.security,
-        "model_hint": step.model_hint,
-        "progress_status": None if row is None else row.status,
-        "sections": {section.heading: section.body for section in step.sections},
-        "done_means": step.done_means,
-        "phase_skills_note": phase_skills_note(step.phase),
-        "skills": [
-            {"skill": suggestion.skill, "reason": suggestion.reason}
-            for suggestion in suggest_skills(step)
-        ],
-        "existing_branches": branches,
-        "suggested_branch": suggested_branch(step),
-    }
-
-
 def describe_prerequisite(state: Prerequisite) -> str:
     here = "no row" if state.status_here is None else state.status_here
     on_main = "unknown" if state.status_on_main is None else state.status_on_main
@@ -796,10 +765,7 @@ def command_brief(arguments: argparse.Namespace) -> int:
     step = find_step(arguments.step_id)
     row = progress_here().steps.get(step.step_id)
     branches = step_branches(step.step_id)
-    if arguments.json:
-        print_json(brief_payload(step, row, branches))
-    else:
-        print("\n".join(render_brief(step, row, branches)))
+    print("\n".join(render_brief(step, row, branches)))
     return EXIT_OK
 
 
@@ -809,45 +775,12 @@ def command_status(arguments: argparse.Namespace) -> int:
     states = prerequisites(step, progress_here(), on_main)
     branches = step_branches(step.step_id)
     changes = working_tree_changes()
-    if arguments.json:
-        print_json(
-            {
-                "step_id": step.step_id,
-                "origin_main_available": on_main is not None,
-                "prerequisites": [
-                    {
-                        "step_id": state.step_id,
-                        "status_here": state.status_here,
-                        "status_on_main": state.status_on_main,
-                        "merge_commit": state.merge_commit,
-                        "met": state.met,
-                    }
-                    for state in states
-                ],
-                "prerequisites_met": all(state.met for state in states),
-                "existing_branches": branches,
-                "suggested_branch": suggested_branch(step),
-                "working_tree_changes": changes,
-            }
-        )
-    else:
-        print("\n".join(render_status(step, states, on_main is not None, branches, changes)))
+    print("\n".join(render_status(step, states, on_main is not None, branches, changes)))
     return EXIT_OK
 
 
-def command_next(arguments: argparse.Namespace) -> int:
-    progress = progress_here()
-    if arguments.json:
-        action = next_action(progress)
-        print_json(
-            {
-                "open": [row.step_id for row in open_rows(progress)],
-                "next_command": None if action is None else action.command,
-                "next_description": None if action is None else action.description,
-            }
-        )
-    else:
-        print("\n".join(render_next(progress)))
+def command_next(_: argparse.Namespace) -> int:
+    print("\n".join(render_next(progress_here())))
     return EXIT_OK
 
 
@@ -860,10 +793,6 @@ def command_session(arguments: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def print_json(payload: dict[str, object]) -> None:
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="masterplan_step.py", description="Read one masterplan step and the state around it."
@@ -871,18 +800,15 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     brief = commands.add_parser("brief", help="the step as written, the skills to load, the branch")
     brief.add_argument("step_id", help="a step ID such as 0.5")
-    brief.add_argument("--json", action="store_true", help="print JSON instead of text")
-    brief.set_defaults(handler=command_brief)
+    brief.set_defaults(run=command_brief)
     status = commands.add_parser("status", help="prerequisites, branches, and the working tree")
     status.add_argument("step_id", help="a step ID such as 0.5")
-    status.add_argument("--json", action="store_true", help="print JSON instead of text")
-    status.set_defaults(handler=command_status)
+    status.set_defaults(run=command_status)
     upcoming = commands.add_parser("next", help="open steps and the next command to run")
-    upcoming.add_argument("--json", action="store_true", help="print JSON instead of text")
-    upcoming.set_defaults(handler=command_next)
+    upcoming.set_defaults(run=command_next)
     session = commands.add_parser("session", help="the summary the SessionStart hook prints")
     session.add_argument("--source", default="startup", help="startup, resume, clear, or compact")
-    session.set_defaults(handler=command_session)
+    session.set_defaults(run=command_session)
     return parser
 
 
@@ -896,7 +822,7 @@ def main(argv: Sequence[str]) -> int:
     use_utf8_output()
     arguments = build_parser().parse_args(argv)
     try:
-        return arguments.handler(arguments)
+        return arguments.run(arguments)
     except UnknownStepError as error:
         print(error, file=sys.stderr)
         return EXIT_UNKNOWN_STEP

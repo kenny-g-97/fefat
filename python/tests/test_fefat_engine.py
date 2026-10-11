@@ -1,3 +1,5 @@
+import array
+
 import fefat_engine
 import polars as pl
 import pyarrow as pa
@@ -28,9 +30,16 @@ def test_a_chunked_array_is_read_in_place_chunk_by_chunk() -> None:
 
 def test_a_polars_series_is_read_in_place() -> None:
     series = pl.Series(PNL, dtype=pl.Int64)
+    # Held while the engine reads: two copies freed in turn could share one address.
+    exported = series.to_arrow()
 
-    assert fefat_engine.arrow_values_addresses(series) == [series.to_arrow().buffers()[1].address]
+    assert fefat_engine.arrow_values_addresses(series) == [exported.buffers()[1].address]
     assert fefat_engine.max_drawdown_arrow(series) == MAX_DRAWDOWN
+
+
+def test_a_buffer_that_is_not_an_arrow_array_is_refused() -> None:
+    with pytest.raises(ValueError, match="__arrow_c_array__ or __arrow_c_stream__"):
+        fefat_engine.max_drawdown_arrow(array.array("q", PNL))  # pyright: ignore[reportArgumentType]
 
 
 def test_an_array_that_is_not_int64_is_refused_with_its_type() -> None:

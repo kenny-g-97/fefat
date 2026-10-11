@@ -5,8 +5,8 @@
  *
  * Denies what CLAUDE.md and docs/masterplan/05-build-process.md section 8
  * forbid: skipping the commit gate (--no-verify, git commit -n), changing or
- * overriding core.hooksPath, writing .git/config directly, force pushes, and
- * pushes to main. Asks before golden regeneration, merges and other changes
+ * overriding core.hooksPath, writing .git/config directly or through
+ * git config --edit, force pushes, and pushes to main. Asks before golden regeneration, merges and other changes
  * on GitHub, edits of .githooks/, commits on main, pushes whose branch it
  * cannot tell, commands it cannot read, and anything that mentions Databento
  * (downloads cost money). Everything else gets no decision, so the permission
@@ -14,12 +14,15 @@
  *
  * Its cases are in scripts/test_hooks.py.
  */
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { readHookInput } from "./lib/hook-input.mjs";
 import { askBeforeToolCall, denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
-import { currentBranch } from "./lib/git-facts.mjs";
-import { commandStartDirectory, foldCase, withForwardSlashes } from "./lib/project-paths.mjs";
+import { currentBranch, runGit } from "./lib/git-facts.mjs";
+import { commandStartDirectory, foldCase, usesWindowsAlias, withForwardSlashes } from "./lib/project-paths.mjs";
 import {
   BASH,
+  FIND_ACTIONS_THAT_WRITE,
   POWERSHELL,
   commandsIn,
   gitInvocationsIn,
@@ -38,9 +41,13 @@ const REASONS = {
   noVerify:
     "--no-verify (or git commit -n) skips the commit gate in .githooks/pre-commit, which this repository never allows; fix what the gate reports instead.",
   hooksPath:
-    "core.hooksPath must stay .githooks, the commit gate; this repository never changes or overrides it.",
+    "core.hooksPath must stay .githooks, the commit gate; `just setup` sets it in a new clone, and nothing else changes or overrides it.",
   gitConfigFile:
     "Writing .git/config directly could change core.hooksPath; use git config for other settings.",
+  gitConfigOption:
+    "git -c and --config-env can define aliases, includes, or push targets that the guard cannot see; confirm the setting.",
+  windowsAlias:
+    "This writes to .git, .claude, or .githooks under another name Windows accepts (a short name such as GIT~1, or a trailing dot or space), which the other checks would not recognise; confirm the path.",
   forcePush:
     "Force pushes are never used here (docs/masterplan/05-build-process.md section 8); push new commits instead.",
   pushToMain:
@@ -66,10 +73,14 @@ const REASONS = {
 };
 
 const COMMIT_OPTION_LETTERS_WITH_VALUE = new Set(["m", "F", "C", "c", "t", "S", "u"]);
-const CONFIG_WRITE_WORDS = new Set(["--unset", "--unset-all", "--add", "--replace-all", "set", "unset", "--edit", "-e", "edit"]);
+const CONFIG_WRITE_WORDS = new Set(["--unset", "--unset-all", "--add", "--replace-all", "set", "unset"]);
+const CONFIG_EDIT_WORDS = new Set(["--edit", "-e", "edit"]);
 const CONFIG_SECTION_WORDS = new Set(["--remove-section", "--rename-section", "remove-section", "rename-section"]);
 const CONFIG_OPTIONS_WITH_VALUE = new Set(["--default", "--type", "--comment", "--file", "-f", "--blob", "--value"]);
 const PUSH_OPTIONS_WITH_VALUE = new Set(["--repo", "--receive-pack", "--exec", "--push-option", "-o"]);
+const EVERYTHING_PUSH_OPTIONS = ["--mirror", "--all", "--branches"];
+// git reads a destination heads/main as refs/heads/main.
+const BRANCH_REF_PREFIX = /^(refs\/)?heads\//;
 const WRITING_PROGRAMS = new Set([
   "cp", "mv", "rm", "tee", "touch", "copy", "move", "del", "erase", "xcopy", "robocopy", "ren",
   "rename", "copy-item", "move-item", "remove-item", "rename-item", "new-item", "set-content",
@@ -84,15 +95,15 @@ const JAVASCRIPT_RUNNERS = new Set(["pnpm", "npm", "npx", "yarn", "vitest", "bun
 const GOLDEN_ENVIRONMENT =
   /\b(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\s*=|\bsetx\s+(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\b/i;
 const GUARDRAIL_PATH =
-  /(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(apple-design|backtest-expert|designing-architecture|software-design-principles)(\/|$)/;
+  /(^|\/)\.claude(\/skills)?\/?$|(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(apple-design|backtest-expert|designing-architecture|software-design-principles)(\/|$)/;
 const READING_PROGRAMS = new Set([
   "cat", "head", "tail", "less", "more", "rg", "grep", "ls", "dir", "wc", "diff", "file", "stat", "tree",
   "echo", "type", "get-content", "gc", "get-childitem", "gci", "select-string", "sls", "test-path",
 ]);
 const READING_GIT_SUBCOMMANDS = new Set(["diff", "log", "show", "status", "ls-files", "blame", "grep", "add"]);
-const FIND_ACTIONS_THAT_CHANGE_FILES = new Set(["-delete", "-exec", "-execdir", "-ok", "-okdir"]);
 const BRANCH_CREATING_OPTIONS = new Set(["-c", "-C", "--create", "--force-create", "-b", "-B", "--orphan"]);
 const TRACKING_OPTIONS = new Set(["-t", "--track"]);
+const RESTORE_OPTIONS = new Set(["-p", "--patch", "--ours", "--theirs", "--pathspec-from-file"]);
 const GIT_CONFIG_ENVIRONMENT = /^(\$env:)?GIT_CONFIG\w*/i;
 
 function deny(reason) {
@@ -155,7 +166,7 @@ function branchTracker() {
 }
 
 function switchTarget(git) {
-  if (git.subcommand === "checkout" && git.args.includes("--")) {
+  if (git.subcommand === "checkout" && restoresFiles(git)) {
     return NOT_SWITCHED;
   }
   for (let index = 0; index < git.args.length; index += 1) {
@@ -180,6 +191,26 @@ function switchTarget(git) {
   return NOT_SWITCHED;
 }
 
+/** `git checkout [<tree-ish>] [--] <paths>` and `git checkout <path>` restore files and stay on the branch. */
+function restoresFiles(git) {
+  if (git.args.some((arg) => arg === "--" || RESTORE_OPTIONS.has(arg.split("=")[0]))) {
+    return true;
+  }
+  if (git.args.some((arg) => BRANCH_CREATING_OPTIONS.has(arg) || TRACKING_OPTIONS.has(arg))) {
+    return false;
+  }
+  const positionals = git.args.filter((arg) => !arg.startsWith("-"));
+  return positionals.length > 1 || (positionals.length === 1 && namesFile(positionals[0], git.directory));
+}
+
+/** A path on disk or in git's index: what git checkout takes a lone argument for when it is one. */
+function namesFile(word, directory) {
+  if (directory === null) {
+    return false;
+  }
+  return existsSync(path.resolve(directory, word)) || runGit(["ls-files", "--error-unmatch", "--", word], directory) !== null;
+}
+
 function commandFindings(command) {
   const findings = [];
   if (command.opaque !== null) {
@@ -197,6 +228,9 @@ function commandFindings(command) {
   }
   if (written.some((target) => GUARDRAIL_PATH.test(target))) {
     findings.push(ask(REASONS.guardrails));
+  }
+  if (written.some(usesWindowsAlias)) {
+    findings.push(ask(REASONS.windowsAlias));
   }
   const touchesGoldens = written.some(isGoldenPath) || mentionsGoldensOutsideReading(command.words);
   if (touchesGoldens || regeneratesGoldens(command.words) || GOLDEN_ENVIRONMENT.test(command.text)) {
@@ -232,9 +266,14 @@ function writtenPaths(command) {
   if (IN_PLACE_EDITORS.has(program) && args.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg.startsWith("--in-place"))) {
     targets.push(...args);
   }
+  for (const git of gitInvocationsIn(command)) {
+    if (git.subcommand === "rm" || git.subcommand === "mv") {
+      targets.push(...git.args);
+    }
+  }
   return targets
     .filter((target) => !isDiscardedOutput(target))
-    .map((target) => withForwardSlashes(target).toLowerCase().replace(/^of=/, ""));
+    .map((target) => path.posix.normalize(withForwardSlashes(target).toLowerCase().replace(/^of=/, "")));
 }
 
 /** A program other than a reader that names a path under fixtures/goldens/, such as a generator's output folder. */
@@ -251,7 +290,7 @@ function readsOnly(program, args) {
     return READING_GIT_SUBCOMMANDS.has(args.find((arg) => !arg.startsWith("-")));
   }
   if (program === "find") {
-    return !args.some((arg) => FIND_ACTIONS_THAT_CHANGE_FILES.has(arg));
+    return !args.some((arg) => FIND_ACTIONS_THAT_WRITE.includes(arg));
   }
   return READING_PROGRAMS.has(program);
 }
@@ -332,8 +371,10 @@ function gitFindings(git, branchAt) {
   const findings = [];
   if (git.configs.some((config) => config.toLowerCase().startsWith("core.hookspath"))) {
     findings.push(deny(REASONS.hooksPath));
+  } else if (git.configs.length > 0) {
+    findings.push(ask(REASONS.gitConfigOption));
   }
-  if (git.args.some(isNoVerifyOption)) {
+  if (!READING_GIT_SUBCOMMANDS.has(git.subcommand) && git.args.some(isNoVerifyOption)) {
     findings.push(deny(REASONS.noVerify));
   }
   if (git.subcommand === "commit") {
@@ -341,6 +382,9 @@ function gitFindings(git, branchAt) {
   }
   if (git.subcommand === "config" && configWritesHooksPath(git.args)) {
     findings.push(deny(REASONS.hooksPath));
+  }
+  if (git.subcommand === "config" && git.args.some((arg) => CONFIG_EDIT_WORDS.has(arg))) {
+    findings.push(deny(REASONS.gitConfigFile));
   }
   if (git.subcommand === "push") {
     findings.push(...pushFindings(git, branchAt));
@@ -412,7 +456,7 @@ function pushFindings(git, branchAt) {
   }
   if (push.deletes) {
     for (const refspec of push.refspecs) {
-      const branch = refspec.replace(/^\+/, "").replace(/^refs\/heads\//, "");
+      const branch = refspec.replace(/^\+/, "").replace(BRANCH_REF_PREFIX, "");
       findings.push(isMain(branch) ? deny(REASONS.pushToMain) : ask(REASONS.deleteBranch));
     }
     return findings;
@@ -460,13 +504,18 @@ function parsePushArguments(args) {
 function applyLongPushOption(push, name) {
   if (name.startsWith("--force")) {
     push.force = true;
-  } else if (name === "--mirror" || name === "--all" || name === "--branches") {
+  } else if (EVERYTHING_PUSH_OPTIONS.some((option) => abbreviates(name, option))) {
     push.everything = true;
-  } else if (name === "--delete") {
+  } else if (abbreviates(name, "--delete")) {
     push.deletes = true;
-  } else if (name === "--tags") {
+  } else if (abbreviates(name, "--tags")) {
     push.tags = true;
   }
+}
+
+/** git takes any unique start of a long option (--mirr for --mirror); one it finds ambiguous fails anyway. */
+function abbreviates(name, option) {
+  return name.length >= "--x".length && option.startsWith(name);
 }
 
 /** Applies a cluster such as -uf; true when it ends in -o, whose value is the next word. */
@@ -498,7 +547,7 @@ function refspecDestination(refspec) {
   if (destination === "HEAD" || destination === "@") {
     return CURRENT_BRANCH;
   }
-  return destination.replace(/^refs\/heads\//, "");
+  return destination.replace(BRANCH_REF_PREFIX, "");
 }
 
 function currentBranchPushFindings(directory, branchAt) {

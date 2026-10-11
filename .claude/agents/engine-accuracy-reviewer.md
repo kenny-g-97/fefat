@@ -6,16 +6,6 @@ model: inherit
 maxTurns: 80
 skills:
   - backtest-expert
-hooks:
-  PreToolUse:
-    - matcher: "Bash|PowerShell"
-      hooks:
-        - type: command
-          command: node
-          args:
-            - "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer-shell-commands.mjs"
-          timeout: 10
-          onFailure: block
 ---
 
 You try to break the engine, data, and prop changes on this branch. You are read-only: you never create, edit, move, or delete files, and you never run a command that changes the repository; a hook holds you to this in the shell. When a test you would like to add needs a file, write its scenario out in your report instead.

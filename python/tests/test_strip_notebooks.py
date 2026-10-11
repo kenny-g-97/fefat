@@ -50,15 +50,17 @@ def test_a_staged_notebook_with_outputs_passes_after_strip_notebooks_and_git_add
     assert cell["source"] == ["print(close)"]
 
 
-def test_untracked_notebooks_are_stripped_and_ignored_ones_are_left_alone(tmp_path: Path) -> None:
+def test_untracked_and_ignored_notebooks_keep_their_outputs(tmp_path: Path) -> None:
     repository = GitRepository.initialized(tmp_path)
     repository.write(".gitignore", b".ipynb_checkpoints/\n")
     repository.write("notebooks/draft.ipynb", notebook_bytes())
     repository.write("notebooks/.ipynb_checkpoints/draft-checkpoint.ipynb", notebook_bytes())
+    repository.stage("notebooks/study.ipynb", notebook_bytes())
 
     stripped = strip_notebooks.strip(tmp_path)
 
-    assert stripped == [Path("notebooks/draft.ipynb")]
+    assert stripped == [Path("notebooks/study.ipynb")]
+    assert (tmp_path / "notebooks" / "draft.ipynb").read_bytes() == notebook_bytes()
     checkpoint = tmp_path / "notebooks" / ".ipynb_checkpoints" / "draft-checkpoint.ipynb"
     assert checkpoint.read_bytes() == notebook_bytes()
 
@@ -77,7 +79,7 @@ def test_outputs_that_nbstripout_keeps_on_purpose_are_reported(tmp_path: Path) -
     repository = GitRepository.initialized(tmp_path)
     cell = {**NOTEBOOK_WITH_OUTPUTS["cells"][0], "metadata": {"keep_output": True}}
     kept = json.dumps({**NOTEBOOK_WITH_OUTPUTS, "cells": [cell]}).encode()
-    repository.write("notebooks/kept.ipynb", kept)
+    repository.stage("notebooks/kept.ipynb", kept)
 
     with pytest.raises(strip_notebooks.StripError, match="keep_output"):
         strip_notebooks.strip(tmp_path)
@@ -88,7 +90,7 @@ def test_a_notebook_marked_keep_output_as_a_whole_is_reported_by_where_the_mark_
 ) -> None:
     repository = GitRepository.initialized(tmp_path)
     kept = {**NOTEBOOK_WITH_OUTPUTS, "metadata": {"keep_output": True}}
-    repository.write("notebooks/kept.ipynb", json.dumps(kept).encode())
+    repository.stage("notebooks/kept.ipynb", json.dumps(kept).encode())
 
     with pytest.raises(strip_notebooks.StripError, match="notebook's own metadata"):
         strip_notebooks.strip(tmp_path)
@@ -97,7 +99,7 @@ def test_a_notebook_marked_keep_output_as_a_whole_is_reported_by_where_the_mark_
 def test_init_cells_are_stripped_too(tmp_path: Path) -> None:
     repository = GitRepository.initialized(tmp_path)
     cell = {**NOTEBOOK_WITH_OUTPUTS["cells"][0], "metadata": {"init_cell": True}}
-    repository.write(
+    repository.stage(
         "notebooks/init.ipynb", json.dumps({**NOTEBOOK_WITH_OUTPUTS, "cells": [cell]}).encode()
     )
 
@@ -107,7 +109,7 @@ def test_init_cells_are_stripped_too(tmp_path: Path) -> None:
 
 def test_a_notebook_whose_name_starts_with_a_dash_is_stripped(tmp_path: Path) -> None:
     repository = GitRepository.initialized(tmp_path)
-    repository.write("-draft.ipynb", notebook_bytes())
+    repository.stage("-draft.ipynb", notebook_bytes())
 
     assert strip_notebooks.strip(tmp_path) == [Path("-draft.ipynb")]
     assert not strip_notebooks.has_outputs(tmp_path / "-draft.ipynb")
@@ -129,7 +131,7 @@ def test_an_nbformat_3_notebook_stops_with_a_message_instead_of_a_crash(tmp_path
         "nbformat_minor": 0,
         "worksheets": [{"cells": [old_cell], "metadata": {}}],
     }
-    repository.write("notebooks/old.ipynb", json.dumps(old_notebook).encode())
+    repository.stage("notebooks/old.ipynb", json.dumps(old_notebook).encode())
 
     with pytest.raises(strip_notebooks.StripError, match="nbformat 4"):
         strip_notebooks.strip(tmp_path)

@@ -12,4 +12,5 @@ workspace = true
 [dependencies]
 
 [dev-dependencies]
-proptest = "1.11.0"
+# Without fork, timeout, and bit-set, which no test uses: 11 fewer crates to compile.
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }

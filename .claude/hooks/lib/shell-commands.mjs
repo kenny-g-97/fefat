@@ -20,13 +20,17 @@ import { absolutePath, isAbsolutePath, withForwardSlashes } from "./project-path
 
 export const BASH = "bash";
 export const POWERSHELL = "powershell";
+/** The `find` actions that change files or run programs. */
+export const FIND_ACTIONS_THAT_WRITE = [
+  "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls",
+];
 
 const MAX_NESTING = 3;
 const BASH_PROGRAMS = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
 const POWERSHELL_PROGRAMS = new Set(["powershell", "pwsh"]);
 const CMD_PROGRAMS = new Set(["cmd"]);
 const EXPRESSION_PROGRAMS = new Set(["invoke-expression", "iex"]);
-const START_PROCESS_PROGRAMS = new Set(["start-process", "saps"]);
+const START_PROCESS_PROGRAMS = new Set(["start-process", "saps", "start"]);
 const START_PROCESS_PARAMETERS_WITH_VALUE = new Set([
   "-workingdirectory", "-credential", "-redirectstandardoutput", "-redirectstandardinput",
   "-redirectstandarderror", "-windowstyle", "-verb",
@@ -51,9 +55,12 @@ const POWERSHELL_PARAMETERS_WITH_VALUE = new Set([
 ]);
 const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
   "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--exec-path", "--list-cmds",
-  "--attr-source",
+  "--attr-source", "--shallow-file",
 ]);
 const DISCARDED_OUTPUTS = new Set(["/dev/null", "$null", "nul", "nul:"]);
+// Bash runs ( ... ), $( ... ), and backticks in a subshell, so a cd inside ends with it; PowerShell's parentheses keep the location.
+const SUBSHELL_START = "(";
+const SUBSHELL_END = ")";
 
 /**
  * Every command a tool call would run, in order, nested ones included.
@@ -136,7 +143,16 @@ export function isDiscardedOutput(target) {
 
 function collectCommands(text, shell, startDirectory, depth, commands) {
   let directory = startDirectory;
+  const outerDirectories = [];
   for (const segment of segmentsOf(text, shell)) {
+    if (segment === SUBSHELL_START) {
+      outerDirectories.push(directory);
+      continue;
+    }
+    if (segment === SUBSHELL_END) {
+      directory = outerDirectories.length > 0 ? outerDirectories.pop() : directory;
+      continue;
+    }
     const tokens = tokenize(segment, shell);
     const { words, outputTargets } = separateRedirections(tokens);
     if (words.length === 0) {
@@ -148,7 +164,7 @@ function collectCommands(text, shell, startDirectory, depth, commands) {
       ? "a command nested too deeply"
       : nested?.kind === "opaque"
         ? nested.reason
-        : runsVariable(words, shell);
+        : (runsVariable(words, shell) ?? gitSubcommandInVariable(words));
     commands.push({ words, outputTargets, directory, text: segment, opaque });
     if (nested?.kind === "command" && !tooDeep) {
       collectCommands(nested.text, nested.shell, directory, depth + 1, commands);
@@ -170,6 +186,15 @@ function runsVariable(words, shell) {
   }
   const called = shell === BASH ? words[index + 1] !== "=" : ["&", "."].includes(words[index - 1]);
   return called ? "a command held in a variable" : null;
+}
+
+/** `git $sub ...`: which git command runs is not known before it runs. */
+function gitSubcommandInVariable(words) {
+  const held = words.some((word, index) => {
+    const git = programName(word) === "git" ? parseGitInvocation(words.slice(index + 1), null) : null;
+    return git !== null && /[$%`]/.test(git.subcommand);
+  });
+  return held ? "a git subcommand held in a variable" : null;
 }
 
 function segmentsOf(text, shell) {
@@ -342,6 +367,7 @@ function splitSegments(text, shell) {
   const segments = [];
   let current = "";
   let quote = null;
+  let insideBackticks = false;
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     const next = text[index + 1];
@@ -377,6 +403,11 @@ function splitSegments(text, shell) {
     if (length > 0) {
       segments.push(current);
       current = "";
+      if (shell === BASH && (char === "(" || char === ")" || char === "`")) {
+        const opens = char === "(" || (char === "`" && !insideBackticks);
+        insideBackticks = char === "`" ? !insideBackticks : insideBackticks;
+        segments.push(opens ? SUBSHELL_START : SUBSHELL_END);
+      }
       index += length - 1;
       continue;
     }
@@ -517,6 +548,10 @@ function substitutionsIn(tokens, shell) {
 
 function nestedCommand(words, shell) {
   for (let index = 0; index < words.length; index += 1) {
+    // `start` is Start-Process only as the program itself; elsewhere it is an ordinary word (rg -n start).
+    if (programName(words[index]) === "start" && index !== programIndex(words)) {
+      continue;
+    }
     const nested = nestedCommandAt(programName(words[index]), words.slice(index + 1), shell);
     if (nested !== null) {
       return nested;

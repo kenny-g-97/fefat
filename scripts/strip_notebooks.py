@@ -5,9 +5,10 @@ Run it in the project environment, since it drives nbstripout (a development too
     just strip-notebooks
     uv run python scripts/strip_notebooks.py
 
-It strips the notebooks git knows about: tracked ones, and untracked ones that
-.gitignore does not exclude (so `.ipynb_checkpoints/` copies stay as they are).
-A commit takes the staged copy, so stage each stripped notebook again with
+It strips the notebooks in git's index, the ones a commit can take: an
+untracked draft keeps its outputs until it is staged with `git add`, and
+`.ipynb_checkpoints/` copies stay as they are. A commit takes the staged copy,
+so stage each stripped notebook again with
 `git add` before committing; the data guard (scripts/guard_data.py) refuses
 staged notebooks with outputs (docs/masterplan/05-build-process.md section 5).
 """
@@ -37,10 +38,8 @@ def git_output(repository: Path, *arguments: str) -> str:
 
 
 def notebooks(repository: Path) -> list[Path]:
-    """The notebooks on disk that git tracks or would track, relative to the repository."""
-    listed = git_output(
-        repository, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.ipynb"
-    )
+    """The notebooks on disk that are in git's index, relative to the repository."""
+    listed = git_output(repository, "ls-files", "-z", "--cached", "--", "*.ipynb")
     paths = {Path(entry) for entry in listed.split("\0") if entry}
     return sorted(path for path in paths if (repository / path).is_file())
 

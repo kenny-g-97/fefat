@@ -17,6 +17,13 @@ ES_TICK = 250_000_000
 BTC_TICK = 100_000_000
 ES_SESSION_LENGTH = timedelta(hours=23)
 FIXTURE_SIZE_LIMIT_BYTES = 20_000_000
+SESSIONS = [
+    ("ES", "ESH6", "2026-03-05", datetime(2026, 3, 4, 23, tzinfo=UTC)),
+    ("ES", "ESH6", "2026-03-06", datetime(2026, 3, 5, 23, tzinfo=UTC)),
+    ("ES", "ESH6", "2026-03-09", datetime(2026, 3, 8, 22, tzinfo=UTC)),
+    ("BTC", "BTCUSDT-PERP", "2026-03-07", datetime(2026, 3, 7, tzinfo=UTC)),
+]
+BAR_FIELDS = ("ts_close", "open", "high", "low", "close", "volume", "trade_count")
 
 
 def nanoseconds(instant: datetime) -> int:
@@ -29,6 +36,13 @@ def partition(schema: str, root: str, contract: str, key: str) -> Path:
 
 def rows(path: Path) -> list[dict[str, int | str]]:
     return pq.read_table(path).to_pylist()
+
+
+def second_bar(start: int, trades: list[dict[str, int | str]]) -> tuple[int, ...]:
+    prices = [int(trade["price"]) for trade in trades]
+    volume = sum(int(trade["size"]) for trade in trades)
+    end = start + NANOSECONDS_PER_SECOND
+    return (end, prices[0], max(prices), min(prices), prices[-1], volume, len(trades))
 
 
 def manifest_entries() -> list[dict[str, str | int]]:
@@ -126,6 +140,28 @@ def test_ts_recv_never_decreases_and_never_precedes_ts_event() -> None:
 
         assert received == sorted(received), path
         assert all(int(trade["ts_recv"]) >= int(trade["ts_event"]) for trade in trades), path
+
+
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
+def test_second_bars_hold_the_trades_received_in_their_second(
+    root: str, contract: str, day: str, open_utc: datetime
+) -> None:
+    open_time = nanoseconds(open_utc)
+
+    def second_of(instant: int | str) -> int:
+        return int(instant) - (int(instant) - open_time) % NANOSECONDS_PER_SECOND
+
+    trades = rows(partition("trades", root, contract, f"date={day}"))
+    received: dict[int, list[dict[str, int | str]]] = {}
+    for trade in trades:
+        received.setdefault(second_of(trade["ts_recv"]), []).append(trade)
+    bars = rows(partition("ohlcv-1s", root, contract, f"date={day}"))
+
+    assert {int(bar["ts_open"]): tuple(int(bar[name]) for name in BAR_FIELDS) for bar in bars} == {
+        start: second_bar(start, group) for start, group in received.items()
+    }
+    # The fixture tells the clocks apart, so bars bucketed by ts_event would fail the line above.
+    assert any(second_of(trade["ts_event"]) != second_of(trade["ts_recv"]) for trade in trades)
 
 
 @pytest.mark.parametrize(("root", "contract"), [("ES", "ESH6"), ("BTC", "BTCUSDT-PERP")])

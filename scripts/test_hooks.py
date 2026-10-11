@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -44,12 +45,12 @@ HOOK_TIMEOUT_SECONDS = 60
 PARALLEL_HOOKS = 8
 ON_WINDOWS = sys.platform == "win32"
 STEP_BRANCH = "step/0.5-hook-tests"
-RUFF = ROOT / ".venv" / ("Scripts/ruff.exe" if ON_WINDOWS else "bin/ruff")
 PRETTIER = ROOT / "web" / "node_modules" / "prettier" / "bin" / "prettier.cjs"
 DESIGN_SKILL_SCRIPT = (
     ROOT / ".claude" / "skills" / "backtest-expert" / "scripts" / "evaluate_backtest.py"
 )
 WEB_SOURCE = ROOT / "web" / "src" / "App.tsx"
+AGENTS = ROOT / ".claude" / "agents"
 
 
 class Hook(Enum):
@@ -157,6 +158,20 @@ def powershell(command: str, directory: Path) -> str:
     return tool_call("PowerShell", {"command": command, "description": "hook test"}, directory)
 
 
+def agent_name(path: Path) -> str:
+    """The frontmatter name, which Claude Code sends hooks as agent_type."""
+    found = re.search(r"^name: *(\S+)", path.read_text(encoding="utf-8"), re.MULTILINE)
+    if found is None:
+        raise ValueError(f"Expected a name: line in {path.name}, got none.")
+    return found.group(1)
+
+
+def in_subagent(stdin: str, agent_type: str) -> str:
+    return json.dumps(
+        {**json.loads(stdin), "agent_id": "agent_hook_tests", "agent_type": agent_type}
+    )
+
+
 def after_write(path: Path | str) -> str:
     return tool_call("Write", {"file_path": str(path), "content": ""}, event="PostToolUse")
 
@@ -210,6 +225,39 @@ def file_guard_cases() -> list[Case]:
 
     cases = [
         case("edit .env is denied", edit(ROOT / ".env"), Expect.DENY, ".env"),
+        case("write .envrc is denied", write(ROOT / ".envrc"), Expect.DENY, ".env"),
+        case("write config/prod.env is denied", write(ROOT / "config" / "prod.env"), Expect.DENY),
+        case(
+            "write GIT~1/config (a Windows short name) asks",
+            write(ROOT / "GIT~1" / "config"),
+            Expect.ASK,
+            "short name",
+        ),
+        case(
+            "write .git./config (a trailing dot) asks",
+            write(f"{ROOT.as_posix()}/.git./config"),
+            Expect.ASK,
+        ),
+        case(
+            "a short name of a file in .claude asks",
+            write(ROOT / ".claude" / "SETTIN~1.JSO"),
+            Expect.ASK,
+        ),
+        case(
+            "the NTFS stream form of .git asks",
+            write(f"{ROOT.as_posix()}/.git::$INDEX_ALLOCATION/config"),
+            Expect.ASK,
+        ),
+        case(
+            "a .git folder reached through a short-named parent is denied",
+            write(f"{ROOT.parent.parent.as_posix()}/DOCUME~1/{ROOT.name}/.git/config"),
+            Expect.DENY,
+        ),
+        case(
+            "a short name of another folder is left to the permission rules",
+            write(outside / "PROGRA~1" / "notes.txt"),
+            Expect.ALLOW,
+        ),
         case(
             "write .env.example is left to the permission rules",
             write(ROOT / ".env.example"),
@@ -708,6 +756,188 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.ASK,
             tool="PowerShell",
         ),
+        case(
+            "a cd inside a subshell does not hide a commit on main",
+            "(cd ..) && git commit -m x",
+            Expect.ASK,
+            directory=on_main,
+        ),
+        case(
+            "a cd inside a subshell does not hide a push to main",
+            "(cd ..) && git push origin HEAD",
+            Expect.DENY,
+            directory=on_main,
+        ),
+        case(
+            "a cd inside $( ) does not hide a push to main",
+            "echo $(cd ..) && git push origin HEAD",
+            Expect.DENY,
+            directory=on_main,
+        ),
+        case(
+            "a PowerShell (cd ..) moves the location for the commands after it",
+            "(cd ..); git commit -m x",
+            Expect.ALLOW,
+            tool="PowerShell",
+            directory=on_main,
+        ),
+        case("git config --edit is denied", "git config --edit", Expect.DENY, reason=".git/config"),
+        case("git config -e is denied", "git config -e", Expect.DENY),
+        case(
+            "writing .git//config is denied",
+            "echo '[core] hooksPath = x' >> .git//config",
+            Expect.DENY,
+        ),
+        case("writing .git/./config is denied", "echo x > .git/./config", Expect.DENY),
+        case(
+            "a git subcommand held in a variable asks",
+            "sub=push; git $sub --force origin main",
+            Expect.ASK,
+            reason="held in a variable",
+        ),
+        case(
+            "git checkout . restores files, so a push after it is still on main",
+            "git checkout .; git push origin HEAD",
+            Expect.DENY,
+            directory=on_main,
+        ),
+        case(
+            "git checkout <tree-ish> <path> restores files, so a push after it is still on main",
+            "git checkout HEAD README.md && git push origin HEAD",
+            Expect.DENY,
+            directory=on_main,
+        ),
+        case(
+            "git checkout <branch> still counts as a switch",
+            "git checkout step/0.5-x && git push origin HEAD",
+            Expect.ASK,
+            directory=on_main,
+        ),
+        case("a push to heads/main is denied", "git push origin HEAD:heads/main", Expect.DENY),
+        case("pushing heads/main is denied", "git push origin heads/main", Expect.DENY),
+        case("git push --mirr (an abbreviation) is denied", "git push --mirr origin", Expect.DENY),
+        case("git push --al (an abbreviation) is denied", "git push --al origin", Expect.DENY),
+        case(
+            "git -c with an alias that skips the gate asks",
+            'git -c alias.ci="commit --no-verify" ci -m x',
+            Expect.ASK,
+            reason="aliases",
+        ),
+        case(
+            "git -c with an alias that force-pushes asks",
+            'git -c alias.fp="push --force" fp origin step/0.5-x',
+            Expect.ASK,
+            reason="aliases",
+        ),
+        case(
+            "git -c include.path asks",
+            "git -c include.path=C:/tmp/x.cfg commit -m x",
+            Expect.ASK,
+            reason="aliases",
+        ),
+        case(
+            "git -c remote.origin.push asks why",
+            "git -c remote.origin.push=HEAD:main push",
+            Expect.ASK,
+            reason="aliases",
+        ),
+        case(
+            "git --config-env=core.hooksPath is denied",
+            "git --config-env=core.hooksPath=HP commit -m x",
+            Expect.DENY,
+        ),
+        case(
+            "GIT_CONFIG_COUNT with core.hooksPath is denied",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=x git commit -m x",
+            Expect.DENY,
+        ),
+        case(
+            "PowerShell's start alias with a force push is denied",
+            "start git 'push --force'",
+            Expect.DENY,
+            tool="PowerShell",
+        ),
+        case(
+            "writing GIT~1/config (a Windows short name) asks",
+            "echo x >> GIT~1/config",
+            Expect.ASK,
+            reason="short name",
+        ),
+        case(
+            "writing CLAUDE~1/settings.json asks",
+            "echo '{}' > CLAUDE~1/settings.json",
+            Expect.ASK,
+        ),
+        case(
+            "writing .git.\\config (a trailing dot) asks in PowerShell",
+            "Add-Content .git.\\config x",
+            Expect.ASK,
+            tool="PowerShell",
+        ),
+        case("git rm of the commit gate asks", "git rm .githooks/pre-commit", Expect.ASK),
+        case("git rm of the hooks asks", "git rm -r .claude/hooks", Expect.ASK),
+        case(
+            "git grep for --no-verify is allowed",
+            "git grep -n -e --no-verify",
+            Expect.ALLOW,
+        ),
+        case(
+            "an unknown git option with a value does not hide --no-verify",
+            "git --shallow-file log commit --no-verify -m x",
+            Expect.DENY,
+        ),
+        case(
+            "searching for the word start is allowed",
+            "rg -n start fixtures/goldens/es fixtures/goldens/btc",
+            Expect.ALLOW,
+        ),
+        case("rm -rf .claude/ asks", "rm -rf .claude/", Expect.ASK, reason="guardrails"),
+        case(
+            "Remove-Item .claude\\ asks in PowerShell",
+            "Remove-Item -Recurse -Force .claude\\",
+            Expect.ASK,
+            tool="PowerShell",
+        ),
+        case(
+            "sed -i on a short name of .git asks",
+            "sed -i 's/githooks/x/' GIT~1/config",
+            Expect.ASK,
+            reason="short name",
+        ),
+        case(
+            "a cd inside backticks does not hide a commit on main",
+            "echo `cd ..` && git commit -m x",
+            Expect.ASK,
+            directory=on_main,
+        ),
+        case(
+            "a cd inside backticks does not hide a push to main",
+            "echo `cd ..` && git push origin HEAD",
+            Expect.DENY,
+            directory=on_main,
+        ),
+        case(
+            "removing the .claude folder through a .. asks",
+            "rm -rf .claude/hooks/..",
+            Expect.ASK,
+            reason="guardrails",
+        ),
+        case(
+            "text that ends in a dot is not a Windows path",
+            'Set-Content notes.md "Done."',
+            Expect.ALLOW,
+            tool="PowerShell",
+        ),
+        case(
+            "a sed expression that ends in a dot is not a Windows path",
+            "sed -i 's/foo/bar./' README.md",
+            Expect.ALLOW,
+        ),
+        case(
+            "find -fprint into fixtures/goldens asks",
+            "find . -name '*.json' -fprint fixtures/goldens/es/run.json",
+            Expect.ASK,
+        ),
         Case("input that is not JSON asks", Hook.SHELL_GUARD, "not json", Expect.ASK, step),
         Case("empty input asks", Hook.SHELL_GUARD, "", Expect.ASK, step),
         Case(
@@ -773,7 +1003,10 @@ def session_cases(repositories: Repositories, branch: str) -> list[Case]:
             "startup prints the branch and where the masterplan stands",
             session_start("startup", ROOT),
             ROOT,
-            (output_contains(f"branch {branch}"), output_contains_one_of(["Step ", "Next: "])),
+            (
+                output_contains(f"branch {branch}"),
+                output_contains_one_of(["Step ", "Next: ", "Continue with /phase-"]),
+            ),
         ),
         case(
             "without the step reader it falls back to what git can tell",
@@ -804,6 +1037,7 @@ def reviewer_cases() -> list[Case]:
         "git branch --list 'step/*'",
     ]
     allowed += ["git --no-pager log -3", "sort -r notes.txt", "git grep -n hooksPath"]
+    allowed += ["rg -n start scripts/"]
     denied = [
         "git -c core.pager=less log",
         "GIT_EXTERNAL_DIFF=./x.sh git diff",
@@ -825,10 +1059,36 @@ def reviewer_cases() -> list[Case]:
         "find . -name '*.tmp' -delete",
         "uv run ruff check --fix .",
         "bash -c 'git diff'",
+        "uv run ruff check -oprobe.txt",
+        "pnpm --dir web test --outputFile.json=probe.json",
+        "pnpm --dir web test --coverage",
+        "pnpm --dir web test --reporter=html",
+        "cargo test --config \"target.x86_64-pc-windows-msvc.runner='x'\"",
+        "cargo clippy -Zunstable-options",
+        "cargo test -- --logfile probe.txt",
+        "git grep --open=rm -e foo",
+        "uv run ruff check --config 'fix = true' .",
+        "uv run pytest --log-file=CLAUDE.md",
+        "uv run pytest --debug=CLAUDE.md",
+        "uv run pytest -o log_file=probe.txt",
+        "node --check --import ./x.mjs y.mjs",
+        "sort --ou=out.txt notes.txt",
+        "just check strip-notebooks",
+        "just test strip-notebooks",
+        "git grep -nOrm -e foo",
+        "uv run pytest -qolog_file=CLAUDE.md",
+        "uv run ruff check -qoCLAUDE.md",
     ]
+
+    def reviewer_bash(command: str) -> str:
+        return in_subagent(bash(command, ROOT), "step-reviewer")
+
     cases = [
         Case(
-            f"a reviewer may run: {command}", Hook.REVIEWER_SHELL, bash(command, ROOT), Expect.ALLOW
+            f"a reviewer may run: {command}",
+            Hook.REVIEWER_SHELL,
+            reviewer_bash(command),
+            Expect.ALLOW,
         )
         for command in allowed
     ]
@@ -836,7 +1096,7 @@ def reviewer_cases() -> list[Case]:
         Case(
             f"a reviewer may not run: {command}",
             Hook.REVIEWER_SHELL,
-            bash(command, ROOT),
+            reviewer_bash(command),
             Expect.DENY,
         )
         for command in denied
@@ -845,11 +1105,41 @@ def reviewer_cases() -> list[Case]:
         Case(
             "a reviewer may not run: Remove-Item notes.txt (PowerShell)",
             Hook.REVIEWER_SHELL,
-            powershell("Remove-Item notes.txt", ROOT),
+            in_subagent(powershell("Remove-Item notes.txt", ROOT), "step-reviewer"),
             Expect.DENY,
             reason_contains="read-only",
         )
     )
+    cases += [
+        Case(
+            f"{reviewer} may not write the probe file",
+            Hook.REVIEWER_SHELL,
+            in_subagent(bash("printf probe > reviewer-probe.txt", ROOT), reviewer),
+            Expect.DENY,
+            reason_contains="read-only",
+        )
+        for reviewer in sorted(agent_name(path) for path in AGENTS.glob("*.md"))
+    ]
+    cases += [
+        Case(
+            "a reviewer whose name carries a prefix is still a reviewer",
+            Hook.REVIEWER_SHELL,
+            in_subagent(bash("printf probe > reviewer-probe.txt", ROOT), "project:step-reviewer"),
+            Expect.DENY,
+        ),
+        Case(
+            "the main session's writes are left to the other guards",
+            Hook.REVIEWER_SHELL,
+            bash("echo x > notes.txt", ROOT),
+            Expect.ALLOW,
+        ),
+        Case(
+            "another subagent's writes are left to the other guards",
+            Hook.REVIEWER_SHELL,
+            in_subagent(bash("echo x > notes.txt", ROOT), "general-purpose"),
+            Expect.ALLOW,
+        ),
+    ]
     return cases
 
 

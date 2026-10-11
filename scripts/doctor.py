@@ -24,6 +24,8 @@ from enum import Enum
 from pathlib import Path
 
 COMMAND_TIMEOUT_SECONDS = 60
+# rustup applies engine/rust-toolchain.toml only inside engine/, so Rust answers from there.
+ENGINE = Path(__file__).resolve().parents[1] / "engine"
 VERSION_PATTERN = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?")
 MSVC_WORKLOAD_COMPONENT = "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
 MSVC_LINKER_GLOB = r"VC\Tools\MSVC\**\bin\Hostx64\x64\link.exe"
@@ -88,10 +90,13 @@ class Finding:
         return abbreviate_home(self.installation.path)
 
 
-def run_command(arguments: list[str]) -> str | None:
+def run_command(arguments: list[str], directory: Path | None = None) -> str | None:
     try:
         completed = subprocess.run(
             arguments,
+            cwd=directory,
+            # A check never installs: rustup would otherwise fetch a missing pinned toolchain.
+            env={**os.environ, "RUSTUP_AUTO_INSTALL": "0"},
             capture_output=True,
             text=True,
             errors="replace",
@@ -109,12 +114,14 @@ def first_line(text: str) -> str:
     return text.splitlines()[0] if text else ""
 
 
-def command_on_path(executable: str) -> Callable[[], Installation | None]:
+def command_on_path(
+    executable: str, directory: Path | None = None
+) -> Callable[[], Installation | None]:
     def locate() -> Installation | None:
         found = shutil.which(executable)
         if found is None:
             return None
-        output = run_command([found, "--version"])
+        output = run_command([found, "--version"], directory)
         version = None if output is None else Version.parse(first_line(output))
         return Installation(Path(found), version)
 
@@ -221,10 +228,10 @@ def requirements() -> list[Requirement]:
         Requirement(
             "rustc",
             Version(1, 85),
-            command_on_path("rustc"),
-            "winget install Rustlang.Rustup, then rustup default stable",
+            command_on_path("rustc", ENGINE),
+            "winget install Rustlang.Rustup, then `rustup toolchain install` in engine/ (the pin)",
         ),
-        Requirement("cargo", Version(1, 85), command_on_path("cargo"), "comes with rustup"),
+        Requirement("cargo", Version(1, 85), command_on_path("cargo", ENGINE), "comes with rustup"),
         Requirement("just", Version(1, 38), command_on_path("just"), "winget install Casey.Just"),
         native_linker_requirement(),
     ]

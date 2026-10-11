@@ -23,9 +23,9 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 
 ## 2. The session protocol
 
-1. Open Claude Code in the repo root and start a **fresh session**. Run `/step N.M` (from step 0.5 on) or paste the step's Prompt. Steps 0.1–0.4 are pasted, because 0.4 is the step that creates the runner.
+1. Open Claude Code in the repo root and start a **fresh session**. Run `/step N.M` (from step 0.5 on), ask for it in plain words ("0.6 is merged, plan the next step"), or paste the step's Prompt. Steps 0.1–0.4 are pasted, because 0.4 is the step that creates the runner.
 2. The step runner reads the step, checks `PROGRESS.md` for prerequisites, and creates or reuses the branch `step/N.M-<slug>`.
-3. **Plan mode** when the meta line says `plan: required` (new subsystems, schemas, public SDK or API surfaces, engine semantics). Read the plan for outcome and risk, then approve. `optional` means Claude Code decides; `skip` means go straight to work.
+3. **Plan mode** when the meta line says `plan: required` (new subsystems, schemas, public SDK or API surfaces, engine semantics). Read the plan for outcome and risk, then approve. `optional` means Claude Code decides; `skip` means go straight to work. In practice you open every step in plan mode, so `skip` gets a short plan; you plan on the strongest model and switch to Opus with `/model opus` once you approve.
 4. Claude Code loads the skills for the step's area before writing code — `software-design-principles` for any code, `designing-architecture` for a new module or seam, `backtest-expert` for engine, prop, results, and research steps, `frontend-design` with `web/DESIGN.md` for anything under `web/` (`08-code-design.md`; the `step` skill does this from the paths a step touches) — then works in auto mode, commits in small logical commits, and never commits to `main`.
 5. Before opening the PR it runs `just check` and `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, the ponytail plugin's `/ponytail-review`, and the specialist reviewers the step lists. `/security-review` runs when the step says `security: yes` and at every phase exit.
 6. It opens the PR from the template: what changed, evidence per "Done means" item, deviations from the prompt, follow-ups added to `BACKLOG.md`, and the `PROGRESS.md` row (status, PR number, date, note).
@@ -66,7 +66,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 
 - **Phase kickoff** (`/phase-kickoff N`, strongest model), delivered as a docs-only PR: read the phase's steps, the ADRs, and the code as it now is; list step assumptions that no longer hold; propose edits to this phase's unstarted steps only, keeping IDs stable; pull in backlog items; ask you the open decisions listed in the phase file.
 - **Change control.** A step changes only through a kickoff PR or an "Amendment" block Claude Code proposes when an assumption breaks mid-step; it then stops instead of deviating silently. Finished steps are never rewritten.
-- **Phase exit** (`/phase-exit N`): full suite from a clean checkout; specialist review of the phase diff, with `/code-review high` and `/ponytail-review`; `/security-review`; for phases with UI, the `design-reviewer`, `design-critique`, and `accessibility-review` over the main pages; a demo script you perform; repeated corrections turned into `CLAUDE.md`, rule, or skill edits (including deletions); docs and runbook updated; backlog groomed; Claude Code version and usage logged; tag `phase-N`.
+- **Phase exit** (`/phase-exit N`): full suite from a clean checkout; specialist review of the phase diff, with `/code-review high` and `/ponytail-review`; `/security-review`; for phases with UI, the `design-reviewer`, `design-critique`, and `accessibility-review` over the main pages; the upgrade step of §7 (toolchain pin, lockfiles, CI pins); a demo script you perform; repeated corrections turned into `CLAUDE.md`, rule, or skill edits (including deletions); docs and runbook updated; backlog groomed; Claude Code version and usage logged; tag `phase-N`.
 - **ADRs** in `docs/adr/`: context, decision, consequences, how we would know it is wrong. Written when a decision affects more than one step; superseded, never edited.
 - **`PROGRESS.md`** is the single status table. **`BACKLOG.md`** takes everything Claude Code notices but must not do now.
 
@@ -86,7 +86,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 
 ## 8. Git conventions
 
-- Branches `step/N.M-<slug>`, `kickoff/PN`, `exit/PN`. Squash-merge into `main`. Tags `phase-N` at phase exits.
+- Branches `step/N.M-<slug>`, `kickoff/PN`, `exit/PN`, and `config/<slug>` for a setup change outside any step (a skill, reviewer, plugin, or setting). Squash-merge into `main`. Tags `phase-N` at phase exits.
 - Commit messages: imperative subject under 72 characters, body explains why. Claude Code's attribution line as configured.
 - PR template sections: Summary · Done means (evidence per item) · Deviations · Follow-ups · Progress row · Screenshots/recordings (UI).
 - `main` is not protected on GitHub's side: the free plan offers no branch protection for private repositories, and you chose to stay on it (D-30). The repository allows squash merging only and deletes branches after merge (step 0.3); the routine below protects your merges, and Claude Code's hooks block its own pushes to `main` (step 0.4).

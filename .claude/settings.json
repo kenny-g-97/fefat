@@ -260,10 +260,10 @@
       "PowerShell(git push origin main)",
       "Bash(git commit --no-verify:*)",
       "PowerShell(git commit --no-verify:*)",
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(./**/.env)",
-      "Read(./**/.env.*)",
+      "Read(./.env*)",
+      "Read(./**/.env*)",
+      "Read(./*.env)",
+      "Read(./**/*.env)",
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
       "Read(./**/*.pfx)",
@@ -310,6 +310,15 @@
             "timeout": 10,
             "onFailure": "block",
             "statusMessage": "Checking the command"
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer-shell-commands.mjs"
+            ],
+            "timeout": 10,
+            "onFailure": "block"
           }
         ]
       }
