@@ -57,7 +57,8 @@ const READ_ONLY_COMMANDS = [
   readOnly("git diff", { forbids: ["--output"] }),
   readOnly("git log", { forbids: ["--output"] }),
   readOnly("git show", { forbids: ["--output"] }),
-  readOnly("git grep", { forbids: [/^-O/, /^--op/] }),
+  // A short option counts inside a cluster too (-nO, -qo): /^-[A-Za-z]*O/ and the like.
+  readOnly("git grep", { forbids: [/^-[A-Za-z]*O/, /^--op/] }),
   ...["status", "blame", "rev-parse", "rev-list", "ls-files", "merge-base", "describe", "cat-file", "for-each-ref", "shortlog"].map(
     (subcommand) => readOnly(`git ${subcommand}`),
   ),
@@ -74,13 +75,13 @@ const READ_ONLY_COMMANDS = [
   readOnly("uv run pytest", {
     forbids: [
       "--snapshot-update", "--force-regen", "--junitxml", "--junit-xml", "--result-log", "--html", "--basetemp",
-      "--log-file", "--debug", /^-o/, "--override-ini",
+      "--log-file", "--debug", /^-[A-Za-z]*o/, "--override-ini",
     ],
   }),
   readOnly("uv run pyright", { forbids: ["--createstub", "--writebaseline"] }),
   readOnly("uv run lint-imports"),
   readOnly("uv run ruff check", {
-    forbids: ["--fix", "--fix-only", "--unsafe-fixes", "--add-noqa", "--output-file", /^-o/, "--config"],
+    forbids: ["--fix", "--fix-only", "--unsafe-fixes", "--add-noqa", "--output-file", /^-[A-Za-z]*o/, "--config"],
   }),
   readOnly("uv run ruff format", { requiresOneOf: ["--check", "--diff"] }),
   readOnly("uv run python docs/masterplan/tools/check_masterplan.py"),

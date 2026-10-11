@@ -58,7 +58,7 @@ const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
   "--attr-source", "--shallow-file",
 ]);
 const DISCARDED_OUTPUTS = new Set(["/dev/null", "$null", "nul", "nul:"]);
-// Bash runs ( ... ) and $( ... ) in a subshell, so a cd inside ends at the ")"; PowerShell's parentheses keep the location.
+// Bash runs ( ... ), $( ... ), and backticks in a subshell, so a cd inside ends with it; PowerShell's parentheses keep the location.
 const SUBSHELL_START = "(";
 const SUBSHELL_END = ")";
 
@@ -367,6 +367,7 @@ function splitSegments(text, shell) {
   const segments = [];
   let current = "";
   let quote = null;
+  let insideBackticks = false;
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     const next = text[index + 1];
@@ -402,8 +403,10 @@ function splitSegments(text, shell) {
     if (length > 0) {
       segments.push(current);
       current = "";
-      if (shell === BASH && (char === "(" || char === ")")) {
-        segments.push(char === "(" ? SUBSHELL_START : SUBSHELL_END);
+      if (shell === BASH && (char === "(" || char === ")" || char === "`")) {
+        const opens = char === "(" || (char === "`" && !insideBackticks);
+        insideBackticks = char === "`" ? !insideBackticks : insideBackticks;
+        segments.push(opens ? SUBSHELL_START : SUBSHELL_END);
       }
       index += length - 1;
       continue;
@@ -545,6 +548,10 @@ function substitutionsIn(tokens, shell) {
 
 function nestedCommand(words, shell) {
   for (let index = 0; index < words.length; index += 1) {
+    // `start` is Start-Process only as the program itself; elsewhere it is an ordinary word (rg -n start).
+    if (programName(words[index]) === "start" && index !== programIndex(words)) {
+      continue;
+    }
     const nested = nestedCommandAt(programName(words[index]), words.slice(index + 1), shell);
     if (nested !== null) {
       return nested;

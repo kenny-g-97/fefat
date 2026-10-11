@@ -95,7 +95,7 @@ const JAVASCRIPT_RUNNERS = new Set(["pnpm", "npm", "npx", "yarn", "vitest", "bun
 const GOLDEN_ENVIRONMENT =
   /\b(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\s*=|\bsetx\s+(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\b/i;
 const GUARDRAIL_PATH =
-  /(^|\/)\.claude(\/skills)?$|(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(apple-design|backtest-expert|designing-architecture|software-design-principles)(\/|$)/;
+  /(^|\/)\.claude(\/skills)?\/?$|(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(apple-design|backtest-expert|designing-architecture|software-design-principles)(\/|$)/;
 const READING_PROGRAMS = new Set([
   "cat", "head", "tail", "less", "more", "rg", "grep", "ls", "dir", "wc", "diff", "file", "stat", "tree",
   "echo", "type", "get-content", "gc", "get-childitem", "gci", "select-string", "sls", "test-path",
@@ -219,8 +219,7 @@ function commandFindings(command) {
   if (setsHooksPathThroughEnvironment(command.words)) {
     findings.push(deny(REASONS.hooksPath));
   }
-  const { named, edited } = writtenPaths(command);
-  const written = [...named, ...edited];
+  const written = writtenPaths(command);
   if (written.some((target) => /(^|\/)\.git\/config$/.test(target))) {
     findings.push(deny(REASONS.gitConfigFile));
   }
@@ -230,8 +229,7 @@ function commandFindings(command) {
   if (written.some((target) => GUARDRAIL_PATH.test(target))) {
     findings.push(ask(REASONS.guardrails));
   }
-  // A sed or perl script is no path, so only the targets a command names can be Windows aliases.
-  if (named.some(usesWindowsAlias)) {
+  if (written.some(usesWindowsAlias)) {
     findings.push(ask(REASONS.windowsAlias));
   }
   const touchesGoldens = written.some(isGoldenPath) || mentionsGoldensOutsideReading(command.words);
@@ -257,30 +255,22 @@ function setsHooksPathThroughEnvironment(words) {
   });
 }
 
-/**
- * The paths a command writes: the ones it names (redirections, the arguments of
- * cp, rm, git rm, and the like), and every argument of an in-place editor
- * (sed -i, perl -i), whose script cannot be told apart from its files.
- */
 function writtenPaths(command) {
   const index = programIndex(command.words);
   const program = index < command.words.length ? programName(command.words[index]) : "";
   const args = command.words.slice(index + 1);
-  const named = [...command.outputTargets];
+  const targets = [...command.outputTargets];
   if (WRITING_PROGRAMS.has(program)) {
-    named.push(...args);
+    targets.push(...args);
+  }
+  if (IN_PLACE_EDITORS.has(program) && args.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg.startsWith("--in-place"))) {
+    targets.push(...args);
   }
   for (const git of gitInvocationsIn(command)) {
     if (git.subcommand === "rm" || git.subcommand === "mv") {
-      named.push(...git.args);
+      targets.push(...git.args);
     }
   }
-  const editsInPlace =
-    IN_PLACE_EDITORS.has(program) && args.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg.startsWith("--in-place"));
-  return { named: normalizedPaths(named), edited: editsInPlace ? normalizedPaths(args) : [] };
-}
-
-function normalizedPaths(targets) {
   return targets
     .filter((target) => !isDiscardedOutput(target))
     .map((target) => path.posix.normalize(withForwardSlashes(target).toLowerCase().replace(/^of=/, "")));

@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -49,7 +50,7 @@ DESIGN_SKILL_SCRIPT = (
     ROOT / ".claude" / "skills" / "backtest-expert" / "scripts" / "evaluate_backtest.py"
 )
 WEB_SOURCE = ROOT / "web" / "src" / "App.tsx"
-REVIEWERS = sorted(path.stem for path in (ROOT / ".claude" / "agents").glob("*.md"))
+AGENTS = ROOT / ".claude" / "agents"
 
 
 class Hook(Enum):
@@ -155,6 +156,14 @@ def bash(command: str, directory: Path) -> str:
 
 def powershell(command: str, directory: Path) -> str:
     return tool_call("PowerShell", {"command": command, "description": "hook test"}, directory)
+
+
+def agent_name(path: Path) -> str:
+    """The frontmatter name, which Claude Code sends hooks as agent_type."""
+    found = re.search(r"^name: *(\S+)", path.read_text(encoding="utf-8"), re.MULTILINE)
+    if found is None:
+        raise ValueError(f"Expected a name: line in {path.name}, got none.")
+    return found.group(1)
 
 
 def in_subagent(stdin: str, agent_type: str) -> str:
@@ -878,6 +887,36 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.DENY,
         ),
         case(
+            "searching for the word start is allowed",
+            "rg -n start fixtures/goldens/es fixtures/goldens/btc",
+            Expect.ALLOW,
+        ),
+        case("rm -rf .claude/ asks", "rm -rf .claude/", Expect.ASK, reason="guardrails"),
+        case(
+            "Remove-Item .claude\\ asks in PowerShell",
+            "Remove-Item -Recurse -Force .claude\\",
+            Expect.ASK,
+            tool="PowerShell",
+        ),
+        case(
+            "sed -i on a short name of .git asks",
+            "sed -i 's/githooks/x/' GIT~1/config",
+            Expect.ASK,
+            reason="short name",
+        ),
+        case(
+            "a cd inside backticks does not hide a commit on main",
+            "echo `cd ..` && git commit -m x",
+            Expect.ASK,
+            directory=on_main,
+        ),
+        case(
+            "a cd inside backticks does not hide a push to main",
+            "echo `cd ..` && git push origin HEAD",
+            Expect.DENY,
+            directory=on_main,
+        ),
+        case(
             "removing the .claude folder through a .. asks",
             "rm -rf .claude/hooks/..",
             Expect.ASK,
@@ -998,6 +1037,7 @@ def reviewer_cases() -> list[Case]:
         "git branch --list 'step/*'",
     ]
     allowed += ["git --no-pager log -3", "sort -r notes.txt", "git grep -n hooksPath"]
+    allowed += ["rg -n start scripts/"]
     denied = [
         "git -c core.pager=less log",
         "GIT_EXTERNAL_DIFF=./x.sh git diff",
@@ -1035,6 +1075,9 @@ def reviewer_cases() -> list[Case]:
         "sort --ou=out.txt notes.txt",
         "just check strip-notebooks",
         "just test strip-notebooks",
+        "git grep -nOrm -e foo",
+        "uv run pytest -qolog_file=CLAUDE.md",
+        "uv run ruff check -qoCLAUDE.md",
     ]
 
     def reviewer_bash(command: str) -> str:
@@ -1075,7 +1118,7 @@ def reviewer_cases() -> list[Case]:
             Expect.DENY,
             reason_contains="read-only",
         )
-        for reviewer in REVIEWERS
+        for reviewer in sorted(agent_name(path) for path in AGENTS.glob("*.md"))
     ]
     cases += [
         Case(
