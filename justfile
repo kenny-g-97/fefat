@@ -20,8 +20,9 @@ default:
 doctor:
     uv run --no-project python scripts/doctor.py
 
-# Install every dependency (the uv workspace, the Cargo workspace, the web app) and build the engine
+# Point git at the commit gate (a clone copies no git settings), install every dependency (the uv workspace, the Cargo workspace, the web app), and build the engine
 setup:
+    git config core.hooksPath .githooks
     uv sync --locked --all-packages
     just setup-engine
     just build-engine

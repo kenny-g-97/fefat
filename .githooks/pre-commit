@@ -1,9 +1,9 @@
 #!/bin/sh
 # Git runs this file before every commit and stops the commit when it exits
 # non-zero. Git looks for it here because `core.hooksPath` is `.githooks`, a
-# setting that a clone does not copy: in a fresh clone run
+# setting that a clone does not copy: `just setup` sets it in a fresh clone with
 #     git config core.hooksPath .githooks
-# once; afterwards `git config core.hooksPath` prints `.githooks`.
+# and afterwards `git config core.hooksPath` prints `.githooks`.
 #
 # On Windows, Git for Windows runs it with its own sh and recognises it as a
 # script by the `#!/bin/sh` first line, so the executable bit does not matter

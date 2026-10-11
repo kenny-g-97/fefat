@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+from itertools import takewhile
 from pathlib import Path
 
 from git_repository import GitRepository
@@ -53,3 +54,10 @@ def test_the_commit_refuses_force_staged_market_data_and_accepts_listed_fixtures
 
     assert accepted.returncode == 0, accepted.stdout + accepted.stderr
     assert repository.git("rev-list", "--count", "HEAD").stdout.strip() == "2"
+
+
+def test_just_setup_points_git_at_the_commit_gate() -> None:
+    lines = (ROOT / "justfile").read_text(encoding="utf-8").splitlines()
+    recipe = takewhile(lambda line: line.startswith("    "), lines[lines.index("setup:") + 1 :])
+
+    assert "git config core.hooksPath .githooks" in [line.strip() for line in recipe]
