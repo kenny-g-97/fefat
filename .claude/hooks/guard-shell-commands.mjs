@@ -219,7 +219,8 @@ function commandFindings(command) {
   if (setsHooksPathThroughEnvironment(command.words)) {
     findings.push(deny(REASONS.hooksPath));
   }
-  const written = writtenPaths(command);
+  const { named, edited } = writtenPaths(command);
+  const written = [...named, ...edited];
   if (written.some((target) => /(^|\/)\.git\/config$/.test(target))) {
     findings.push(deny(REASONS.gitConfigFile));
   }
@@ -229,7 +230,8 @@ function commandFindings(command) {
   if (written.some((target) => GUARDRAIL_PATH.test(target))) {
     findings.push(ask(REASONS.guardrails));
   }
-  if (written.some(usesWindowsAlias)) {
+  // A sed or perl script is no path, so only the targets a command names can be Windows aliases.
+  if (named.some(usesWindowsAlias)) {
     findings.push(ask(REASONS.windowsAlias));
   }
   const touchesGoldens = written.some(isGoldenPath) || mentionsGoldensOutsideReading(command.words);
@@ -255,22 +257,30 @@ function setsHooksPathThroughEnvironment(words) {
   });
 }
 
+/**
+ * The paths a command writes: the ones it names (redirections, the arguments of
+ * cp, rm, git rm, and the like), and every argument of an in-place editor
+ * (sed -i, perl -i), whose script cannot be told apart from its files.
+ */
 function writtenPaths(command) {
   const index = programIndex(command.words);
   const program = index < command.words.length ? programName(command.words[index]) : "";
   const args = command.words.slice(index + 1);
-  const targets = [...command.outputTargets];
+  const named = [...command.outputTargets];
   if (WRITING_PROGRAMS.has(program)) {
-    targets.push(...args);
-  }
-  if (IN_PLACE_EDITORS.has(program) && args.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg.startsWith("--in-place"))) {
-    targets.push(...args);
+    named.push(...args);
   }
   for (const git of gitInvocationsIn(command)) {
     if (git.subcommand === "rm" || git.subcommand === "mv") {
-      targets.push(...git.args);
+      named.push(...git.args);
     }
   }
+  const editsInPlace =
+    IN_PLACE_EDITORS.has(program) && args.some((arg) => /^-[A-Za-z]*i/.test(arg) || arg.startsWith("--in-place"));
+  return { named: normalizedPaths(named), edited: editsInPlace ? normalizedPaths(args) : [] };
+}
+
+function normalizedPaths(targets) {
   return targets
     .filter((target) => !isDiscardedOutput(target))
     .map((target) => path.posix.normalize(withForwardSlashes(target).toLowerCase().replace(/^of=/, "")));

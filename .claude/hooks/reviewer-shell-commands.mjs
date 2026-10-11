@@ -166,10 +166,15 @@ function problemsWith(commands) {
   return problems;
 }
 
+/** The agent's own name, without a prefix such as "project:" that a later Claude Code might add. */
+function agentName(agentType) {
+  return typeof agentType === "string" ? agentType.slice(agentType.lastIndexOf(":") + 1) : "";
+}
+
 async function main() {
   const reading = await readHookInput();
   // The main session and other agents are not this guard's business; the shell guard asks about input it cannot read.
-  if (!reading.ok || !REVIEWERS.has(reading.input.agent_type)) {
+  if (!reading.ok || !REVIEWERS.has(agentName(reading.input.agent_type))) {
     leaveToolCallToPermissionRules();
     return;
   }

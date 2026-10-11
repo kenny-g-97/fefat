@@ -386,7 +386,13 @@ def fixture_problem(
 
 def manifest_problems(files: Sequence[IndexedFile], contents: dict[str, bytes]) -> list[Problem]:
     data_files = [
-        file for file in files if file.is_fixture() and file.market_data_suffix() is not None
+        file
+        for file in files
+        if file.is_fixture()
+        and (
+            file.market_data_suffix() is not None
+            or data_format(contents.get(file.object_id, b"")) is not None
+        )
     ]
     manifest = next((file for file in files if file.path == MANIFEST), None)
     if manifest is None or manifest.object_id not in contents:

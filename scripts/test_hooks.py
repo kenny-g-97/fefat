@@ -853,6 +853,11 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.ALLOW,
         ),
         case(
+            "a sed expression that ends in a dot is not a Windows path",
+            "sed -i 's/foo/bar./' README.md",
+            Expect.ALLOW,
+        ),
+        case(
             "find -fprint into fixtures/goldens asks",
             "find . -name '*.json' -fprint fixtures/goldens/es/run.json",
             Expect.ASK,
@@ -1033,6 +1038,12 @@ def reviewer_cases() -> list[Case]:
         for reviewer in REVIEWERS
     ]
     cases += [
+        Case(
+            "a reviewer whose name carries a prefix is still a reviewer",
+            Hook.REVIEWER_SHELL,
+            in_subagent(bash("printf probe > reviewer-probe.txt", ROOT), "project:step-reviewer"),
+            Expect.DENY,
+        ),
         Case(
             "the main session's writes are left to the other guards",
             Hook.REVIEWER_SHELL,

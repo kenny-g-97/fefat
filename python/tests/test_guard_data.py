@@ -352,3 +352,14 @@ def test_the_guard_and_the_claude_code_file_guard_know_the_same_market_data_exte
     assert set(guard_data.MARKET_DATA_SUFFIXES) == set(
         re.findall(r'"([^"]+)"', declaration.group(1))
     )
+
+
+def test_data_under_another_name_in_the_fixtures_needs_its_manifest_entry(
+    repository: GitRepository,
+) -> None:
+    repository.stage("fixtures/synthetic/es_notes.bin", FIXTURE_BYTES)
+    repository.stage("fixtures/synthetic/MANIFEST.json", manifest_listing({}))
+
+    assert rules_by_path(repository) == {
+        "fixtures/synthetic/es_notes.bin": [guard_data.Rule.FIXTURE_NOT_IN_MANIFEST]
+    }

@@ -22,6 +22,12 @@ def decision_log(tmp_path: Path) -> Path:
     return log
 
 
+def test_a_missing_decision_log_is_reported_rather_than_raised(tmp_path: Path) -> None:
+    errors = check_masterplan.adr_errors(tmp_path / "DECISIONS.md", tmp_path)
+
+    assert errors == ["DECISIONS.md not found"]
+
+
 def test_the_decision_records_match_the_log() -> None:
     assert check_masterplan.adr_errors(check_masterplan.DECISIONS, check_masterplan.ADRS) == []
 

@@ -91,6 +91,8 @@ def parse_phase(path: Path) -> list[Step]:
 
 def adr_errors(decisions: Path, adrs: Path) -> list[str]:
     """The ways docs/adr/ falls out of step with the decisions DECISIONS.md marks ADR."""
+    if not decisions.exists():
+        return [f"{decisions.name} not found"]
     marked = ADR_ROW_RE.findall(decisions.read_text(encoding="utf-8"))
     records = sorted(
         path for path in adrs.glob("[0-9][0-9][0-9][0-9]-*.md") if path.name[:4] != "0000"
