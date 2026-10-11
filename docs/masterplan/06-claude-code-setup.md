@@ -68,7 +68,7 @@ The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git
 - `ask` rules for `git push`, `gh pr merge`, golden regeneration, and any `databento` download command.
 - `deny` for reading `.env*` and the credential store.
 - Every `Bash(...)` rule is paired with a `PowerShell(...)` twin; a `Bash` deny rule alone silently disables the PowerShell tool.
-- Auto mode is the working mode; its classifier already blocks production-style actions. There is no command sandbox on native Windows, so the permission rules and hooks are the guardrails.
+- Auto mode is the working mode; its classifier already blocks production-style actions. There is no command sandbox on native Windows, so the permission rules and hooks are the guardrails. The guards read each command line: what an allowed program does by itself (a Python script that calls git, for example) and a git alias set in a config file are outside their sight, so they catch mistakes in commands, not a program written to get around them (the security review of the Phase 0 exit).
 
 ## 7. Integrations
 
