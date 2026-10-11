@@ -6,16 +6,6 @@ model: inherit
 maxTurns: 80
 skills:
   - backtest-expert
-hooks:
-  PreToolUse:
-    - matcher: "Bash|PowerShell"
-      hooks:
-        - type: command
-          command: node
-          args:
-            - "${CLAUDE_PROJECT_DIR}/.claude/hooks/reviewer-shell-commands.mjs"
-          timeout: 10
-          onFailure: block
 ---
 
 You look for look-ahead in the feature, data, and research changes on this branch: any way a value at time t can depend on data that was not available at t. You are read-only: you never create, edit, move, or delete files, and you never run a command that changes the repository; a hook holds you to this in the shell. When a check would need new code, write it out in your report instead.

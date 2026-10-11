@@ -50,6 +50,7 @@ DESIGN_SKILL_SCRIPT = (
     ROOT / ".claude" / "skills" / "backtest-expert" / "scripts" / "evaluate_backtest.py"
 )
 WEB_SOURCE = ROOT / "web" / "src" / "App.tsx"
+REVIEWERS = sorted(path.stem for path in (ROOT / ".claude" / "agents").glob("*.md"))
 
 
 class Hook(Enum):
@@ -155,6 +156,12 @@ def bash(command: str, directory: Path) -> str:
 
 def powershell(command: str, directory: Path) -> str:
     return tool_call("PowerShell", {"command": command, "description": "hook test"}, directory)
+
+
+def in_subagent(stdin: str, agent_type: str) -> str:
+    return json.dumps(
+        {**json.loads(stdin), "agent_id": "agent_hook_tests", "agent_type": agent_type}
+    )
 
 
 def after_write(path: Path | str) -> str:
@@ -773,7 +780,10 @@ def session_cases(repositories: Repositories, branch: str) -> list[Case]:
             "startup prints the branch and where the masterplan stands",
             session_start("startup", ROOT),
             ROOT,
-            (output_contains(f"branch {branch}"), output_contains_one_of(["Step ", "Next: "])),
+            (
+                output_contains(f"branch {branch}"),
+                output_contains_one_of(["Step ", "Next: ", "Continue with /phase-"]),
+            ),
         ),
         case(
             "without the step reader it falls back to what git can tell",
@@ -826,9 +836,16 @@ def reviewer_cases() -> list[Case]:
         "uv run ruff check --fix .",
         "bash -c 'git diff'",
     ]
+
+    def reviewer_bash(command: str) -> str:
+        return in_subagent(bash(command, ROOT), "step-reviewer")
+
     cases = [
         Case(
-            f"a reviewer may run: {command}", Hook.REVIEWER_SHELL, bash(command, ROOT), Expect.ALLOW
+            f"a reviewer may run: {command}",
+            Hook.REVIEWER_SHELL,
+            reviewer_bash(command),
+            Expect.ALLOW,
         )
         for command in allowed
     ]
@@ -836,7 +853,7 @@ def reviewer_cases() -> list[Case]:
         Case(
             f"a reviewer may not run: {command}",
             Hook.REVIEWER_SHELL,
-            bash(command, ROOT),
+            reviewer_bash(command),
             Expect.DENY,
         )
         for command in denied
@@ -845,11 +862,35 @@ def reviewer_cases() -> list[Case]:
         Case(
             "a reviewer may not run: Remove-Item notes.txt (PowerShell)",
             Hook.REVIEWER_SHELL,
-            powershell("Remove-Item notes.txt", ROOT),
+            in_subagent(powershell("Remove-Item notes.txt", ROOT), "step-reviewer"),
             Expect.DENY,
             reason_contains="read-only",
         )
     )
+    cases += [
+        Case(
+            f"{reviewer} may not write the probe file",
+            Hook.REVIEWER_SHELL,
+            in_subagent(bash("printf probe > reviewer-probe.txt", ROOT), reviewer),
+            Expect.DENY,
+            reason_contains="read-only",
+        )
+        for reviewer in REVIEWERS
+    ]
+    cases += [
+        Case(
+            "the main session's writes are left to the other guards",
+            Hook.REVIEWER_SHELL,
+            bash("echo x > notes.txt", ROOT),
+            Expect.ALLOW,
+        ),
+        Case(
+            "another subagent's writes are left to the other guards",
+            Hook.REVIEWER_SHELL,
+            in_subagent(bash("echo x > notes.txt", ROOT), "general-purpose"),
+            Expect.ALLOW,
+        ),
+    ]
     return cases
 
 
