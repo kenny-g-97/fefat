@@ -12,7 +12,7 @@ What Phase 0 built, shown in about fifteen minutes without reading code. Run eve
    It ends with `OK` after the masterplan count (`P14: 9 steps`). On the way you see the data guard's line `Data guard: git's index holds no market data outside fixtures/synthetic/, no secrets, no files over 25 MB, and no notebook outputs.`
 
 4. **Run every test.** Run `just test`.
-   Three lines matter: `145 passed` from pytest, `All 227 hook cases passed.` from the Claude Code guards, and `test result: ok. 8 passed` from the Rust tests. No line says `FAILED`.
+   Three lines matter: `147 passed` from pytest, `All 229 hook cases passed.` from the Claude Code guards, and `test result: ok. 8 passed` from the Rust tests. No line says `FAILED`.
 
 5. **Call the engine from a notebook.** Open `notebooks/00-hello-engine.ipynb` in VS Code, pick the `.venv` kernel (Python 3.12) at the top right, and click _Run All_.
    The first code cell prints `EngineBuild(version='0.0.1', target_os='windows', target_arch='x86_64', profile=<BuildProfile.RELEASE: 'release'>)`; the last prints `130`, the number the markdown cell above it works out by hand. The notebook now runs on Polars 2.0.0: `uv run python -c "import polars; print(polars.__version__)"` prints `2.0.0`.
