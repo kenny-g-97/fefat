@@ -1,14 +1,17 @@
 """Consistency checks for the FEFAT masterplan.
 
-Run from the repository root (or anywhere):
+Run from the repository root (or anywhere), through uv (bare `python` is a
+Microsoft Store stub on the builder's PC):
 
-    python docs/masterplan/tools/check_masterplan.py            # check
-    python docs/masterplan/tools/check_masterplan.py --progress  # print PROGRESS.md rows
+    uv run --no-project python docs/masterplan/tools/check_masterplan.py            # check
+    uv run --no-project python docs/masterplan/tools/check_masterplan.py --progress  # print PROGRESS.md rows
 
 Checks: step headings parse, IDs are unique and sequential within a phase, every
 `Depends on` resolves to an existing step (or "none"), every step has the six
 sections in order (optionally followed by "Amendment" sections), every step has
-a meta line, and PROGRESS.md lists every step. Standard library only.
+a meta line, PROGRESS.md lists every step, and every decision marked ADR in
+DECISIONS.md has its record in docs/adr/, in the log's order, with the five
+sections and a link to its successor where it is superseded. Standard library only.
 """
 
 from __future__ import annotations
@@ -21,6 +24,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PHASES = ROOT / "phases"
 PROGRESS = ROOT / "PROGRESS.md"
+DECISIONS = ROOT / "DECISIONS.md"
+ADRS = ROOT.parent / "adr"
+ADR_ROW_RE = re.compile(r"^\| (D-\d+) \*\*ADR\*\*([^|]*)\|", re.M)
+SUCCESSOR_RE = re.compile(r"superseded by (D-\d+)")
+DECISION_LINK_RE = re.compile(r"^Decision log: \[(D-\d+)\]", re.M)
+ADR_SECTIONS = ["Context", "Decision", "Consequences", "How we would know it is wrong", "Status"]
 
 STEP_RE = re.compile(r"^### (\d+)\.(\d+) (.+?)\s*$")
 META_RE = re.compile(
@@ -80,6 +89,39 @@ def parse_phase(path: Path) -> list[Step]:
     return steps
 
 
+def adr_errors(decisions: Path, adrs: Path) -> list[str]:
+    """The ways docs/adr/ falls out of step with the decisions DECISIONS.md marks ADR."""
+    marked = ADR_ROW_RE.findall(decisions.read_text(encoding="utf-8"))
+    records = sorted(
+        path for path in adrs.glob("[0-9][0-9][0-9][0-9]-*.md") if path.name[:4] != "0000"
+    )
+    errors = []
+    if len(records) != len(marked):
+        errors.append(
+            f"docs/adr: expected {len(marked)} records for the decisions marked ADR, got {len(records)}"
+        )
+    # Not strict: a missing or extra record is the count error above, and the rest still pair up.
+    names = {decision: record.name for (decision, _), record in zip(marked, records, strict=False)}
+    for number, (decision, note) in enumerate(marked[: len(records)], start=1):
+        name = names[decision]
+        text = (adrs / name).read_text(encoding="utf-8")
+        link = DECISION_LINK_RE.search(text)
+        if not name.startswith(f"{number:04d}-") or link is None or link.group(1) != decision:
+            named = link.group(1) if link else "no decision"
+            errors.append(
+                f"docs/adr/{name}: expected record {number:04d} for {decision}, got {named}"
+            )
+        sections = re.findall(r"^## (.+?)\s*$", text, re.M)
+        if sections != ADR_SECTIONS:
+            errors.append(f"docs/adr/{name}: sections {sections} != {ADR_SECTIONS}")
+        successor = SUCCESSOR_RE.search(note)
+        if successor and names.get(successor.group(1), "the successor's record") not in text:
+            errors.append(
+                f"docs/adr/{name}: {decision} is superseded by {successor.group(1)}, expected a link to its successor"
+            )
+    return errors
+
+
 def main(argv: list[str]) -> int:
     errors: list[str] = []
     steps: list[Step] = []
@@ -131,6 +173,7 @@ def main(argv: list[str]) -> int:
                 errors.append(f"PROGRESS.md: missing row for step {s.id}")
     else:
         errors.append("PROGRESS.md not found")
+    errors.extend(adr_errors(DECISIONS, ADRS))
 
     print(f"{len(steps)} steps in {len(by_phase)} phases")
     for phase, ss in sorted(by_phase.items()):
