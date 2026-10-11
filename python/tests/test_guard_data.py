@@ -194,6 +194,8 @@ def test_key_and_certificate_files_are_refused(repository: GitRepository, path: 
         "api" + '_token: str = "' + "azGD9" * 5 + '"',
         "PASS" + 'WORD="' + "Tr4d3r!Pass#" + "2026xyz" + '"',
         "pass" + "word = '" + "S3cure@Fefat#" + "2026!" + "'",
+        "pushover" + "_token: " + "azGDORePK8gMaC0Q" + "OYAMyEEuzJnyUi",
+        "  pass" + "word: " + "S3cure2026" + "Password",
     ],
 )
 def test_a_secret_in_a_text_file_is_refused(repository: GitRepository, secret_line: str) -> None:
@@ -222,6 +224,8 @@ def test_a_key_in_a_utf_16_text_file_is_refused(repository: GitRepository) -> No
         "ANTHROPIC_API_KEY=sk-ant-api03-...",
         'CACHE_KEY = "features/v1/ES/2024"',
         "MAX_TOKENS = 16000",
+        "token: credential_store.read_token()",
+        "password: <your password here>",
     ],
 )
 def test_names_and_placeholders_that_only_look_like_secrets_pass(
@@ -279,8 +283,29 @@ def test_ordinary_files_pass(repository: GitRepository) -> None:
         "README.md", b"# FEFAT\n\nReal data lives under FEFAT_DATA_DIR; see .env.example.\n"
     )
     repository.stage("python/fefat/src/fefat/__init__.py", b'__version__ = "0.0.1"\n')
+    repository.stage("web/public/logo.png", b"\x89PNG\r\n\x1a\n" + bytes(16))
 
     assert guard_data.find_problems(repository.folder) == []
+
+
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        ("data/es_1m.pq", FIXTURE_BYTES),
+        ("data/es", FIXTURE_BYTES),
+        ("notebooks/cache.pkl", b"\x80\x05\x95" + bytes(16)),
+        ("data/es.npy", b"\x93NUMPY\x01\x00" + bytes(16)),
+        ("data/es.npz", b"PK\x03\x04" + bytes(16)),
+        ("data/trades.json.gz", b"\x1f\x8b\x08" + bytes(16)),
+        ("data/es.dat", b"DBN\x02" + bytes(16)),
+    ],
+)
+def test_data_under_another_name_is_refused_by_its_first_bytes(
+    repository: GitRepository, path: str, content: bytes
+) -> None:
+    repository.stage(path, content)
+
+    assert rules_by_path(repository) == {path: [guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES]}
 
 
 def test_main_refuses_with_exit_2_when_git_cannot_be_read(
