@@ -36,7 +36,7 @@ just dev      # local server and web dev server (from Phase 4)
 
 ## How work happens
 
-- One masterplan step per session unless the builder asks for more, run by the `step` skill: the builder starts it with `/step N.M` or in plain words ("0.6 is merged, plan the next step"), and `--dry-run` only previews it. A phase opens with `/phase-kickoff N` and closes with `/phase-exit N`.
+- One masterplan step per session, run by the `step` skill: the builder starts it with `/step N.M` or in plain words ("0.6 is merged, plan the next step"), and `--dry-run` only previews it. A phase opens with `/phase-kickoff N` and closes with `/phase-exit N`.
 - Every step works on a branch `step/N.M-<slug>` and ends with a pull request from `.github/pull_request_template.md`. Never commit to `main`: the builder squash-merges with the routine in `05-build-process.md` §8.
 - GitHub's free plan cannot protect `main` (D-30), so the hooks and the merge routine are the only guard: never work around them.
 - `git push`, `gh pr merge`, golden regeneration, new dependencies, and anything mentioning Databento always ask the builder first (`.claude/settings.json`).

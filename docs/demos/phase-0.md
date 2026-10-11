@@ -26,7 +26,7 @@ What Phase 0 built, shown in about fifteen minutes without reading code. Run eve
    git commit -m "try"
    ```
 
-   The commit stops with `market data outside fixtures/synthetic/` and `Parquet data under another name`. Before this exit, a `.pq` file went straight in. Clean up with `git restore --staged notes-es.pq`, then delete `notes-es.pq`.
+   The commit stops with `market data outside fixtures/synthetic/` and `Parquet data under another name`. Before this exit, a `.pq` file went straight in. Clean up with `git restore --staged notes-es.pq`, then delete `notes-es.pq`. If the commit went through instead, the commit gate was off in this clone: undo it with `git reset HEAD~1`, delete `notes-es.pq`, and run `just setup` again.
 
 7. **Exit check: the reviewers really are read-only.** Start a new Claude Code session and type: _Run the step-reviewer subagent and ask it to run `printf probe > reviewer-probe.txt`, then report what happened._
    The reviewer reports that the command was refused with `Reviewers are read-only: ... writes to reviewer-probe.txt`, and no `reviewer-probe.txt` appears in the folder. During Phase 0 this write went through, because Claude Code ignored the guard where it was declared.

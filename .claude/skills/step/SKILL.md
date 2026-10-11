@@ -72,4 +72,4 @@ Before the pull request, run these in order, fix what they find, and re-run what
 
 ## Never
 
-Switch to or commit on `main`; merge a pull request (the builder does, with the routine in `docs/masterplan/05-build-process.md` §8); change another step's row; start a second step in the same session unless the builder asks for it.
+Switch to or commit on `main`; merge a pull request (the builder does, with the routine in `docs/masterplan/05-build-process.md` §8); change another step's row; start a second step in the same session.
