@@ -108,20 +108,39 @@ def adr_errors(decisions: Path, adrs: Path) -> list[str]:
         name = names[decision]
         text = (adrs / name).read_text(encoding="utf-8")
         link = DECISION_LINK_RE.search(text)
-        if not name.startswith(f"{number:04d}-") or link is None or link.group(1) != decision:
+        if not name.startswith(f"{number:04d}-"):
+            errors.append(
+                f"docs/adr/{name}: expected number {number:04d}, the place of {decision} in the log"
+            )
+        if link is None or link.group(1) != decision:
             named = link.group(1) if link else "no decision"
             errors.append(
-                f"docs/adr/{name}: expected record {number:04d} for {decision}, got {named}"
+                f"docs/adr/{name}: expected its Decision log line to name {decision}, got {named}"
             )
         sections = re.findall(r"^## (.+?)\s*$", text, re.M)
         if sections != ADR_SECTIONS:
             errors.append(f"docs/adr/{name}: sections {sections} != {ADR_SECTIONS}")
-        successor = SUCCESSOR_RE.search(note)
-        if successor and names.get(successor.group(1), "the successor's record") not in text:
-            errors.append(
-                f"docs/adr/{name}: {decision} is superseded by {successor.group(1)}, expected a link to its successor"
-            )
+        errors.extend(successor_errors(name, decision, note, text, names))
     return errors
+
+
+def successor_errors(
+    name: str, decision: str, note: str, text: str, names: dict[str, str]
+) -> list[str]:
+    """A superseded decision's record must link the record of the decision that supersedes it."""
+    successor = SUCCESSOR_RE.search(note)
+    if successor is None:
+        return []
+    record = names.get(successor.group(1))
+    if record is None:
+        return [
+            f"docs/adr/{name}: {decision} is superseded by {successor.group(1)}, which has no record"
+        ]
+    if record not in text:
+        return [
+            f"docs/adr/{name}: {decision} is superseded by {successor.group(1)}, expected a link to its successor {record}"
+        ]
+    return []
 
 
 def main(argv: list[str]) -> int:

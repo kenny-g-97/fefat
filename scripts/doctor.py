@@ -95,6 +95,8 @@ def run_command(arguments: list[str], directory: Path | None = None) -> str | No
         completed = subprocess.run(
             arguments,
             cwd=directory,
+            # A check never installs: rustup would otherwise fetch a missing pinned toolchain.
+            env={**os.environ, "RUSTUP_AUTO_INSTALL": "0"},
             capture_output=True,
             text=True,
             errors="replace",

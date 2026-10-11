@@ -56,6 +56,38 @@ def test_a_record_that_names_another_decision_is_reported(tmp_path: Path) -> Non
     assert any("0002-new.md" in error and "D-03" in error for error in errors), errors
 
 
+def test_a_gap_in_the_record_numbers_is_reported(tmp_path: Path) -> None:
+    write_record(tmp_path, "0001-old.md", "D-01", "Superseded by [ADR-0003](0003-new.md).")
+    write_record(tmp_path, "0003-new.md", "D-03", "Accepted.")
+
+    errors = check_masterplan.adr_errors(decision_log(tmp_path), tmp_path)
+
+    assert any("0003-new.md" in error and "0002" in error for error in errors), errors
+
+
+def test_a_record_without_the_five_sections_is_reported(tmp_path: Path) -> None:
+    write_record(tmp_path, "0001-old.md", "D-01", "Superseded by [ADR-0002](0002-new.md).")
+    (tmp_path / "0002-new.md").write_text(
+        "# 0002-new.md\n\nDecision log: [D-03](../masterplan/DECISIONS.md)\n\n## Context\n\nText.\n",
+        encoding="utf-8",
+    )
+
+    errors = check_masterplan.adr_errors(decision_log(tmp_path), tmp_path)
+
+    assert any("0002-new.md" in error and "sections" in error for error in errors), errors
+
+
+def test_a_successor_without_a_record_is_named_as_such(tmp_path: Path) -> None:
+    log = tmp_path / "DECISIONS.md"
+    log.write_text(LOG.replace("superseded by D-03", "superseded by D-02"), encoding="utf-8")
+    write_record(tmp_path, "0001-old.md", "D-01", "Superseded by D-02.")
+    write_record(tmp_path, "0002-new.md", "D-03", "Accepted.")
+
+    errors = check_masterplan.adr_errors(log, tmp_path)
+
+    assert any("D-02" in error and "no record" in error for error in errors), errors
+
+
 def test_a_superseded_record_without_a_link_to_its_successor_is_reported(tmp_path: Path) -> None:
     write_record(tmp_path, "0001-old.md", "D-01", "Accepted.")
     write_record(tmp_path, "0002-new.md", "D-03", "Accepted.")

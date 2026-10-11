@@ -230,6 +230,11 @@ def file_guard_cases() -> list[Case]:
             Expect.ASK,
         ),
         case(
+            "a short name of another folder is left to the permission rules",
+            write(outside / "PROGRA~1" / "notes.txt"),
+            Expect.ALLOW,
+        ),
+        case(
             "write .env.example is left to the permission rules",
             write(ROOT / ".env.example"),
             Expect.ALLOW,
@@ -851,6 +856,12 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             "git grep for --no-verify is allowed",
             "git grep -n -e --no-verify",
             Expect.ALLOW,
+        ),
+        case(
+            "text that ends in a dot is not a Windows path",
+            'Set-Content notes.md "Done."',
+            Expect.ALLOW,
+            tool="PowerShell",
         ),
         case(
             "a sed expression that ends in a dot is not a Windows path",

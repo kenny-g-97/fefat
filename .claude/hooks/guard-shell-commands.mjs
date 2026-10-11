@@ -47,7 +47,7 @@ const REASONS = {
   gitConfigOption:
     "git -c and --config-env can define aliases, includes, or push targets that the guard cannot see; confirm the setting.",
   windowsAlias:
-    "This writes to a path with a Windows short name (such as GIT~1) or a name ending in a dot or a space, which can stand for .git or .claude; confirm the path.",
+    "This writes to .git, .claude, or .githooks under another name Windows accepts (a short name such as GIT~1, or a trailing dot or space), which the other checks would not recognise; confirm the path.",
   forcePush:
     "Force pushes are never used here (docs/masterplan/05-build-process.md section 8); push new commits instead.",
   pushToMain:

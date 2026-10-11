@@ -65,7 +65,7 @@ const RULES = [
     applies: (file) => usesWindowsAlias(file.absolute),
     decision: "ask",
     reason: (file) =>
-      `${file.absolute} uses a Windows short name (such as GIT~1) or a name ending in a dot or a space, which Windows reads as another name, possibly .git or .claude; check the path.`,
+      `${file.absolute} names .git, .claude, or .githooks under another name Windows accepts (a short name such as GIT~1, or a trailing dot or space), which the other checks would not recognise; check the path.`,
   },
   {
     applies: (file, toolInput) =>

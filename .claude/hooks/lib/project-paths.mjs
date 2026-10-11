@@ -13,6 +13,8 @@ const WINDOWS_DRIVE_PATH = /^[a-zA-Z]:\//;
 const GIT_BASH_DRIVE_PATH = /^\/([a-zA-Z])\//;
 const LONG_PATH_PREFIX = /^\/\/\?\//;
 const CASE_INSENSITIVE_PLATFORMS = new Set(["win32", "darwin"]);
+const GUARDED_FOLDERS = new Set([".git", ".claude", ".githooks"]);
+const SHORT_NAME_OF_GUARDED_FOLDER = /^(git|claude|githoo)~\d+$/i;
 
 export function withForwardSlashes(text) {
   return text.replaceAll("\\", "/").replace(LONG_PATH_PREFIX, "");
@@ -41,13 +43,18 @@ export function absolutePath(text, baseDirectory) {
 }
 
 /**
- * True when a path uses a Windows short name (GIT~1) or a segment ending in a
- * dot or a space, which Windows drops: other names for .git or .claude.
+ * True when a path names .git, .claude, or .githooks by another name Windows
+ * accepts: the 8.3 short name (GIT~1, CLAUDE~1, GITHOO~1) or the name with
+ * trailing dots or spaces, which Windows drops (.git.).
  */
 export function usesWindowsAlias(text) {
   return withForwardSlashes(text)
     .split("/")
-    .some((segment) => /~\d/.test(segment) || (/[. ]$/.test(segment) && segment !== "." && segment !== ".."));
+    .some((segment) => {
+      const trimmed = segment.replace(/[. ]+$/, "").toLowerCase();
+      const dropsCharacters = trimmed !== segment.toLowerCase() && GUARDED_FOLDERS.has(trimmed);
+      return SHORT_NAME_OF_GUARDED_FOLDER.test(segment) || dropsCharacters;
+    });
 }
 
 export function foldCase(text) {

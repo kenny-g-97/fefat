@@ -143,7 +143,7 @@ def test_ts_recv_never_decreases_and_never_precedes_ts_event() -> None:
 
 
 @pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
-def test_second_bars_hold_the_trades_received_in_their_half_open_second(
+def test_second_bars_hold_the_trades_received_in_their_second(
     root: str, contract: str, day: str, open_utc: datetime
 ) -> None:
     open_time = nanoseconds(open_utc)
