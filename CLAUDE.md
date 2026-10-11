@@ -36,12 +36,15 @@ just dev      # local server and web dev server (from Phase 4)
 
 ## How work happens
 
-- One masterplan step per session: `/step N.M` (`/step N.M --dry-run` only previews it). A phase opens with `/phase-kickoff N` and closes with `/phase-exit N`.
+- One masterplan step per session unless the builder asks for more, run by the `step` skill: the builder starts it with `/step N.M` or in plain words ("0.6 is merged, plan the next step"), and `--dry-run` only previews it. A phase opens with `/phase-kickoff N` and closes with `/phase-exit N`.
 - Every step works on a branch `step/N.M-<slug>` and ends with a pull request from `.github/pull_request_template.md`. Never commit to `main`: the builder squash-merges with the routine in `05-build-process.md` §8.
 - GitHub's free plan cannot protect `main` (D-30), so the hooks and the merge routine are the only guard: never work around them.
 - `git push`, `gh pr merge`, golden regeneration, new dependencies, and anything mentioning Databento always ask the builder first (`.claude/settings.json`).
-- The step's meta line decides the mode: `Plan mode: required` means a plan the builder approves before any edit, and `Model hint: hard` asks for the strongest model.
+- The builder plans every step in plan mode, whatever its meta line says: `Plan mode: required` makes the plan mandatory, and `skip` asks for a short one.
+- Plans run on the strongest model (Fable) and the work on Opus: after approving a plan the builder switches with `/model opus` and says "proceed with opus"; continue the approved plan from its first item, without planning again. `Model hint: hard` marks the steps where the strongest model matters most.
 - Stay inside the step and put anything else in `docs/masterplan/BACKLOG.md`. If a step's assumption no longer holds, stop and propose an Amendment block instead of deviating silently.
+- A plan revision or setup change the builder asks for during a step (a skill, reviewer, plugin, or setting) goes in its own commit before the step's work, or its own `config/<slug>` pull request when it stands alone, with a `DECISIONS.md` entry when it decides something.
+- When an option costs money, recommend the free or local one first and give the paid one's monthly cost (D-01, D-30).
 - Each acceptance item gets a test that fails without the change, shown failing first.
 - Before the pull request: `just check`, `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, `/ponytail-review` (the ponytail plugin, D-32), the reviewers on the step's meta line, and `/security-review` when it says `Security: yes`.
 - The pull request writes the step's `PROGRESS.md` row as `done` with its number; the row becomes true when it is merged.

@@ -27,7 +27,7 @@ A short bootstrap `CLAUDE.md` exists since the repository preparation (2026-10-0
 
 | Skill | Invocation | Does |
 | --- | --- | --- |
-| `step` | `/step N.M` | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, loads the skills for the paths the step touches (`08-code-design.md`), runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
+| `step` | `/step N.M`, or the builder's plain words ("plan the next step") | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, loads the skills for the paths the step touches (`08-code-design.md`), runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
 | `phase-kickoff` | `/phase-kickoff N` | the reconciliation procedure in `05-build-process.md` §6 |
 | `phase-exit` | `/phase-exit N` | the exit procedure in `05-build-process.md` §6 |
 | `verify` | model-invoked | tiered checks by changed area (Rust, Python, web, docs), with the UI recipe (Playwright at desktop and phone sizes, screenshots) in a supporting file |

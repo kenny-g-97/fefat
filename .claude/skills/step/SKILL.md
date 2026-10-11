@@ -1,27 +1,26 @@
 ---
 name: step
-description: Run one masterplan step N.M under the session protocol of docs/masterplan/05-build-process.md section 2 - brief, prerequisites, branch, skills, plan mode, work, checks, reviewers, pull request, and the PROGRESS.md row. With --dry-run it only previews the step.
+description: Run one masterplan step N.M under the session protocol of docs/masterplan/05-build-process.md section 2 - brief, prerequisites, branch, skills, plan mode, work, checks, reviewers, pull request, and the PROGRESS.md row. With --dry-run it only previews the step. Use it when the builder types /step N.M and when the builder asks for a step in plain words, such as "0.6 is merged, plan the next step".
 argument-hint: "N.M [--dry-run]"
-disable-model-invocation: true
 ---
 
 # /step — run one masterplan step
 
 Arguments: `$ARGUMENTS`
 
-The first argument is the step ID `N.M` (for example `0.5` or `2.11`); `--dry-run` anywhere means preview only. Without a valid ID, print `Usage: /step N.M [--dry-run]` and stop.
+The first argument is the step ID `N.M` (for example `0.5` or `2.11`); `--dry-run` anywhere means preview only. When the builder asked in plain words ("the next step"), the ID is the one `masterplan_step.py next` names after `git fetch origin --prune`. Without a valid ID, print `Usage: /step N.M [--dry-run]` and stop.
 
 The protocol is `docs/masterplan/05-build-process.md` §2, and this skill is its checklist; the step's own text in its phase file wins over anything here. Read the masterplan through `uv run --no-project python scripts/masterplan_step.py` (below: `masterplan_step.py`), never by parsing it yourself.
 
 ## 1. Brief
 
-1. Run `masterplan_step.py brief <ID>`. An unknown ID exits with code 2: report it and stop.
+1. Run `git fetch origin --prune`, so that even a dry run sees what was merged, then `masterplan_step.py brief <ID>`. An unknown ID exits with code 2: report it and stop.
 2. Show the builder, briefly: the title with its phase file and line, the meta line, **Purpose**, **Prerequisites**, **Done means** (numbered), the skills to load, and the branch. If the model hint is `hard`, say which model this session runs on.
 3. With `--dry-run`, stop here: "Dry run: nothing was changed." Otherwise ask with AskUserQuestion, "Proceed with step N.M?" (Proceed / Not now), and stop unless the answer is Proceed.
 
 ## 2. Prerequisites and branch
 
-1. Run `git fetch origin --prune`, then `masterplan_step.py status <ID>`.
+1. Run `masterplan_step.py status <ID>`.
 2. Every `Depends on` step must be `done` (or `skipped`) in PROGRESS.md **on origin/main**: a row turns true only when its pull request is merged. If one is not, stop and list it; continue only on the builder's explicit word, and record that under Deviations.
 3. `git status --porcelain` must show no changes to tracked files; untracked files are fine. Never stash, reset, or discard anything to get a clean tree: ask instead.
 4. Branch:
@@ -40,7 +39,7 @@ The protocol is `docs/masterplan/05-build-process.md` §2, and this skill is its
    - `engine-golden` when engine, scenario, or golden files change;
    - `claude-api` for any code that calls the Anthropic API.
 2. Read the documents the step's prompt names and the rules in `.claude/rules/` for the areas it touches.
-3. Plan mode: `required` means enter plan mode (EnterPlanMode) before any edit and wait for approval; `optional` means plan when the step adds a schema, a public API, or a module, or touches more than about six files; `skip` means start.
+3. Plan mode: `required` means enter plan mode (EnterPlanMode) before any edit and wait for approval; `optional` means plan when the step adds a schema, a public API, or a module, or touches more than about six files; `skip` means start. When the session is already in plan mode, as the builder usually opens it, plan whatever the meta line says (`skip` then means a short plan). After approving, the builder may switch models (`/model opus`, "proceed with opus"): continue the approved plan from its first item without planning again.
 
 ## 4. Work
 
@@ -73,4 +72,4 @@ Before the pull request, run these in order, fix what they find, and re-run what
 
 ## Never
 
-Switch to or commit on `main`; merge a pull request (the builder does, with the routine in `docs/masterplan/05-build-process.md` §8); change another step's row; start a second step in the same session.
+Switch to or commit on `main`; merge a pull request (the builder does, with the routine in `docs/masterplan/05-build-process.md` §8); change another step's row; start a second step in the same session unless the builder asks for it.

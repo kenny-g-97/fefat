@@ -23,9 +23,9 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 
 ## 2. The session protocol
 
-1. Open Claude Code in the repo root and start a **fresh session**. Run `/step N.M` (from step 0.5 on) or paste the step's Prompt. Steps 0.1–0.4 are pasted, because 0.4 is the step that creates the runner.
+1. Open Claude Code in the repo root and start a **fresh session**. Run `/step N.M` (from step 0.5 on), ask for it in plain words ("0.6 is merged, plan the next step"), or paste the step's Prompt. Steps 0.1–0.4 are pasted, because 0.4 is the step that creates the runner.
 2. The step runner reads the step, checks `PROGRESS.md` for prerequisites, and creates or reuses the branch `step/N.M-<slug>`.
-3. **Plan mode** when the meta line says `plan: required` (new subsystems, schemas, public SDK or API surfaces, engine semantics). Read the plan for outcome and risk, then approve. `optional` means Claude Code decides; `skip` means go straight to work.
+3. **Plan mode** when the meta line says `plan: required` (new subsystems, schemas, public SDK or API surfaces, engine semantics). Read the plan for outcome and risk, then approve. `optional` means Claude Code decides; `skip` means go straight to work. In practice you open every step in plan mode, so `skip` gets a short plan; you plan on the strongest model and switch to Opus with `/model opus` once you approve.
 4. Claude Code loads the skills for the step's area before writing code — `software-design-principles` for any code, `designing-architecture` for a new module or seam, `backtest-expert` for engine, prop, results, and research steps, `frontend-design` with `web/DESIGN.md` for anything under `web/` (`08-code-design.md`; the `step` skill does this from the paths a step touches) — then works in auto mode, commits in small logical commits, and never commits to `main`.
 5. Before opening the PR it runs `just check` and `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, the ponytail plugin's `/ponytail-review`, and the specialist reviewers the step lists. `/security-review` runs when the step says `security: yes` and at every phase exit.
 6. It opens the PR from the template: what changed, evidence per "Done means" item, deviations from the prompt, follow-ups added to `BACKLOG.md`, and the `PROGRESS.md` row (status, PR number, date, note).
