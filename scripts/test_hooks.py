@@ -44,7 +44,6 @@ HOOK_TIMEOUT_SECONDS = 60
 PARALLEL_HOOKS = 8
 ON_WINDOWS = sys.platform == "win32"
 STEP_BRANCH = "step/0.5-hook-tests"
-RUFF = ROOT / ".venv" / ("Scripts/ruff.exe" if ON_WINDOWS else "bin/ruff")
 PRETTIER = ROOT / "web" / "node_modules" / "prettier" / "bin" / "prettier.cjs"
 DESIGN_SKILL_SCRIPT = (
     ROOT / ".claude" / "skills" / "backtest-expert" / "scripts" / "evaluate_backtest.py"
