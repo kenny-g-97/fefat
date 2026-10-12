@@ -1,12 +1,15 @@
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 import platformdirs
 import pytest
 
 from fefat.config import FefatPaths, resolve_paths
+
+PATHS_WHEN_COLLECTED = resolve_paths(os.environ)
 
 
 def test_without_variables_home_is_the_user_data_folder_with_the_data_inside_it() -> None:
@@ -53,3 +56,10 @@ def test_tests_run_with_the_fefat_folders_inside_their_temporary_folder(tmp_path
     paths = resolve_paths(os.environ)
 
     assert paths == FefatPaths(home=tmp_path / "fefat-home", data_dir=tmp_path / "fefat-data")
+
+
+def test_code_that_runs_before_any_fixture_sees_temporary_fefat_folders_too() -> None:
+    temporary_folder = Path(tempfile.gettempdir())
+
+    assert temporary_folder in PATHS_WHEN_COLLECTED.home.parents
+    assert temporary_folder in PATHS_WHEN_COLLECTED.data_dir.parents
