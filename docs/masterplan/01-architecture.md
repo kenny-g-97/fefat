@@ -167,7 +167,7 @@ Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Id
 | Area | Endpoints |
 | --- | --- |
 | Session | `POST /auth/login`, `POST /auth/logout`, `GET /me`, `GET/PUT /settings` |
-| Data | `GET /instruments`, `GET /datasets`, `GET /datasets/{id}/quality`, `GET /market/bars?instrument&timeframe&from&to&source`, `GET /catalog`, `POST /catalog/sync`, `GET /sources`, `POST /sources` (connect one; the key goes to the credential store), `GET/POST /import-profiles`, `POST /imports/preview`, `POST /imports` |
+| Data | `GET /instruments`, `GET /datasets`, `GET /datasets/{id}/quality`, `GET /market/bars?instrument&timeframe&from&to&origin&provider`, `GET /catalog`, `POST /catalog/sync`, `GET /sources`, `POST /sources` (connect one; the key goes to the credential store), `GET/POST /import-profiles`, `POST /imports/preview`, `POST /imports` |
 | Features | `GET/POST /features`, `GET /features/{id}/versions`, `POST /features/{id}/versions`, `POST /features/preview`, `POST /features/validate`, `GET /features/{id}/analytics` |
 | Strategies | `GET/POST /strategies`, `GET /strategies/{id}/versions`, `POST /strategies/{id}/versions`, `POST /strategies/build` (spec → code), `GET /strategies/{id}/diff?from&to` |
 | Runs | `POST /runs` (202 or the cached run), `GET /runs`, `GET /runs/{id}`, `/runs/{id}/trades`, `/equity?max_points`, `/chart?from&to`, `/stats`, `/distribution`, `POST /runs/{id}/query` (DuckDB SQL, row cap), `POST /runs/compare`, `POST /runs/{id}/explain/{trade_id}` |
@@ -214,7 +214,7 @@ CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for
 | Credential store | `secrets.get/set(name)` | Windows credential store | macOS keychain, Linux secret service |
 | Licensing | `licence.check(feature, scope)` | always `ok` | app licence keys (backlog); never a gate on data, which the trader's own accounts cover (D-37) |
 
-Each seam is a `Protocol` in `python/fefat_app/src/fefat_app/ports.py` (the Rust seams, `MarketDataReader` and `AccountModel`, are traits in `fefat-core`); the adapters are chosen in `container.py` from `config.toml`, so swapping one is a configuration change plus one new module (`08-code-design.md` §1).
+Each seam except the data source (`Provider`, SDK code in `fefat.market.sources`) is a `Protocol` in `python/fefat_app/src/fefat_app/ports.py` (the Rust seams, `MarketDataReader` and `AccountModel`, are traits in `fefat-core`); the adapters are chosen in `container.py` from `config.toml`, so swapping one is a configuration change plus one new module (`08-code-design.md` §1).
 
 ## 11. Conventions
 

@@ -56,6 +56,10 @@ Not in this step: the server, the UI.
 
 - keyring backend missing on Windows is unusual; if it happens, the fallback must fail loudly, never write a plaintext file.
 
+#### Amendment
+
+2026-10-12 (D-37): the tables are `catalog_products` and `data_sources` instead of `platform_products`.
+
 ### 4.2 Local server, login, typed client generation
 
 Depends on: 4.1 · Plan mode: required · Reviews: step-reviewer, code-review · Security: yes · Model hint: hard

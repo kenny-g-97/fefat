@@ -195,6 +195,10 @@ Not in this step: data sources in the packaged app and catalog updates (14.6–1
 
 - A failed migration must leave the pre-migration backup in place and the app able to open the previous version's database read-only.
 
+#### Amendment
+
+2026-10-12 (D-37): the "Not in this step" line names the data sources in the packaged app and the catalog updates (14.6–14.7) instead of platform data delivery.
+
 ### 14.6 Data sources in the packaged app and the no-shipped-data check
 
 Depends on: 14.5 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: yes · Model hint: hard
@@ -216,7 +220,7 @@ Read docs/masterplan/02-engine-and-data.md §1.8, docs/adr/0018-own-data-sources
 
 Add the no-shipped-data check: the release build fails when the installer, the bundled resources, or the signed catalog index (14.7) contain any dataset or raw vendor file (the commit guard's data-format check, run over the bundle), and a fresh install starts with an empty data folder. Reduce the licensing seam of docs/masterplan/01-architecture.md §10 to app licence keys (backlog): `licence.check` keeps returning `ok` for every data source.
 
-Tests: the bundle check refuses a build that contains a Parquet or DBN file; a fresh install shows an empty catalog with every source unconnected; connecting a source in the packaged app stores the key in the OS credential store and syncs a synthetic product end to end.
+Tests: the bundle check refuses a build that contains a Parquet or DBN file; a fresh install shows the catalog products with no data and every source unconnected; connecting a source in the packaged app stores the key in the OS credential store and syncs a synthetic product end to end.
 
 Not in this step: the signed catalog updates (14.7), the first-run wizard (14.8), billing.
 ```
@@ -298,7 +302,7 @@ A new user gets from install to a first backtest without reading documentation.
 ```text
 Masterplan step 14.8 — First-run experience.
 
-Build the first-run wizard: choose the data folder; set a password; optionally enter an Anthropic key (tested); get data — pick the products the user trades from the catalog, connect a source from the guide (its terms shown and accepted; a key stored in the credential store) and sync them, and/or import their own files with the import wizard; phone pairing (Tailscale explanation, QR code); a sample strategy and a one-click first backtest on the synced or imported data. Everything skippable and reachable again from settings.
+Build the first-run wizard: choose the data folder; set a password; optionally enter an Anthropic key (tested); get data — pick the products the user trades from the catalog, connect a source from the guide (its terms shown and accepted; a key stored in the credential store) and sync them, with the cost preview before any paid download, and/or import their own files with the import wizard; phone pairing (Tailscale explanation, QR code); a sample strategy and a one-click first backtest on the synced or imported data. Everything skippable and reachable again from settings.
 
 Not in this step: marketing or licensing terms.
 ```
@@ -337,7 +341,7 @@ The installer works where it will be used: fresh Windows and macOS machines with
 ```text
 Masterplan step 14.9 — Clean-machine install tests.
 
-Read docs/release-process.md and the first-run wizard from 14.8. Add CI jobs that install the built installer on Windows and macOS runners made to look like a customer's machine (GitHub-hosted images ship Python, Rust, and Node, so the job must isolate PATH and hide those toolchains, or use a bare VM image), launch the app headless where possible or through the Tauri test driver, complete the first-run wizard by installing a small synthetic platform pack from a test instance of the data service, run the sample backtest, verify the run page, then uninstall and check nothing is left behind except the data folder. Record the results, the installer sizes, and the time to first backtest in docs/validation/install-tests.md, and make the job a required check for release tags.
+Read docs/release-process.md and the first-run wizard from 14.8. Add CI jobs that install the built installer on Windows and macOS runners made to look like a customer's machine (GitHub-hosted images ship Python, Rust, and Node, so the job must isolate PATH and hide those toolchains, or use a bare VM image), launch the app headless where possible or through the Tauri test driver, complete the first-run wizard by connecting a synthetic source (a local stand-in of the archive) and syncing one small synthetic product, run the sample backtest, verify the run page, then uninstall and check nothing is left behind except the data folder. Record the results, the installer sizes, and the time to first backtest in docs/validation/install-tests.md, and make the job a required check for release tags.
 
 Not in this step: new features, store distribution.
 ```
@@ -354,6 +358,10 @@ Not in this step: new features, store distribution.
 #### If it fails
 
 - Missing Visual C++ runtime on clean Windows machines is the classic failure; the installer must bundle or install it.
+
+#### Amendment
+
+2026-10-12 (D-37): the clean-machine test connects a synthetic source and syncs one product instead of installing a platform pack from the data service.
 
 ## Phase exit
 

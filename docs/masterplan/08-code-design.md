@@ -75,7 +75,7 @@ engine crates:  fefat-py, fefat-cli  →  fefat-engine, fefat-prop, fefat-metric
 - Matches project size and complexity: a monolith for one process; ports only where the plan already needed a seam.
 - Aligns with team skills: the builder reads the Python core and the plain-language specs; the adapters are small and conventional.
 - Supports current requirements: nothing in the first release needs more than one process.
-- Allows anticipated growth: cloud sync, containers, Managed Agents, and the hosted data service each replace one adapter (`01-architecture.md` §10).
+- Allows anticipated growth: cloud sync, containers, and Managed Agents each replace one adapter, and a new data vendor is one `Provider` (`01-architecture.md` §10).
 - Dependencies flow inward: the rule above, enforced in `just check`.
 - Clear boundaries: three languages with typed contracts; one folder per adapter; one folder per web area.
 - Testing strategy is feasible: every port has an in-memory implementation; engine tests run on in-memory tapes; the reference engine remains the oracle (D-10).
