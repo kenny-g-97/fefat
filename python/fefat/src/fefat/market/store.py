@@ -42,7 +42,7 @@ from fefat.market.raw_manifest import (
     RawManifest,
     checked_raw_path,
 )
-from fefat.market.schema import FrozenModel, polars_schema
+from fefat.market.schema import FrozenModel, SchemaKind, SchemaName, polars_schema
 from fefat.market.snapshot import FileDigest, Snapshot
 
 
@@ -132,10 +132,15 @@ class Store:
         """The rows a snapshot pinned, cut to its request's dates like `scan`, parsed from
         bytes whose SHA-256 matches the pin, so that a run reads exactly the data it names; a
         file that changed after the snapshot is refused."""
-        self._pinned_bytes(snapshot.metadata)
+        self.pinned_metadata(snapshot)
         expected = polars_schema(snapshot.request.dataset.schema_name)
         frames = [self._pinned_partition(digest, expected) for digest in snapshot.partitions]
         return pl.concat(frames).filter(_within_the_dates(snapshot.request))
+
+    def pinned_metadata(self, snapshot: Snapshot) -> DatasetMetadata:
+        """The dataset's metadata as the snapshot pinned it, such as the size unit a run's
+        rows count in; refused if `dataset.json` changed after the snapshot."""
+        return DatasetMetadata.model_validate_json(self._pinned_bytes(snapshot.metadata))
 
     def raw_manifest(self) -> RawManifest:
         """The raw manifest; empty until the first raw file is recorded."""
@@ -161,10 +166,11 @@ class Store:
         file = self._folder / RAW_FOLDER_NAME / relative
         if not file.is_file():
             raise FileNotFoundError(f"Expected the raw file {file}, got no such file.")
+        size_bytes, sha256 = _size_and_sha256(file)
         raw_file = RawFile(
             path=relative,
-            size_bytes=file.stat().st_size,
-            sha256=_sha256(file),
+            size_bytes=size_bytes,
+            sha256=sha256,
             provider=provider,
             vendor_version=vendor_version,
             downloaded_on=downloaded_on,
@@ -208,9 +214,8 @@ class Store:
         path = self._folder / relative
         if not path.is_file():
             raise FileNotFoundError(f"Expected the file {path} to pin, got no such file.")
-        return FileDigest(
-            path=relative.as_posix(), size_bytes=path.stat().st_size, sha256=_sha256(path)
-        )
+        size_bytes, sha256 = _size_and_sha256(path)
+        return FileDigest(path=relative.as_posix(), size_bytes=size_bytes, sha256=sha256)
 
     def _pinned_bytes(self, digest: FileDigest) -> bytes:
         content = (self._folder / digest.path).read_bytes()
@@ -238,9 +243,15 @@ def _sorted_by_path(files: Iterable[PartitionFile]) -> tuple[PartitionFile, ...]
 def _within_the_dates(request: PartitionRequest) -> pl.Expr:
     """Bars carry their trade date, so a range keeps only its own bars; other records come
     whole (trades and TBBO are already cut by their trade-date partitions)."""
-    if "trade_date" not in polars_schema(request.dataset.schema_name):
+    if not _carries_trade_dates(request.dataset.schema_name):
         return pl.lit(True)
     return pl.col("trade_date").is_between(request.start, request.end)
+
+
+def _carries_trade_dates(schema_name: SchemaName) -> bool:
+    """Bars carry their session's trade date; ticks get theirs from their partition, and the
+    other records have none."""
+    return schema_name.kind is SchemaKind.OHLCV
 
 
 def _require_columns(expected: pl.Schema, actual: pl.Schema, source: str) -> None:
@@ -257,7 +268,7 @@ def _described(columns: pl.Schema) -> str:
 def _require_trade_dates_of_the_key(partition: Partition, frame: pl.DataFrame) -> None:
     """A request selects bars by their partition's key, so a bar written under another trade
     date or month would be read for the wrong dates; it is refused."""
-    if partition.key is None or "trade_date" not in frame.columns:
+    if partition.key is None or not _carries_trade_dates(partition.dataset.schema_name):
         return
     trade_date = pl.col("trade_date")
     if isinstance(partition.key, YearMonth):
@@ -304,6 +315,8 @@ def _write_atomically(path: Path, write: Callable[[Path], object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _sha256(path: Path) -> str:
+def _size_and_sha256(path: Path) -> tuple[int, str]:
+    """The file's size and SHA-256, both from one open handle, so they describe one file."""
     with path.open("rb") as file:
-        return hashlib.file_digest(file, "sha256").hexdigest()
+        size_bytes = os.fstat(file.fileno()).st_size
+        return size_bytes, hashlib.file_digest(file, "sha256").hexdigest()

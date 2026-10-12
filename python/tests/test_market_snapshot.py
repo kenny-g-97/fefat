@@ -195,3 +195,14 @@ def test_reading_a_snapshot_keeps_only_the_bars_of_its_dates() -> None:
     assert read.height > 0
     assert read.get_column("trade_date").unique().to_list() == [date(2026, 3, 6)]
     assert read.filter(pl.col("trade_date") != date(2026, 3, 6)).is_empty()
+
+
+def test_the_pinned_metadata_is_the_one_the_snapshot_pinned(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    pinned = store.snapshot(ES_TRADES)
+    mini_lots = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"))
+
+    assert store.pinned_metadata(pinned) == ES_SIZE
+    store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)
+    with pytest.raises(ValueError, match="the file changed after the snapshot"):
+        store.pinned_metadata(pinned)

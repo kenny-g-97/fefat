@@ -340,6 +340,9 @@ def test_recording_a_raw_file_that_does_not_exist_is_refused(tmp_path: Path) -> 
         ".",
         "MANIFEST.json",
         "manifest.json",
+        "MANIFEST.json.",
+        "vendor./bars.dbn",
+        "vendor/bars.dbn ",
     ],
 )
 def test_a_raw_path_that_leaves_the_raw_folder_or_names_the_manifest_is_refused(

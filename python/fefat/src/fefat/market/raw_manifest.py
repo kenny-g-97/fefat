@@ -20,10 +20,13 @@ RAW_MANIFEST_FILE_NAME = "MANIFEST.json"
 
 def checked_raw_path(path: str) -> str:
     """A vendor file's path relative to the `raw` folder, written with `/`; a path that could
-    leave the folder, or that names the manifest itself, is refused."""
+    leave the folder or name the manifest itself is refused, as is a name ending in a dot or a
+    space, which Windows drops."""
     parts = PurePosixPath(path).parts
     outside = not parts or path.startswith("/") or PurePosixPath(path).as_posix() != path
-    unsafe = any(part == ".." or ":" in part or "\\" in part for part in parts)
+    unsafe = any(
+        part == ".." or ":" in part or "\\" in part or part.endswith((".", " ")) for part in parts
+    )
     if outside or unsafe or path.lower() == RAW_MANIFEST_FILE_NAME.lower():
         raise ValueError(
             "Expected a vendor's file inside the raw folder, such as vendor/job/file.dbn, "
