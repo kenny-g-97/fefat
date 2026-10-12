@@ -13,12 +13,17 @@ prices as int64 in 1e-9 units, timestamps as int64 nanoseconds UTC, laid out as
 daylight saving on 2026-03-08 (the UTC open moves from 23:00 to 22:00), a 24x7
 BTC perpetual-like UTC day, and the 1-second and 1-minute bars built from their
 trades the way section 1.4 builds bars: bucketed by `ts_recv` into
-`[t, t + width)` from the session open, sparse, with `ts_open` and `ts_close`.
+`[t, t + width)` from the session open, sparse, with `ts_open`, `ts_close`,
+and the session's `trade_date` (the first hour of an ES session falls on the UTC
+day before its trade date).
 
 Trades carry `ts_recv`, `ts_event`, `instrument_id`, `price`, `size` (contracts
 for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
-`N` for the opening print), and `sequence`. MANIFEST.json lists every file with
-the generator, the seed, and its SHA-256. Each session draws from its own
+`N` for the opening print), and `sequence`. Each dataset folder
+`<schema>/root=…/` holds a `dataset.json` with the unit of its sizes and volumes
+(`size_unit`: one unit is `lot` of `asset`). MANIFEST.json lists every file with
+the generator, the seed, its size, and its SHA-256, and each Parquet file's row
+count. Each session draws from its own
 `random.Random`, seeded with "<seed>/<root>/<trade date>". Times and durations
 here are integer nanoseconds; instants count from the Unix epoch in UTC.
 
@@ -53,6 +58,7 @@ DEFAULT_OUT = ROOT / "fixtures" / "synthetic"
 DEFAULT_SEED = 20260308
 GENERATOR = "scripts/gen_fixtures.py"
 MANIFEST_NAME = "MANIFEST.json"
+DATASET_METADATA_NAME = "dataset.json"
 
 NANOSECONDS_PER_SECOND = 1_000_000_000
 NANOSECONDS_PER_MINUTE = 60 * NANOSECONDS_PER_SECOND
@@ -86,6 +92,7 @@ BARS_SCHEMA = pa.schema(
     [
         ("ts_open", pa.int64()),
         ("ts_close", pa.int64()),
+        ("trade_date", pa.date32()),
         ("instrument_id", pa.uint32()),
         ("open", pa.int64()),
         ("high", pa.int64()),
@@ -113,6 +120,8 @@ class FixtureProduct:
     root: str
     contract: str
     instrument_id: int
+    size_lot: str
+    size_asset: str
     tick: int
     first_price_ticks: int
     time_zone: ZoneInfo
@@ -130,6 +139,8 @@ ES = FixtureProduct(
     root="ES",
     contract="ESH6",
     instrument_id=1001,
+    size_lot="1",
+    size_asset="contract",
     tick=250_000_000,
     first_price_ticks=27_400,
     time_zone=ZoneInfo("America/Chicago"),
@@ -162,6 +173,8 @@ BTC = FixtureProduct(
     root="BTC",
     contract="BTCUSDT-PERP",
     instrument_id=2001,
+    size_lot="0.001",
+    size_asset="BTC",
     tick=100_000_000,
     first_price_ticks=980_000,
     time_zone=ZoneInfo("UTC"),
@@ -326,13 +339,14 @@ def simulate_session(
     return recorder.tape(), price_ticks
 
 
-def bars_from_trades(trades: pa.Table, anchor: int, width: int) -> pa.Table:
-    """Bucket trades by `ts_recv` into [t, t + width) from the anchor; only buckets with trades."""
+def bars_from_trades(trades: pa.Table, session: Session, width: int) -> pa.Table:
+    """Bucket trades by `ts_recv` into [t, t + width) from the session open; only buckets with trades."""
+    anchor = session.open_time()
     received = trades.column("ts_recv").to_pylist()
     prices = trades.column("price").to_pylist()
     sizes = trades.column("size").to_pylist()
     instrument_ids = trades.column("instrument_id").to_pylist()
-    columns: dict[str, list[int]] = {name: [] for name in BARS_SCHEMA.names}
+    columns: dict[str, list[int | date]] = {name: [] for name in BARS_SCHEMA.names}
     for bucket, rows in groupby(
         range(len(received)), key=lambda row: (received[row] - anchor) // width
     ):
@@ -342,6 +356,7 @@ def bars_from_trades(trades: pa.Table, anchor: int, width: int) -> pa.Table:
         bar = {
             "ts_open": ts_open,
             "ts_close": ts_open + width,
+            "trade_date": session.trade_date,
             "instrument_id": instrument_ids[members[0]],
             "open": bucket_prices[0],
             "high": max(bucket_prices),
@@ -372,12 +387,25 @@ def written_partition(table: pa.Table, path: Path, out: Path, seed: int) -> dict
     pq.write_table(
         table, path, compression="zstd", compression_level=9, version="2.6", data_page_version="1.0"
     )
+    return manifest_entry(path, out, seed) | {"rows": table.num_rows}
+
+
+def written_dataset_metadata(
+    product: FixtureProduct, schema: str, out: Path, seed: int
+) -> dict[str, str | int]:
+    """Write a dataset's `dataset.json`, the unit of its sizes and volumes, and return its entry."""
+    path = out / schema / f"root={product.root}" / DATASET_METADATA_NAME
+    metadata = {"size_unit": {"lot": product.size_lot, "asset": product.size_asset}}
+    path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return manifest_entry(path, out, seed)
+
+
+def manifest_entry(path: Path, out: Path, seed: int) -> dict[str, str | int]:
     content = path.read_bytes()
     return {
         "path": path.relative_to(out).as_posix(),
         "generator": GENERATOR,
         "seed": seed,
-        "rows": table.num_rows,
         "bytes": len(content),
         "sha256": hashlib.sha256(content).hexdigest(),
     }
@@ -393,7 +421,8 @@ def month_of(product: FixtureProduct) -> str:
 
 
 def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[str, str | int]]:
-    """Write a product's trades and 1-second bars per trade date and its 1-minute bars per month."""
+    """Write a product's trades and 1-second bars per trade date, its 1-minute bars per month,
+    and the `dataset.json` of each of its datasets."""
     entries: list[dict[str, str | int]] = []
     minute_bars: list[pa.Table] = []
     price_ticks = product.first_price_ticks
@@ -404,17 +433,21 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
             session, random_source, opening_price_ticks(price_ticks, session, random_source)
         )
         day = f"date={trade_date.isoformat()}"
-        second_bars = bars_from_trades(trades, session.open_time(), NANOSECONDS_PER_SECOND)
+        second_bars = bars_from_trades(trades, session, NANOSECONDS_PER_SECOND)
         entries.append(
             written_partition(trades, partition_path(out, "trades", product, day), out, seed)
         )
         entries.append(
             written_partition(second_bars, partition_path(out, "ohlcv-1s", product, day), out, seed)
         )
-        minute_bars.append(bars_from_trades(trades, session.open_time(), NANOSECONDS_PER_MINUTE))
+        minute_bars.append(bars_from_trades(trades, session, NANOSECONDS_PER_MINUTE))
     month = f"month={month_of(product)}"
     month_path = partition_path(out, "ohlcv-1m", product, month)
     entries.append(written_partition(pa.concat_tables(minute_bars), month_path, out, seed))
+    entries.extend(
+        written_dataset_metadata(product, schema, out, seed)
+        for schema in ("trades", "ohlcv-1s", "ohlcv-1m")
+    )
     return entries
 
 

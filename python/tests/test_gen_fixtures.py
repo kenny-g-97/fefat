@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -73,14 +73,15 @@ def test_the_committed_fixtures_are_what_the_generator_writes(regenerated: Path)
     assert MANIFEST.read_text(encoding="utf-8") == fresh
 
 
-def test_every_committed_data_file_is_listed_with_its_hash() -> None:
+def test_every_committed_fixture_file_is_listed_with_its_hash() -> None:
     listed = {entry["path"]: entry["sha256"] for entry in manifest_entries()}
     on_disk = {
         path.relative_to(FIXTURES).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in FIXTURES.rglob("*.parquet")
+        for path in FIXTURES.rglob("*")
+        if path.is_file() and path != MANIFEST
     }
 
-    assert len(on_disk) == 10
+    assert len(on_disk) == 16
     assert on_disk == listed
 
 
@@ -176,3 +177,39 @@ def test_minute_bars_carry_exactly_the_volume_of_their_trades(root: str, contrac
     assert all(int(bar["ts_close"]) - int(bar["ts_open"]) == NANOSECONDS_PER_MINUTE for bar in bars)
     assert all(int(bar["low"]) <= int(bar["open"]) <= int(bar["high"]) for bar in bars)
     assert all(int(bar["low"]) <= int(bar["close"]) <= int(bar["high"]) for bar in bars)
+
+
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
+def test_bars_carry_the_session_trade_date_not_the_utc_date_of_ts_open(
+    root: str, contract: str, day: str, open_utc: datetime
+) -> None:
+    trade_date = date.fromisoformat(day)
+    session_open = nanoseconds(open_utc)
+    next_session_open = nanoseconds(open_utc + timedelta(days=1))
+    utc_midnight = nanoseconds(datetime.combine(trade_date, time(), tzinfo=UTC))
+    second_bars = pq.read_table(partition("ohlcv-1s", root, contract, f"date={day}")).to_pylist()
+    minute_bars = [
+        bar
+        for bar in pq.read_table(partition("ohlcv-1m", root, contract, "month=2026-03")).to_pylist()
+        if session_open <= bar["ts_open"] < next_session_open
+    ]
+    opened_the_evening_before = [bar for bar in second_bars if bar["ts_open"] < utc_midnight]
+
+    assert {bar["trade_date"] for bar in second_bars} == {trade_date}
+    assert {bar["trade_date"] for bar in minute_bars} == {trade_date}
+    # An ES session opens on the UTC day before its trade date; the BTC day opens at its midnight.
+    assert bool(opened_the_evening_before) == (session_open < utc_midnight)
+
+
+@pytest.mark.parametrize(
+    ("root", "lot", "asset"), [("ES", "1", "contract"), ("BTC", "0.001", "BTC")]
+)
+@pytest.mark.parametrize("schema", ["trades", "ohlcv-1s", "ohlcv-1m"])
+def test_each_dataset_states_the_unit_of_its_sizes_and_volumes(
+    schema: str, root: str, lot: str, asset: str
+) -> None:
+    metadata = FIXTURES / schema / f"root={root}" / "dataset.json"
+
+    assert json.loads(metadata.read_text(encoding="utf-8")) == {
+        "size_unit": {"lot": lot, "asset": asset}
+    }
