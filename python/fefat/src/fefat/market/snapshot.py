@@ -1,11 +1,12 @@
 """Snapshots: the files a request read, pinned by their content (ADR-0009, ADR-0019).
 
 A snapshot names a dataset's `dataset.json` and the partitions a request selected, each
-with its SHA-256, and one hash over all of them: the SHA-256 of their `sha256sum` listing,
-one line `<sha256>  <path>` per file, sorted by path, each ending in a newline, which any
-language can reproduce. The hash names the files; the rows read from them also depend on
-the request's dates, so whatever keys on a snapshot (a run, a cache) keys on its request
-too. `Store.snapshot` takes one, and `Store.read` reads exactly what it pinned.
+with its SHA-256, and one hash over the request and all of them: the SHA-256 of a line
+`request <dataset folder> <start> <end>` followed by the files' `sha256sum` listing, one
+line `<sha256>  <path>` per file, sorted by path, each line ending in a newline, which any
+language can reproduce. Two requests that read the same files over different dates read
+different rows, so their hashes differ too. `Store.snapshot` takes one, and `Store.read`
+reads exactly what it pinned.
 """
 
 import hashlib
@@ -31,10 +32,12 @@ class FileDigest(FrozenModel):
     sha256: Sha256
 
 
-def _listing_sha256(files: Iterable[FileDigest]) -> str:
+def _snapshot_sha256(request: PartitionRequest, files: Iterable[FileDigest]) -> str:
+    folder = request.dataset.relative_folder().as_posix()
     ordered = sorted(files, key=lambda file: file.path)
-    listing = "".join(f"{file.sha256}  {file.path}\n" for file in ordered)
-    return hashlib.sha256(listing.encode()).hexdigest()
+    lines = [f"request {folder} {request.start} {request.end}\n"]
+    lines += [f"{file.sha256}  {file.path}\n" for file in ordered]
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
 
 
 class Snapshot(FrozenModel):
@@ -52,7 +55,7 @@ class Snapshot(FrozenModel):
         cls, request: PartitionRequest, metadata: FileDigest, partitions: tuple[FileDigest, ...]
     ) -> Self:
         """The snapshot of the files, with its hash computed."""
-        sha256 = _listing_sha256((metadata, *partitions))
+        sha256 = _snapshot_sha256(request, (metadata, *partitions))
         return cls(request=request, metadata=metadata, partitions=partitions, sha256=sha256)
 
     @model_validator(mode="after")
@@ -70,7 +73,7 @@ class Snapshot(FrozenModel):
         ]
         if unselected:
             raise ValueError(f"Expected only partitions its request selects, got {unselected}.")
-        expected = _listing_sha256((self.metadata, *self.partitions))
+        expected = _snapshot_sha256(self.request, (self.metadata, *self.partitions))
         if self.sha256 != expected:
             raise ValueError(
                 f"Expected the snapshot hash {expected} of its files, got {self.sha256}."

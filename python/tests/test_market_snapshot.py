@@ -3,7 +3,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
 
@@ -46,6 +46,14 @@ request = PartitionRequest.model_validate_json(sys.argv[2])
 sys.stdout.write(Store(Path(sys.argv[1])).snapshot(request).model_dump_json())
 """
 UNKNOWN_SHA256 = "0" * 64
+SESSION_CLOSES = {
+    "ES": {
+        date(2026, 3, 5): datetime(2026, 3, 5, 22, tzinfo=UTC),
+        date(2026, 3, 6): datetime(2026, 3, 6, 22, tzinfo=UTC),
+        date(2026, 3, 9): datetime(2026, 3, 9, 21, tzinfo=UTC),
+    },
+    "BTC": {date(2026, 3, 7): datetime(2026, 3, 8, tzinfo=UTC)},
+}
 
 
 def store_with_the_es_trades(folder: Path) -> Store:
@@ -96,9 +104,10 @@ def test_a_snapshot_changes_when_the_size_unit_of_its_dataset_changes(tmp_path: 
     assert store.snapshot(ES_TRADES).sha256 != before.sha256
 
 
-def test_a_snapshot_pins_each_files_sha256_and_hashes_their_sha256sum_listing() -> None:
+def test_a_snapshot_pins_each_files_sha256_and_hashes_its_request_with_their_listing() -> None:
     snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
     files = sorted((snapshot.metadata, *snapshot.partitions), key=lambda file: file.path)
+    request_line = "request synthetic/trades/root=ES 2026-03-05 2026-03-09\n"
     listing = "".join(f"{file.sha256}  {file.path}\n" for file in files)
 
     assert {file.path: (file.size_bytes, file.sha256) for file in files} == {
@@ -107,7 +116,20 @@ def test_a_snapshot_pins_each_files_sha256_and_hashes_their_sha256sum_listing() 
         if path.startswith("synthetic/trades/root=ES/")
     }
     assert snapshot.metadata.path == "synthetic/trades/root=ES/dataset.json"
-    assert snapshot.sha256 == hashlib.sha256(listing.encode()).hexdigest()
+    assert snapshot.sha256 == hashlib.sha256((request_line + listing).encode()).hexdigest()
+
+
+def test_two_ranges_that_read_the_same_files_get_different_snapshots() -> None:
+    minute_bars = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES"
+    )
+    narrow = PartitionRequest(dataset=minute_bars, start=date(2026, 3, 5), end=date(2026, 3, 6))
+    wide = PartitionRequest(dataset=minute_bars, start=date(2026, 3, 5), end=date(2026, 3, 9))
+
+    narrow_snapshot, wide_snapshot = FIXTURE_STORE.snapshot(narrow), FIXTURE_STORE.snapshot(wide)
+
+    assert narrow_snapshot.partitions == wide_snapshot.partitions
+    assert narrow_snapshot.sha256 != wide_snapshot.sha256
 
 
 def test_a_snapshot_whose_hash_does_not_cover_its_files_is_refused() -> None:
@@ -222,3 +244,28 @@ def test_a_snapshot_refuses_metadata_it_cannot_read(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=r"dataset\.json to hold a DatasetMetadata"):
         store.snapshot(ES_TRADES)
+
+
+@pytest.mark.parametrize("root", ["ES", "BTC"])
+@pytest.mark.parametrize("schema", ["trades", "ohlcv-1s", "ohlcv-1m"])
+def test_a_read_cut_at_any_date_holds_exactly_the_rows_available_by_its_close(
+    root: str, schema: str
+) -> None:
+    dataset = Dataset(provider="synthetic", schema_name=parse_schema_name(schema), root=root)
+    closes = SESSION_CLOSES[root]
+    first, last = min(closes), max(closes)
+    trades = schema == "trades"
+    clock, order = ("ts_recv", ["ts_recv", "sequence"]) if trades else ("ts_close", ["ts_open"])
+
+    def read(start: date, end: date) -> pl.DataFrame:
+        request = PartitionRequest(dataset=dataset, start=start, end=end)
+        return FIXTURE_STORE.read(FIXTURE_STORE.snapshot(request)).sort(order)
+
+    every_row = read(first, last)
+    for offset in range((last - first).days + 1):
+        cut = first + timedelta(days=offset)
+        close = closes[max(day for day in closes if day <= cut)]
+        available = every_row.filter(pl.col(clock) <= int(close.timestamp()) * 1_000_000_000)
+        assert_frame_equal(read(first, cut), available)
+        if not trades and cut in closes:
+            assert_frame_equal(read(cut, last), every_row.filter(pl.col("trade_date") >= cut))

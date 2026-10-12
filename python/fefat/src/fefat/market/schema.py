@@ -179,8 +179,9 @@ _BARS_COLUMNS = pl.Schema(
 """One row per bar of the trades received in `[ts_open, ts_close)`, sparse (a bar exists only
 where trades do), with its session's `trade_date`; a bar is available at `ts_close`. `volume`
 counts the dataset's size unit, and `trade_count` is null for a vendor's bars that carry no
-count. `ohlcv-1d` holds session bars by trade date, which the bar builder makes from finer
-bars; a vendor's daily bars cut on UTC dates are not session bars and are not stored as it."""
+count. `ohlcv-1d` holds session bars by trade date, built from finer bars or imported with
+`ts_open` and `ts_close` from the calendar's session for their date; a vendor's daily bars
+cut on UTC dates are not session bars and are not stored as it."""
 
 _DEFINITIONS_COLUMNS = pl.Schema(
     {
@@ -238,7 +239,7 @@ _FUNDING_COLUMNS = pl.Schema(
 )
 """A perpetual's funding event, its rate in 1e-9 units (0.0001 is 100_000). An archive's one
 time column goes to `ts_event`; `ts_recv` is when the rate was fixed (the funding time on
-Binance and Bybit), never earlier."""
+Binance and Bybit), never earlier than `ts_event`."""
 
 _COLUMNS_BY_KIND = {
     SchemaKind.TRADES: _TRADES_COLUMNS,
