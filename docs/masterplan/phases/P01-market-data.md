@@ -1,12 +1,14 @@
 # Phase 1 — Market data
 
-**Goal.** One clean, documented, hash-pinned store on disk with correct session calendars, bars rebuilt and verified, continuous futures series built without look-ahead, and a quality report for every dataset, filled from the data sources you connect: vendor accounts and public archives through connectors (your own Databento account for futures, the free crypto archives), and files from any vendor or trading platform through import presets. FEFAT ships no market data (D-37); it ships the product catalog (specifications, calendars, roll rules, quality rules, a recommended source per product), the connectors and presets, a guide to well-known sources, and the sync that keeps each product current through your own sources.
+**Goal.** One clean, documented, hash-pinned store on disk with correct session calendars, bars rebuilt and verified, continuous futures series built without look-ahead, and a quality report for every dataset, filled from the files you feed it: Databento batch downloads and exports, and files from any vendor or trading platform through import presets (no connector and no sync in Phase 1, D-38). FEFAT ships no market data (D-37); it ships the product catalog (specifications, calendars, roll rules, quality rules, a recommended source per product), the import presets, and a guide to well-known sources.
 
-**You get.** `ff.market.load("ES", "5m", "2024-01-01", "2024-12-31")` in a notebook returns correct bars; `fefat data sources` lists the suggested sources with their terms and which ones you have connected; `fefat data status` shows every catalog product with its coverage and quality; `fefat data sync` brings a product up to date through your connected sources, pricing any Databento download before pulling it; `fefat data import file` brings in your own files through saved profiles.
+**You get.** `ff.market.load("MES", "5m", "2024-01-01", "2024-12-31")` in a notebook returns correct bars; `fefat data import databento <folder>` and `fefat data import file <path> --profile <name>` bring in your files, and running them again imports nothing twice; `fefat data sources` lists the known sources with what they offer, their cost and terms, and the preset that reads their files; `fefat data status` shows every catalog product with its coverage and quality.
 
 **Depends on.** Phase 0.
 
-**Open decisions for the kickoff.** Which Databento files you already have (schemas, products, date ranges) and where they are; whether to buy one month of Standard now (`07-tools-and-costs.md` §3); which crypto venue (Binance by default; Kraken/Coinbase/Hyperliquid if you are US-based); the catalog product list (default ES, NQ, CL, GC and their micros; BTCUSDT and ETHUSDT perpetuals and spot); which sources the source guide names first (candidates in `BACKLOG.md`); and which import presets you need first (the platforms whose exports you use).
+**Kickoff (2026-10-12, pull request #10, D-38).** Your data is two Databento batch downloads of 1-minute bars for every MCL, MGC, MES, and MNQ contract (`docs/data-inventory.md`); `FEFAT_DATA_DIR` keeps its default; no purchase is planned, and any later purchase arrives as files. No connector and no sync in Phase 1: step 1.4 is skipped, 1.6 is a file importer, and 1.9 keeps the catalog, the source guide, and `fefat data status`. The catalog is MES, MNQ, MCL, and MGC; the presets are Databento CSV, IBKR (TWS API bars), NinjaTrader, and TradingView first. The source research is `appendix/research-data-sources.md`. Conventions for every step of the phase: Polars 2 (D-36), so a frame a test compares or a run reads is sorted explicitly, never left in engine order; `Store` takes its folder as an argument, and an autouse fixture keeps `FEFAT_HOME` and `FEFAT_DATA_DIR` out of the tests; a new dependency goes in with `uv add` and a decision entry like D-31; real data is read by path and never enters the repository; fixtures change only through `scripts/gen_fixtures.py`, regenerated with their manifest. The commit guard's plain-text extensions and the per-commit guard arrive in their own `config/data-guard-text-and-push` pull request before step 1.10 (`BACKLOG.md`).
+
+**Open decisions for the kickoff** (settled 2026-10-12, D-38)**.** Which Databento files you already have (schemas, products, date ranges) and where they are; whether to buy one month of Standard now (`07-tools-and-costs.md` §3); which crypto venue (Binance by default; Kraken/Coinbase/Hyperliquid if you are US-based); the catalog product list (default ES, NQ, CL, GC and their micros; BTCUSDT and ETHUSDT perpetuals and spot); which sources the source guide names first (candidates in `BACKLOG.md`); and which import presets you need first (the platforms whose exports you use).
 
 ## Kickoff
 
@@ -26,14 +28,14 @@ Every later component reads one layout. Decided once, documented in an ADR, enfo
 
 #### Prerequisites
 
-- Phase 0 complete; the data inventory from the kickoff.
+- Phase 0 complete; the data inventory from the kickoff (`docs/data-inventory.md`).
 
 #### Prompt
 
 ```text
 Masterplan step 1.1 — Canonical schemas, units, partitions, manifests, snapshot hashes.
 
-Read docs/masterplan/02-engine-and-data.md §1.1–1.2 and docs/adr/. Define the canonical on-disk store in `python/fefat/src/fefat/market/schema.py`: Arrow schemas for trades, tbbo, bars (any timeframe), definitions, statistics, funding, and the partition layout `data/<provider>/<schema>/root=…/contract=…/date=…`. Prices are int64 in 1e-9 units; timestamps are int64 nanoseconds UTC with both ts_recv and ts_event; the engine clock is ts_recv. Write `python/fefat/src/fefat/market/store.py` with a `Store` class that resolves `FEFAT_DATA_DIR`, lists partitions, reads them lazily with Polars, writes them atomically (temp file then rename), and maintains `data/raw/MANIFEST.json` (sha256, size, vendor version, download date) for immutable raw files.
+Read docs/masterplan/02-engine-and-data.md §1.1–1.2 and docs/adr/. Define the canonical on-disk store in `python/fefat/src/fefat/market/schema.py`: Arrow schemas for trades, tbbo, bars (any timeframe), definitions, statistics, funding, and the partition layout `data/<provider>/<schema>/root=…/contract=…/date=…`. Prices are int64 in 1e-9 units; timestamps are int64 nanoseconds UTC with both ts_recv and ts_event; the engine clock is ts_recv. Write `python/fefat/src/fefat/market/store.py` with a `Store` class that takes its folder (the app and notebooks pass `fefat.config.resolve_paths(os.environ).data_dir`), lists partitions, reads them lazily with Polars, writes them atomically (temp file then rename), and maintains `data/raw/MANIFEST.json` (sha256, size, vendor version and job id, download date) for immutable raw files.
 
 Define `Snapshot`: a content-hashed list of partition paths and hashes for a (root, schema, range) request, so a backtest can pin exactly what it read. Record the decisions as an ADR.
 
@@ -53,6 +55,10 @@ Tests use `fixtures/synthetic/` only. Not in this step: importers, bars, calenda
 #### If it fails
 
 - If Polars refuses the int64 nanosecond timestamps as Datetime: keep raw int64 columns in the store and convert to Datetime only in views.
+
+#### Amendment
+
+2026-10-12 (Phase 1 kickoff, D-38): `fefat.config.resolve_paths` exists since step 0.5, so `Store` takes its folder as an argument, and an autouse pytest fixture clears `FEFAT_HOME` and `FEFAT_DATA_DIR`, so that no test can read real data. The schemas start from the fixtures of step 0.5, which already follow the layout with `fixtures/synthetic/` as the provider folder `synthetic` (`scripts/gen_fixtures.py`: trades with `ts_recv`, `ts_event`, `instrument_id`, `price`, `size`, `side`, and `sequence`; bars with `ts_open`, `ts_close`, `instrument_id`, open, high, low, close, `volume`, and `trade_count`; 1-minute bars per `month=`, as `02-engine-and-data.md` §1.1 partitions them), and add what the Phase 0 exit reviews asked for: `trade_date` on every bar schema, assigned by the session table of 1.3 (a date taken from `ts_open` puts the first hour of a CME session on the wrong day); the size unit in each dataset's metadata (the BTC fixture's `size` is lots of 0.001 BTC); and, on settlement statistics, the vendor's reference time beside the receive time, which is the availability column. The raw manifest also records the vendor's job id and published hash, which the batch downloads on this PC carry in their `manifest.json`. Polars is 2.0.0 (D-36): every frame a test compares is sorted explicitly. The dependencies this step adds (`pydantic`, and `pyarrow` in the SDK if the writer needs it) get a decision entry like D-31.
 
 ### 1.2 Instruments, contract identity, fee tables
 
@@ -94,6 +100,10 @@ Not in this step: calendars, importers.
 
 - If Databento definitions are not in your inventory, the resolver must still work from the static table and flag "no definitions loaded"; buy or download definitions later (they are cheap).
 
+#### Amendment
+
+2026-10-12 (Phase 1 kickoff, D-38): the files on this PC hold no definition records, but each Databento batch file carries its symbology in the DBN metadata: child raw symbol to `instrument_id` by date interval, 1,913 children for MCL, MGC, and MES and 167 for MNQ, outrights, calendar spreads, and strategy symbols alike, resolved from the parents `MCL.FUT`, `MGC.FUT`, `MES.FUT`, and `MNQ.FUT` (`docs/data-inventory.md`). The resolver builds contract identity from definition records where they exist, else from the DBN metadata mappings of the imported files, else from the static table, and records which; a reused symbol is still resolved by `instrument_id` and date. Spread and strategy symbols (`MCLF2-MCLG2`, `MCL:SA 03M F2`) are recognised and skipped at import (1.6) with a count, never stored as contracts. The static table carries each product's first trade date with its source: the data starts there, not at the dataset's 2010-06-06 start.
+
 ### 1.3 Session calendar and trade date
 
 Depends on: 1.2 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
@@ -128,11 +138,15 @@ Not in this step: bars, rolls.
 
 #### Your checks
 
-- In a notebook, run `validate_calendar` on one month of your real ES data and read the report: no mismatches, or mismatches you can explain (a half-day holiday, for example).
+- In a notebook, run `validate_calendar` on one month each of your real MES, MCL, and MGC bars and read the reports: no mismatches, or mismatches you can explain (a half-day holiday, for example).
 
 #### If it fails
 
 - Mismatches on half-day sessions mean the holiday table lacks early closes; add them to the override file with a source link.
+
+#### Amendment
+
+2026-10-12 (Phase 1 kickoff, D-38): the real data on this PC is 1-minute bars (`docs/data-inventory.md`), so `validate_calendar` compares the table with the first and last bar of each day (`ts_open` of the first, `ts_close` of the last) as well as with prints where ticks exist, and Your checks cover the equity-index, energy, and metals calendars with MES, MCL, and MGC. From the Phase 0 exit reviews: the session close is the local close time (16:00 Chicago, or the early close the holiday table gives), never the open plus 23 hours, which `scripts/gen_fixtures.py` uses today and this step corrects, regenerating the fixtures with their manifest.
 
 ### 1.4 Crypto importer
 
@@ -178,9 +192,11 @@ Not in this step: Databento, bars from trades (1.5), the remaining venues.
 
 2026-10-12 (D-37): the crypto archive is the first source a trader connects, not platform data, and its `Provider` interface is the one seam for every source (1.6, 1.9).
 
+2026-10-12 (Phase 1 kickoff, D-38): skipped. No connector is built in Phase 1, since the data layer takes only the files you feed it, and no crypto files exist on this PC. The Binance Vision archive layout the kickoff researched (`appendix/research-data-sources.md`: spot klines without a header row and futures klines with one, spot timestamps in microseconds since 2025-01-01, an inclusive `close_time`, `.CHECKSUM` files) returns as an import preset of 1.10's kind when you feed such files, and the connector itself stays in `BACKLOG.md` with the `Provider` seam.
+
 ### 1.5 Bar builder
 
-Depends on: 1.3, 1.4 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: default
+Depends on: 1.3 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -188,7 +204,7 @@ Bars of any timeframe are built from trades with one convention, and they match 
 
 #### Prerequisites
 
-- Steps 1.3 and 1.4 merged.
+- Step 1.3 merged.
 
 #### Prompt
 
@@ -197,7 +213,7 @@ Masterplan step 1.5 — Bar builder.
 
 Read docs/masterplan/02-engine-and-data.md §1.4. Implement `python/fefat/src/fefat/market/bars.py`: build bars of a given timeframe from trades using Polars, bucketing by ts_recv into [t, t+Δ) anchored at the session open from the calendar, storing sparse bars with ts_open and an explicit ts_close plus volume, trade count, and VWAP; and build a dense session-grid view with zero-volume bars flagged for signal use. Daily bars follow the trade date. Resampling from finer bars must give the same result as building from trades.
 
-Tests: on synthetic fixtures, bars built from trades equal the fixture's 1-second and 1-minute bars; on real data, a `verify_bars(store, root, date)` command compares rebuilt 1-second and 1-minute bars with the vendor bars (Databento OHLCV or Binance klines) and reports differences.
+Tests: on synthetic fixtures, bars built from trades equal the fixture's 1-second and 1-minute bars; on real data, a `verify_bars(store, root, date)` command compares rebuilt bars with the vendor's at every fidelity the data has (1-minute bars resampled to 5-minute and daily against the vendor's, and 1-second and 1-minute bars rebuilt from trades against Databento's or Binance's where trades exist) and reports differences.
 
 Not in this step: rolls, continuous series.
 ```
@@ -205,62 +221,66 @@ Not in this step: rolls, continuous series.
 #### Done means
 
 1. Synthetic equality tests pass for 1-second, 1-minute, 5-minute, and daily bars.
-2. `verify_bars` on one real Databento day and one real Binance day reports zero differences (or differences explained in the PR, such as the vendor's handling of the session open).
-3. Building 5 years of 1-minute bars for one root from 1-second bars takes under a minute on this PC (timed in the PR).
+2. `verify_bars` on one real day of each product on this PC reports zero differences at the fidelities the data has (or differences explained in the PR, such as the vendor's handling of the session open); the tick-level comparison runs the day a trades file is imported and is noted as pending until then.
+3. Resampling the 16 years of real MES 1-minute bars to 5-minute bars takes under a minute on this PC, and building 1-minute bars from the synthetic 1-second bars, scaled to five years, projects under a minute (both timed in the PR).
 
 #### Your checks
 
-- In a notebook: build 5-minute ES bars for one day from your real trades and compare the day's high and low with your charting platform.
+- In a notebook: build 5-minute MES bars for one day from your real 1-minute bars and compare the day's high and low with your charting platform.
 
 #### If it fails
 
 - Off-by-one-bar differences usually mean a bar-open versus bar-close labelling mismatch; the convention is ts_open with an explicit ts_close, and the vendor's `ts_event` is the bar open.
 
-### 1.6 Databento importer with cost preview
+#### Amendment
 
-Depends on: 1.2 · Plan mode: optional · Reviews: step-reviewer · Security: yes · Model hint: default
+2026-10-12 (Phase 1 kickoff, D-38): no trades or 1-second bars exist on this PC and 1.4 is skipped, so the step depends on 1.3 alone, verifies against the vendor at the fidelities the data has, and times what the data allows; the prompt, Done means 2 and 3, and Your checks were reworded. Bars carry `trade_date` (1.1). From the Phase 0 exit reviews: a bar whose close lies after the end of the data is held back and written only when later data completes it; and the fixtures gain a print received exactly on a second boundary, one in the last slot before the close, and one after the close, planted by `scripts/gen_fixtures.py` in this step.
+
+### 1.6 Databento file importer
+
+Depends on: 1.2 · Plan mode: optional · Reviews: step-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
-Your Databento account is one connected source among others: your existing files are imported, and any further download is priced before a cent is spent.
+Your Databento files are imported, batch downloads and exports alike, and any later purchase arrives the same way: as files.
 
 #### Prerequisites
 
-- Step 1.2 merged; your Databento file inventory; a Databento API key if you will download (this step adds the `fefat secrets` command that stores it).
+- Step 1.2 merged; your Databento files (`docs/data-inventory.md`).
 
 #### Prompt
 
 ```text
-Masterplan step 1.6 — Databento importer with cost preview.
+Masterplan step 1.6 — Databento file importer.
 
-Read docs/masterplan/02-engine-and-data.md §1.1–1.2 and docs/masterplan/appendix/research-market-data.md §2. Implement `fefat data import databento`, as a `Provider` of `fefat.market.sources` (1.4): (a) `--from-files <folder>` ingests existing DBN (.dbn, .dbn.zst) and Databento CSV/Parquet exports with the official `databento` Python client, keeping the originals immutable under data/raw/ with manifest entries, and writing canonical partitions for trades, tbbo, ohlcv-1s/1m/1d, definitions, and statistics; (b) `--download` builds a request for a dataset/schema/symbols/range, calls `metadata.get_cost` and `get_record_count`, prints the cost and size, and proceeds only after an explicit `--yes` (the CLI must never download without it). Store the API key through the credential store, never in files or logs.
+Read docs/masterplan/02-engine-and-data.md §1.1–1.2, docs/masterplan/appendix/research-market-data.md §2, and docs/data-inventory.md. Implement `fefat data import databento <folder-or-file>` (the CLI in python/fefat_app/src/fefat_app/cli.py calling python/fefat/src/fefat/market/importers/databento.py): it ingests a batch-download folder (the DBN file beside its metadata.json, manifest.json, and condition.json, as on this PC) and single DBN (.dbn, .dbn.zst), CSV, and Parquet exports, decoding DBN with the official `databento-dbn` library (the client's own decoder; the `databento` client and its network code are not needed without a connector). It verifies each file against the vendor's SHA-256 where manifest.json gives one, keeps the originals immutable under data/raw/ with manifest entries (job id, hash, DBN version, the newest last_modified_date of condition.json), stores the per-day conditions for the quality report (1.8), maps instrument_id to contracts through the DBN metadata or the definition records (1.2), skipping spreads with a count, and writes canonical partitions for trades, tbbo, ohlcv-1s/1m/1d, definitions, and statistics, streaming, so that an 873 MB file is never loaded whole. Idempotent: a re-run skips what the manifest already holds. Assert ts_recv is non-decreasing within each file and record any violation.
 
-Support continuous symbology (`ES.v.0` etc.) for discovery only; stored data is always per contract, resolved by instrument_id. Assert ts_recv is non-decreasing within each file and record any violation.
+No network, no key, no download (D-38): a purchase happens on Databento's website and its files come through this command.
 
-The credential store does not exist yet: add `python/fefat_app/src/fefat_app/credentials.py` (a thin layer over `keyring`, backed by the Windows credential store) and a `fefat secrets set|get|list` CLI that never prints secret values; Phase 4 reuses this module unchanged.
+Tests: offline, on a small DBN batch folder (a DBN file plus the three JSON sidecars) written by scripts/gen_fixtures.py in the DBN layout under fixtures/synthetic/ with manifest entries; a re-run test; a wrong-hash test.
 
-Tests: offline, on a small DBN fixture generated with the dbn library in scripts/gen_fixtures.py; a test that the key never lands on disk in plaintext.
-
-Not in this step: bars, rolls, live data.
+Not in this step: bars, rolls, downloads, the credential store.
 ```
 
 #### Done means
 
-1. Your existing files are imported; `Store().list_partitions()` shows them with manifest entries, and the PR lists what was imported (schemas and ranges, no data).
-2. The cost preview prints dollars and megabytes for a sample request and refuses to download without `--yes` (test with a mocked client).
-3. The API key never appears in logs, config, or the repo (grep in the PR).
+1. Your existing files are imported; `Store().list_partitions()` shows them with manifest entries, and the PR lists what was imported (schemas, ranges, contracts per root, and the spreads skipped; no data).
+2. A re-run of the same folder imports nothing and says so, and a file whose SHA-256 differs from the vendor's `manifest.json` is refused with both hashes (tests).
+3. The per-day conditions of `condition.json` are stored, and the import summary lists the degraded days of `docs/data-inventory.md`.
 
 #### Your checks
 
-- Run `fefat data import databento --download --dataset GLBX.MDP3 --schema trades --symbols ES.v.0 --start 2025-01-02 --end 2025-01-03` without `--yes`: it prints a cost and stops.
+- Run `fefat data import databento <the MNQ folder>`, then `Store().list_partitions()` in a notebook: 35 MNQ contracts with 1-minute bars from 2019 to 2026 and the raw file in the manifest; run the command again: nothing to import.
 
 #### If it fails
 
-- DBN version mismatch on old files: the client upgrades on read; if it refuses, pin the `databento` package version noted in the error and record it in the manifest.
+- DBN version mismatch on old files: the decoder upgrades on read; if it refuses, pin the `databento-dbn` version noted in the error and record it in the manifest.
 
 #### Amendment
 
 2026-10-12 (D-37): Databento is one connector among the sources a trader connects with their own account; the importer implements the `Provider` interface of 1.4.
+
+2026-10-12 (Phase 1 kickoff, D-38): no connector in Phase 1, so the download, the cost preview, the `--yes` gate, the credential store, and `fefat secrets` left this step (`BACKLOG.md`, with the `Provider` seam), its title became "Databento file importer", and Security changed to no. Your files are two uncompressed DBN v3 batch downloads of 2026-09-23 (`docs/data-inventory.md`): `ohlcv-1m` for the parents `MCL.FUT`, `MGC.FUT`, and `MES.FUT` (873 MB, about 15.6 million records) and `MNQ.FUT` (222 MB, about 4.0 million), 2010-06-06 to 2026-09-23, symbols as `instrument_id` with the mapping in the DBN metadata, each beside its `metadata.json` (the query), `manifest.json` (the vendor's SHA-256 of every file), and `condition.json` (per-day `available` or `degraded`; 32 degraded days). The purpose, prerequisites, prompt, Done means, and Your checks were rewritten for them.
 
 ### 1.7 Rolls and forward-anchored continuous series
 
@@ -272,7 +292,7 @@ Signals are computed on a continuous series that never uses tomorrow's informati
 
 #### Prerequisites
 
-- Steps 1.5 and 1.6 merged; at least two consecutive ES contracts in your data.
+- Steps 1.5 and 1.6 merged; at least two consecutive contracts of one catalog product in your data (every MES, MNQ, MCL, and MGC contract is on this PC).
 
 #### Prompt
 
@@ -281,7 +301,7 @@ Masterplan step 1.7 — Rolls and forward-anchored continuous series.
 
 Read docs/masterplan/02-engine-and-data.md §1.5 and docs/adr/ (the forward-anchoring decision). Implement `python/fefat/src/fefat/market/continuous.py`: a roll calendar per root computed from per-contract volume through session d−1 and effective at the open of session d (default rule: volume, no roll-back, forced before expiry; open-interest and calendar rules as options), and continuous signal bars that are forward-anchored: history never changes at a roll; the new contract is shifted to join the old series. Columns: close (and open/high/low) adjusted, close_raw, adj_offset, contract, roll_flag. Provide `to_raw_price(level, at)` for price-level signals and a back-adjusted view for display only.
 
-Tests: (1) look-ahead: removing all data after date T does not change any roll decision or any adjusted value on or before T; (2) the roll dates for ES match Databento's ES.v.0 mapping on your real data within the documented convention (session open vs UTC midnight), with differences listed; (3) adjusted differences equal raw differences within a contract; (4) a position held across a roll (engine comes later) has the gap recorded for transfer.
+Tests: (1) look-ahead: removing all data after date T does not change any roll decision or any adjusted value on or before T; (2) the roll dates for MES match Databento's MES.v.0 mapping on your real data within the documented convention (session open vs UTC midnight), with differences listed, the mapping fetched once by you outside the app (Databento's symbology endpoint is free) and kept under FEFAT_DATA_DIR; (3) adjusted differences equal raw differences within a contract; (4) a position held across a roll (engine comes later) has the gap recorded for transfer.
 
 Not in this step: the engine's roll handling (2.9), charts.
 ```
@@ -289,16 +309,20 @@ Not in this step: the engine's roll handling (2.9), charts.
 #### Done means
 
 1. The look-ahead test and the within-contract difference test pass on synthetic data.
-2. The ES.v.0 comparison on real data passes or lists explained differences.
+2. The MES.v.0 comparison on real data passes or lists explained differences.
 3. The ADR is linked and the module docstring explains why forward anchoring was chosen.
 
 #### Your checks
 
-- In a notebook: plot one year of continuous ES close, `close_raw`, and `adj_offset`; the offset steps at roll dates and the adjusted series is continuous across them.
+- In a notebook: plot one year of continuous MES close, `close_raw`, and `adj_offset`; the offset steps at roll dates and the adjusted series is continuous across them.
 
 #### If it fails
 
 - If roll dates differ from Databento by exactly one session, the comparison is using the wrong boundary (UTC midnight versus session open); the convention is session open, document the mapping.
+
+#### Amendment
+
+2026-10-12 (Phase 1 kickoff, D-38): the real contracts on this PC are MES, MNQ, MCL, and MGC 1-minute bars since each product's launch (`docs/data-inventory.md`), so the prerequisite, test 2, Done means 2, and Your checks name MES, with the `.v.0` mapping fetched once by you outside the app (no connector in Phase 1). The look-ahead test needs a second ES contract in the fixtures with overlapping sessions and a volume crossover (Phase 0 exit review): this step adds ESM6 to `scripts/gen_fixtures.py`, seeding each tape by contract rather than by root so that the two tapes differ, and regenerates the fixtures with their manifest.
 
 ### 1.8 Data-quality report and SDK data API
 
@@ -326,61 +350,65 @@ Not in this step: the web catalog page (5.4).
 
 #### Done means
 
-1. The quality report on synthetic fixtures finds the planted anomalies (the generator plants a gap, a duplicate, and an out-of-session print) and nothing else.
-2. `ff.market.load("ES", "5m", "2024-01-01", "2024-03-31")` returns bars with the documented columns in under 2 seconds warm.
+1. The quality report on synthetic fixtures finds the planted anomalies (the test plants a gap, a duplicate, an out-of-session print, and a non-monotonic `ts_recv` in a temporary copy of the fixtures) and nothing else.
+2. `ff.market.load("MES", "5m", "2024-01-01", "2024-03-31")` returns bars with the documented columns in under 2 seconds warm.
 3. `fefat data catalog` prints every dataset with its range, fidelity coverage, and quality status.
 
 #### Your checks
 
-- Run `fefat data catalog`; then in a notebook open the Markdown report for ES and read the coverage table: it matches what you bought.
+- Run `fefat data catalog`; then in a notebook open the Markdown report for MES and read the coverage table: it matches what you imported.
 
 #### If it fails
 
 - Reports of "out-of-session prints" on real data often point at the calendar (holiday early closes); fix the override file, not the data.
 
-### 1.9 Product catalog, data sources, and managed sync
+#### Amendment
 
-Depends on: 1.8 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: yes · Model hint: hard
+2026-10-12 (Phase 1 kickoff, D-38): `scripts/gen_fixtures.py` plants no anomalies and the committed fixtures stay clean, so the test builds a temporary store from them, plants the anomalies, and expects the report to find exactly those (Done means 1 reworded). The report also lists the days the vendor flagged (the conditions 1.6 stores) and the bars held back as incomplete (1.5). Done means 2 and Your checks name MES, the product with the longest real history on this PC (`docs/data-inventory.md`).
+
+### 1.9 Product catalog, source guide, and data status
+
+Depends on: 1.8 · Plan mode: optional · Reviews: step-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
-FEFAT ships know-how, not data: a catalog of curated products with their specifications, calendars, roll rules, and recommended sources; a guide to well-known data sources; and a sync that keeps each product complete, checked, and current through the sources the trader connects with their own accounts.
+FEFAT ships know-how, not data: a catalog of curated products with their specifications, calendars, roll rules, quality rules, and recommended sources; a guide to well-known data sources, with the preset that reads each source's files; and a status view of every catalog product's coverage and quality.
 
 #### Prerequisites
 
-- Step 1.8 merged; the catalog product list and the first sources from the kickoff; your Databento key stored with `fefat secrets` if futures data will be downloaded.
+- Step 1.8 merged; the catalog product list (D-38: MES, MNQ, MCL, MGC) and `docs/masterplan/appendix/research-data-sources.md`.
 
 #### Prompt
 
 ```text
-Masterplan step 1.9 — Product catalog, data sources, and managed sync.
+Masterplan step 1.9 — Product catalog, source guide, and data status.
 
-Read docs/masterplan/02-engine-and-data.md §1.8, docs/masterplan/00-product-spec.md §2.5, and docs/adr/0018-own-data-sources-no-shipped-data.md. Implement the product catalog in `python/fefat/src/fefat/market/catalog/`: a versioned `catalog.yaml` listing the curated products (from the kickoff; by default ES, NQ, CL, GC and their micros, and BTCUSDT and ETHUSDT spot and perpetuals), each with its instrument specification, calendar, roll rule, schemas, history depth, update cadence, and the sources that can supply it, in order of recommendation. Implement the source guide in `fefat/market/sources/`: a registry of the known sources, connectors (1.4, 1.6) and file presets (1.10) alike, each describing what it offers, its cost, and the terms a trader accepts for personal use, written from docs/masterplan/appendix/research-market-data.md and the kickoff's research. `fefat data sources` prints the guide with each source's connection state; `fefat data connect <source>` records the connection and, where the source needs a key, stores it through the credential store and checks it.
+Read docs/masterplan/02-engine-and-data.md §1.8, docs/masterplan/00-product-spec.md §2.5, docs/adr/0018-own-data-sources-no-shipped-data.md, and docs/masterplan/appendix/research-data-sources.md. Implement the product catalog in `python/fefat/src/fefat/market/catalog/`: a versioned `catalog.yaml` listing the curated products (D-38: MES, MNQ, MCL, and MGC; the others join when their files arrive), each with its instrument specification, calendar, roll rule, schemas, history depth, quality rules, and the sources that can supply it, in order of recommendation. Implement the source guide in `fefat/market/sources/`: a registry of the known sources, written from the research appendix, each describing what it offers, its cost, the terms a trader accepts for personal use, whether a desktop app may use the trader's own account or files, and the import preset (1.10) that reads its files; `fefat data sources` prints it. Add `fefat data status`: each catalog product's coverage per schema and fidelity, last import, quality verdict, and the provider it came from; a product with bars but no ticks reads "complete at 1-minute fidelity", not missing. Datasets carry `origin: import`, their `provider` (the importer or preset), and the licence scope the source's terms give the trader; `ff.market.catalog()` shows them, and `ff.market.load` takes an optional `provider` where several datasets cover a product. Nothing in FEFAT connects to a source or serves data to another machine; the origin value `sync` and the `Provider` seam are reserved for the connectors of a later phase (BACKLOG.md).
 
-Add `fefat data status` (each catalog product's coverage, last update, quality, and the source it came from) and `fefat data sync [--product …] [--source …]`, which brings products up to date through the trader's connected sources (every Databento download shows the cost preview and needs `--yes`), rebuilds bars and continuous series for the new range, runs the quality report, and records the catalog version on the datasets. Datasets carry `origin: sync | import`, their `provider`, and the licence scope the source's terms give the trader; `ff.market.catalog()` shows them, and `ff.market.load` takes an optional `origin` or `provider` where several datasets cover a product. Adding a vendor later means adding one `Provider`; nothing in FEFAT ever serves data to another machine.
+Tests: the catalog loads and validates (every product names an instrument of 1.2 and a calendar of 1.3); the source guide lists every registered source and preset with its terms; status on the synthetic store reports the fixtures' coverage and the quality verdicts of 1.8.
 
-Tests: an offline end-to-end sync of a synthetic catalog product (fixtures stand in for vendor files); a re-sync is a no-op; an interrupted sync resumes; the cost-preview gate is respected; the source guide lists every registered provider and preset with its terms.
-
-Not in this step: importing your own files (1.10), the web pages (Phase 5), the signed catalog updates of Phase 14.
+Not in this step: connectors, sync, and keys (deferred, D-38), importing your own files (1.10), the web pages (Phase 5), the signed catalog updates of Phase 14.
 ```
 
 #### Done means
 
-1. `fefat data sync` on the synthetic product produces bars, continuous series, and a quality report, tagged `origin: sync` with its provider and the catalog version.
-2. Re-running is a no-op, and an interrupted sync completes when re-run (tests).
-3. `fefat data sources` lists every source with what it offers, its terms, and whether it is connected; `fefat data status` lists every catalog product with its coverage, last update, quality, and source.
+1. `catalog.yaml` validates: every product names an instrument of 1.2 and a calendar of 1.3, and `ff.market.catalog()` shows the catalog version and each dataset's origin, provider, and licence scope (test).
+2. `fefat data sources` lists every registered source and preset with what it offers, its cost, its terms, and the preset that reads its files (test).
+3. `fefat data status` lists every catalog product with its coverage per schema, last import, quality, and provider, and reads "complete at 1-minute fidelity" for the four products on this PC.
 
 #### Your checks
 
-- Run `fefat data sources`, connect the crypto archive (no key needed), run `fefat data status`, sync one crypto product, then run status again: the product shows as up to date with a quality "pass".
+- Run `fefat data sources` and read the Databento and NinjaTrader entries; run `fefat data status`: MES, MNQ, MCL, and MGC show their coverage from each product's launch to 2026-09 at 1-minute fidelity, each with a quality verdict.
 
 #### If it fails
 
-- A futures product shows a download cost you did not expect: stop; the sync must never download without your `--yes`. Shorten the history in the catalog or buy the month of Databento Standard first (`07-tools-and-costs.md` §3).
+- A product shows less coverage than the inventory promises: the gap is in the import (1.6), not in the catalog; read the import summary's skipped symbols and degraded days before touching the catalog.
 
 #### Amendment
 
 2026-10-12 (D-37): FEFAT no longer provides "platform data" or plans to deliver data to customers; traders connect their own sources, and FEFAT provides the catalog, the connectors and presets, the source guide, and sync. The step was renamed from "Platform data catalog and managed updates"; `PlatformDataSource` and its hosted swap are gone, the `Provider` interface of 1.4 is the seam for every source, `source: platform | user` became `origin: sync | import` with a `provider`, and the commands lost the word platform.
+
+2026-10-12 (Phase 1 kickoff, D-38): no connector and no sync in Phase 1, so the step keeps the catalog, the source guide, and `fefat data status`, and loses `fefat data connect`, `fefat data sync`, the keys, and the end-to-end sync tests, which stay in `BACKLOG.md` with the `Provider` seam; the title, the meta line (plan optional, step-reviewer, security no, default model), purpose, prerequisites, prompt, Done means, Your checks, and If it fails were rewritten. The catalog is MES, MNQ, MCL, and MGC, the products with data on this PC; the source guide is written from `appendix/research-data-sources.md`.
 
 ### 1.10 Import your own market data
 
@@ -392,14 +420,14 @@ Traders can bring data for any product — files from their own data vendor or t
 
 #### Prerequisites
 
-- Step 1.9 merged; one of your own files to try (for example a CSV export of 1-minute bars from your charting platform).
+- Step 1.9 merged; the `config/data-guard-text-and-push` pull request merged (the guard refuses plain-text data files outside `fixtures/synthetic/`); one of your own files to try (an IBKR, NinjaTrader, or TradingView export).
 
 #### Prompt
 
 ```text
 Masterplan step 1.10 — Import your own market data.
 
-Read docs/masterplan/02-engine-and-data.md §1.8. Implement `fefat data import file <path> --profile <name>`: a generic importer for bar and tick files (CSV, TSV, Parquet; zipped or gzipped) driven by import profiles of kind `market_data` — column mapping (timestamp; open, high, low, close, volume; or price, size, side), timestamp format and time zone, whether timestamps mark the bar open or the bar close, price scaling, the timeframe (ticks, or bars of any timeframe; bars coarser than 1 minute are accepted, and backtests on them fill at that coarser fidelity), the series type (per contract with contract codes, or a continuous series, unadjusted or back-adjusted; continuous series run as one synthetic contract with roll handling off and a warning on every run that uses them), and the instrument (an existing one, or a new specification with tick size, point value, currency, and calendar — one of the built-in calendars or the generic one from 1.3 — entered once and saved). Profiles are saved and reusable. Ship presets for common exports (Databento CSV, NinjaTrader, Sierra Chart, TradeStation, TradingView, plus those chosen at the kickoff), each an entry of the source guide (1.9), documented, and tested against a small synthetic sample in its exact layout. `--preview` prints the first rows as they would be stored and the problems detected, and writes nothing.
+Read docs/masterplan/02-engine-and-data.md §1.8 and the export layouts in docs/masterplan/appendix/research-data-sources.md. Implement `fefat data import file <path> --profile <name>`: a generic importer for bar and tick files (CSV, TSV, Parquet; zipped or gzipped) driven by import profiles of kind `market_data` — column mapping (timestamp; open, high, low, close, volume; or price, size, side), timestamp format and time zone, whether timestamps mark the bar open or the bar close, price scaling, the timeframe (ticks, or bars of any timeframe; bars coarser than 1 minute are accepted, and backtests on them fill at that coarser fidelity), the series type (per contract with contract codes, or a continuous series, unadjusted or back-adjusted; continuous series run as one synthetic contract with roll handling off and a warning on every run that uses them), and the instrument (an existing one, or a new specification with tick size, point value, currency, and calendar — one of the built-in calendars or the generic one from 1.3 — entered once and saved). Profiles are saved and reusable. Ship presets for common exports, first the ones you use (D-38: Databento CSV, IBKR bars pulled through the TWS API and saved as CSV, NinjaTrader, TradingView), then Sierra Chart and TradeStation, each written from the layouts in the research appendix, an entry of the source guide (1.9), documented, and tested against a small synthetic sample in its exact layout, generated by scripts/gen_fixtures.py under fixtures/synthetic/. `--preview` prints the first rows as they would be stored and the problems detected, and writes nothing.
 
 Imported data lands in the canonical store tagged `origin: import` with the preset as its provider, keeps the original file under `data/raw/user/` with a manifest entry, goes through bar building (for ticks), the calendar check, and the quality report, and is never uploaded anywhere. Where imported and synced data overlap, both are kept as separate datasets.
 
@@ -426,6 +454,8 @@ Not in this step: the import wizard in the app (5.12), trade logs (Phase 7), alt
 
 2026-10-12 (D-37): the vocabulary changed (`origin: import` with a `provider` instead of `source: user`; synced data instead of platform data), and each preset is an entry of the source guide of 1.9.
 
+2026-10-12 (Phase 1 kickoff, D-38): the presets are Databento CSV, IBKR (bars pulled through the TWS API and saved as CSV: date, open, high, low, close, volume, average, barCount, in the TWS login's time zone), NinjaTrader, and TradingView first, then Sierra Chart and TradeStation, written from the export layouts the kickoff researched (`appendix/research-data-sources.md`: delimiter, header, timestamp format and time zone, open-or-close stamping, contract-code form); their samples come from `scripts/gen_fixtures.py` under `fixtures/synthetic/`, the only place the guard admits them. With no connector in Phase 1, this importer and 1.6 are the only way data enters the store, so the prompt and prerequisites were reworded, and the guard's plain-text extensions arrive first in their own `config/` pull request (`BACKLOG.md`).
+
 ### 1.11 Notebook demo and phase exit prep
 
 Depends on: 1.10 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
@@ -443,7 +473,7 @@ A notebook you can rerun any time shows the whole data layer working on your rea
 ```text
 Masterplan step 1.11 — Notebook demo.
 
-Write `notebooks/01-market-data.ipynb`: the source guide with your connected sources and the catalog status, load continuous ES 5-minute bars for a year, show the roll dates and the adj_offset steps, load one real day of ticks and rebuild its 1-minute bars, compare with the vendor bars, load BTCUSDT perpetual 1-minute bars with funding, load one dataset you imported yourself, and show the quality summary. Every cell has a one-line explanation; expected outputs are described in markdown cells (no data is committed; the notebook runs against FEFAT_DATA_DIR). Add `docs/data-guide.md` explaining the store layout, units, calendars, rolls, the source guide, how to connect a source and how sync keeps a product current, and how to import your own data (profiles and presets), written for you.
+Write `notebooks/01-market-data.ipynb`: the source guide and the catalog status, load continuous MES 5-minute bars for a year, show the roll dates and the adj_offset steps, resample one real day of 1-minute bars to 5-minute and daily and compare with the vendor's (and rebuild 1-minute bars from ticks the day a trades file exists; the cell skips with a message otherwise), load one dataset you imported through a preset, and show the quality summary. Every cell has a one-line explanation; expected outputs are described in markdown cells (no data is committed; the notebook runs against FEFAT_DATA_DIR). Add `docs/data-guide.md` explaining the store layout, units, calendars, rolls, the source guide, how to import Databento files and your own exports (profiles and presets), and how to read the status and quality reports, written for you.
 
 Not in this step: anything else.
 ```
@@ -451,7 +481,7 @@ Not in this step: anything else.
 #### Done means
 
 1. The notebook runs top to bottom on your machine without edits.
-2. `docs/data-guide.md` answers: where is my data, which sources are suggested and how do I connect one, how does sync keep a product current, how do I import my own data, how do I check quality.
+2. `docs/data-guide.md` answers: where is my data, which sources are suggested and where do I get their files, how do I import Databento files and my own exports, how do I check coverage and quality.
 
 #### Your checks
 
@@ -465,8 +495,10 @@ Not in this step: anything else.
 
 2026-10-12 (D-37): the notebook and the data guide show the source guide and connected sources instead of platform data.
 
+2026-10-12 (Phase 1 kickoff, D-38): no connected sources and no crypto data in Phase 1, so the notebook and the guide show the source guide, the catalog status, and the data of `docs/data-inventory.md` (MES for the continuous series; the tick cells skip until a trades file is imported); the prompt and Done means 2 were reworded.
+
 ## Phase exit
 
 ```text
-/phase-exit 1 — Run the exit procedure from docs/masterplan/05-build-process.md §6 for Phase 1: full suite from a clean clone; leakage-auditor and engine-accuracy-reviewer over the phase diff; /security-review (the importer handles a secret); demo script = notebooks/01-market-data.ipynb; retro of repeated corrections into CLAUDE.md or rules; backlog groomed; tag phase-1.
+/phase-exit 1 — Run the exit procedure from docs/masterplan/05-build-process.md §6 for Phase 1: full suite from a clean clone; leakage-auditor and engine-accuracy-reviewer over the phase diff; /security-review (the importers parse files you supply); demo script = notebooks/01-market-data.ipynb; retro of repeated corrections into CLAUDE.md or rules; backlog groomed; tag phase-1.
 ```

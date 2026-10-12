@@ -23,7 +23,7 @@ Already present on 2026-10-05: git 2.55, GitHub CLI 2.97 (signed in), Node 24 + 
 | --- | --- | --- | --- |
 | GitHub (have) | P0 | free (private repos) | `gh auth` |
 | Anthropic Console API key | P8 (the in-app agent); earlier for notebook experiments | pay as you go | OS credential store via the settings page |
-| Databento (have data; account for more) | P1 | see §3 | OS credential store; used only by the importer with a cost preview |
+| Databento (have data; account for more) | P1 (files only; a key once a connector exists, D-38) | see §3 | nowhere in Phase 1: downloads happen on Databento's website and the files are imported; later, the OS credential store |
 | Tailscale | P4 | free personal plan | the Tailscale app |
 | Apple Developer membership; a cloud code-signing service for Windows (Azure Trusted Signing or similar — certificates on hardware tokens cannot be used from CI) | P14 only | $99/yr; roughly $10–30 a month | CI secrets |
 | Static host for the signed catalog index (GitHub Releases, or object storage) | P14 only | about $0 a month; a few dollars on object storage | CI secrets and the publishing workflow |
@@ -33,16 +33,16 @@ Claude Code itself runs on your existing Claude plan.
 
 ## 3. Market data for the personal phase (confirmed at the Phase 1 kickoff)
 
-The catalog products are filled on this PC from the sources you connect (step 1.9), exactly as a customer's copy will be, since FEFAT ships no data (D-37). Your own files for other products come in through imports (step 1.10) at no cost.
+Confirmed on 2026-10-12 (D-38): the app connects to no data source in Phase 1 and imports the files you feed it, so every purchase below happens on the vendor's website, and its files come through the importers (steps 1.6 and 1.10). FEFAT ships no data (D-37), so a customer's copy is filled the same way. Your own files for other products come in through imports at no cost.
 
-- **Futures catalog products — pilot:** Databento's $125 free credit covers about one year of ES trades.
-- **Futures catalog products — recommended:** one month of Databento Standard ($199) to download the full bar, definition, and settlement history for all eight products, plus 12 months of trades or TBBO. Older years use 1-second bars for fills.
-- **Optional:** backfill four more years of trades, roughly $1.0–2.2k at the 2024 per-GB rates (the importer prices every download with `metadata.get_cost` before pulling anything).
-- **Crypto catalog products:** Binance Vision, Bybit, Hyperliquid archives — $0 for personal use. If you are US-based, Kraken, Coinbase, and Hyperliquid instead of Binance and Bybit.
+- **On this PC today:** 1-minute bars for every MCL, MGC, MES, and MNQ contract, 2010 to 2026-09 (`docs/data-inventory.md`), bought from Databento before the plan; no purchase is planned in Phase 1.
+- **Futures catalog products, when ticks are wanted (Phase 2 at the latest):** Databento pay as you go, about $28 per GB for trades (one year of ES trades is about $95, which the $125 sign-up credit covers if it is unspent), or one month of Databento Standard ($199) for the full bar, definition, and settlement history of all eight products plus 12 months of trades or TBBO. Older years use 1-second bars for fills.
+- **Optional:** backfill four more years of trades, roughly $1.0–2.2k at the 2024 per-GB rates; `metadata.get_cost` on Databento's site prices any request before you pay.
+- **Crypto catalog products:** Binance Vision, Bybit, Hyperliquid archives — $0 for personal use, downloaded by hand until a connector exists (`BACKLOG.md`). If you are US-based, Kraken, Coinbase, and Hyperliquid instead of Binance and Bybit.
 - **Your own data:** files from any vendor or platform you already use — $0.
-- Disk: budget 100–200 GB under `FEFAT_DATA_DIR` for five years of eight futures products with ticks for the recent year, plus caches.
+- Disk: budget 100–200 GB under `FEFAT_DATA_DIR` (left at its default, `%LOCALAPPDATA%\FEFAT\data`) for five years of eight futures products with ticks for the recent year, plus caches.
 
-Details and sources: `appendix/research-market-data.md`.
+Details and sources: `appendix/research-market-data.md` and `appendix/research-data-sources.md`.
 
 ## 4. Running costs
 
@@ -54,7 +54,7 @@ Details and sources: `appendix/research-market-data.md`.
 | In-app agent | pay as you go; set a monthly cap in Settings | Opus 5.5: $4 / $20 per million tokens in / out; Sonnet 5.5: $2 / $10; cache reads are much cheaper |
 | Claude Code during the build | your plan | each step carries a model hint; heavy multi-agent workflows are off by default |
 | CI (GitHub Actions, step 0.6) | $0 within the free plan | the private repository gets 2,000 minutes and 500 MB of artifact storage a month; every push to a pull request runs a Windows and a Linux job, and Windows minutes are priced higher; without a payment method on file, runs stop when the minutes are used up |
-| Market data | $199 for the history, up to ~$2.5k for five years of ticks (§3); then a recurring cost to keep the futures catalog products current through your Databento account: pay-as-you-go downloads, priced by the sync before each one (at the 2024 rates, daily ticks for the eight products come to tens of dollars a month; bars only, a few dollars), or the $199 plan in months you need more | crypto updates are free |
+| Market data | $199 for the history, up to ~$2.5k for five years of ticks (§3); then a recurring cost to keep the futures catalog products current through your Databento account: pay-as-you-go downloads, priced on Databento's website before each one until a connector exists (D-38), then by the sync (at the 2024 rates, daily ticks for the eight products come to tens of dollars a month; bars only, a few dollars), or the $199 plan in months you need more | crypto updates are free |
 
 ## 5. Product-phase costs (P14 and beyond)
 

@@ -16,6 +16,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-10-10 — The `apple-design` skill became the lens of a new read-only `design-reviewer` subagent, which reviews every step that changes `web/` from step 4.3 on and the main pages at the exits of UI phases (D-34). No step changed; the Phase 4 kickoff adds the reviewer to the meta lines of the UI steps.
 - 2026-10-11 — The Phase 0 exit moved the SDK to Polars 2.0.0 before Phase 1 writes on it (D-36), registered the reviewers' read-only guard in the settings (an Amendment under step 0.4), gave the phase exit the upgrade step of `05-build-process.md` §7, and wrote the phase's retro into `CLAUDE.md`, the `step` skill, and 05 §2 (steps started in plain words, plan mode for every step). No unstarted step changed.
 - 2026-10-12 — FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and presets, and sync (D-37, ADR-0018, superseding the data delivery of D-24). Steps 1.9, 5.1, 5.3, 5.4, 5.6, 14.6, 14.7, 14.8, and 14.9 amended (1.9, 14.6, and 14.7 renamed) and 1.4, 1.6, 1.10, 1.11, 4.1, 5.13, and 14.5 reworded, before any Phase 1 step started; `00`, `01`, `02` §1.8, `05` §8, `07`, `08`, both READMEs, and the milestones updated. No step ID changed.
+- 2026-10-12 — Phase 1 kickoff (D-38, pull request #10): no connector and no sync in Phase 1, since the data layer takes only the files you feed it: step 1.4 skipped, 1.6 reduced to a file importer (no download, no key), 1.9 reduced to the catalog, the source guide, and `fefat data status`, and the credential store deferred to the first step that needs a key; the catalog is MES, MNQ, MCL, and MGC, the products on this PC (`docs/data-inventory.md`); the presets are Databento CSV, IBKR, NinjaTrader, and TradingView first; the other Phase 1 steps were reconciled with the Phase 0 code, the fixtures, and the exit reviews (an Amendment under each step); the source research is `appendix/research-data-sources.md`. No step ID changed.
 
 ## Steps
 
@@ -32,12 +33,12 @@ Phase kickoffs and exits are tracked in the second table.
 | 1.1 | Canonical schemas, units, partitions, manifests, snapshot hashes | P1 | todo | | | |
 | 1.2 | Instruments, contract identity, fee tables | P1 | todo | | | |
 | 1.3 | Session calendar and trade date | P1 | todo | | | |
-| 1.4 | Crypto importer | P1 | todo | | | |
+| 1.4 | Crypto importer | P1 | skipped | | 2026-10-12 | No connector in Phase 1 (D-38): the Binance archive layout becomes an import preset when crypto files arrive |
 | 1.5 | Bar builder | P1 | todo | | | |
-| 1.6 | Databento importer with cost preview | P1 | todo | | | |
+| 1.6 | Databento file importer | P1 | todo | | | Renamed at the Phase 1 kickoff (D-38): files only, no download, no key |
 | 1.7 | Rolls and forward-anchored continuous series | P1 | todo | | | |
 | 1.8 | Data-quality report and SDK data API | P1 | todo | | | |
-| 1.9 | Product catalog, data sources, and managed sync | P1 | todo | | | |
+| 1.9 | Product catalog, source guide, and data status | P1 | todo | | | Renamed at the Phase 1 kickoff (D-38): no connect, no sync |
 | 1.10 | Import your own market data | P1 | todo | | | |
 | 1.11 | Notebook demo and phase exit prep | P1 | todo | | | |
 | 2.1 | Fill specification and scenario format | P2 | todo | | | |
@@ -161,7 +162,7 @@ Phase kickoffs and exits are tracked in the second table.
 | Phase | Kickoff PR | Kickoff date | Exit PR | Exit date | Tag |
 | --- | --- | --- | --- | --- | --- |
 | P0 | (no kickoff) | | #8 | 2026-10-11 | phase-0 |
-| P1 | | | | | |
+| P1 | #10 | 2026-10-12 | | | |
 | P2 | | | | | |
 | P3 | | | | | |
 | P4 | | | | | |
@@ -180,7 +181,7 @@ Phase kickoffs and exits are tracked in the second table.
 
 | Milestone | Step | Reached |
 | --- | --- | --- |
-| Your connected sources and your own imports, from the command line | 1.10 | |
+| Your Databento files and your own exports imported from the command line | 1.10 | |
 | First backtest in a notebook (reference engine) | 2.2 | |
 | Every run ready for prop simulation (trade paths) | 2.13 | |
 | Trustworthy tick-level backtests from a notebook | 2.15 | |
