@@ -1,0 +1,39 @@
+# ADR-0019: One canonical market-data store: units, clocks, schemas, layout, and snapshots
+
+Decision log: [D-40](../masterplan/DECISIONS.md), 2026-10-12
+
+## Context
+
+Every Phase 1 step after 1.1 reads or writes market data: the importers (1.6, 1.10), the bar builder (1.5), the continuous series (1.7), the load API and the quality report (1.8), and from Phase 2 the engine's cache builder. They need one layout, decided once. Databento ships integer prices in 1e-9 units, integer nanosecond timestamps, and two clocks per record; platform exports arrive in other units. Databento re-normalised its CME history in August 2026, so a vendor file can change under the same name, and a run must pin exactly what it read (ADR-0009). The Phase 0 exit reviews asked for three things before the store was defined: a trade date on every bar, because a date taken from `ts_open` puts the first hour of a CME session on the wrong day; the unit of each dataset's sizes, because the BTC fixture's size counts lots of 0.001 BTC; and the vendor's reference time on settlement statistics beside the time they were received.
+
+## Decision
+
+- **Units.** Prices are int64 counts of 1e-9 of the quote currency and timestamps int64 nanoseconds since the Unix epoch in UTC, stored as integers; views convert them. A vendor's "undefined" value (Databento's largest integers) is stored as null. Vendor flags are not stored: the importer counts, per day, the records whose flags mark an unreliable `ts_recv`, beside the vendor's own conditions.
+- **Clocks and availability.** Records keep `ts_recv`, the engine's clock (ADR-0006), and `ts_event`, the venue's time. Each record type names the time from which it may be used: `ts_recv` for trades, TBBO, definitions, statistics, and funding, and `ts_close` for bars. Bars carry `ts_open`, `ts_close`, and the `trade_date` of their session. Statistics also carry `ts_ref`, the vendor's reference time, and keep every update, with `stat_flags` telling a final settlement from a preliminary one. A funding archive's single time column goes to `ts_event`, and `ts_recv` is when the rate was fixed, never earlier than `ts_event`.
+- **Schemas.** Six, as Polars schemas whose types are Arrow's, with columns in a fixed order and in the vendor's spelling: trades; TBBO, which is trades with the best bid and ask just before them; bars of any timeframe (`ohlcv-1s`, `ohlcv-1m`, `ohlcv-5m`, `ohlcv-1d`), where `trade_count` is null for a vendor's bars without counts; definitions; statistics; and funding. `ohlcv-1d` holds session bars by trade date, built from finer bars or imported with the open and close of the calendar's session for their date; a vendor's daily bars cut on UTC dates are not stored as it. A file whose columns differ in name, type, or order is refused on read and on write.
+- **Layout.** `<provider>/<schema>/root=<root>/contract=<contract>/`, then `date=<trade date>/part.parquet` for trades, TBBO, and bars finer than a minute; `month=<month of the trade dates>/part.parquet` for one-minute bars; and `part.parquet` alone for coarser bars, definitions, statistics, and funding. Files are Parquet with zstd. A bar must fall on its partition's trade date or month, or the write is refused. A `dataset.json` in each `root=` folder holds what all its partitions share, for now the unit of sizes and volumes (1 contract, 0.001 BTC). A path is read only if it parses back to the same partition, so a misplaced or misspelled file fails instead of being read.
+- **Writes** go to a temporary file beside the target, which is flushed to disk and then replaces the target in one step: a reader, or a power cut, sees the old file or the new one, never half of one.
+- **Raw files.** Vendor originals stay under `raw/`, beside the providers, and never change. `raw/MANIFEST.json` lists each with its path, size, SHA-256, provider, vendor version, download date, and the vendor's batch job id and published SHA-256. Recording a file whose bytes or details changed is refused, so a corrected download arrives as a new file.
+- **Requests and reads.** A request names a dataset (provider, schema, root) and a range of trade dates. It selects the partitions whose key touches the range, and every partition without a key. Reading it keeps the rows of the range wherever the store knows their trade date: trades and TBBO through their partitions, and bars through `trade_date`. Definitions, statistics, and funding come whole, and the reader cuts them at `ts_recv` against the end of the range (the session close from the calendar of step 1.3). Rows come in path order, so readers sort them by the clock.
+- **Snapshots.** A snapshot pins a request's files by content: the dataset's `dataset.json` and each selected partition, with its path (written with `/`), size, and SHA-256, and one hash over the request and those files: the SHA-256 of a line `request <dataset folder> <start> <end>` followed by the files' `sha256sum` listing (`<sha256>  <path>` per line, sorted by path), which any language can reproduce. A run reads through its snapshot, which hashes each file's bytes as it parses them and refuses a file that changed after the snapshot. A snapshot read back from a record is checked against its request. Two requests that read the same files over different dates read different rows, so their hashes differ.
+- **Folder.** `Store` takes its folder: `resolve_paths(os.environ).data_dir` in the app and notebooks, a temporary folder in tests, and the repository's `fixtures/` (provider `synthetic`) for the fixtures.
+
+## Consequences
+
+- The importers write only through `Store`, so every stored file has its schema, its place, and its dataset's metadata.
+- The step that first stores TBBO, definitions, statistics, or funding (1.6 or later) may add columns to that schema, since nothing is stored in it yet, and records them in `02-engine-and-data.md` §1.1. Changing a column of a schema with stored data needs a new decision.
+- The bar builder (1.5) adds `vwap`, builds `ohlcv-1d` from finer bars by trade date, and regenerates the fixtures with their manifest. Daily bars carry no settlement column: the official settlement stays in `statistics` and is joined to daily bars as of its `ts_recv` when they are loaded (1.8).
+- The Databento importer (1.6) skips the vendor's UTC-day `ohlcv-1d` files with a count, stores the vendor's undefined values as null, and counts the records whose flags mark an unreliable `ts_recv`, per day.
+- The load API (1.8) cuts definitions, statistics, and funding at `ts_recv` against the end of its range and sorts by the clock.
+- pyarrow stays a development tool (D-39): Polars reads and writes the files.
+- The one-step replace is atomic on one NTFS or POSIX volume, not on exFAT or network drives; a `FEFAT_DATA_DIR` there loses that guarantee.
+- Two imports recording raw files at once can lose a manifest entry, a snapshot reads every file it pins to hash it, and a request selects every partition without a key whatever its dates; all three wait in `BACKLOG.md`.
+- Phase 2's cache builder reads through snapshots, and the run key includes the snapshot hash.
+
+## How we would know it is wrong
+
+If the same request over the same files gave two different snapshot hashes, on one machine or on Windows and Linux; if a read of a request returned bars from after its end; if a component had to read market data without going through `Store`; or if importing real files needed a column or a partitioning that this layout cannot hold without rewriting stored data.
+
+## Status
+
+Accepted; recorded in step 1.1.

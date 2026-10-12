@@ -1,52 +1,80 @@
 {
   "files": [
     {
-      "bytes": 30577,
+      "bytes": 30885,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=BTC/contract=BTCUSDT-PERP/month=2026-03/part.parquet",
       "rows": 1440,
       "seed": 20260308,
-      "sha256": "010c132acfd2c3ffcc131d9b1888274d0f3ed4bbed54cfc81c81a94943d3a875"
+      "sha256": "5918a71d06aa831b8cdd0e83b2790d4c25693eaa70d7bb16bbaeac5b599e9a79"
     },
     {
-      "bytes": 82367,
+      "bytes": 64,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1m/root=BTC/dataset.json",
+      "seed": 20260308,
+      "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
+    },
+    {
+      "bytes": 82689,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet",
       "rows": 4140,
       "seed": 20260308,
-      "sha256": "f46c504404673df4c5640ef4fd6c172fdb39d08e24f2f2cdccaea45d6c268559"
+      "sha256": "e64f4eb5211f3e1eef3069678490bf5d2f9a9e0ede851186dcf8490f6ad4d5ee"
     },
     {
-      "bytes": 505615,
+      "bytes": 65,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1m/root=ES/dataset.json",
+      "seed": 20260308,
+      "sha256": "6bcbb498e5592e0890606eb6399a7d5506aba204c5c1b50cf6d55fc9c32cb0a5"
+    },
+    {
+      "bytes": 505999,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=BTC/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
       "rows": 34583,
       "seed": 20260308,
-      "sha256": "833173fbc54e6f1889c71588b108a8f6556df990f55669f2639703fe67a78ce4"
+      "sha256": "f8170f499950910650e8bfeda3ad675e904fad26adb19ad7d2161f9fdee7b1ff"
     },
     {
-      "bytes": 426587,
+      "bytes": 64,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=BTC/dataset.json",
+      "seed": 20260308,
+      "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
+    },
+    {
+      "bytes": 426971,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH6/date=2026-03-05/part.parquet",
       "rows": 30588,
       "seed": 20260308,
-      "sha256": "6c8605493e31551a9137a50450cc640d42e92dbfe010f3cd51cad4ca103f4040"
+      "sha256": "5fb38f199c7f352b2da179da263d95b2f7f3db6996473590d07f7322d3776423"
     },
     {
-      "bytes": 426289,
+      "bytes": 426673,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH6/date=2026-03-06/part.parquet",
       "rows": 30632,
       "seed": 20260308,
-      "sha256": "111553a82be46a3e3ff030c8a9fb3c4b728693ae15310642028cf2844fb00e72"
+      "sha256": "34ec2259bfaa5881f6601dca3fab2814c26d14977644ddc665fe25ef1d382dc3"
     },
     {
-      "bytes": 443686,
+      "bytes": 444070,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH6/date=2026-03-09/part.parquet",
       "rows": 30664,
       "seed": 20260308,
-      "sha256": "c078e3fa4e4c8abdfa27d0a47f2d091e5c10db37b237e159db12838bf8596ad6"
+      "sha256": "36a1fa9cb33c7e90869d339c3c10a0d81be6bf35df4631fd2c9a108607995859"
+    },
+    {
+      "bytes": 65,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/dataset.json",
+      "seed": 20260308,
+      "sha256": "6bcbb498e5592e0890606eb6399a7d5506aba204c5c1b50cf6d55fc9c32cb0a5"
     },
     {
       "bytes": 1141000,
@@ -55,6 +83,13 @@
       "rows": 60798,
       "seed": 20260308,
       "sha256": "f63e0a328941ae01d2cfa7d96bf5d15a512961707f1452f23a54c244578768e5"
+    },
+    {
+      "bytes": 64,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=BTC/dataset.json",
+      "seed": 20260308,
+      "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
       "bytes": 1271033,
@@ -79,6 +114,13 @@
       "rows": 70847,
       "seed": 20260308,
       "sha256": "f3744f4147821dbaffbcd71fc13ae403147105ceea4f27e43fcdf4d7162d96be"
+    },
+    {
+      "bytes": 65,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/dataset.json",
+      "seed": 20260308,
+      "sha256": "6bcbb498e5592e0890606eb6399a7d5506aba204c5c1b50cf6d55fc9c32cb0a5"
     }
   ]
 }
