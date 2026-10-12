@@ -57,7 +57,7 @@ Each is a decision in `docs/masterplan/DECISIONS.md`, with its record where it h
 
 - Runs are deterministic, pinned, and hashed; versions and runs are immutable (D-11, [ADR-0009](docs/adr/0009-deterministic-pinned-hashed-runs.md)).
 - No look-ahead: features are prefix-invariant and pass the leak detector (D-12, [ADR-0010](docs/adr/0010-leak-detector-prefix-invariance.md)).
-- Licensed market data never enters the repository, a pull request, or a prompt (D-21; D-24, [ADR-0013](docs/adr/0013-platform-data-and-own-imports.md)).
+- Licensed market data never enters the repository, a pull request, or a prompt, and FEFAT ships none: traders connect their own sources (D-21; D-37, [ADR-0018](docs/adr/0018-own-data-sources-no-shipped-data.md)).
 - Scenario tables specify the fills, and the Python reference engine is the oracle the Rust engine matches exactly (D-07, [ADR-0005](docs/adr/0005-bar-close-decisions-finest-data-fills.md); D-10, [ADR-0008](docs/adr/0008-fill-spec-scenarios-reference-engine.md)).
 - Goldens change only with the builder's approval, a fill-model version bump when fills change, and a changelog entry (the `engine-golden` skill).
 - Tests are never weakened, skipped, or deleted to make them pass.

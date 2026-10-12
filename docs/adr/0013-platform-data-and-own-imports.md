@@ -25,4 +25,4 @@ If platform data did not lower the barrier to start, because traders brought the
 
 ## Status
 
-Accepted; supersedes [ADR-0001](0001-local-first-no-hosted-market-data.md). Recorded in step 0.7.
+Accepted 2026-10-08; supersedes [ADR-0001](0001-local-first-no-hosted-market-data.md). Partly superseded by [ADR-0018](0018-own-data-sources-no-shipped-data.md) (D-37, 2026-10-12): FEFAT no longer provides platform data or delivers data to customers; the catalog, the imports, and the rule that imported data never leaves the trader's machine stand. Recorded in step 0.7.

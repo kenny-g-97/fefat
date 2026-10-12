@@ -86,7 +86,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 
 ## 8. Git conventions
 
-- Branches `step/N.M-<slug>`, `kickoff/PN`, `exit/PN`, and `config/<slug>` for a setup change outside any step (a skill, reviewer, plugin, or setting). Squash-merge into `main`. Tags `phase-N` at phase exits.
+- Branches `step/N.M-<slug>`, `kickoff/PN`, `exit/PN`, and `config/<slug>` for a setup change or plan revision outside any step (a skill, reviewer, plugin, setting, or decision). Squash-merge into `main`. Tags `phase-N` at phase exits.
 - Commit messages: imperative subject under 72 characters, body explains why. Claude Code's attribution line as configured.
 - PR template sections: Summary · Done means (evidence per item) · Deviations · Follow-ups · Progress row · Screenshots/recordings (UI).
 - `main` is not protected on GitHub's side: the free plan offers no branch protection for private repositories, and you chose to stay on it (D-30). The repository allows squash merging only and deletes branches after merge (step 0.3); the routine below protects your merges, and Claude Code's hooks block its own pushes to `main` (step 0.4).

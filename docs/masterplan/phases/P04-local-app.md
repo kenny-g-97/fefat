@@ -33,7 +33,7 @@ App state has a home: a SQLite database with migrations, a workspace folder layo
 ```text
 Masterplan step 4.1 — App-state database, workspace folders, settings.
 
-Read docs/masterplan/01-architecture.md §4 and §5. In `python/fefat_app/src/fefat_app/database/` set up SQLAlchemy 2 models and Alembic (batch mode for SQLite) for the tables in §5 that this phase needs: settings, workspaces, datasets and dataset_snapshots, instruments, platform_products, import_profiles, features and feature_versions, strategies and strategy_versions, strategy_version_features, runs, jobs, events, push_subscriptions. Versioned tables are insert-only (enforced by a trigger or by the repository layer with a test). UUIDv7 ids. WAL mode. A `fefat db upgrade` command. Migrate the file-based feature versions from Phase 3 and the import profiles saved in Phase 1 into the database on first run (`fefat db import-workspace`), keeping the files as a backup.
+Read docs/masterplan/01-architecture.md §4 and §5. In `python/fefat_app/src/fefat_app/database/` set up SQLAlchemy 2 models and Alembic (batch mode for SQLite) for the tables in §5 that this phase needs: settings, workspaces, datasets and dataset_snapshots, instruments, catalog_products, data_sources, import_profiles, features and feature_versions, strategies and strategy_versions, strategy_version_features, runs, jobs, events, push_subscriptions. Versioned tables are insert-only (enforced by a trigger or by the repository layer with a test). UUIDv7 ids. WAL mode. A `fefat db upgrade` command. Migrate the file-based feature versions from Phase 3 and the import profiles saved in Phase 1 into the database on first run (`fefat db import-workspace`), keeping the files as a backup.
 
 Extend `fefat.config` from 0.5 (one module for `FEFAT_HOME` and `FEFAT_DATA_DIR` resolution with platformdirs defaults) with `config.toml` and validated settings (port, bind address, Tailscale exposure flag, process-pool size, model defaults), and reuse `fefat_app.credentials` from 1.6 (keyring over the Windows credential store, with the `fefat secrets` CLI) for every API key.
 
@@ -55,6 +55,10 @@ Not in this step: the server, the UI.
 #### If it fails
 
 - keyring backend missing on Windows is unusual; if it happens, the fallback must fail loudly, never write a plaintext file.
+
+#### Amendment
+
+2026-10-12 (D-37): the tables are `catalog_products` and `data_sources` instead of `platform_products`.
 
 ### 4.2 Local server, login, typed client generation
 

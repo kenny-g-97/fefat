@@ -22,7 +22,7 @@ This document is the map of the system. `02-engine-and-data.md`, `03-prop-simula
  │        │                                                                                     │
  │        ▼                                                                                     │
  │  fefat  ── Python SDK (also used directly from notebooks)                                    │
- │     ├── market      platform catalog + sync, your imports, calendars, bars, rolls → Parquet  │
+ │     ├── market      catalog + sources, sync, your imports, calendars, bars, rolls → Parquet  │
  │     ├── features    feature runtime, cache, leak detector → Polars                           │
  │     ├── indicators  indicator library (ATR, RSI, VWAP, …), golden-tested against TA-Lib      │
  │     ├── strategy    SignalStrategy, Execution template, event strategies                     │
@@ -118,7 +118,7 @@ FEFAT_HOME/
   config.toml                 port, bind address, Tailscale exposure, data dir, model defaults
   fefat.sqlite                app state
   logs/
-  data/                       canonical market data (Parquet; platform and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports)
+  data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports)
   cache/                      engine Arrow IPC cache, feature cache (both rebuildable)
   workspaces/default/
     features/<name>/v<n>.json file-based feature versions from Phase 3 (imported into the database in 4.1, kept as backup)
@@ -139,7 +139,7 @@ All ids are UUIDv7 strings. Every row carries `created_at`; versioned rows are n
 | Area | Tables (key columns) |
 | --- | --- |
 | Settings | `settings(key, value_json)`, `workspaces(id, name, path)` |
-| Data | `datasets(id, kind, provider, schema, root, instrument, range_start, range_end, source, license_scope, catalog_version, pack_version)` (`source` is `platform` or `user`), `dataset_snapshots(id, dataset_id, manifest_json, content_hash)`, `instruments(id, root, symbol, kind, tick_size, point_value, currency, calendar, valid_from, valid_to, source)`, `fee_tables(id, name, effective_from, json)`, `platform_products(id, catalog_version, spec_json, status, last_sync_at)`, `import_profiles(id, kind, name, mapping_json)` (`kind` is `market_data` or `trade_log`) |
+| Data | `datasets(id, kind, provider, schema, root, instrument, range_start, range_end, origin, license_scope, catalog_version)` (`origin` is `sync` or `import`; `provider` names the connector or preset), `dataset_snapshots(id, dataset_id, manifest_json, content_hash)`, `instruments(id, root, symbol, kind, tick_size, point_value, currency, calendar, valid_from, valid_to, source)`, `fee_tables(id, name, effective_from, json)`, `catalog_products(id, catalog_version, spec_json, recommended_sources_json, status, last_sync_at)`, `data_sources(id, provider, status, connected_at)` (keys live in the credential store), `import_profiles(id, kind, name, mapping_json)` (`kind` is `market_data` or `trade_log`) |
 | Code | `features(id, workspace_id, name, latest_version_id)`, `feature_versions(id, feature_id, version_no, parent_id, code, code_sha256, params_schema_json, inputs_json, warmup, validation_json, author_kind, proposal_id)`, `strategies(id, workspace_id, name, kind, latest_version_id)`, `strategy_versions(id, strategy_id, version_no, parent_id, code, code_sha256, builder_spec_json, params_schema_json, author_kind, proposal_id, changelog)`, `strategy_version_features(strategy_version_id, feature_version_id)` |
 | Runs | `runs(id, strategy_version_id, params_json, config_json, snapshot_ids_json, engine_version, fill_model_version, seed, run_hash, origin, status, job_id, study_id, trial_no, metrics_json, artifact_dir, fidelity_json, warnings_json)` (`origin` is `manual`, `study`, `walk_forward`, `reproduce`, or `agent`), `studies(id, kind, spec_json, state, totals_json, summary_json, artifact_dir)` |
 | Prop | `prop_rule_sets(id, firm, plan, name)`, `prop_rule_set_versions(id, rule_set_id, version_no, as_of, sources_json, rules_json, status)`, `prop_strategies(id, name)`, `prop_strategy_versions(id, prop_strategy_id, version_no, spec_json)`, `backtest_files(id, kind, run_id, import_profile_id, path_fidelity_json, instruments_json, range_start, range_end, trade_count, artifact_dir)` (`kind` is `run` or `imported`; `path_fidelity_json` is the mix of fidelities across trades), `prop_simulations(id, backtest_file_id, rule_set_version_ids_json, prop_strategy_version_id, config_json, sim_hash, metrics_json, artifact_dir)` |
@@ -152,7 +152,7 @@ The schema is created by Alembic migrations from Phase 4. Earlier phases keep SD
 
 ## 6. Jobs and execution
 
-- **Jobs** are rows in `jobs`. Kinds in the first release: `backtest`, `feature_preview`, `feature_validate`, `analytics`, `study`, `prop_sim`, `platform_sync`, `import`, `trade_import`, `catalog_sync`, `reproduce`, `agent_turn`, `ingest`, plus `demo` and `python_snippet` for tests and tooling; later phases add kinds the same way. State machine: `queued → running → succeeded | failed | cancelled | timed_out`; transitions are compare-and-set updates.
+- **Jobs** are rows in `jobs`. Kinds in the first release: `backtest`, `feature_preview`, `feature_validate`, `analytics`, `study`, `prop_sim`, `source_sync`, `import`, `trade_import`, `catalog_sync`, `reproduce`, `agent_turn`, `ingest`, plus `demo` and `python_snippet` for tests and tooling; later phases add kinds the same way. State machine: `queued → running → succeeded | failed | cancelled | timed_out`; transitions are compare-and-set updates.
 - **Runner.** The server owns a process pool sized from `config.toml` (default: physical cores minus two). Each job runs `run_job(job_id)` in a worker process; progress is written to `events` (stream `job:<id>`) and `jobs.progress`.
 - **Streams.** `GET /v1/streams/{stream_id}` is Server-Sent Events backed by the `events` table: the event id is the row id, the client reconnects with `Last-Event-ID`, heartbeats every 15 s. Agent turns use the same mechanism (stream `turn:<id>`).
 - **Executor.** User code (features, strategies, ingestion transforms) runs through `fefat_app.executor`: a subprocess with a scrubbed environment, a wall-clock timeout, a memory limit (Job Objects on Windows, `RLIMIT_AS` elsewhere), and a result file validated against a Pydantic model before anything is registered. This is crash containment and resource control, not a security boundary — a local app runs the user's own code.
@@ -167,7 +167,7 @@ Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Id
 | Area | Endpoints |
 | --- | --- |
 | Session | `POST /auth/login`, `POST /auth/logout`, `GET /me`, `GET/PUT /settings` |
-| Data | `GET /instruments`, `GET /datasets`, `GET /datasets/{id}/quality`, `GET /market/bars?instrument&timeframe&from&to&source`, `GET /platform-data`, `POST /platform-data/sync`, `GET/POST /import-profiles`, `POST /imports/preview`, `POST /imports` |
+| Data | `GET /instruments`, `GET /datasets`, `GET /datasets/{id}/quality`, `GET /market/bars?instrument&timeframe&from&to&origin&provider`, `GET /catalog`, `POST /catalog/sync`, `GET /sources`, `POST /sources` (connect one; the key goes to the credential store), `GET/POST /import-profiles`, `POST /imports/preview`, `POST /imports` |
 | Features | `GET/POST /features`, `GET /features/{id}/versions`, `POST /features/{id}/versions`, `POST /features/preview`, `POST /features/validate`, `GET /features/{id}/analytics` |
 | Strategies | `GET/POST /strategies`, `GET /strategies/{id}/versions`, `POST /strategies/{id}/versions`, `POST /strategies/build` (spec → code), `GET /strategies/{id}/diff?from&to` |
 | Runs | `POST /runs` (202 or the cached run), `GET /runs`, `GET /runs/{id}`, `/runs/{id}/trades`, `/equity?max_points`, `/chart?from&to`, `/stats`, `/distribution`, `POST /runs/{id}/query` (DuckDB SQL, row cap), `POST /runs/compare`, `POST /runs/{id}/explain/{trade_id}` |
@@ -188,8 +188,8 @@ The web app's TypeScript types are generated from `web/openapi.json` by `openapi
 - Rate limit on login; passwords hashed with Argon2.
 - Content Security Policy: `default-src 'self'; img-src 'self' data: blob:` (no remote images in chat).
 - File access is confined to `FEFAT_HOME` and `FEFAT_DATA_DIR`; the API never takes raw filesystem paths from clients except for imports of large files, which are validated against the import roots allowed in `config.toml`.
-- Platform data delivered by the hosted service (Phase 14) is verified against a signed manifest and partition hashes before it is installed.
-- Secrets (Anthropic API key, Databento API key, VAPID private key) live in the OS credential store via `keyring`, never in `config.toml`.
+- Catalog updates from FEFAT's static host (Phase 14) are verified against a signed manifest and file hashes before they are installed; that host never serves market data.
+- Secrets (Anthropic API key, data vendor keys such as Databento's, VAPID private key) live in the OS credential store via `keyring`, never in `config.toml`.
 
 ## 9. Environments
 
@@ -210,11 +210,11 @@ CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for
 | Dispatcher | `submit(job_id)`, `cancel(job_id)` | local process pool | remote workers, cloud sync |
 | Blob store | `BlobStore.put/get/list` over workspace paths | local files | optional cloud sync |
 | Agent runtime | `AgentRuntime.run_turn(session, message, tools, emit)` | Messages API loop | Agent SDK or Managed Agents |
-| Platform data source | `PlatformDataSource.catalog()`, `fetch(product, range)` | the platform pipeline on this machine, using your Databento subscription and the public crypto archives | signed data packs from FEFAT's hosted service (Phase 14) |
+| Data source | `Provider.describe()`, `fetch(symbol, schema, range)` in `fefat.market.sources` | Databento with your own key, the public crypto archives, file presets | more vendors, one provider each; never a FEFAT-hosted data service (D-37) |
 | Credential store | `secrets.get/set(name)` | Windows credential store | macOS keychain, Linux secret service |
-| Licensing | `licence.check(product_or_feature, scope)` | always `ok` | signed entitlement tokens for platform data (14.6–14.7); app licence keys (backlog) |
+| Licensing | `licence.check(feature, scope)` | always `ok` | app licence keys (backlog); never a gate on data, which the trader's own accounts cover (D-37) |
 
-Each seam is a `Protocol` in `python/fefat_app/src/fefat_app/ports.py` (the Rust seams, `MarketDataReader` and `AccountModel`, are traits in `fefat-core`); the adapters are chosen in `container.py` from `config.toml`, so swapping one is a configuration change plus one new module (`08-code-design.md` §1).
+Each seam except the data source (`Provider`, SDK code in `fefat.market.sources`) is a `Protocol` in `python/fefat_app/src/fefat_app/ports.py` (the Rust seams, `MarketDataReader` and `AccountModel`, are traits in `fefat-core`); the adapters are chosen in `container.py` from `config.toml`, so swapping one is a configuration change plus one new module (`08-code-design.md` §1).
 
 ## 11. Conventions
 
