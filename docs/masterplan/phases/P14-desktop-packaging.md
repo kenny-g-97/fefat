@@ -1,17 +1,17 @@
 # Phase 14 — Desktop packaging and distribution (product phase)
 
-**Goal.** FEFAT becomes an installable desktop app for other traders: the backend as a sidecar inside a Tauri shell, signed installers for Windows and macOS, auto-update, platform data delivered to customers as signed data packs from a hosted service (only for products FEFAT is licensed to distribute), a first-run experience, and clean-machine tests. This phase is optional for personal use and required for a commercial release.
+**Goal.** FEFAT becomes an installable desktop app for other traders: the backend as a sidecar inside a Tauri shell, signed installers for Windows and macOS, auto-update, the data sources a trader connects on first run (FEFAT ships no market data, D-37), signed updates of the catalog of products and sources, a first-run experience, and clean-machine tests. This phase is optional for personal use and required for a commercial release.
 
-**You get.** `FEFAT-Setup.exe` and `FEFAT.dmg` that a trader can install without Python or Rust on their machine, and that install and update the platform data for the products FEFAT provides.
+**You get.** `FEFAT-Setup.exe` and `FEFAT.dmg` that a trader can install without Python or Rust on their machine, and that keep the catalog of products and sources up to date; the trader's data comes from the sources they connect.
 
 **Depends on.** Phase 13.
 
-**Open decisions for the kickoff.** Confirm the shell (Tauri 2, decided in D-03; revisit only if the spike in 14.1 finds a blocker); how to bundle Python (a self-contained interpreter from python-build-standalone with the `fefat` wheels, versus PyInstaller); Windows signing through a cloud signing service (certificates have been issued on hardware tokens since 2023 and cannot be exported into CI secrets — Azure Trusted Signing or a similar service) and an Apple Developer membership; update channel (GitHub Releases); whether macOS is in the first release; which products the platform provides to customers, from which vendors, under which distribution licences and at what cost (`07-tools-and-costs.md` §5); and where the data packs are hosted.
+**Open decisions for the kickoff.** Confirm the shell (Tauri 2, decided in D-03; revisit only if the spike in 14.1 finds a blocker); how to bundle Python (a self-contained interpreter from python-build-standalone with the `fefat` wheels, versus PyInstaller); Windows signing through a cloud signing service (certificates have been issued on hardware tokens since 2023 and cannot be exported into CI secrets — Azure Trusted Signing or a similar service) and an Apple Developer membership; update channel (GitHub Releases); whether macOS is in the first release; which vendors in the source guide have confirmed in writing that the app may use a customer's own account on the customer's machine (`07-tools-and-costs.md` §5); and where the signed catalog index is hosted (GitHub Releases by default).
 
 ## Kickoff
 
 ```text
-/phase-kickoff 14 — Read docs/masterplan/phases/P14-desktop-packaging.md, docs/masterplan/01-architecture.md §1–§4 and §10, docs/masterplan/02-engine-and-data.md §1.8, and docs/masterplan/appendix/research-market-data.md §3. Research the current Tauri 2 sidecar and updater documentation, python-build-standalone, signing requirements for Windows and macOS, and the current distribution terms of the data vendors for the platform products; ask me the open decisions; write the packaging decision record draft in the kickoff PR and reconcile the steps.
+/phase-kickoff 14 — Read docs/masterplan/phases/P14-desktop-packaging.md, docs/masterplan/01-architecture.md §1–§4 and §10, docs/masterplan/02-engine-and-data.md §1.8, and docs/masterplan/appendix/research-market-data.md §3. Research the current Tauri 2 sidecar and updater documentation, python-build-standalone, signing requirements for Windows and macOS, and the current terms of the vendors in the source guide for use of a customer's own account by an app on the customer's machine; ask me the open decisions; write the packaging decision record draft in the kickoff PR and reconcile the steps.
 ```
 
 ## Steps
@@ -179,7 +179,7 @@ Masterplan step 14.5 — Auto-update and release workflow.
 
 Read the current Tauri 2 updater documentation and the docs/release-process.md started in 14.4. Enable Tauri's updater with a signed update manifest served from GitHub Releases, a release channel setting (stable, beta), an in-app update prompt with release notes, a download-then-apply flow that never leaves a half-installed app, database migrations run on first start after an update (with a pre-migration backup through `fefat backup` and a clear message if a migration fails), and a rollback note in the runbook. Make the release workflow produce and sign the manifest, verify signatures in a test, and bump versions in one place (`just release <version>`). Write docs/release-process.md: tagging, building, signing, publishing, verifying, rolling back.
 
-Not in this step: platform data delivery (14.6–14.7), the first-run experience, store distribution.
+Not in this step: data sources in the packaged app and catalog updates (14.6–14.7), the first-run experience, store distribution.
 ```
 
 #### Done means
@@ -195,83 +195,91 @@ Not in this step: platform data delivery (14.6–14.7), the first-run experience
 
 - A failed migration must leave the pre-migration backup in place and the app able to open the previous version's database read-only.
 
-### 14.6 Platform data packs and licence gate
+### 14.6 Data sources in the packaged app and the no-shipped-data check
 
 Depends on: 14.5 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: yes · Model hint: hard
 
 #### Purpose
 
-Platform data becomes something FEFAT can deliver to customers: versioned, signed packs that the app verifies before installing, built only for products FEFAT is licensed to distribute.
+The packaged app gives a new trader their data the same way the personal build does: through the sources they connect with their own accounts and the files they import, with the terms of each source in view. FEFAT ships no market data, and the build proves it.
 
 #### Prerequisites
 
-- Step 14.5 merged; the licensing decisions from the kickoff.
+- Step 14.5 merged; the vendor confirmations from the kickoff.
 
 #### Prompt
 
 ```text
-Masterplan step 14.6 — Platform data packs and licence gate.
+Masterplan step 14.6 — Data sources in the packaged app and the no-shipped-data check.
 
-Read docs/masterplan/02-engine-and-data.md §1.8 and the licensing section of docs/masterplan/appendix/research-market-data.md §3. Define the platform data pack: a versioned bundle of canonical partitions for one product and range, with a manifest (product, schemas, range, catalog version, partition hashes, licence scope, the attribution text the vendor requires) signed with a FEFAT signing key held outside the repository. Implement `fefat data pack build` (from the platform datasets the 1.9 pipeline produces), an installer that verifies the signature and every hash before writing into the store, records the pack version on the datasets, and updates incrementally, and a `PackDataSource` for the `PlatformDataSource` interface that installs from a local folder of packs. Implement the licensing seam from docs/masterplan/01-architecture.md §10 for platform data: `licence.check(product, scope)` verifies a signed entitlement token (offline, against a FEFAT public key) that lists the products a customer may install; `fefat licence issue` creates tokens (you run it for now; billing is backlog). Every install calls the check; the catalog page shows the vendor's attribution text.
+Read docs/masterplan/02-engine-and-data.md §1.8, docs/adr/0018-own-data-sources-no-shipped-data.md, and the licensing section of docs/masterplan/appendix/research-market-data.md §3. Bring the source guide, the connectors, the presets, and the sync of step 1.9 into the packaged app as they are: the catalog of products and sources ships inside the app, every dataset is fetched on the customer's machine with the customer's own account or imported from the customer's files, and nothing FEFAT runs ever receives, stores, or serves market data. Write docs/data-sources.md for customers: for each source in the guide, what it offers, its cost, the terms a trader accepts for personal use, the vendor's attribution text where its terms require one (shown on the catalog page), and the status of the vendor's written confirmation that the app may use a customer's own account on the customer's machine; the app marks a source without that confirmation as "check the terms yourself" and never hides it.
 
-Write docs/platform-data-licensing.md: for each catalog product, the vendor, the licence that allows delivering it to customers, its cost, the subscriber agreement customers must accept (CME requires one with every subscriber), and its status. The pack builder refuses products whose distribution licence is not confirmed in that file, and datasets whose licence scope does not allow distribution (data you downloaded under your own plan is for internal use only). For products without a distribution licence, add an `OwnAccountDataSource`: the same catalog and managed sync running on the customer's machine with the customer's own vendor key (the personal-phase pipeline), so they keep the platform experience at no licensing cost to FEFAT; confirm with each vendor in writing that this use of their key is allowed.
+Add the no-shipped-data check: the release build fails when the installer, the bundled resources, or the signed catalog index (14.7) contain any dataset or raw vendor file (the commit guard's data-format check, run over the bundle), and a fresh install starts with an empty data folder. Reduce the licensing seam of docs/masterplan/01-architecture.md §10 to app licence keys (backlog): `licence.check` keeps returning `ok` for every data source.
 
-Tests: a tampered pack is refused; an incremental update installs only new partitions; the builder refuses an unlicensed product and an internal-use dataset; an install without a valid entitlement token is refused; runs pin pack versions through their data snapshots.
+Tests: the bundle check refuses a build that contains a Parquet or DBN file; a fresh install shows an empty catalog with every source unconnected; connecting a source in the packaged app stores the key in the OS credential store and syncs a synthetic product end to end.
 
-Not in this step: hosting (14.7), billing.
+Not in this step: the signed catalog updates (14.7), the first-run wizard (14.8), billing.
 ```
 
 #### Done means
 
-1. Pack build, verified install, and incremental update work on synthetic products (tests).
-2. A tampered pack, an unlicensed product, an internal-use dataset, and a missing entitlement are all refused with clear messages.
-3. docs/platform-data-licensing.md lists every catalog product with its licence, cost, subscriber agreement, and status, and which delivery each customer gets (packs, or managed sync with their own vendor account).
+1. docs/data-sources.md lists every source in the guide with its offer, cost, terms, attribution text, and confirmation status.
+2. The bundle check refuses a build with a data file in it, and a clean install has an empty data folder (tests, and the release workflow runs the check).
+3. Connecting a source and syncing a synthetic product work in the packaged app (recording).
 
 #### Your checks
 
-- Read docs/platform-data-licensing.md: every product you plan to provide to customers shows a vendor, a licence, and a cost you have agreed to.
+- Install the build on a clean VM: the catalog shows your products with no data and every source unconnected; connect the crypto archive and sync one product.
 
 #### If it fails
 
-- If a vendor will not license distribution of a product, offer it to customers as managed sync with their own vendor account, or as import-only; the app handles all of these the same way once the data is in the store.
+- A vendor will not confirm that the app may use a customer's own account: keep the source in the guide as "check the terms yourself", or as import-only; the app handles both the same way once the data is in the store.
 
-### 14.7 Hosted platform data service
+#### Amendment
+
+2026-10-12 (D-37): the step replaces "Platform data packs and licence gate". FEFAT no longer delivers data to customers, so packs, distribution licences, entitlement tokens, and `OwnAccountDataSource` (now simply the sync of 1.9) are gone, and the step's job is the source guide for customers and the proof that no data ships with the app.
+
+### 14.7 Signed catalog updates from a static host
 
 Depends on: 14.6 · Plan mode: required · Reviews: step-reviewer, code-review · Security: yes · Model hint: hard
 
 #### Purpose
 
-Customers' apps download platform data from FEFAT's service and keep it current, while all their computing stays on their own machines.
+The catalog of products and sources changes between releases (a new source, a changed specification or calendar, a new preset), and customers' apps pick those changes up without an app update, from a static host that serves no market data.
 
 #### Prerequisites
 
-- Step 14.6 merged; an object-storage account for the packs (decided at the kickoff), with its credentials stored as secrets.
+- Step 14.6 merged; the host for the index from the kickoff (GitHub Releases by default), with its credentials stored as secrets.
 
 #### Prompt
 
 ```text
-Masterplan step 14.7 — Hosted platform data service.
+Masterplan step 14.7 — Signed catalog updates from a static host.
 
-Implement the hosted side of platform data: an object-storage bucket for packs, a publishing workflow you run (`just publish-packs`: build, sign, upload, update the catalog index), a small endpoint that verifies the customer's entitlement token from 14.6 and issues short-lived download links for the products it lists, and an `HttpPackDataSource` in the app that lists the catalog, downloads packs with resume and integrity checks, and schedules updates. The service only serves downloads: no customer data or computing goes to it. Document publishing, monitoring, and operating costs in docs/runbook.md.
+Define the catalog index: a versioned bundle of the product catalog, the source guide, the calendars, the roll rules, and the import presets, with a manifest (version, file hashes, the minimum app version) signed with a FEFAT signing key held outside the repository; it contains no market data, and the no-shipped-data check of 14.6 runs on it. Implement a publishing workflow you run (`just publish-catalog`: build, sign, upload) to the static host decided at the kickoff, and in the app a `CatalogUpdater` that fetches the index on a schedule and on demand, verifies the signature and every hash against the FEFAT public key, installs it next to the bundled copy, falls back to the bundled copy when verification fails or the host is unreachable, and shows the catalog version on the Data page. Document publishing, monitoring, and operating costs in docs/runbook.md.
 
-Tests: end to end against a local stand-in of the service (download, resume after an interruption, signature check, refused entitlement); a real upload of one synthetic pack to the bucket and a download by the app.
+Tests: end to end against a local stand-in of the host (download, resume after an interruption, signature check, a tampered index refused, a too-old app version refused with a clear message); a real upload of one index to the host and an update by the app.
 
-Not in this step: billing and customer accounts beyond the entitlement token (backlog).
+Not in this step: market data of any kind, billing, customer accounts.
 ```
 
 #### Done means
 
-1. The app installs a pack from the hosted service and updates it (recording attached).
-2. Interrupted downloads resume; tampered or unentitled downloads are refused (tests).
+1. The app updates its catalog from the host and shows the new version (recording).
+2. A tampered or unverifiable index is refused and the bundled copy stays in use (tests).
 3. The runbook documents publishing, monitoring, and costs.
 
 #### Your checks
 
-- Publish one synthetic pack with `just publish-packs`, then install it from a fresh FEFAT home with the app.
+- Publish one index with `just publish-catalog`, then watch a fresh install pick it up and show the new catalog version.
 
 #### If it fails
 
-- Download links that expire mid-download must be renewed by the app; the resume test covers it.
+- An index that fails verification must leave the bundled copy in use and say so; the tamper test covers it.
+
+#### Amendment
+
+2026-10-12 (D-37): the step replaces "Hosted platform data service". The hosted side serves the signed catalog index only (specifications, calendars, roll rules, presets, the source guide), never market data, so it needs no data licence and costs about nothing on a static host.
 
 ### 14.8 First-run experience
 
@@ -290,7 +298,7 @@ A new user gets from install to a first backtest without reading documentation.
 ```text
 Masterplan step 14.8 — First-run experience.
 
-Build the first-run wizard: choose the data folder; set a password; optionally enter an Anthropic key (tested); get data — enter the entitlement token and accept the data subscriber terms the licences require, then install the platform data for the products the user trades from the hosted service; or use managed sync with their own vendor account (their own key) for products delivered that way; and/or import their own files with the import wizard; phone pairing (Tailscale explanation, QR code); a sample strategy and a one-click first backtest on the installed data. Everything skippable and reachable again from settings.
+Build the first-run wizard: choose the data folder; set a password; optionally enter an Anthropic key (tested); get data — pick the products the user trades from the catalog, connect a source from the guide (its terms shown and accepted; a key stored in the credential store) and sync them, and/or import their own files with the import wizard; phone pairing (Tailscale explanation, QR code); a sample strategy and a one-click first backtest on the synced or imported data. Everything skippable and reachable again from settings.
 
 Not in this step: marketing or licensing terms.
 ```
@@ -302,11 +310,15 @@ Not in this step: marketing or licensing terms.
 
 #### Your checks
 
-- Run the wizard on a clean VM, install one small platform product, and confirm it ends with a backtest on it.
+- Run the wizard on a clean VM, connect the crypto archive and sync one small product, and confirm it ends with a backtest on it.
 
 #### If it fails
 
 - The wizard must never block on a network failure; every network step has a skip.
+
+#### Amendment
+
+2026-10-12 (D-37): the wizard connects a source from the guide and syncs instead of installing platform data with an entitlement token.
 
 ### 14.9 Clean-machine install tests
 
@@ -346,5 +358,5 @@ Not in this step: new features, store distribution.
 ## Phase exit
 
 ```text
-/phase-exit 14 — Run the exit procedure for Phase 14: release workflow green with signed installers; /security-review over the shell, updater, sidecar, data packs, and data service; demo = install on a clean machine, install platform data, and run the wizard; update docs/product-readiness.md; retro; tag phase-14 and v1.0.0-rc1.
+/phase-exit 14 — Run the exit procedure for Phase 14: release workflow green with signed installers; /security-review over the shell, updater, sidecar, the catalog updater, and the connectors; demo = install on a clean machine, connect a source, and run the wizard; update docs/product-readiness.md; retro; tag phase-14 and v1.0.0-rc1.
 ```

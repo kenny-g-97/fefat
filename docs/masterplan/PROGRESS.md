@@ -15,6 +15,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-10-09 — GitHub's free plan has no branch protection or rulesets for private repositories, and you chose to stay on it (D-30): steps 0.3 and 0.6 amended, and the merge routine written into `05-build-process.md` §8.
 - 2026-10-10 — The `apple-design` skill became the lens of a new read-only `design-reviewer` subagent, which reviews every step that changes `web/` from step 4.3 on and the main pages at the exits of UI phases (D-34). No step changed; the Phase 4 kickoff adds the reviewer to the meta lines of the UI steps.
 - 2026-10-11 — The Phase 0 exit moved the SDK to Polars 2.0.0 before Phase 1 writes on it (D-36), registered the reviewers' read-only guard in the settings (an Amendment under step 0.4), gave the phase exit the upgrade step of `05-build-process.md` §7, and wrote the phase's retro into `CLAUDE.md`, the `step` skill, and 05 §2 (steps started in plain words, plan mode for every step). No unstarted step changed.
+- 2026-10-12 — FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and presets, and sync (D-37, ADR-0018, superseding the data delivery of D-24). Steps 1.9, 5.1, 5.4, 14.6, 14.7, and 14.8 amended (1.9, 14.6, and 14.7 renamed) and 1.4, 1.6, 1.10, and 1.11 reworded, before any Phase 1 step started; `00`, `01`, `02` §1.8, `07`, `08`, and the README updated. No step ID changed.
 
 ## Steps
 
@@ -36,7 +37,7 @@ Phase kickoffs and exits are tracked in the second table.
 | 1.6 | Databento importer with cost preview | P1 | todo | | | |
 | 1.7 | Rolls and forward-anchored continuous series | P1 | todo | | | |
 | 1.8 | Data-quality report and SDK data API | P1 | todo | | | |
-| 1.9 | Platform data catalog and managed updates | P1 | todo | | | |
+| 1.9 | Product catalog, data sources, and managed sync | P1 | todo | | | |
 | 1.10 | Import your own market data | P1 | todo | | | |
 | 1.11 | Notebook demo and phase exit prep | P1 | todo | | | |
 | 2.1 | Fill specification and scenario format | P2 | todo | | | |
@@ -150,8 +151,8 @@ Phase kickoffs and exits are tracked in the second table.
 | 14.3 | Tauri shell: window, tray, auto-start | P14 | todo | | | |
 | 14.4 | Installers for Windows and macOS, code signing | P14 | todo | | | |
 | 14.5 | Auto-update and release workflow | P14 | todo | | | |
-| 14.6 | Platform data packs and licence gate | P14 | todo | | | |
-| 14.7 | Hosted platform data service | P14 | todo | | | |
+| 14.6 | Data sources in the packaged app and the no-shipped-data check | P14 | todo | | | |
+| 14.7 | Signed catalog updates from a static host | P14 | todo | | | |
 | 14.8 | First-run experience | P14 | todo | | | |
 | 14.9 | Clean-machine install tests | P14 | todo | | | |
 

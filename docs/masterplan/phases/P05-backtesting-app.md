@@ -1,8 +1,8 @@
 # Phase 5 — Backtesting in the app
 
-**Goal.** The web MVP: the data catalog with platform data updates and an import wizard for your own data, strategies with immutable versions, backtests as jobs, results you can read on desktop and phone, a trade review chart with markers and indicator panes, run comparison, version diffs, and a notification when a run finishes.
+**Goal.** The web MVP: the data catalog with sources, sync, and an import wizard for your own data, strategies with immutable versions, backtests as jobs, results you can read on desktop and phone, a trade review chart with markers and indicator panes, run comparison, version diffs, and a notification when a run finishes.
 
-**You get.** Keep platform data current and import your own from the app, create a strategy from a template, run it, inspect every trade on the chart, compare runs, and get a push notification on your phone.
+**You get.** Connect a data source, keep your products current, and import your own files from the app, create a strategy from a template, run it, inspect every trade on the chart, compare runs, and get a push notification on your phone.
 
 **Depends on.** Phase 4.
 
@@ -33,7 +33,7 @@ The database knows about your data and your strategies, and the catalog is fille
 ```text
 Masterplan step 5.1 — Schema and data catalog from the data folder.
 
-Read docs/masterplan/01-architecture.md §5 and §7 (Data). Add a `catalog sync` job that scans FEFAT_DATA_DIR through the SDK store, upserts `datasets` (with their source — platform or user — licence scope, and catalog version), `dataset_snapshots`, `instruments`, and `platform_products`, and records quality status from the Phase 1 reports; run it at server start and on demand. Implement `GET /v1/instruments`, `GET /v1/datasets`, `GET /v1/datasets/{id}/quality`, `GET /v1/platform-data` (each catalog product with its status, coverage, and last update), and `GET /v1/market/bars` (instrument, timeframe, from, to, continuous flag, optional source — platform data by default where both exist; returns columnar JSON, capped at 20,000 bars per request, with `nextFrom` for paging). Make the strategies and versions tables ready for 5.2 if 4.1 left gaps.
+Read docs/masterplan/01-architecture.md §5 and §7 (Data). Add a `catalog sync` job that scans FEFAT_DATA_DIR through the SDK store, upserts `datasets` (with their origin, sync or import, their provider, licence scope, and catalog version), `dataset_snapshots`, `instruments`, `catalog_products`, and `data_sources`, and records quality status from the Phase 1 reports; run it at server start and on demand. Implement `GET /v1/instruments`, `GET /v1/datasets`, `GET /v1/datasets/{id}/quality`, `GET /v1/catalog` (each catalog product with its status, coverage, last update, and source), `GET /v1/sources` (the source guide from 1.9 with each source's terms and connection state), and `GET /v1/market/bars` (instrument, timeframe, from, to, continuous flag, optional origin or provider where several datasets cover the instrument, the catalog's recommended source by default; returns columnar JSON, capped at 20,000 bars per request, with `nextFrom` for paging). Make the strategies and versions tables ready for 5.2 if 4.1 left gaps.
 
 Tests: sync is idempotent; bars endpoint pages correctly and refuses unknown instruments; quality status flows through.
 
@@ -53,6 +53,10 @@ Not in this step: pages.
 #### If it fails
 
 - Slow sync on a large data folder: hash partitions lazily from the Phase 1 manifests rather than re-reading files.
+
+#### Amendment
+
+2026-10-12 (D-37): datasets carry an origin (sync or import) and a provider instead of `source: platform | user`; `platform_products` became `catalog_products` with `data_sources` beside it; `/v1/platform-data` became `/v1/catalog` and `/v1/sources`.
 
 ### 5.2 Strategy versions API
 
@@ -149,19 +153,19 @@ You can see your data: what you have, how good it is, and the bars on a chart th
 ```text
 Masterplan step 5.4 — Data catalog page and chart viewer.
 
-Build the Data section of the web app: a catalog page in two parts — **Platform data** (each catalog product with coverage by month as a small heat strip, quality status, last update, and an Update action backed by `POST /v1/platform-data/sync` that runs the platform sync from 1.9 as a `platform_sync` job; paid downloads show the cost preview and need an explicit confirmation before anything is pulled; progress in the jobs drawer) and **Your data** (imported datasets with the same columns; the import wizard arrives in 5.12) — plus instruments with tick size and point value, and a chart viewer: Lightweight Charts 5 candlesticks with a volume pane, instrument and timeframe pickers, a continuous/raw toggle, bars loaded by the visible range through `/v1/market/bars` with paging and caching, a crosshair readout, and session shading from the calendar. Wrap Lightweight Charts in a reusable `PriceChart` component with a stable API (series, panes, markers, primitives) that 5.9 and Phase 6 reuse. Phone: the chart is full width, pinch and drag work, pickers collapse into a sheet.
+Build the Data section of the web app: a catalog page in three parts — **Catalog products** (each with coverage by month as a small heat strip, quality status, last update, its source, and an Update action backed by `POST /v1/catalog/sync` that runs the sync from 1.9 as a `source_sync` job; paid downloads show the cost preview and need an explicit confirmation before anything is pulled; progress in the jobs drawer), **Sources** (the source guide from 1.9 with each source's terms and connection state, and a Connect action backed by `POST /v1/sources` that stores a key through the credential store and never shows it again), and **Your data** (imported datasets with the same columns; the import wizard arrives in 5.12) — plus instruments with tick size and point value, and a chart viewer: Lightweight Charts 5 candlesticks with a volume pane, instrument and timeframe pickers, a continuous/raw toggle, bars loaded by the visible range through `/v1/market/bars` with paging and caching, a crosshair readout, and session shading from the calendar. Wrap Lightweight Charts in a reusable `PriceChart` component with a stable API (series, panes, markers, primitives) that 5.9 and Phase 6 reuse. Phone: the chart is full width, pinch and drag work, pickers collapse into a sheet.
 
-Playwright: open the catalog, update a synthetic platform product and see its coverage change, open the chart for the seeded synthetic instrument, scroll back, assert bars are fetched and rendered; desktop and phone.
+Playwright: open the catalog, connect a synthetic source, update a synthetic catalog product and see its coverage change, open the chart for the seeded synthetic instrument, scroll back, assert bars are fetched and rendered; desktop and phone.
 
 Not in this step: indicators on the chart, trade markers.
 ```
 
 #### Done means
 
-1. Playwright specs pass on both projects with screenshots attached, including the platform update flow.
+1. Playwright specs pass on both projects with screenshots attached, including the connect and update flows.
 2. Scrolling back on a year of 5-minute bars stays smooth (no request larger than 20,000 bars; requests are cached).
 3. `PriceChart` is documented in `web/src/charts/README.md`.
-4. A platform update that needs a paid Databento download never calls the download API without your confirmation (test with a mocked client).
+4. An update that needs a paid Databento download never calls the download API without your confirmation (test with a mocked client).
 
 #### Your checks
 
@@ -170,6 +174,10 @@ Not in this step: indicators on the chart, trade markers.
 #### If it fails
 
 - Timestamps off by hours: the chart expects UTC seconds; convert from ns and apply the display time zone in the UI, not in the API.
+
+#### Amendment
+
+2026-10-12 (D-37): the catalog page shows catalog products and the source guide with a Connect action instead of "platform data"; the sync job and endpoints were renamed.
 
 ### 5.5 Strategy page
 
@@ -492,7 +500,7 @@ The MVP is coherent on the phone, the whole flow is covered by one end-to-end su
 ```text
 Masterplan step 5.13 — Phone pass, end-to-end suite, demo.
 
-Walk every page of the app at 390×844 and at 1280×800 with the ui-verifier and fix layout, touch-target, and contrast issues found. Write one Playwright end-to-end flow: log in, update a synthetic platform product, import a synthetic CSV through the wizard, create a strategy from a template, run it on synthetic data, wait for completion, open results, select a trade, see it on the chart, create version 2 with a parameter change, run, compare. Record a 60-second demo video with Playwright and write docs/demo-mvp.md with the click path for me. Update docs/engine-guide.md with an "In the app" section.
+Walk every page of the app at 390×844 and at 1280×800 with the ui-verifier and fix layout, touch-target, and contrast issues found. Write one Playwright end-to-end flow: log in, connect a synthetic source and update a synthetic catalog product, import a synthetic CSV through the wizard, create a strategy from a template, run it on synthetic data, wait for completion, open results, select a trade, see it on the chart, create version 2 with a parameter change, run, compare. Record a 60-second demo video with Playwright and write docs/demo-mvp.md with the click path for me. Update docs/engine-guide.md with an "In the app" section.
 
 Not in this step: new features.
 ```

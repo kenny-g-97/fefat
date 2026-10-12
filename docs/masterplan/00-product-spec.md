@@ -5,7 +5,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 ## 1. Who it is for
 
 - **Now:** one trader (you) who is comfortable with Python and notebooks, trades CME futures and crypto, develops intraday and swing strategies, and evaluates prop-firm accounts.
-- **Later:** other traders like you, running FEFAT on their own machines with their own Claude API key, using the platform's data for the products it provides and importing their own data for the rest. Compute stays on their machines (`DECISIONS.md`, D-01); platform data is delivered to them under the licences it requires (D-24).
+- **Later:** other traders like you, running FEFAT on their own machines with their own Claude API key, connecting their own data sources for the products they trade and importing their own files for the rest. Compute and data stay on their machines (`DECISIONS.md`, D-01, D-37): FEFAT ships no market data.
 
 ## 2. The four pillars
 
@@ -47,8 +47,9 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 ### 2.5 Market data, under all four pillars
 
-- **Platform data:** FEFAT provides market data for a curated set of products — by default ES, NQ, CL, GC and their micros, and BTC and ETH spot and perpetuals; the list is confirmed at the Phase 1 kickoff. It comes ready to use, with instrument specifications, session calendars, roll rules, and quality reports, and FEFAT keeps it current.
-- **Your own data:** traders can also import market data for any product — files from their own data vendor or trading platform — through saved import profiles and, in the app, a mapping wizard (columns, time zone, bar stamping, instrument specification). Imported data goes through the same validation and quality report, is used exactly like platform data, and never leaves the trader's machine.
+- **Catalog products:** FEFAT ships the know-how for a curated set of products — by default ES, NQ, CL, GC and their micros, and BTC and ETH spot and perpetuals; the list is confirmed at the Phase 1 kickoff — instrument specifications, session calendars, roll rules, quality rules, and the recommended data sources. The data itself comes from a source the trader connects (their own Databento account for futures, a public crypto archive), and FEFAT keeps each product current through it, with a cost preview before any paid download. FEFAT ships no market data (D-37).
+- **Data sources:** a guide to well-known sources (data vendors, exchanges' public archives, trading platforms' exports) says what each offers, what it costs, and the terms a trader accepts for personal use. Each source has a connector (used with the trader's own account) or an import preset, and adding a source is adding one connector.
+- **Your own data:** traders can also import market data for any product — files from their own data vendor or trading platform — through saved import profiles and, in the app, a mapping wizard (columns, time zone, bar stamping, instrument specification). Imported data goes through the same validation and quality report, is used exactly like synced data, and never leaves the trader's machine.
 
 ## 3. Research tools (added capabilities)
 
@@ -61,22 +62,22 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 | In | Later (phase) | Not planned |
 | --- | --- | --- |
-| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as platform data | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12), hardening (P13), desktop packaging and platform data delivery to customers (P14) | Live or paper trading, broker connections |
-| Signal strategies, backtests, feature lab, strategy builder, prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute for other users |
+| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as catalog products, filled from the sources you connect | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12), hardening (P13), desktop packaging (P14) | Live or paper trading, broker connections |
+| Signal strategies, backtests, feature lab, strategy builder, prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute or market data for other users |
 | One user, one PC, phone over Tailscale | Machine-learning models on features (backlog) | Order-book (L2) strategies, tick-reactive scalping |
-| Platform data built from Databento and the crypto archives; imports of your own data from any vendor's files | More platform products, more import presets, more prop firms | Social features, strategy marketplace |
+| Connectors for Databento and the crypto archives, import presets for common exports, and a guide to well-known sources | More catalog products, connectors, presets, and prop firms | Social features, strategy marketplace |
 
 ## 5. Non-goals and constraints
 
-- Platform data is delivered only where FEFAT has the right to deliver it: in the personal phase it is built from your own Databento subscription and the public crypto archives, for your own use; in the commercial version every platform product needs a distribution licence (Phase 14), and products without one are import-only. Imported data never leaves the trader's machine. No market data of any kind enters the repository; it lives under `FEFAT_DATA_DIR`.
+- FEFAT ships no market data and never receives, stores, or serves it for anyone else (D-37): every dataset is fetched on the trader's machine with the trader's own account, or imported from the trader's files, under the vendor's terms for personal use, and never leaves that machine. No market data of any kind enters the repository; it lives under `FEFAT_DATA_DIR`.
 - A prop simulation never re-runs a strategy; it reads an existing backtest file.
 - FEFAT never executes the agent's edits without an explicit decision by the user.
 - FEFAT never silently changes a saved result: versions and runs are immutable; a changed fill rule is a new engine version.
-- No cloud dependency for core use. The only network calls in normal use are to Anthropic's API (agent, optional), data vendors and the platform data service (downloads and updates), and the push-notification services.
+- No cloud dependency for core use. The only network calls in normal use are to Anthropic's API (agent, optional), the data sources the trader connected (downloads and updates), FEFAT's static host for signed catalog updates (Phase 14, never data), and the push-notification services.
 
 ## 6. Key journeys (first release)
 
-1. **Get data.** Bring the platform data for the products you trade up to date (futures from your Databento files or account, with a cost preview before any paid download; crypto from the public archives), import your own files for anything else, and see the catalog with coverage and quality reports.
+1. **Get data.** Connect a data source and bring the products you trade up to date (futures from your Databento files or account, with a cost preview before any paid download; crypto from the public archives), import your own files for anything else, and see the catalog with coverage and quality reports.
 2. **Build a feature.** Write ten lines of Python (or ask the agent), preview it on ES 5-minute bars for 2024, read its statistics and leak check, save version 1.
 3. **Build a strategy.** Pick two features, set conditions, choose stop and targets and session window in the builder, look at the generated code, run a backtest on 2021–2025 with tick fills, inspect trades on the chart.
 4. **Iterate with the agent.** Ask why March lost money; the agent queries the trades, suggests a filter, proposes the edit; you accept; version 2 is created and backtested; compare versions.
@@ -97,7 +98,9 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | Run | One backtest: a strategy version plus parameters, data snapshot, engine version, and configuration, with its artifacts. |
 | Data snapshot | A content-hashed manifest of the exact data partitions a run used. |
 | Leak (look-ahead) | A feature value at time t that depends on information available only after t. |
-| Platform data | Market data FEFAT provides for its curated products, kept current, with instrument specifications, calendars, and roll rules. |
+| Catalog product | A product FEFAT ships the know-how for (instrument specification, calendar, roll rule, quality rules, recommended sources); its data comes from a source the trader connects. |
+| Data source | Where a trader's data comes from: a vendor account or public archive through a connector, or a file layout through an import preset. The source guide lists the well-known ones with their costs and terms. |
+| Sync | Bringing a catalog product up to date through a connected source, on the trader's machine. |
 | Imported data | Market data a trader brings in from their own files; it never leaves their machine. |
 | Import profile | A saved description of a file layout (columns, time zone, bar stamping, instrument) used to import market data or trade logs. |
 | Rule set | A prop firm plan expressed as data. |

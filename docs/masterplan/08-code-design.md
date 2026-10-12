@@ -57,7 +57,7 @@ engine crates:  fefat-py, fefat-cli  →  fefat-engine, fefat-prop, fefat-metric
 ```
 
 - `fefat` never imports `fefat_app`; `fefat_app.services` never imports FastAPI or SQLAlchemy; routers in `fefat_app.http` hold no business logic; the web client recomputes no number the API provides.
-- Ports are `typing.Protocol`s in `python/fefat_app/src/fefat_app/ports.py`: `Executor`, `Dispatcher`, `BlobStore`, `AgentRuntime`, `PlatformDataSource`, `CredentialStore`, `Licence`. Adapters are built once from `config.toml` in `python/fefat_app/src/fefat_app/container.py` and reach services through FastAPI dependencies; no service instantiates an adapter.
+- Ports are `typing.Protocol`s in `python/fefat_app/src/fefat_app/ports.py`: `Executor`, `Dispatcher`, `BlobStore`, `AgentRuntime`, `CredentialStore`, `Licence` (the data-source seam, `Provider`, is SDK code in `fefat.market.sources`, used from notebooks too). Adapters are built once from `config.toml` in `python/fefat_app/src/fefat_app/container.py` and reach services through FastAPI dependencies; no service instantiates an adapter.
 - In Rust, `fefat-core` holds the shared vocabulary (newtypes, orders, fills, errors, calendar) and the `MarketDataReader` trait (bars, seconds, ticks, and the offsets between levels); `fefat-engine`, `fefat-prop`, and `fefat-metrics` are pure computation over it; `fefat-data` is the only crate with `unsafe` and the only one that opens files; `fefat-py` and `fefat-cli` wire the two together.
 
 ### 1.5 Enforcement
@@ -87,7 +87,7 @@ engine crates:  fefat-py, fefat-cli  →  fefat-engine, fefat-prop, fefat-metric
 
 | Before | After | Why |
 | --- | --- | --- |
-| `python/fefat/data/` and `ff.data.load(...)` | `python/fefat/src/fefat/market/` and `ff.market.load(...)` | `data` is a generic name; the package holds market data (platform data, imported data, calendars, bars, rolls). The CLI keeps `fefat data …` because that is what the trader calls it. |
+| `python/fefat/data/` and `ff.data.load(...)` | `python/fefat/src/fefat/market/` and `ff.market.load(...)` | `data` is a generic name; the package holds market data (the catalog, the sources, synced and imported data, calendars, bars, rolls). The CLI keeps `fefat data …` because that is what the trader calls it. |
 | `fefat/ta/`, `ff.ta.atr(14)` | `fefat/indicators/`, `ff.indicators.atr(14)` | no abbreviations; the plan already calls them indicators |
 | `fefat/ref/engine.py`, `fefat/ref/prop.py` | `fefat/reference/engine.py`, `fefat/reference/prop.py` | no abbreviations; it is the reference implementation (D-10) |
 | `fefat_app/server/` | `fefat_app/http/` | names the adapter by what it is: the HTTP ring |
