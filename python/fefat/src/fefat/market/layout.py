@@ -1,4 +1,4 @@
-"""Where the canonical store keeps its files (ADR-0019).
+"""Where the canonical store keeps its files, and which files a request selects (ADR-0019).
 
 A store folder holds a folder per provider, a folder per schema in each, and below:
 
@@ -7,11 +7,11 @@ A store folder holds a folder per provider, a folder per schema in each, and bel
     <provider>/<schema>/root=<root>/contract=<contract>/month=<YYYY-MM>/part.parquet
     <provider>/<schema>/root=<root>/contract=<contract>/part.parquet
 
-Trades, TBBO, and bars finer than a minute are split per trade date, one-minute
-bars per month, and coarser bars, definitions, statistics, and funding are one file
-per contract (`partitioning`). `dataset.json` holds what every partition of the
-dataset shares, such as the unit of its sizes. The folder `raw` beside the providers
-keeps the vendors' original files (`fefat.market.store`). What the files hold is
+Trades, TBBO, and bars finer than a minute are split per trade date, one-minute bars per
+month of their trade dates, and coarser bars, definitions, statistics, and funding are one
+file per contract (`partitioning`). `dataset.json` holds what every partition of the dataset
+shares, such as the unit of its sizes. The folder `raw` beside the providers keeps the
+vendors' original files (`fefat.market.raw_manifest`). What the files hold is
 `fefat.market.schema`.
 """
 
@@ -25,10 +25,12 @@ from typing import Annotated, Self
 from pydantic import AfterValidator, Field, StringConstraints, model_validator
 
 from fefat.market.schema import (
+    SECONDS_PER_TIME_UNIT,
     FrozenModel,
     RecordSchemaName,
     SchemaKind,
     SchemaName,
+    TimeUnit,
     parse_schema_name,
 )
 
@@ -39,7 +41,6 @@ PARTITION_LAYOUT = (
     "<provider>/<schema>/root=<root>/contract=<contract>[/date=<YYYY-MM-DD>|/month=<YYYY-MM>]"
     f"/{PARTITION_FILE_NAME}"
 )
-SECONDS_PER_MINUTE = 60
 
 
 def _not_the_raw_folder(name: str) -> str:
@@ -75,9 +76,10 @@ def partitioning(schema_name: SchemaName) -> Partitioning:
         ticks = schema_name.kind in (SchemaKind.TRADES, SchemaKind.TBBO)
         return Partitioning.TRADE_DATE if ticks else Partitioning.CONTRACT
     seconds = schema_name.timeframe.nominal_seconds()
-    if seconds < SECONDS_PER_MINUTE:
+    one_minute = SECONDS_PER_TIME_UNIT[TimeUnit.MINUTE]
+    if seconds < one_minute:
         return Partitioning.TRADE_DATE
-    if seconds == SECONDS_PER_MINUTE:
+    if seconds == one_minute:
         return Partitioning.MONTH
     return Partitioning.CONTRACT
 
@@ -116,6 +118,10 @@ class Dataset(FrozenModel):
     def relative_folder(self) -> PurePosixPath:
         """The dataset's folder, relative to the store folder."""
         return PurePosixPath(self.provider, str(self.schema_name), f"root={self.root}")
+
+    def metadata_path(self) -> PurePosixPath:
+        """The dataset's `dataset.json`, relative to the store folder."""
+        return self.relative_folder() / DATASET_METADATA_FILE_NAME
 
 
 def _partitioning_of(key: date | YearMonth | None) -> Partitioning:
@@ -194,6 +200,36 @@ def _parsed_key(folder: str) -> date | YearMonth:
     if name == Partitioning.MONTH:
         return YearMonth.parse(value)
     raise ValueError(f"expected a date= or month= folder, got {folder!r}")
+
+
+class PartitionRequest(FrozenModel):
+    """The partitions of one dataset whose keys touch a range of trade dates, both ends included:
+    a trade-date key inside the range, a month key with any day in it, and a partition without a
+    key (one file per contract) always. Selecting a file is not cutting its rows:
+    `Store.scan` and `Store.read` keep the bars of the range, and records without a trade date
+    come whole, for the reader to cut at `ts_recv`."""
+
+    dataset: Dataset
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def _starts_on_or_before_its_end(self) -> Self:
+        if self.end < self.start:
+            raise ValueError(
+                f"Expected the start {self.start} on or before the end, got the end {self.end}."
+            )
+        return self
+
+    def selects(self, partition: Partition) -> bool:
+        """Whether the partition belongs to the dataset and its key touches the dates."""
+        if partition.dataset != self.dataset:
+            return False
+        if isinstance(partition.key, YearMonth):
+            return partition.key.overlaps(self.start, self.end)
+        if isinstance(partition.key, date):
+            return self.start <= partition.key <= self.end
+        return True
 
 
 class SizeUnit(FrozenModel):

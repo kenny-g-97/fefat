@@ -213,3 +213,20 @@ def test_each_dataset_states_the_unit_of_its_sizes_and_volumes(
     assert json.loads(metadata.read_text(encoding="utf-8")) == {
         "size_unit": {"lot": lot, "asset": asset}
     }
+
+
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
+def test_every_bar_lies_inside_the_session_of_its_trade_date(
+    root: str, contract: str, day: str, open_utc: datetime
+) -> None:
+    length = timedelta(days=1) if root == "BTC" else ES_SESSION_LENGTH
+    session_open, session_close = nanoseconds(open_utc), nanoseconds(open_utc + length)
+    bars = [
+        bar
+        for schema, key in (("ohlcv-1s", f"date={day}"), ("ohlcv-1m", "month=2026-03"))
+        for bar in pq.read_table(partition(schema, root, contract, key)).to_pylist()
+        if bar["trade_date"] == date.fromisoformat(day)
+    ]
+
+    assert bars
+    assert all(session_open <= bar["ts_open"] < bar["ts_close"] <= session_close for bar in bars)

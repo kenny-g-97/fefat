@@ -3,9 +3,14 @@
 Every price is an int64 count of 1e-9 units of the quote currency (5,432.25 is
 5_432_250_000_000) and every timestamp an int64 count of nanoseconds since the Unix
 epoch in UTC, as Databento ships them. The store keeps both as integers; views
-convert them. Records keep both clocks: `ts_recv`, when the capture server received
-the record, which is the engine's clock (ADR-0006), and `ts_event`, the venue's
-time. Bars carry `ts_open`, `ts_close`, and the `trade_date` of their session.
+convert them. A vendor's "undefined" value (Databento's largest integers) is stored
+as null, and vendor flags are not stored: the importer counts, per day, the records
+whose flags mark an unreliable `ts_recv`.
+
+Records keep both clocks: `ts_recv`, when the capture server received the record,
+which is the engine's clock (ADR-0006), and `ts_event`, the venue's time. Each
+record type names the time from which it may be used, its availability: `ts_recv`
+for trades, TBBO, definitions, statistics, and funding, and `ts_close` for bars.
 Columns keep the vendor's spelling, an external contract (`08-code-design.md` §2).
 Where the files live is `fefat.market.layout`.
 """
@@ -131,7 +136,7 @@ SchemaName = Annotated[
 ]
 """A schema as a model field: built from its folder name, written as it."""
 
-TRADES_COLUMNS = pl.Schema(
+_TRADES_COLUMNS = pl.Schema(
     {
         "ts_recv": pl.Int64,
         "ts_event": pl.Int64,
@@ -142,21 +147,22 @@ TRADES_COLUMNS = pl.Schema(
         "sequence": pl.UInt32,
     }
 )
-"""One row per trade print. `side` is the aggressor (`A` sells, `B` buys, `N` none), and
-`size` counts the dataset's size unit."""
+"""One row per trade print, available at `ts_recv`. `side` is the aggressor (`A` sells, `B`
+buys, `N` none), and `size` counts the dataset's size unit."""
 
-TBBO_COLUMNS = pl.Schema(
+_TBBO_COLUMNS = pl.Schema(
     {
-        **TRADES_COLUMNS,
+        **_TRADES_COLUMNS,
         "bid_px_00": pl.Int64,
         "ask_px_00": pl.Int64,
         "bid_sz_00": pl.UInt32,
         "ask_sz_00": pl.UInt32,
     }
 )
-"""A trade with the best bid and ask just before it (Databento's TBBO, level 0 of `Mbp1Msg`)."""
+"""A trade with the best bid and ask just before it (Databento's TBBO, level 0 of `Mbp1Msg`),
+available at `ts_recv`."""
 
-BARS_COLUMNS = pl.Schema(
+_BARS_COLUMNS = pl.Schema(
     {
         "ts_open": pl.Int64,
         "ts_close": pl.Int64,
@@ -171,10 +177,12 @@ BARS_COLUMNS = pl.Schema(
     }
 )
 """One row per bar of the trades received in `[ts_open, ts_close)`, sparse (a bar exists only
-where trades do), with its session's `trade_date`. `volume` counts the dataset's size unit;
-`trade_count` is null for a vendor's bars that carry no count."""
+where trades do), with its session's `trade_date`; a bar is available at `ts_close`. `volume`
+counts the dataset's size unit, and `trade_count` is null for a vendor's bars that carry no
+count. `ohlcv-1d` holds session bars by trade date, which the bar builder makes from finer
+bars; a vendor's daily bars cut on UTC dates are not session bars and are not stored as it."""
 
-DEFINITIONS_COLUMNS = pl.Schema(
+_DEFINITIONS_COLUMNS = pl.Schema(
     {
         "ts_recv": pl.Int64,
         "ts_event": pl.Int64,
@@ -196,10 +204,10 @@ DEFINITIONS_COLUMNS = pl.Schema(
     }
 )
 """An instrument definition as the vendor published it (fields of Databento's
-`InstrumentDefMsg`): `min_price_increment` and `unit_of_measure_qty` in 1e-9 units,
-`expiration` and `activation` in nanoseconds."""
+`InstrumentDefMsg`), applying from `ts_recv`: `min_price_increment` and `unit_of_measure_qty`
+in 1e-9 units, `expiration` and `activation` in nanoseconds."""
 
-STATISTICS_COLUMNS = pl.Schema(
+_STATISTICS_COLUMNS = pl.Schema(
     {
         "ts_recv": pl.Int64,
         "ts_event": pl.Int64,
@@ -209,15 +217,18 @@ STATISTICS_COLUMNS = pl.Schema(
         "price": pl.Int64,
         "quantity": pl.Int64,
         "update_action": pl.UInt8,
+        "stat_flags": pl.UInt8,
         "sequence": pl.UInt32,
     }
 )
 """A venue statistic (Databento's `StatMsg`): `stat_type` 3 is the settlement price, 6 the
 cleared volume, and 9 the open interest. `ts_ref` is the vendor's reference time (the
-settlement's trade date), and `ts_recv` is when the value became available, the first
-moment a backtest may use it."""
+settlement's trade date), and `ts_recv` is when the value became available, the first moment
+a backtest may use it. Every update is kept: a final settlement that revises a preliminary
+one is a new row (`stat_flags` tells them apart), read as of `ts_recv`, never a replacement
+keyed on `ts_ref`."""
 
-FUNDING_COLUMNS = pl.Schema(
+_FUNDING_COLUMNS = pl.Schema(
     {
         "ts_recv": pl.Int64,
         "ts_event": pl.Int64,
@@ -225,19 +236,20 @@ FUNDING_COLUMNS = pl.Schema(
         "funding_rate": pl.Int64,
     }
 )
-"""A perpetual's funding event, its rate in 1e-9 units (0.0001 is 100_000); an archive with
-one time column stores it in both clocks."""
+"""A perpetual's funding event, its rate in 1e-9 units (0.0001 is 100_000). An archive's one
+time column goes to `ts_event`; `ts_recv` is when the rate was fixed (the funding time on
+Binance and Bybit), never earlier."""
 
-COLUMNS_BY_KIND = {
-    SchemaKind.TRADES: TRADES_COLUMNS,
-    SchemaKind.TBBO: TBBO_COLUMNS,
-    SchemaKind.OHLCV: BARS_COLUMNS,
-    SchemaKind.DEFINITIONS: DEFINITIONS_COLUMNS,
-    SchemaKind.STATISTICS: STATISTICS_COLUMNS,
-    SchemaKind.FUNDING: FUNDING_COLUMNS,
+_COLUMNS_BY_KIND = {
+    SchemaKind.TRADES: _TRADES_COLUMNS,
+    SchemaKind.TBBO: _TBBO_COLUMNS,
+    SchemaKind.OHLCV: _BARS_COLUMNS,
+    SchemaKind.DEFINITIONS: _DEFINITIONS_COLUMNS,
+    SchemaKind.STATISTICS: _STATISTICS_COLUMNS,
+    SchemaKind.FUNDING: _FUNDING_COLUMNS,
 }
 
 
 def polars_schema(schema_name: SchemaName) -> pl.Schema:
     """The columns, in order and with their types, that every partition of the schema holds."""
-    return pl.Schema(COLUMNS_BY_KIND[schema_name.kind])
+    return pl.Schema(_COLUMNS_BY_KIND[schema_name.kind])

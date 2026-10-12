@@ -1,47 +1,49 @@
-"""The canonical market-data store on disk (ADR-0019): partitions read lazily with Polars,
-written atomically, and pinned by snapshots, and the vendors' raw files kept in a manifest.
+"""The canonical market-data store on disk (ADR-0019): partitions read with Polars and written
+atomically, snapshots that pin what a request read, and the raw manifest of vendor files.
 
-`Store` takes its folder: `fefat.config.resolve_paths(os.environ).data_dir` in the app and
-in notebooks, a temporary folder in tests, and the repository's `fixtures` folder for the
+`Store` takes its folder: `fefat.config.resolve_paths(os.environ).data_dir` in the app and in
+notebooks, a temporary folder in tests, and the repository's `fixtures` folder for the
 synthetic fixtures (provider `synthetic`). It creates nothing until it writes:
 
     store = Store(resolve_paths(os.environ).data_dir)
     store.list_partitions()
     es_trades = Dataset(provider="synthetic", schema_name="trades", root="ES")
     request = PartitionRequest(dataset=es_trades, start=date(2026, 3, 5), end=date(2026, 3, 9))
-    store.scan(request).collect()
-    store.snapshot(request).sha256
+    snapshot = store.snapshot(request)
+    store.read(snapshot)
 
 What the files hold is `fefat.market.schema`; where they live is `fefat.market.layout`.
 """
 
 import hashlib
+import io
 import os
 import tempfile
 from collections.abc import Callable, Iterable, Iterator
 from datetime import date
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Self
 
 import polars as pl
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, Field, ValidationError
 
 from fefat.market.layout import (
-    DATASET_METADATA_FILE_NAME,
     PARTITION_FILE_NAME,
     RAW_FOLDER_NAME,
     Dataset,
     DatasetMetadata,
     Partition,
-    ProviderName,
+    PartitionRequest,
     YearMonth,
 )
+from fefat.market.raw_manifest import (
+    RAW_MANIFEST_FILE_NAME,
+    BatchJob,
+    RawFile,
+    RawManifest,
+    checked_raw_path,
+)
 from fefat.market.schema import FrozenModel, polars_schema
-
-RAW_MANIFEST_FILE_NAME = "MANIFEST.json"
-
-Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-"""A SHA-256 digest as 64 lowercase hex digits, without a prefix such as `sha256:`."""
+from fefat.market.snapshot import FileDigest, Snapshot
 
 
 class PartitionFile(FrozenModel):
@@ -49,133 +51,6 @@ class PartitionFile(FrozenModel):
 
     partition: Partition
     size_bytes: int = Field(ge=0)
-
-
-class PartitionRequest(FrozenModel):
-    """The partitions of one dataset whose keys touch a range of trade dates, both ends included:
-    a trade-date key inside the range, a month key with any day in it, and a partition without a
-    key (one file per contract) always."""
-
-    dataset: Dataset
-    start: date
-    end: date
-
-    @model_validator(mode="after")
-    def _starts_on_or_before_its_end(self) -> Self:
-        if self.end < self.start:
-            raise ValueError(
-                f"Expected the start {self.start} on or before the end, got the end {self.end}."
-            )
-        return self
-
-    def selects(self, partition: Partition) -> bool:
-        """Whether the partition belongs to the dataset and its key touches the dates."""
-        if partition.dataset != self.dataset:
-            return False
-        if isinstance(partition.key, YearMonth):
-            return partition.key.overlaps(self.start, self.end)
-        if isinstance(partition.key, date):
-            return self.start <= partition.key <= self.end
-        return True
-
-
-class PartitionDigest(FrozenModel):
-    """A partition file a snapshot pins: its path relative to the store folder, written with `/`
-    on every system, its size, and its SHA-256."""
-
-    path: str
-    size_bytes: int = Field(ge=0)
-    sha256: Sha256
-
-
-def _listing_sha256(partitions: tuple[PartitionDigest, ...]) -> str:
-    listing = "".join(f"{digest.sha256}  {digest.path}\n" for digest in partitions)
-    return hashlib.sha256(listing.encode()).hexdigest()
-
-
-class Snapshot(FrozenModel):
-    """The partitions a request selected, each with its content hash, and one hash over all of
-    them, so that a run pins exactly the data it read (ADR-0009).
-
-    `sha256` is the SHA-256 of the partitions' `sha256sum` listing: one line `<sha256>  <path>`
-    per partition, sorted by path, each ending in a newline."""
-
-    request: PartitionRequest
-    partitions: tuple[PartitionDigest, ...] = Field(min_length=1)
-    sha256: Sha256
-
-    @classmethod
-    def of(cls, request: PartitionRequest, partitions: tuple[PartitionDigest, ...]) -> Self:
-        """The snapshot of the partitions, with its hash computed."""
-        return cls(request=request, partitions=partitions, sha256=_listing_sha256(partitions))
-
-    @model_validator(mode="after")
-    def _hash_covers_its_partitions(self) -> Self:
-        paths = [digest.path for digest in self.partitions]
-        if paths != sorted(set(paths)):
-            raise ValueError(f"Expected the partitions sorted by path, each once, got {paths}.")
-        expected = _listing_sha256(self.partitions)
-        if self.sha256 != expected:
-            raise ValueError(
-                f"Expected the snapshot hash {expected} of its partitions, got {self.sha256}."
-            )
-        return self
-
-
-def _inside_the_raw_folder(path: str) -> str:
-    parts = PurePosixPath(path).parts
-    outside = not parts or path.startswith("/") or PurePosixPath(path).as_posix() != path
-    if outside or any(part == ".." or ":" in part or "\\" in part for part in parts):
-        raise ValueError(
-            f"Expected a path inside the raw folder, such as vendor/job/file.dbn, got {path!r}."
-        )
-    return path
-
-
-RawPath = Annotated[str, AfterValidator(_inside_the_raw_folder)]
-"""A vendor file's path relative to the `raw` folder, written with `/`."""
-
-
-class BatchJob(FrozenModel):
-    """The vendor's batch job a raw file came from, with the SHA-256 the vendor published for it
-    (comparing it with the file's own is the importer's check)."""
-
-    job_id: str = Field(min_length=1)
-    published_sha256: Sha256
-
-
-class RawFile(FrozenModel):
-    """A vendor's original file under `raw`, as the raw manifest records it."""
-
-    path: RawPath
-    size_bytes: int = Field(ge=0)
-    sha256: Sha256
-    provider: ProviderName
-    vendor_version: str = Field(min_length=1)
-    downloaded_on: date
-    batch_job: BatchJob | None
-
-
-class RawManifest(FrozenModel):
-    """Every raw file the store has recorded, sorted by path (`raw/MANIFEST.json`)."""
-
-    files: tuple[RawFile, ...] = ()
-
-    @model_validator(mode="after")
-    def _records_each_path_once(self) -> Self:
-        paths = [file.path for file in self.files]
-        if len(paths) != len(set(paths)):
-            raise ValueError(f"Expected each raw file recorded once, got the paths {paths}.")
-        return self
-
-    def file_at(self, path: str) -> RawFile | None:
-        """The record of the file at the path, if the manifest has one."""
-        return next((file for file in self.files if file.path == path), None)
-
-    def with_file(self, raw_file: RawFile) -> Self:
-        """The manifest with one more file recorded."""
-        files = sorted((*self.files, raw_file), key=lambda file: file.path)
-        return type(self)(files=tuple(files))
 
 
 class Store:
@@ -202,8 +77,13 @@ class Store:
         )
 
     def scan(self, request: PartitionRequest) -> pl.LazyFrame:
-        """The rows of every partition the request selects, in path order, read lazily."""
-        return pl.concat([self.scan_partition(file.partition) for file in self._selected(request)])
+        """The rows of the request's dataset on its trade dates, read lazily: trades and TBBO
+        by their partitions, bars by their `trade_date`. Definitions, statistics, and funding
+        carry no trade date and come whole, for the reader to cut at `ts_recv`. Rows come file
+        by file in path order (contract, then date): sort them before relying on time order.
+        A run reads through `snapshot` and `read` instead."""
+        rows = pl.concat([self.scan_partition(file.partition) for file in self._selected(request)])
+        return rows.filter(_within_the_dates(request))
 
     def scan_partition(self, partition: Partition) -> pl.LazyFrame:
         """One partition's rows, read lazily, once its file's columns match its schema."""
@@ -215,9 +95,11 @@ class Store:
 
     def write_partition(self, partition: Partition, frame: pl.DataFrame) -> PartitionFile:
         """Write a partition, replacing any earlier file of it in one step. The frame's columns
-        must match the schema, and the dataset needs its metadata first."""
+        must match the schema, bars must fall on the partition's trade date or month, and the
+        dataset needs its metadata first."""
         source = f"the frame for {partition.relative_path()}"
         _require_columns(polars_schema(partition.dataset.schema_name), frame.schema, source)
+        _require_trade_dates_of_the_key(partition, frame)
         self.dataset_metadata(partition.dataset)
         path = self._folder / partition.relative_path()
         _write_atomically(
@@ -227,28 +109,40 @@ class Store:
 
     def dataset_metadata(self, dataset: Dataset) -> DatasetMetadata:
         """The dataset's metadata, from its `dataset.json`."""
-        path = self._metadata_path(dataset)
+        path = self._folder / dataset.metadata_path()
         if not path.is_file():
             raise FileNotFoundError(
                 f"Expected the metadata of {dataset.relative_folder()} in {path}, got no such "
                 "file; write it with write_dataset_metadata before the dataset's partitions."
             )
-        return DatasetMetadata.model_validate_json(path.read_bytes())
+        return _parsed_json(DatasetMetadata, path)
 
     def write_dataset_metadata(self, dataset: Dataset, metadata: DatasetMetadata) -> None:
         """Write the dataset's `dataset.json`, replacing any earlier one in one step."""
-        _write_atomically(self._metadata_path(dataset), _json_writer(metadata))
+        _write_atomically(self._folder / dataset.metadata_path(), _json_writer(metadata))
 
     def snapshot(self, request: PartitionRequest) -> Snapshot:
-        """Pin the partitions the request selects by their content, so a run names what it read."""
-        return Snapshot.of(request, tuple(self._digest(file) for file in self._selected(request)))
+        """Pin the dataset's metadata and the partitions the request selects by their content."""
+        partitions = tuple(
+            self._digest(file.partition.relative_path()) for file in self._selected(request)
+        )
+        return Snapshot.of(request, self._digest(request.dataset.metadata_path()), partitions)
+
+    def read(self, snapshot: Snapshot) -> pl.DataFrame:
+        """The rows a snapshot pinned, cut to its request's dates like `scan`, parsed from
+        bytes whose SHA-256 matches the pin, so that a run reads exactly the data it names; a
+        file that changed after the snapshot is refused."""
+        self._pinned_bytes(snapshot.metadata)
+        expected = polars_schema(snapshot.request.dataset.schema_name)
+        frames = [self._pinned_partition(digest, expected) for digest in snapshot.partitions]
+        return pl.concat(frames).filter(_within_the_dates(snapshot.request))
 
     def raw_manifest(self) -> RawManifest:
         """The raw manifest; empty until the first raw file is recorded."""
         path = self._raw_manifest_path()
         if not path.is_file():
             return RawManifest()
-        return RawManifest.model_validate_json(path.read_bytes())
+        return _parsed_json(RawManifest, path)
 
     def record_raw_file(
         self,
@@ -263,7 +157,7 @@ class Store:
         Recording the same file again changes nothing. Raw files are immutable, so a recorded
         file whose bytes or details changed is refused: a vendor's re-normalised history
         arrives as a new file."""
-        relative = _inside_the_raw_folder(path.as_posix())
+        relative = checked_raw_path(path.as_posix())
         file = self._folder / RAW_FOLDER_NAME / relative
         if not file.is_file():
             raise FileNotFoundError(f"Expected the raw file {file}, got no such file.")
@@ -310,16 +204,28 @@ class Store:
             )
         return selected
 
-    def _digest(self, file: PartitionFile) -> PartitionDigest:
-        relative = file.partition.relative_path()
-        return PartitionDigest(
-            path=relative.as_posix(),
-            size_bytes=file.size_bytes,
-            sha256=_sha256(self._folder / relative),
+    def _digest(self, relative: PurePosixPath) -> FileDigest:
+        path = self._folder / relative
+        if not path.is_file():
+            raise FileNotFoundError(f"Expected the file {path} to pin, got no such file.")
+        return FileDigest(
+            path=relative.as_posix(), size_bytes=path.stat().st_size, sha256=_sha256(path)
         )
 
-    def _metadata_path(self, dataset: Dataset) -> Path:
-        return self._folder / dataset.relative_folder() / DATASET_METADATA_FILE_NAME
+    def _pinned_bytes(self, digest: FileDigest) -> bytes:
+        content = (self._folder / digest.path).read_bytes()
+        actual = hashlib.sha256(content).hexdigest()
+        if actual != digest.sha256:
+            raise ValueError(
+                f"Expected the SHA-256 {digest.sha256} that pinned {digest.path}, got {actual}: "
+                "the file changed after the snapshot."
+            )
+        return content
+
+    def _pinned_partition(self, digest: FileDigest, expected: pl.Schema) -> pl.DataFrame:
+        frame = pl.read_parquet(io.BytesIO(self._pinned_bytes(digest)))
+        _require_columns(expected, frame.schema, digest.path)
+        return frame
 
     def _raw_manifest_path(self) -> Path:
         return self._folder / RAW_FOLDER_NAME / RAW_MANIFEST_FILE_NAME
@@ -327,6 +233,14 @@ class Store:
 
 def _sorted_by_path(files: Iterable[PartitionFile]) -> tuple[PartitionFile, ...]:
     return tuple(sorted(files, key=lambda file: file.partition.relative_path().as_posix()))
+
+
+def _within_the_dates(request: PartitionRequest) -> pl.Expr:
+    """Bars carry their trade date, so a range keeps only its own bars; other records come
+    whole (trades and TBBO are already cut by their trade-date partitions)."""
+    if "trade_date" not in polars_schema(request.dataset.schema_name):
+        return pl.lit(True)
+    return pl.col("trade_date").is_between(request.start, request.end)
 
 
 def _require_columns(expected: pl.Schema, actual: pl.Schema, source: str) -> None:
@@ -340,14 +254,41 @@ def _described(columns: pl.Schema) -> str:
     return ", ".join(f"{name} {dtype}" for name, dtype in columns.items())
 
 
+def _require_trade_dates_of_the_key(partition: Partition, frame: pl.DataFrame) -> None:
+    """A request selects bars by their partition's key, so a bar written under another trade
+    date or month would be read for the wrong dates; it is refused."""
+    if partition.key is None or "trade_date" not in frame.columns:
+        return
+    trade_date = pl.col("trade_date")
+    if isinstance(partition.key, YearMonth):
+        month = partition.key
+        inside = (trade_date.dt.year() == month.year) & (trade_date.dt.month() == month.month)
+    else:
+        inside = trade_date == partition.key
+    strays = frame.filter(inside.not_() | trade_date.is_null()).get_column("trade_date")
+    if not strays.is_empty():
+        raise ValueError(
+            f"Expected every bar of {partition.relative_path()} on its key {partition.key}, "
+            f"got the trade dates {strays.unique().sort().to_list()[:5]}."
+        )
+
+
+def _parsed_json[Model: BaseModel](model: type[Model], path: Path) -> Model:
+    try:
+        return model.model_validate_json(path.read_bytes())
+    except ValidationError as error:
+        raise ValueError(f"Expected {path} to hold a {model.__name__}, got: {error}") from error
+
+
 def _json_writer(model: BaseModel) -> Callable[[Path], object]:
     content = model.model_dump_json(indent=2).encode() + b"\n"
     return lambda temporary: temporary.write_bytes(content)
 
 
 def _write_atomically(path: Path, write: Callable[[Path], object]) -> None:
-    """Write through a temporary file beside the target, then replace the target in one step
-    (atomic on one NTFS or POSIX volume), so that a reader never sees half a file."""
+    """Write through a temporary file beside the target, flush it to disk, then replace the
+    target in one step (atomic on one NTFS or POSIX volume): a reader, or a power cut, sees
+    the old file or the new one, never half of one."""
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent, prefix=f"{path.stem}.", suffix=".tmp"
@@ -356,6 +297,8 @@ def _write_atomically(path: Path, write: Callable[[Path], object]) -> None:
     temporary = Path(temporary_name)
     try:
         write(temporary)
+        with temporary.open("rb+") as written:
+            os.fsync(written.fileno())
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)

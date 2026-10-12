@@ -1,8 +1,6 @@
 import hashlib
 import json
-import os
-import subprocess
-import sys
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
@@ -11,16 +9,10 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit
+from fefat.market.layout import Dataset, DatasetMetadata, Partition, PartitionRequest, SizeUnit
+from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import SchemaKind, parse_schema_name
-from fefat.market.store import (
-    BatchJob,
-    PartitionRequest,
-    RawFile,
-    RawManifest,
-    Snapshot,
-    Store,
-)
+from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures"
@@ -42,22 +34,16 @@ TRADES_OF_MARCH_5 = Partition.from_relative_path(
 TRADES_OF_MARCH_6 = Partition.from_relative_path(
     PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-06/part.parquet")
 )
+SECONDS_OF_MARCH_5 = Partition.from_relative_path(
+    PurePosixPath("synthetic/ohlcv-1s/root=ES/contract=ESH6/date=2026-03-05/part.parquet")
+)
+SECONDS_OF_MARCH_6 = Partition.from_relative_path(
+    PurePosixPath("synthetic/ohlcv-1s/root=ES/contract=ESH6/date=2026-03-06/part.parquet")
+)
 MINUTE_BARS_OF_MARCH = Partition.from_relative_path(
     PurePosixPath("synthetic/ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet")
 )
-SETTLEMENTS = Partition.from_relative_path(
-    PurePosixPath("synthetic/statistics/root=ES/contract=ESH6/part.parquet")
-)
 ORDER_BY_KIND = {SchemaKind.TRADES: ["ts_recv", "sequence"], SchemaKind.OHLCV: ["ts_open"]}
-SNAPSHOT_PROGRAM = """
-import sys
-from pathlib import Path
-
-from fefat.market.store import PartitionRequest, Store
-
-request = PartitionRequest.model_validate_json(sys.argv[2])
-sys.stdout.write(Store(Path(sys.argv[1])).snapshot(request).model_dump_json())
-"""
 RAW_PATH = PurePosixPath("vendor/job-1/bars.dbn")
 RAW_BYTES = b"vendor bytes"
 JOB = BatchJob(job_id="job-1", published_sha256=hashlib.sha256(RAW_BYTES).hexdigest())
@@ -73,17 +59,6 @@ def store_with_the_es_trades(folder: Path) -> Store:
     for partition in (TRADES_OF_MARCH_5, TRADES_OF_MARCH_6):
         store.write_partition(partition, FIXTURE_STORE.scan_partition(partition).collect())
     return store
-
-
-def snapshot_in_a_new_process(folder: Path, request: PartitionRequest, hash_seed: str) -> str:
-    completed = subprocess.run(
-        [sys.executable, "-c", SNAPSHOT_PROGRAM, str(folder), request.model_dump_json()],
-        capture_output=True,
-        text=True,
-        check=True,
-        env={**os.environ, "PYTHONHASHSEED": hash_seed},
-    )
-    return completed.stdout
 
 
 def store_with_a_raw_file(folder: Path) -> Store:
@@ -151,7 +126,7 @@ def test_a_store_whose_folder_does_not_exist_yet_lists_nothing_and_creates_nothi
     assert not folder.exists()
 
 
-def test_a_request_reads_the_partitions_of_its_dates_and_no_others() -> None:
+def test_a_request_reads_the_trades_of_its_dates_and_no_others() -> None:
     request = PartitionRequest(
         dataset=ES_TRADES.dataset, start=date(2026, 3, 5), end=date(2026, 3, 6)
     )
@@ -163,35 +138,22 @@ def test_a_request_reads_the_partitions_of_its_dates_and_no_others() -> None:
     assert FIXTURE_STORE.scan(request).collect().height == expected_rows
 
 
-@pytest.mark.parametrize(
-    ("partition", "start", "end", "expected"),
-    [
-        (TRADES_OF_MARCH_5, date(2026, 3, 5), date(2026, 3, 5), True),
-        (TRADES_OF_MARCH_5, date(2026, 3, 6), date(2026, 3, 9), False),
-        (TRADES_OF_MARCH_5, date(2026, 3, 1), date(2026, 3, 4), False),
-        (MINUTE_BARS_OF_MARCH, date(2026, 2, 20), date(2026, 3, 1), True),
-        (MINUTE_BARS_OF_MARCH, date(2026, 4, 1), date(2026, 4, 30), False),
-        (SETTLEMENTS, date(2010, 6, 6), date(2010, 6, 6), True),
-    ],
-)
-def test_a_request_selects_the_partitions_whose_key_touches_its_dates(
-    partition: Partition, start: date, end: date, expected: bool
-) -> None:
-    request = PartitionRequest(dataset=partition.dataset, start=start, end=end)
+def test_a_scan_of_a_month_is_unchanged_when_later_trade_dates_join_it(tmp_path: Path) -> None:
+    every_day = FIXTURE_STORE.scan_partition(MINUTE_BARS_OF_MARCH).collect()
+    dataset = MINUTE_BARS_OF_MARCH.dataset
+    request = PartitionRequest(dataset=dataset, start=date(2026, 3, 5), end=date(2026, 3, 6))
+    store = Store(tmp_path)
+    store.write_dataset_metadata(dataset, ES_SIZE)
+    earlier_days = every_day.filter(pl.col("trade_date") <= request.end)
+    store.write_partition(MINUTE_BARS_OF_MARCH, earlier_days)
+    before = store.scan(request).collect().sort("ts_open")
 
-    assert request.selects(partition) is expected
+    store.write_partition(MINUTE_BARS_OF_MARCH, every_day)
+    after = store.scan(request).collect().sort("ts_open")
 
-
-def test_a_request_selects_nothing_of_another_dataset() -> None:
-    btc_trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="BTC")
-    request = PartitionRequest(dataset=btc_trades, start=date(2026, 3, 1), end=date(2026, 3, 31))
-
-    assert not request.selects(TRADES_OF_MARCH_5)
-
-
-def test_a_request_that_ends_before_it_starts_is_refused() -> None:
-    with pytest.raises(ValueError, match="Expected the start"):
-        PartitionRequest(dataset=ES_TRADES.dataset, start=date(2026, 3, 9), end=date(2026, 3, 5))
+    assert every_day.filter(pl.col("trade_date") > request.end).height > 0
+    assert after.filter(pl.col("trade_date") > request.end).is_empty()
+    assert_frame_equal(after, before)
 
 
 def test_a_request_that_selects_nothing_is_refused() -> None:
@@ -203,49 +165,6 @@ def test_a_request_that_selects_nothing_is_refused() -> None:
         FIXTURE_STORE.scan(request)
     with pytest.raises(ValueError, match="Expected at least one partition"):
         FIXTURE_STORE.snapshot(request)
-
-
-def test_a_snapshot_is_byte_identical_across_two_runs_and_changes_with_one_partitions_bytes(
-    tmp_path: Path,
-) -> None:
-    store = store_with_the_es_trades(tmp_path)
-    first = snapshot_in_a_new_process(tmp_path, ES_TRADES, hash_seed="1")
-    second = snapshot_in_a_new_process(tmp_path, ES_TRADES, hash_seed="2")
-    shorter = store.scan_partition(TRADES_OF_MARCH_6).collect().head(-1)
-    store.write_partition(TRADES_OF_MARCH_6, shorter)
-    before = Snapshot.model_validate_json(first)
-    after = store.snapshot(ES_TRADES)
-
-    assert second == first
-    assert len(before.partitions) == 2
-    assert after.sha256 != before.sha256
-    assert [digest.path for digest in after.partitions if digest not in before.partitions] == [
-        TRADES_OF_MARCH_6.relative_path().as_posix()
-    ]
-
-
-def test_a_snapshot_pins_each_partitions_sha256_and_hashes_their_sha256sum_listing() -> None:
-    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
-    listing = "".join(f"{digest.sha256}  {digest.path}\n" for digest in snapshot.partitions)
-
-    assert {digest.path: (digest.size_bytes, digest.sha256) for digest in snapshot.partitions} == {
-        path: (entry["bytes"], entry["sha256"])
-        for path, entry in MANIFEST_ENTRIES.items()
-        if path.startswith("synthetic/trades/root=ES/")
-    }
-    assert [digest.path for digest in snapshot.partitions] == sorted(
-        digest.path for digest in snapshot.partitions
-    )
-    assert snapshot.sha256 == hashlib.sha256(listing.encode()).hexdigest()
-
-
-def test_a_snapshot_whose_hash_does_not_cover_its_partitions_is_refused() -> None:
-    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
-
-    with pytest.raises(ValueError, match="Expected the snapshot hash"):
-        Snapshot(
-            request=snapshot.request, partitions=snapshot.partitions[:-1], sha256=snapshot.sha256
-        )
 
 
 def test_a_frame_with_other_columns_is_refused_and_nothing_is_written(tmp_path: Path) -> None:
@@ -270,6 +189,39 @@ def test_a_partition_of_a_dataset_without_metadata_is_refused(tmp_path: Path) ->
 
     with pytest.raises(FileNotFoundError, match="Expected the metadata"):
         store.write_partition(TRADES_OF_MARCH_5, trades)
+    assert store.list_partitions() == ()
+
+
+def april_first_on_the_last_bar(bars: pl.DataFrame) -> pl.DataFrame:
+    last_bar = pl.int_range(pl.len()) == pl.len() - 1
+    april_first = pl.when(last_bar).then(pl.lit(date(2026, 4, 1))).otherwise(pl.col("trade_date"))
+    return bars.with_columns(april_first.alias("trade_date"))
+
+
+@pytest.mark.parametrize(
+    ("partition", "source", "change"),
+    [
+        (MINUTE_BARS_OF_MARCH, MINUTE_BARS_OF_MARCH, april_first_on_the_last_bar),
+        (SECONDS_OF_MARCH_6, SECONDS_OF_MARCH_5, lambda bars: bars),
+        (
+            SECONDS_OF_MARCH_5,
+            SECONDS_OF_MARCH_5,
+            lambda bars: bars.with_columns(pl.lit(None, dtype=pl.Date).alias("trade_date")),
+        ),
+    ],
+)
+def test_a_bar_outside_its_partitions_trade_date_or_month_is_refused(
+    tmp_path: Path,
+    partition: Partition,
+    source: Partition,
+    change: Callable[[pl.DataFrame], pl.DataFrame],
+) -> None:
+    store = Store(tmp_path)
+    store.write_dataset_metadata(partition.dataset, ES_SIZE)
+    bars = change(FIXTURE_STORE.scan_partition(source).collect())
+
+    with pytest.raises(ValueError, match="Expected every bar"):
+        store.write_partition(partition, bars)
     assert store.list_partitions() == ()
 
 
@@ -310,11 +262,18 @@ def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
 
     store.write_dataset_metadata(ES_TRADES.dataset, btc)
 
+    written = (tmp_path / ES_TRADES.dataset.metadata_path()).read_bytes()
     assert store.dataset_metadata(ES_TRADES.dataset) == btc
-    assert (
-        b"\r\n"
-        not in (tmp_path / ES_TRADES.dataset.relative_folder() / "dataset.json").read_bytes()
-    )
+    assert b"\r\n" not in written
+
+
+def test_a_broken_dataset_json_is_refused_with_its_path(tmp_path: Path) -> None:
+    path = tmp_path / ES_TRADES.dataset.metadata_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('{"size_unit": {"lot": "-1", "asset": "contract"}}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"Expected .*dataset\.json to hold a DatasetMetadata"):
+        Store(tmp_path).dataset_metadata(ES_TRADES.dataset)
 
 
 def test_recording_a_raw_file_keeps_its_size_hash_and_vendor_details(tmp_path: Path) -> None:
@@ -372,10 +331,21 @@ def test_recording_a_raw_file_that_does_not_exist_is_refused(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize(
-    "path", ["../outside.dbn", "vendor/../../outside.dbn", "/vendor/bars.dbn", "C:/bars.dbn", "."]
+    "path",
+    [
+        "../outside.dbn",
+        "vendor/../../outside.dbn",
+        "/vendor/bars.dbn",
+        "C:/bars.dbn",
+        ".",
+        "MANIFEST.json",
+        "manifest.json",
+    ],
 )
-def test_a_raw_path_that_leaves_the_raw_folder_is_refused(tmp_path: Path, path: str) -> None:
-    with pytest.raises(ValueError, match="Expected a path inside the raw folder"):
+def test_a_raw_path_that_leaves_the_raw_folder_or_names_the_manifest_is_refused(
+    tmp_path: Path, path: str
+) -> None:
+    with pytest.raises(ValueError, match="Expected a vendor's file inside the raw folder"):
         Store(tmp_path).record_raw_file(
             PurePosixPath(path),
             provider="vendor",
@@ -383,6 +353,14 @@ def test_a_raw_path_that_leaves_the_raw_folder_is_refused(tmp_path: Path, path: 
             downloaded_on=date(2026, 9, 23),
             batch_job=None,
         )
+
+
+def test_a_broken_raw_manifest_is_refused_with_its_path(tmp_path: Path) -> None:
+    store = store_with_a_raw_file(tmp_path)
+    (tmp_path / "raw" / "MANIFEST.json").write_text('{"files": [{"path": "x"}]}', "utf-8")
+
+    with pytest.raises(ValueError, match=r"Expected .*MANIFEST\.json to hold a RawManifest"):
+        store.raw_manifest()
 
 
 def test_a_published_hash_is_bare_lowercase_hex() -> None:

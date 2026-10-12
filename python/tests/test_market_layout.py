@@ -3,8 +3,25 @@ from pathlib import PurePosixPath
 
 import pytest
 
-from fefat.market.layout import Dataset, Partition, Partitioning, YearMonth, partitioning
+from fefat.market.layout import (
+    Dataset,
+    Partition,
+    Partitioning,
+    PartitionRequest,
+    YearMonth,
+    partitioning,
+)
 from fefat.market.schema import parse_schema_name
+
+TRADES_OF_MARCH_5 = Partition.from_relative_path(
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-05/part.parquet")
+)
+MINUTE_BARS_OF_MARCH = Partition.from_relative_path(
+    PurePosixPath("synthetic/ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet")
+)
+SETTLEMENTS = Partition.from_relative_path(
+    PurePosixPath("synthetic/statistics/root=ES/contract=ESH6/part.parquet")
+)
 
 
 @pytest.mark.parametrize(
@@ -100,3 +117,36 @@ def test_a_month_overlaps_a_range_of_days_that_touches_it(
     start: date, end: date, expected: bool
 ) -> None:
     assert YearMonth(year=2026, month=3).overlaps(start, end) is expected
+
+
+@pytest.mark.parametrize(
+    ("partition", "start", "end", "expected"),
+    [
+        (TRADES_OF_MARCH_5, date(2026, 3, 5), date(2026, 3, 5), True),
+        (TRADES_OF_MARCH_5, date(2026, 3, 6), date(2026, 3, 9), False),
+        (TRADES_OF_MARCH_5, date(2026, 3, 1), date(2026, 3, 4), False),
+        (MINUTE_BARS_OF_MARCH, date(2026, 2, 20), date(2026, 3, 1), True),
+        (MINUTE_BARS_OF_MARCH, date(2026, 4, 1), date(2026, 4, 30), False),
+        (SETTLEMENTS, date(2010, 6, 6), date(2010, 6, 6), True),
+    ],
+)
+def test_a_request_selects_the_partitions_whose_key_touches_its_dates(
+    partition: Partition, start: date, end: date, expected: bool
+) -> None:
+    request = PartitionRequest(dataset=partition.dataset, start=start, end=end)
+
+    assert request.selects(partition) is expected
+
+
+def test_a_request_selects_nothing_of_another_dataset() -> None:
+    btc_trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="BTC")
+    request = PartitionRequest(dataset=btc_trades, start=date(2026, 3, 1), end=date(2026, 3, 31))
+
+    assert not request.selects(TRADES_OF_MARCH_5)
+
+
+def test_a_request_that_ends_before_it_starts_is_refused() -> None:
+    with pytest.raises(ValueError, match="Expected the start"):
+        PartitionRequest(
+            dataset=TRADES_OF_MARCH_5.dataset, start=date(2026, 3, 9), end=date(2026, 3, 5)
+        )

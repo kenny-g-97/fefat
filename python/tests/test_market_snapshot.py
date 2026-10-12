@@ -1,0 +1,197 @@
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import date
+from decimal import Decimal
+from pathlib import Path, PurePosixPath
+
+import polars as pl
+import pytest
+from polars.testing import assert_frame_equal
+
+from fefat.market.layout import Dataset, DatasetMetadata, Partition, PartitionRequest, SizeUnit
+from fefat.market.schema import parse_schema_name
+from fefat.market.snapshot import FileDigest, Snapshot
+from fefat.market.store import Store
+
+ROOT = Path(__file__).resolve().parents[2]
+FIXTURES = ROOT / "fixtures"
+FIXTURE_STORE = Store(FIXTURES)
+FIXTURE_ENTRIES = {
+    f"synthetic/{entry['path']}": entry
+    for entry in json.loads((FIXTURES / "synthetic" / "MANIFEST.json").read_text("utf-8"))["files"]
+}
+ES_TRADES = PartitionRequest(
+    dataset=Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES"),
+    start=date(2026, 3, 5),
+    end=date(2026, 3, 9),
+)
+ES_SIZE = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+TRADES_OF_MARCH_5 = Partition.from_relative_path(
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-05/part.parquet")
+)
+TRADES_OF_MARCH_6 = Partition.from_relative_path(
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-06/part.parquet")
+)
+SNAPSHOT_PROGRAM = """
+import sys
+from pathlib import Path
+
+from fefat.market.layout import PartitionRequest
+from fefat.market.store import Store
+
+request = PartitionRequest.model_validate_json(sys.argv[2])
+sys.stdout.write(Store(Path(sys.argv[1])).snapshot(request).model_dump_json())
+"""
+UNKNOWN_SHA256 = "0" * 64
+
+
+def store_with_the_es_trades(folder: Path) -> Store:
+    store = Store(folder)
+    store.write_dataset_metadata(ES_TRADES.dataset, ES_SIZE)
+    for partition in (TRADES_OF_MARCH_5, TRADES_OF_MARCH_6):
+        store.write_partition(partition, FIXTURE_STORE.scan_partition(partition).collect())
+    return store
+
+
+def snapshot_in_a_new_process(folder: Path, request: PartitionRequest, hash_seed: str) -> str:
+    completed = subprocess.run(
+        [sys.executable, "-c", SNAPSHOT_PROGRAM, str(folder), request.model_dump_json()],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PYTHONHASHSEED": hash_seed},
+    )
+    return completed.stdout
+
+
+def test_a_snapshot_is_byte_identical_across_two_runs_and_changes_with_one_partitions_bytes(
+    tmp_path: Path,
+) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    first = snapshot_in_a_new_process(tmp_path, ES_TRADES, hash_seed="1")
+    second = snapshot_in_a_new_process(tmp_path, ES_TRADES, hash_seed="2")
+    shorter = store.scan_partition(TRADES_OF_MARCH_6).collect().head(-1)
+    store.write_partition(TRADES_OF_MARCH_6, shorter)
+    before = Snapshot.model_validate_json(first)
+    after = store.snapshot(ES_TRADES)
+
+    assert second == first
+    assert len(before.partitions) == 2
+    assert after.sha256 != before.sha256
+    assert [digest.path for digest in after.partitions if digest not in before.partitions] == [
+        TRADES_OF_MARCH_6.relative_path().as_posix()
+    ]
+
+
+def test_a_snapshot_changes_when_the_size_unit_of_its_dataset_changes(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    before = store.snapshot(ES_TRADES)
+    mini_lots = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"))
+
+    store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)
+
+    assert store.snapshot(ES_TRADES).sha256 != before.sha256
+
+
+def test_a_snapshot_pins_each_files_sha256_and_hashes_their_sha256sum_listing() -> None:
+    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
+    files = sorted((snapshot.metadata, *snapshot.partitions), key=lambda file: file.path)
+    listing = "".join(f"{file.sha256}  {file.path}\n" for file in files)
+
+    assert {file.path: (file.size_bytes, file.sha256) for file in files} == {
+        path: (entry["bytes"], entry["sha256"])
+        for path, entry in FIXTURE_ENTRIES.items()
+        if path.startswith("synthetic/trades/root=ES/")
+    }
+    assert snapshot.metadata.path == "synthetic/trades/root=ES/dataset.json"
+    assert snapshot.sha256 == hashlib.sha256(listing.encode()).hexdigest()
+
+
+def test_a_snapshot_whose_hash_does_not_cover_its_files_is_refused() -> None:
+    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
+
+    with pytest.raises(ValueError, match="Expected the snapshot hash"):
+        Snapshot(
+            request=snapshot.request,
+            metadata=snapshot.metadata,
+            partitions=snapshot.partitions[:-1],
+            sha256=snapshot.sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../../outside.parquet",
+        "synthetic/trades/root=BTC/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
+        "synthetic/trades/root=ES/contract=ESH6/date=2026-03-10/part.parquet",
+    ],
+)
+def test_a_snapshot_read_back_with_a_partition_its_request_does_not_select_is_refused(
+    path: str,
+) -> None:
+    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
+    stranger = FileDigest(path=path, size_bytes=1, sha256=UNKNOWN_SHA256)
+
+    with pytest.raises(ValueError, match="Expected"):
+        Snapshot.of(ES_TRADES, snapshot.metadata, (stranger,))
+
+
+def test_a_snapshot_read_back_with_another_datasets_metadata_is_refused() -> None:
+    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
+    btc_metadata = FileDigest(
+        path="synthetic/trades/root=BTC/dataset.json", size_bytes=1, sha256=UNKNOWN_SHA256
+    )
+
+    with pytest.raises(ValueError, match="Expected the metadata"):
+        Snapshot.of(ES_TRADES, btc_metadata, snapshot.partitions)
+
+
+def test_reading_a_snapshot_returns_the_rows_its_request_scans() -> None:
+    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
+
+    read = FIXTURE_STORE.read(snapshot).sort("ts_recv", "sequence")
+    scanned = FIXTURE_STORE.scan(ES_TRADES).collect().sort("ts_recv", "sequence")
+
+    assert read.height == sum(
+        FIXTURE_ENTRIES[digest.path]["rows"] for digest in snapshot.partitions
+    )
+    assert_frame_equal(read, scanned)
+
+
+def test_reading_a_snapshot_refuses_a_partition_that_changed_after_it(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    pinned = store.snapshot(ES_TRADES)
+    shorter = store.scan_partition(TRADES_OF_MARCH_6).collect().head(-1)
+
+    store.write_partition(TRADES_OF_MARCH_6, shorter)
+
+    with pytest.raises(ValueError, match="the file changed after the snapshot"):
+        store.read(pinned)
+
+
+def test_reading_a_snapshot_refuses_metadata_that_changed_after_it(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    pinned = store.snapshot(ES_TRADES)
+    mini_lots = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"))
+
+    store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)
+
+    with pytest.raises(ValueError, match="the file changed after the snapshot"):
+        store.read(pinned)
+
+
+def test_reading_a_snapshot_keeps_only_the_bars_of_its_dates() -> None:
+    minute_bars = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES"
+    )
+    request = PartitionRequest(dataset=minute_bars, start=date(2026, 3, 6), end=date(2026, 3, 6))
+
+    read = FIXTURE_STORE.read(FIXTURE_STORE.snapshot(request))
+
+    assert read.height > 0
+    assert read.get_column("trade_date").unique().to_list() == [date(2026, 3, 6)]
+    assert read.filter(pl.col("trade_date") != date(2026, 3, 6)).is_empty()
