@@ -47,3 +47,9 @@ def test_resolving_creates_nothing(tmp_path: Path) -> None:
     resolve_paths({"FEFAT_HOME": str(tmp_path / "home")})
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_tests_run_with_the_fefat_folders_inside_their_temporary_folder(tmp_path: Path) -> None:
+    paths = resolve_paths(os.environ)
+
+    assert paths == FefatPaths(home=tmp_path / "fefat-home", data_dir=tmp_path / "fefat-data")
