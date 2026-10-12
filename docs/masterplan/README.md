@@ -45,7 +45,7 @@ The session protocol, reviews, verification approach, and test-data policy are i
 | Phase | What you get | Steps | Milestone |
 | --- | --- | --- | --- |
 | P0 Foundations | Tools, repository, Claude Code setup, test and data-safety guards | 8 | |
-| P1 Market data | The product catalog, the data sources you connect (kept current), and imports of your own data, in one clean store; calendars, bars, rolls | 11 | |
+| P1 Market data | The product catalog, the source guide, and imports of your Databento files and your own exports, in one clean store; calendars, bars, rolls (connectors and sync deferred, D-38) | 11 | |
 | P2 Engine | The backtest engine, proven against the readable reference; trade paths in every run | 15 | first notebook backtest at 2.2 (step 21); trustworthy at 2.15 (step 34) |
 | P3 Features | Feature library, leak detector, indicators, analytics, from notebooks | 8 | |
 | P4 Local app and phone access | Local server, login, web shell, jobs, executor, the app on your phone | 6 | app on the phone at 4.6 (step 48) |
