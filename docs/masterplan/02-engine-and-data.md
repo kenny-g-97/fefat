@@ -6,15 +6,16 @@ This is the design of the quantitative core: the `fefat` SDK and the `fefat_engi
 
 ### 1.1 Canonical store
 
-The decisions are [ADR-0019](../adr/0019-canonical-market-data-store.md); the code is `fefat.market.schema`, `fefat.market.layout`, and `fefat.market.store`.
+The decisions are [ADR-0019](../adr/0019-canonical-market-data-store.md); the code is `fefat.market.schema`, `layout`, `snapshot`, `raw_manifest`, and `store`.
 
-- **Format:** Parquet with zstd, in Databento-native units: prices as `int64` in 1e-9 units, timestamps as `int64` nanoseconds UTC. Both `ts_recv` and `ts_event` are kept; bars carry `ts_open`, `ts_close`, and the `trade_date` of their session, and statistics also carry the vendor's reference time `ts_ref`. Six schemas (trades, TBBO, bars of any timeframe, definitions, statistics, funding) are Polars schemas, checked on every read and write.
-- **Clock:** the engine clock is `ts_recv` (Databento buckets its own bars on it, and its 1-second bars are the affordable history for older years, so both eras must share one clock). Ingest asserts `ts_recv` is non-decreasing within a file.
-- **Partitioning:** `data/<provider>/<schema>/root=ES/contract=ESH4/date=2024-02-13/part.parquet` for ticks, TBBO, and bars finer than a minute (per trade date), `month=` for 1-minute bars (the month of their trade dates), one file per contract for coarser bars (5-minute, daily), definitions, statistics, and funding. Each `root=` folder holds a `dataset.json` with what all its partitions share, such as the unit of their sizes and volumes (1 contract, 0.001 BTC).
+- **Format:** Parquet with zstd, in Databento-native units: prices as `int64` in 1e-9 units, timestamps as `int64` nanoseconds UTC. Both `ts_recv` and `ts_event` are kept; bars carry `ts_open`, `ts_close`, and the `trade_date` of their session, and statistics also carry the vendor's reference time `ts_ref` and its `stat_flags`. Six schemas (trades, TBBO, bars of any timeframe, definitions, statistics, funding) are Polars schemas, checked on every read and write. A vendor's undefined values are stored as null; vendor flags are not stored, and the importer counts per day the records whose flags mark an unreliable `ts_recv`.
+- **Clock:** the engine clock is `ts_recv` (Databento buckets its own bars on it, and its 1-second bars are the affordable history for older years, so both eras must share one clock). Ingest asserts `ts_recv` is non-decreasing within a file. A record may be used from its availability time: `ts_recv` for trades, TBBO, definitions, statistics, and funding, and `ts_close` for bars.
+- **Partitioning:** `data/<provider>/<schema>/root=ES/contract=ESH4/date=2024-02-13/part.parquet` for ticks, TBBO, and bars finer than a minute (per trade date), `month=` for 1-minute bars (the month of their trade dates), one file per contract for coarser bars (5-minute, daily), definitions, statistics, and funding. A bar must fall on its partition's trade date or month. Each `root=` folder holds a `dataset.json` with what all its partitions share, such as the unit of their sizes and volumes (1 contract, 0.001 BTC).
 - **Raw files are immutable.** Vendor files (`.dbn.zst`, Binance zips) stay under `data/raw/` with a manifest (SHA-256, byte size, vendor version, download date, and the vendor's batch job id and published SHA-256). Databento re-normalised CME history in August 2026; the manifest is how a changed re-download is detected, and recording a file whose bytes changed is refused.
-- **Snapshots.** A data snapshot is the list of partitions a run read, each with its content hash, and one hash over them: the SHA-256 of their `sha256sum` listing (`<sha256>  <path>` per line, sorted by path). Runs pin snapshot hashes, not "the data as of today".
+- **Reads.** A request for a range of trade dates keeps the trades, TBBO, and bars of those dates; definitions, statistics, and funding come whole, and the load API (1.8) cuts them at `ts_recv` against the end of the range.
+- **Snapshots.** A data snapshot is the list of files a run read (the dataset's `dataset.json` and its partitions), each with its content hash, and one hash over them: the SHA-256 of their `sha256sum` listing (`<sha256>  <path>` per line, sorted by path). A run reads through its snapshot, which refuses a file that changed after it. Runs pin snapshot hashes, not "the data as of today".
 
-Amended in step 1.1 (2026-10-12): the trade date on bars, `ts_ref` on statistics, `dataset.json`, the split of TBBO, coarser bars, definitions, and funding, the batch job in the raw manifest, and the snapshot hash were added. The schemas are Polars schemas rather than pyarrow ones, so the SDK reads and writes Parquet without pyarrow (D-39).
+Amended in step 1.1 (2026-10-12): the trade date on bars, `ts_ref` and `stat_flags` on statistics, `dataset.json`, the split of TBBO, coarser bars, definitions, and funding, the batch job in the raw manifest, availability per record type, the cut of reads to a request's dates, the snapshot hash, and reading through a snapshot were added. The schemas are Polars schemas rather than pyarrow ones, so the SDK reads and writes Parquet without pyarrow (D-39).
 
 ### 1.2 Identity and metadata
 
@@ -33,7 +34,7 @@ Amended in step 1.1 (2026-10-12): the trade date on bars, `ts_ref` on statistics
 
 - Trades are bucketed by `ts_recv` into `[t, t+Δ)` anchored to the session open. Stored bars are sparse (printed only when trades occur) and carry `ts_open` and an explicit `ts_close`.
 - **Signal bars** use a dense session grid with zero-volume bars flagged, so multi-timeframe and cross-instrument joins are exact.
-- Daily bars follow the trade date and carry the official settlement (from the `statistics` schema) with its availability time.
+- Daily bars follow the trade date: they are built from finer bars by session, never taken from a vendor's UTC-day bars, and the official settlement (from the `statistics` schema) is joined to them as of its availability time when they are loaded (ADR-0019).
 - Bars rebuilt from trades must equal the vendor's 1-second and 1-minute bars; this is a test in step 1.5.
 
 ### 1.5 Rolls and continuous series
