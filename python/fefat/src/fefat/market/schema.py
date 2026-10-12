@@ -56,7 +56,7 @@ class TimeUnit(StrEnum):
     DAY = "d"
 
 
-SECONDS_PER_TIME_UNIT = {
+_SECONDS_PER_TIME_UNIT = {
     TimeUnit.SECOND: 1,
     TimeUnit.MINUTE: 60,
     TimeUnit.HOUR: 3_600,
@@ -75,7 +75,7 @@ class Timeframe(FrozenModel):
 
     def nominal_seconds(self) -> int:
         """The length in seconds, nominal for daily bars, whose sessions differ in length."""
-        return self.count * SECONDS_PER_TIME_UNIT[self.unit]
+        return self.count * _SECONDS_PER_TIME_UNIT[self.unit]
 
 
 class RecordSchemaName(FrozenModel):

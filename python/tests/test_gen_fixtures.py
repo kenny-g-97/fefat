@@ -197,7 +197,6 @@ def test_bars_carry_the_session_trade_date_not_the_utc_date_of_ts_open(
 
     assert {bar["trade_date"] for bar in second_bars} == {trade_date}
     assert {bar["trade_date"] for bar in minute_bars} == {trade_date}
-    # An ES session opens on the UTC day before its trade date; the BTC day opens at its midnight.
     assert bool(opened_the_evening_before) == (session_open < utc_midnight)
 
 

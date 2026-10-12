@@ -206,3 +206,19 @@ def test_the_pinned_metadata_is_the_one_the_snapshot_pinned(tmp_path: Path) -> N
     store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)
     with pytest.raises(ValueError, match="the file changed after the snapshot"):
         store.pinned_metadata(pinned)
+
+
+def test_a_snapshot_read_back_with_a_partition_twice_is_refused() -> None:
+    snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
+    twice = (snapshot.partitions[0], snapshot.partitions[0])
+
+    with pytest.raises(ValueError, match="Expected the partitions sorted by path, each once"):
+        Snapshot.of(ES_TRADES, snapshot.metadata, twice)
+
+
+def test_a_snapshot_refuses_metadata_it_cannot_read(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    (tmp_path / ES_TRADES.dataset.metadata_path()).write_text('{"size_unit": {}}', "utf-8")
+
+    with pytest.raises(ValueError, match=r"dataset\.json to hold a DatasetMetadata"):
+        store.snapshot(ES_TRADES)

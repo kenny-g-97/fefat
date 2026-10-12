@@ -25,11 +25,11 @@ from typing import Annotated, Self
 from pydantic import AfterValidator, Field, StringConstraints, model_validator
 
 from fefat.market.schema import (
-    SECONDS_PER_TIME_UNIT,
     FrozenModel,
     RecordSchemaName,
     SchemaKind,
     SchemaName,
+    Timeframe,
     TimeUnit,
     parse_schema_name,
 )
@@ -76,7 +76,7 @@ def partitioning(schema_name: SchemaName) -> Partitioning:
         ticks = schema_name.kind in (SchemaKind.TRADES, SchemaKind.TBBO)
         return Partitioning.TRADE_DATE if ticks else Partitioning.CONTRACT
     seconds = schema_name.timeframe.nominal_seconds()
-    one_minute = SECONDS_PER_TIME_UNIT[TimeUnit.MINUTE]
+    one_minute = Timeframe(count=1, unit=TimeUnit.MINUTE).nominal_seconds()
     if seconds < one_minute:
         return Partitioning.TRADE_DATE
     if seconds == one_minute:

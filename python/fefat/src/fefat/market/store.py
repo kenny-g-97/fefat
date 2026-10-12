@@ -115,14 +115,16 @@ class Store:
                 f"Expected the metadata of {dataset.relative_folder()} in {path}, got no such "
                 "file; write it with write_dataset_metadata before the dataset's partitions."
             )
-        return _parsed_json(DatasetMetadata, path)
+        return _parsed_json(DatasetMetadata, path.read_bytes(), str(path))
 
     def write_dataset_metadata(self, dataset: Dataset, metadata: DatasetMetadata) -> None:
         """Write the dataset's `dataset.json`, replacing any earlier one in one step."""
         _write_atomically(self._folder / dataset.metadata_path(), _json_writer(metadata))
 
     def snapshot(self, request: PartitionRequest) -> Snapshot:
-        """Pin the dataset's metadata and the partitions the request selects by their content."""
+        """Pin the dataset's metadata and the partitions the request selects by their content;
+        metadata that does not parse is refused, so a run never pins a size unit it cannot read."""
+        self.dataset_metadata(request.dataset)
         partitions = tuple(
             self._digest(file.partition.relative_path()) for file in self._selected(request)
         )
@@ -140,14 +142,15 @@ class Store:
     def pinned_metadata(self, snapshot: Snapshot) -> DatasetMetadata:
         """The dataset's metadata as the snapshot pinned it, such as the size unit a run's
         rows count in; refused if `dataset.json` changed after the snapshot."""
-        return DatasetMetadata.model_validate_json(self._pinned_bytes(snapshot.metadata))
+        content = self._pinned_bytes(snapshot.metadata)
+        return _parsed_json(DatasetMetadata, content, snapshot.metadata.path)
 
     def raw_manifest(self) -> RawManifest:
         """The raw manifest; empty until the first raw file is recorded."""
         path = self._raw_manifest_path()
         if not path.is_file():
             return RawManifest()
-        return _parsed_json(RawManifest, path)
+        return _parsed_json(RawManifest, path.read_bytes(), str(path))
 
     def record_raw_file(
         self,
@@ -163,10 +166,7 @@ class Store:
         file whose bytes or details changed is refused: a vendor's re-normalised history
         arrives as a new file."""
         relative = checked_raw_path(path.as_posix())
-        file = self._folder / RAW_FOLDER_NAME / relative
-        if not file.is_file():
-            raise FileNotFoundError(f"Expected the raw file {file}, got no such file.")
-        size_bytes, sha256 = _size_and_sha256(file)
+        size_bytes, sha256 = _size_and_sha256(self._vendor_file(relative))
         raw_file = RawFile(
             path=relative,
             size_bytes=size_bytes,
@@ -188,6 +188,20 @@ class Store:
                 f"{raw_file.model_dump_json()}."
             )
         return recorded
+
+    def _vendor_file(self, relative: str) -> Path:
+        """The vendor's file under `raw`, refused when it is missing or when it is the manifest
+        under another name, such as a hard link or a short 8.3 name."""
+        file = self._folder / RAW_FOLDER_NAME / relative
+        if not file.is_file():
+            raise FileNotFoundError(f"Expected the raw file {file}, got no such file.")
+        manifest = self._raw_manifest_path()
+        if manifest.is_file() and file.samefile(manifest):
+            raise ValueError(
+                f"Expected a vendor's file inside the raw folder, got {relative!r}, another name "
+                "of the raw manifest."
+            )
+        return file
 
     def _partition_files(self, folder: Path) -> Iterator[PartitionFile]:
         for path in folder.rglob(PARTITION_FILE_NAME):
@@ -266,29 +280,30 @@ def _described(columns: pl.Schema) -> str:
 
 
 def _require_trade_dates_of_the_key(partition: Partition, frame: pl.DataFrame) -> None:
-    """A request selects bars by their partition's key, so a bar written under another trade
-    date or month would be read for the wrong dates; it is refused."""
-    if partition.key is None or not _carries_trade_dates(partition.dataset.schema_name):
+    """Reads select bars by their partition's key and keep them by their trade date, so a bar
+    without a trade date, or with one outside its partition's date or month, is refused."""
+    if not _carries_trade_dates(partition.dataset.schema_name):
         return
     trade_date = pl.col("trade_date")
+    inside = pl.lit(True)
     if isinstance(partition.key, YearMonth):
         month = partition.key
         inside = (trade_date.dt.year() == month.year) & (trade_date.dt.month() == month.month)
-    else:
+    elif partition.key is not None:
         inside = trade_date == partition.key
     strays = frame.filter(inside.not_() | trade_date.is_null()).get_column("trade_date")
     if not strays.is_empty():
         raise ValueError(
-            f"Expected every bar of {partition.relative_path()} on its key {partition.key}, "
-            f"got the trade dates {strays.unique().sort().to_list()[:5]}."
+            f"Expected every bar of {partition.relative_path()} with a trade date of its key "
+            f"{partition.key}, got the trade dates {strays.unique().sort().to_list()[:5]}."
         )
 
 
-def _parsed_json[Model: BaseModel](model: type[Model], path: Path) -> Model:
+def _parsed_json[Model: BaseModel](model: type[Model], content: bytes, source: str) -> Model:
     try:
-        return model.model_validate_json(path.read_bytes())
+        return model.model_validate_json(content)
     except ValidationError as error:
-        raise ValueError(f"Expected {path} to hold a {model.__name__}, got: {error}") from error
+        raise ValueError(f"Expected {source} to hold a {model.__name__}, got: {error}") from error
 
 
 def _json_writer(model: BaseModel) -> Callable[[Path], object]:

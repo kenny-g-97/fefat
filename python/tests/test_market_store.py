@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
@@ -42,6 +43,9 @@ SECONDS_OF_MARCH_6 = Partition.from_relative_path(
 )
 MINUTE_BARS_OF_MARCH = Partition.from_relative_path(
     PurePosixPath("synthetic/ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet")
+)
+FIVE_MINUTE_BARS = Partition.from_relative_path(
+    PurePosixPath("synthetic/ohlcv-5m/root=ES/contract=ESH6/part.parquet")
 )
 ORDER_BY_KIND = {SchemaKind.TRADES: ["ts_recv", "sequence"], SchemaKind.OHLCV: ["ts_open"]}
 RAW_PATH = PurePosixPath("vendor/job-1/bars.dbn")
@@ -208,6 +212,11 @@ def april_first_on_the_last_bar(bars: pl.DataFrame) -> pl.DataFrame:
             SECONDS_OF_MARCH_5,
             lambda bars: bars.with_columns(pl.lit(None, dtype=pl.Date).alias("trade_date")),
         ),
+        (
+            FIVE_MINUTE_BARS,
+            MINUTE_BARS_OF_MARCH,
+            lambda bars: bars.with_columns(pl.lit(None, dtype=pl.Date).alias("trade_date")),
+        ),
     ],
 )
 def test_a_bar_outside_its_partitions_trade_date_or_month_is_refused(
@@ -254,6 +263,28 @@ def test_a_failed_write_keeps_the_old_partition_and_leaves_no_temporary_file(
 
     assert path.read_bytes() == before
     assert list(path.parent.iterdir()) == [path]
+
+
+def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(tmp_path)
+    store.write_dataset_metadata(ES_TRADES.dataset, ES_SIZE)
+    target = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    target_existed_at_each_flush: list[bool] = []
+    flush = os.fsync
+
+    def recording_flush(descriptor: int) -> None:
+        target_existed_at_each_flush.append(target.exists())
+        flush(descriptor)
+
+    monkeypatch.setattr(os, "fsync", recording_flush)
+    store.write_partition(
+        TRADES_OF_MARCH_5, FIXTURE_STORE.scan_partition(TRADES_OF_MARCH_5).collect()
+    )
+
+    assert target_existed_at_each_flush == [False]
+    assert target.exists()
 
 
 def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
@@ -351,6 +382,21 @@ def test_a_raw_path_that_leaves_the_raw_folder_or_names_the_manifest_is_refused(
     with pytest.raises(ValueError, match="Expected a vendor's file inside the raw folder"):
         Store(tmp_path).record_raw_file(
             PurePosixPath(path),
+            provider="vendor",
+            vendor_version="DBN 3",
+            downloaded_on=date(2026, 9, 23),
+            batch_job=None,
+        )
+
+
+def test_another_name_of_the_raw_manifest_is_refused(tmp_path: Path) -> None:
+    store = store_with_a_raw_file(tmp_path)
+    record(store)
+    os.link(tmp_path / "raw" / "MANIFEST.json", tmp_path / "raw" / "vendor" / "alias.json")
+
+    with pytest.raises(ValueError, match="another name of the raw manifest"):
+        store.record_raw_file(
+            PurePosixPath("vendor/alias.json"),
             provider="vendor",
             vendor_version="DBN 3",
             downloaded_on=date(2026, 9, 23),
