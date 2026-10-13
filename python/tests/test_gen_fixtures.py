@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
@@ -15,14 +16,41 @@ NANOSECONDS_PER_SECOND = 1_000_000_000
 NANOSECONDS_PER_MINUTE = 60 * NANOSECONDS_PER_SECOND
 ES_TICK = 250_000_000
 BTC_TICK = 100_000_000
-ES_SESSION_LENGTH = timedelta(hours=23)
 FIXTURE_SIZE_LIMIT_BYTES = 20_000_000
+# ES sessions run from 17:00 Chicago the day before their trade date to 16:00 Chicago on it:
+# 23:00 to 22:00 UTC in standard time (UTC-6), 22:00 to 21:00 UTC once daylight saving starts
+# on 2026-03-08 (UTC-5). The BTC day runs from 00:00 UTC to 00:00 UTC the next day.
 SESSIONS = [
-    ("ES", "ESH6", "2026-03-05", datetime(2026, 3, 4, 23, tzinfo=UTC)),
-    ("ES", "ESH6", "2026-03-06", datetime(2026, 3, 5, 23, tzinfo=UTC)),
-    ("ES", "ESH6", "2026-03-09", datetime(2026, 3, 8, 22, tzinfo=UTC)),
-    ("BTC", "BTCUSDT-PERP", "2026-03-07", datetime(2026, 3, 7, tzinfo=UTC)),
+    (
+        "ES",
+        "ESH2026",
+        "2026-03-05",
+        datetime(2026, 3, 4, 23, tzinfo=UTC),
+        datetime(2026, 3, 5, 22, tzinfo=UTC),
+    ),
+    (
+        "ES",
+        "ESH2026",
+        "2026-03-06",
+        datetime(2026, 3, 5, 23, tzinfo=UTC),
+        datetime(2026, 3, 6, 22, tzinfo=UTC),
+    ),
+    (
+        "ES",
+        "ESH2026",
+        "2026-03-09",
+        datetime(2026, 3, 8, 22, tzinfo=UTC),
+        datetime(2026, 3, 9, 21, tzinfo=UTC),
+    ),
+    (
+        "BTCUSDT-PERP",
+        "BTCUSDT-PERP",
+        "2026-03-07",
+        datetime(2026, 3, 7, tzinfo=UTC),
+        datetime(2026, 3, 8, tzinfo=UTC),
+    ),
 ]
+OPENS = [(root, contract, day, open_utc) for root, contract, day, open_utc, _ in SESSIONS]
 BAR_FIELDS = ("ts_close", "open", "high", "low", "close", "volume", "trade_count")
 
 
@@ -92,27 +120,52 @@ def test_the_fixtures_stay_under_20_mb() -> None:
 
 
 @pytest.mark.parametrize(
-    ("trade_date", "open_utc"),
+    ("trade_date", "open_utc", "close_utc"),
     [
-        (date(2026, 3, 5), datetime(2026, 3, 4, 23, tzinfo=UTC)),
-        (date(2026, 3, 6), datetime(2026, 3, 5, 23, tzinfo=UTC)),
-        (date(2026, 3, 9), datetime(2026, 3, 8, 22, tzinfo=UTC)),
+        (
+            date(2026, 3, 5),
+            datetime(2026, 3, 4, 23, tzinfo=UTC),
+            datetime(2026, 3, 5, 22, tzinfo=UTC),
+        ),
+        (
+            date(2026, 3, 6),
+            datetime(2026, 3, 5, 23, tzinfo=UTC),
+            datetime(2026, 3, 6, 22, tzinfo=UTC),
+        ),
+        (
+            date(2026, 3, 9),
+            datetime(2026, 3, 8, 22, tzinfo=UTC),
+            datetime(2026, 3, 9, 21, tzinfo=UTC),
+        ),
     ],
 )
 def test_each_es_session_runs_from_17_00_to_16_00_chicago_across_the_clock_change(
-    trade_date: date, open_utc: datetime
+    trade_date: date, open_utc: datetime, close_utc: datetime
 ) -> None:
-    trades = rows(partition("trades", "ES", "ESH6", f"date={trade_date.isoformat()}"))
+    trades = rows(partition("trades", "ES", "ESH2026", f"date={trade_date.isoformat()}"))
+    session = gen_fixtures.Session(gen_fixtures.ES, trade_date)
     open_time = nanoseconds(open_utc)
-    close_time = nanoseconds(open_utc + ES_SESSION_LENGTH)
+    close_time = nanoseconds(close_utc)
 
+    assert (session.open_time(), session.close_time()) == (open_time, close_time)
     assert trades[0]["side"] == "N"
     assert open_time <= int(trades[0]["ts_event"]) < open_time + NANOSECONDS_PER_SECOND
     assert int(trades[-1]["ts_recv"]) < close_time
 
 
+def test_a_session_closes_at_its_local_close_time_on_the_day_the_clocks_change() -> None:
+    # A product trading from 01:00 to 16:00 Chicago on 2026-03-08, when 02:00 CST becomes
+    # 03:00 CDT: it opens at 01:00 CST (UTC-6), 07:00 UTC, and closes at 16:00 CDT (UTC-5),
+    # 21:00 UTC, fourteen hours later. An open plus a fixed length cannot see the lost hour.
+    product = replace(gen_fixtures.ES, opens_at=time(1), opens_on_previous_day=False)
+    session = gen_fixtures.Session(product, date(2026, 3, 8))
+
+    assert session.open_time() == nanoseconds(datetime(2026, 3, 8, 7, tzinfo=UTC))
+    assert session.close_time() == nanoseconds(datetime(2026, 3, 8, 21, tzinfo=UTC))
+
+
 def test_the_crypto_day_trades_around_the_clock_on_a_saturday() -> None:
-    trades = rows(partition("trades", "BTC", "BTCUSDT-PERP", "date=2026-03-07"))
+    trades = rows(partition("trades", "BTCUSDT-PERP", "BTCUSDT-PERP", "date=2026-03-07"))
     day_start = nanoseconds(datetime(2026, 3, 7, tzinfo=UTC))
     day_end = nanoseconds(datetime(2026, 3, 8, tzinfo=UTC))
     hours = {
@@ -120,12 +173,13 @@ def test_the_crypto_day_trades_around_the_clock_on_a_saturday() -> None:
     }
 
     assert date(2026, 3, 7).weekday() == 5
+    assert gen_fixtures.Session(gen_fixtures.BTC, date(2026, 3, 7)).close_time() == day_end
     assert day_start <= int(trades[0]["ts_recv"])
     assert int(trades[-1]["ts_recv"]) < day_end
     assert hours == set(range(24))
 
 
-@pytest.mark.parametrize(("root", "tick"), [("ES", ES_TICK), ("BTC", BTC_TICK)])
+@pytest.mark.parametrize(("root", "tick"), [("ES", ES_TICK), ("BTCUSDT-PERP", BTC_TICK)])
 def test_trade_prices_sit_on_the_tick_grid(root: str, tick: int) -> None:
     paths = sorted((FIXTURES / "trades" / f"root={root}").rglob("*.parquet"))
     prices = [int(trade["price"]) for path in paths for trade in rows(path)]
@@ -143,7 +197,7 @@ def test_ts_recv_never_decreases_and_never_precedes_ts_event() -> None:
         assert all(int(trade["ts_recv"]) >= int(trade["ts_event"]) for trade in trades), path
 
 
-@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), OPENS)
 def test_second_bars_hold_the_trades_received_in_their_second(
     root: str, contract: str, day: str, open_utc: datetime
 ) -> None:
@@ -165,7 +219,9 @@ def test_second_bars_hold_the_trades_received_in_their_second(
     assert any(second_of(trade["ts_event"]) != second_of(trade["ts_recv"]) for trade in trades)
 
 
-@pytest.mark.parametrize(("root", "contract"), [("ES", "ESH6"), ("BTC", "BTCUSDT-PERP")])
+@pytest.mark.parametrize(
+    ("root", "contract"), [("ES", "ESH2026"), ("BTCUSDT-PERP", "BTCUSDT-PERP")]
+)
 def test_minute_bars_carry_exactly_the_volume_of_their_trades(root: str, contract: str) -> None:
     bars = rows(partition("ohlcv-1m", root, contract, "month=2026-03"))
     trades_folder = FIXTURES / "trades" / f"root={root}"
@@ -179,7 +235,7 @@ def test_minute_bars_carry_exactly_the_volume_of_their_trades(root: str, contrac
     assert all(int(bar["low"]) <= int(bar["close"]) <= int(bar["high"]) for bar in bars)
 
 
-@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), OPENS)
 def test_bars_carry_the_session_trade_date_not_the_utc_date_of_ts_open(
     root: str, contract: str, day: str, open_utc: datetime
 ) -> None:
@@ -195,13 +251,14 @@ def test_bars_carry_the_session_trade_date_not_the_utc_date_of_ts_open(
     ]
     opened_the_evening_before = [bar for bar in second_bars if bar["ts_open"] < utc_midnight]
 
+    assert minute_bars
     assert {bar["trade_date"] for bar in second_bars} == {trade_date}
     assert {bar["trade_date"] for bar in minute_bars} == {trade_date}
     assert bool(opened_the_evening_before) == (session_open < utc_midnight)
 
 
 @pytest.mark.parametrize(
-    ("root", "lot", "asset"), [("ES", "1", "contract"), ("BTC", "0.001", "BTC")]
+    ("root", "lot", "asset"), [("ES", "1", "contract"), ("BTCUSDT-PERP", "0.001", "BTC")]
 )
 @pytest.mark.parametrize("schema", ["trades", "ohlcv-1s", "ohlcv-1m"])
 def test_each_dataset_states_the_unit_of_its_sizes_and_volumes(
@@ -214,12 +271,11 @@ def test_each_dataset_states_the_unit_of_its_sizes_and_volumes(
     }
 
 
-@pytest.mark.parametrize(("root", "contract", "day", "open_utc"), SESSIONS)
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc", "close_utc"), SESSIONS)
 def test_every_bar_lies_inside_the_session_of_its_trade_date(
-    root: str, contract: str, day: str, open_utc: datetime
+    root: str, contract: str, day: str, open_utc: datetime, close_utc: datetime
 ) -> None:
-    length = timedelta(days=1) if root == "BTC" else ES_SESSION_LENGTH
-    session_open, session_close = nanoseconds(open_utc), nanoseconds(open_utc + length)
+    session_open, session_close = nanoseconds(open_utc), nanoseconds(close_utc)
     bars = [
         bar
         for schema, key in (("ohlcv-1s", f"date={day}"), ("ohlcv-1m", "month=2026-03"))

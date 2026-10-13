@@ -15,7 +15,12 @@ BTC perpetual-like UTC day, and the 1-second and 1-minute bars built from their
 trades the way section 1.4 builds bars: bucketed by `ts_recv` into
 `[t, t + width)` from the session open, sparse, with `ts_open`, `ts_close`,
 and the session's `trade_date` (the first hour of an ES session falls on the UTC
-day before its trade date).
+day before its trade date). A session opens and closes at local times of its
+product's time zone, as the calendar of `fefat.market.calendar` does: ES from
+17:00 Chicago the day before its trade date to 16:00 Chicago on it, BTC from
+00:00 UTC to 00:00 UTC the next day. The labels follow the SDK: the ES contract
+is `ESH2026` (root, month code, four-digit year, `fefat.market.contracts`) and
+the BTC root is the instrument key `BTCUSDT-PERP` (`fefat.market.instruments`).
 
 Trades carry `ts_recv`, `ts_event`, `instrument_id`, `price`, `size` (contracts
 for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
@@ -127,7 +132,7 @@ class FixtureProduct:
     time_zone: ZoneInfo
     opens_at: time
     opens_on_previous_day: bool
-    session_minutes: int
+    closes_at: time
     activity: tuple[ActivityWindow, ...]
     trade_sizes: tuple[tuple[int, float], ...]
     opening_auction: bool
@@ -137,7 +142,7 @@ class FixtureProduct:
 
 ES = FixtureProduct(
     root="ES",
-    contract="ESH6",
+    contract="ESH2026",
     instrument_id=1001,
     size_lot="1",
     size_asset="contract",
@@ -146,7 +151,7 @@ ES = FixtureProduct(
     time_zone=ZoneInfo("America/Chicago"),
     opens_at=time(17, 0),
     opens_on_previous_day=True,
-    session_minutes=23 * 60,
+    closes_at=time(16, 0),
     activity=(
         ActivityWindow(0, 930, 0.02),
         ActivityWindow(930, 940, 0.40),
@@ -170,7 +175,7 @@ ES = FixtureProduct(
     trade_dates=(date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)),
 )
 BTC = FixtureProduct(
-    root="BTC",
+    root="BTCUSDT-PERP",
     contract="BTCUSDT-PERP",
     instrument_id=2001,
     size_lot="0.001",
@@ -180,7 +185,7 @@ BTC = FixtureProduct(
     time_zone=ZoneInfo("UTC"),
     opens_at=time(0, 0),
     opens_on_previous_day=False,
-    session_minutes=24 * 60,
+    closes_at=time(0, 0),
     activity=(
         ActivityWindow(0, 810, 0.04),
         ActivityWindow(810, 1200, 0.08),
@@ -206,7 +211,7 @@ PRODUCTS = (ES, BTC)
 
 @dataclass(frozen=True)
 class Session:
-    """One trading session of a product, from its open (as a UTC instant) for a fixed length."""
+    """One trading session of a product, from its local open to its local close, as UTC instants."""
 
     product: FixtureProduct
     trade_date: date
@@ -222,8 +227,16 @@ class Session:
         )
         return int(local_open.timestamp()) * NANOSECONDS_PER_SECOND
 
+    def closing_day(self) -> date:
+        if self.product.opens_on_previous_day or self.product.closes_at > self.product.opens_at:
+            return self.trade_date
+        return self.trade_date + timedelta(days=1)
+
     def close_time(self) -> int:
-        return self.open_time() + self.product.session_minutes * NANOSECONDS_PER_MINUTE
+        local_close = datetime.combine(
+            self.closing_day(), self.product.closes_at, tzinfo=self.product.time_zone
+        )
+        return int(local_close.timestamp()) * NANOSECONDS_PER_SECOND
 
     def opens_after_weekend(self) -> bool:
         return self.opening_day().weekday() == SUNDAY

@@ -30,10 +30,10 @@ ES_TRADES = PartitionRequest(
 )
 ES_SIZE = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
 TRADES_OF_MARCH_5 = Partition.from_relative_path(
-    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-05/part.parquet")
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
 )
 TRADES_OF_MARCH_6 = Partition.from_relative_path(
-    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-06/part.parquet")
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-06/part.parquet")
 )
 SNAPSHOT_PROGRAM = """
 import sys
@@ -52,7 +52,7 @@ SESSION_CLOSES = {
         date(2026, 3, 6): datetime(2026, 3, 6, 22, tzinfo=UTC),
         date(2026, 3, 9): datetime(2026, 3, 9, 21, tzinfo=UTC),
     },
-    "BTC": {date(2026, 3, 7): datetime(2026, 3, 8, tzinfo=UTC)},
+    "BTCUSDT-PERP": {date(2026, 3, 7): datetime(2026, 3, 8, tzinfo=UTC)},
 }
 
 
@@ -148,8 +148,8 @@ def test_a_snapshot_whose_hash_does_not_cover_its_files_is_refused() -> None:
     "path",
     [
         "../../outside.parquet",
-        "synthetic/trades/root=BTC/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
-        "synthetic/trades/root=ES/contract=ESH6/date=2026-03-10/part.parquet",
+        "synthetic/trades/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
+        "synthetic/trades/root=ES/contract=ESH2026/date=2026-03-10/part.parquet",
     ],
 )
 def test_a_snapshot_read_back_with_a_partition_its_request_does_not_select_is_refused(
@@ -165,7 +165,7 @@ def test_a_snapshot_read_back_with_a_partition_its_request_does_not_select_is_re
 def test_a_snapshot_read_back_with_another_datasets_metadata_is_refused() -> None:
     snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
     btc_metadata = FileDigest(
-        path="synthetic/trades/root=BTC/dataset.json", size_bytes=1, sha256=UNKNOWN_SHA256
+        path="synthetic/trades/root=BTCUSDT-PERP/dataset.json", size_bytes=1, sha256=UNKNOWN_SHA256
     )
 
     with pytest.raises(ValueError, match="Expected the metadata"):
@@ -246,7 +246,7 @@ def test_a_snapshot_refuses_metadata_it_cannot_read(tmp_path: Path) -> None:
         store.snapshot(ES_TRADES)
 
 
-@pytest.mark.parametrize("root", ["ES", "BTC"])
+@pytest.mark.parametrize("root", ["ES", "BTCUSDT-PERP"])
 @pytest.mark.parametrize("schema", ["trades", "ohlcv-1s", "ohlcv-1m"])
 def test_a_read_cut_at_any_date_holds_exactly_the_rows_available_by_its_close(
     root: str, schema: str

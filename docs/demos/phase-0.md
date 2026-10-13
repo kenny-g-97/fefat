@@ -21,7 +21,7 @@ What Phase 0 built, shown in about fifteen minutes without reading code. Run eve
 6. **Exit check: data under another name is refused.** Copy a fixture under a name that hides what it is, and try to commit it:
 
    ```text
-   Copy-Item fixtures/synthetic/ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet notes-es.pq
+   Copy-Item fixtures/synthetic/ohlcv-1m/root=ES/contract=ESH2026/month=2026-03/part.parquet notes-es.pq
    git add notes-es.pq
    git commit -m "try"
    ```

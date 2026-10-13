@@ -30,22 +30,22 @@ ES_TRADES = PartitionRequest(
 )
 ES_SIZE = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
 TRADES_OF_MARCH_5 = Partition.from_relative_path(
-    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-05/part.parquet")
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
 )
 TRADES_OF_MARCH_6 = Partition.from_relative_path(
-    PurePosixPath("synthetic/trades/root=ES/contract=ESH6/date=2026-03-06/part.parquet")
+    PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-06/part.parquet")
 )
 SECONDS_OF_MARCH_5 = Partition.from_relative_path(
-    PurePosixPath("synthetic/ohlcv-1s/root=ES/contract=ESH6/date=2026-03-05/part.parquet")
+    PurePosixPath("synthetic/ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
 )
 SECONDS_OF_MARCH_6 = Partition.from_relative_path(
-    PurePosixPath("synthetic/ohlcv-1s/root=ES/contract=ESH6/date=2026-03-06/part.parquet")
+    PurePosixPath("synthetic/ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-06/part.parquet")
 )
 MINUTE_BARS_OF_MARCH = Partition.from_relative_path(
-    PurePosixPath("synthetic/ohlcv-1m/root=ES/contract=ESH6/month=2026-03/part.parquet")
+    PurePosixPath("synthetic/ohlcv-1m/root=ES/contract=ESH2026/month=2026-03/part.parquet")
 )
 FIVE_MINUTE_BARS = Partition.from_relative_path(
-    PurePosixPath("synthetic/ohlcv-5m/root=ES/contract=ESH6/part.parquet")
+    PurePosixPath("synthetic/ohlcv-5m/root=ES/contract=ESH2026/part.parquet")
 )
 ORDER_BY_KIND = {SchemaKind.TRADES: ["ts_recv", "sequence"], SchemaKind.OHLCV: ["ts_open"]}
 RAW_PATH = PurePosixPath("vendor/job-1/bars.dbn")
