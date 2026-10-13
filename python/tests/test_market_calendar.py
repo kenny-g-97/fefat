@@ -170,13 +170,19 @@ def test_instants_received_at_the_same_time_keep_their_order(
     tables: dict[CalendarId, SessionTable],
 ) -> None:
     # The prints of one event share their ts_recv, and bars take their open and close from the
-    # first and last print, so equal instants keep the order they came in (D-36).
+    # first and last print, so equal instants keep the order they came in (D-36). Several
+    # hundred rows in falling order, four to an instant, since a sort of twenty rows or fewer
+    # keeps ties in order whatever it is asked.
     same = utc(2026, 3, 9, 15)
-    received = pl.DataFrame({"ts_recv": [same + 5, same, same, same - 5], "sequence": [9, 8, 7, 6]})
+    offsets = [(399 - row) // 4 for row in range(400)]
+    received = pl.DataFrame(
+        {"ts_recv": [same + offset for offset in offsets], "sequence": range(400)}
+    )
 
     assigned = tables[EQUITY_INDEX].assign_trade_dates(received, "ts_recv")
 
-    assert assigned.get_column("sequence").to_list() == [6, 8, 7, 9]
+    in_order = sorted(range(400), key=lambda row: offsets[row])
+    assert assigned.get_column("sequence").to_list() == in_order
 
 
 @pytest.mark.parametrize(

@@ -235,8 +235,9 @@ class SessionTable:
         """`frame` sorted by `column`, an Int64 instant in nanoseconds since the Unix epoch, UTC,
         keeping the order of equal instants (D-36), with the `trade_date` of the session each
         instant falls in. An instant outside every session (a weekend, the daily break, a full
-        close) is refused, with the first of them. The hours a halt day leaves closed lie inside
-        the next trade date's session, since the table holds no halt windows (`BACKLOG.md`)."""
+        close) is refused, with the first of them. The hours a halt day leaves closed, and the
+        weekend after a Friday halt, lie inside the next trade date's session, since the table
+        holds no halt windows (`BACKLOG.md`)."""
         if frame.schema.get(column) != pl.Int64:
             raise ValueError(
                 f"Expected an Int64 column {column!r} of nanoseconds since the Unix epoch, UTC, "
