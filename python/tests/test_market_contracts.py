@@ -7,7 +7,9 @@ import pytest
 from polars.testing import assert_frame_equal
 
 from fefat.market.contracts import (
+    ACTIVE_DAYS_COLUMNS,
     SYMBOLOGY_COLUMNS,
+    SYMBOLOGY_CONTRACT_COLUMNS,
     Contract,
     ContractResolver,
     IdentitySource,
@@ -483,33 +485,62 @@ def test_frames_with_other_columns_are_refused() -> None:
         ContractResolver(definitions=NO_DEFINITIONS, symbology=other, instruments=STATIC_TABLE)
 
 
+def active_days_frame(*days: tuple[int, date]) -> pl.DataFrame:
+    return pl.DataFrame(list(days), schema=ACTIVE_DAYS_COLUMNS, orient="row")
+
+
 def test_symbology_contracts_name_each_outright_interval_and_leave_spreads_without_one() -> None:
     # The importer maps millions of records to contracts with one join, so the merged intervals
-    # carry their contract: ESH6's two touching intervals read as one, and MGCG1's two listings,
-    # ten years apart, stay two contracts.
+    # carry their contract: ESH6's two touching intervals read as one, MGCG1's two listings, ten
+    # years apart, stay two contracts, each interval ends the day after its last record, and
+    # ESM6, without records, is left out.
     symbology = symbology_frame(
         ("ESH6-ESM6", 1002, date(2026, 3, 4), date(2026, 3, 10)),
         ("ESH6", 1001, date(2025, 3, 21), date(2026, 1, 1)),
         ("ESH6", 1001, date(2026, 1, 1), date(2026, 3, 21)),
+        ("ESM6", 1003, date(2025, 6, 20), date(2026, 6, 19)),
         ("MGCG1", 5002, date(2020, 8, 30), date(2021, 2, 25)),
         ("MGCG1", 5001, date(2010, 9, 12), date(2011, 2, 24)),
     )
+    active = active_days_frame(
+        (1001, date(2025, 3, 24)),
+        (1001, date(2026, 3, 20)),
+        (1002, date(2026, 3, 5)),
+        (5001, date(2010, 9, 13)),
+        (5001, date(2011, 2, 23)),
+        (5002, date(2020, 8, 31)),
+        (5002, date(2021, 2, 24)),
+    )
 
-    contracts = symbology_contracts(symbology)
+    contracts = symbology_contracts(symbology, active)
 
     expected = pl.DataFrame(
         [
             ("ESH6", 1001, date(2025, 3, 21), date(2026, 3, 21), "ES", "ESH2026", "2026-03"),
-            ("ESH6-ESM6", 1002, date(2026, 3, 4), date(2026, 3, 10), None, None, None),
+            ("ESH6-ESM6", 1002, date(2026, 3, 4), date(2026, 3, 6), None, None, None),
             ("MGCG1", 5001, date(2010, 9, 12), date(2011, 2, 24), "MGC", "MGCG2011", "2011-02"),
             ("MGCG1", 5002, date(2020, 8, 30), date(2021, 2, 25), "MGC", "MGCG2021", "2021-02"),
         ],
-        schema={**SYMBOLOGY_COLUMNS, "root": pl.String, "contract": pl.String, "expiry": pl.String},
+        schema=SYMBOLOGY_CONTRACT_COLUMNS,
         orient="row",
     )
     assert_frame_equal(contracts, expected)
 
 
+def test_an_interval_that_runs_on_past_its_records_takes_its_decade_from_them() -> None:
+    # Databento maps MNQM3 to instrument_id 4973 from its listing on 2022-03-06 until the end of
+    # the query, 2026-09-23, three years after the contract expired; its records end on its last
+    # trade date, 2023-06-16, which puts it in June 2023, not June 2033.
+    symbology = symbology_frame(("MNQM3", 4973, date(2022, 3, 6), date(2026, 9, 23)))
+    active = active_days_frame((4973, date(2022, 3, 7)), (4973, date(2023, 6, 16)))
+
+    contracts = symbology_contracts(symbology, active)
+
+    assert contracts.select("contract", "start_date", "end_date").rows() == [
+        ("MNQM2023", date(2022, 3, 6), date(2023, 6, 17))
+    ]
+
+
 def test_symbology_contracts_refuse_other_columns() -> None:
     with pytest.raises(ValueError, match=r"Expected the columns .* in the symbology"):
-        symbology_contracts(pl.DataFrame({"raw_symbol": ["ESH6"]}))
+        symbology_contracts(pl.DataFrame({"raw_symbol": ["ESH6"]}), active_days_frame())

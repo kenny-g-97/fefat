@@ -29,7 +29,7 @@ from pathlib import Path, PurePosixPath
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
-from fefat.market.importers.canonical import RecordPlacement
+from fefat.market.importers.canonical import RecordPlacement, active_days
 from fefat.market.importers.dbn import read_dbn
 from fefat.market.importers.file_writer import write_records
 from fefat.market.importers.report import (
@@ -150,14 +150,17 @@ class _DataFileImporter:
         self, original: _Original, revision: str, downloaded_on: date
     ) -> FileImport | None:
         """The file kept under `raw`, its records written, and the file recorded last; `None`
-        for the vendor's daily bars, which are skipped."""
+        for the vendor's daily bars, which are skipped. The file is read twice, streaming: once
+        for the days each instrument has records, which name its contracts, then to write."""
         metadata, frames = read_dbn(original.source)
         if metadata.schema_name == _DAILY_BARS:
             return None
+        days = active_days(frames, metadata.schema_name)
         self._store.write_raw_file(original.raw_path, original.source, original.sha256)
         placement = RecordPlacement(
-            original.source, metadata, PROVIDER, self._instruments, self._cache_folder
+            original.source, metadata, days, PROVIDER, self._instruments, self._cache_folder
         )
+        _, frames = read_dbn(original.source)
         report = write_records(frames, placement, self._store, original.raw_path.as_posix())
         self._store.record_raw_file(
             original.raw_path,

@@ -410,3 +410,18 @@ def test_a_spreads_definition_is_set_aside_with_a_count(tmp_path: Path) -> None:
     _, report = imported(tmp_path, loose_file(tmp_path, "es.definition.dbn", content))
 
     assert report.files[0].spreads == (SymbolRecords(raw_symbol="ESH6-ESM6", records=1),)
+
+
+def test_a_contract_whose_symbology_runs_on_past_its_bars_is_named_by_its_bars(
+    tmp_path: Path,
+) -> None:
+    # The MNQ batch on this PC maps MNQM3 until the end of its query, 2026-09-23, three years
+    # after the contract expired; its bars end on its last trade date, 2023-06-16 (08:29 CDT).
+    mnqm3 = [mapping("MNQM3", 4973, date(2022, 3, 6), date(2026, 9, 23))]
+    bars = [OHLCVMsg(ONE_MINUTE, 1, 4973, utc(2023, 6, 16, 13, 29), 1, 1, 1, 1, 1)]
+    content = dbn_content(Schema("ohlcv-1m"), mnqm3, bars)
+
+    store, report = imported(tmp_path, loose_file(tmp_path, "mnq.ohlcv-1m.dbn", content))
+
+    assert [file.partition.contract for file in store.list_partitions()] == ["MNQM2023"]
+    assert report.files[0].contracts[0].expiry == "2023-06"

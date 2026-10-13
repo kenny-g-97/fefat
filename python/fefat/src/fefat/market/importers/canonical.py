@@ -5,8 +5,10 @@
 them, ready for the store:
 
 - Each record gets its contract from one join with the file's symbology (`symbology_contracts`):
-  the interval covering its `instrument_id` on the UTC date of its clock. A record no interval
-  covers, or two cover, is refused. Spread and strategy symbols are set aside with a count.
+  the interval covering its `instrument_id` on the UTC date of its clock, each interval cut to
+  the days its instrument has records (`active_days`, a first pass over the file), since the
+  vendor's interval can run on years after its contract expired. A record no interval covers,
+  or two cover, is refused. Spread and strategy symbols are set aside with a count.
 - Bars and ticks get the trade date of their session
   (`SessionTable.assign_trade_dates_or_previous`). A record outside every session takes the
   session before it and is counted per trade date, since the holiday rules of the years before
@@ -18,7 +20,7 @@ them, ready for the store:
 buffers.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -27,7 +29,7 @@ import polars as pl
 
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
-from fefat.market.contracts import symbology_contracts
+from fefat.market.contracts import ACTIVE_DAYS_COLUMNS, symbology_contracts
 from fefat.market.importers.dbn import DbnMetadata
 from fefat.market.instruments import InstrumentTable
 from fefat.market.layout import (
@@ -84,6 +86,7 @@ class RecordPlacement:
         self,
         source: Path,
         metadata: DbnMetadata,
+        days: pl.DataFrame,
         provider: str,
         instruments: InstrumentTable,
         cache_folder: Path,
@@ -91,7 +94,7 @@ class RecordPlacement:
         self.schema_name: SchemaName = metadata.schema_name
         self._source = source
         self.metadata = metadata
-        self._contracts = symbology_contracts(metadata.symbology).rename(
+        self._contracts = symbology_contracts(metadata.symbology, days).rename(
             {"raw_symbol": "mapped_symbol"}
         )
         self._provider = provider
@@ -101,7 +104,7 @@ class RecordPlacement:
 
     def clock_column(self) -> str:
         """The column a file of this schema is ordered by: bars have no `ts_recv`."""
-        return "ts_event" if self.schema_name.kind is SchemaKind.OHLCV else "ts_recv"
+        return clock_column(self.schema_name)
 
     def order_column(self) -> str:
         """The column a stored partition of this schema is sorted by."""
@@ -124,8 +127,7 @@ class RecordPlacement:
     def _with_contracts(self, records: pl.DataFrame) -> pl.DataFrame:
         """The records with the raw symbol, root, contract, and expiry of the one interval that
         covers each; a record no interval covers, or two cover, is refused."""
-        day = pl.col(self.clock_column()).cast(pl.Datetime("ns")).dt.date()
-        numbered = records.with_row_index("record").with_columns(day=day)
+        numbered = records.with_row_index("record").with_columns(_utc_day(self.clock_column()))
         covering = pl.col("day").is_between(pl.col("start_date"), pl.col("end_date"), closed="left")
         located = numbered.join(self._contracts, on="instrument_id").filter(covering)
         if located.height != numbered.height or located.get_column("record").is_duplicated().any():
@@ -212,6 +214,24 @@ class RecordPlacement:
         if isinstance(key, date):
             return Partition(dataset=dataset, contract=contract, key=key)
         return Partition(dataset=dataset, contract=contract, key=None)
+
+
+def clock_column(schema_name: SchemaName) -> str:
+    """The column a DBN file of the schema is ordered by: `ts_recv`, or `ts_event` for bars,
+    which have no `ts_recv`."""
+    return "ts_event" if schema_name.kind is SchemaKind.OHLCV else "ts_recv"
+
+
+def active_days(records: Iterable[pl.DataFrame], schema_name: SchemaName) -> pl.DataFrame:
+    """The UTC dates on which each instrument_id has records in a file's frames, with the
+    columns of `ACTIVE_DAYS_COLUMNS`, from a first pass over the file."""
+    day = _utc_day(clock_column(schema_name))
+    seen = [frame.select("instrument_id", day).unique() for frame in records]
+    return pl.concat([pl.DataFrame(schema=ACTIVE_DAYS_COLUMNS), *seen]).unique()
+
+
+def _utc_day(column: str) -> pl.Expr:
+    return pl.col(column).cast(pl.Datetime("ns")).dt.date().alias("day")
 
 
 def _canonical(kept: pl.DataFrame, schema_name: SchemaName) -> pl.DataFrame:
