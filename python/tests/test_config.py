@@ -17,6 +17,7 @@ def test_without_variables_home_is_the_user_data_folder_with_the_data_inside_it(
 
     expected_home = platformdirs.user_data_path("FEFAT", appauthor=False)
     assert paths == FefatPaths(home=expected_home, data_dir=expected_home / "data")
+    assert paths.cache_dir == expected_home / "cache"
     if sys.platform == "win32":
         assert expected_home == Path(os.environ["LOCALAPPDATA"]) / "FEFAT"
 

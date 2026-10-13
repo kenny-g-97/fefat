@@ -19,6 +19,7 @@ APP_NAME = "FEFAT"
 HOME_VARIABLE = "FEFAT_HOME"
 DATA_DIR_VARIABLE = "FEFAT_DATA_DIR"
 DATA_FOLDER_NAME = "data"
+CACHE_FOLDER_NAME = "cache"
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,12 @@ class FefatPaths:
 
     home: Path
     data_dir: Path
+
+    @property
+    def cache_dir(self) -> Path:
+        """`<FEFAT_HOME>/cache`: what FEFAT can rebuild, such as the session tables, so the
+        folder may be deleted at any time (`01-architecture.md` section 4)."""
+        return self.home / CACHE_FOLDER_NAME
 
 
 def resolve_paths(environment: Mapping[str, str]) -> FefatPaths:

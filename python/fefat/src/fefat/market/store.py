@@ -108,9 +108,7 @@ class Store:
         _require_trade_dates_of_the_key(partition, frame)
         self.dataset_metadata(partition.dataset)
         path = self._folder / partition.relative_path()
-        _write_atomically(
-            path, lambda temporary: frame.write_parquet(temporary, compression="zstd")
-        )
+        write_atomically(path, lambda temporary: frame.write_parquet(temporary, compression="zstd"))
         return PartitionFile(partition=partition, size_bytes=path.stat().st_size)
 
     def dataset_metadata(self, dataset: Dataset) -> DatasetMetadata:
@@ -125,7 +123,7 @@ class Store:
 
     def write_dataset_metadata(self, dataset: Dataset, metadata: DatasetMetadata) -> None:
         """Write the dataset's `dataset.json`, replacing any earlier one in one step."""
-        _write_atomically(self._folder / dataset.metadata_path(), _json_writer(metadata))
+        write_atomically(self._folder / dataset.metadata_path(), _json_writer(metadata))
 
     def snapshot(self, request: PartitionRequest) -> Snapshot:
         """Pin the dataset's metadata and the partitions the request selects by their content;
@@ -185,7 +183,7 @@ class Store:
         manifest = self.raw_manifest()
         recorded = manifest.file_at(relative)
         if recorded is None:
-            _write_atomically(self._raw_manifest_path(), _json_writer(manifest.with_file(raw_file)))
+            write_atomically(self._raw_manifest_path(), _json_writer(manifest.with_file(raw_file)))
             return raw_file
         if recorded != raw_file:
             raise ValueError(
@@ -306,7 +304,7 @@ def _json_writer(model: BaseModel) -> Callable[[Path], object]:
     return lambda temporary: temporary.write_bytes(content)
 
 
-def _write_atomically(path: Path, write: Callable[[Path], object]) -> None:
+def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
     """Write through a temporary file beside the target, flush it to disk, then replace the
     target in one step (atomic on one NTFS or POSIX volume): a reader, or a power cut, sees
     the old file or the new one, never half of one."""
