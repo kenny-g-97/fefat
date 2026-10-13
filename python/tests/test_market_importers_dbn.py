@@ -86,11 +86,8 @@ def minute_bars_file(folder: Path, name: str = "bars.ohlcv-1m.dbn") -> Path:
 
 
 def frames_of(path: Path, chunk_bytes: int = 8_000_000) -> tuple[DbnMetadata, pl.DataFrame]:
-    metadata, *frames = read_dbn(path, chunk_bytes)
-    assert isinstance(metadata, DbnMetadata)
-    records = [frame for frame in frames if isinstance(frame, pl.DataFrame)]
-    assert len(records) == len(frames)
-    return metadata, pl.concat(records)
+    metadata, frames = read_dbn(path, chunk_bytes)
+    return metadata, pl.concat(list(frames))
 
 
 def test_a_file_gives_its_metadata_then_its_records_as_columns(tmp_path: Path) -> None:
@@ -110,6 +107,19 @@ def test_a_file_gives_its_metadata_then_its_records_as_columns(tmp_path: Path) -
         3,
     )
     assert_frame_equal(metadata.symbology.sort("raw_symbol"), expected_symbology)
+    assert_frame_equal(bars, EXPECTED_BARS)
+
+
+def test_a_file_of_an_older_dbn_version_gives_that_version_and_its_records_upgraded(
+    tmp_path: Path,
+) -> None:
+    content = dbn_content(Schema("ohlcv-1m"), MAPPINGS, MINUTE_BARS, version=2)
+    path = write_dbn(tmp_path / "bars.dbn", content)
+
+    metadata, bars = frames_of(path)
+
+    assert content[:4] == b"DBN"
+    assert metadata.version == 2
     assert_frame_equal(bars, EXPECTED_BARS)
 
 

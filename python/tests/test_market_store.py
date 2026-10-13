@@ -415,3 +415,50 @@ def test_a_broken_raw_manifest_is_refused_with_its_path(tmp_path: Path) -> None:
 def test_a_published_hash_is_bare_lowercase_hex() -> None:
     with pytest.raises(ValueError, match="pattern"):
         BatchJob(job_id="job-1", published_sha256=f"sha256:{JOB.published_sha256}")
+
+
+def test_a_vendor_file_is_copied_into_raw_once_its_copy_has_the_stated_hash(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "download" / "bars.dbn"
+    source.parent.mkdir()
+    source.write_bytes(RAW_BYTES)
+    store = Store(tmp_path / "store")
+
+    store.write_raw_file(RAW_PATH, source, JOB.published_sha256)
+
+    assert (tmp_path / "store" / "raw" / RAW_PATH).read_bytes() == RAW_BYTES
+    assert store.raw_manifest() == RawManifest()
+
+
+def test_a_copy_without_the_stated_hash_is_refused_and_left_out(tmp_path: Path) -> None:
+    source = tmp_path / "bars.dbn"
+    source.write_bytes(b"other vendor bytes")
+    store = Store(tmp_path / "store")
+
+    with pytest.raises(ValueError, match=f"SHA-256 {JOB.published_sha256}, got"):
+        store.write_raw_file(RAW_PATH, source, JOB.published_sha256)
+
+    assert not (tmp_path / "store" / "raw" / RAW_PATH).exists()
+
+
+def test_a_raw_file_the_manifest_records_is_never_written_again(tmp_path: Path) -> None:
+    store = store_with_a_raw_file(tmp_path)
+    record(store)
+    source = tmp_path / "bars.dbn"
+    source.write_bytes(RAW_BYTES)
+
+    with pytest.raises(ValueError, match="which it records: raw files never change"):
+        store.write_raw_file(RAW_PATH, source, JOB.published_sha256)
+
+
+def test_a_recorded_raw_file_reads_back_and_a_changed_one_is_refused(tmp_path: Path) -> None:
+    store = store_with_a_raw_file(tmp_path)
+    recorded = record(store)
+
+    assert store.raw_file(RAW_PATH) == RAW_BYTES
+    (tmp_path / "raw" / RAW_PATH).write_bytes(b"changed")
+    with pytest.raises(ValueError, match=f"recorded SHA-256 {recorded.sha256}"):
+        store.raw_file(RAW_PATH)
+    with pytest.raises(FileNotFoundError, match="got no such entry"):
+        store.raw_file(PurePosixPath("vendor/job-1/other.dbn"))

@@ -54,6 +54,7 @@ def dbn_content(
     mappings: Sequence[SymbolMapping],
     records: Sequence[DBNRecord],
     stype_out: SType = INSTRUMENT_ID,
+    version: int = 3,
 ) -> bytes:
     """A DBN file's bytes: the metadata of a parent-symbol query on CME Globex, then the records."""
     metadata = Metadata(
@@ -67,6 +68,7 @@ def dbn_content(
         not_found=[],
         mappings=list(mappings),
         end=utc(2030, 1, 1),
+        version=version,
     )
     return metadata.encode() + b"".join(bytes(record) for record in records)
 

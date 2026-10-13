@@ -4,15 +4,16 @@ D-42).
 A DBN file is a metadata header (the dataset, the schema, and the symbology that maps each raw
 symbol to an `instrument_id` by UTC date) followed by fixed-width records. `read_dbn` feeds the
 file to the decoder a chunk at a time, so a file of any size streams, and yields its
-`DbnMetadata` first, then a frame per chunk with the record columns the canonical store keeps
-(`fefat.market.schema`), in the file's order. The vendor's undefined values (its largest
+`DbnMetadata`, read at once, and an iterator of frames, one per chunk, with the record columns
+the canonical store keeps (`fefat.market.schema`), in the file's order. The vendor's undefined values (its largest
 integers, an empty text) become null. Flags are not kept: trades and TBBO frames carry
 `bad_ts_recv`, whether a record's flags mark its `ts_recv` unreliable, for the importer to count
 per day (ADR-0019). Files of older DBN versions are upgraded to version 3 as they are read, and
 a file whose name ends in `.zst` is inflated by the decoder.
 
-    for item in read_dbn(Path("glbx-mdp3-20100606-20260923.ohlcv-1m.dbn")):
-        ...  # the DbnMetadata, then frames of ts_event, instrument_id, open, ..., volume
+    metadata, frames = read_dbn(Path("glbx-mdp3-20100606-20260923.ohlcv-1m.dbn"))
+    for bars in frames:
+        ...  # ts_event, instrument_id, open, high, low, close, volume
 """
 
 from collections.abc import Callable, Iterator
@@ -50,13 +51,15 @@ CHUNK_BYTES = 8_000_000
 
 _UNDEFINED_YEAR = 65_535
 _UNDEFINED_MONTH = 255
+_AS_WRITTEN = VersionUpgradePolicy.from_int(1)
 _UPGRADE_TO_VERSION_3 = VersionUpgradePolicy.from_int(3)
 
 
 @dataclass(frozen=True)
 class DbnMetadata:
-    """A DBN file's header: its dataset, the canonical schema of its records, its DBN version,
-    and its symbology, with the columns of `SYMBOLOGY_COLUMNS`."""
+    """A DBN file's header: its dataset, the canonical schema of its records, the DBN version
+    it is written in (before the decoder upgrades it), and its symbology, with the columns of
+    `SYMBOLOGY_COLUMNS`."""
 
     dataset: str
     schema_name: SchemaName
@@ -211,28 +214,44 @@ _LAYOUTS = {
 _CANONICAL_NAMES = {"definition": "definitions"}
 
 
-def read_dbn(path: Path, chunk_bytes: int = CHUNK_BYTES) -> Iterator[DbnMetadata | pl.DataFrame]:
-    """The file's `DbnMetadata`, then a frame of its records per chunk read, in file order. A
-    file that is not DBN, holds records of another schema than its header names, or ends in
-    the middle of a record is refused."""
-    layout: _RecordLayout | None = None
-    for decoded in _decoded(path, chunk_bytes):
-        records = decoded
-        if layout is None:
-            metadata = _metadata_of(decoded[0], path)
-            layout = _LAYOUTS[str(metadata.schema_name)]
-            records = decoded[1:]
-            yield metadata
-        if records:
-            yield layout.frame(records, path)
-    if layout is None:
+def read_dbn(
+    path: Path, chunk_bytes: int = CHUNK_BYTES
+) -> tuple[DbnMetadata, Iterator[pl.DataFrame]]:
+    """The file's `DbnMetadata`, read now, and its records as a frame per chunk, read as the
+    iterator is consumed, in file order. A file that is not DBN, holds records of another
+    schema than its header names, or ends in the middle of a record is refused."""
+    version = _written_version(path, chunk_bytes)
+    decoded = _decoded(path, chunk_bytes, _UPGRADE_TO_VERSION_3)
+    first = next(decoded, None)
+    if first is None:
         raise ValueError(f"Expected a DBN file with its metadata, got an empty file: {path}.")
+    metadata = _metadata_of(first[0], path, version)
+    layout = _LAYOUTS[str(metadata.schema_name)]
+    return metadata, _frames(layout, first[1:], decoded, path)
 
 
-def _decoded(path: Path, chunk_bytes: int) -> Iterator[list[Any]]:
+def _frames(
+    layout: _RecordLayout, first: list[Any], decoded: Iterator[list[Any]], path: Path
+) -> Iterator[pl.DataFrame]:
+    if first:
+        yield layout.frame(first, path)
+    for records in decoded:
+        yield layout.frame(records, path)
+
+
+def _written_version(path: Path, chunk_bytes: int) -> int:
+    """The DBN version the file states in its header, read before any upgrade."""
+    for decoded in _decoded(path, chunk_bytes, _AS_WRITTEN):
+        return _header(decoded[0], path).version
+    raise ValueError(f"Expected a DBN file with its metadata, got an empty file: {path}.")
+
+
+def _decoded(
+    path: Path, chunk_bytes: int, upgrade_policy: VersionUpgradePolicy
+) -> Iterator[list[Any]]:
     """What the decoder makes of each chunk, skipping chunks that complete nothing."""
     compression = Compression("zstd" if path.name.endswith(".zst") else "none")
-    decoder = DBNDecoder(upgrade_policy=_UPGRADE_TO_VERSION_3, compression=compression)
+    decoder = DBNDecoder(upgrade_policy=upgrade_policy, compression=compression)
     try:
         with path.open("rb") as file:
             for chunk in iter(lambda: file.read(chunk_bytes), b""):
@@ -250,9 +269,16 @@ def _decoded(path: Path, chunk_bytes: int) -> Iterator[list[Any]]:
         )
 
 
-def _metadata_of(header: object, path: Path) -> DbnMetadata:
-    if not isinstance(header, Metadata):
-        raise ValueError(f"Expected the DBN metadata first in {path}, got {type(header).__name__}.")
+def _header(decoded: object, path: Path) -> Metadata:
+    if not isinstance(decoded, Metadata):
+        raise ValueError(
+            f"Expected the DBN metadata first in {path}, got {type(decoded).__name__}."
+        )
+    return decoded
+
+
+def _metadata_of(decoded: object, path: Path, version: int) -> DbnMetadata:
+    header = _header(decoded, path)
     if header.stype_out != SType("instrument_id") or not header.mappings:
         raise ValueError(
             f"Expected raw symbols mapped to instrument_id in the metadata of {path}, got the "
@@ -263,7 +289,7 @@ def _metadata_of(header: object, path: Path) -> DbnMetadata:
     return DbnMetadata(
         dataset=header.dataset,
         schema_name=_schema_name(header, path),
-        version=header.version,
+        version=version,
         symbology=_symbology(header, path),
     )
 
