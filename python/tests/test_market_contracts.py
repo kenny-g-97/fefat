@@ -146,8 +146,12 @@ def test_a_definition_answers_until_its_expiration_day() -> None:
 
 def test_two_instruments_alive_for_one_symbol_on_one_day_are_refused() -> None:
     twice = resolver_of(definition_frame(esz6_of_2016(42), esz6_of_2016(43)))
+    expected = (
+        "Expected one instrument for ESZ6 on 2016-06-01, got the instrument_ids 42, 43; "
+        "resolve by instrument_id instead."
+    )
 
-    with pytest.raises(ValueError, match=re.escape("got the instrument_ids 42, 43.")):
+    with pytest.raises(ValueError, match=re.escape(expected)):
         twice.by_symbol("ESZ6", date(2016, 6, 1))
 
 
@@ -259,6 +263,62 @@ def test_two_intervals_covering_one_day_are_refused() -> None:
 
     with pytest.raises(ValueError, match="Expected one symbology interval covering 2010-12-01"):
         resolver_of(symbology=overlapping).by_instrument_id(5001, date(2010, 12, 1))
+
+
+def test_a_mapping_repeated_or_split_across_files_reads_as_one_interval() -> None:
+    from_two_files = symbology_frame(
+        ("CLZ6", 9, date(2016, 11, 22), date(2017, 1, 1)),
+        ("CLZ6", 9, date(2016, 11, 22), date(2017, 1, 1)),
+        ("CLZ6", 9, date(2017, 1, 1), date(2026, 9, 23)),
+    )
+
+    assert resolver_of(symbology=from_two_files).by_instrument_id(
+        9, date(2016, 12, 15)
+    ) == Contract(
+        root="CL",
+        expiry=YearMonth(year=2026, month=12),
+        first_trade_date=date(2016, 11, 22),
+        last_trade_date=date(2026, 9, 22),
+        raw_symbols=("CLZ6",),
+        identity_source=IdentitySource.SYMBOLOGY,
+    )
+
+
+@pytest.mark.parametrize(
+    ("contracts", "instrument_id", "on", "expected"),
+    [
+        (
+            resolver_of(
+                symbology=symbology_frame(("MCLF3", 3, date(2012, 12, 16), date(2013, 1, 1)))
+            ),
+            3,
+            date(2012, 12, 20),
+            "Expected a date on or after 2021-07-12, when MCL began trading, got 2012-12-20.",
+        ),
+        (
+            resolver_of(
+                definition_frame(
+                    definition(
+                        "ZNZ6",
+                        11,
+                        asset="ZN",
+                        listed=datetime(2016, 3, 21, 21, tzinfo=UTC),
+                        expires=datetime(2016, 12, 20, 18, 1, tzinfo=UTC),
+                        maturity=(2016, 12),
+                    )
+                )
+            ),
+            11,
+            date(2016, 6, 1),
+            "Expected a root of the instrument table (",
+        ),
+    ],
+)
+def test_every_source_refuses_a_product_the_instrument_table_lacks_on_that_day(
+    contracts: ContractResolver, instrument_id: int, on: date, expected: str
+) -> None:
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        contracts.by_instrument_id(instrument_id, on)
 
 
 @pytest.mark.parametrize(

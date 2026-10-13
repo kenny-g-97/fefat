@@ -15,9 +15,10 @@ import itertools
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Annotated, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import AfterValidator, Field, PlainSerializer, model_validator
 
 from fefat.market.layout import FolderName
 from fefat.market.schema import FrozenModel
@@ -43,6 +44,14 @@ class CryptoFee(FrozenModel):
 Fee = Annotated[FuturesFee | CryptoFee, Field(discriminator="kind")]
 """A fee as a model field: a futures or a crypto fee, told apart by `kind`."""
 
+FeesByRoot = Annotated[
+    Mapping[FolderName, Fee],
+    AfterValidator(MappingProxyType),
+    PlainSerializer(dict, return_type=dict[FolderName, Fee]),
+]
+"""The fee of each instrument root, read-only so that no run's fees change under it (D-11),
+and written as a JSON object."""
+
 
 class FeeSchedule(FrozenModel):
     """The fee of each instrument root, in force from `effective_from` until the table's next
@@ -50,7 +59,7 @@ class FeeSchedule(FrozenModel):
 
     effective_from: date
     sources: tuple[str, ...] = Field(min_length=1)
-    fees: Mapping[FolderName, Fee] = Field(min_length=1)
+    fees: FeesByRoot = Field(min_length=1)
 
 
 class FeeTable(FrozenModel):
@@ -112,6 +121,9 @@ _CME_FEE_SOURCES = (
     "https://www.tradestation.com/pricing/exchange-execution-and-clearing-fees/",
     "https://www.nfa.futures.org/faqs/members/nfa-assessment-fees.html",
 )
+"""Where CME's and NFA's fees were read, for every futures table: CME's fee finder, which
+refuses automated reading, and the brokers' pages that pass its fees on with their dates,
+Topstep's and TradeStation's, besides NFA's own."""
 
 
 def _by_size(standard: str, micro: str) -> dict[str, str]:
@@ -191,10 +203,10 @@ BINANCE_DEFAULT = FeeTable(
 """Binance for a regular user (VIP 0) paying without BNB: USD-M perpetuals 0.02 % maker and
 0.05 % taker, spot 0.1 % either way."""
 
-TABLES: Mapping[str, FeeTable] = {
-    table.name: table for table in (RETAIL_DEFAULT, PROP_TOPSTEP, BINANCE_DEFAULT)
-}
-"""The fee tables a run can name."""
+TABLES: Mapping[str, FeeTable] = MappingProxyType(
+    {table.name: table for table in (RETAIL_DEFAULT, PROP_TOPSTEP, BINANCE_DEFAULT)}
+)
+"""The fee tables a run can name, read-only."""
 
 
 def lookup(table_name: str, root: str, on: date) -> FuturesFee | CryptoFee:

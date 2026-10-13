@@ -135,6 +135,15 @@ def test_schedules_out_of_order_or_on_one_date_are_refused(dates: tuple[date, da
         FeeTable(name="a-broker", schedules=tuple(es_schedule(day, "2.00") for day in dates))
 
 
+def test_fee_tables_cannot_be_changed_once_built() -> None:
+    zero = FuturesFee(per_contract_side=Decimal(0))
+
+    with pytest.raises(TypeError):
+        TABLES["retail-default"] = TWO_SCHEDULES  # pyright: ignore[reportIndexIssue]
+    with pytest.raises(TypeError):
+        TABLES["retail-default"].schedules[0].fees["ES"] = zero  # pyright: ignore[reportIndexIssue]
+
+
 def test_every_seeded_schedule_names_https_sources_and_prices_roots_of_the_instruments() -> None:
     roots = set(STATIC_TABLE.roots())
 

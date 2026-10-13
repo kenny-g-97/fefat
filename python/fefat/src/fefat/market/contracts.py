@@ -108,7 +108,9 @@ def expiry_month(raw_symbol: str, first_seen: date, last_seen: date) -> YearMont
 
 class ContractResolver:
     """Resolves contracts from definition records, then the symbology of the imported files,
-    then an instrument table; a frame without rows means nothing of its source is loaded."""
+    then an instrument table; a frame without rows means nothing of its source is loaded. A
+    contract of a root the table lacks, or dated before the root's first trade date, is
+    refused whatever its source."""
 
     def __init__(
         self, definitions: pl.DataFrame, symbology: pl.DataFrame, instruments: InstrumentTable
@@ -116,7 +118,7 @@ class ContractResolver:
         require_columns(DEFINITIONS_COLUMNS, definitions.schema, "the definitions")
         require_columns(SYMBOLOGY_COLUMNS, symbology.schema, "the symbology")
         self._definitions = definitions
-        self._symbology = symbology
+        self._symbology = _merged_intervals(symbology)
         self._instruments = instruments
 
     def by_instrument_id(self, instrument_id: int, on: date) -> Contract:
@@ -148,10 +150,12 @@ class ContractResolver:
         )
 
     def _from_records(self, named: pl.Expr, on: date) -> Contract | None:
-        from_definitions = self._from_definitions(named, on)
-        if from_definitions is not None:
-            return from_definitions
-        return self._from_symbology(named, on)
+        contract = self._from_definitions(named, on)
+        if contract is None:
+            contract = self._from_symbology(named, on)
+        if contract is not None:
+            self._instruments.get(contract.root, on)
+        return contract
 
     def _from_definitions(self, named: pl.Expr, on: date) -> Contract | None:
         alive = self._definitions.filter(
@@ -166,7 +170,7 @@ class ContractResolver:
             symbols = ", ".join(alive.get_column("raw_symbol").unique().sort().to_list())
             raise ValueError(
                 f"Expected one instrument for {symbols} on {on}, got the instrument_ids "
-                f"{', '.join(map(str, instrument_ids))}."
+                f"{', '.join(map(str, instrument_ids))}; resolve by instrument_id instead."
             )
         latest = alive.with_columns(
             _utc_date("activation").alias("first_trade_date"),
@@ -199,6 +203,22 @@ class ContractResolver:
             raw_symbols=(raw_symbol,),
             identity_source=IdentitySource.SYMBOLOGY,
         )
+
+
+def _merged_intervals(symbology: pl.DataFrame) -> pl.DataFrame:
+    """The intervals of each raw symbol and `instrument_id` joined where they overlap or touch,
+    so a mapping that several files repeat, or split at their edges, reads as one interval;
+    the same pair seen again after a gap, ten years on, stays apart."""
+    pair = ["raw_symbol", "instrument_id"]
+    starts_a_run = pl.col("start_date") > pl.col("end_date").cum_max().shift(1).over(pair)
+    return (
+        symbology.sort([*pair, "start_date"])
+        .with_columns(starts_a_run.fill_null(True).cum_sum().over(pair).alias("run"))
+        .group_by([*pair, "run"])
+        .agg(pl.col("start_date").min(), pl.col("end_date").max())
+        .drop("run")
+        .sort([*pair, "start_date"])
+    )
 
 
 def _contract_of(definition: dict[str, Any], symbols_seen: tuple[str, ...]) -> Contract:
