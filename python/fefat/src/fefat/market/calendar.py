@@ -1,8 +1,9 @@
 """Session calendars: the trade dates of a product group, each with its session's open and
 close as UTC instants (`02-engine-and-data.md` §1.3, D-41).
 
-A calendar is regular hours in a time zone and its holidays: full closes, halts whose trading
-belongs to the next trade date (as CME dates holiday trading), and early closes. Trade dates
+A calendar (`fefat.market.calendar_definition`) is regular hours in a time zone and its
+holidays: full closes, halts whose trading belongs to the next trade date (as CME dates holiday
+trading), and early closes, with the regular closes of earlier eras. Trade dates
 come from session membership, never from clock arithmetic: `SessionTable.assign_trade_dates`
 gives each instant the trade date of the session it falls in. Local times become UTC instants
 day by day through the IANA time-zone database that Polars carries, so a daylight-saving
@@ -15,17 +16,15 @@ folder. The built-in calendars are `fefat.market.builtin_calendars`:
 """
 
 import hashlib
-import itertools
-from datetime import UTC, date, datetime, time, timedelta
-from enum import IntEnum, StrEnum
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Self
 
 import polars as pl
 from polars.exceptions import ComputeError
-from pydantic import AfterValidator, Field, StringConstraints, model_validator
+from pydantic import model_validator
 
-from fefat.market.layout import FolderName
+from fefat.market.calendar_definition import Calendar, SessionHours
 from fefat.market.schema import FrozenModel, require_columns
 from fefat.market.store import write_atomically
 
@@ -42,135 +41,6 @@ since the Unix epoch, UTC."""
 _LEAD_IN = timedelta(days=14)
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-class CalendarId(StrEnum):
-    """A built-in session calendar: CME Globex's equity index, energy, and metals groups, and
-    crypto's 24x7 UTC days (`fefat.market.builtin_calendars`)."""
-
-    CME_EQUITY_INDEX = "cme-equity-index"
-    CME_ENERGY = "cme-energy"
-    CME_METALS = "cme-metals"
-    CRYPTO_24X7 = "crypto-24x7"
-
-
-class Weekday(IntEnum):
-    """A day of the week, numbered as ISO 8601, `date.isoweekday`, and Polars number them."""
-
-    MONDAY = 1
-    TUESDAY = 2
-    WEDNESDAY = 3
-    THURSDAY = 4
-    FRIDAY = 5
-    SATURDAY = 6
-    SUNDAY = 7
-
-
-def _known_time_zone(name: str) -> str:
-    try:
-        pl.Series([0], dtype=pl.Datetime("ns")).dt.replace_time_zone(name)
-    except ComputeError as error:
-        raise ValueError(
-            f"Expected an IANA time zone such as America/Chicago, got {name!r}."
-        ) from error
-    return name
-
-
-TimeZoneName = Annotated[str, AfterValidator(_known_time_zone)]
-"""An IANA time-zone name that Polars knows, such as `America/Chicago` or `UTC`."""
-
-SourceLink = Annotated[str, StringConstraints(pattern=r"^https://\S+$")]
-"""Where a holiday's date or time is published."""
-
-
-class SessionHours(FrozenModel):
-    """Regular sessions in local time of `time_zone`: each opens at `opens_at`, on the day before
-    its trade date when `opens_on_previous_day`, and closes at `closes_at` on its trade date, or
-    on the day after when it opens on its trade date and `closes_at` is not after `opens_at` (a
-    crypto UTC day runs 00:00 to 00:00). `weekdays` are the days of the week that are trade
-    dates."""
-
-    time_zone: TimeZoneName
-    opens_at: time
-    closes_at: time
-    opens_on_previous_day: bool
-    weekdays: frozenset[Weekday] = Field(min_length=1)
-
-    @model_validator(mode="after")
-    def _sessions_end_before_the_next_opens(self) -> Self:
-        if self.opens_on_previous_day and self.closes_at > self.opens_at:
-            raise ValueError(
-                "Expected the close at or before the open time when sessions open the day "
-                f"before their trade date, got an open at {self.opens_at} and a close at "
-                f"{self.closes_at}."
-            )
-        return self
-
-
-class FullClose(FrozenModel):
-    """A day without trading: no session ends on it, and the next session opens at the regular
-    open after it."""
-
-    kind: Literal["full-close"] = "full-close"
-    day: date
-    source: SourceLink
-
-
-class Halt(FrozenModel):
-    """A holiday that trades until a midday halt but has no trade date of its own: its trading
-    belongs to the next trade date, whose session opens at the regular open before it."""
-
-    kind: Literal["halt"] = "halt"
-    day: date
-    source: SourceLink
-
-
-class EarlyClose(FrozenModel):
-    """A trade date whose session closes early, at `closes_at` local time."""
-
-    kind: Literal["early-close"] = "early-close"
-    day: date
-    closes_at: time
-    source: SourceLink
-
-
-Holiday = Annotated[FullClose | Halt | EarlyClose, Field(discriminator="kind")]
-"""A holiday as a model field: a full close, a halt, or an early close, told apart by `kind`."""
-
-
-class Calendar(FrozenModel):
-    """A session calendar: regular hours and the holidays that change them, at most one a day,
-    each on one of the calendar's weekdays. The built-in calendars are
-    `fefat.market.builtin_calendars.BUILT_IN`; a product a trader imports on hours of its own
-    gets a calendar built the same way, with its own name."""
-
-    name: FolderName
-    hours: SessionHours
-    holidays: tuple[Holiday, ...]
-
-    @model_validator(mode="after")
-    def _one_holiday_a_day_on_a_trading_weekday(self) -> Self:
-        days = sorted(holiday.day for holiday in self.holidays)
-        repeated = sorted({day for day, after in itertools.pairwise(days) if day == after})
-        if repeated:
-            raise ValueError(
-                f"Expected at most one holiday a day in {self.name}, got several on "
-                f"{', '.join(str(day) for day in repeated)}."
-            )
-        off_days = [day for day in days if day.isoweekday() not in self.hours.weekdays]
-        if off_days:
-            raise ValueError(
-                f"Expected {self.name}'s holidays on its weekdays, got {off_days[0]}, a "
-                f"{off_days[0]:%A}."
-            )
-        return self
-
-    def no_session_reason(self, day: date) -> str:
-        """Why `day`, a date without a session, is not a trade date: its holiday or weekday."""
-        holiday = next((holiday for holiday in self.holidays if holiday.day == day), None)
-        if holiday is None:
-            return f"a {day:%A}, not one of its weekdays"
-        return f"a {holiday.kind} holiday ({holiday.source})"
 
 
 class Session(FrozenModel):
@@ -318,8 +188,8 @@ def build_sessions(calendar: Calendar, first: date, last: date) -> pl.DataFrame:
     _require_an_earlier_trade_date(calendar, sessions, first)
     hours = calendar.hours
     open_day = pl.col("first_trading_day") - timedelta(days=int(hours.opens_on_previous_day))
-    close_time = pl.col("early_close").fill_null(hours.closes_at)
-    regular_close_time = pl.lit(hours.closes_at)
+    regular_close_time = _regular_close_time(calendar)
+    close_time = pl.col("early_close").fill_null(regular_close_time)
     try:
         built = sessions.filter(pl.col("trade_date") >= first).select(
             "trade_date",
@@ -336,6 +206,16 @@ def build_sessions(calendar: Calendar, first: date, last: date) -> pl.DataFrame:
         ) from error
     _require_early_closes_inside_their_sessions(calendar, built)
     return built.drop("regular_close")
+
+
+def _regular_close_time(calendar: Calendar) -> pl.Expr:
+    """Each trade date's regular close: the close of the former era it falls in, if any, else
+    the hours' close."""
+    close_time = pl.lit(calendar.hours.closes_at)
+    for former in sorted(calendar.former_closes, key=lambda former: former.until, reverse=True):
+        before = pl.col("trade_date") < former.until
+        close_time = pl.when(before).then(pl.lit(former.closes_at)).otherwise(close_time)
+    return close_time
 
 
 def _close_day(close_time: pl.Expr, hours: SessionHours) -> pl.Expr:

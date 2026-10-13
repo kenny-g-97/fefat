@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 import fefat as ff
-from fefat.market.calendar import CalendarId
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.instruments import (
     STATIC_TABLE,
     Currency,

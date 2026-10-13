@@ -1,19 +1,18 @@
 """Market data: the canonical store, its schemas, and its layout (ADR-0019); instrument
 specifications, contract identity, and fee tables; session calendars and trade dates."""
 
-from fefat.market.calendar import (
+from fefat.market.calendar import Session, SessionTable, sessions_of
+from fefat.market.calendar_check import CalendarReport, validate_calendar
+from fefat.market.calendar_definition import (
     Calendar,
     CalendarId,
     EarlyClose,
+    FormerClose,
     FullClose,
     Halt,
-    Session,
     SessionHours,
-    SessionTable,
     Weekday,
-    sessions_of,
 )
-from fefat.market.calendar_check import CalendarReport, validate_calendar
 from fefat.market.contracts import Contract, ContractResolver, IdentitySource, is_outright
 from fefat.market.fees import CryptoFee, FeeSchedule, FeeTable, FuturesFee
 from fefat.market.instruments import Currency, Instrument, InstrumentKind, InstrumentTable
@@ -44,6 +43,7 @@ __all__ = [
     "EarlyClose",
     "FeeSchedule",
     "FeeTable",
+    "FormerClose",
     "FullClose",
     "FuturesFee",
     "Halt",

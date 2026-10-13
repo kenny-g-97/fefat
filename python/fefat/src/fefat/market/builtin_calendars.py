@@ -2,7 +2,8 @@
 
 CME Globex trades the equity index, energy, and metals groups from 17:00 Chicago on the evening
 before a trade date to 16:00 Chicago on it, from Sunday evening to Friday afternoon, as the
-products' specification pages state (`fefat.market.instruments`). Its holidays follow the US
+products' specification pages state (`fefat.market.instruments`), and to 16:15 before trade date
+2015-09-21, when the daily maintenance began 15 minutes earlier for all three (`FORMER_CLOSES`). Its holidays follow the US
 exchange holidays, and CME dates holiday trading by session: what trades on a halt day belongs
 to the next trade date ("Day orders entered after a product's Pre-opening(s) on Sunday,
 September 6th are for trade date Tuesday, September 8th", the notes of
@@ -16,8 +17,11 @@ both the same way in every year, the trade date CME Clearing used before that ch
 - Halts, every group: Martin Luther King Jr. Day, Presidents' Day, Memorial Day, Juneteenth
   (from 2022), Independence Day (both on the nearest weekday), Labor Day, and Thanksgiving.
 - Early closes: the day after Thanksgiving (equity index 12:15, energy and metals 13:45),
-  Christmas Eve from Monday to Thursday (12:15, and 12:45), and for equity index the weekday
-  before Independence Day, from Monday to Thursday (12:15).
+  Christmas Eve from Monday to Thursday (12:15, and 12:45), and for equity index July 3, the
+  day before Independence Day, from Monday to Thursday (12:15). When Independence Day is a
+  Saturday, its Friday observance is a halt and the Thursday before trades in full: MES and MNQ
+  printed until 16:00 on 2020-07-02 and 2026-07-02, and the 2026 schedule names Friday's early
+  close only (https://ampfutures.com/news/holiday-trading-schedule-independence-day).
 
 Each rule names its source: brokers' copies of CME's holiday schedules, since cmegroup.com
 refuses scripted reads. `OVERRIDES` holds the days the rules miss, each with its source; where
@@ -30,12 +34,12 @@ from collections.abc import Callable, Iterator, Mapping
 from datetime import date, time, timedelta
 from types import MappingProxyType
 
-from fefat.market.calendar import (
-    FIRST_SESSION_DATE,
-    LAST_SESSION_DATE,
+from fefat.market.calendar import FIRST_SESSION_DATE, LAST_SESSION_DATE
+from fefat.market.calendar_definition import (
     Calendar,
     CalendarId,
     EarlyClose,
+    FormerClose,
     FullClose,
     Halt,
     Holiday,
@@ -76,7 +80,18 @@ _INDEPENDENCE_DAY = f"{_DTN}/fourth-of-july-service-hours-2025/"
 _LABOR_DAY = "https://edgeclear.com/exchange-holiday-hours/"
 _THANKSGIVING = f"{_PARAGON}/2025/11/PGM_Thanksgiving-Holiday-Schedule_2025.pdf"
 _CHRISTMAS_EVE = f"{_DTN}/christmas-new-year-holiday-hours-2025/"
-_DAY_BEFORE_INDEPENDENCE_DAY = f"{_PARAGON}/2026/07/PGM_Independence-Day-Holiday-Schedule_2026.pdf"
+_DAY_BEFORE_INDEPENDENCE_DAY = _INDEPENDENCE_DAY
+_CLOSE_AT_16_00 = (
+    "https://www.cmegroup.com/tools-information/lookups/advisories/electronic-trading/20150907.html"
+)
+
+FORMER_CLOSES = (
+    FormerClose(until=date(2015, 9, 21), closes_at=time(16, 15), source=_CLOSE_AT_16_00),
+)
+"""CME Globex's regular close before trade date 2015-09-21: "the closing times for the following
+markets will now occur 15 minutes earlier Monday through Friday at 16:00 CT", NYMEX, COMEX, and
+CME Equity among them (the CME Globex notice of 2015-09-07), which the real MGC bars show,
+ending up to 16:15 until 2015-09-18 and by 16:00 after."""
 
 
 def _observed(day: date) -> date:
@@ -174,7 +189,7 @@ def _christmas_eve(year: int) -> tuple[date, ...]:
 
 
 def _day_before_independence_day(year: int) -> tuple[date, ...]:
-    return _monday_to_thursday(_observed(date(year, 7, 4)) - timedelta(days=1))
+    return _monday_to_thursday(date(year, 7, 3))
 
 
 _FULL_CLOSES: tuple[tuple[DayRule, str], ...] = (
@@ -241,6 +256,23 @@ OVERRIDES: tuple[tuple[CalendarId, Holiday], ...] = (
         )
         for calendar_id in (CalendarId.CME_ENERGY, CalendarId.CME_METALS)
     ),
+    # The day after Thanksgiving before the close moved to 13:45: the real MGC bars end at 12:45
+    # in 2019 and 2020, and MCL's too in 2023 (step 1.6).
+    *(
+        (calendar_id, EarlyClose(day=day, closes_at=time(12, 45), source=source))
+        for day, source in (
+            (
+                date(2019, 11, 29),
+                "https://www.yuantafutures.com.hk/en/Uploads/file/20191121/1574278760128424.pdf",
+            ),
+            (date(2020, 11, 27), "https://cdn.tradestation.com/uploads/thanksgiving-day-2020.pdf"),
+            (
+                date(2023, 11, 24),
+                "https://www.cmegroup.com/trading-hours/files/thanksgiving-day-2023.pdf",
+            ),
+        )
+        for calendar_id in (CalendarId.CME_ENERGY, CalendarId.CME_METALS)
+    ),
     # Good Friday with the March jobs report.
     (
         CalendarId.CME_EQUITY_INDEX,
@@ -303,7 +335,12 @@ def _rule_holidays(calendar_id: CalendarId, years: range) -> Iterator[Holiday]:
 
 def _cme_calendar(calendar_id: CalendarId) -> Calendar:
     holidays = cme_holidays(calendar_id, FIRST_SESSION_DATE.year, LAST_SESSION_DATE.year)
-    return Calendar(name=calendar_id.value, hours=CME_GLOBEX_HOURS, holidays=holidays)
+    return Calendar(
+        name=calendar_id.value,
+        hours=CME_GLOBEX_HOURS,
+        holidays=holidays,
+        former_closes=FORMER_CLOSES,
+    )
 
 
 BUILT_IN: Mapping[CalendarId, Calendar] = MappingProxyType(

@@ -20,7 +20,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from fefat.market.calendar import CalendarId
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.layout import FolderName
 from fefat.market.schema import FrozenModel
 
