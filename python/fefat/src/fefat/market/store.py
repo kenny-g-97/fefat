@@ -42,7 +42,13 @@ from fefat.market.raw_manifest import (
     RawManifest,
     checked_raw_path,
 )
-from fefat.market.schema import FrozenModel, SchemaKind, SchemaName, polars_schema
+from fefat.market.schema import (
+    FrozenModel,
+    SchemaKind,
+    SchemaName,
+    polars_schema,
+    require_columns,
+)
 from fefat.market.snapshot import FileDigest, Snapshot
 
 
@@ -90,7 +96,7 @@ class Store:
         path = self._folder / partition.relative_path()
         rows = pl.scan_parquet(path, hive_partitioning=False)
         expected = polars_schema(partition.dataset.schema_name)
-        _require_columns(expected, rows.collect_schema(), str(path))
+        require_columns(expected, rows.collect_schema(), str(path))
         return rows
 
     def write_partition(self, partition: Partition, frame: pl.DataFrame) -> PartitionFile:
@@ -98,7 +104,7 @@ class Store:
         must match the schema, bars must fall on the partition's trade date or month, and the
         dataset needs its metadata first."""
         source = f"the frame for {partition.relative_path()}"
-        _require_columns(polars_schema(partition.dataset.schema_name), frame.schema, source)
+        require_columns(polars_schema(partition.dataset.schema_name), frame.schema, source)
         _require_trade_dates_of_the_key(partition, frame)
         self.dataset_metadata(partition.dataset)
         path = self._folder / partition.relative_path()
@@ -243,7 +249,7 @@ class Store:
 
     def _pinned_partition(self, digest: FileDigest, expected: pl.Schema) -> pl.DataFrame:
         frame = pl.read_parquet(io.BytesIO(self._pinned_bytes(digest)))
-        _require_columns(expected, frame.schema, digest.path)
+        require_columns(expected, frame.schema, digest.path)
         return frame
 
     def _raw_manifest_path(self) -> Path:
@@ -266,17 +272,6 @@ def _carries_trade_dates(schema_name: SchemaName) -> bool:
     """Bars carry their session's trade date; ticks get theirs from their partition, and the
     other records have none."""
     return schema_name.kind is SchemaKind.OHLCV
-
-
-def _require_columns(expected: pl.Schema, actual: pl.Schema, source: str) -> None:
-    if actual != expected:
-        raise ValueError(
-            f"Expected the columns {_described(expected)}, got {_described(actual)} in {source}."
-        )
-
-
-def _described(columns: pl.Schema) -> str:
-    return ", ".join(f"{name} {dtype}" for name, dtype in columns.items())
 
 
 def _require_trade_dates_of_the_key(partition: Partition, frame: pl.DataFrame) -> None:

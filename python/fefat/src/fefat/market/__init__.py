@@ -1,6 +1,7 @@
 """Market data: the canonical store, its schemas, and its layout (ADR-0019); instrument
-specifications."""
+specifications and contract identity."""
 
+from fefat.market.contracts import Contract, ContractResolver, IdentitySource, is_outright
 from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import (
     Dataset,
@@ -17,8 +18,11 @@ from fefat.market.store import Store
 
 __all__ = [
     "BatchJob",
+    "Contract",
+    "ContractResolver",
     "Dataset",
     "DatasetMetadata",
+    "IdentitySource",
     "Instrument",
     "InstrumentKind",
     "InstrumentTable",
@@ -28,6 +32,7 @@ __all__ = [
     "Snapshot",
     "Store",
     "YearMonth",
+    "is_outright",
     "parse_schema_name",
     "polars_schema",
 ]

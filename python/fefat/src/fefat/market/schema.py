@@ -254,3 +254,15 @@ _COLUMNS_BY_KIND = {
 def polars_schema(schema_name: SchemaName) -> pl.Schema:
     """The columns, in order and with their types, that every partition of the schema holds."""
     return pl.Schema(_COLUMNS_BY_KIND[schema_name.kind])
+
+
+def require_columns(expected: pl.Schema, actual: pl.Schema, source: str) -> None:
+    """Refuse columns other than `expected`, in its order and with its types, naming `source`."""
+    if actual != expected:
+        raise ValueError(
+            f"Expected the columns {_described(expected)}, got {_described(actual)} in {source}."
+        )
+
+
+def _described(columns: pl.Schema) -> str:
+    return ", ".join(f"{name} {dtype}" for name, dtype in columns.items())
