@@ -242,6 +242,8 @@ Not in this step: rolls, continuous series.
 
 2026-10-12 (Phase 1 kickoff, D-38): no trades or 1-second bars exist on this PC and 1.4 is skipped, so the step depends on 1.3 alone, verifies against the vendor at the fidelities the data has, and times what the data allows; the prompt, Done means 2 and 3, and Your checks were reworded. Bars carry `trade_date` (1.1). From the Phase 0 exit reviews: a bar whose close lies after the end of the data is held back and written only when later data completes it; and the fixtures gain a print received exactly on a second boundary, one in the last slot before the close, and one after the close, planted by `scripts/gen_fixtures.py` in this step.
 
+2026-10-13 (step 1.3): the session tables hold no halt windows, so the hours a halt day leaves closed lie inside the next trade date's session: 12:00 to 17:00 CT on a Monday holiday for equity index, and from Friday noon to Sunday 17:00 after a Friday holiday (the session of Monday 2026-06-22 spans 95 hours, 42 of them traded). Before the dense session grid is built, give the calendar its halt windows and leave them out of the grid, so that indicators counting bars, exits counting minutes, and the prop rules never read closed hours as market time (`BACKLOG.md`).
+
 ### 1.6 Databento file importer
 
 Depends on: 1.2 · Plan mode: optional · Reviews: step-reviewer · Security: no · Model hint: default

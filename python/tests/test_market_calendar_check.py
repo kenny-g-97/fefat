@@ -12,6 +12,7 @@ from fefat.market.calendar_check import (
     MismatchKind,
     MissingSession,
     SessionMismatch,
+    SessionWithoutPrints,
     validate_calendar,
 )
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
@@ -48,7 +49,7 @@ def test_the_synthetic_fixtures_match_their_calendars(tmp_path: Path) -> None:
     report = validate_calendar(Store(FIXTURES), tmp_path)
 
     assert report == CalendarReport(days_checked=12, mismatches=())
-    assert report.summary() == "No mismatches over 12 trade dates."
+    assert report.summary() == "Trade dates checked: 12. Mismatches: none."
 
 
 def test_ticks_filed_under_another_trade_date_are_reported_with_their_times(
@@ -90,11 +91,14 @@ def test_ticks_filed_under_another_trade_date_are_reported_with_their_times(
 
 
 def test_bars_on_a_day_without_a_session_are_reported(tmp_path: Path) -> None:
-    store = copied_fixtures(tmp_path / "store")
+    # Juneteenth 2026 trades until a midday halt but has no trade date of its own. The store
+    # holds only these bars, so no session between the fixtures' March and June lacks prints.
+    fixtures = Store(FIXTURES)
     march_9 = Partition(dataset=ES_SECONDS, contract="ESH2026", key=date(2026, 3, 9))
-    # Juneteenth 2026 trades until a midday halt but has no trade date of its own.
     juneteenth = date(2026, 6, 19)
-    bars = store.scan_partition(march_9).collect().with_columns(trade_date=pl.lit(juneteenth))
+    bars = fixtures.scan_partition(march_9).collect().with_columns(trade_date=pl.lit(juneteenth))
+    store = Store(tmp_path / "store")
+    store.write_dataset_metadata(ES_SECONDS, fixtures.dataset_metadata(ES_SECONDS))
     store.write_partition(Partition(dataset=ES_SECONDS, contract="ESH2026", key=juneteenth), bars)
     first, last = first_and_last(bars, "ts_open", "ts_close")
 
@@ -106,7 +110,7 @@ def test_bars_on_a_day_without_a_session_are_reported(tmp_path: Path) -> None:
         ),
     )
     assert report.summary().splitlines() == [
-        "Mismatches over 13 trade dates: 1",
+        "Trade dates checked: 1. Mismatches: 1.",
         f"synthetic/ohlcv-1s/root=ES 2026-06-19 no-session: prints {utc_text(first)} to "
         f"{utc_text(last)}, on a day without a session",
     ]
@@ -186,3 +190,46 @@ def test_a_coarse_bar_that_straddles_an_early_close_is_not_a_print_after_it(
     report = validate_calendar(store, tmp_path / "cache")
 
     assert report == CalendarReport(days_checked=1, mismatches=())
+
+
+def test_a_session_without_prints_inside_a_datasets_dates_is_reported(tmp_path: Path) -> None:
+    # With Friday 2026-03-06 gone from every ES dataset, its session, from Thursday 17:00 CST,
+    # 23:00 UTC, to 16:00 CST, 22:00 UTC, has no prints between the first trade date, 03-05,
+    # and the last, 03-09: the trace of a day the vendor missed, or of a full close the
+    # calendar lacks.
+    store = copied_fixtures(tmp_path / "store")
+    friday = date(2026, 3, 6)
+    for dataset in (ES_TRADES, ES_SECONDS):
+        partition = Partition(dataset=dataset, contract="ESH2026", key=friday)
+        (tmp_path / "store" / partition.relative_path()).unlink()
+    month = Partition(dataset=ES_MINUTES, contract="ESH2026", key=YearMonth(year=2026, month=3))
+    others = store.scan_partition(month).collect().filter(pl.col("trade_date") != friday)
+    store.write_partition(month, others)
+    session = Session(trade_date=friday, open=utc(2026, 3, 5, 23), close=utc(2026, 3, 6, 22))
+
+    report = validate_calendar(store, tmp_path / "cache")
+
+    assert report.days_checked == 12
+    assert report.mismatches == tuple(
+        SessionWithoutPrints(dataset=dataset, trade_date=friday, session=session)
+        for dataset in (ES_MINUTES, ES_SECONDS, ES_TRADES)
+    )
+    assert report.summary().splitlines()[1] == (
+        "synthetic/ohlcv-1m/root=ES 2026-03-06 no-prints: no prints in the session "
+        "2026-03-05T23:00:00Z to 2026-03-06T22:00:00Z"
+    )
+
+
+def test_an_empty_tick_file_adds_no_trade_date(tmp_path: Path) -> None:
+    # An empty file on Saturday 2026-03-07 adds nothing to check, and an empty file in place of
+    # Friday 03-06's trades leaves that session without prints.
+    store = copied_fixtures(tmp_path / "store")
+    empty = pl.DataFrame(schema=polars_schema(ES_TRADES.schema_name))
+    for day in (date(2026, 3, 6), date(2026, 3, 7)):
+        store.write_partition(Partition(dataset=ES_TRADES, contract="ESH2026", key=day), empty)
+
+    report = validate_calendar(store, tmp_path / "cache")
+
+    assert [
+        (mismatch.dataset, mismatch.trade_date, mismatch.kind) for mismatch in report.mismatches
+    ] == [(ES_TRADES, date(2026, 3, 6), MismatchKind.NO_PRINTS)]

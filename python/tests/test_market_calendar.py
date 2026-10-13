@@ -166,6 +166,19 @@ def test_instants_get_the_trade_date_of_the_session_they_fall_in(
     assert_frame_equal(assigned, expected)
 
 
+def test_instants_received_at_the_same_time_keep_their_order(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # The prints of one event share their ts_recv, and bars take their open and close from the
+    # first and last print, so equal instants keep the order they came in (D-36).
+    same = utc(2026, 3, 9, 15)
+    received = pl.DataFrame({"ts_recv": [same + 5, same, same, same - 5], "sequence": [9, 8, 7, 6]})
+
+    assigned = tables[EQUITY_INDEX].assign_trade_dates(received, "ts_recv")
+
+    assert assigned.get_column("sequence").to_list() == [6, 8, 7, 9]
+
+
 @pytest.mark.parametrize(
     ("instant", "text"),
     [
@@ -406,3 +419,16 @@ def test_a_changed_session_rule_builds_a_new_session_table(
     sessions_of(calendar, tmp_path / "cache")
 
     assert len(cached_tables(tmp_path / "cache")) == 2
+
+
+def test_a_new_polars_version_builds_a_new_session_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Polars carries the time-zone database that turns local times into UTC instants.
+    calendar = BUILT_IN[CRYPTO]
+    sessions_of(calendar, tmp_path)
+    monkeypatch.setattr(pl, "__version__", "0.0.0")
+
+    sessions_of(calendar, tmp_path)
+
+    assert len(cached_tables(tmp_path)) == 2

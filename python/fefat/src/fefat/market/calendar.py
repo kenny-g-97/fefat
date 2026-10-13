@@ -225,17 +225,18 @@ class SessionTable:
             f"{self._calendar.no_session_reason(trade_date)}."
         )
 
-    def with_sessions(self, days: pl.DataFrame) -> pl.DataFrame:
-        """`days`, which holds a `trade_date` column, with the `session_open` and `session_close`
-        of each trade date's session: null where the calendar has none, such as a weekend or a
-        holiday. A trade date outside the table's span is refused."""
-        self._require_within_the_span(days.get_column("trade_date").drop_nulls())
-        return days.join(self._renamed(), on="trade_date", how="left", maintain_order="left")
+    def between(self, first: date, last: date) -> pl.DataFrame:
+        """The sessions of the trade dates from `first` to `last`, with the columns of
+        `SESSION_COLUMNS`; dates outside the table's span are refused."""
+        self._require_within_the_span(pl.Series([first, last], dtype=pl.Date))
+        return self._sessions.filter(pl.col("trade_date").is_between(first, last))
 
     def assign_trade_dates(self, frame: pl.DataFrame, column: str) -> pl.DataFrame:
         """`frame` sorted by `column`, an Int64 instant in nanoseconds since the Unix epoch, UTC,
-        with the `trade_date` of the session each instant falls in. An instant outside every
-        session (a weekend, the daily break, a full close) is refused, with the first of them."""
+        keeping the order of equal instants (D-36), with the `trade_date` of the session each
+        instant falls in. An instant outside every session (a weekend, the daily break, a full
+        close) is refused, with the first of them. The hours a halt day leaves closed lie inside
+        the next trade date's session, since the table holds no halt windows (`BACKLOG.md`)."""
         if frame.schema.get(column) != pl.Int64:
             raise ValueError(
                 f"Expected an Int64 column {column!r} of nanoseconds since the Unix epoch, UTC, "
@@ -243,7 +244,7 @@ class SessionTable:
             )
         if "trade_date" in frame.columns:
             raise ValueError("Expected a frame without a trade_date column, got one.")
-        assigned = frame.sort(column).join_asof(
+        assigned = frame.sort(column, maintain_order=True).join_asof(
             self._renamed(), left_on=column, right_on="session_open", strategy="backward"
         )
         outside = assigned.filter(

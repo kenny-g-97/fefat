@@ -8,7 +8,9 @@ compares them with that trade date's session in the root's calendar
 (`fefat.market.instruments`, `fefat.market.builtin_calendars`). It reports a print before the
 open or after the close (for bars, a bar wholly outside the session, since a bar's prints lie
 somewhere inside it), a first print more than `tolerance` after the open, a last print more
-than `tolerance` before the close, and a trade date the calendar has no session for.
+than `tolerance` before the close, a trade date the calendar has no session for, and a session
+between a dataset's first and last trade date without a single print, which is a day the
+vendor missed or a session the calendar should not have, such as a full close it lacks.
 Definitions, statistics, and funding hold no session prints and are not checked. A half-day
 the holiday rules lack shows as an early last print: add it to
 `fefat.market.builtin_calendars.OVERRIDES` with its source.
@@ -29,7 +31,7 @@ from pydantic import Field
 
 from fefat.market import instruments
 from fefat.market.builtin_calendars import BUILT_IN
-from fefat.market.calendar import Session, sessions_of, utc_text
+from fefat.market.calendar import Session, SessionTable, sessions_of, utc_text
 from fefat.market.layout import Dataset, Partition
 from fefat.market.schema import FrozenModel, SchemaKind
 from fefat.market.store import Store
@@ -46,6 +48,7 @@ class MismatchKind(StrEnum):
     LATE_FIRST_PRINT = "late-first-print"
     EARLY_LAST_PRINT = "early-last-print"
     NO_SESSION = "no-session"
+    NO_PRINTS = "no-prints"
 
 
 class SessionMismatch(FrozenModel):
@@ -85,7 +88,23 @@ class MissingSession(FrozenModel):
         return f"{_observed(self)}, on a day without a session"
 
 
-CalendarMismatch = Annotated[SessionMismatch | MissingSession, Field(discriminator="kind")]
+class SessionWithoutPrints(FrozenModel):
+    """A session between a dataset's first and last trade date without a single print."""
+
+    kind: Literal[MismatchKind.NO_PRINTS] = MismatchKind.NO_PRINTS
+    dataset: Dataset
+    trade_date: date
+    session: Session
+
+    def describe(self) -> str:
+        """One line: the dataset, the trade date, and the session that has no prints."""
+        session = f"{utc_text(self.session.open)} to {utc_text(self.session.close)}"
+        heading = f"{self.dataset.relative_folder()} {self.trade_date} {self.kind}"
+        return f"{heading}: no prints in the session {session}"
+
+
+Mismatch = SessionMismatch | MissingSession | SessionWithoutPrints
+CalendarMismatch = Annotated[Mismatch, Field(discriminator="kind")]
 """A mismatch of a dataset's trade date with the calendar, told apart by `kind`."""
 
 
@@ -105,8 +124,8 @@ class CalendarReport(FrozenModel):
     def summary(self) -> str:
         """A line per mismatch with its trade date and times, or one line saying there are none."""
         if not self.mismatches:
-            return f"No mismatches over {self.days_checked} trade dates."
-        heading = f"Mismatches over {self.days_checked} trade dates: {len(self.mismatches)}"
+            return f"Trade dates checked: {self.days_checked}. Mismatches: none."
+        heading = f"Trade dates checked: {self.days_checked}. Mismatches: {len(self.mismatches)}."
         return "\n".join([heading, *(mismatch.describe() for mismatch in self.mismatches)])
 
 
@@ -117,14 +136,16 @@ def validate_calendar(
     table `fefat.market.calendar.sessions_of` keeps in `cache_folder`. A root missing from
     the instrument table is refused, since its calendar is unknown."""
     days_checked = 0
-    mismatches: list[SessionMismatch | MissingSession] = []
+    mismatches: list[Mismatch] = []
     for dataset, partitions in _checked_datasets(store):
+        prints = _prints_by_trade_date(store, partitions)
+        if prints.is_empty():
+            continue
         # shortcut: the calendar of the root's newest instrument version; split the check by
         # version when a root's calendar changes over time.
         calendar = BUILT_IN[instruments.get(dataset.root).calendar_id]
-        prints = _prints_by_trade_date(store, partitions)
-        days_checked += prints.height
-        joined = sessions_of(calendar, cache_folder).with_sessions(prints)
+        joined = _beside_their_sessions(prints, sessions_of(calendar, cache_folder))
+        days_checked += joined.height
         mismatches.extend(_mismatches(dataset, joined, tolerance))
     return CalendarReport(days_checked=days_checked, mismatches=tuple(mismatches))
 
@@ -143,7 +164,8 @@ def _checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]
 
 def _prints_by_trade_date(store: Store, partitions: list[Partition]) -> pl.DataFrame:
     """Per trade date, across the partitions: the first and last print, the end of the first
-    print, and the start of the last (a bar's `ts_close` and `ts_open`, a tick's own time)."""
+    print, and the start of the last (a bar's `ts_close` and `ts_open`, a tick's own time). An
+    empty file adds no trade date."""
     return (
         pl.concat([_partition_prints(store, partition) for partition in partitions])
         .group_by("trade_date")
@@ -153,9 +175,19 @@ def _prints_by_trade_date(store: Store, partitions: list[Partition]) -> pl.DataF
             pl.col("last_start").max(),
             pl.col("last_print").max(),
         )
+        .drop_nulls("first_print")
         .sort("trade_date")
         .collect()
     )
+
+
+def _beside_their_sessions(prints: pl.DataFrame, table: SessionTable) -> pl.DataFrame:
+    """The prints of each trade date beside the sessions from the dataset's first trade date to
+    its last: a row per date that has either, the other side null where it is missing."""
+    dates = pl.col("trade_date")
+    first, last = prints.select(first=dates.min(), last=dates.max()).row(0)
+    sessions = table.between(first, last).rename({"open": "session_open", "close": "session_close"})
+    return prints.join(sessions, on="trade_date", how="full", coalesce=True).sort("trade_date")
 
 
 def _partition_prints(store: Store, partition: Partition) -> pl.LazyFrame:
@@ -177,12 +209,11 @@ def _partition_prints(store: Store, partition: Partition) -> pl.LazyFrame:
     )
 
 
-def _mismatches(
-    dataset: Dataset, joined: pl.DataFrame, tolerance: timedelta
-) -> list[SessionMismatch | MissingSession]:
+def _mismatches(dataset: Dataset, joined: pl.DataFrame, tolerance: timedelta) -> list[Mismatch]:
     margin = tolerance // timedelta(microseconds=1) * 1_000
     checks = {
         MismatchKind.NO_SESSION: pl.col("session_open").is_null(),
+        MismatchKind.NO_PRINTS: pl.col("first_print").is_null(),
         MismatchKind.PRINT_BEFORE_OPEN: pl.col("first_end") <= pl.col("session_open"),
         MismatchKind.PRINT_AFTER_CLOSE: pl.col("last_start") >= pl.col("session_close"),
         MismatchKind.LATE_FIRST_PRINT: pl.col("first_print") > pl.col("session_open") + margin,
@@ -197,7 +228,12 @@ def _mismatches(
     return [_mismatch(dataset, row) for row in found.iter_rows(named=True)]
 
 
-def _mismatch(dataset: Dataset, row: dict[str, Any]) -> SessionMismatch | MissingSession:
+def _mismatch(dataset: Dataset, row: dict[str, Any]) -> Mismatch:
+    if row["first_print"] is None:
+        session = Session(
+            trade_date=row["trade_date"], open=row["session_open"], close=row["session_close"]
+        )
+        return SessionWithoutPrints(dataset=dataset, trade_date=row["trade_date"], session=session)
     observed = {
         "dataset": dataset,
         "trade_date": row["trade_date"],
