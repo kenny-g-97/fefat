@@ -1,6 +1,7 @@
 """Generate the synthetic market data under fixtures/synthetic/, the only data files in git.
 
-Run it in the project environment, since it writes Parquet through pyarrow:
+Run it in the project environment, since it writes Parquet through pyarrow and DBN through
+databento-dbn:
 
     uv run python scripts/gen_fixtures.py
     uv run python scripts/gen_fixtures.py --out <folder> --seed <number>
@@ -28,7 +29,14 @@ for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
 `<schema>/root=…/` holds a `dataset.json` with the unit of its sizes and volumes
 (`size_unit`: one unit is `lot` of `asset`). MANIFEST.json lists every file with
 the generator, the seed, its size, and its SHA-256, and each Parquet file's row
-count. Each session draws from its own
+count.
+
+Beside the provider folders, `databento-batch/<job>/` holds a Databento batch download as the
+importer of step 1.6 reads one: the ES 1-minute bars as a DBN file (`ESH6`, instrument_id
+1001), with a calendar spread `ESH6-ESM6` (1002) trading now and then, which the importer
+skips, encoded by the vendor's own encoder; `metadata.json` with the query, `condition.json`
+with each day's condition (one degraded), and `manifest.json` with each other file's size and
+SHA-256, as Databento writes them. Each session draws from its own
 `random.Random`, seeded with "<seed>/<root>/<trade date>". Times and durations
 here are integer nanoseconds; instants count from the Unix epoch in UTC.
 
@@ -57,6 +65,8 @@ from zoneinfo import ZoneInfo
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from databento_dbn import Metadata, OHLCVMsg, RType, Schema, SType
+from databento_dbn.metadata import MappingInterval
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "fixtures" / "synthetic"
@@ -64,6 +74,15 @@ DEFAULT_SEED = 20260308
 GENERATOR = "scripts/gen_fixtures.py"
 MANIFEST_NAME = "MANIFEST.json"
 DATASET_METADATA_NAME = "dataset.json"
+
+DATABENTO_JOB = "GLBX-20260310-SYNTHETIC0"
+DATABENTO_DATA_FILE = "glbx-mdp3-20260304-20260309.ohlcv-1m.dbn"
+DATABENTO_QUERY = (date(2026, 3, 4), date(2026, 3, 10))
+DATABENTO_PUBLISHER = 1
+DATABENTO_OUTRIGHT = "ESH6"
+DATABENTO_SPREAD = ("ESH6-ESM6", 1002)
+DATABENTO_SPREAD_EVERY = 100
+DATABENTO_DEGRADED_DAY = date(2026, 3, 6)
 
 NANOSECONDS_PER_SECOND = 1_000_000_000
 NANOSECONDS_PER_MINUTE = 60 * NANOSECONDS_PER_SECOND
@@ -73,6 +92,7 @@ OPENING_PRINT_DELAY = (1_000_000, 50_000_000)
 OPENING_PRINT_SIZE = (50, 400)
 RECEIVE_LATENCY = (20_000, 400_000)
 WEEKEND_GAP_FACTOR = 3
+SATURDAY = 5
 SUNDAY = 6
 
 BUYER = "B"
@@ -464,6 +484,155 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
     return entries
 
 
+@dataclass
+class DatabentoInterval:
+    """A symbology interval as the DBN encoder takes it: the symbol is the instrument_id."""
+
+    start_date: date
+    end_date: date
+    symbol: str
+
+
+@dataclass
+class DatabentoMapping:
+    raw_symbol: str
+    intervals: Sequence[MappingInterval]
+
+
+def utc_midnight(day: date) -> int:
+    return int(datetime.combine(day, time(), tzinfo=ZoneInfo("UTC")).timestamp()) * (
+        NANOSECONDS_PER_SECOND
+    )
+
+
+def databento_metadata() -> Metadata:
+    """The header of a batch download of the parent `ES.FUT` with the vendor's symbology."""
+    start, end = DATABENTO_QUERY
+    spread = DATABENTO_SPREAD[0]
+    mappings = [
+        DatabentoMapping(raw_symbol, [DatabentoInterval(start, end, str(instrument_id))])
+        for raw_symbol, instrument_id in ((DATABENTO_OUTRIGHT, ES.instrument_id), DATABENTO_SPREAD)
+    ]
+    return Metadata(
+        dataset="GLBX.MDP3",
+        start=utc_midnight(start),
+        stype_in=SType("parent"),
+        stype_out=SType("instrument_id"),
+        schema=Schema("ohlcv-1m"),
+        symbols=[f"{ES.root}.FUT"],
+        partial=[DATABENTO_OUTRIGHT, spread],
+        not_found=[],
+        mappings=mappings,
+        end=utc_midnight(end),
+    )
+
+
+def databento_bars(bars: list[dict[str, int]], random_source: random.Random) -> list[OHLCVMsg]:
+    """The ES 1-minute bars as the vendor's records, with a spread bar beside every hundredth,
+    sorted by bar open as the vendor sorts them."""
+    minute = int(RType.from_str("ohlcv-1m"))
+    records: list[OHLCVMsg] = []
+    for index, bar in enumerate(bars):
+        prices = (bar["open"], bar["high"], bar["low"], bar["close"])
+        records.append(
+            OHLCVMsg(
+                minute,
+                DATABENTO_PUBLISHER,
+                ES.instrument_id,
+                bar["ts_open"],
+                *prices,
+                bar["volume"],
+            )
+        )
+        if index % DATABENTO_SPREAD_EVERY == 0:
+            spread_price = random_source.randrange(-200, -150) * ES.tick
+            spread_prices = (spread_price, spread_price + ES.tick, spread_price, spread_price)
+            records.append(
+                OHLCVMsg(
+                    minute,
+                    DATABENTO_PUBLISHER,
+                    DATABENTO_SPREAD[1],
+                    bar["ts_open"],
+                    *spread_prices,
+                    random_source.randrange(1, 6),
+                )
+            )
+    return records
+
+
+def written_json(path: Path, content: object) -> Path:
+    path.write_text(json.dumps(content, indent=4) + "\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def databento_query() -> dict[str, object]:
+    start, end = DATABENTO_QUERY
+    return {
+        "version": 1,
+        "job_id": DATABENTO_JOB,
+        "query": {
+            "dataset": "GLBX.MDP3",
+            "schema": "ohlcv-1m",
+            "symbols": [f"{ES.root}.FUT"],
+            "stype_in": "parent",
+            "stype_out": "instrument_id",
+            "start": utc_midnight(start),
+            "end": utc_midnight(end),
+            "limit": None,
+            "encoding": "dbn",
+            "compression": None,
+        },
+        "customizations": {"map_symbols": False, "pretty_px": False, "pretty_ts": False},
+    }
+
+
+def databento_conditions() -> list[dict[str, str]]:
+    """A condition per date of the query, Saturdays left out, as the vendor lists them."""
+    start, end = DATABENTO_QUERY
+    days = [start + timedelta(days=offset) for offset in range((end - start).days)]
+    return [
+        {
+            "date": day.isoformat(),
+            "condition": "degraded" if day == DATABENTO_DEGRADED_DAY else "available",
+            "last_modified_date": max(day, date(2026, 3, 8)).isoformat(),
+        }
+        for day in days
+        if day.weekday() != SATURDAY
+    ]
+
+
+def vendor_manifest(paths: Sequence[Path]) -> dict[str, object]:
+    files = [
+        {
+            "filename": path.name,
+            "size": path.stat().st_size,
+            "hash": f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}",
+        }
+        for path in paths
+    ]
+    return {"job_id": DATABENTO_JOB, "files": files}
+
+
+def written_databento_batch(out: Path, seed: int) -> list[dict[str, str | int]]:
+    """Write the Databento batch download of the ES 1-minute bars, after the ES files, and
+    return the entries of its four files."""
+    folder = out / "databento-batch" / DATABENTO_JOB
+    folder.mkdir(parents=True, exist_ok=True)
+    month = f"month={month_of(ES)}"
+    bars = pq.read_table(partition_path(out, "ohlcv-1m", ES, month)).to_pylist()
+    records = databento_bars(bars, random.Random(f"{seed}/databento-batch"))
+    data_file = folder / DATABENTO_DATA_FILE
+    data_file.write_bytes(
+        databento_metadata().encode() + b"".join(bytes(record) for record in records)
+    )
+    sidecars = [
+        written_json(folder / "condition.json", databento_conditions()),
+        written_json(folder / "metadata.json", databento_query()),
+    ]
+    manifest = written_json(folder / "manifest.json", vendor_manifest([*sidecars, data_file]))
+    return [manifest_entry(path, out, seed) for path in (data_file, *sidecars, manifest)]
+
+
 def write_manifest(out: Path, entries: Sequence[dict[str, str | int]]) -> None:
     ordered = sorted(entries, key=lambda entry: str(entry["path"]))
     text = json.dumps({"files": ordered}, indent=2, sort_keys=True) + "\n"
@@ -493,6 +662,7 @@ def main(argv: Sequence[str]) -> int:
         for product in PRODUCTS
         for entry in written_product(product, arguments.out, arguments.seed)
     ]
+    entries.extend(written_databento_batch(arguments.out, arguments.seed))
     write_manifest(arguments.out, entries)
     total_bytes = sum(int(entry["bytes"]) for entry in entries)
     print(

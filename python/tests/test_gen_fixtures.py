@@ -109,8 +109,21 @@ def test_every_committed_fixture_file_is_listed_with_its_hash() -> None:
         if path.is_file() and path != MANIFEST
     }
 
-    assert len(on_disk) == 16
+    assert len(on_disk) == 20
     assert on_disk == listed
+
+
+def test_the_databento_batch_lists_each_files_size_and_sha256_as_the_vendor_does() -> None:
+    folder = FIXTURES / "databento-batch" / gen_fixtures.DATABENTO_JOB
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    listed = {entry["filename"]: (entry["size"], entry["hash"]) for entry in manifest["files"]}
+
+    assert manifest["job_id"] == gen_fixtures.DATABENTO_JOB
+    assert listed == {
+        path.name: (path.stat().st_size, f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}")
+        for path in folder.iterdir()
+        if path.name != "manifest.json"
+    }
 
 
 def test_the_fixtures_stay_under_20_mb() -> None:
