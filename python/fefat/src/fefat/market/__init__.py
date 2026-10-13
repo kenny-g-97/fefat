@@ -1,5 +1,7 @@
-"""Market data: the canonical store, its schemas, and its layout (ADR-0019)."""
+"""Market data: the canonical store, its schemas, and its layout (ADR-0019); instrument
+specifications."""
 
+from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -17,6 +19,9 @@ __all__ = [
     "BatchJob",
     "Dataset",
     "DatasetMetadata",
+    "Instrument",
+    "InstrumentKind",
+    "InstrumentTable",
     "Partition",
     "PartitionRequest",
     "SizeUnit",
