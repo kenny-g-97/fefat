@@ -48,6 +48,8 @@ from fefat.market.schema import SchemaName, parse_schema_name
 
 CHUNK_BYTES = 8_000_000
 """How much of a file the decoder takes at a time: about 143,000 one-minute bars."""
+_HEADER_CHUNK_BYTES = 65_536
+"""How much the decoder takes at a time while it reads only the header."""
 
 _UNDEFINED_YEAR = 65_535
 _UNDEFINED_MONTH = 255
@@ -220,7 +222,7 @@ def read_dbn(
     """The file's `DbnMetadata`, read now, and its records as a frame per chunk, read as the
     iterator is consumed, in file order. A file that is not DBN, holds records of another
     schema than its header names, or ends in the middle of a record is refused."""
-    version = _written_version(path, chunk_bytes)
+    version = _written_version(path, min(chunk_bytes, _HEADER_CHUNK_BYTES))
     decoded = _decoded(path, chunk_bytes, _UPGRADE_TO_VERSION_3)
     first = next(decoded, None)
     if first is None:
@@ -309,7 +311,12 @@ def _symbology(header: Metadata, path: Path) -> pl.DataFrame:
     """The metadata's mappings as rows of `SYMBOLOGY_COLUMNS`; an interval without a symbol,
     when the raw symbol named nothing, is left out."""
     rows = [
-        (raw_symbol, _instrument_id(interval["symbol"], raw_symbol, path), *_dates(interval))
+        (
+            raw_symbol,
+            _instrument_id(interval["symbol"], raw_symbol, path),
+            interval["start_date"],
+            interval["end_date"],
+        )
         for raw_symbol, intervals in header.mappings.items()
         for interval in intervals
         if interval["symbol"]
@@ -324,7 +331,3 @@ def _instrument_id(symbol: str, raw_symbol: str, path: Path) -> int:
             f"{symbol!r}."
         )
     return int(symbol)
-
-
-def _dates(interval: Any) -> tuple[object, object]:
-    return interval["start_date"], interval["end_date"]

@@ -97,6 +97,7 @@ class RecordPlacement:
         self._contracts = symbology_contracts(metadata.symbology, days).rename(
             {"raw_symbol": "mapped_symbol"}
         )
+        _require_covered(days, self._contracts, source)
         self._provider = provider
         self._instruments = instruments
         self._cache_folder = cache_folder
@@ -215,6 +216,29 @@ class RecordPlacement:
         if isinstance(key, date):
             return Partition(dataset=dataset, contract=contract, key=key)
         return Partition(dataset=dataset, contract=contract, key=None)
+
+
+def _require_covered(days: pl.DataFrame, contracts: pl.DataFrame, source: Path) -> None:
+    """Refuse, before the second pass writes anything, a file with records on a day that no
+    symbology interval of their instrument covers, or that two cover."""
+    covering = pl.col("day").is_between(pl.col("start_date"), pl.col("end_date"), closed="left")
+    covered = days.join(contracts, on="instrument_id").filter(covering)
+    missing = days.join(covered, on=["instrument_id", "day"], how="anti").sort(
+        "day", "instrument_id"
+    )
+    if not missing.is_empty():
+        instrument_id, day = missing.select("instrument_id", "day").row(0)
+        raise ValueError(
+            f"Expected the symbology of {source} to cover every record, got none for "
+            f"instrument_id {instrument_id} on {day} ({missing.height} instrument days uncovered)."
+        )
+    doubled = covered.filter(pl.struct("instrument_id", "day").is_duplicated()).sort("day")
+    if not doubled.is_empty():
+        instrument_id, day = doubled.select("instrument_id", "day").row(0)
+        raise ValueError(
+            f"Expected one symbology interval covering instrument_id {instrument_id} on {day} in "
+            f"{source}, got {doubled.height} intervals over its days."
+        )
 
 
 def clock_column(schema_name: SchemaName) -> str:

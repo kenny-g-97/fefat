@@ -7,8 +7,9 @@ the vendor's website, and its files come through here.
 `manifest.json` publishes, refusing a mismatch with both hashes, before it writes anything; a
 batch split into several DBN files is refused, since its files can share partitions, which are
 not merged yet. It writes the records as canonical partitions (`file_writer`), then keeps the
-file unchanged under `raw/databento/<job>/` (a single file under `raw/databento/`) with its
-entry in the raw manifest, recorded last: the job id and the published SHA-256, the DBN version
+file unchanged under `raw/databento/<job>/` (a single file under `raw/databento/<its
+SHA-256>/`, since the vendor names files by dates and schema, not by product) with its entry in
+the raw manifest, recorded last: the job id and the published SHA-256, the DBN version
 and the newest revision date in `condition.json` (`DBN 3, revised 2026-09-23`), and the
 download date the job id carries, or, for a single file, the UTC date it was last written. So
 an interrupted import runs again, a refused one leaves no copy behind, and a finished one
@@ -68,7 +69,6 @@ class BatchFile(VendorModel):
     """A file of a batch download as `manifest.json` lists it, with its published SHA-256."""
 
     filename: str = Field(min_length=1)
-    size: int = Field(ge=0)
     hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
     def published_sha256(self) -> str:
@@ -242,8 +242,8 @@ def _import_file(path: Path, store: Store, importer: _DataFileImporter) -> Datab
             f"Expected a DBN file ({', '.join(_DBN_SUFFIXES)}) or a batch folder, got {path}: "
             "other exports arrive through `fefat data import file` (step 1.10)."
         )
-    original = _Original(path, PurePosixPath(PROVIDER, path.name), _sha256(path), None)
-    _refuse_changed_originals(store, (original,))
+    sha256 = _sha256(path)
+    original = _Original(path, PurePosixPath(PROVIDER, sha256, path.name), sha256, None)
     raw_path = original.raw_path.as_posix()
     if _recorded(store, original):
         return DatabentoImport(

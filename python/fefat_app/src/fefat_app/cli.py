@@ -38,8 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="fefat", description="FEFAT: feature engineering for algorithmic trading."
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    data = commands.add_parser("data", help="the market data in your store")
-    data_commands = data.add_subparsers(dest="data_command", required=True)
+    market_data = commands.add_parser("data", help="the market data in your store")
+    data_commands = market_data.add_subparsers(dest="data_command", required=True)
     imports = data_commands.add_parser("import", help="bring your files into the store")
     sources = imports.add_subparsers(dest="source", required=True)
     databento = sources.add_parser(

@@ -17,7 +17,7 @@ The decisions are [ADR-0019](../adr/0019-canonical-market-data-store.md); the co
 
 Amended in step 1.1 (2026-10-12): the trade date on bars, `ts_ref` and `stat_flags` on statistics, `dataset.json`, the split of TBBO, coarser bars, definitions, and funding, the batch job in the raw manifest, availability per record type, the cut of reads to a request's dates, the snapshot hash, and reading through a snapshot were added. The schemas are Polars schemas rather than pyarrow ones, so the SDK reads and writes Parquet without pyarrow (D-39).
 
-Amended in step 1.6 (2026-10-13): the Databento importer (`fefat.market.importers`) keeps each batch download's files under `raw/databento/<job>/`, recording the data file's `vendor_version` as `DBN <version>, revised <newest last_modified_date of condition.json>` and the sidecars' as `revised <date>`; it reads each DBN file twice, streaming, dates bars and ticks by their session and counts those outside every session, and writes each partition once it is complete, refusing a file that overlaps an imported partition.
+Amended in step 1.6 (2026-10-13): the Databento importer (`fefat.market.importers`) keeps each batch download's files under `raw/databento/<job>/` (a single DBN file under `raw/databento/<its SHA-256>/`), recording the data file's `vendor_version` as `DBN <version>, revised <newest last_modified_date of condition.json>` and the sidecars' as `revised <date>`; it reads each DBN file twice, streaming, dates bars and ticks by their session and counts those outside every session, and writes each partition once it is complete, refusing a file that overlaps an imported partition.
 
 ### 1.2 Identity and metadata
 

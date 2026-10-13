@@ -231,7 +231,9 @@ def test_a_bar_outside_every_session_takes_the_session_before_it_and_is_counted(
         date(2026, 3, 9),
     ]
     assert report.files[0].outside_sessions == (DayRecords(trade_date=date(2026, 3, 6), records=1),)
-    assert store.raw_manifest().files[0].path == "databento/es.ohlcv-1m.dbn"
+    assert store.raw_manifest().files[0].path == (
+        f"databento/{hashlib.sha256(content).hexdigest()}/es.ohlcv-1m.dbn"
+    )
     assert store.raw_manifest().files[0].batch_job is None
 
 
@@ -288,7 +290,8 @@ def test_the_vendors_daily_bars_are_skipped_with_a_count(tmp_path: Path) -> None
     store, report = imported(tmp_path, loose_file(tmp_path, "es.ohlcv-1d.dbn", content))
 
     assert report.files == ()
-    assert report.daily_bars_skipped == ("databento/es.ohlcv-1d.dbn",)
+    sha256 = hashlib.sha256(content).hexdigest()
+    assert report.daily_bars_skipped == (f"databento/{sha256}/es.ohlcv-1d.dbn",)
     assert store.list_partitions() == ()
     assert store.raw_manifest() == RawManifest()
 
@@ -390,7 +393,7 @@ def test_a_refused_file_leaves_no_copy_under_raw(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="got none for instrument_id 1001"):
         imported(tmp_path, loose_file(tmp_path, "es.ohlcv-1m.dbn", content))
 
-    assert not (tmp_path / "data" / "raw" / "databento" / "es.ohlcv-1m.dbn").exists()
+    assert list((tmp_path / "data").rglob("*.dbn")) == []
 
 
 def test_a_batch_without_revision_dates_imports_and_says_so(tmp_path: Path) -> None:
@@ -446,6 +449,27 @@ def test_a_bar_whose_instrument_id_the_symbology_does_not_cover_is_refused(tmp_p
 
     with pytest.raises(ValueError, match="got none for instrument_id 1001 on 2026-03-21"):
         imported(tmp_path, loose_file(tmp_path, "es.ohlcv-1m.dbn", content))
+
+
+def test_single_files_of_one_name_are_told_apart_by_their_content(tmp_path: Path) -> None:
+    # Databento names a file by dataset, dates, and schema, not by product, so a second
+    # purchase of another product over the same dates has the same name.
+    mesh6 = [mapping("MESH6", 7001, date(2025, 3, 21), date(2026, 3, 21))]
+    mes_bars = [OHLCVMsg(ONE_MINUTE, 1, 7001, utc(2026, 3, 9, 14, 30), 1, 1, 1, 1, 1)]
+    es_content = dbn_content(Schema("ohlcv-1m"), ESH6, es_bars(utc(2026, 3, 9, 14, 30)))
+    mes_content = dbn_content(Schema("ohlcv-1m"), mesh6, mes_bars)
+    store = Store(tmp_path / "data")
+    name = "glbx-mdp3-20260309-20260309.ohlcv-1m.dbn"
+
+    import_databento(write_dbn(tmp_path / "es" / name, es_content), store, tmp_path / "cache")
+    mes = import_databento(
+        write_dbn(tmp_path / "mes" / name, mes_content), store, tmp_path / "cache"
+    )
+    again = import_databento(tmp_path / "es" / name, store, tmp_path / "cache")
+
+    assert [file.partition.dataset.root for file in store.list_partitions()] == ["ES", "MES"]
+    assert mes.files[0].contracts[0].contract == "MESH2026"
+    assert again.already_imported == (f"databento/{hashlib.sha256(es_content).hexdigest()}/{name}",)
 
 
 def test_bars_a_minute_apart_are_one_minute_long(tmp_path: Path) -> None:
