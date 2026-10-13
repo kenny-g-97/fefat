@@ -20,6 +20,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
+from fefat.market.calendar import CalendarId
 from fefat.market.layout import FolderName
 from fefat.market.schema import FrozenModel
 
@@ -41,8 +42,8 @@ class Currency(StrEnum):
 
 class Instrument(FrozenModel):
     """One version of a product's specification, in force from `valid_from` until the day
-    before `valid_to`. `calendar_id` names the session calendar of `fefat.market.calendar`
-    (step 1.3)."""
+    before `valid_to`. `calendar_id` names its session calendar, one of the built-in
+    calendars of `fefat.market.builtin_calendars`."""
 
     root: FolderName
     kind: InstrumentKind
@@ -50,7 +51,7 @@ class Instrument(FrozenModel):
     point_value: Decimal = Field(gt=0)
     lot_step: Decimal = Field(gt=0)
     currency: Currency
-    calendar_id: str = Field(min_length=1)
+    calendar_id: CalendarId
     valid_from: date
     valid_to: date | None
     sources: tuple[str, ...] = Field(min_length=1)
@@ -122,7 +123,7 @@ def _cme_futures(
     root: str,
     tick_size: str,
     point_value: str,
-    calendar_id: str,
+    calendar_id: CalendarId,
     first_trade_date: date,
     sources: tuple[str, ...],
 ) -> Instrument:
@@ -155,7 +156,7 @@ def _binance(
         point_value=Decimal(1),
         lot_step=Decimal(lot_step),
         currency=Currency.USDT,
-        calendar_id="crypto-24x7",
+        calendar_id=CalendarId.CRYPTO_24X7,
         valid_from=first_trade_date,
         valid_to=None,
         sources=sources,
@@ -179,7 +180,7 @@ STATIC_TABLE = InstrumentTable(
             "ES",
             "0.25",
             "50",
-            "cme-equity-index",
+            CalendarId.CME_EQUITY_INDEX,
             date(1997, 9, 9),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/sp/e-mini-sandp500.contractSpecs.html",
@@ -193,7 +194,7 @@ STATIC_TABLE = InstrumentTable(
             "NQ",
             "0.25",
             "20",
-            "cme-equity-index",
+            CalendarId.CME_EQUITY_INDEX,
             date(1999, 6, 21),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/nasdaq/e-mini-nasdaq-100.contractSpecs.html",
@@ -207,7 +208,7 @@ STATIC_TABLE = InstrumentTable(
             "CL",
             "0.01",
             "1000",
-            "cme-energy",
+            CalendarId.CME_ENERGY,
             date(1983, 3, 30),
             sources=(
                 f"{_CME_SPECIFICATIONS}/energy/crude-oil/light-sweet-crude.contractSpecs.html",
@@ -221,7 +222,7 @@ STATIC_TABLE = InstrumentTable(
             "GC",
             "0.10",
             "100",
-            "cme-metals",
+            CalendarId.CME_METALS,
             date(1974, 12, 31),
             sources=(
                 f"{_CME_SPECIFICATIONS}/metals/precious/gold.contractSpecs.html",
@@ -232,7 +233,7 @@ STATIC_TABLE = InstrumentTable(
             "MES",
             "0.25",
             "5",
-            "cme-equity-index",
+            CalendarId.CME_EQUITY_INDEX,
             date(2019, 5, 6),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/sp/micro-e-mini-sandp-500.contractSpecs.html",
@@ -243,7 +244,7 @@ STATIC_TABLE = InstrumentTable(
             "MNQ",
             "0.25",
             "2",
-            "cme-equity-index",
+            CalendarId.CME_EQUITY_INDEX,
             date(2019, 5, 6),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/nasdaq/micro-e-mini-nasdaq-100.contractSpecs.html",
@@ -254,7 +255,7 @@ STATIC_TABLE = InstrumentTable(
             "MCL",
             "0.01",
             "100",
-            "cme-energy",
+            CalendarId.CME_ENERGY,
             date(2021, 7, 12),
             sources=(
                 f"{_CME_SPECIFICATIONS}/energy/crude-oil/micro-wti-crude-oil.contractSpecs.html",
@@ -266,7 +267,7 @@ STATIC_TABLE = InstrumentTable(
             "MGC",
             "0.10",
             "10",
-            "cme-metals",
+            CalendarId.CME_METALS,
             date(2010, 10, 4),
             sources=(
                 f"{_CME_SPECIFICATIONS}/metals/precious/e-micro-gold.contractSpecs.html",

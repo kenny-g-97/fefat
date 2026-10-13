@@ -90,6 +90,9 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | --- | --- |
 | Bar | A time bucket of trades (1-second, 1-minute, 5-minute, daily). Signals are decided at bar close. |
 | Tick | One trade print (or trade with the prior best bid/ask, "TBBO"). Fills are simulated on ticks when available. |
+| Session | One trade date's trading, from its open to its close, as UTC instants; a CME Globex session opens at 17:00 Chicago on the evening before its trade date and closes at 16:00 Chicago on it. |
+| Trade date | The date a session's trading counts for, in bars, daily P&L, and prop rules: it comes from the session an instant falls in, never from the instant's calendar date; a halt day's trading belongs to the next trade date, while an early-close day keeps its own. |
+| Session calendar | A product group's trade dates and their sessions, built from local hours in a time zone and the holidays that change them: full closes, halts, and early closes. |
 | Fidelity | The finest data used to fill an order on a given day: `tick`, `1s`, `1m`, or a coarser bar timeframe for imported data. |
 | Feature | A versioned function from data to aligned time series. |
 | Signal frame | The table of boolean/number columns a signal strategy produces for every bar (`long_entry`, `stop_price`, …). |

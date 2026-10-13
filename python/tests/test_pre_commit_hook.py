@@ -13,7 +13,7 @@ A_FIXTURE = (
     / "synthetic"
     / "ohlcv-1m"
     / "root=ES"
-    / "contract=ESH6"
+    / "contract=ESH2026"
     / "month=2026-03"
     / "part.parquet"
 )
