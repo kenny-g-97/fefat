@@ -1,6 +1,8 @@
 import hashlib
 import json
+import os
 import shutil
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -335,6 +337,108 @@ def test_ticks_go_to_their_sessions_trade_date_and_unreliable_receive_times_are_
 def test_a_path_that_is_neither_a_batch_folder_nor_a_file_is_refused(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="Expected a Databento batch folder or DBN file"):
         imported(tmp_path, tmp_path / "missing")
+
+
+def batch_copy(folder: Path) -> Path:
+    batch = folder / "batch"
+    shutil.copytree(BATCH, batch)
+    return batch
+
+
+def publish(batch: Path, name: str) -> None:
+    """List `name` in the batch's manifest.json with its size and SHA-256, as the vendor would."""
+    manifest_path = batch / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    entry = {
+        "filename": name,
+        "size": (batch / name).stat().st_size,
+        "hash": f"sha256:{sha256_of(batch / name)}",
+    }
+    files = [file for file in manifest["files"] if file["filename"] != name]
+    manifest["files"] = [*files, entry]
+    manifest_path.write_text(json.dumps(manifest, indent=4), encoding="utf-8")
+
+
+def test_a_file_of_spreads_only_writes_nothing_and_counts_them(tmp_path: Path) -> None:
+    spread = [OHLCVMsg(ONE_MINUTE, 1, 1002, utc(2026, 3, 9, 14, 30), -1, -1, -1, -1, 2)]
+    content = dbn_content(Schema("ohlcv-1m"), ESH6_AND_SPREAD, spread)
+
+    store, report = imported(tmp_path, loose_file(tmp_path, "spread.ohlcv-1m.dbn", content))
+
+    assert store.list_partitions() == ()
+    assert report.files[0].spreads == (SymbolRecords(raw_symbol="ESH6-ESM6", records=1),)
+
+
+def test_a_batch_split_into_several_data_files_is_refused_before_anything_is_written(
+    tmp_path: Path,
+) -> None:
+    # A batch split by day or month gives two files rows of one partition, which the importer
+    # does not merge, so it refuses the batch rather than stop after its first file.
+    batch = batch_copy(tmp_path)
+    shutil.copyfile(batch / DATA_FILE, batch / "glbx-mdp3-20260310-20260310.ohlcv-1m.dbn")
+    publish(batch, "glbx-mdp3-20260310-20260310.ohlcv-1m.dbn")
+
+    with pytest.raises(ValueError, match="Expected one DBN file in the batch"):
+        imported(tmp_path, batch)
+
+    assert not (tmp_path / "data").exists()
+
+
+def test_a_refused_file_leaves_no_copy_under_raw(tmp_path: Path) -> None:
+    content = dbn_content(Schema("ohlcv-1m"), ESH6, es_bars(utc(2026, 3, 21, 14, 30)))
+
+    with pytest.raises(ValueError, match="got none for instrument_id 1001"):
+        imported(tmp_path, loose_file(tmp_path, "es.ohlcv-1m.dbn", content))
+
+    assert not (tmp_path / "data" / "raw" / "databento" / "es.ohlcv-1m.dbn").exists()
+
+
+def test_a_batch_without_revision_dates_imports_and_says_so(tmp_path: Path) -> None:
+    batch = batch_copy(tmp_path)
+    conditions = json.loads((batch / "condition.json").read_text(encoding="utf-8"))
+    for day in conditions:
+        day["condition"], day["last_modified_date"] = "pending", None
+    (batch / "condition.json").write_text(json.dumps(conditions, indent=4), encoding="utf-8")
+    publish(batch, "condition.json")
+
+    store, report = imported(tmp_path, batch)
+
+    data_file = store.raw_manifest().file_at(f"databento/{JOB}/{DATA_FILE}")
+    assert data_file is not None
+    assert data_file.vendor_version == "DBN 3, no revision date"
+    assert report.summary().splitlines()[1:3] == [
+        f"Databento batch {JOB}, no revision date in its conditions.",
+        "Days the vendor marks pending (5): 2026-03-04, 2026-03-05, 2026-03-06, 2026-03-08, "
+        "2026-03-09",
+    ]
+
+
+def test_a_rerun_reads_no_file_the_raw_manifest_already_records(tmp_path: Path) -> None:
+    # The store keeps its own verified copy, so a re-run checks the vendor's published hash
+    # against the recorded one and never reads the batch's files again.
+    batch = batch_copy(tmp_path)
+    imported(tmp_path, batch)
+    (batch / DATA_FILE).write_bytes(b"a later copy that was cut short")
+
+    _, again = imported(tmp_path, batch)
+
+    assert again.already_imported == (f"databento/{JOB}/{DATA_FILE}",)
+
+
+def test_a_single_files_download_date_is_the_utc_date_it_was_last_written(
+    tmp_path: Path,
+) -> None:
+    # An instant whose local date differs from its UTC date on this machine: 23:30 UTC is the
+    # next day east of UTC, 00:30 UTC the day before west of it, so the date must come from UTC.
+    content = dbn_content(Schema("ohlcv-1m"), ESH6, es_bars(utc(2026, 3, 9, 14, 30)))
+    source = loose_file(tmp_path, "es.ohlcv-1m.dbn", content)
+    east = time.localtime(utc(2026, 3, 10, 12) // 1_000_000_000).tm_gmtoff > 0
+    written = utc(2026, 3, 10, 23, 30) if east else utc(2026, 3, 10, 0, 30)
+    os.utime(source, (written // 1_000_000_000, written // 1_000_000_000))
+
+    store, _ = imported(tmp_path, source)
+
+    assert store.raw_manifest().files[0].downloaded_on == date(2026, 3, 10)
 
 
 def test_a_bar_whose_instrument_id_the_symbology_does_not_cover_is_refused(tmp_path: Path) -> None:

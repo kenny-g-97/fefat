@@ -6,6 +6,7 @@ report.
 """
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 import polars as pl
 
@@ -78,7 +79,7 @@ def write_records(
         buffers.add(chunk.partitions)
         if clock.latest is not None:
             buffers.write_complete(clock.latest)
-        placed.append(chunk)
+        placed.append(replace(chunk, partitions={}))
     buffers.write_all()
     return FileImport(
         path=raw_path,

@@ -3,13 +3,16 @@ the DBN files beside the vendor's `metadata.json`, `manifest.json`, and `conditi
 single DBN file (`.dbn`, `.dbn.zst`). No network and no key: a purchase is made and downloaded on
 the vendor's website, and its files come through here.
 
-`import_databento` checks every file a batch's `manifest.json` lists against the SHA-256 it
-publishes, refusing a mismatch with both hashes, before it writes anything. It keeps each file
-it imports unchanged under `raw/databento/<job>/` (a single file under `raw/databento/`) with
-its entry in the raw manifest: the job id and the published SHA-256, the DBN version and the
-newest revision date in `condition.json` (`DBN 3, revised 2026-09-23`), and the download date
-the job id carries. It writes the records as canonical partitions (`file_writer`) and records a
-data file last, so an interrupted import runs again and a finished one imports nothing twice.
+`import_databento` checks every file it is about to read against the SHA-256 the batch's
+`manifest.json` publishes, refusing a mismatch with both hashes, before it writes anything; a
+batch split into several DBN files is refused, since its files can share partitions, which are
+not merged yet. It writes the records as canonical partitions (`file_writer`), then keeps the
+file unchanged under `raw/databento/<job>/` (a single file under `raw/databento/`) with its
+entry in the raw manifest, recorded last: the job id and the published SHA-256, the DBN version
+and the newest revision date in `condition.json` (`DBN 3, revised 2026-09-23`), and the
+download date the job id carries, or, for a single file, the UTC date it was last written. So
+an interrupted import runs again, a refused one leaves no copy behind, and a finished one
+imports nothing twice and reads none of its files again.
 A file the raw manifest records with other bytes is refused: raw files never change, so a
 corrected download arrives as a new file. The vendor's daily bars (`ohlcv-1d`) are cut on UTC
 days rather than sessions and are skipped (ADR-0019). `vendor_conditions` reads a batch's
@@ -23,7 +26,7 @@ per-day conditions back for the quality report (1.8).
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path, PurePosixPath
 
 import polars as pl
@@ -110,23 +113,24 @@ class _Original:
 
 @dataclass(frozen=True)
 class _Batch:
-    """A batch download whose files match the hashes its vendor published."""
+    """A batch download as its vendor's files describe it: one DBN file and its sidecars."""
 
     folder: Path
     job_id: str
     downloaded_on: date
     conditions: tuple[DayCondition, ...]
     sidecars: tuple[_Original, ...]
-    data_files: tuple[_Original, ...]
+    data_file: _Original
 
-    def revised(self) -> date:
-        """The newest day the vendor changed any of the batch's days."""
+    def revised(self) -> date | None:
+        """The newest day the vendor changed any of the batch's days, if it gives one."""
         dates = [day.last_modified_date for day in self.conditions if day.last_modified_date]
-        if not dates:
-            raise ValueError(
-                f"Expected a last_modified_date in {self.folder / _CONDITIONS}, got none."
-            )
-        return max(dates)
+        return max(dates, default=None)
+
+    def revision(self) -> str:
+        """The batch's revision as the raw manifest records it."""
+        revised = self.revised()
+        return "no revision date" if revised is None else f"revised {revised}"
 
     def report(self) -> BatchReport:
         unavailable = tuple(
@@ -149,19 +153,20 @@ class _DataFileImporter:
     def imported(
         self, original: _Original, revision: str, downloaded_on: date
     ) -> FileImport | None:
-        """The file kept under `raw`, its records written, and the file recorded last; `None`
-        for the vendor's daily bars, which are skipped. The file is read twice, streaming: once
-        for the days each instrument has records, which name its contracts, then to write."""
+        """The file's records written, then the file kept under `raw` and recorded last;
+        `None` for the vendor's daily bars, which are skipped. The file is read twice,
+        streaming: once for the days each instrument has records, which name its contracts,
+        then to write."""
         metadata, frames = read_dbn(original.source)
         if metadata.schema_name == _DAILY_BARS:
             return None
         days = active_days(frames, metadata.schema_name)
-        self._store.write_raw_file(original.raw_path, original.source, original.sha256)
         placement = RecordPlacement(
             original.source, metadata, days, PROVIDER, self._instruments, self._cache_folder
         )
         _, frames = read_dbn(original.source)
         report = write_records(frames, placement, self._store, original.raw_path.as_posix())
+        self._store.write_raw_file(original.raw_path, original.source, original.sha256)
         self._store.record_raw_file(
             original.raw_path,
             provider=PROVIDER,
@@ -204,32 +209,30 @@ def vendor_conditions(store: Store, job_id: str) -> pl.DataFrame:
 
 
 def _import_batch(batch: _Batch, store: Store, importer: _DataFileImporter) -> DatabentoImport:
-    _refuse_changed_originals(store, (*batch.sidecars, *batch.data_files))
-    revision = f"revised {batch.revised()}"
+    _refuse_changed_originals(store, (*batch.sidecars, batch.data_file))
+    unrecorded = [
+        original
+        for original in (*batch.sidecars, batch.data_file)
+        if not _recorded(store, original)
+    ]
+    for original in unrecorded:
+        _require_published(original, batch.folder)
     for sidecar in batch.sidecars:
-        if not _recorded(store, sidecar):
+        if sidecar in unrecorded:
             store.write_raw_file(sidecar.raw_path, sidecar.source, sidecar.sha256)
             store.record_raw_file(
-                sidecar.raw_path, PROVIDER, revision, batch.downloaded_on, sidecar.batch_job
+                sidecar.raw_path, PROVIDER, batch.revision(), batch.downloaded_on, sidecar.batch_job
             )
-    imported: list[FileImport] = []
-    already: list[str] = []
-    skipped: list[str] = []
-    for original in batch.data_files:
-        if _recorded(store, original):
-            already.append(original.raw_path.as_posix())
-            continue
-        report = importer.imported(original, f", {revision}", batch.downloaded_on)
-        if report is None:
-            skipped.append(original.raw_path.as_posix())
-            continue
-        imported.append(report)
+    raw_path = batch.data_file.raw_path.as_posix()
+    report = None
+    if batch.data_file in unrecorded:
+        report = importer.imported(batch.data_file, f", {batch.revision()}", batch.downloaded_on)
     return DatabentoImport(
         source=str(batch.folder),
         batch=batch.report(),
-        files=tuple(imported),
-        already_imported=tuple(already),
-        daily_bars_skipped=tuple(skipped),
+        files=() if report is None else (report,),
+        already_imported=() if batch.data_file in unrecorded else (raw_path,),
+        daily_bars_skipped=(raw_path,) if batch.data_file in unrecorded and report is None else (),
     )
 
 
@@ -250,7 +253,7 @@ def _import_file(path: Path, store: Store, importer: _DataFileImporter) -> Datab
             already_imported=(raw_path,),
             daily_bars_skipped=(),
         )
-    downloaded_on = date.fromtimestamp(path.stat().st_mtime)
+    downloaded_on = datetime.fromtimestamp(path.stat().st_mtime, UTC).date()
     report = importer.imported(original, "", downloaded_on)
     return DatabentoImport(
         source=str(path),
@@ -262,8 +265,8 @@ def _import_file(path: Path, store: Store, importer: _DataFileImporter) -> Datab
 
 
 def _batch(folder: Path) -> _Batch:
-    """The batch download in `folder`, once every file its manifest lists matches the SHA-256
-    the vendor published for it."""
+    """The batch download in `folder`, as its sidecars describe it; its files are checked
+    against the vendor's hashes only when they are about to be read."""
     manifest = _parsed(BatchManifest, folder / _VENDOR_MANIFEST)
     query = _parsed(BatchQuery, folder / _QUERY)
     if query.job_id != manifest.job_id:
@@ -272,9 +275,7 @@ def _batch(folder: Path) -> _Batch:
             f"{folder / _QUERY}, got {query.job_id}."
         )
     listed = {file.filename: file for file in manifest.files}
-    data_names = _require_listed(folder, listed)
-    for file in manifest.files:
-        _require_published(folder / file.filename, file.published_sha256(), folder)
+    data_name = _data_file_name(folder, listed)
     job = manifest.job_id
 
     def original(name: str) -> _Original:
@@ -298,34 +299,42 @@ def _batch(folder: Path) -> _Batch:
                 None,
             ),
         ),
-        data_files=tuple(original(name) for name in data_names),
+        data_file=original(data_name),
     )
 
 
-def _require_listed(folder: Path, listed: dict[str, BatchFile]) -> list[str]:
-    """The data files the manifest lists, sorted, once it lists the query, the conditions, at
-    least one DBN file, and nothing else."""
+def _data_file_name(folder: Path, listed: dict[str, BatchFile]) -> str:
+    """The batch's DBN file, once its manifest lists the query, the conditions, one DBN file,
+    and nothing else."""
     data_names = sorted(name for name in listed if name.endswith(_DBN_SUFFIXES))
     others = sorted(set(listed) - {_QUERY, _CONDITIONS, *data_names})
-    if {_QUERY, _CONDITIONS} <= set(listed) and data_names and not others:
-        return data_names
-    raise ValueError(
-        f"Expected {folder / _VENDOR_MANIFEST} to list {_QUERY}, {_CONDITIONS}, and DBN files, "
-        f"got {', '.join(sorted(listed))}: a batch encoded in CSV or JSON arrives through "
-        "`fefat data import file` (step 1.10)."
-    )
+    if not {_QUERY, _CONDITIONS} <= set(listed) or not data_names or others:
+        raise ValueError(
+            f"Expected {folder / _VENDOR_MANIFEST} to list {_QUERY}, {_CONDITIONS}, and DBN "
+            f"files, got {', '.join(sorted(listed))}: a batch encoded in CSV or JSON arrives "
+            "through `fefat data import file` (step 1.10)."
+        )
+    if len(data_names) > 1:
+        raise ValueError(
+            f"Expected one DBN file in the batch {folder}, got {len(data_names)}: "
+            f"{', '.join(data_names)}. A batch split by day, month, or symbol can give two files "
+            "rows of one partition, which the importer does not merge yet."
+        )
+    return data_names[0]
 
 
-def _require_published(path: Path, published: str, folder: Path) -> None:
+def _require_published(original: _Original, folder: Path) -> None:
+    path = original.source
     if not path.is_file():
         raise FileNotFoundError(
             f"Expected {path}, which {folder / _VENDOR_MANIFEST} lists, got no such file."
         )
     actual = _sha256(path)
-    if actual != published:
+    if actual != original.sha256:
         raise ValueError(
-            f"Expected {path} to have the SHA-256 {published} that {folder / _VENDOR_MANIFEST} "
-            f"publishes, got {actual}: the file differs from the vendor's; download it again."
+            f"Expected {path} to have the SHA-256 {original.sha256} that "
+            f"{folder / _VENDOR_MANIFEST} publishes, got {actual}: the file differs from the "
+            "vendor's; download it again."
         )
 
 

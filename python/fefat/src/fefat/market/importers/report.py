@@ -36,15 +36,17 @@ class ConditionDay(FrozenModel):
 
 
 class BatchReport(FrozenModel):
-    """A batch download's job, the newest revision date of its days, and the days its vendor
-    marks other than available."""
+    """A batch download's job, the newest revision date of its days (none when the vendor
+    gives no day one), and the days its vendor marks other than available."""
 
     job_id: str = Field(min_length=1)
-    revised: date
+    revised: date | None
     unavailable_days: tuple[ConditionDay, ...]
 
     def lines(self) -> list[str]:
         heading = f"Databento batch {self.job_id}, data revised up to {self.revised}."
+        if self.revised is None:
+            heading = f"Databento batch {self.job_id}, no revision date in its conditions."
         ordered = sorted(self.unavailable_days, key=lambda day: (day.condition, day.day))
         listed: list[str] = []
         for condition, days in groupby(ordered, key=lambda day: day.condition):

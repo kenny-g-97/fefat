@@ -114,7 +114,10 @@ class RecordPlacement:
         located = self._with_contracts(records)
         outright = pl.col("contract").is_not_null()
         spreads = _symbol_counts(located.filter(outright.not_()))
-        kept, early = self._dated(located.filter(outright))
+        outrights = located.filter(outright)
+        if outrights.is_empty():
+            return _spreads_only(spreads)
+        kept, early = self._dated(outrights)
         return PlacedRecords(
             partitions=self._partitions(kept),
             contracts=self._contract_counts(kept),
@@ -155,8 +158,6 @@ class RecordPlacement:
         """Bars and ticks with their trade date and `in_session`, and those dated before their
         product's first trade date counted apart; other records pass undated."""
         if self.schema_name.kind not in (SchemaKind.OHLCV, SchemaKind.TRADES, SchemaKind.TBBO):
-            return outrights, pl.DataFrame(schema=EARLY_COUNTS)
-        if outrights.is_empty():
             return outrights, pl.DataFrame(schema=EARLY_COUNTS)
         roots = outrights.partition_by("root", as_dict=True, maintain_order=True)
         dated = pl.concat([self._dated_root(str(root), rows) for (root,), rows in roots.items()])
@@ -254,6 +255,19 @@ def _partition_key(schema_name: SchemaName) -> pl.Expr:
     if split is Partitioning.MONTH:
         return pl.col("trade_date").dt.truncate("1mo")
     return pl.lit(None, dtype=pl.Date)
+
+
+def _spreads_only(spreads: pl.DataFrame) -> PlacedRecords:
+    """A frame of records without one outright: nothing to write, the spreads counted."""
+    no_days = pl.DataFrame(schema=DAY_COUNTS)
+    return PlacedRecords(
+        partitions={},
+        contracts=pl.DataFrame(schema=CONTRACT_COUNTS),
+        spreads=spreads,
+        early=pl.DataFrame(schema=EARLY_COUNTS),
+        outside_sessions=no_days,
+        unreliable_ts_recv=no_days,
+    )
 
 
 def _symbol_counts(spreads: pl.DataFrame) -> pl.DataFrame:
