@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "FEFAT SDK: market data, features, strategies, backtests, prop simulation, research"
 requires-python = ">=3.12"
 dependencies = [
+    "databento-dbn==0.72.0",
     "platformdirs>=4.12.4",
     "polars>=2.0.0,<3",
     "pydantic>=2.14.1,<3.0.0",
