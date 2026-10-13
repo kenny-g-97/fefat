@@ -162,3 +162,13 @@ def test_a_calendar_id_that_names_no_built_in_calendar_is_refused() -> None:
 
     with pytest.raises(ValueError, match="calendar_id"):
         Instrument.model_validate(misspelled)
+
+
+def test_the_first_trade_date_is_the_start_of_a_roots_first_version() -> None:
+    assert A_TICK_CHANGE.first_trade_date("ES") == date(1997, 9, 9)
+    assert ff.instruments.STATIC_TABLE.first_trade_date("MCL") == date(2021, 7, 12)
+
+
+def test_the_first_trade_date_of_an_unknown_root_is_refused() -> None:
+    with pytest.raises(ValueError, match="Expected a root of the instrument table"):
+        STATIC_TABLE.first_trade_date("ZN")

@@ -438,3 +438,63 @@ def test_a_new_polars_version_builds_a_new_session_table(
     sessions_of(calendar, tmp_path)
 
     assert len(cached_tables(tmp_path)) == 2
+
+
+def test_an_instant_outside_every_session_takes_the_latest_session_opened_before_it(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # The importer of step 1.6 dates a vendor's bars while the holiday rules of the years
+    # before 2024 are unchecked, so an instant outside every session is dated, not refused.
+    # Saturday noon, 2026-03-07, falls after Friday 03-06's session; 15:00 CDT on Monday 03-09,
+    # 20:00 UTC, falls inside Monday's session; 5 ms after Monday's close at 16:00 CDT, 21:00
+    # UTC, a print matched before the close but received after it keeps Monday; 16:30 CDT on
+    # Tuesday 03-10, 21:30 UTC, falls in the daily break after Tuesday's session.
+    after_the_close = utc(2026, 3, 9, 21) + 5_000_000
+    received = pl.DataFrame(
+        {
+            "ts_recv": [
+                utc(2026, 3, 10, 21, 30),
+                after_the_close,
+                utc(2026, 3, 7, 12),
+                utc(2026, 3, 9, 20),
+            ]
+        }
+    )
+
+    assigned = tables[EQUITY_INDEX].assign_trade_dates_or_previous(received, "ts_recv")
+
+    expected = pl.DataFrame(
+        {
+            "ts_recv": [
+                utc(2026, 3, 7, 12),
+                utc(2026, 3, 9, 20),
+                after_the_close,
+                utc(2026, 3, 10, 21, 30),
+            ],
+            "trade_date": [date(2026, 3, 6), date(2026, 3, 9), date(2026, 3, 9), date(2026, 3, 10)],
+            "in_session": [False, True, False, False],
+        }
+    )
+    assert_frame_equal(assigned, expected)
+
+
+@pytest.mark.parametrize(
+    "instant",
+    [
+        # Saturday 2010-01-02, before the table's first session, which opens on Sunday
+        # 2010-01-03 at 17:00 CST for Monday 01-04 (01-01 is a full close).
+        utc(2010, 1, 2, 12),
+        # 2031-01-02, after the table's last session closes on 2030-12-31.
+        utc(2031, 1, 2, 12),
+    ],
+)
+def test_dating_by_the_latest_session_refuses_instants_beyond_the_table(
+    tables: dict[CalendarId, SessionTable], instant: int
+) -> None:
+    received = pl.DataFrame({"ts_recv": [utc(2026, 3, 9, 15), instant]})
+
+    with pytest.raises(
+        ValueError,
+        match="from its first open 2010-01-03T23:00:00Z to its last close 2030-12-31T22:00:00Z",
+    ):
+        tables[EQUITY_INDEX].assign_trade_dates_or_previous(received, "ts_recv")

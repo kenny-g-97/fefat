@@ -238,16 +238,7 @@ class SessionTable:
         close) is refused, with the first of them. The hours a halt day leaves closed, and the
         weekend after a Friday halt, lie inside the next trade date's session, since the table
         holds no halt windows (`BACKLOG.md`)."""
-        if frame.schema.get(column) != pl.Int64:
-            raise ValueError(
-                f"Expected an Int64 column {column!r} of nanoseconds since the Unix epoch, UTC, "
-                f"got {frame.schema.get(column)}."
-            )
-        if "trade_date" in frame.columns:
-            raise ValueError("Expected a frame without a trade_date column, got one.")
-        assigned = frame.sort(column, maintain_order=True).join_asof(
-            self._renamed(), left_on=column, right_on="session_open", strategy="backward"
-        )
+        assigned = self._beside_their_sessions(frame, column)
         outside = assigned.filter(
             pl.col("trade_date").is_null() | (pl.col(column) >= pl.col("session_close"))
         )
@@ -257,6 +248,43 @@ class SessionTable:
                 f"{outside.height} outside, the first at {utc_text(outside.item(0, column))}."
             )
         return assigned.drop("session_open", "session_close")
+
+    def assign_trade_dates_or_previous(self, frame: pl.DataFrame, column: str) -> pl.DataFrame:
+        """`frame` sorted by `column` as `assign_trade_dates` sorts it, with the `trade_date` of
+        the latest session that opened at or before each instant and `in_session`, whether the
+        instant falls inside that session. An instant in the daily break, on a weekend, or on a
+        holiday the rules miss takes the trade date before it rather than being refused, as an
+        importer of a vendor's history needs (step 1.6), and a print received just after a close
+        keeps its session. An instant before the table's first open or from its last close on
+        is refused."""
+        assigned = self._beside_their_sessions(frame, column)
+        first_open = self._sessions.item(0, "open")
+        last_close = self._sessions.item(-1, "close")
+        instant = pl.col(column)
+        beyond = assigned.filter((instant < first_open) | (instant >= last_close))
+        if not beyond.is_empty():
+            raise ValueError(
+                f"Expected every {column} within the session table of {self._calendar.name}, "
+                f"from its first open {utc_text(first_open)} to its last close "
+                f"{utc_text(last_close)}, got {beyond.height} outside, the first at "
+                f"{utc_text(beyond.item(0, column))}."
+            )
+        in_session = instant < pl.col("session_close")
+        return assigned.with_columns(in_session=in_session).drop("session_open", "session_close")
+
+    def _beside_their_sessions(self, frame: pl.DataFrame, column: str) -> pl.DataFrame:
+        """`frame` sorted by `column`, keeping the order of equal instants (D-36), beside the
+        session that opened last at or before each instant: its trade date, open, and close."""
+        if frame.schema.get(column) != pl.Int64:
+            raise ValueError(
+                f"Expected an Int64 column {column!r} of nanoseconds since the Unix epoch, UTC, "
+                f"got {frame.schema.get(column)}."
+            )
+        if "trade_date" in frame.columns:
+            raise ValueError("Expected a frame without a trade_date column, got one.")
+        return frame.sort(column, maintain_order=True).join_asof(
+            self._renamed(), left_on=column, right_on="session_open", strategy="backward"
+        )
 
     def _renamed(self) -> pl.DataFrame:
         return self._sessions.rename({"open": "session_open", "close": "session_close"})

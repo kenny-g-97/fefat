@@ -4,6 +4,7 @@ from typing import Any
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from fefat.market.contracts import (
     SYMBOLOGY_COLUMNS,
@@ -12,6 +13,7 @@ from fefat.market.contracts import (
     IdentitySource,
     expiry_month,
     is_outright,
+    symbology_contracts,
 )
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import YearMonth
@@ -479,3 +481,35 @@ def test_frames_with_other_columns_are_refused() -> None:
         ContractResolver(definitions=other, symbology=NO_SYMBOLOGY, instruments=STATIC_TABLE)
     with pytest.raises(ValueError, match=r"Expected the columns .* in the symbology"):
         ContractResolver(definitions=NO_DEFINITIONS, symbology=other, instruments=STATIC_TABLE)
+
+
+def test_symbology_contracts_name_each_outright_interval_and_leave_spreads_without_one() -> None:
+    # The importer maps millions of records to contracts with one join, so the merged intervals
+    # carry their contract: ESH6's two touching intervals read as one, and MGCG1's two listings,
+    # ten years apart, stay two contracts.
+    symbology = symbology_frame(
+        ("ESH6-ESM6", 1002, date(2026, 3, 4), date(2026, 3, 10)),
+        ("ESH6", 1001, date(2025, 3, 21), date(2026, 1, 1)),
+        ("ESH6", 1001, date(2026, 1, 1), date(2026, 3, 21)),
+        ("MGCG1", 5002, date(2020, 8, 30), date(2021, 2, 25)),
+        ("MGCG1", 5001, date(2010, 9, 12), date(2011, 2, 24)),
+    )
+
+    contracts = symbology_contracts(symbology)
+
+    expected = pl.DataFrame(
+        [
+            ("ESH6", 1001, date(2025, 3, 21), date(2026, 3, 21), "ES", "ESH2026", "2026-03"),
+            ("ESH6-ESM6", 1002, date(2026, 3, 4), date(2026, 3, 10), None, None, None),
+            ("MGCG1", 5001, date(2010, 9, 12), date(2011, 2, 24), "MGC", "MGCG2011", "2011-02"),
+            ("MGCG1", 5002, date(2020, 8, 30), date(2021, 2, 25), "MGC", "MGCG2021", "2021-02"),
+        ],
+        schema={**SYMBOLOGY_COLUMNS, "root": pl.String, "contract": pl.String, "expiry": pl.String},
+        orient="row",
+    )
+    assert_frame_equal(contracts, expected)
+
+
+def test_symbology_contracts_refuse_other_columns() -> None:
+    with pytest.raises(ValueError, match=r"Expected the columns .* in the symbology"):
+        symbology_contracts(pl.DataFrame({"raw_symbol": ["ESH6"]}))
