@@ -6,9 +6,9 @@ from enum import StrEnum
 import fefat_engine
 
 from fefat import stats
-from fefat.market import instruments
+from fefat.market import fees, instruments
 
-__all__ = ["BuildProfile", "EngineBuild", "engine_info", "instruments", "stats"]
+__all__ = ["BuildProfile", "EngineBuild", "engine_info", "fees", "instruments", "stats"]
 
 __version__ = "0.0.1"
 
