@@ -79,38 +79,40 @@ def test_good_friday_falls_two_days_before_easter(year: int, good_friday: date) 
     assert holidays_of(ENERGY, year, year)[good_friday] == FULL_CLOSE
 
 
+# The observance rules on years whose sessions nobody can have checked yet (2027 onward), and on
+# 2026, whose schedules the module cites; earlier years are checked against real bars in 1.6.
 def test_new_years_day_on_a_saturday_is_not_observed_and_on_a_sunday_moves_to_monday() -> None:
-    around_2022 = holidays_of(METALS, 2021, 2023)
+    # 2028-01-01 is a Saturday and 2034-01-01 a Sunday.
+    holidays = holidays_of(METALS, 2027, 2034)
 
-    assert date(2021, 12, 31) not in around_2022
-    assert date(2022, 1, 3) not in around_2022
-    assert around_2022[date(2023, 1, 2)] == FULL_CLOSE
+    assert date(2027, 12, 31) not in holidays
+    assert date(2028, 1, 3) not in holidays
+    assert holidays[date(2034, 1, 2)] == FULL_CLOSE
 
 
 def test_christmas_and_independence_day_on_a_weekend_move_to_the_nearest_weekday() -> None:
-    equity_index = holidays_of(EQUITY_INDEX, 2020, 2022)
+    equity_index = holidays_of(EQUITY_INDEX, 2026, 2033)
 
-    # Christmas 2021 is a Saturday, observed on Friday 12-24, with no early close before it.
-    assert equity_index[date(2021, 12, 24)] == FULL_CLOSE
-    assert date(2021, 12, 23) not in equity_index
-    # Christmas 2022 is a Sunday, observed on Monday 12-26.
-    assert equity_index[date(2022, 12, 26)] == FULL_CLOSE
-    # Independence Day 2020 is a Saturday, observed on Friday 07-03, so equity index closes
-    # early on Thursday 07-02; in 2021 it is a Sunday, observed on Monday 07-05, after a
-    # regular Friday.
-    assert equity_index[date(2020, 7, 3)] == HALT
-    assert equity_index[date(2020, 7, 2)] == early_close(12, 15)
-    assert equity_index[date(2021, 7, 5)] == HALT
-    assert date(2021, 7, 2) not in equity_index
+    # Christmas 2027 is a Saturday, observed on Friday 12-24 with no early close before it;
+    # Christmas 2033 is a Sunday, observed on Monday 12-26.
+    assert equity_index[date(2027, 12, 24)] == FULL_CLOSE
+    assert date(2027, 12, 23) not in equity_index
+    assert equity_index[date(2033, 12, 26)] == FULL_CLOSE
+    # Independence Day 2026 is a Saturday, observed on Friday 07-03, and equity index closed
+    # early on Thursday 07-02 (the 2026 schedule the module cites); in 2027 it is a Sunday,
+    # observed on Monday 07-05, after a regular Friday.
+    assert equity_index[date(2026, 7, 3)] == HALT
+    assert equity_index[date(2026, 7, 2)] == early_close(12, 15)
+    assert equity_index[date(2027, 7, 5)] == HALT
+    assert date(2027, 7, 2) not in equity_index
 
 
 def test_juneteenth_is_observed_from_2022() -> None:
+    # Not a holiday in 2021; on its day in 2025 and 2026, a Thursday and a Friday (the schedules
+    # the module cites); and on Friday 2027-06-18, since 2027-06-19 is a Saturday.
     energy = holidays_of(ENERGY, 2021, 2027)
 
-    assert [day for day in energy if day.month == 6] == [
-        date(2022, 6, 20),
-        date(2023, 6, 19),
-        date(2024, 6, 19),
+    assert [day for day in energy if day.month == 6 and day.year in (2021, 2025, 2026, 2027)] == [
         date(2025, 6, 19),
         date(2026, 6, 19),
         date(2027, 6, 18),

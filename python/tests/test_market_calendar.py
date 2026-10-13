@@ -259,6 +259,41 @@ def test_holidays_must_be_one_a_day_on_the_calendars_weekdays() -> None:
         )
 
 
+def test_an_early_close_after_the_regular_close_is_refused() -> None:
+    # 18:00 CST on Wednesday 2026-03-04 is two hours after the regular 16:00 close, and after
+    # the next session opens at 17:00.
+    late = Calendar(
+        name="late-close",
+        hours=BUILT_IN[EQUITY_INDEX].hours,
+        holidays=(EarlyClose(day=date(2026, 3, 4), closes_at=time(18), source=A_SOURCE),),
+    )
+
+    with pytest.raises(ValueError, match="Expected the early close of late-close on 2026-03-04"):
+        build_sessions(late, date(2026, 3, 2), date(2026, 3, 6))
+
+
+def test_an_early_close_of_a_utc_day_falls_on_its_trade_date() -> None:
+    # A UTC day runs from 00:00 to 00:00 the next day, so an early close at 12:00 ends the
+    # session at noon of the trade date itself, not of the day after.
+    half_day = Calendar(
+        name="half-day",
+        hours=BUILT_IN[CRYPTO].hours,
+        holidays=(EarlyClose(day=date(2026, 3, 4), closes_at=time(12), source=A_SOURCE),),
+    )
+
+    sessions = build_sessions(half_day, date(2026, 3, 4), date(2026, 3, 5))
+
+    assert sessions.rows() == [
+        (date(2026, 3, 4), utc(2026, 3, 4), utc(2026, 3, 4, 12)),
+        (date(2026, 3, 5), utc(2026, 3, 5), utc(2026, 3, 6)),
+    ]
+
+
+def test_a_session_that_closes_before_it_opens_is_refused() -> None:
+    with pytest.raises(ValueError, match="to close after it opens"):
+        Session(trade_date=date(2026, 3, 9), open=utc(2026, 3, 9, 21), close=utc(2026, 3, 8, 22))
+
+
 def test_a_generic_calendar_of_a_traders_product_gives_its_sessions() -> None:
     # A product traded 09:30 to 16:00 New York time, Monday to Friday, closed on Friday
     # 2026-07-03 and closing at 13:00 on Friday 2026-11-27. New York keeps EDT (UTC-4) from

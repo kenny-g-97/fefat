@@ -6,7 +6,8 @@ first bar's `ts_open` and the last bar's `ts_close`, or the first and last `ts_r
 and TBBO (keyed by their partition's trade date), across all of the root's contracts, and
 compares them with that trade date's session in the root's calendar
 (`fefat.market.instruments`, `fefat.market.builtin_calendars`). It reports a print before the
-open or after the close, a first print more than `tolerance` after the open, a last print more
+open or after the close (for bars, a bar wholly outside the session, since a bar's prints lie
+somewhere inside it), a first print more than `tolerance` after the open, a last print more
 than `tolerance` before the close, and a trade date the calendar has no session for.
 Definitions, statistics, and funding hold no session prints and are not checked. A half-day
 the holiday rules lack shows as an early last print: add it to
@@ -21,10 +22,10 @@ from collections.abc import Iterator
 from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self
+from typing import Annotated, Any, Literal
 
 import polars as pl
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from fefat.market import instruments
 from fefat.market.builtin_calendars import BUILT_IN
@@ -47,34 +48,51 @@ class MismatchKind(StrEnum):
     NO_SESSION = "no-session"
 
 
-class CalendarMismatch(FrozenModel):
-    """A trade date of a dataset whose first and last prints, in nanoseconds since the Unix
-    epoch, UTC, disagree with its session; `session` is None only for a trade date that has
-    none."""
+class SessionMismatch(FrozenModel):
+    """A trade date of a dataset whose first or last print, in nanoseconds since the Unix epoch,
+    UTC, lies outside its session or too far inside it."""
 
+    kind: Literal[
+        MismatchKind.PRINT_BEFORE_OPEN,
+        MismatchKind.PRINT_AFTER_CLOSE,
+        MismatchKind.LATE_FIRST_PRINT,
+        MismatchKind.EARLY_LAST_PRINT,
+    ]
     dataset: Dataset
     trade_date: date
-    kind: MismatchKind
     first_print: int
     last_print: int
-    session: Session | None
-
-    @model_validator(mode="after")
-    def _a_session_unless_the_day_has_none(self) -> Self:
-        if (self.session is None) != (self.kind is MismatchKind.NO_SESSION):
-            raise ValueError(
-                f"Expected a session with every mismatch but {MismatchKind.NO_SESSION}, got "
-                f"{self.kind} with the session {self.session}."
-            )
-        return self
+    session: Session
 
     def describe(self) -> str:
         """One line: the dataset, the trade date, the kind, and the observed and expected times."""
-        observed = f"prints {utc_text(self.first_print)} to {utc_text(self.last_print)}"
-        heading = f"{self.dataset.relative_folder()} {self.trade_date} {self.kind}: {observed}"
-        if self.session is None:
-            return f"{heading}, on a day without a session"
-        return f"{heading}, session {utc_text(self.session.open)} to {utc_text(self.session.close)}"
+        session = f"session {utc_text(self.session.open)} to {utc_text(self.session.close)}"
+        return f"{_observed(self)}, {session}"
+
+
+class MissingSession(FrozenModel):
+    """A trade date of a dataset, with its first and last print, that the calendar has no
+    session for."""
+
+    kind: Literal[MismatchKind.NO_SESSION] = MismatchKind.NO_SESSION
+    dataset: Dataset
+    trade_date: date
+    first_print: int
+    last_print: int
+
+    def describe(self) -> str:
+        """One line: the dataset, the trade date, and the observed times."""
+        return f"{_observed(self)}, on a day without a session"
+
+
+CalendarMismatch = Annotated[SessionMismatch | MissingSession, Field(discriminator="kind")]
+"""A mismatch of a dataset's trade date with the calendar, told apart by `kind`."""
+
+
+def _observed(mismatch: SessionMismatch | MissingSession) -> str:
+    prints = f"prints {utc_text(mismatch.first_print)} to {utc_text(mismatch.last_print)}"
+    folder = mismatch.dataset.relative_folder()
+    return f"{folder} {mismatch.trade_date} {mismatch.kind}: {prints}"
 
 
 class CalendarReport(FrozenModel):
@@ -99,8 +117,10 @@ def validate_calendar(
     table `fefat.market.calendar.sessions_of` keeps in `cache_folder`. A root missing from
     the instrument table is refused, since its calendar is unknown."""
     days_checked = 0
-    mismatches: list[CalendarMismatch] = []
+    mismatches: list[SessionMismatch | MissingSession] = []
     for dataset, partitions in _checked_datasets(store):
+        # shortcut: the calendar of the root's newest instrument version; split the check by
+        # version when a root's calendar changes over time.
         calendar = BUILT_IN[instruments.get(dataset.root).calendar_id]
         prints = _prints_by_trade_date(store, partitions)
         days_checked += prints.height
@@ -122,12 +142,17 @@ def _checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]
 
 
 def _prints_by_trade_date(store: Store, partitions: list[Partition]) -> pl.DataFrame:
-    """Per trade date: the first print, the last print, and the end of the last print (the last
-    bar's `ts_close`, or the nanosecond after the last tick), across the partitions."""
+    """Per trade date, across the partitions: the first and last print, the end of the first
+    print, and the start of the last (a bar's `ts_close` and `ts_open`, a tick's own time)."""
     return (
         pl.concat([_partition_prints(store, partition) for partition in partitions])
         .group_by("trade_date")
-        .agg(pl.col("first_print").min(), pl.col("last_print").max(), pl.col("last_end").max())
+        .agg(
+            pl.col("first_print").min(),
+            pl.col("first_end").min(),
+            pl.col("last_start").max(),
+            pl.col("last_print").max(),
+        )
         .sort("trade_date")
         .collect()
     )
@@ -138,27 +163,30 @@ def _partition_prints(store: Store, partition: Partition) -> pl.LazyFrame:
     if partition.dataset.schema_name.kind is SchemaKind.OHLCV:
         return rows.group_by("trade_date").agg(
             first_print=pl.col("ts_open").min(),
+            first_end=pl.col("ts_close").min(),
+            last_start=pl.col("ts_open").max(),
             last_print=pl.col("ts_close").max(),
-            last_end=pl.col("ts_close").max(),
         )
+    received = pl.col("ts_recv")
     return rows.select(
         trade_date=pl.lit(partition.key, dtype=pl.Date),
-        first_print=pl.col("ts_recv").min(),
-        last_print=pl.col("ts_recv").max(),
-        last_end=pl.col("ts_recv").max() + 1,
+        first_print=received.min(),
+        first_end=received.min() + 1,
+        last_start=received.max(),
+        last_print=received.max(),
     )
 
 
 def _mismatches(
     dataset: Dataset, joined: pl.DataFrame, tolerance: timedelta
-) -> list[CalendarMismatch]:
+) -> list[SessionMismatch | MissingSession]:
     margin = tolerance // timedelta(microseconds=1) * 1_000
     checks = {
         MismatchKind.NO_SESSION: pl.col("session_open").is_null(),
-        MismatchKind.PRINT_BEFORE_OPEN: pl.col("first_print") < pl.col("session_open"),
-        MismatchKind.PRINT_AFTER_CLOSE: pl.col("last_end") > pl.col("session_close"),
+        MismatchKind.PRINT_BEFORE_OPEN: pl.col("first_end") <= pl.col("session_open"),
+        MismatchKind.PRINT_AFTER_CLOSE: pl.col("last_start") >= pl.col("session_close"),
         MismatchKind.LATE_FIRST_PRINT: pl.col("first_print") > pl.col("session_open") + margin,
-        MismatchKind.EARLY_LAST_PRINT: pl.col("last_end") < pl.col("session_close") - margin,
+        MismatchKind.EARLY_LAST_PRINT: pl.col("last_print") < pl.col("session_close") - margin,
     }
     found = pl.concat(
         [
@@ -169,17 +197,16 @@ def _mismatches(
     return [_mismatch(dataset, row) for row in found.iter_rows(named=True)]
 
 
-def _mismatch(dataset: Dataset, row: dict[str, Any]) -> CalendarMismatch:
-    session = None
-    if row["session_open"] is not None:
-        session = Session(
-            trade_date=row["trade_date"], open=row["session_open"], close=row["session_close"]
-        )
-    return CalendarMismatch(
-        dataset=dataset,
-        trade_date=row["trade_date"],
-        kind=row["kind"],
-        first_print=row["first_print"],
-        last_print=row["last_print"],
-        session=session,
+def _mismatch(dataset: Dataset, row: dict[str, Any]) -> SessionMismatch | MissingSession:
+    observed = {
+        "dataset": dataset,
+        "trade_date": row["trade_date"],
+        "first_print": row["first_print"],
+        "last_print": row["last_print"],
+    }
+    if row["session_open"] is None:
+        return MissingSession.model_validate(observed)
+    session = Session(
+        trade_date=row["trade_date"], open=row["session_open"], close=row["session_close"]
     )
+    return SessionMismatch.model_validate({**observed, "kind": row["kind"], "session": session})

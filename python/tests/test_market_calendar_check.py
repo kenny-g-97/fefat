@@ -8,13 +8,14 @@ import pytest
 
 from fefat.market.calendar import Session, utc_text
 from fefat.market.calendar_check import (
-    CalendarMismatch,
     CalendarReport,
     MismatchKind,
+    MissingSession,
+    SessionMismatch,
     validate_calendar,
 )
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
-from fefat.market.schema import parse_schema_name
+from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -72,7 +73,7 @@ def test_ticks_filed_under_another_trade_date_are_reported_with_their_times(
 
     assert report.days_checked == 13
     assert report.mismatches == tuple(
-        CalendarMismatch(
+        SessionMismatch(
             dataset=ES_TRADES,
             trade_date=date(2026, 3, 10),
             kind=kind,
@@ -100,13 +101,8 @@ def test_bars_on_a_day_without_a_session_are_reported(tmp_path: Path) -> None:
     report = validate_calendar(store, tmp_path / "cache")
 
     assert report.mismatches == (
-        CalendarMismatch(
-            dataset=ES_SECONDS,
-            trade_date=juneteenth,
-            kind=MismatchKind.NO_SESSION,
-            first_print=first,
-            last_print=last,
-            session=None,
+        MissingSession(
+            dataset=ES_SECONDS, trade_date=juneteenth, first_print=first, last_print=last
         ),
     )
     assert report.summary().splitlines() == [
@@ -156,3 +152,37 @@ def test_a_root_without_a_known_calendar_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Expected a root of the instrument table"):
         validate_calendar(store, tmp_path / "cache")
+
+
+def test_a_coarse_bar_that_straddles_an_early_close_is_not_a_print_after_it(
+    tmp_path: Path,
+) -> None:
+    # The day after Thanksgiving 2025, equity index opens on Wednesday at 17:00 CST, 23:00 UTC,
+    # and closes early at 12:15 CST, 18:15 UTC. An hourly bar from 12:00 to 13:00 CST, 18:00 to
+    # 19:00 UTC, holds prints from before the close, so it ends after the close without being
+    # a print after it.
+    store = Store(tmp_path / "store")
+    hours = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1h"), root="ES")
+    store.write_dataset_metadata(
+        hours, DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+    )
+    bars = pl.DataFrame(
+        {
+            "ts_open": [utc(2025, 11, 26, 23), utc(2025, 11, 28, 18)],
+            "ts_close": [utc(2025, 11, 27), utc(2025, 11, 28, 19)],
+            "trade_date": [date(2025, 11, 28), date(2025, 11, 28)],
+            "instrument_id": [1001, 1001],
+            "open": [1, 1],
+            "high": [1, 1],
+            "low": [1, 1],
+            "close": [1, 1],
+            "volume": [1, 1],
+            "trade_count": [1, 1],
+        },
+        schema=polars_schema(hours.schema_name),
+    )
+    store.write_partition(Partition(dataset=hours, contract="ESZ2025", key=None), bars)
+
+    report = validate_calendar(store, tmp_path / "cache")
+
+    assert report == CalendarReport(days_checked=1, mismatches=())

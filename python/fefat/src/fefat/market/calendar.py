@@ -1,25 +1,14 @@
 """Session calendars: the trade dates of a product group, each with its session's open and
 close as UTC instants (`02-engine-and-data.md` §1.3, D-41).
 
-A calendar is regular hours in a time zone and the holidays that change them. On a regular
-day a CME Globex session opens at 17:00 Chicago the evening before its trade date and closes
-at 16:00 Chicago on it; a crypto session is the UTC day. A holiday is one of three kinds:
-
-- a full close (`FullClose`): no trading, so no session ends on the day, and the next session
-  opens at the regular open after it;
-- a halt (`Halt`): trading until a midday halt but no trade date of its own, so what trades on
-  the day belongs to the next trade date, whose session opens at the regular open before the
-  holiday (the Tuesday session after Labor Day opens on Sunday at 17:00), as CME dates
-  holiday trading;
-- an early close (`EarlyClose`): a trade date whose session closes at an earlier local time.
-
-Trade dates come from session membership, never from clock arithmetic:
-`SessionTable.assign_trade_dates` gives each instant the trade date of the session it falls
-in. Local times become UTC instants day by day through the IANA time-zone database that
-Polars carries, so a daylight-saving change moves the UTC open and close, and a local time
-that does not exist that day, or exists twice, is refused. `sessions_of` builds a calendar's
-table once and keeps it in the cache folder under a key that changes with the calendar and
-with this module. The built-in calendars are `fefat.market.builtin_calendars`:
+A calendar is regular hours in a time zone and its holidays: full closes, halts whose trading
+belongs to the next trade date (as CME dates holiday trading), and early closes. Trade dates
+come from session membership, never from clock arithmetic: `SessionTable.assign_trade_dates`
+gives each instant the trade date of the session it falls in. Local times become UTC instants
+day by day through the IANA time-zone database that Polars carries, so a daylight-saving
+change moves the UTC open and close, and a local time that does not exist that day, or exists
+twice, is refused. `sessions_of` builds a calendar's table once and keeps it in the cache
+folder. The built-in calendars are `fefat.market.builtin_calendars`:
 
     table = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], resolve_paths(os.environ).cache_dir)
     table.session(date(2026, 3, 9))  # open 2026-03-08 22:00 UTC (17:00 CDT), close 21:00 UTC
@@ -44,13 +33,15 @@ from fefat.market.store import write_atomically
 # the holiday rules of the earlier years, before importing older data.
 FIRST_SESSION_DATE = date(2010, 1, 1)
 LAST_SESSION_DATE = date(2030, 12, 31)
-CACHE_FOLDER_NAME = "calendar"
+SESSION_TABLE_FOLDER_NAME = "calendar"
+"""The folder of the cached session tables, inside the cache folder."""
 SESSION_COLUMNS = pl.Schema({"trade_date": pl.Date, "open": pl.Int64, "close": pl.Int64})
 """A session table's columns: the trade date, and its session's open and close in nanoseconds
 since the Unix epoch, UTC."""
 
 _LEAD_IN = timedelta(days=14)
 _NANOSECONDS_PER_SECOND = 1_000_000_000
+_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class CalendarId(StrEnum):
@@ -114,10 +105,6 @@ class SessionHours(FrozenModel):
                 f"{self.closes_at}."
             )
         return self
-
-    def closes_on_next_day(self) -> bool:
-        """Whether a session closes on the day after its trade date."""
-        return not self.opens_on_previous_day and self.closes_at <= self.opens_at
 
 
 class FullClose(FrozenModel):
@@ -194,12 +181,21 @@ class Session(FrozenModel):
     open: int
     close: int
 
+    @model_validator(mode="after")
+    def _closes_after_it_opens(self) -> Self:
+        if self.close <= self.open:
+            raise ValueError(
+                f"Expected the session of {self.trade_date} to close after it opens at "
+                f"{utc_text(self.open)}, got a close at {utc_text(self.close)}."
+            )
+        return self
+
 
 def utc_text(instant: int) -> str:
     """An instant in nanoseconds since the Unix epoch as ISO 8601 UTC text, such as
     `2026-03-08T22:00:00Z`, with the nanoseconds when there are any."""
     seconds, nanoseconds = divmod(instant, _NANOSECONDS_PER_SECOND)
-    text = datetime.fromtimestamp(seconds, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    text = (_UNIX_EPOCH + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
     if nanoseconds:
         return f"{text}.{nanoseconds:09d}Z"
     return f"{text}Z"
@@ -282,7 +278,8 @@ def build_sessions(calendar: Calendar, first: date, last: date) -> pl.DataFrame:
     full close, and it is a trade date when it trades and is not a halt. A trade date's session
     opens at the regular open of the first day that trades after the previous trade date (the
     evening before on CME), so a weekend or a halt folds into the next trade date, and closes at
-    the regular or early close of its trade date."""
+    the regular or early close of its trade date. An early close must fall after its session's
+    open and by its regular close."""
     if last < first:
         raise ValueError(
             f"Expected the first trade date {first} on or before the last, got {last}."
@@ -291,19 +288,48 @@ def build_sessions(calendar: Calendar, first: date, last: date) -> pl.DataFrame:
     _require_an_earlier_trade_date(calendar, sessions, first)
     hours = calendar.hours
     open_day = pl.col("first_trading_day") - timedelta(days=int(hours.opens_on_previous_day))
-    close_day = pl.col("trade_date") + timedelta(days=int(hours.closes_on_next_day()))
     close_time = pl.col("early_close").fill_null(hours.closes_at)
+    regular_close_time = pl.lit(hours.closes_at)
     try:
-        return sessions.filter(pl.col("trade_date") >= first).select(
+        built = sessions.filter(pl.col("trade_date") >= first).select(
             "trade_date",
             open=_utc_nanoseconds(open_day, pl.lit(hours.opens_at), hours.time_zone),
-            close=_utc_nanoseconds(close_day, close_time, hours.time_zone),
+            close=_utc_nanoseconds(_close_day(close_time, hours), close_time, hours.time_zone),
+            regular_close=_utc_nanoseconds(
+                _close_day(regular_close_time, hours), regular_close_time, hours.time_zone
+            ),
         )
     except ComputeError as error:
         raise ValueError(
             f"Expected open and close times that exist once in {hours.time_zone} on every "
             f"session of {calendar.name}, got: {str(error).splitlines()[0]}"
         ) from error
+    _require_early_closes_inside_their_sessions(calendar, built)
+    return built.drop("regular_close")
+
+
+def _close_day(close_time: pl.Expr, hours: SessionHours) -> pl.Expr:
+    """The day a session closes: its trade date, or the day after for a session that opens on
+    its trade date and closes at or before its open time, such as a crypto UTC day, whose early
+    close at 12:00 still falls on the trade date."""
+    if hours.opens_on_previous_day:
+        return pl.col("trade_date")
+    next_day = pl.col("trade_date") + timedelta(days=1)
+    return pl.when(close_time <= hours.opens_at).then(next_day).otherwise(pl.col("trade_date"))
+
+
+def _require_early_closes_inside_their_sessions(calendar: Calendar, sessions: pl.DataFrame) -> None:
+    misplaced = sessions.filter(
+        (pl.col("close") <= pl.col("open")) | (pl.col("close") > pl.col("regular_close"))
+    )
+    if misplaced.is_empty():
+        return
+    trade_date, opens, closes, regular_close = misplaced.row(0)
+    raise ValueError(
+        f"Expected the early close of {calendar.name} on {trade_date} after its session's open "
+        f"{utc_text(opens)} and by its regular close {utc_text(regular_close)}, got "
+        f"{utc_text(closes)}."
+    )
 
 
 def _days(calendar: Calendar, start: date, end: date) -> pl.DataFrame:
@@ -362,10 +388,12 @@ def _utc_nanoseconds(day: pl.Expr, local_time: pl.Expr, time_zone: str) -> pl.Ex
 def sessions_of(calendar: Calendar, cache_folder: Path) -> SessionTable:
     """The calendar's sessions from `FIRST_SESSION_DATE` to `LAST_SESSION_DATE`, read from
     `<cache_folder>/calendar/` when built before, else built and written there. The file's
-    name carries a key over the calendar, its holidays included, and over this module's
-    source, so a changed holiday or a changed rule builds a new table; older files stay until
-    the cache folder, which holds nothing that cannot be rebuilt, is cleared."""
-    path = cache_folder / CACHE_FOLDER_NAME / f"{calendar.name}-{_cache_key(calendar)}.parquet"
+    name carries a key over the calendar, its holidays included, this module's source, and the
+    Polars version, whose time-zone database converts the local times, so a changed holiday, a
+    changed rule, or new time-zone rules build a new table; older files stay until the cache
+    folder, which holds nothing that cannot be rebuilt, is cleared."""
+    folder = cache_folder / SESSION_TABLE_FOLDER_NAME
+    path = folder / f"{calendar.name}-{_cache_key(calendar)}.parquet"
     if path.is_file():
         return SessionTable(calendar, pl.read_parquet(path))
     sessions = build_sessions(calendar, FIRST_SESSION_DATE, LAST_SESSION_DATE)
@@ -375,5 +403,8 @@ def sessions_of(calendar: Calendar, cache_folder: Path) -> SessionTable:
 
 def _cache_key(calendar: Calendar) -> str:
     digest = hashlib.sha256(calendar.model_dump_json().encode())
+    # shortcut: the key reads this module's source, which a build shipping only bytecode lacks;
+    # replace it with a version constant when the app is packaged (Phase 14).
     digest.update(Path(__file__).read_bytes())
+    digest.update(pl.__version__.encode())
     return digest.hexdigest()[:12]
