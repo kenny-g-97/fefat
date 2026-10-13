@@ -13,6 +13,7 @@ from fefat.market.calendar import (
     Weekday,
     sessions_of,
 )
+from fefat.market.calendar_check import CalendarReport, validate_calendar
 from fefat.market.contracts import Contract, ContractResolver, IdentitySource, is_outright
 from fefat.market.fees import CryptoFee, FeeSchedule, FeeTable, FuturesFee
 from fefat.market.instruments import Currency, Instrument, InstrumentKind, InstrumentTable
@@ -33,6 +34,7 @@ __all__ = [
     "BatchJob",
     "Calendar",
     "CalendarId",
+    "CalendarReport",
     "Contract",
     "ContractResolver",
     "CryptoFee",
@@ -63,4 +65,5 @@ __all__ = [
     "parse_schema_name",
     "polars_schema",
     "sessions_of",
+    "validate_calendar",
 ]
