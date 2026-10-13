@@ -119,7 +119,7 @@ FEFAT_HOME/
   fefat.sqlite                app state
   logs/
   data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports)
-  cache/                      engine Arrow IPC cache, feature cache (both rebuildable)
+  cache/                      engine Arrow IPC cache, feature cache, session tables (all rebuildable)
   workspaces/default/
     features/<name>/v<n>.json file-based feature versions from Phase 3 (imported into the database in 4.1, kept as backup)
     artifacts/runs/<run_id>/  orders, fills, trades, trade_paths, equity, signals, log, run.json
