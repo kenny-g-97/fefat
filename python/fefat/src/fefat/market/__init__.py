@@ -3,7 +3,7 @@ specifications, contract identity, and fee tables."""
 
 from fefat.market.contracts import Contract, ContractResolver, IdentitySource, is_outright
 from fefat.market.fees import CryptoFee, FeeSchedule, FeeTable, FuturesFee
-from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
+from fefat.market.instruments import Currency, Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -22,6 +22,7 @@ __all__ = [
     "Contract",
     "ContractResolver",
     "CryptoFee",
+    "Currency",
     "Dataset",
     "DatasetMetadata",
     "FeeSchedule",

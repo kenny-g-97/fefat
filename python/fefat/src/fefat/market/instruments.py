@@ -32,6 +32,13 @@ class InstrumentKind(StrEnum):
     SPOT = "spot"
 
 
+class Currency(StrEnum):
+    """The currency of an instrument's prices and of what a point is worth."""
+
+    USD = "USD"
+    USDT = "USDT"
+
+
 class Instrument(FrozenModel):
     """One version of a product's specification, in force from `valid_from` until the day
     before `valid_to`. `calendar_id` names the session calendar of `fefat.market.calendar`
@@ -42,7 +49,7 @@ class Instrument(FrozenModel):
     tick_size: Decimal = Field(gt=0)
     point_value: Decimal = Field(gt=0)
     lot_step: Decimal = Field(gt=0)
-    currency: str = Field(min_length=1)
+    currency: Currency
     calendar_id: str = Field(min_length=1)
     valid_from: date
     valid_to: date | None
@@ -125,7 +132,7 @@ def _cme_futures(
         tick_size=Decimal(tick_size),
         point_value=Decimal(point_value),
         lot_step=Decimal(1),
-        currency="USD",
+        currency=Currency.USD,
         calendar_id=calendar_id,
         valid_from=first_trade_date,
         valid_to=None,
@@ -147,7 +154,7 @@ def _binance(
         tick_size=Decimal(tick_size),
         point_value=Decimal(1),
         lot_step=Decimal(lot_step),
-        currency="USDT",
+        currency=Currency.USDT,
         calendar_id="crypto-24x7",
         valid_from=first_trade_date,
         valid_to=None,

@@ -147,12 +147,54 @@ def test_a_definition_answers_until_its_expiration_day() -> None:
 def test_two_instruments_alive_for_one_symbol_on_one_day_are_refused() -> None:
     twice = resolver_of(definition_frame(esz6_of_2016(42), esz6_of_2016(43)))
     expected = (
-        "Expected one instrument for ESZ6 on 2016-06-01, got the instrument_ids 42, 43; "
-        "resolve by instrument_id instead."
+        "Expected the definitions alive on 2016-06-01 to name one contract, got ESZ6 as "
+        "instrument_id 42, ESZ6 as instrument_id 43."
     )
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         twice.by_symbol("ESZ6", date(2016, 6, 1))
+
+
+def test_an_instrument_id_that_names_two_contracts_on_one_day_is_refused() -> None:
+    nqh7_on_the_same_id = definition(
+        "NQH7",
+        42,
+        asset="NQ",
+        listed=datetime(2016, 12, 16, 21, tzinfo=UTC),
+        expires=datetime(2017, 3, 17, 13, 30, tzinfo=UTC),
+        maturity=(2017, 3),
+    )
+    reused = resolver_of(definition_frame(esz6_of_2016(42), nqh7_on_the_same_id))
+    expected = (
+        "Expected the definitions alive on 2016-12-16 to name one contract, got ESZ6 as "
+        "instrument_id 42, NQH7 as instrument_id 42."
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        reused.by_instrument_id(42, date(2016, 12, 16))
+    assert str(reused.by_instrument_id(42, date(2016, 12, 19))) == "NQH2017"
+
+
+@pytest.mark.parametrize(
+    ("source", "first_trade_date", "last_trade_date"),
+    [
+        (IdentitySource.DEFINITIONS, None, None),
+        (IdentitySource.SYMBOLOGY, date(2015, 9, 18), None),
+        (IdentitySource.STATIC_TABLE, date(2015, 9, 18), date(2016, 12, 16)),
+    ],
+)
+def test_a_contract_has_trade_dates_exactly_when_definitions_or_symbology_gave_them(
+    source: IdentitySource, first_trade_date: date | None, last_trade_date: date | None
+) -> None:
+    with pytest.raises(ValueError, match=f"Expected a contract from {source}"):
+        Contract(
+            root="ES",
+            expiry=YearMonth(year=2016, month=12),
+            first_trade_date=first_trade_date,
+            last_trade_date=last_trade_date,
+            raw_symbols=("ESZ6",),
+            identity_source=source,
+        )
 
 
 def test_a_spread_is_refused_by_instrument_id_and_by_symbol() -> None:

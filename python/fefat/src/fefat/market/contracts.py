@@ -24,10 +24,10 @@ and resolving one is refused.
 import re
 from datetime import date, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, Self
 
 import polars as pl
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from fefat.market.instruments import InstrumentTable
 from fefat.market.layout import FolderName, YearMonth
@@ -78,6 +78,18 @@ class Contract(FrozenModel):
     last_trade_date: date | None
     raw_symbols: tuple[str, ...] = Field(min_length=1)
     identity_source: IdentitySource
+
+    @model_validator(mode="after")
+    def _is_dated_unless_from_the_static_table(self) -> Self:
+        dated = self.identity_source is not IdentitySource.STATIC_TABLE
+        dates = (self.first_trade_date, self.last_trade_date)
+        if any((day is not None) != dated for day in dates):
+            raise ValueError(
+                f"Expected a contract from {self.identity_source} "
+                f"{'with both' if dated else 'without'} trade dates, got first trade date "
+                f"{self.first_trade_date} and last trade date {self.last_trade_date}."
+            )
+        return self
 
     def __str__(self) -> str:
         return f"{self.root}{MONTH_CODES[self.expiry.month - 1]}{self.expiry.year:04d}"
@@ -165,19 +177,20 @@ class ContractResolver:
         ).sort("ts_recv")
         if alive.is_empty():
             return None
-        instrument_ids = alive.get_column("instrument_id").unique().sort().to_list()
-        if len(instrument_ids) > 1:
-            symbols = ", ".join(alive.get_column("raw_symbol").unique().sort().to_list())
+        named_contracts = alive.select("raw_symbol", "instrument_id").unique().sort(pl.all())
+        if named_contracts.height > 1:
+            described = ", ".join(
+                f"{raw_symbol} as instrument_id {instrument_id}"
+                for raw_symbol, instrument_id in named_contracts.iter_rows()
+            )
             raise ValueError(
-                f"Expected one instrument for {symbols} on {on}, got the instrument_ids "
-                f"{', '.join(map(str, instrument_ids))}; resolve by instrument_id instead."
+                f"Expected the definitions alive on {on} to name one contract, got {described}."
             )
         latest = alive.with_columns(
             _utc_date("activation").alias("first_trade_date"),
             _utc_date("expiration").alias("last_trade_date"),
         ).row(-1, named=True)
-        symbols_seen = tuple(alive.get_column("raw_symbol").unique(maintain_order=True))
-        return _contract_of(latest, symbols_seen)
+        return _contract_of(latest)
 
     def _from_symbology(self, named: pl.Expr, on: date) -> Contract | None:
         covering = self._symbology.filter(
@@ -221,7 +234,7 @@ def _merged_intervals(symbology: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _contract_of(definition: dict[str, Any], symbols_seen: tuple[str, ...]) -> Contract:
+def _contract_of(definition: dict[str, Any]) -> Contract:
     described = f"instrument_id {definition['instrument_id']} ({definition['raw_symbol']})"
     if definition["instrument_class"] != OUTRIGHT_FUTURE:
         raise ValueError(
@@ -239,7 +252,7 @@ def _contract_of(definition: dict[str, Any], symbols_seen: tuple[str, ...]) -> C
         expiry=YearMonth(year=definition["maturity_year"], month=definition["maturity_month"]),
         first_trade_date=definition["first_trade_date"],
         last_trade_date=definition["last_trade_date"],
-        raw_symbols=symbols_seen,
+        raw_symbols=(definition["raw_symbol"],),
         identity_source=IdentitySource.DEFINITIONS,
     )
 

@@ -5,7 +5,13 @@ from decimal import Decimal
 import pytest
 
 import fefat as ff
-from fefat.market.instruments import STATIC_TABLE, Instrument, InstrumentKind, InstrumentTable
+from fefat.market.instruments import (
+    STATIC_TABLE,
+    Currency,
+    Instrument,
+    InstrumentKind,
+    InstrumentTable,
+)
 
 ES_SPECIFICATION = "https://www.cmegroup.com/markets/equities/sp/e-mini-sandp500.contractSpecs.html"
 
@@ -17,7 +23,7 @@ def es_version(tick_size: str, valid_from: date, valid_to: date | None) -> Instr
         tick_size=Decimal(tick_size),
         point_value=Decimal(50),
         lot_step=Decimal(1),
-        currency="USD",
+        currency=Currency.USD,
         calendar_id="cme-equity-index",
         valid_from=valid_from,
         valid_to=valid_to,
@@ -138,3 +144,10 @@ def test_versions_of_one_root_that_overlap_are_refused(versions: tuple[Instrumen
 def test_a_version_that_ends_before_it_starts_is_refused() -> None:
     with pytest.raises(ValueError, match="Expected ES's valid_to after its valid_from"):
         es_version("0.25", date(2024, 1, 2), date(2024, 1, 2))
+
+
+def test_a_currency_fefat_does_not_know_is_refused() -> None:
+    in_lowercase = {**es_version("0.25", date(1997, 9, 9), None).model_dump(), "currency": "usd"}
+
+    with pytest.raises(ValueError, match="currency"):
+        Instrument.model_validate(in_lowercase)
