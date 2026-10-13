@@ -152,6 +152,8 @@ class ContractResolver:
         contract = self._from_records(pl.col("raw_symbol") == raw_symbol, on)
         if contract is not None:
             return contract
+        # shortcut: with no listing dates, a symbol asked after its contract expired names the
+        # next decade's (ESZ5 on 2026-01-02 is ESZ2035); definitions or symbology settle it.
         return Contract(
             root=self._instruments.get(root, on).root,
             expiry=expiry_month(raw_symbol, on, on),
@@ -186,11 +188,11 @@ class ContractResolver:
             raise ValueError(
                 f"Expected the definitions alive on {on} to name one contract, got {described}."
             )
-        latest = alive.with_columns(
+        latest = alive.tail(1).with_columns(
             _utc_date("activation").alias("first_trade_date"),
             _utc_date("expiration").alias("last_trade_date"),
-        ).row(-1, named=True)
-        return _contract_of(latest)
+        )
+        return _contract_of(latest.row(0, named=True))
 
     def _from_symbology(self, named: pl.Expr, on: date) -> Contract | None:
         covering = self._symbology.filter(
