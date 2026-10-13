@@ -1,0 +1,20 @@
+{
+    "job_id": "GLBX-20260310-SYNTHETIC0",
+    "files": [
+        {
+            "filename": "condition.json",
+            "size": 602,
+            "hash": "sha256:8201aebfe61334e2788e3479bc681187e857c19700737d6fdf234d9caca068cd"
+        },
+        {
+            "filename": "metadata.json",
+            "size": 536,
+            "hash": "sha256:a297df4ed7d2a8c1a23e6ec1ef7b09382b905bd9855c498b98a16b4b1f786911"
+        },
+        {
+            "filename": "glbx-mdp3-20260304-20260309.ohlcv-1m.dbn",
+            "size": 234848,
+            "hash": "sha256:b4ae2668437c910debbeb5d75c2641709cc4b5101cddb9b4001c1d01ce78b32e"
+        }
+    ]
+}

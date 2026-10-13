@@ -20,7 +20,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from fefat.market.calendar import CalendarId
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.layout import FolderName
 from fefat.market.schema import FrozenModel
 
@@ -92,17 +92,13 @@ class InstrumentTable(FrozenModel):
         """The roots of the table, sorted."""
         return tuple(sorted({version.root for version in self.versions}))
 
+    def first_trade_date(self, root: str) -> date:
+        """The day `root` began trading: the start of its first version."""
+        return self._versions_of(root)[0].valid_from
+
     def get(self, root: str, on: date | None = None) -> Instrument:
         """The version of `root` in force on `on`, or its newest version without a date."""
-        versions = sorted(
-            (version for version in self.versions if version.root == root),
-            key=lambda version: version.valid_from,
-        )
-        if not versions:
-            raise ValueError(
-                f"Expected a root of the instrument table ({', '.join(self.roots())}), "
-                f"got {root!r}."
-            )
+        versions = self._versions_of(root)
         if on is None:
             return versions[-1]
         in_force = [version for version in versions if version.in_force_on(on)]
@@ -117,6 +113,19 @@ class InstrumentTable(FrozenModel):
         raise ValueError(
             f"Expected a date when a version of {root} was in force, got {on}, outside all of them."
         )
+
+    def _versions_of(self, root: str) -> list[Instrument]:
+        """The versions of `root`, oldest first; an unknown root is refused."""
+        versions = sorted(
+            (version for version in self.versions if version.root == root),
+            key=lambda version: version.valid_from,
+        )
+        if not versions:
+            raise ValueError(
+                f"Expected a root of the instrument table ({', '.join(self.roots())}), "
+                f"got {root!r}."
+            )
+        return versions
 
 
 def _cme_futures(

@@ -3,7 +3,7 @@ from datetime import date, time
 import pytest
 
 from fefat.market.builtin_calendars import BUILT_IN, cme_holidays, easter_sunday
-from fefat.market.calendar import CalendarId
+from fefat.market.calendar_definition import CalendarId
 
 EQUITY_INDEX = CalendarId.CME_EQUITY_INDEX
 ENERGY = CalendarId.CME_ENERGY
@@ -42,7 +42,6 @@ ENERGY_AND_METALS_OF_2026 = {
 EQUITY_INDEX_OF_2026 = {
     **ENERGY_AND_METALS_OF_2026,
     date(2026, 4, 3): early_close(8, 15),
-    date(2026, 7, 2): early_close(12, 15),
     date(2026, 11, 27): early_close(12, 15),
     date(2026, 12, 24): early_close(12, 15),
 }
@@ -98,13 +97,15 @@ def test_christmas_and_independence_day_on_a_weekend_move_to_the_nearest_weekday
     assert equity_index[date(2027, 12, 24)] == FULL_CLOSE
     assert date(2027, 12, 23) not in equity_index
     assert equity_index[date(2033, 12, 26)] == FULL_CLOSE
-    # Independence Day 2026 is a Saturday, observed on Friday 07-03, and equity index closed
-    # early on Thursday 07-02 (the 2026 schedule the module cites); in 2027 it is a Sunday,
-    # observed on Monday 07-05, after a regular Friday.
+    # Independence Day 2026 is a Saturday, observed on Friday 07-03 with a halt, and Thursday
+    # 07-02 traded in full (MES and MNQ printed until 16:00 that day, step 1.6); in 2027 it is a
+    # Sunday, observed on Monday 07-05, after a regular Friday. Equity index closes early on
+    # July 3 only when it falls from Monday to Thursday, as on Thursday 2025-07-03.
     assert equity_index[date(2026, 7, 3)] == HALT
-    assert equity_index[date(2026, 7, 2)] == early_close(12, 15)
+    assert date(2026, 7, 2) not in equity_index
     assert equity_index[date(2027, 7, 5)] == HALT
     assert date(2027, 7, 2) not in equity_index
+    assert holidays_of(EQUITY_INDEX, 2025, 2025)[date(2025, 7, 3)] == early_close(12, 15)
 
 
 def test_juneteenth_is_observed_from_2022() -> None:
@@ -127,6 +128,24 @@ def test_overrides_replace_the_rules_for_their_group_only() -> None:
     # In 2021 energy and metals closed at 12:45 the day after Thanksgiving, equity at 12:15.
     assert holidays_of(METALS, 2021, 2021)[date(2021, 11, 26)] == early_close(12, 45)
     assert holidays_of(EQUITY_INDEX, 2021, 2021)[date(2021, 11, 26)] == early_close(12, 15)
+
+
+@pytest.mark.parametrize("day", [date(2019, 11, 29), date(2020, 11, 27), date(2023, 11, 24)])
+@pytest.mark.parametrize("calendar_id", [ENERGY, METALS])
+def test_energy_and_metals_closed_at_12_45_the_day_after_thanksgiving_until_2023(
+    calendar_id: CalendarId, day: date
+) -> None:
+    # The real MGC and MCL bars end at 12:45 CST on these days (step 1.6), as the schedules the
+    # override rows cite state; equity index kept its 12:15 rule.
+    assert holidays_of(calendar_id, day.year, day.year)[day] == early_close(12, 45)
+    assert holidays_of(EQUITY_INDEX, day.year, day.year)[day] == early_close(12, 15)
+
+
+@pytest.mark.parametrize("calendar_id", [EQUITY_INDEX, ENERGY, METALS])
+def test_cme_globex_closed_at_16_15_before_2015_09_21(calendar_id: CalendarId) -> None:
+    (former,) = BUILT_IN[calendar_id].former_closes
+
+    assert (former.until, former.closes_at) == (date(2015, 9, 21), time(16, 15))
 
 
 def test_every_built_in_calendar_is_keyed_by_its_own_name() -> None:

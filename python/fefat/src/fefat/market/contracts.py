@@ -55,6 +55,15 @@ SYMBOLOGY_COLUMNS = pl.Schema(
 """One interval of the imported files' symbology: `raw_symbol` named `instrument_id` from
 `start_date` until the day before `end_date`, as the DBN metadata maps them."""
 
+ACTIVE_DAYS_COLUMNS = pl.Schema({"instrument_id": pl.UInt32, "day": pl.Date})
+"""The UTC dates on which each instrument_id has records in the imported files."""
+
+SYMBOLOGY_CONTRACT_COLUMNS = pl.Schema(
+    {**SYMBOLOGY_COLUMNS, "root": pl.String, "contract": pl.String, "expiry": pl.String}
+)
+"""A merged symbology interval with the root, the contract (`ESZ2026`), and the expiry month
+(`2026-12`) of its outright, all three null for a spread or strategy symbol."""
+
 
 class IdentitySource(StrEnum):
     """Where a contract's identity came from, best first."""
@@ -207,17 +216,54 @@ class ContractResolver:
             raise ValueError(f"Expected one symbology interval covering {on}, got {intervals}.")
         if covering.is_empty():
             return None
-        interval = covering.row(0, named=True)
-        raw_symbol = interval["raw_symbol"]
-        last_day = interval["end_date"] - timedelta(days=1)
-        return Contract(
-            root=_outright(raw_symbol)[1],
-            expiry=expiry_month(raw_symbol, interval["start_date"], last_day),
-            first_trade_date=interval["start_date"],
-            last_trade_date=last_day,
-            raw_symbols=(raw_symbol,),
-            identity_source=IdentitySource.SYMBOLOGY,
-        )
+        return _symbology_contract(covering.row(0, named=True))
+
+
+def symbology_contracts(symbology: pl.DataFrame, active_days: pl.DataFrame) -> pl.DataFrame:
+    """Every interval of the imported files' symbology that has records, merged as the resolver
+    merges them and ending the day after its last record (`active_days`, with the columns of
+    `ACTIVE_DAYS_COLUMNS`), with the columns of `SYMBOLOGY_CONTRACT_COLUMNS`: an outright's
+    root, contract, and expiry month, and nulls for a spread or strategy symbol. The vendor's
+    interval can run on to the end of the query years after its contract expired (Databento
+    maps MNQM3 until 2026-09-23), while a contract's records end with it, so the records settle
+    its decade. The importer joins its records with it once rather than resolving each record."""
+    require_columns(SYMBOLOGY_COLUMNS, symbology.schema, "the symbology")
+    require_columns(ACTIVE_DAYS_COLUMNS, active_days.schema, "the active days")
+    covering = pl.col("day").is_between(pl.col("start_date"), pl.col("end_date"), closed="left")
+    active = (
+        _merged_intervals(symbology)
+        .join(active_days, on="instrument_id")
+        .filter(covering)
+        .group_by("raw_symbol", "instrument_id", "start_date")
+        .agg(end_date=pl.col("day").max() + timedelta(days=1))
+        .sort("raw_symbol", "instrument_id", "start_date")
+    )
+    labels = pl.DataFrame(
+        [_contract_labels(interval) for interval in active.iter_rows(named=True)],
+        schema={name: SYMBOLOGY_CONTRACT_COLUMNS[name] for name in ("root", "contract", "expiry")},
+        orient="row",
+    )
+    return pl.concat([active, labels], how="horizontal")
+
+
+def _contract_labels(interval: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
+    if not is_outright(interval["raw_symbol"]):
+        return (None, None, None)
+    contract = _symbology_contract(interval)
+    return (contract.root, str(contract), str(contract.expiry))
+
+
+def _symbology_contract(interval: dict[str, Any]) -> Contract:
+    raw_symbol = interval["raw_symbol"]
+    last_day = interval["end_date"] - timedelta(days=1)
+    return Contract(
+        root=_outright(raw_symbol)[1],
+        expiry=expiry_month(raw_symbol, interval["start_date"], last_day),
+        first_trade_date=interval["start_date"],
+        last_trade_date=last_day,
+        raw_symbols=(raw_symbol,),
+        identity_source=IdentitySource.SYMBOLOGY,
+    )
 
 
 def _merged_intervals(symbology: pl.DataFrame) -> pl.DataFrame:

@@ -11,16 +11,19 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import (
     FIRST_SESSION_DATE,
     LAST_SESSION_DATE,
+    Session,
+    SessionTable,
+    build_sessions,
+    sessions_of,
+)
+from fefat.market.calendar_definition import (
     Calendar,
     CalendarId,
     EarlyClose,
+    FormerClose,
     FullClose,
-    Session,
     SessionHours,
-    SessionTable,
     Weekday,
-    build_sessions,
-    sessions_of,
 )
 
 EQUITY_INDEX = CalendarId.CME_EQUITY_INDEX
@@ -90,6 +93,22 @@ GOLDEN_SESSIONS = [
     (ENERGY, date(2026, 4, 6), utc(2026, 4, 5, 22), utc(2026, 4, 6, 21)),
     # A crypto UTC day, Saturday 2026-03-07, from 00:00 UTC to 00:00 UTC on Sunday.
     (CRYPTO, date(2026, 3, 7), utc(2026, 3, 7), utc(2026, 3, 8)),
+    # Until CME moved the daily maintenance 15 minutes earlier for trade date Monday 2015-09-21,
+    # equity index, energy, and metals closed at 16:15 Chicago. Friday 2015-09-18, CDT, opens on
+    # Thursday at 17:00 CDT, 22:00 UTC, and closes at 16:15 CDT, 21:15 UTC; Monday 09-21 opens
+    # on Sunday at 22:00 UTC and closes at 16:00 CDT, 21:00 UTC.
+    (METALS, date(2015, 9, 18), utc(2015, 9, 17, 22), utc(2015, 9, 18, 21, 15)),
+    (METALS, date(2015, 9, 21), utc(2015, 9, 20, 22), utc(2015, 9, 21, 21)),
+    (EQUITY_INDEX, date(2015, 9, 18), utc(2015, 9, 17, 22), utc(2015, 9, 18, 21, 15)),
+    (ENERGY, date(2015, 9, 21), utc(2015, 9, 20, 22), utc(2015, 9, 21, 21)),
+    # Independence Day 2026 is a Saturday, observed on Friday 07-03 with a halt. Thursday 07-02,
+    # CDT, trades in full, from Wednesday 17:00, 22:00 UTC, to 16:00, 21:00 UTC: MES and MNQ
+    # printed until 16:00 that day. In 2025, Thursday 07-03 closed early, at 12:15 CDT, 17:15 UTC.
+    (EQUITY_INDEX, date(2026, 7, 2), utc(2026, 7, 1, 22), utc(2026, 7, 2, 21)),
+    (EQUITY_INDEX, date(2025, 7, 3), utc(2025, 7, 2, 22), utc(2025, 7, 3, 17, 15)),
+    # The day after Thanksgiving 2023, Friday 11-24, CST: energy and metals closed at 12:45 CST,
+    # 18:45 UTC, an hour before the 13:45 close of 2024 on.
+    (ENERGY, date(2023, 11, 24), utc(2023, 11, 22, 23), utc(2023, 11, 24, 18, 45)),
 ]
 
 
@@ -313,6 +332,38 @@ def test_a_session_that_closes_before_it_opens_is_refused() -> None:
         Session(trade_date=date(2026, 3, 9), open=utc(2026, 3, 9, 21), close=utc(2026, 3, 8, 22))
 
 
+def test_a_former_close_holds_for_the_trade_dates_before_its_end() -> None:
+    # A calendar that closed at 16:15 until 2015-09-21 and at 16:00 since, with an early close at
+    # 12:15 on Friday 2015-09-18 that keeps its own time.
+    moved = Calendar(
+        name="moved-close",
+        hours=BUILT_IN[EQUITY_INDEX].hours,
+        holidays=(EarlyClose(day=date(2015, 9, 18), closes_at=time(12, 15), source=A_SOURCE),),
+        former_closes=(
+            FormerClose(until=date(2015, 9, 21), closes_at=time(16, 15), source=A_SOURCE),
+        ),
+    )
+
+    sessions = build_sessions(moved, date(2015, 9, 17), date(2015, 9, 21))
+
+    assert sessions.get_column("close").to_list() == [
+        utc(2015, 9, 17, 21, 15),
+        utc(2015, 9, 18, 17, 15),
+        utc(2015, 9, 21, 21),
+    ]
+
+
+def test_a_former_close_after_the_next_open_or_two_on_one_day_are_refused() -> None:
+    hours = BUILT_IN[EQUITY_INDEX].hours
+    late = FormerClose(until=date(2015, 9, 21), closes_at=time(17, 30), source=A_SOURCE)
+    twice = FormerClose(until=date(2015, 9, 21), closes_at=time(16, 15), source=A_SOURCE)
+
+    with pytest.raises(ValueError, match="Expected the former close of late at or before"):
+        Calendar(name="late", hours=hours, holidays=(), former_closes=(late,))
+    with pytest.raises(ValueError, match="Expected one former close ending on each day"):
+        Calendar(name="twice", hours=hours, holidays=(), former_closes=(twice, twice))
+
+
 def test_a_generic_calendar_of_a_traders_product_gives_its_sessions() -> None:
     # A product traded 09:30 to 16:00 New York time, Monday to Friday, closed on Friday
     # 2026-07-03 and closing at 13:00 on Friday 2026-11-27. New York keeps EDT (UTC-4) from
@@ -438,3 +489,63 @@ def test_a_new_polars_version_builds_a_new_session_table(
     sessions_of(calendar, tmp_path)
 
     assert len(cached_tables(tmp_path)) == 2
+
+
+def test_an_instant_outside_every_session_takes_the_latest_session_opened_before_it(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # The importer of step 1.6 dates a vendor's bars while the holiday rules of the years
+    # before 2024 are unchecked, so an instant outside every session is dated, not refused.
+    # Saturday noon, 2026-03-07, falls after Friday 03-06's session; 15:00 CDT on Monday 03-09,
+    # 20:00 UTC, falls inside Monday's session; 5 ms after Monday's close at 16:00 CDT, 21:00
+    # UTC, a print matched before the close but received after it keeps Monday; 16:30 CDT on
+    # Tuesday 03-10, 21:30 UTC, falls in the daily break after Tuesday's session.
+    after_the_close = utc(2026, 3, 9, 21) + 5_000_000
+    received = pl.DataFrame(
+        {
+            "ts_recv": [
+                utc(2026, 3, 10, 21, 30),
+                after_the_close,
+                utc(2026, 3, 7, 12),
+                utc(2026, 3, 9, 20),
+            ]
+        }
+    )
+
+    assigned = tables[EQUITY_INDEX].assign_trade_dates_or_previous(received, "ts_recv")
+
+    expected = pl.DataFrame(
+        {
+            "ts_recv": [
+                utc(2026, 3, 7, 12),
+                utc(2026, 3, 9, 20),
+                after_the_close,
+                utc(2026, 3, 10, 21, 30),
+            ],
+            "trade_date": [date(2026, 3, 6), date(2026, 3, 9), date(2026, 3, 9), date(2026, 3, 10)],
+            "in_session": [False, True, False, False],
+        }
+    )
+    assert_frame_equal(assigned, expected)
+
+
+@pytest.mark.parametrize(
+    "instant",
+    [
+        # Saturday 2010-01-02, before the table's first session, which opens on Sunday
+        # 2010-01-03 at 17:00 CST for Monday 01-04 (01-01 is a full close).
+        utc(2010, 1, 2, 12),
+        # 2031-01-02, after the table's last session closes on 2030-12-31.
+        utc(2031, 1, 2, 12),
+    ],
+)
+def test_dating_by_the_latest_session_refuses_instants_beyond_the_table(
+    tables: dict[CalendarId, SessionTable], instant: int
+) -> None:
+    received = pl.DataFrame({"ts_recv": [utc(2026, 3, 9, 15), instant]})
+
+    with pytest.raises(
+        ValueError,
+        match="from its first open 2010-01-03T23:00:00Z to its last close 2030-12-31T22:00:00Z",
+    ):
+        tables[EQUITY_INDEX].assign_trade_dates_or_previous(received, "ts_recv")

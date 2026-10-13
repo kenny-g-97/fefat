@@ -18,6 +18,7 @@ What the files hold is `fefat.market.schema`; where they live is `fefat.market.l
 import hashlib
 import io
 import os
+import shutil
 import tempfile
 from collections.abc import Callable, Iterable, Iterator
 from datetime import date
@@ -91,6 +92,10 @@ class Store:
         rows = pl.concat([self.scan_partition(file.partition) for file in self._selected(request)])
         return rows.filter(_within_the_dates(request))
 
+    def has_partition(self, partition: Partition) -> bool:
+        """Whether the store holds the partition's file."""
+        return (self._folder / partition.relative_path()).is_file()
+
     def scan_partition(self, partition: Partition) -> pl.LazyFrame:
         """One partition's rows, read lazily, once its file's columns match its schema."""
         path = self._folder / partition.relative_path()
@@ -155,6 +160,38 @@ class Store:
         if not path.is_file():
             return RawManifest()
         return _parsed_json(RawManifest, path.read_bytes(), str(path))
+
+    def write_raw_file(self, path: PurePosixPath, source: Path, sha256: str) -> None:
+        """Copy a vendor's file to `raw/<path>` in one step, once the copy's SHA-256 is the
+        one stated, replacing a copy an interrupted import left behind. A path the raw manifest
+        records is refused, since raw files never change; record the copy with
+        `record_raw_file` once it is imported."""
+        relative = checked_raw_path(path.as_posix())
+        if self.raw_manifest().file_at(relative) is not None:
+            raise ValueError(
+                f"Expected a raw file the manifest {self._raw_manifest_path()} does not record, "
+                f"got {relative}, which it records: raw files never change."
+            )
+        write_atomically(self._folder / RAW_FOLDER_NAME / relative, _verified_copy(source, sha256))
+
+    def raw_file(self, path: PurePosixPath) -> bytes:
+        """The bytes of a raw file the manifest records, refused when they no longer match its
+        recorded SHA-256."""
+        relative = checked_raw_path(path.as_posix())
+        recorded = self.raw_manifest().file_at(relative)
+        if recorded is None:
+            raise FileNotFoundError(
+                f"Expected {relative} in the raw manifest {self._raw_manifest_path()}, got no "
+                "such entry."
+            )
+        content = self._vendor_file(relative).read_bytes()
+        actual = hashlib.sha256(content).hexdigest()
+        if actual != recorded.sha256:
+            raise ValueError(
+                f"Expected the raw file {relative} with its recorded SHA-256 {recorded.sha256}, "
+                f"got {actual}: raw files never change."
+            )
+        return content
 
     def record_raw_file(
         self,
@@ -321,6 +358,18 @@ def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _verified_copy(source: Path, sha256: str) -> Callable[[Path], object]:
+    def copy(temporary: Path) -> None:
+        shutil.copyfile(source, temporary)
+        copied = _size_and_sha256(temporary)[1]
+        if copied != sha256:
+            raise ValueError(
+                f"Expected the copy of {source} to have the SHA-256 {sha256}, got {copied}."
+            )
+
+    return copy
 
 
 def _size_and_sha256(path: Path) -> tuple[int, str]:

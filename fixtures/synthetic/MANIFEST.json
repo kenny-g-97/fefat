@@ -1,6 +1,34 @@
 {
   "files": [
     {
+      "bytes": 602,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "databento-batch/GLBX-20260310-SYNTHETIC0/condition.json",
+      "seed": 20260308,
+      "sha256": "8201aebfe61334e2788e3479bc681187e857c19700737d6fdf234d9caca068cd"
+    },
+    {
+      "bytes": 234848,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "databento-batch/GLBX-20260310-SYNTHETIC0/glbx-mdp3-20260304-20260309.ohlcv-1m.dbn",
+      "seed": 20260308,
+      "sha256": "b4ae2668437c910debbeb5d75c2641709cc4b5101cddb9b4001c1d01ce78b32e"
+    },
+    {
+      "bytes": 640,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "databento-batch/GLBX-20260310-SYNTHETIC0/manifest.json",
+      "seed": 20260308,
+      "sha256": "a9e16d73f6776072244bea2519d19b643ebf2a3b71b33fdf606b01510f48884a"
+    },
+    {
+      "bytes": 536,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "databento-batch/GLBX-20260310-SYNTHETIC0/metadata.json",
+      "seed": 20260308,
+      "sha256": "a297df4ed7d2a8c1a23e6ec1ef7b09382b905bd9855c498b98a16b4b1f786911"
+    },
+    {
       "bytes": 31819,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/month=2026-03/part.parquet",

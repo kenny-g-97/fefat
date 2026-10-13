@@ -1,0 +1,27 @@
+[
+    {
+        "date": "2026-03-04",
+        "condition": "available",
+        "last_modified_date": "2026-03-08"
+    },
+    {
+        "date": "2026-03-05",
+        "condition": "available",
+        "last_modified_date": "2026-03-08"
+    },
+    {
+        "date": "2026-03-06",
+        "condition": "degraded",
+        "last_modified_date": "2026-03-08"
+    },
+    {
+        "date": "2026-03-08",
+        "condition": "available",
+        "last_modified_date": "2026-03-08"
+    },
+    {
+        "date": "2026-03-09",
+        "condition": "available",
+        "last_modified_date": "2026-03-09"
+    }
+]

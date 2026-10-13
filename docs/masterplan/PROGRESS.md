@@ -35,7 +35,7 @@ Phase kickoffs and exits are tracked in the second table.
 | 1.3 | Session calendar and trade date | P1 | done | #13 | 2026-10-13 | `fefat.market.calendar`, `builtin_calendars`, and `calendar_check`; CME's holiday rules in code with sourced overrides instead of exchange-calendars, and Polars for time zones (D-41); the real-data run of `validate_calendar` moves to the end of 1.6; the fixtures close at the local close and are labelled `ESH2026` and `BTCUSDT-PERP`; halt windows go to 1.5; follow-ups for 1.5, 1.6, 1.8, 1.10, 14.7, and the Phase 2 kickoff in the backlog |
 | 1.4 | Crypto importer | P1 | skipped | | 2026-10-12 | No connector in Phase 1 (D-38): the Binance archive layout becomes an import preset when crypto files arrive |
 | 1.5 | Bar builder | P1 | todo | | | |
-| 1.6 | Databento file importer | P1 | todo | | | Renamed at the Phase 1 kickoff (D-38): files only, no download, no key |
+| 1.6 | Databento file importer | P1 | done | #14 | 2026-10-14 | DBN files only, CSV and Parquet exports left for 1.10; `databento-dbn` 0.72.0 (D-42); `fefat.market.importers` and the `fefat` command; contracts named by their records, since Databento's symbology runs past expiry; your files imported (MNQ 34, MES 34, MCL 84, MGC 106 contracts); the real bars fixed the calendars: a 16:15 close before 2015-09-21, the July 3 rule, three Thanksgiving rows; `calendar_definition` split from `calendar` |
 | 1.7 | Rolls and forward-anchored continuous series | P1 | todo | | | |
 | 1.8 | Data-quality report and SDK data API | P1 | todo | | | |
 | 1.9 | Product catalog, source guide, and data status | P1 | todo | | | Renamed at the Phase 1 kickoff (D-38): no connect, no sync |
