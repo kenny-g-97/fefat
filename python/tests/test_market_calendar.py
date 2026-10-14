@@ -207,6 +207,20 @@ def test_a_holiday_without_a_trade_date_of_its_own_has_no_session(
         tables[calendar_id].session(holiday)
 
 
+def test_the_session_following_a_trade_date_is_the_next_trade_dates(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # Friday 2026-03-06 is followed by Monday 03-09, which opens on Sunday at 17:00 CDT, 22:00
+    # UTC, and Wednesday 2025-11-26 by Friday 11-28, Thanksgiving having no trade date.
+    equity_index = tables[EQUITY_INDEX]
+
+    assert equity_index.following(date(2026, 3, 6)).trade_date == date(2026, 3, 9)
+    assert equity_index.following(date(2026, 3, 6)).open == utc(2026, 3, 8, 22)
+    assert equity_index.following(date(2025, 11, 26)).trade_date == date(2025, 11, 28)
+    with pytest.raises(ValueError, match="after 2030-12-31, got none in its session table"):
+        equity_index.following(LAST_SESSION_DATE)
+
+
 def test_a_weekend_day_and_a_day_outside_the_table_have_no_session(
     tables: dict[CalendarId, SessionTable],
 ) -> None:

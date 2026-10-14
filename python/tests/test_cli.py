@@ -48,3 +48,31 @@ def test_a_refused_import_prints_the_reason_and_exits_with_1(
 
     assert code == 1
     assert "fefat: Expected a Databento batch folder or DBN file" in capsys.readouterr().err
+
+
+def test_verifying_imported_minute_bars_leaves_rebuilding_pending_and_exits_with_0(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The batch holds the vendor's 1-minute bars only, as the files on this PC do: rebuilding
+    # them from trades waits for a trades file, and the resampling check runs on them.
+    main(["data", "import", "databento", str(BATCH)])
+    capsys.readouterr()
+
+    code = main(["data", "verify-bars", "ES", "2026-03-06"])
+
+    printed = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert printed[0] == "Bars of ES on 2026-03-06. Comparisons run: 1. Differences: none."
+    assert printed[2] == (
+        "databento: trades -> ohlcv-1m against ohlcv-1m: pending, without trades to rebuild from"
+    )
+    assert printed[-1].endswith("against ohlcv-1m -> ohlcv-1d: 1 compared, no differences")
+
+
+def test_verifying_bars_of_a_store_without_them_prints_the_reason_and_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "verify-bars", "ES", "2026-03-06"])
+
+    assert code == 1
+    assert "fefat: Expected trades or bars of ES in the store, got none" in capsys.readouterr().err

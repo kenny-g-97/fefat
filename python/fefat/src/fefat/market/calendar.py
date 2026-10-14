@@ -115,6 +115,17 @@ class SessionTable:
             f"{self._calendar.no_session_reason(trade_date)}."
         )
 
+    def following(self, trade_date: date) -> Session:
+        """The session of the first trade date after `trade_date`, whose open ends the break in
+        which a print still takes `trade_date`; none after the table's last is refused."""
+        found = self._sessions.filter(pl.col("trade_date") > trade_date).head(1)
+        if found.is_empty():
+            raise ValueError(
+                f"Expected a trade date of {self._calendar.name} after {trade_date}, got none in "
+                "its session table."
+            )
+        return Session.model_validate(found.row(0, named=True))
+
     def between(self, first: date, last: date) -> pl.DataFrame:
         """The sessions of the trade dates from `first` to `last`, with the columns of
         `SESSION_COLUMNS`; dates outside the table's span are refused."""
