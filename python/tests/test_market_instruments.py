@@ -13,6 +13,7 @@ from fefat.market.instruments import (
     InstrumentKind,
     InstrumentTable,
 )
+from fefat.market.last_trade_rules import ThirdFriday
 
 ES_SPECIFICATION = "https://www.cmegroup.com/markets/equities/sp/e-mini-sandp500.contractSpecs.html"
 
@@ -26,6 +27,7 @@ def es_version(tick_size: str, valid_from: date, valid_to: date | None) -> Instr
         lot_step=Decimal(1),
         currency=Currency.USD,
         calendar_id=CalendarId.CME_EQUITY_INDEX,
+        last_trade_rule=ThirdFriday(),
         valid_from=valid_from,
         valid_to=valid_to,
         sources=(ES_SPECIFICATION,),
