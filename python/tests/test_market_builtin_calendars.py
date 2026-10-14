@@ -3,17 +3,23 @@ from datetime import date, time
 import pytest
 
 from fefat.market.builtin_calendars import BUILT_IN, cme_holidays, easter_sunday
-from fefat.market.calendar_definition import CalendarId
+from fefat.market.calendar_definition import CalendarId, FormerDailyHalt
 
 EQUITY_INDEX = CalendarId.CME_EQUITY_INDEX
 ENERGY = CalendarId.CME_ENERGY
 METALS = CalendarId.CME_METALS
 FULL_CLOSE = {"kind": "full-close"}
-HALT = {"kind": "halt"}
 
 
 def early_close(hour: int, minute: int) -> dict[str, object]:
     return {"kind": "early-close", "closes_at": time(hour, minute)}
+
+
+def halt(hour: int, minute: int) -> dict[str, object]:
+    return {"kind": "halt", "closes_at": time(hour, minute)}
+
+
+NOON_HALT = halt(12, 0)
 
 
 def holidays_of(calendar_id: CalendarId, first_year: int, last_year: int) -> dict[date, dict]:
@@ -25,23 +31,30 @@ def holidays_of(calendar_id: CalendarId, first_year: int, last_year: int) -> dic
 
 # CME's holiday calendar for 2026 (https://www.cmegroup.com/trading-hours.html), with the
 # times of the brokers' copies of its schedules that `fefat.market.builtin_calendars` cites.
+# Energy and metals halt at 13:30 on a weekday holiday and at noon on a Friday one, and the real
+# MCL and MGC bars of 2026 end at 13:29 and 11:59 on those days (step 1.5).
 ENERGY_AND_METALS_OF_2026 = {
     date(2026, 1, 1): FULL_CLOSE,
-    date(2026, 1, 19): HALT,
-    date(2026, 2, 16): HALT,
+    date(2026, 1, 19): halt(13, 30),
+    date(2026, 2, 16): halt(13, 30),
     date(2026, 4, 3): FULL_CLOSE,
-    date(2026, 5, 25): HALT,
-    date(2026, 6, 19): HALT,
-    date(2026, 7, 3): HALT,
-    date(2026, 9, 7): HALT,
-    date(2026, 11, 26): HALT,
+    date(2026, 5, 25): halt(13, 30),
+    date(2026, 6, 19): NOON_HALT,
+    date(2026, 7, 3): NOON_HALT,
+    date(2026, 9, 7): halt(13, 30),
+    date(2026, 11, 26): halt(13, 30),
     date(2026, 11, 27): early_close(13, 45),
     date(2026, 12, 24): early_close(12, 45),
     date(2026, 12, 25): FULL_CLOSE,
 }
 EQUITY_INDEX_OF_2026 = {
     **ENERGY_AND_METALS_OF_2026,
+    date(2026, 1, 19): NOON_HALT,
+    date(2026, 2, 16): NOON_HALT,
     date(2026, 4, 3): early_close(8, 15),
+    date(2026, 5, 25): NOON_HALT,
+    date(2026, 9, 7): NOON_HALT,
+    date(2026, 11, 26): NOON_HALT,
     date(2026, 11, 27): early_close(12, 15),
     date(2026, 12, 24): early_close(12, 15),
 }
@@ -101,9 +114,9 @@ def test_christmas_and_independence_day_on_a_weekend_move_to_the_nearest_weekday
     # 07-02 traded in full (MES and MNQ printed until 16:00 that day, step 1.6); in 2027 it is a
     # Sunday, observed on Monday 07-05, after a regular Friday. Equity index closes early on
     # July 3 only when it falls from Monday to Thursday, as on Thursday 2025-07-03.
-    assert equity_index[date(2026, 7, 3)] == HALT
+    assert equity_index[date(2026, 7, 3)] == NOON_HALT
     assert date(2026, 7, 2) not in equity_index
-    assert equity_index[date(2027, 7, 5)] == HALT
+    assert equity_index[date(2027, 7, 5)] == NOON_HALT
     assert date(2027, 7, 2) not in equity_index
     assert holidays_of(EQUITY_INDEX, 2025, 2025)[date(2025, 7, 3)] == early_close(12, 15)
 
@@ -146,6 +159,43 @@ def test_cme_globex_closed_at_16_15_before_2015_09_21(calendar_id: CalendarId) -
     (former,) = BUILT_IN[calendar_id].former_closes
 
     assert (former.until, former.closes_at) == (date(2015, 9, 21), time(16, 15))
+
+
+@pytest.mark.parametrize(
+    ("day", "energy_and_metals"),
+    [
+        # CME's 2011 Labor Day schedule halts NYMEX and COMEX at 12:15, and the real MGC bars end
+        # between 12:11 and 12:14 on halt days of 2011 and 2012; MCL and MGC end at 11:59 on
+        # Labor Day 2021 and at 13:29 on Martin Luther King Jr. Day 2022 and Labor Day 2025, and
+        # at 11:59 on Friday holidays (step 1.5).
+        (date(2011, 9, 5), halt(12, 15)),
+        (date(2012, 5, 28), halt(12, 15)),
+        (date(2014, 5, 26), NOON_HALT),
+        (date(2021, 9, 6), NOON_HALT),
+        (date(2022, 1, 17), halt(13, 30)),
+        (date(2025, 9, 1), halt(13, 30)),
+        (date(2025, 7, 4), NOON_HALT),
+        (date(2026, 6, 19), NOON_HALT),
+    ],
+)
+def test_energy_and_metals_halt_at_12_15_until_2012_then_12_00_and_13_30_from_2022(
+    day: date, energy_and_metals: dict[str, object]
+) -> None:
+    assert holidays_of(ENERGY, day.year, day.year)[day] == energy_and_metals
+    assert holidays_of(METALS, day.year, day.year)[day] == energy_and_metals
+    assert holidays_of(EQUITY_INDEX, day.year, day.year)[day] == NOON_HALT
+
+
+def test_equity_index_halted_daily_from_15_15_to_15_30_until_2021_06_28() -> None:
+    # MES and MNQ have no bar from 15:15 to 15:29 Chicago until trade date 2021-06-25, and a
+    # bar there on most days from 2021-06-28 (step 1.5).
+    (daily,) = BUILT_IN[EQUITY_INDEX].former_daily_halts
+
+    assert daily == FormerDailyHalt(
+        until=date(2021, 6, 28), halts_at=time(15, 15), resumes_at=time(15, 30), source=daily.source
+    )
+    assert BUILT_IN[ENERGY].former_daily_halts == ()
+    assert BUILT_IN[METALS].former_daily_halts == ()
 
 
 def test_every_built_in_calendar_is_keyed_by_its_own_name() -> None:

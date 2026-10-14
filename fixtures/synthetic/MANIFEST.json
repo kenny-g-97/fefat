@@ -8,18 +8,18 @@
       "sha256": "8201aebfe61334e2788e3479bc681187e857c19700737d6fdf234d9caca068cd"
     },
     {
-      "bytes": 234848,
+      "bytes": 234904,
       "generator": "scripts/gen_fixtures.py",
       "path": "databento-batch/GLBX-20260310-SYNTHETIC0/glbx-mdp3-20260304-20260309.ohlcv-1m.dbn",
       "seed": 20260308,
-      "sha256": "b4ae2668437c910debbeb5d75c2641709cc4b5101cddb9b4001c1d01ce78b32e"
+      "sha256": "42be79d10f8fcf8321ad98435c3173d29c0e8b1baed517b620b9ab1b99c6f11f"
     },
     {
       "bytes": 640,
       "generator": "scripts/gen_fixtures.py",
       "path": "databento-batch/GLBX-20260310-SYNTHETIC0/manifest.json",
       "seed": 20260308,
-      "sha256": "a9e16d73f6776072244bea2519d19b643ebf2a3b71b33fdf606b01510f48884a"
+      "sha256": "57526fb1d8f5e5eb9c19c4c74e110baee4df943475efe98c69a746dc5bd38716"
     },
     {
       "bytes": 536,
@@ -29,12 +29,12 @@
       "sha256": "a297df4ed7d2a8c1a23e6ec1ef7b09382b905bd9855c498b98a16b4b1f786911"
     },
     {
-      "bytes": 31819,
+      "bytes": 40140,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/month=2026-03/part.parquet",
       "rows": 1440,
       "seed": 20260308,
-      "sha256": "47c7acba223e1d1f6c3fc1d3385c6d099c8f6169caff057f3adcd5e5e2ea5438"
+      "sha256": "54e601d2141a10f2ec29b7b8dcdb8a5b7a25c91d0947c1b681ead590af94302f"
     },
     {
       "bytes": 64,
@@ -44,12 +44,12 @@
       "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
-      "bytes": 82689,
+      "bytes": 106868,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=ES/contract=ESH2026/month=2026-03/part.parquet",
-      "rows": 4140,
+      "rows": 4141,
       "seed": 20260308,
-      "sha256": "e64f4eb5211f3e1eef3069678490bf5d2f9a9e0ede851186dcf8490f6ad4d5ee"
+      "sha256": "8c85d91e23dfdabac43460e6527fc16bed6fbc881d46aed60b331ce5af03a890"
     },
     {
       "bytes": 65,
@@ -59,12 +59,12 @@
       "sha256": "6bcbb498e5592e0890606eb6399a7d5506aba204c5c1b50cf6d55fc9c32cb0a5"
     },
     {
-      "bytes": 483482,
+      "bytes": 518875,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
-      "rows": 34266,
+      "rows": 34268,
       "seed": 20260308,
-      "sha256": "6edee2f0809fbbc2f0097ef07f57e315e705bb434c039fd1f80522ffd57bb1fd"
+      "sha256": "d9ed7bb7c0b5cb56c14c602d768a0e3cc06022bf2418963702d34d20e9d72658"
     },
     {
       "bytes": 64,
@@ -74,28 +74,28 @@
       "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
-      "bytes": 426971,
+      "bytes": 474984,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-05/part.parquet",
-      "rows": 30588,
+      "rows": 30590,
       "seed": 20260308,
-      "sha256": "5fb38f199c7f352b2da179da263d95b2f7f3db6996473590d07f7322d3776423"
+      "sha256": "d32c85b6d1ff8139945225c98e50318c18d394668d2bc94e146969f6dd6cbcbd"
     },
     {
-      "bytes": 426673,
+      "bytes": 473943,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-06/part.parquet",
-      "rows": 30632,
+      "rows": 30635,
       "seed": 20260308,
-      "sha256": "34ec2259bfaa5881f6601dca3fab2814c26d14977644ddc665fe25ef1d382dc3"
+      "sha256": "ce43b572620d6452a88f9bc78927accfee4a636e38f2f9b3cfcd157dc945ccac"
     },
     {
-      "bytes": 444070,
+      "bytes": 486277,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-09/part.parquet",
-      "rows": 30664,
+      "rows": 30666,
       "seed": 20260308,
-      "sha256": "36a1fa9cb33c7e90869d339c3c10a0d81be6bf35df4631fd2c9a108607995859"
+      "sha256": "765ce0d5fd7ac121821a64650209d67ffc6777a2643c94ae1188251c5dfc0bf4"
     },
     {
       "bytes": 65,
@@ -105,12 +105,12 @@
       "sha256": "6bcbb498e5592e0890606eb6399a7d5506aba204c5c1b50cf6d55fc9c32cb0a5"
     },
     {
-      "bytes": 1124865,
+      "bytes": 1124992,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/date=2026-03-07/part.parquet",
-      "rows": 60609,
+      "rows": 60611,
       "seed": 20260308,
-      "sha256": "7e3f44cc3ed4f809924847d5e6a0de02c31e45a56243028ba642f357aefc117c"
+      "sha256": "3343bd42b06f2a76f2e40e72965bd4c24898428d8011c73fdee4f048074ef243"
     },
     {
       "bytes": 64,
@@ -120,28 +120,28 @@
       "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
-      "bytes": 1271033,
+      "bytes": 1283956,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet",
-      "rows": 71295,
+      "rows": 71297,
       "seed": 20260308,
-      "sha256": "c051365311535742ded1150c780a1094534ab857fd62102706d5926e30008bed"
+      "sha256": "c446c7c4118c0d8ce13d0ee0e9d9c1bfae28c13cc7ac6540260fce4c8af05161"
     },
     {
-      "bytes": 1304210,
+      "bytes": 1291942,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=ES/contract=ESH2026/date=2026-03-06/part.parquet",
-      "rows": 71071,
+      "rows": 71074,
       "seed": 20260308,
-      "sha256": "c9824d82bb075ddc0eacec6a62e09814da514f68f31d4a679ca32a2bd81936df"
+      "sha256": "eb266d1f5e954e2def0119752f8bf9467c5ffeb8c736f70d55204ca05fba5fec"
     },
     {
-      "bytes": 1286583,
+      "bytes": 1264739,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=ES/contract=ESH2026/date=2026-03-09/part.parquet",
-      "rows": 70847,
+      "rows": 70849,
       "seed": 20260308,
-      "sha256": "f3744f4147821dbaffbcd71fc13ae403147105ceea4f27e43fcdf4d7162d96be"
+      "sha256": "f4f5b1d38238ae9a831a5ac4fea406e1f2f1f711909c3e71f67309ca4810b517"
     },
     {
       "bytes": 65,

@@ -228,12 +228,20 @@ def _mismatches(dataset: Dataset, joined: pl.DataFrame, tolerance: timedelta) ->
     return [_mismatch(dataset, row) for row in found.iter_rows(named=True)]
 
 
+def _session(row: dict[str, Any]) -> Session:
+    return Session(
+        trade_date=row["trade_date"],
+        open=row["session_open"],
+        close=row["session_close"],
+        halts=row["halts"],
+    )
+
+
 def _mismatch(dataset: Dataset, row: dict[str, Any]) -> Mismatch:
     if row["first_print"] is None:
-        session = Session(
-            trade_date=row["trade_date"], open=row["session_open"], close=row["session_close"]
+        return SessionWithoutPrints(
+            dataset=dataset, trade_date=row["trade_date"], session=_session(row)
         )
-        return SessionWithoutPrints(dataset=dataset, trade_date=row["trade_date"], session=session)
     observed = {
         "dataset": dataset,
         "trade_date": row["trade_date"],
@@ -242,7 +250,6 @@ def _mismatch(dataset: Dataset, row: dict[str, Any]) -> Mismatch:
     }
     if row["session_open"] is None:
         return MissingSession.model_validate(observed)
-    session = Session(
-        trade_date=row["trade_date"], open=row["session_open"], close=row["session_close"]
+    return SessionMismatch.model_validate(
+        {**observed, "kind": row["kind"], "session": _session(row)}
     )
-    return SessionMismatch.model_validate({**observed, "kind": row["kind"], "session": session})

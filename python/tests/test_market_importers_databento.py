@@ -91,8 +91,9 @@ def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_pat
     names = sorted((DATA_FILE, "condition.json", "manifest.json", "metadata.json"))
     first, last = utc_text(bars.item(0, "ts_open")), utc_text(bars.item(-1, "ts_open"))
     assert [file.partition for file in store.list_partitions()] == [IMPORTED_MINUTES]
-    assert_frame_equal(bars.drop("trade_count"), synthetic.drop("trade_count"))
+    assert_frame_equal(bars.drop("trade_count", "vwap"), synthetic.drop("trade_count", "vwap"))
     assert bars.get_column("trade_count").null_count() == bars.height
+    assert bars.get_column("vwap").null_count() == bars.height
     assert store.raw_manifest() == RawManifest(
         files=tuple(
             RawFile(
@@ -109,17 +110,19 @@ def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_pat
             for name in names
         )
     )
-    # 4,140 ES bars and 42 bars of the calendar spread, one beside every hundredth.
+    # 4,141 ES bars and 42 bars of the calendar spread, one beside every hundredth. The bar
+    # opening at 16:00 CST on Friday 03-06 holds the print received after the close (step 1.5),
+    # outside every session and dated by the session before it.
     assert report.summary().splitlines() == [
         f"Imported 1 file from {BATCH}.",
         f"Databento batch {JOB}, data revised up to 2026-03-09.",
         "Days the vendor marks degraded (1): 2026-03-06",
-        f"databento/{JOB}/{DATA_FILE}: ohlcv-1m, DBN version 3, 4,182 records from {first} to "
+        f"databento/{JOB}/{DATA_FILE}: ohlcv-1m, DBN version 3, 4,183 records from {first} to "
         f"{last}",
-        f"  ES: 1 contract, ESH2026, 4,140 records from {first} to {last}",
+        f"  ES: 1 contract, ESH2026, 4,141 records from {first} to {last}",
         "  Spreads and strategies set aside: 1 symbol, 42 records",
         "  Before their product's first trade date: none",
-        "  Outside every session: none",
+        "  Outside every session: 1 record on 1 trade date: 2026-03-06 (1)",
         "  Clock: never decreases",
         "  Partitions: 1 written, 0 already stored",
     ]

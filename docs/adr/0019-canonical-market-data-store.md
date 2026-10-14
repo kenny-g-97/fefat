@@ -36,4 +36,4 @@ If the same request over the same files gave two different snapshot hashes, on o
 
 ## Status
 
-Accepted; recorded in step 1.1.
+Accepted; recorded in step 1.1. Amended by D-43 (step 1.5): bars carry `vwap`, and the end of a range of trade dates is the open of the session after its last trade date, not that session's close, since a print received in the break after a close keeps its trade date; the load API (1.8) cuts definitions, statistics, and funding there.

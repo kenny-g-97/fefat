@@ -11,6 +11,7 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import (
     FIRST_SESSION_DATE,
     LAST_SESSION_DATE,
+    HaltWindow,
     Session,
     SessionTable,
     build_sessions,
@@ -21,7 +22,9 @@ from fefat.market.calendar_definition import (
     CalendarId,
     EarlyClose,
     FormerClose,
+    FormerDailyHalt,
     FullClose,
+    Halt,
     SessionHours,
     Weekday,
 )
@@ -37,6 +40,13 @@ def utc(*fields: int) -> int:
     """The instant of a UTC date and time, in nanoseconds since the Unix epoch."""
     year, month, day, *clock = fields
     return int(datetime(year, month, day, *clock, tzinfo=UTC).timestamp()) * 1_000_000_000
+
+
+def halt(start: int, end: int) -> HaltWindow:
+    return HaltWindow(start=start, end=end)
+
+
+NO_HALTS: tuple[HaltWindow, ...] = ()
 
 
 # Golden sessions, computed by hand. CME Globex trades from 17:00 Chicago on the evening before
@@ -112,12 +122,54 @@ GOLDEN_SESSIONS = [
 ]
 
 
+# Golden halts, computed by hand in the same way. A halt day's hours from its halt to the next
+# open lie inside the next trade date's session, and equity index halted from 15:15 to 15:30
+# Chicago inside every session until trade date 2021-06-28.
+GOLDEN_HALTS = [
+    # Thanksgiving 2025, CST: equity index halts at 12:00, 18:00 UTC, and reopens at 17:00, 23:00
+    # UTC, for Friday 11-28; energy and metals halt at 13:30, 19:30 UTC, as they do since 2022.
+    (EQUITY_INDEX, date(2025, 11, 28), (halt(utc(2025, 11, 27, 18), utc(2025, 11, 27, 23)),)),
+    (ENERGY, date(2025, 11, 28), (halt(utc(2025, 11, 27, 19, 30), utc(2025, 11, 27, 23)),)),
+    (METALS, date(2025, 11, 28), (halt(utc(2025, 11, 27, 19, 30), utc(2025, 11, 27, 23)),)),
+    # Juneteenth 2026, a Friday, CDT: every group halts at 12:00, 17:00 UTC, and reopens on Sunday
+    # 06-21 at 17:00, 22:00 UTC, for Monday 06-22.
+    (EQUITY_INDEX, date(2026, 6, 22), (halt(utc(2026, 6, 19, 17), utc(2026, 6, 21, 22)),)),
+    (ENERGY, date(2026, 6, 22), (halt(utc(2026, 6, 19, 17), utc(2026, 6, 21, 22)),)),
+    (METALS, date(2026, 6, 22), (halt(utc(2026, 6, 19, 17), utc(2026, 6, 21, 22)),)),
+    # Thanksgiving 2023, CST: energy halts at 13:30, 19:30 UTC.
+    (ENERGY, date(2023, 11, 24), (halt(utc(2023, 11, 23, 19, 30), utc(2023, 11, 23, 23)),)),
+    # Martin Luther King Jr. Day 2021, CST: metals halted at 12:00, 18:00 UTC, before 2022.
+    (METALS, date(2021, 1, 19), (halt(utc(2021, 1, 18, 18), utc(2021, 1, 18, 23)),)),
+    # Labor Day 2011, CDT: metals halted at 12:15, 17:15 UTC, and reopened at 17:00, 22:00 UTC.
+    (METALS, date(2011, 9, 6), (halt(utc(2011, 9, 5, 17, 15), utc(2011, 9, 5, 22)),)),
+    # Friday 2021-06-25, CDT: equity index's last daily halt, 15:15 to 15:30, 20:15 to 20:30 UTC;
+    # none from Monday 06-28, and never in energy and metals.
+    (EQUITY_INDEX, date(2021, 6, 25), (halt(utc(2021, 6, 25, 20, 15), utc(2021, 6, 25, 20, 30)),)),
+    (EQUITY_INDEX, date(2021, 6, 28), NO_HALTS),
+    (METALS, date(2021, 6, 25), NO_HALTS),
+    # Friday 2015-09-18, CDT, closing at 16:15: the daily halt lies inside the session.
+    (EQUITY_INDEX, date(2015, 9, 18), (halt(utc(2015, 9, 18, 20, 15), utc(2015, 9, 18, 20, 30)),)),
+    # Friday 2020-11-27, CST, closes at 12:15, before the daily halt; Thanksgiving's halt from
+    # 12:00 to 17:00, 18:00 to 23:00 UTC, lies inside its session.
+    (EQUITY_INDEX, date(2020, 11, 27), (halt(utc(2020, 11, 26, 18), utc(2020, 11, 26, 23)),)),
+    # A regular day of 2026, and a crypto UTC day.
+    (EQUITY_INDEX, date(2026, 3, 9), NO_HALTS),
+    (CRYPTO, date(2026, 3, 7), NO_HALTS),
+]
+
+
 @pytest.fixture(scope="module")
 def tables(tmp_path_factory: pytest.TempPathFactory) -> dict[CalendarId, SessionTable]:
     cache_folder = tmp_path_factory.mktemp("cache")
     return {
         identity: sessions_of(calendar, cache_folder) for identity, calendar in BUILT_IN.items()
     }
+
+
+HALTS_OF_GOLDEN_SESSIONS = {
+    (calendar_id, trade_date): halts for calendar_id, trade_date, halts in GOLDEN_HALTS
+}
+"""The golden halts by session; every other golden session has none."""
 
 
 @pytest.mark.parametrize(("calendar_id", "trade_date", "opens", "closes"), GOLDEN_SESSIONS)
@@ -130,7 +182,18 @@ def test_golden_sessions(
 ) -> None:
     session = tables[calendar_id].session(trade_date)
 
-    assert session == Session(trade_date=trade_date, open=opens, close=closes)
+    halts = HALTS_OF_GOLDEN_SESSIONS.get((calendar_id, trade_date), NO_HALTS)
+    assert session == Session(trade_date=trade_date, open=opens, close=closes, halts=halts)
+
+
+@pytest.mark.parametrize(("calendar_id", "trade_date", "halts"), GOLDEN_HALTS)
+def test_golden_halts(
+    tables: dict[CalendarId, SessionTable],
+    calendar_id: CalendarId,
+    trade_date: date,
+    halts: tuple[HaltWindow, ...],
+) -> None:
+    assert tables[calendar_id].session(trade_date).halts == halts
 
 
 @pytest.mark.parametrize(
@@ -149,6 +212,20 @@ def test_a_holiday_without_a_trade_date_of_its_own_has_no_session(
 ) -> None:
     with pytest.raises(ValueError, match=f"got {holiday}, a {kind} holiday"):
         tables[calendar_id].session(holiday)
+
+
+def test_the_session_following_a_trade_date_is_the_next_trade_dates(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # Friday 2026-03-06 is followed by Monday 03-09, which opens on Sunday at 17:00 CDT, 22:00
+    # UTC, and Wednesday 2025-11-26 by Friday 11-28, Thanksgiving having no trade date.
+    equity_index = tables[EQUITY_INDEX]
+
+    assert equity_index.following(date(2026, 3, 6)).trade_date == date(2026, 3, 9)
+    assert equity_index.following(date(2026, 3, 6)).open == utc(2026, 3, 8, 22)
+    assert equity_index.following(date(2025, 11, 26)).trade_date == date(2025, 11, 28)
+    with pytest.raises(ValueError, match="after 2030-12-31, got none in its session table"):
+        equity_index.following(LAST_SESSION_DATE)
 
 
 def test_a_weekend_day_and_a_day_outside_the_table_have_no_session(
@@ -322,8 +399,8 @@ def test_an_early_close_of_a_utc_day_falls_on_its_trade_date() -> None:
     sessions = build_sessions(half_day, date(2026, 3, 4), date(2026, 3, 5))
 
     assert sessions.rows() == [
-        (date(2026, 3, 4), utc(2026, 3, 4), utc(2026, 3, 4, 12)),
-        (date(2026, 3, 5), utc(2026, 3, 5), utc(2026, 3, 6)),
+        (date(2026, 3, 4), utc(2026, 3, 4), utc(2026, 3, 4, 12), []),
+        (date(2026, 3, 5), utc(2026, 3, 5), utc(2026, 3, 6), []),
     ]
 
 
@@ -391,10 +468,87 @@ def test_a_generic_calendar_of_a_traders_product_gives_its_sessions() -> None:
     autumn = build_sessions(new_york_cash, date(2026, 11, 27), date(2026, 11, 27))
 
     assert summer.rows() == [
-        (date(2026, 7, 2), utc(2026, 7, 2, 13, 30), utc(2026, 7, 2, 20)),
-        (date(2026, 7, 6), utc(2026, 7, 6, 13, 30), utc(2026, 7, 6, 20)),
+        (date(2026, 7, 2), utc(2026, 7, 2, 13, 30), utc(2026, 7, 2, 20), []),
+        (date(2026, 7, 6), utc(2026, 7, 6, 13, 30), utc(2026, 7, 6, 20), []),
     ]
-    assert autumn.rows() == [(date(2026, 11, 27), utc(2026, 11, 27, 14, 30), utc(2026, 11, 27, 18))]
+    assert autumn.rows() == [
+        (date(2026, 11, 27), utc(2026, 11, 27, 14, 30), utc(2026, 11, 27, 18), [])
+    ]
+
+
+def new_york_cash_hours() -> SessionHours:
+    weekdays = frozenset(
+        {Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY}
+    )
+    return SessionHours(
+        time_zone="America/New_York",
+        opens_at=time(9, 30),
+        closes_at=time(16),
+        opens_on_previous_day=False,
+        weekdays=weekdays,
+    )
+
+
+def test_the_halt_of_a_session_opening_on_its_trade_date_lasts_until_the_next_open() -> None:
+    # Hours of 09:30 to 16:00 New York time, in EST (UTC-5) after 2026-11-01, with a halt at
+    # 13:00 on Thursday 11-26: Friday 11-27's session opens on Thursday at 09:30, 14:30 UTC, and
+    # holds the halt from 13:00, 18:00 UTC, to Friday's open at 09:30, 14:30 UTC.
+    halting = Calendar(
+        name="halting",
+        hours=new_york_cash_hours(),
+        holidays=(Halt(day=date(2026, 11, 26), closes_at=time(13), source=A_SOURCE),),
+    )
+
+    sessions = build_sessions(halting, date(2026, 11, 25), date(2026, 11, 27))
+
+    assert sessions.rows() == [
+        (date(2026, 11, 25), utc(2026, 11, 25, 14, 30), utc(2026, 11, 25, 21), []),
+        (
+            date(2026, 11, 27),
+            utc(2026, 11, 26, 14, 30),
+            utc(2026, 11, 27, 21),
+            [{"start": utc(2026, 11, 26, 18), "end": utc(2026, 11, 27, 14, 30)}],
+        ),
+    ]
+
+
+def test_a_halt_outside_its_session_is_refused() -> None:
+    # A halt at 09:00 on Thursday 2026-11-26, before that day's 09:30 open.
+    early = Calendar(
+        name="early-halt",
+        hours=new_york_cash_hours(),
+        holidays=(Halt(day=date(2026, 11, 26), closes_at=time(9), source=A_SOURCE),),
+    )
+
+    with pytest.raises(ValueError, match="Expected the halts of early-halt inside their sessions"):
+        build_sessions(early, date(2026, 11, 25), date(2026, 11, 27))
+
+
+def test_halts_that_overlap_are_refused() -> None:
+    # Two daily halts, 12:00 to 13:00 and 12:30 to 13:30 New York time: the grid reads each
+    # session's halts one after another, so they must be apart.
+    overlapping = Calendar(
+        name="overlapping",
+        hours=new_york_cash_hours(),
+        holidays=(),
+        former_daily_halts=tuple(
+            FormerDailyHalt(until=date(2027, 1, 4), halts_at=start, resumes_at=end, source=A_SOURCE)
+            for start, end in ((time(12), time(13)), (time(12, 30), time(13, 30)))
+        ),
+    )
+
+    with pytest.raises(ValueError, match="and apart from each other, got one from"):
+        build_sessions(overlapping, date(2026, 11, 25), date(2026, 11, 25))
+
+
+def test_a_daily_halt_that_resumes_before_it_halts_is_refused() -> None:
+    with pytest.raises(ValueError, match="Expected a daily halt to resume after it halts"):
+        FormerDailyHalt(
+            until=date(2021, 6, 28),
+            halts_at=time(15, 30),
+            resumes_at=time(15, 15),
+            source=A_SOURCE,
+        )
 
 
 @pytest.mark.parametrize("calendar_id", list(CalendarId))

@@ -1,9 +1,11 @@
-"""Session calendars: the trade dates of a product group, each with its session's open and
-close as UTC instants (`02-engine-and-data.md` §1.3, D-41).
+"""Session calendars: the trade dates of a product group, each with its session's open, close,
+and halts as UTC instants (`02-engine-and-data.md` §1.3, D-41, D-43).
 
 A calendar (`fefat.market.calendar_definition`) is regular hours in a time zone and its
 holidays: full closes, halts whose trading belongs to the next trade date (as CME dates holiday
-trading), and early closes, with the regular closes of earlier eras. Trade dates
+trading), and early closes, with the regular closes and daily halts of earlier eras. A halt
+day's hours from its halt to the next open, and a daily halt, lie inside a session as its
+halts, which the dense session grid (`fefat.market.bars.session_grid`) leaves out. Trade dates
 come from session membership, never from clock arithmetic: `SessionTable.assign_trade_dates`
 gives each instant the trade date of the session it falls in. Local times become UTC instants
 day by day through the IANA time-zone database that Polars carries, so a daylight-saving
@@ -34,22 +36,40 @@ FIRST_SESSION_DATE = date(2010, 1, 1)
 LAST_SESSION_DATE = date(2030, 12, 31)
 SESSION_TABLE_FOLDER_NAME = "calendar"
 """The folder of the cached session tables, inside the cache folder."""
-SESSION_COLUMNS = pl.Schema({"trade_date": pl.Date, "open": pl.Int64, "close": pl.Int64})
-"""A session table's columns: the trade date, and its session's open and close in nanoseconds
-since the Unix epoch, UTC."""
+SESSION_COLUMNS = pl.Schema(
+    {
+        "trade_date": pl.Date,
+        "open": pl.Int64,
+        "close": pl.Int64,
+        "halts": pl.List(pl.Struct({"start": pl.Int64, "end": pl.Int64})),
+    }
+)
+"""A session table's columns: the trade date, its session's open and close, and the halts
+inside the session in order, each from `start` to just before `end`, all in nanoseconds since
+the Unix epoch, UTC."""
 
 _LEAD_IN = timedelta(days=14)
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
+class HaltWindow(FrozenModel):
+    """A stretch of a session without trading, from `start` to just before `end`, in
+    nanoseconds since the Unix epoch, UTC: a halt day's hours from its halt to the next open,
+    or a daily halt."""
+
+    start: int
+    end: int
+
+
 class Session(FrozenModel):
     """One trade date's session, from `open` to just before `close`, in nanoseconds since the
-    Unix epoch, UTC (the store's clock)."""
+    Unix epoch, UTC (the store's clock), with the halts inside it in order."""
 
     trade_date: date
     open: int
     close: int
+    halts: tuple[HaltWindow, ...] = ()
 
     @model_validator(mode="after")
     def _closes_after_it_opens(self) -> Self:
@@ -95,6 +115,17 @@ class SessionTable:
             f"{self._calendar.no_session_reason(trade_date)}."
         )
 
+    def following(self, trade_date: date) -> Session:
+        """The session of the first trade date after `trade_date`, whose open ends the break in
+        which a print still takes `trade_date`; none after the table's last is refused."""
+        found = self._sessions.filter(pl.col("trade_date") > trade_date).head(1)
+        if found.is_empty():
+            raise ValueError(
+                f"Expected a trade date of {self._calendar.name} after {trade_date}, got none in "
+                "its session table."
+            )
+        return Session.model_validate(found.row(0, named=True))
+
     def between(self, first: date, last: date) -> pl.DataFrame:
         """The sessions of the trade dates from `first` to `last`, with the columns of
         `SESSION_COLUMNS`; dates outside the table's span are refused."""
@@ -105,9 +136,8 @@ class SessionTable:
         """`frame` sorted by `column`, an Int64 instant in nanoseconds since the Unix epoch, UTC,
         keeping the order of equal instants (D-36), with the `trade_date` of the session each
         instant falls in. An instant outside every session (a weekend, the daily break, a full
-        close) is refused, with the first of them. The hours a halt day leaves closed, and the
-        weekend after a Friday halt, lie inside the next trade date's session, since the table
-        holds no halt windows (`BACKLOG.md`)."""
+        close) is refused, with the first of them. An instant inside a session's halts keeps
+        its trade date, since vendors' prints arrive there too."""
         assigned = self._beside_their_sessions(frame, column)
         outside = assigned.filter(
             pl.col("trade_date").is_null() | (pl.col(column) >= pl.col("session_close"))
@@ -157,7 +187,7 @@ class SessionTable:
         )
 
     def _renamed(self) -> pl.DataFrame:
-        return self._sessions.rename({"open": "session_open", "close": "session_close"})
+        return self._sessions.select("trade_date", session_open="open", session_close="close")
 
     def _span(self) -> tuple[date, date]:
         return self._sessions.item(0, "trade_date"), self._sessions.item(-1, "trade_date")
@@ -179,33 +209,93 @@ def build_sessions(calendar: Calendar, first: date, last: date) -> pl.DataFrame:
     opens at the regular open of the first day that trades after the previous trade date (the
     evening before on CME), so a weekend or a halt folds into the next trade date, and closes at
     the regular or early close of its trade date. An early close must fall after its session's
-    open and by its regular close."""
+    open and by its regular close. A halt day's hours from its halt to the regular open of the
+    next day that trades are a halt of the session it folds into, and so is each former daily
+    halt of a session still open when it starts, cut at the close; halts must fall after their
+    session's open and by its close."""
     if last < first:
         raise ValueError(
             f"Expected the first trade date {first} on or before the last, got {last}."
         )
-    sessions = _trade_dates_with_their_first_trading_day(_days(calendar, first - _LEAD_IN, last))
-    _require_an_earlier_trade_date(calendar, sessions, first)
     hours = calendar.hours
     open_day = pl.col("first_trading_day") - timedelta(days=int(hours.opens_on_previous_day))
     regular_close_time = _regular_close_time(calendar)
     close_time = pl.col("early_close").fill_null(regular_close_time)
+    days = _days(calendar, first - _LEAD_IN, last)
     try:
-        built = sessions.filter(pl.col("trade_date") >= first).select(
-            "trade_date",
-            open=_utc_nanoseconds(open_day, pl.lit(hours.opens_at), hours.time_zone),
-            close=_utc_nanoseconds(_close_day(close_time, hours), close_time, hours.time_zone),
-            regular_close=_utc_nanoseconds(
-                _close_day(regular_close_time, hours), regular_close_time, hours.time_zone
-            ),
+        sessions = _trade_dates_with_their_first_trading_day(
+            days.with_columns(halt=_holiday_halt(hours))
+        )
+        _require_an_earlier_trade_date(calendar, sessions, first)
+        built = (
+            sessions.filter(pl.col("trade_date") >= first)
+            .select(
+                "trade_date",
+                "halts",
+                open=_utc_nanoseconds(open_day, pl.lit(hours.opens_at), hours.time_zone),
+                close=_utc_nanoseconds(_close_day(close_time, hours), close_time, hours.time_zone),
+                regular_close=_utc_nanoseconds(
+                    _close_day(regular_close_time, hours), regular_close_time, hours.time_zone
+                ),
+            )
+            .with_columns(halts=_with_daily_halts(calendar))
         )
     except ComputeError as error:
         raise ValueError(
-            f"Expected open and close times that exist once in {hours.time_zone} on every "
-            f"session of {calendar.name}, got: {str(error).splitlines()[0]}"
+            f"Expected open, close, and halt times that exist once in {hours.time_zone} on "
+            f"every session of {calendar.name}, got: {str(error).splitlines()[0]}"
         ) from error
     _require_early_closes_inside_their_sessions(calendar, built)
-    return built.drop("regular_close")
+    _require_halts_inside_their_sessions(calendar, built)
+    return built.select(SESSION_COLUMNS.names())
+
+
+def _holiday_halt(hours: SessionHours) -> pl.Expr:
+    """On a halt day, its halt: from its halt time to the regular open of the next day that
+    trades, when trading resumes for the next trade date; null fields on other days."""
+    halt_day = pl.when(pl.col("kind") == "halt").then(pl.col("day"))
+    reopening_day = pl.when(pl.col("kind") == "halt").then(
+        pl.col("next_trading_day") - timedelta(days=int(hours.opens_on_previous_day))
+    )
+    return pl.struct(
+        start=_utc_nanoseconds(halt_day, pl.col("closes_at"), hours.time_zone),
+        end=_utc_nanoseconds(reopening_day, pl.lit(hours.opens_at), hours.time_zone),
+    )
+
+
+def _with_daily_halts(calendar: Calendar) -> pl.Expr:
+    """A session's halts in order: those of its halt days and each former daily halt of a
+    trade date before the halt's end, on the trade date and cut at the close, unless the
+    session closes before the halt starts (an early close)."""
+    time_zone = calendar.hours.time_zone
+    daily: list[pl.Expr] = []
+    for former in calendar.former_daily_halts:
+        start = _utc_nanoseconds(pl.col("trade_date"), pl.lit(former.halts_at), time_zone)
+        resumes = _utc_nanoseconds(pl.col("trade_date"), pl.lit(former.resumes_at), time_zone)
+        end = pl.min_horizontal(resumes, pl.col("close"))
+        in_force = (pl.col("trade_date") < former.until) & (start < end)
+        daily.append(pl.when(in_force).then(pl.struct(start=start, end=end)))
+    return pl.concat_list("halts", *daily).list.drop_nulls().list.sort()
+
+
+def _require_halts_inside_their_sessions(calendar: Calendar, sessions: pl.DataFrame) -> None:
+    halts = sessions.select("trade_date", "open", "close", "halts").explode("halts").unnest("halts")
+    misplaced = halts.filter(
+        (pl.col("start") <= pl.col("open"))
+        | (pl.col("end") <= pl.col("start"))
+        | (pl.col("end") > pl.col("close"))
+        | (pl.col("start") < pl.col("end").shift(1).over("trade_date"))
+    )
+    if misplaced.is_empty():
+        return
+    trade_date, opens, closes, start, end = misplaced.select(
+        "trade_date", "open", "close", "start", "end"
+    ).row(0)
+    raise ValueError(
+        f"Expected the halts of {calendar.name} inside their sessions, after the open, by the "
+        f"close, and apart from each other, got one from {utc_text(start)} to {utc_text(end)} in "
+        f"the session of {trade_date}, {utc_text(opens)} to {utc_text(closes)}."
+    )
 
 
 def _regular_close_time(calendar: Calendar) -> pl.Expr:
@@ -234,7 +324,9 @@ def _require_early_closes_inside_their_sessions(calendar: Calendar, sessions: pl
     )
     if misplaced.is_empty():
         return
-    trade_date, opens, closes, regular_close = misplaced.row(0)
+    trade_date, opens, closes, regular_close = misplaced.select(
+        "trade_date", "open", "close", "regular_close"
+    ).row(0)
     raise ValueError(
         f"Expected the early close of {calendar.name} on {trade_date} after its session's open "
         f"{utc_text(opens)} and by its regular close {utc_text(regular_close)}, got "
@@ -244,7 +336,8 @@ def _require_early_closes_inside_their_sessions(calendar: Calendar, sessions: pl
 
 def _days(calendar: Calendar, start: date, end: date) -> pl.DataFrame:
     """Every day from `start` to `end`, in order, with whether it trades, whether it is a trade
-    date, and its early close (null on other days)."""
+    date, its early close or halt time (null on other days), and the next day after it that
+    trades (null after the last)."""
     holidays = pl.from_dicts(
         [holiday.model_dump() for holiday in calendar.holidays],
         schema={"day": pl.Date, "kind": pl.String, "closes_at": pl.Time},
@@ -255,13 +348,17 @@ def _days(calendar: Calendar, start: date, end: date) -> pl.DataFrame:
         pl.DataFrame({"day": pl.date_range(start, end, eager=True)})
         .join(holidays, on="day", how="left", maintain_order="left")
         .with_columns(trades=trades)
-        .with_columns(is_trade_date=pl.col("trades") & pl.col("kind").ne_missing("halt"))
+        .with_columns(
+            is_trade_date=pl.col("trades") & pl.col("kind").ne_missing("halt"),
+            next_trading_day=pl.when("trades").then("day").shift(-1).fill_null(strategy="backward"),
+        )
     )
 
 
 def _trade_dates_with_their_first_trading_day(days: pl.DataFrame) -> pl.DataFrame:
     """A row per trade date, sorted: the first day that trades after the previous trade date
-    (the trade date itself after a regular day) and the trade date's early close, if any."""
+    (the trade date itself after a regular day), the trade date's early close, if any, and the
+    halts of the halt days that fold into it, in order (rows keep their order within a group)."""
     trade_dates_before = pl.col("is_trade_date").cast(pl.UInt32).cum_sum().shift(1, fill_value=0)
     return (
         days.with_columns(trade_dates_before=trade_dates_before)
@@ -270,6 +367,7 @@ def _trade_dates_with_their_first_trading_day(days: pl.DataFrame) -> pl.DataFram
             trade_date=pl.col("day").filter(pl.col("is_trade_date")).max(),
             first_trading_day=pl.col("day").filter(pl.col("trades")).min(),
             early_close=pl.col("closes_at").filter(pl.col("is_trade_date")).max(),
+            halts=pl.col("halt").filter(pl.col("kind") == "halt"),
         )
         .drop_nulls("trade_date")
         .sort("trade_date")

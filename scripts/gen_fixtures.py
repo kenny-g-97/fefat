@@ -15,9 +15,15 @@ daylight saving on 2026-03-08 (the UTC open moves from 23:00 to 22:00), a 24x7
 BTC perpetual-like UTC day, and the 1-second and 1-minute bars built from their
 trades the way section 1.4 builds bars: bucketed by `ts_recv` into
 `[t, t + width)` from the session open, sparse, with `ts_open`, `ts_close`,
-and the session's `trade_date` (the first hour of an ES session falls on the UTC
-day before its trade date). A session opens and closes at local times of its
-product's time zone, as the calendar of `fefat.market.calendar` does: ES from
+the session's `trade_date` (the first hour of an ES session falls on the UTC
+day before its trade date), and the `vwap` rounded down to 1e-9 units. Each
+session also holds planted prints at the edges of bars (step 1.5): one received
+exactly on a minute boundary, 90 minutes after the open, one in the last 100 ms
+before the close, and, on ES's Friday 2026-03-06, one received 400 ms after the
+close, which keeps that trade date in bars opening at the close, as the vendor's
+bars do (the importer of step 1.6 dates such prints the same way). A session
+opens and closes at local times of its product's time zone, as the calendar of
+`fefat.market.calendar` does: ES from
 17:00 Chicago the day before its trade date to 16:00 Chicago on it, BTC from
 00:00 UTC to 00:00 UTC the next day. The labels follow the SDK: the ES contract
 is `ESH2026` (root, month code, four-digit year, `fefat.market.contracts`) and
@@ -52,6 +58,7 @@ fixtures are regenerated and committed with the manifest.
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import random
@@ -94,6 +101,12 @@ RECEIVE_LATENCY = (20_000, 400_000)
 WEEKEND_GAP_FACTOR = 3
 SATURDAY = 5
 SUNDAY = 6
+BOUNDARY_PRINT_AFTER_OPEN = 90 * NANOSECONDS_PER_MINUTE
+LAST_SLOT_PRINT_BEFORE_CLOSE = 50_000_000
+AFTER_CLOSE_PRINT_DELAY = 400_000_000
+AFTER_CLOSE_PRINT_DAY = date(2026, 3, 6)
+PLANTED_PRINT_LATENCY = 150_000
+PLANTED_PRINT_SIZE = 1
 
 BUYER = "B"
 SELLER = "A"
@@ -125,6 +138,7 @@ BARS_SCHEMA = pa.schema(
         ("close", pa.int64()),
         ("volume", pa.uint64()),
         ("trade_count", pa.uint32()),
+        ("vwap", pa.int64()),
     ]
 )
 
@@ -372,6 +386,47 @@ def simulate_session(
     return recorder.tape(), price_ticks
 
 
+def planted_receive_times(session: Session) -> list[int]:
+    """When the planted prints of a session arrive: on a minute boundary, in the last slot
+    before the close, and on ES's 2026-03-06 after the close."""
+    receive_times = [
+        session.open_time() + BOUNDARY_PRINT_AFTER_OPEN,
+        session.close_time() - LAST_SLOT_PRINT_BEFORE_CLOSE,
+    ]
+    if session.product is ES and session.trade_date == AFTER_CLOSE_PRINT_DAY:
+        receive_times.append(session.close_time() + AFTER_CLOSE_PRINT_DELAY)
+    return receive_times
+
+
+def with_planted_prints(trades: pa.Table, session: Session) -> pa.Table:
+    """The session's tape with its planted prints, each at the price of the print received
+    before it, sorted by `ts_recv` (a planted print follows a print received at the same
+    instant) and numbered again. The planted prints draw nothing from the session's random
+    source, so the rest of the tape stays as it was."""
+    prints = trades.to_pylist()
+    received = [int(trade["ts_recv"]) for trade in prints]
+    for receive_time in planted_receive_times(session):
+        received_before = bisect.bisect_right(received, receive_time)
+        if received_before == 0:
+            raise ValueError(
+                f"Expected a print before the one planted at {receive_time} in the session of "
+                f"{session.product.root} {session.trade_date}, got none."
+            )
+        previous = prints[received_before - 1]
+        prints.append(
+            previous
+            | {
+                "ts_recv": receive_time,
+                "ts_event": receive_time - PLANTED_PRINT_LATENCY,
+                "size": PLANTED_PRINT_SIZE,
+                "side": BUYER,
+            }
+        )
+    ordered = sorted(prints, key=lambda trade: int(trade["ts_recv"]))
+    numbered = [trade | {"sequence": number} for number, trade in enumerate(ordered, start=1)]
+    return pa.Table.from_pylist(numbered, schema=TRADES_SCHEMA)
+
+
 def bars_from_trades(trades: pa.Table, session: Session, width: int) -> pa.Table:
     """Bucket trades by `ts_recv` into [t, t + width) from the session open; only buckets with trades."""
     anchor = session.open_time()
@@ -385,6 +440,7 @@ def bars_from_trades(trades: pa.Table, session: Session, width: int) -> pa.Table
     ):
         members = list(rows)
         bucket_prices = [prices[row] for row in members]
+        volume = sum(sizes[row] for row in members)
         ts_open = anchor + bucket * width
         bar = {
             "ts_open": ts_open,
@@ -395,8 +451,9 @@ def bars_from_trades(trades: pa.Table, session: Session, width: int) -> pa.Table
             "high": max(bucket_prices),
             "low": min(bucket_prices),
             "close": bucket_prices[-1],
-            "volume": sum(sizes[row] for row in members),
+            "volume": volume,
             "trade_count": len(members),
+            "vwap": sum(prices[row] * sizes[row] for row in members) // volume,
         }
         for name, value in bar.items():
             columns[name].append(value)
@@ -462,9 +519,10 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
     for trade_date in product.trade_dates:
         session = Session(product, trade_date)
         random_source = random.Random(f"{seed}/{product.root}/{trade_date.isoformat()}")
-        trades, price_ticks = simulate_session(
+        tape, price_ticks = simulate_session(
             session, random_source, opening_price_ticks(price_ticks, session, random_source)
         )
+        trades = with_planted_prints(tape, session)
         day = f"date={trade_date.isoformat()}"
         second_bars = bars_from_trades(trades, session, NANOSECONDS_PER_SECOND)
         entries.append(

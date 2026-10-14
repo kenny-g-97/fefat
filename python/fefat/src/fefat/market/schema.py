@@ -77,6 +77,10 @@ class Timeframe(FrozenModel):
         """The length in seconds, nominal for daily bars, whose sessions differ in length."""
         return self.count * _SECONDS_PER_TIME_UNIT[self.unit]
 
+    def nominal_nanoseconds(self) -> int:
+        """The length in nanoseconds, the unit of the store's clock."""
+        return self.nominal_seconds() * 1_000_000_000
+
 
 class RecordSchemaName(FrozenModel):
     """The schema of records other than bars, named by its kind alone."""
@@ -174,14 +178,16 @@ _BARS_COLUMNS = pl.Schema(
         "close": pl.Int64,
         "volume": pl.UInt64,
         "trade_count": pl.UInt32,
+        "vwap": pl.Int64,
     }
 )
 """One row per bar of the trades received in `[ts_open, ts_close)`, sparse (a bar exists only
 where trades do), with its session's `trade_date`; a bar is available at `ts_close`. `volume`
-counts the dataset's size unit, and `trade_count` is null for a vendor's bars that carry no
-count. `ohlcv-1d` holds session bars by trade date, built from finer bars or imported with
-`ts_open` and `ts_close` from the calendar's session for their date; a vendor's daily bars
-cut on UTC dates are not session bars and are not stored as it."""
+counts the dataset's size unit; `trade_count` and `vwap`, the volume-weighted average price in
+the prices' 1e-9 units rounded down, are null for a vendor's bars that carry neither (D-43).
+`ohlcv-1d` holds session bars by trade date, built from finer bars or imported with `ts_open`
+and `ts_close` from the calendar's session for their date; a vendor's daily bars cut on UTC
+dates are not session bars and are not stored as it. `fefat.market.bars` builds bars."""
 
 _DEFINITIONS_COLUMNS = pl.Schema(
     {
