@@ -268,13 +268,13 @@ def one_minute_bars(*bars: tuple[int, date, int, int]) -> pl.DataFrame:
     )
 
 
-def test_the_grid_carries_a_close_forward_within_its_instrument_and_never_back(
+def test_the_grid_starts_each_instrument_at_its_first_bar_and_carries_its_close_forward(
     tables: dict[CalendarId, SessionTable],
 ) -> None:
     # Instrument 1 trades in the second minute of 2026-03-05's session and the first of
-    # 03-09's: it is null before its first bar, at 100 through 03-06, a day without bars inside
-    # its span, and at 300 from its bar on 03-09. Instrument 2 trades once, at 03-06's open:
-    # its rows start and end with that trade date, before which nothing is filled.
+    # 03-09's: its rows start at its first bar, stay at 100 through 03-06, a day without bars,
+    # and turn 300 at its bar on 03-09. Instrument 2 trades once, at 03-06's open: its rows
+    # start there and carry its close to the end of the range, since no bar says it stopped.
     table = tables[EQUITY_INDEX]
     march_5, march_6, march_9 = (table.session(day) for day in (MARCH_5, MARCH_6, MARCH_9))
     bars = one_minute_bars(
@@ -291,15 +291,40 @@ def test_the_grid_carries_a_close_forward_within_its_instrument_and_never_back(
 
     first = grid.filter(pl.col("instrument_id") == 1).get_column("close").to_list()
     second = grid.filter(pl.col("instrument_id") == 2).get_column("close").to_list()
-    assert grid.height == 4 * per_session
-    assert first == [None] + [100] * (2 * per_session - 1) + [300] * per_session
-    assert second == [200] * per_session
+    assert first == [100] * (2 * per_session - 1) + [300] * per_session
+    assert second == [200] * 2 * per_session
     assert days.select("instrument_id", "trade_date", "close", "zero_volume").rows() == [
         (1, MARCH_5, 100, False),
         (1, MARCH_6, 100, True),
         (1, MARCH_9, 300, False),
         (2, MARCH_6, 200, False),
+        (2, MARCH_9, 200, True),
     ]
+
+
+def test_the_grid_up_to_an_instant_never_changes_when_later_bars_are_removed(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # The truncation test of D-12 on the grid: instrument 1 trades on 2026-03-05 and 03-09 and
+    # not on 03-06, instrument 2 first on 03-09. Cut at 12:00 UTC on Friday 03-06, the bars
+    # leave every grid row closing by then as it was: no row exists, or is missing, because of
+    # a bar to come.
+    table = tables[EQUITY_INDEX]
+    march_5, march_9 = table.session(MARCH_5), table.session(MARCH_9)
+    bars = one_minute_bars(
+        (march_5.open + NANOSECONDS_PER_MINUTE, MARCH_5, 1, 100),
+        (march_9.open, MARCH_9, 1, 300),
+        (march_9.open, MARCH_9, 2, 200),
+    )
+    cut = utc(2026, 3, 6, 12)
+    whole = session_grid(bars, MINUTE, table, MARCH_5, MARCH_9)
+    truncated = session_grid(
+        bars.filter(pl.col("ts_close") <= cut), MINUTE, table, MARCH_5, MARCH_9
+    )
+
+    before_the_cut = pl.col("ts_close") <= cut
+    assert whole.filter(before_the_cut & (pl.col("trade_date") == MARCH_6)).height > 0
+    assert_frame_equal(truncated.filter(before_the_cut), whole.filter(before_the_cut))
 
 
 def trades_of(*prints: tuple[int, int]) -> pl.DataFrame:

@@ -110,30 +110,27 @@ def session_grid(
     bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable, first: date, last: date
 ) -> pl.DataFrame:
     """The dense view of sparse `bars` of `timeframe` for signals: for each instrument of
-    `bars`, a row for every bucket of every session from its first to its last trade date with
-    a bar, within trade dates `first` to `last`, but the buckets lying wholly inside a halt
+    `bars`, a row for every bucket of every session from trade date `first` to `last`, from
+    the instrument's first bar in the grid on, but the buckets lying wholly inside a halt
     (`Session.halts`), sorted by instrument and `ts_open`, with the columns of `GRID_COLUMNS`.
     A bucket with a bar holds it; one without is `zero_volume`, with volume and trade count 0,
-    no vwap, and its prices at the close of the instrument's bar before it, or null before its
-    first bar: a bucket is never filled from a later one (D-12), and a contract that stopped
-    trading has no rows after its last trade date. Bars outside the grid, received after a
-    close or inside a halt, are left out, and a bar whose bucket the grid closes otherwise is
-    refused (bars of another timeframe)."""
+    no vwap, and its prices at the close of the instrument's bar before it. No row exists, is
+    missing, or is filled because of a later bar (D-12), so a contract that stopped trading
+    keeps its rows to `last`: a range within a contract's life leaves them out. Bars outside
+    the grid, received after a close or inside a halt, are left out, and a bar whose bucket the
+    grid closes otherwise is refused (bars of another timeframe)."""
     require_columns(BAR_COLUMNS, bars.schema, "the bars of the session grid")
     _require_a_bar_timeframe(timeframe)
     in_range = sessions.between(first, last)
     buckets = _outside_halts(_session_buckets(in_range, timeframe), in_range)
-    dates = pl.col("trade_date")
-    spans = bars.group_by("instrument_id").agg(first_traded=dates.min(), last_traded=dates.max())
-    slots = (
-        buckets.join(spans, how="cross")
-        .filter(dates.is_between(pl.col("first_traded"), pl.col("last_traded")))
-        .drop("first_traded", "last_traded")
-    )
+    instruments = bars.select("instrument_id").unique()
     sparse = bars.rename({"ts_close": "bar_close", "trade_date": "bar_trade_date"})
-    grid = slots.join(sparse, on=["instrument_id", "ts_open"], how="left")
-    _require_bars_of_the_grid(grid, timeframe, slots.height)
-    return _with_empty_buckets_filled(grid.sort("instrument_id", "ts_open"))
+    grid = buckets.join(instruments, how="cross").join(
+        sparse, on=["instrument_id", "ts_open"], how="left"
+    )
+    _require_bars_of_the_grid(grid, timeframe, buckets.height * instruments.height)
+    traded = pl.col("bar_close").is_not_null().cum_max().over("instrument_id")
+    return _with_empty_buckets_filled(grid.sort("instrument_id", "ts_open").filter(traded))
 
 
 def _require_a_bar_timeframe(timeframe: Timeframe) -> None:
