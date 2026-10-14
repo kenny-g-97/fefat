@@ -32,6 +32,7 @@ def march_bars(*opens: int) -> pl.DataFrame:
             "close": [1] * len(opens),
             "volume": list(range(1, len(opens) + 1)),
             "trade_count": [None] * len(opens),
+            "vwap": [None] * len(opens),
         },
         schema=polars_schema(MINUTE_BARS),
     )

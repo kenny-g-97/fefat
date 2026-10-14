@@ -25,6 +25,7 @@ PRICE_COLUMNS = {
     "bid_px_00",
     "ask_px_00",
     "min_price_increment",
+    "vwap",
 }
 
 
@@ -58,6 +59,13 @@ def test_bars_of_every_timeframe_share_one_schema_with_their_trade_date() -> Non
     assert all(columns == one_minute for columns in bars)
     assert list(one_minute)[:3] == ["ts_open", "ts_close", "trade_date"]
     assert one_minute["trade_date"] == pl.Date
+
+
+def test_bars_end_with_their_trade_count_and_their_vwap_in_price_units() -> None:
+    one_minute = polars_schema(parse_schema_name("ohlcv-1m"))
+
+    assert list(one_minute)[-2:] == ["trade_count", "vwap"]
+    assert one_minute["vwap"] == pl.Int64
 
 
 def test_tbbo_rows_are_trades_with_the_best_bid_and_ask_before_them() -> None:

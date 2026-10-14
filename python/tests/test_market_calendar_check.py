@@ -43,13 +43,53 @@ def copied_fixtures(folder: Path) -> Store:
     return Store(folder)
 
 
-def test_the_synthetic_fixtures_match_their_calendars(tmp_path: Path) -> None:
+MARCH_6 = date(2026, 3, 6)
+MARCH_6_SESSION = Session(trade_date=MARCH_6, open=utc(2026, 3, 5, 23), close=utc(2026, 3, 6, 22))
+
+
+def after_the_close_of_march_6() -> tuple[SessionMismatch, ...]:
+    """The fixtures' own mismatches: the print planted 400 ms after the close of ES's Friday
+    2026-03-06 keeps that trade date (step 1.5), so its trades, and its 1-second and 1-minute
+    bars opening at the close, print after the close."""
+    store = Store(FIXTURES)
+    found = []
+    for dataset, key in ((ES_MINUTES, YearMonth(year=2026, month=3)), (ES_SECONDS, MARCH_6)):
+        bars = store.scan_partition(Partition(dataset=dataset, contract="ESH2026", key=key))
+        first, last = first_and_last(
+            bars.filter(pl.col("trade_date") == MARCH_6).collect(), "ts_open", "ts_close"
+        )
+        found.append((dataset, first, last))
+    trades = store.scan_partition(Partition(dataset=ES_TRADES, contract="ESH2026", key=MARCH_6))
+    found.append((ES_TRADES, *first_and_last(trades.collect(), "ts_recv", "ts_recv")))
+    return tuple(
+        SessionMismatch(
+            dataset=dataset,
+            trade_date=MARCH_6,
+            kind=MismatchKind.PRINT_AFTER_CLOSE,
+            first_print=first,
+            last_print=last,
+            session=MARCH_6_SESSION,
+        )
+        for dataset, first, last in found
+    )
+
+
+def test_the_synthetic_fixtures_match_their_calendars_but_for_a_print_after_a_close(
+    tmp_path: Path,
+) -> None:
     # ES trades, 1-second bars, and 1-minute bars on three trade dates, and the same three
-    # schemas of BTCUSDT-PERP on one UTC day.
+    # schemas of BTCUSDT-PERP on one UTC day. The print received 400 ms after the close of
+    # 2026-03-06, at 22:00 UTC, ends that day's trades, a 1-second bar, and a 1-minute bar.
     report = validate_calendar(Store(FIXTURES), tmp_path)
 
-    assert report == CalendarReport(days_checked=12, mismatches=())
-    assert report.summary() == "Trade dates checked: 12. Mismatches: none."
+    mismatches = after_the_close_of_march_6()
+    assert report == CalendarReport(days_checked=12, mismatches=mismatches)
+    assert [mismatch.last_print for mismatch in mismatches] == [
+        utc(2026, 3, 6, 22, 1),
+        utc(2026, 3, 6, 22, 0, 1),
+        utc(2026, 3, 6, 22) + 400_000_000,
+    ]
+    assert report.summary().splitlines()[0] == "Trade dates checked: 12. Mismatches: 3."
 
 
 def test_ticks_filed_under_another_trade_date_are_reported_with_their_times(
@@ -73,18 +113,21 @@ def test_ticks_filed_under_another_trade_date_are_reported_with_their_times(
     report = validate_calendar(store, tmp_path / "cache")
 
     assert report.days_checked == 13
-    assert report.mismatches == tuple(
-        SessionMismatch(
-            dataset=ES_TRADES,
-            trade_date=date(2026, 3, 10),
-            kind=kind,
-            first_print=first,
-            last_print=last,
-            session=session,
-        )
-        for kind in (MismatchKind.EARLY_LAST_PRINT, MismatchKind.PRINT_BEFORE_OPEN)
+    assert report.mismatches == (
+        *after_the_close_of_march_6(),
+        *(
+            SessionMismatch(
+                dataset=ES_TRADES,
+                trade_date=date(2026, 3, 10),
+                kind=kind,
+                first_print=first,
+                last_print=last,
+                session=session,
+            )
+            for kind in (MismatchKind.EARLY_LAST_PRINT, MismatchKind.PRINT_BEFORE_OPEN)
+        ),
     )
-    assert report.summary().splitlines()[1] == (
+    assert report.summary().splitlines()[4] == (
         f"synthetic/trades/root=ES 2026-03-10 early-last-print: prints {utc_text(first)} to "
         f"{utc_text(last)}, session 2026-03-09T22:00:00Z to 2026-03-10T21:00:00Z"
     )
@@ -135,7 +178,7 @@ def test_bars_an_hour_late_open_late_and_print_after_the_close(tmp_path: Path) -
         (ES_MINUTES, day, kind)
         for day in ES_FIXTURE_DAYS
         for kind in (MismatchKind.LATE_FIRST_PRINT, MismatchKind.PRINT_AFTER_CLOSE)
-    }
+    } | {(dataset, MARCH_6, MismatchKind.PRINT_AFTER_CLOSE) for dataset in (ES_SECONDS, ES_TRADES)}
     assert {mismatch.kind for mismatch in within_two_hours.mismatches} == {
         MismatchKind.PRINT_AFTER_CLOSE
     }
@@ -182,6 +225,7 @@ def test_a_coarse_bar_that_straddles_an_early_close_is_not_a_print_after_it(
             "close": [1, 1],
             "volume": [1, 1],
             "trade_count": [1, 1],
+            "vwap": [1, 1],
         },
         schema=polars_schema(hours.schema_name),
     )
@@ -222,7 +266,8 @@ def test_a_session_without_prints_inside_a_datasets_dates_is_reported(tmp_path: 
 
 def test_an_empty_tick_file_adds_no_trade_date(tmp_path: Path) -> None:
     # An empty file on Saturday 2026-03-07 adds nothing to check, and an empty file in place of
-    # Friday 03-06's trades leaves that session without prints.
+    # Friday 03-06's trades leaves that session without prints; its bars still end with the
+    # print after the close.
     store = copied_fixtures(tmp_path / "store")
     empty = pl.DataFrame(schema=polars_schema(ES_TRADES.schema_name))
     for day in (date(2026, 3, 6), date(2026, 3, 7)):
@@ -232,4 +277,8 @@ def test_an_empty_tick_file_adds_no_trade_date(tmp_path: Path) -> None:
 
     assert [
         (mismatch.dataset, mismatch.trade_date, mismatch.kind) for mismatch in report.mismatches
-    ] == [(ES_TRADES, date(2026, 3, 6), MismatchKind.NO_PRINTS)]
+    ] == [
+        (ES_MINUTES, MARCH_6, MismatchKind.PRINT_AFTER_CLOSE),
+        (ES_SECONDS, MARCH_6, MismatchKind.PRINT_AFTER_CLOSE),
+        (ES_TRADES, MARCH_6, MismatchKind.NO_PRINTS),
+    ]

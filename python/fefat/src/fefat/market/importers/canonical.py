@@ -261,7 +261,7 @@ def _utc_day(column: str) -> pl.Expr:
 
 def _canonical(kept: pl.DataFrame, schema_name: SchemaName) -> pl.DataFrame:
     """The rows with the store's columns of the schema, and the root and contract beside them:
-    a vendor's bar opens at its `ts_event` and carries no trade count."""
+    a vendor's bar opens at its `ts_event` and carries no trade count and no vwap."""
     if not isinstance(schema_name, BarSchemaName):
         return kept
     width = schema_name.timeframe.nominal_seconds() * _NANOSECONDS_PER_SECOND
@@ -269,6 +269,7 @@ def _canonical(kept: pl.DataFrame, schema_name: SchemaName) -> pl.DataFrame:
         ts_open=pl.col("ts_event"),
         ts_close=pl.col("ts_event") + width,
         trade_count=pl.lit(None, dtype=pl.UInt32),
+        vwap=pl.lit(None, dtype=pl.Int64),
     )
 
 

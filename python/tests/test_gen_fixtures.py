@@ -51,7 +51,14 @@ SESSIONS = [
     ),
 ]
 OPENS = [(root, contract, day, open_utc) for root, contract, day, open_utc, _ in SESSIONS]
-BAR_FIELDS = ("ts_close", "open", "high", "low", "close", "volume", "trade_count")
+BAR_FIELDS = ("ts_close", "open", "high", "low", "close", "volume", "trade_count", "vwap")
+# Planted prints (step 1.5): one received exactly 90 minutes after each open, on a minute and a
+# second boundary; one 50 ms before each close, in the session's last 100 ms slot; and one 400
+# ms after the close of ES's Friday 2026-03-06, received in the break.
+BOUNDARY_AFTER_OPEN = 90 * NANOSECONDS_PER_MINUTE
+LAST_SLOT_BEFORE_CLOSE = 50_000_000
+AFTER_THE_CLOSE = 400_000_000
+AFTER_THE_CLOSE_DAY = "2026-03-06"
 
 
 def nanoseconds(instant: datetime) -> int:
@@ -69,8 +76,10 @@ def rows(path: Path) -> list[dict[str, int | str]]:
 def second_bar(start: int, trades: list[dict[str, int | str]]) -> tuple[int, ...]:
     prices = [int(trade["price"]) for trade in trades]
     volume = sum(int(trade["size"]) for trade in trades)
+    notional = sum(int(trade["price"]) * int(trade["size"]) for trade in trades)
     end = start + NANOSECONDS_PER_SECOND
-    return (end, prices[0], max(prices), min(prices), prices[-1], volume, len(trades))
+    vwap = notional // volume
+    return (end, prices[0], max(prices), min(prices), prices[-1], volume, len(trades), vwap)
 
 
 def manifest_entries() -> list[dict[str, str | int]]:
@@ -159,11 +168,35 @@ def test_each_es_session_runs_from_17_00_to_16_00_chicago_across_the_clock_chang
     session = gen_fixtures.Session(gen_fixtures.ES, trade_date)
     open_time = nanoseconds(open_utc)
     close_time = nanoseconds(close_utc)
+    after_the_close = [
+        int(trade["ts_recv"]) for trade in trades if int(trade["ts_recv"]) >= close_time
+    ]
 
     assert (session.open_time(), session.close_time()) == (open_time, close_time)
     assert trades[0]["side"] == "N"
     assert open_time <= int(trades[0]["ts_event"]) < open_time + NANOSECONDS_PER_SECOND
-    assert int(trades[-1]["ts_recv"]) < close_time
+    planted = (
+        [close_time + AFTER_THE_CLOSE] if trade_date.isoformat() == AFTER_THE_CLOSE_DAY else []
+    )
+    assert after_the_close == planted
+
+
+@pytest.mark.parametrize(("root", "contract", "day", "open_utc", "close_utc"), SESSIONS)
+def test_each_session_has_a_print_on_a_minute_boundary_and_one_in_its_last_slot(
+    root: str, contract: str, day: str, open_utc: datetime, close_utc: datetime
+) -> None:
+    trades = rows(partition("trades", root, contract, f"date={day}"))
+    received = [int(trade["ts_recv"]) for trade in trades]
+    boundary = nanoseconds(open_utc) + BOUNDARY_AFTER_OPEN
+    close_time = nanoseconds(close_utc)
+    last_slot = [
+        instant for instant in received if close_time - 100_000_000 <= instant < close_time
+    ]
+
+    assert boundary in received
+    assert boundary % NANOSECONDS_PER_MINUTE == 0
+    assert last_slot == [close_time - LAST_SLOT_BEFORE_CLOSE]
+    assert [int(trade["sequence"]) for trade in trades] == list(range(1, len(trades) + 1))
 
 
 def test_a_session_closes_at_its_local_close_time_on_the_day_the_clocks_change() -> None:
@@ -246,6 +279,7 @@ def test_minute_bars_carry_exactly_the_volume_of_their_trades(root: str, contrac
     assert all(int(bar["ts_close"]) - int(bar["ts_open"]) == NANOSECONDS_PER_MINUTE for bar in bars)
     assert all(int(bar["low"]) <= int(bar["open"]) <= int(bar["high"]) for bar in bars)
     assert all(int(bar["low"]) <= int(bar["close"]) <= int(bar["high"]) for bar in bars)
+    assert all(int(bar["low"]) <= int(bar["vwap"]) <= int(bar["high"]) for bar in bars)
 
 
 @pytest.mark.parametrize(("root", "contract", "day", "open_utc"), OPENS)
@@ -295,6 +329,17 @@ def test_every_bar_lies_inside_the_session_of_its_trade_date(
         for bar in pq.read_table(partition(schema, root, contract, key)).to_pylist()
         if bar["trade_date"] == date.fromisoformat(day)
     ]
+    outside = [
+        (bar["ts_open"], bar["ts_close"] - bar["ts_open"])
+        for bar in bars
+        if not session_open <= bar["ts_open"] < bar["ts_close"] <= session_close
+    ]
 
+    # The print received after the close of 2026-03-06 keeps that trade date, in a 1-second
+    # and a 1-minute bar opening at the close, as the vendor's bars do.
+    opening_at_the_close = [
+        (session_close, NANOSECONDS_PER_SECOND),
+        (session_close, NANOSECONDS_PER_MINUTE),
+    ]
     assert bars
-    assert all(session_open <= bar["ts_open"] < bar["ts_close"] <= session_close for bar in bars)
+    assert outside == (opening_at_the_close if day == AFTER_THE_CLOSE_DAY else [])

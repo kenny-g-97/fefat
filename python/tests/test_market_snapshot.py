@@ -46,14 +46,29 @@ request = PartitionRequest.model_validate_json(sys.argv[2])
 sys.stdout.write(Store(Path(sys.argv[1])).snapshot(request).model_dump_json())
 """
 UNKNOWN_SHA256 = "0" * 64
-SESSION_CLOSES = {
+# Each fixture session's close and the open of the session after it. A print received in the
+# break between them keeps the session's trade date, as the vendor's do: the fixtures plant one
+# 400 ms after the close of ES's 2026-03-06 (step 1.5).
+SESSION_ENDS = {
     "ES": {
-        date(2026, 3, 5): datetime(2026, 3, 5, 22, tzinfo=UTC),
-        date(2026, 3, 6): datetime(2026, 3, 6, 22, tzinfo=UTC),
-        date(2026, 3, 9): datetime(2026, 3, 9, 21, tzinfo=UTC),
+        date(2026, 3, 5): (
+            datetime(2026, 3, 5, 22, tzinfo=UTC),
+            datetime(2026, 3, 5, 23, tzinfo=UTC),
+        ),
+        date(2026, 3, 6): (
+            datetime(2026, 3, 6, 22, tzinfo=UTC),
+            datetime(2026, 3, 8, 22, tzinfo=UTC),
+        ),
+        date(2026, 3, 9): (
+            datetime(2026, 3, 9, 21, tzinfo=UTC),
+            datetime(2026, 3, 9, 22, tzinfo=UTC),
+        ),
     },
-    "BTCUSDT-PERP": {date(2026, 3, 7): datetime(2026, 3, 8, tzinfo=UTC)},
+    "BTCUSDT-PERP": {
+        date(2026, 3, 7): (datetime(2026, 3, 8, tzinfo=UTC), datetime(2026, 3, 8, tzinfo=UTC))
+    },
 }
+SESSION_WITH_A_PRINT_IN_THE_BREAK = ("ES", date(2026, 3, 6))
 
 
 def store_with_the_es_trades(folder: Path) -> Store:
@@ -248,12 +263,16 @@ def test_a_snapshot_refuses_metadata_it_cannot_read(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("root", ["ES", "BTCUSDT-PERP"])
 @pytest.mark.parametrize("schema", ["trades", "ohlcv-1s", "ohlcv-1m"])
-def test_a_read_cut_at_any_date_holds_exactly_the_rows_available_by_its_close(
+def test_a_read_cut_at_any_date_holds_exactly_the_rows_available_before_the_next_open(
     root: str, schema: str
 ) -> None:
+    # Every row available by the close of the cut's last session, and the rows received in the
+    # break after it, which are the planted print of ES's 2026-03-06 and its bars, and no other.
+    # A bar is available at its close, so one closing as the next session opens belongs to the
+    # session before, while a print received at that instant is the next session's.
     dataset = Dataset(provider="synthetic", schema_name=parse_schema_name(schema), root=root)
-    closes = SESSION_CLOSES[root]
-    first, last = min(closes), max(closes)
+    ends = SESSION_ENDS[root]
+    first, last = min(ends), max(ends)
     trades = schema == "trades"
     clock, order = ("ts_recv", ["ts_recv", "sequence"]) if trades else ("ts_close", ["ts_open"])
 
@@ -264,8 +283,12 @@ def test_a_read_cut_at_any_date_holds_exactly_the_rows_available_by_its_close(
     every_row = read(first, last)
     for offset in range((last - first).days + 1):
         cut = first + timedelta(days=offset)
-        close = closes[max(day for day in closes if day <= cut)]
-        available = every_row.filter(pl.col(clock) <= int(close.timestamp()) * 1_000_000_000)
+        session = max(day for day in ends if day <= cut)
+        close, next_open = (int(instant.timestamp()) * 1_000_000_000 for instant in ends[session])
+        before_the_next_open = pl.col(clock) < next_open if trades else pl.col(clock) <= next_open
+        available = every_row.filter(before_the_next_open)
+        in_the_break = available.filter(pl.col(clock) > close)
         assert_frame_equal(read(first, cut), available)
-        if not trades and cut in closes:
+        assert in_the_break.height == int((root, session) == SESSION_WITH_A_PRINT_IN_THE_BREAK)
+        if not trades and cut in ends:
             assert_frame_equal(read(cut, last), every_row.filter(pl.col("trade_date") >= cut))
