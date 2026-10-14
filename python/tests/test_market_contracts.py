@@ -15,6 +15,7 @@ from fefat.market.contracts import (
     IdentitySource,
     expiry_month,
     is_outright,
+    parse_contract_name,
     symbology_contracts,
 )
 from fefat.market.instruments import STATIC_TABLE
@@ -383,6 +384,39 @@ def test_expiry_month_takes_the_first_decade_the_dates_allow(
     raw_symbol: str, first_seen: date, last_seen: date, expected: YearMonth
 ) -> None:
     assert expiry_month(raw_symbol, first_seen, last_seen) == expected
+
+
+@pytest.mark.parametrize(
+    ("name", "root", "expiry"),
+    [
+        ("ESZ2026", "ES", YearMonth(year=2026, month=12)),
+        ("MNQH2027", "MNQ", YearMonth(year=2027, month=3)),
+        ("MGCQ2010", "MGC", YearMonth(year=2010, month=8)),
+        ("MCLF2030", "MCL", YearMonth(year=2030, month=1)),
+    ],
+)
+def test_a_contract_name_gives_back_its_root_and_month(
+    name: str, root: str, expiry: YearMonth
+) -> None:
+    written = Contract(
+        root=root,
+        expiry=expiry,
+        first_trade_date=None,
+        last_trade_date=None,
+        raw_symbols=(name,),
+        identity_source=IdentitySource.STATIC_TABLE,
+    )
+
+    assert str(written) == name
+    assert parse_contract_name(name) == (root, expiry)
+
+
+@pytest.mark.parametrize("name", ["ESZ6", "ESZ26", "BTCUSDT-PERP", "esz2026", "ESA2026"])
+def test_a_name_that_is_no_contract_is_refused(name: str) -> None:
+    expected = f"Expected a contract written <root><month code><four-digit year>, got {name!r}."
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        parse_contract_name(name)
 
 
 def test_expiry_month_refuses_a_spread() -> None:
