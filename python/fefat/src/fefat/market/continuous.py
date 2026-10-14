@@ -119,6 +119,11 @@ class RollCalendar:
         return f"RollCalendar({self._root!r}, {sessions}, {counted})"
 
     @property
+    def root(self) -> str:
+        """The root whose contracts the calendar splices."""
+        return self._root
+
+    @property
     def rows(self) -> pl.DataFrame:
         """The row of each session, with the columns of `ROLL_CALENDAR_COLUMNS`."""
         return self._rows
