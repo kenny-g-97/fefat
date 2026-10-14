@@ -5,13 +5,13 @@ A bar is the bucket `[open + k·Δ, open + (k+1)·Δ)` of its session, anchored 
 (`fefat.market.calendar`), and holds the prints received in it: trades are bucketed by
 `ts_recv`, as the vendor buckets its own bars, `ts_open` is the bucket's start, and `ts_close`
 its end, when the bar is available. Every built-in session opens on a whole UTC hour, so buckets
-of a timeframe that divides an hour fall where the vendor's do. A bar of a timeframe that does
-not divide its session ends after the close (an hourly bar of a 12:15 early close closes at
-13:00). A print takes the trade date of the session that opened last before it
-(`SessionTable.assign_trade_dates_or_previous`, as the importers date a vendor's bars), so a print
-received after a close, in the break, gets a bar of its own opening at or after the close. A
-daily bar is the session itself, from its open to its close, and holds the session's prints
-only. Bars are sparse: a bucket without prints has no bar.
+of a timeframe that divides an hour fall where the vendor's do. A print takes the trade date of
+the session that opened last before it (`SessionTable.assign_trade_dates_or_previous`, as the
+importers date a vendor's bars), so a print received after a close, in the break, gets a bar of
+its own opening at or after the close: the close cuts a bucket that straddles it in two (an
+hourly bar of a 12:15 early close runs from 12:00 to 12:15, and the prints after it form a bar
+opening at 12:15). A daily bar is the session itself, from its open to its close, and holds the
+session's prints only. Bars are sparse: a bucket without prints has no bar.
 
 `vwap` is rounded down to the prices' 1e-9 units, so each resampling, which weighs rounded
 vwaps, can lower it by one more unit; `trade_count` and `vwap` are null where any finer bar
@@ -110,23 +110,29 @@ def session_grid(
     bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable, first: date, last: date
 ) -> pl.DataFrame:
     """The dense view of sparse `bars` of `timeframe` for signals: for each instrument of
-    `bars`, a row for every bucket of every session from trade date `first` to `last` but the
-    buckets lying wholly inside a halt (`Session.halts`), sorted by instrument and `ts_open`,
-    with the columns of `GRID_COLUMNS`. A bucket with a bar holds it; one without is
-    `zero_volume`, with volume and trade count 0, no vwap, and its prices at the close of the
-    instrument's bar before it, or null before its first bar: a bucket is never filled from a
-    later one (D-12). Bars outside the grid, received after a close or inside a halt, are left
-    out, and a bar whose bucket the grid closes otherwise is refused (bars of another timeframe)."""
+    `bars`, a row for every bucket of every session from its first to its last trade date with
+    a bar, within trade dates `first` to `last`, but the buckets lying wholly inside a halt
+    (`Session.halts`), sorted by instrument and `ts_open`, with the columns of `GRID_COLUMNS`.
+    A bucket with a bar holds it; one without is `zero_volume`, with volume and trade count 0,
+    no vwap, and its prices at the close of the instrument's bar before it, or null before its
+    first bar: a bucket is never filled from a later one (D-12), and a contract that stopped
+    trading has no rows after its last trade date. Bars outside the grid, received after a
+    close or inside a halt, are left out, and a bar whose bucket the grid closes otherwise is
+    refused (bars of another timeframe)."""
     require_columns(BAR_COLUMNS, bars.schema, "the bars of the session grid")
     _require_a_bar_timeframe(timeframe)
     in_range = sessions.between(first, last)
     buckets = _outside_halts(_session_buckets(in_range, timeframe), in_range)
-    instruments = bars.select("instrument_id").unique()
-    sparse = bars.rename({"ts_close": "bar_close", "trade_date": "bar_trade_date"})
-    grid = buckets.join(instruments, how="cross").join(
-        sparse, on=["instrument_id", "ts_open"], how="left"
+    dates = pl.col("trade_date")
+    spans = bars.group_by("instrument_id").agg(first_traded=dates.min(), last_traded=dates.max())
+    slots = (
+        buckets.join(spans, how="cross")
+        .filter(dates.is_between(pl.col("first_traded"), pl.col("last_traded")))
+        .drop("first_traded", "last_traded")
     )
-    _require_bars_of_the_grid(grid, timeframe, buckets.height * instruments.height)
+    sparse = bars.rename({"ts_close": "bar_close", "trade_date": "bar_trade_date"})
+    grid = slots.join(sparse, on=["instrument_id", "ts_open"], how="left")
+    _require_bars_of_the_grid(grid, timeframe, slots.height)
     return _with_empty_buckets_filled(grid.sort("instrument_id", "ts_open"))
 
 
@@ -138,8 +144,10 @@ def _require_a_bar_timeframe(timeframe: Timeframe) -> None:
 
 
 def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable) -> pl.DataFrame:
-    """The bars beside the bucket of `timeframe` each opens in, `bucket_open` to `bucket_close`;
-    for a daily bucket, without the bars from the session's close on."""
+    """The bars beside the bucket of `timeframe` each opens in, `bucket_open` to `bucket_close`:
+    a bucket the session's close cuts in two is two, the bars before the close ending at it and
+    those after it, in the break, starting at it; a daily bucket leaves out the bars from the
+    close on."""
     dates = pl.col("trade_date")
     first, last = bars.select(first=dates.min(), last=dates.max()).row(0)
     bounds = sessions.between(first, last).select(
@@ -147,14 +155,22 @@ def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable
     )
     joined = bars.join(bounds, on="trade_date", how="left", maintain_order="left")
     _require_their_sessions(joined)
+    session_open, session_close = pl.col("session_open"), pl.col("session_close")
     if timeframe.unit is TimeUnit.DAY:
-        return joined.filter(pl.col("ts_open") < pl.col("session_close")).with_columns(
-            bucket_open=pl.col("session_open"), bucket_close=pl.col("session_close")
+        return joined.filter(pl.col("ts_open") < session_close).with_columns(
+            bucket_open=session_open, bucket_close=session_close
         )
     width = timeframe.nominal_seconds() * _NANOSECONDS_PER_SECOND
-    since_the_open = pl.col("ts_open") - pl.col("session_open")
-    bucket_open = pl.col("session_open") + since_the_open // width * width
-    return joined.with_columns(bucket_open=bucket_open, bucket_close=bucket_open + width)
+    start = session_open + (pl.col("ts_open") - session_open) // width * width
+    before_the_close = pl.col("ts_open") < session_close
+    return joined.with_columns(
+        bucket_open=pl.when(before_the_close)
+        .then(start)
+        .otherwise(pl.max_horizontal(start, session_close)),
+        bucket_close=pl.when(before_the_close)
+        .then(pl.min_horizontal(start + width, session_close))
+        .otherwise(start + width),
+    )
 
 
 def _require_their_sessions(joined: pl.DataFrame) -> None:
@@ -162,8 +178,8 @@ def _require_their_sessions(joined: pl.DataFrame) -> None:
     if orphans.is_empty():
         return
     raise ValueError(
-        f"Expected a session for the trade date of every bar, got {orphans.height} bars on "
-        f"trade dates without one, the first on {orphans.item(0, 'trade_date')}."
+        f"Expected a session on the trade date of every bar, got none on "
+        f"{orphans.item(0, 'trade_date')} for {orphans.height} of them."
     )
 
 
@@ -191,14 +207,19 @@ def _volume_weighted_vwap() -> pl.Expr:
 
 
 def _session_buckets(sessions: pl.DataFrame, timeframe: Timeframe) -> pl.DataFrame:
-    """Every bucket of `timeframe` of each session: its trade date, `ts_open`, and `ts_close`."""
+    """Every bucket of `timeframe` of each session: its trade date, `ts_open`, and `ts_close`,
+    the last one cut at the close."""
     if timeframe.unit is TimeUnit.DAY:
         return sessions.select("trade_date", ts_open="open", ts_close="close")
     width = timeframe.nominal_seconds() * _NANOSECONDS_PER_SECOND
     return (
-        sessions.select("trade_date", ts_open=pl.int_ranges("open", "close", width))
+        sessions.select("trade_date", "close", ts_open=pl.int_ranges("open", "close", width))
         .explode("ts_open")
-        .with_columns(ts_close=pl.col("ts_open") + width)
+        .select(
+            "trade_date",
+            "ts_open",
+            ts_close=pl.min_horizontal(pl.col("ts_open") + width, pl.col("close")),
+        )
     )
 
 

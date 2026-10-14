@@ -5,6 +5,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from fefat.market.bars import build_bars
 from fefat.market.bars_check import (
     BarDifference,
     BarsReport,
@@ -13,8 +14,11 @@ from fefat.market.bars_check import (
     UncomparedBars,
     verify_bars,
 )
+from fefat.market.builtin_calendars import BUILT_IN
+from fefat.market.calendar import sessions_of
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.layout import Dataset, Partition, YearMonth
-from fefat.market.schema import parse_schema_name
+from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -153,6 +157,9 @@ def test_a_stored_bar_that_differs_or_is_missing_is_listed_with_both_sides(tmp_p
     assert by_route[(TRADES, MINUTES)].differences == differences
     assert by_route[(SECONDS, MINUTES)].differences == differences
     assert by_route[(TRADES, SECONDS)].differences == ()
+    # The bars compared are those either side holds: the 1,381 rebuilt ones, one of them gone
+    # from the stored bars.
+    assert by_route[(TRADES, MINUTES)].bars_compared == 23 * 60 + 1
     assert report.summary().splitlines()[0] == (
         "Bars of ES on 2026-03-06. Comparisons run: 4. Differences: 4."
     )
@@ -188,6 +195,47 @@ def test_vendor_bars_without_their_trades_leave_the_rebuilding_pending(tmp_path:
         "synthetic: ohlcv-1m -> ohlcv-5m -> ohlcv-1d against ohlcv-1m -> ohlcv-1d: 1 compared, "
         "no differences",
     ]
+
+
+def test_a_trade_count_the_rebuilt_bars_cannot_know_is_no_difference(tmp_path: Path) -> None:
+    # The vendor's 1-minute bars carry no trade count, while the stored 5-minute bars, built
+    # from trades, do: the 5-minute bars rebuilt from the 1-minute ones lack it, and that is
+    # not a difference.
+    fixtures, store = Store(FIXTURES), Store(tmp_path / "store")
+    minutes = Dataset(provider="synthetic", schema_name=MINUTES, root="ES")
+    five = Dataset(provider="synthetic", schema_name=FIVE_MINUTES, root="ES")
+    trades = Partition(
+        dataset=Dataset(provider="synthetic", schema_name=TRADES, root="ES"),
+        contract="ESH2026",
+        key=MARCH_6,
+    )
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path / "cache")
+    built = build_bars(
+        fixtures.scan_partition(trades).collect(),
+        Timeframe(count=5, unit=TimeUnit.MINUTE),
+        sessions,
+        sessions.following(MARCH_6).open,
+    )
+    vendor = (
+        fixtures.scan_partition(ES_MINUTES)
+        .collect()
+        .with_columns(trade_count=pl.lit(None, dtype=pl.UInt32), vwap=pl.lit(None, dtype=pl.Int64))
+    )
+    for dataset in (minutes, five):
+        store.write_dataset_metadata(dataset, fixtures.dataset_metadata(minutes))
+    store.write_partition(ES_MINUTES, vendor)
+    store.write_partition(Partition(dataset=five, contract="ESH2026", key=None), built)
+
+    report = verify_bars(store, "ES", MARCH_6, tmp_path / "cache")
+
+    (five_minutes,) = (
+        comparison
+        for comparison in report.comparisons
+        if isinstance(comparison, ComparedBars) and comparison.route == (MINUTES, FIVE_MINUTES)
+    )
+    assert built.get_column("trade_count").null_count() == 0
+    assert five_minutes.bars_compared == built.height
+    assert five_minutes.differences == ()
 
 
 def test_a_root_without_data_or_a_day_without_a_session_is_refused(tmp_path: Path) -> None:

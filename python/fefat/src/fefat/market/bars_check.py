@@ -5,8 +5,8 @@ For each provider of the root, `verify_bars` rebuilds every stored bar schema of
 from the data below it with `fefat.market.bars`: 1-second and 1-minute bars from trades,
 1-minute bars from 1-second bars, and 5-minute and daily bars from 1-minute bars. It lists each
 bar on which the two sides differ, by instrument and `ts_open`: a column with both values
-(`ts_close`, `trade_date`, the prices, `volume`, and `trade_count` where the stored bar has
-one), or a bar only one side holds. `vwap` is compared nowhere, since vendors' bars carry none
+(`ts_close`, `trade_date`, the prices, `volume`, and `trade_count` where both sides know it),
+or a bar only one side holds. `vwap` is compared nowhere, since vendors' bars carry none
 and each resampling rounds it down. A comparison whose stored bars exist without the data to
 rebuild them is pending, such as the tick-level one until a trades file is imported, and one
 without stored bars is not available. One comparison always runs on the finest data present:
@@ -152,17 +152,23 @@ class BarsReport(FrozenModel):
     trade_date: date
     comparisons: tuple[BarsComparison, ...]
 
+    def difference_count(self) -> int:
+        """How many differences the comparisons that ran found."""
+        return sum(len(compared.differences) for compared in self._compared())
+
     def summary(self) -> str:
         """A heading with the comparisons run and the differences found, then a line per
         comparison and per difference."""
-        compared = [item for item in self.comparisons if isinstance(item, ComparedBars)]
-        found = sum(len(comparison.differences) for comparison in compared)
+        found = self.difference_count()
         differences = str(found) if found else "none"
         heading = (
-            f"Bars of {self.root} on {self.trade_date}. Comparisons run: {len(compared)}. "
-            f"Differences: {differences}."
+            f"Bars of {self.root} on {self.trade_date}. Comparisons run: "
+            f"{len(self._compared())}. Differences: {differences}."
         )
         return "\n".join([heading, *(line for item in self.comparisons for line in item.lines())])
+
+    def _compared(self) -> list[ComparedBars]:
+        return [item for item in self.comparisons if isinstance(item, ComparedBars)]
 
 
 @dataclass(frozen=True)
@@ -245,12 +251,13 @@ def _against_the_stored(
     if finer is None:
         status = ComparisonStatus.PENDING
         return UncomparedBars(status=status, provider=provider, route=route, reference=reference)
+    joined = _side_by_side(rebuild.along(finer, source, (target,)), stored_bars)
     return ComparedBars(
         provider=provider,
         route=route,
         reference=reference,
-        bars_compared=stored_bars.height,
-        differences=_differences(rebuild.along(finer, source, (target,)), stored_bars),
+        bars_compared=joined.height,
+        differences=_differences(joined),
     )
 
 
@@ -268,32 +275,36 @@ def _resampling_check(
             route=(_MINUTES, _FIVE_MINUTES, _DAYS),
             reference=(_MINUTES, _DAYS),
         )
-    at_once = rebuild.along(present[finest], finest, (_DAYS,))
+    stepwise = rebuild.along(present[finest], finest, (_FIVE_MINUTES, _DAYS))
+    joined = _side_by_side(stepwise, rebuild.along(present[finest], finest, (_DAYS,)))
     return ComparedBars(
         provider=provider,
         route=(finest, _FIVE_MINUTES, _DAYS),
         reference=(finest, _DAYS),
-        bars_compared=at_once.height,
-        differences=_differences(
-            rebuild.along(present[finest], finest, (_FIVE_MINUTES, _DAYS)), at_once
-        ),
+        bars_compared=joined.height,
+        differences=_differences(joined),
     )
 
 
-def _differences(rebuilt: pl.DataFrame, reference: pl.DataFrame) -> tuple[BarDifference, ...]:
-    """The bars on which `rebuilt` and `reference` differ, sorted by instrument, `ts_open`, and
-    column."""
-    joined = rebuilt.join(
+def _side_by_side(rebuilt: pl.DataFrame, reference: pl.DataFrame) -> pl.DataFrame:
+    """A row for every bar either side holds, by instrument and `ts_open`, with the reference's
+    columns beside the rebuilt ones, named with `_reference`."""
+    return rebuilt.join(
         reference, on=["instrument_id", "ts_open"], how="full", coalesce=True, suffix="_reference"
     )
+
+
+def _differences(joined: pl.DataFrame) -> tuple[BarDifference, ...]:
+    """The bars of `joined` on which the two sides differ, sorted by instrument, `ts_open`, and
+    column; a trade count only one side knows is no difference."""
     on_one_side = pl.col("ts_close").is_null() | pl.col("ts_close_reference").is_null()
     differences = [_one_sided(row) for row in joined.filter(on_one_side).iter_rows(named=True)]
     on_both = joined.filter(~on_one_side)
     for column in _COMPARED_COLUMNS:
-        theirs = pl.col(f"{column}_reference")
-        differs = pl.col(column).ne_missing(theirs)
+        ours, theirs = pl.col(column), pl.col(f"{column}_reference")
+        differs = ours.ne_missing(theirs)
         if column == "trade_count":
-            differs = differs & theirs.is_not_null()
+            differs = differs & ours.is_not_null() & theirs.is_not_null()
         rows = on_both.filter(differs).iter_rows(named=True)
         differences.extend(_in_column(row, column) for row in rows)
     return tuple(

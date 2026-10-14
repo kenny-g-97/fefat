@@ -7,7 +7,8 @@ The first imports a Databento batch download, or a single DBN file, into the sto
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
 rebuilds a trade date's bars from the finer data in the store and prints how they compare with
 the stored ones (`fefat.market.bars_check`). A command exits with 0 when it succeeds, and with 1
-and the reason when it refuses its input.
+and the reason when it refuses its input; `verify-bars` also exits with 1 when it finds bars
+that differ.
 """
 
 import argparse
@@ -76,5 +77,6 @@ def verify_bars_of_a_trade_date(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     root: str = arguments.root
     trade_date: date = arguments.trade_date
-    print(verify_bars(Store(paths.data_dir), root, trade_date, paths.cache_dir).summary())
-    return EXIT_OK
+    report = verify_bars(Store(paths.data_dir), root, trade_date, paths.cache_dir)
+    print(report.summary())
+    return EXIT_REFUSED if report.difference_count() else EXIT_OK

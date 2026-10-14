@@ -10,7 +10,7 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.calendar_definition import CalendarId
 from fefat.market.layout import Dataset, Partition, YearMonth
-from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name
+from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name, polars_schema
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,7 +22,7 @@ DAY = Timeframe(count=1, unit=TimeUnit.DAY)
 NANOSECONDS_PER_SECOND = 1_000_000_000
 NANOSECONDS_PER_MINUTE = 60 * NANOSECONDS_PER_SECOND
 EQUITY_INDEX = CalendarId.CME_EQUITY_INDEX
-MARCH_5, MARCH_6 = date(2026, 3, 5), date(2026, 3, 6)
+MARCH_5, MARCH_6, MARCH_9 = date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)
 
 
 def utc(*fields: int) -> int:
@@ -271,33 +271,85 @@ def one_minute_bars(*bars: tuple[int, date, int, int]) -> pl.DataFrame:
 def test_the_grid_carries_a_close_forward_within_its_instrument_and_never_back(
     tables: dict[CalendarId, SessionTable],
 ) -> None:
-    # Instrument 1 trades in the second minute of 2026-03-05's session only, instrument 2 in
-    # the first minute of 03-06's only: each is null before its bar and at its close after it,
-    # on both trade dates, and a day without bars still has its rows.
+    # Instrument 1 trades in the second minute of 2026-03-05's session and the first of
+    # 03-09's: it is null before its first bar, at 100 through 03-06, a day without bars inside
+    # its span, and at 300 from its bar on 03-09. Instrument 2 trades once, at 03-06's open:
+    # its rows start and end with that trade date, before which nothing is filled.
     table = tables[EQUITY_INDEX]
-    march_5, march_6 = table.session(MARCH_5), table.session(MARCH_6)
+    march_5, march_6, march_9 = (table.session(day) for day in (MARCH_5, MARCH_6, MARCH_9))
     bars = one_minute_bars(
         (march_5.open + NANOSECONDS_PER_MINUTE, MARCH_5, 1, 100),
+        (march_9.open, MARCH_9, 1, 300),
         (march_6.open, MARCH_6, 2, 200),
     )
     per_session = 23 * 60
 
-    grid = session_grid(bars, MINUTE, table, MARCH_5, MARCH_6)
+    grid = session_grid(bars, MINUTE, table, MARCH_5, MARCH_9)
     days = session_grid(
-        resample_bars(bars, DAY, table, march_6.close), DAY, table, MARCH_5, MARCH_6
+        resample_bars(bars, DAY, table, march_9.close), DAY, table, MARCH_5, MARCH_9
     )
 
     first = grid.filter(pl.col("instrument_id") == 1).get_column("close").to_list()
     second = grid.filter(pl.col("instrument_id") == 2).get_column("close").to_list()
-    assert grid.height == 2 * 2 * per_session
-    assert first == [None] + [100] * (2 * per_session - 1)
-    assert second == [None] * per_session + [200] * per_session
+    assert grid.height == 4 * per_session
+    assert first == [None] + [100] * (2 * per_session - 1) + [300] * per_session
+    assert second == [200] * per_session
     assert days.select("instrument_id", "trade_date", "close", "zero_volume").rows() == [
         (1, MARCH_5, 100, False),
         (1, MARCH_6, 100, True),
-        (2, MARCH_5, None, True),
+        (1, MARCH_9, 300, False),
         (2, MARCH_6, 200, False),
     ]
+
+
+def trades_of(*prints: tuple[int, int]) -> pl.DataFrame:
+    """Trades of instrument 1001, each (ts_recv, price), of one contract each."""
+    return pl.DataFrame(
+        [
+            (ts_recv, ts_recv - 150_000, 1001, price, 1, "B", sequence)
+            for sequence, (ts_recv, price) in enumerate(prints, start=1)
+        ],
+        schema=polars_schema(parse_schema_name("trades")),
+        orient="row",
+    )
+
+
+def test_a_bucket_the_close_cuts_in_two_is_two_bars(tables: dict[CalendarId, SessionTable]) -> None:
+    # Friday 2026-11-27 closes early at 12:15 CST, 18:15 UTC, inside the hourly bucket from
+    # 12:00 to 13:00: a print at 12:05 is in the bar from 12:00 to the close, and one received
+    # at 12:20, in the break, opens a bar of its own at the close, outside the daily bar.
+    table = tables[EQUITY_INDEX]
+    friday = date(2026, 11, 27)
+    session = table.session(friday)
+    hour = Timeframe(count=1, unit=TimeUnit.HOUR)
+    trades = trades_of((utc(2026, 11, 27, 18, 5), 100), (utc(2026, 11, 27, 18, 20), 200))
+    received_until = table.following(friday).open
+
+    hours = build_bars(trades, hour, table, received_until)
+    day = resample_bars(hours, DAY, table, received_until)
+    grid = session_grid(hours, hour, table, friday, friday)
+
+    assert session.close == utc(2026, 11, 27, 18, 15)
+    assert hours.select("ts_open", "ts_close", "trade_date", "close", "volume").rows() == [
+        (utc(2026, 11, 27, 18), session.close, friday, 100, 1),
+        (session.close, utc(2026, 11, 27, 19), friday, 200, 1),
+    ]
+    assert_frame_equal(day, build_bars(trades, DAY, table, received_until))
+    assert day.select("ts_close", "close", "volume").rows() == [(session.close, 100, 1)]
+    assert grid.select("ts_open", "ts_close").row(-1) == (utc(2026, 11, 27, 18), session.close)
+
+
+def test_bars_on_a_day_without_a_session_and_bars_twice_in_the_grid_are_refused(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    table = tables[EQUITY_INDEX]
+    saturday = one_minute_bars((utc(2026, 3, 7, 12), date(2026, 3, 7), 1, 100))
+    twice = one_minute_bars(*[(table.session(MARCH_5).open, MARCH_5, 1, 100)] * 2)
+
+    with pytest.raises(ValueError, match="Expected a session on the trade date of every bar"):
+        resample_bars(saturday, FIVE_MINUTES, table, 0)
+    with pytest.raises(ValueError, match="Expected one bar for each instrument and ts_open"):
+        session_grid(twice, MINUTE, table, MARCH_5, MARCH_5)
 
 
 def test_the_grid_leaves_out_the_hours_a_halt_closes(

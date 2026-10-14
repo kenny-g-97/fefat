@@ -406,7 +406,13 @@ def with_planted_prints(trades: pa.Table, session: Session) -> pa.Table:
     prints = trades.to_pylist()
     received = [int(trade["ts_recv"]) for trade in prints]
     for receive_time in planted_receive_times(session):
-        previous = prints[bisect.bisect_right(received, receive_time) - 1]
+        received_before = bisect.bisect_right(received, receive_time)
+        if received_before == 0:
+            raise ValueError(
+                f"Expected a print before the one planted at {receive_time} in the session of "
+                f"{session.product.root} {session.trade_date}, got none."
+            )
+        previous = prints[received_before - 1]
         prints.append(
             previous
             | {
