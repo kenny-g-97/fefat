@@ -107,28 +107,38 @@ def resample_bars(
 
 
 def session_grid(
-    bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable, first: date, last: date
+    bars: pl.DataFrame,
+    timeframe: Timeframe,
+    sessions: SessionTable,
+    received_until: int,
+    first: date,
+    last: date,
 ) -> pl.DataFrame:
     """The dense view of sparse `bars` of `timeframe` for signals: for each instrument of
     `bars`, a row for every bucket of every session from trade date `first` to `last`, from
-    the instrument's first bar in the grid on, but the buckets lying wholly inside a halt
-    (`Session.halts`), sorted by instrument and `ts_open`, with the columns of `GRID_COLUMNS`.
-    A bucket with a bar holds it; one without is `zero_volume`, with volume and trade count 0,
-    no vwap, and its prices at the close of the instrument's bar before it. No row exists, is
-    missing, or is filled because of a later bar (D-12), so a contract that stopped trading
-    keeps its rows to `last`: a range within a contract's life leaves them out. Bars outside
-    the grid, received after a close or inside a halt, are left out, and a bar whose bucket the
-    grid closes otherwise is refused (bars of another timeframe)."""
+    the instrument's first bar in the grid on and up to the buckets closing by
+    `received_until`, but the buckets lying wholly inside a halt (`Session.halts`), sorted by
+    instrument and `ts_open`, with the columns of `GRID_COLUMNS`. A bucket with a bar holds it;
+    one without is `zero_volume`, with volume and trade count 0, no vwap, and its prices at the
+    close of the instrument's bar before it. No row exists, is missing, or is filled because of
+    a later bar (D-12), so a contract that stopped trading keeps its rows to `last`: a range
+    within a contract's life leaves them out. Bars outside the grid, received after a close or
+    inside a halt, are left out; a bucket that a halt covers only in part stays, with the prints
+    received in it inside the halt, so these count in a coarse grid's row and in no row of a
+    fine grid. Every bar must be a bucket of `timeframe` in its session (no bars of another)."""
     require_columns(BAR_COLUMNS, bars.schema, "the bars of the session grid")
     _require_a_bar_timeframe(timeframe)
+    _require_bars_of_the_timeframe(bars, timeframe, sessions)
     in_range = sessions.between(first, last)
-    buckets = _outside_halts(_session_buckets(in_range, timeframe), in_range)
+    buckets = _outside_halts(_session_buckets(in_range, timeframe), in_range).filter(
+        pl.col("ts_close") <= received_until
+    )
     instruments = bars.select("instrument_id").unique()
     sparse = bars.rename({"ts_close": "bar_close", "trade_date": "bar_trade_date"})
     grid = buckets.join(instruments, how="cross").join(
         sparse, on=["instrument_id", "ts_open"], how="left"
     )
-    _require_bars_of_the_grid(grid, timeframe, buckets.height * instruments.height)
+    _require_one_bar_a_bucket(grid, buckets.height * instruments.height)
     traded = pl.col("bar_close").is_not_null().cum_max().over("instrument_id")
     return _with_empty_buckets_filled(grid.sort("instrument_id", "ts_open").filter(traded))
 
@@ -172,11 +182,18 @@ def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable
 
 def _require_their_sessions(joined: pl.DataFrame) -> None:
     orphans = joined.filter(pl.col("session_open").is_null())
-    if orphans.is_empty():
+    if not orphans.is_empty():
+        raise ValueError(
+            f"Expected a session on the trade date of every bar, got none on "
+            f"{orphans.item(0, 'trade_date')} for {orphans.height} of them."
+        )
+    early = joined.filter(pl.col("ts_open") < pl.col("session_open"))
+    if early.is_empty():
         return
+    ts_open, trade_date, session_open = early.select("ts_open", "trade_date", "session_open").row(0)
     raise ValueError(
-        f"Expected a session on the trade date of every bar, got none on "
-        f"{orphans.item(0, 'trade_date')} for {orphans.height} of them."
+        f"Expected bars opening at or after the open of their session, got one at "
+        f"{utc_text(ts_open)} dated {trade_date}, whose session opens at {utc_text(session_open)}."
     )
 
 
@@ -235,25 +252,47 @@ def _outside_halts(buckets: pl.DataFrame, sessions: pl.DataFrame) -> pl.DataFram
     )
 
 
-def _require_bars_of_the_grid(grid: pl.DataFrame, timeframe: Timeframe, rows: int) -> None:
+def _require_bars_of_the_timeframe(
+    bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable
+) -> None:
+    """Refuse a bar that is not a bucket of `timeframe` in its session, as bars of another
+    timeframe are, wherever it lies."""
+    if bars.is_empty():
+        return
+    bucketed = _in_buckets(bars, timeframe, sessions)
+    misfits = bucketed.filter(
+        (pl.col("ts_open") != pl.col("bucket_open"))
+        | (pl.col("ts_close") != pl.col("bucket_close"))
+    )
+    if misfits.is_empty():
+        return
+    ts_open, ts_close = misfits.select("ts_open", "ts_close").row(0)
+    raise ValueError(
+        f"Expected bars of {timeframe} in the buckets of their sessions, got one from "
+        f"{utc_text(ts_open)} to {utc_text(ts_close)}."
+    )
+
+
+def _require_one_bar_a_bucket(grid: pl.DataFrame, rows: int) -> None:
+    """Refuse a bar given twice, or dated otherwise than the session of its bucket."""
     if grid.height != rows:
+        twice = grid.filter(pl.struct("instrument_id", "ts_open").is_duplicated())
+        instrument_id, ts_open = twice.select("instrument_id", "ts_open").row(0)
         raise ValueError(
-            f"Expected one bar for each instrument and ts_open, got {grid.height - rows} more "
-            "in the grid than its buckets."
+            f"Expected one bar for each instrument and ts_open, got {grid.height - rows} more, "
+            f"the first of instrument_id {instrument_id} opening {utc_text(ts_open)}."
         )
     elsewhere = grid.filter(
-        pl.col("bar_close").is_not_null()
-        & (
-            (pl.col("bar_close") != pl.col("ts_close"))
-            | (pl.col("bar_trade_date") != pl.col("trade_date"))
-        )
+        pl.col("bar_close").is_not_null() & (pl.col("bar_trade_date") != pl.col("trade_date"))
     )
     if elsewhere.is_empty():
         return
-    ts_open, bar_close = elsewhere.select("ts_open", "bar_close").row(0)
+    ts_open, bar_trade_date, trade_date = elsewhere.select(
+        "ts_open", "bar_trade_date", "trade_date"
+    ).row(0)
     raise ValueError(
-        f"Expected bars of {timeframe} in the buckets of their sessions, got one from "
-        f"{utc_text(ts_open)} to {utc_text(bar_close)}."
+        f"Expected each bar dated by the session of its bucket, got the bar opening "
+        f"{utc_text(ts_open)} dated {bar_trade_date} in the session of {trade_date}."
     )
 
 

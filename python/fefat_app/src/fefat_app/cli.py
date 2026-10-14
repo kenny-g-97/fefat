@@ -8,7 +8,8 @@ The first imports a Databento batch download, or a single DBN file, into the sto
 rebuilds a trade date's bars from the finer data in the store and prints how they compare with
 the stored ones (`fefat.market.bars_check`). A command exits with 0 when it succeeds, and with 1
 and the reason when it refuses its input; `verify-bars` also exits with 1 when it finds bars
-that differ.
+that differ. A command line that names no command, or a date that is no date, exits with 2 and
+the usage, as `argparse` does.
 """
 
 import argparse

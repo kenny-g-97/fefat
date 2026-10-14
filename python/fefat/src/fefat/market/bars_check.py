@@ -24,7 +24,7 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 import polars as pl
 from pydantic import Field
@@ -63,16 +63,11 @@ _STORED_FROM_FINER: tuple[tuple[SchemaName, BarSchemaName], ...] = (
     (_MINUTES, _FIVE_MINUTES),
     (_MINUTES, _DAYS),
 )
-_COMPARED_COLUMNS = (
-    "ts_close",
-    "trade_date",
-    "open",
-    "high",
-    "low",
-    "close",
-    "volume",
-    "trade_count",
-)
+ComparedColumn = Literal[
+    "ts_close", "trade_date", "open", "high", "low", "close", "volume", "trade_count"
+]
+"""A column the check compares; `vwap` is compared nowhere."""
+_COMPARED_COLUMNS: tuple[ComparedColumn, ...] = get_args(ComparedColumn)
 _PRICE_COLUMNS = frozenset({"open", "high", "low", "close"})
 
 
@@ -84,21 +79,49 @@ class ComparisonStatus(StrEnum):
     NOT_AVAILABLE = "not-available"
 
 
-class BarDifference(FrozenModel):
-    """A bar on which the rebuilt bars and the reference disagree, found by `instrument_id` and
-    `ts_open`: in `column`, with both values as the report writes them, or as a bar only one
-    side holds (`column` is `bar`)."""
+class Side(StrEnum):
+    """A side of a comparison: the bars rebuilt, or the reference they are compared with."""
 
+    REBUILT = "rebuilt"
+    REFERENCE = "reference"
+
+
+class ColumnDifference(FrozenModel):
+    """A bar both sides hold, found by `instrument_id` and `ts_open`, whose `column` they give
+    differently, with both values as the report writes them."""
+
+    kind: Literal["column"] = "column"
     instrument_id: int
     ts_open: int
-    column: str
+    column: ComparedColumn
     rebuilt: str
     reference: str
 
     def describe(self) -> str:
         """One indented line: the bar, the column, and both values."""
-        bar = f"instrument_id {self.instrument_id}, bar opening {utc_text(self.ts_open)}"
-        return f"  {bar}: {self.column} rebuilt {self.rebuilt}, reference {self.reference}"
+        values = f"{self.column} rebuilt {self.rebuilt}, reference {self.reference}"
+        return f"  {_bar(self.instrument_id, self.ts_open)}: {values}"
+
+
+class OneSidedBar(FrozenModel):
+    """A bar only one side holds, found by `instrument_id` and `ts_open`."""
+
+    kind: Literal["one-sided"] = "one-sided"
+    instrument_id: int
+    ts_open: int
+    held_by: Side
+
+    def describe(self) -> str:
+        """One indented line: the bar and the side that holds it."""
+        return f"  {_bar(self.instrument_id, self.ts_open)}: only the {self.held_by} bars hold it"
+
+
+BarDifference = Annotated[ColumnDifference | OneSidedBar, Field(discriminator="kind")]
+"""A bar on which the rebuilt bars and the reference disagree, told apart by `kind`."""
+
+
+def _bar(instrument_id: int, ts_open: int) -> str:
+    return f"instrument_id {instrument_id}, bar opening {utc_text(ts_open)}"
 
 
 class ComparedBars(FrozenModel):
@@ -165,10 +188,13 @@ class BarsReport(FrozenModel):
             f"Bars of {self.root} on {self.trade_date}. Comparisons run: "
             f"{len(self._compared())}. Differences: {differences}."
         )
-        return "\n".join([heading, *(line for item in self.comparisons for line in item.lines())])
+        lines = (line for comparison in self.comparisons for line in comparison.lines())
+        return "\n".join([heading, *lines])
 
     def _compared(self) -> list[ComparedBars]:
-        return [item for item in self.comparisons if isinstance(item, ComparedBars)]
+        return [
+            comparison for comparison in self.comparisons if isinstance(comparison, ComparedBars)
+        ]
 
 
 @dataclass(frozen=True)
@@ -294,11 +320,14 @@ def _side_by_side(rebuilt: pl.DataFrame, reference: pl.DataFrame) -> pl.DataFram
     )
 
 
-def _differences(joined: pl.DataFrame) -> tuple[BarDifference, ...]:
-    """The bars of `joined` on which the two sides differ, sorted by instrument, `ts_open`, and
-    column; a trade count only one side knows is no difference."""
+def _differences(joined: pl.DataFrame) -> tuple[ColumnDifference | OneSidedBar, ...]:
+    """The bars of `joined` on which the two sides differ, sorted by instrument and `ts_open`,
+    a bar only one side holds before the columns of one both hold; a trade count only one side
+    knows is no difference."""
     on_one_side = pl.col("ts_close").is_null() | pl.col("ts_close_reference").is_null()
-    differences = [_one_sided(row) for row in joined.filter(on_one_side).iter_rows(named=True)]
+    differences: list[ColumnDifference | OneSidedBar] = [
+        _one_sided(row) for row in joined.filter(on_one_side).iter_rows(named=True)
+    ]
     on_both = joined.filter(~on_one_side)
     for column in _COMPARED_COLUMNS:
         ours, theirs = pl.col(column), pl.col(f"{column}_reference")
@@ -307,23 +336,22 @@ def _differences(joined: pl.DataFrame) -> tuple[BarDifference, ...]:
             differs = differs & ours.is_not_null() & theirs.is_not_null()
         rows = on_both.filter(differs).iter_rows(named=True)
         differences.extend(_in_column(row, column) for row in rows)
-    return tuple(
-        sorted(differences, key=lambda found: (found.instrument_id, found.ts_open, found.column))
-    )
+    return tuple(sorted(differences, key=_order))
 
 
-def _one_sided(row: dict[str, Any]) -> BarDifference:
-    return BarDifference(
-        instrument_id=row["instrument_id"],
-        ts_open=row["ts_open"],
-        column="bar",
-        rebuilt="missing" if row["ts_close"] is None else "present",
-        reference="missing" if row["ts_close_reference"] is None else "present",
-    )
+def _order(difference: ColumnDifference | OneSidedBar) -> tuple[int, int, int]:
+    if isinstance(difference, OneSidedBar):
+        return difference.instrument_id, difference.ts_open, -1
+    return difference.instrument_id, difference.ts_open, _COMPARED_COLUMNS.index(difference.column)
 
 
-def _in_column(row: dict[str, Any], column: str) -> BarDifference:
-    return BarDifference(
+def _one_sided(row: dict[str, Any]) -> OneSidedBar:
+    held_by = Side.REBUILT if row["ts_close_reference"] is None else Side.REFERENCE
+    return OneSidedBar(instrument_id=row["instrument_id"], ts_open=row["ts_open"], held_by=held_by)
+
+
+def _in_column(row: dict[str, Any], column: ComparedColumn) -> ColumnDifference:
+    return ColumnDifference(
         instrument_id=row["instrument_id"],
         ts_open=row["ts_open"],
         column=column,

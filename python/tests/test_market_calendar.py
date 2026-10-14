@@ -166,6 +166,12 @@ def tables(tmp_path_factory: pytest.TempPathFactory) -> dict[CalendarId, Session
     }
 
 
+HALTS_OF_GOLDEN_SESSIONS = {
+    (calendar_id, trade_date): halts for calendar_id, trade_date, halts in GOLDEN_HALTS
+}
+"""The golden halts by session; every other golden session has none."""
+
+
 @pytest.mark.parametrize(("calendar_id", "trade_date", "opens", "closes"), GOLDEN_SESSIONS)
 def test_golden_sessions(
     tables: dict[CalendarId, SessionTable],
@@ -176,7 +182,8 @@ def test_golden_sessions(
 ) -> None:
     session = tables[calendar_id].session(trade_date)
 
-    assert (session.trade_date, session.open, session.close) == (trade_date, opens, closes)
+    halts = HALTS_OF_GOLDEN_SESSIONS.get((calendar_id, trade_date), NO_HALTS)
+    assert session == Session(trade_date=trade_date, open=opens, close=closes, halts=halts)
 
 
 @pytest.mark.parametrize(("calendar_id", "trade_date", "halts"), GOLDEN_HALTS)

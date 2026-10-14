@@ -180,7 +180,7 @@ def test_a_print_received_after_the_close_keeps_its_trade_date_in_a_bar_of_its_o
 
     minutes = build_bars(trades, MINUTE, table, NEXT_OPEN_AFTER_MARCH_6)
     day = build_bars(trades, DAY, table, NEXT_OPEN_AFTER_MARCH_6)
-    grid = session_grid(minutes, MINUTE, table, MARCH_6, MARCH_6)
+    grid = session_grid(minutes, MINUTE, table, NEXT_OPEN_AFTER_MARCH_6, MARCH_6, MARCH_6)
 
     assert late.get_column("ts_recv").to_list() == [close + 400_000_000]
     assert minutes.filter(pl.col("ts_open") >= close).select(
@@ -207,6 +207,46 @@ def test_a_bar_whose_close_lies_after_the_end_of_the_data_is_held_back(
     assert resample_bars(complete, DAY, table, close).height == 1
 
 
+def test_a_print_in_the_break_after_a_regular_close_gets_a_coarse_bar_of_its_own(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # Four-hour buckets from 23:00 UTC do not divide a 23-hour session: the last runs from
+    # 19:00 to the close at 22:00 UTC, and the print received at 22:00:00.4 on 2026-03-06
+    # opens a bar of its own from the close to 23:00, outside the daily bar.
+    trades = fixture_rows("trades", "ES", "ESH2026", MARCH_6)
+    table = tables[EQUITY_INDEX]
+    four_hours = Timeframe(count=4, unit=TimeUnit.HOUR)
+
+    bars = build_bars(trades, four_hours, table, NEXT_OPEN_AFTER_MARCH_6)
+
+    assert bars.select("ts_open", "ts_close").rows()[-2:] == [
+        (utc(2026, 3, 6, 19), utc(2026, 3, 6, 22)),
+        (utc(2026, 3, 6, 22), utc(2026, 3, 6, 23)),
+    ]
+    assert_frame_equal(
+        resample_bars(bars, DAY, table, NEXT_OPEN_AFTER_MARCH_6),
+        build_bars(trades, DAY, table, NEXT_OPEN_AFTER_MARCH_6),
+    )
+
+
+def test_the_vwap_of_negative_prices_rounds_down_toward_minus_infinity(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # Crude oil traded below zero in April 2020: prints at -37.63, -37.62, and -37.62 in one
+    # minute weigh to -37.62333..., rounded down to -37.623333334, not truncated to ...333.
+    table = tables[EQUITY_INDEX]
+    minute = utc(2026, 3, 5, 15)
+    trades = trades_of(
+        (minute + 1, -37_630_000_000), (minute + 2, -37_620_000_000), (minute + 3, -37_620_000_000)
+    )
+
+    bars = build_bars(trades, MINUTE, table, table.following(MARCH_5).open)
+
+    assert bars.select("low", "high", "vwap").rows() == [
+        (-37_630_000_000, -37_620_000_000, -37_623_333_334)
+    ]
+
+
 def test_bars_that_straddle_the_buckets_asked_for_are_refused(
     tables: dict[CalendarId, SessionTable],
 ) -> None:
@@ -229,7 +269,7 @@ def test_the_grid_holds_every_second_of_the_session_and_flags_the_empty_ones(
     session = table.session(MARCH_5)
     seconds = fixture_rows("ohlcv-1s", "ES", "ESH2026", MARCH_5)
 
-    grid = session_grid(seconds, SECOND, table, MARCH_5, MARCH_5)
+    grid = session_grid(seconds, SECOND, table, table.following(MARCH_5).open, MARCH_5, MARCH_5)
 
     empty = grid.with_columns(previous_close=pl.col("close").shift(1)).filter("zero_volume")
     assert grid.schema == GRID_COLUMNS
@@ -283,11 +323,10 @@ def test_the_grid_starts_each_instrument_at_its_first_bar_and_carries_its_close_
         (march_6.open, MARCH_6, 2, 200),
     )
     per_session = 23 * 60
+    until = table.following(MARCH_9).open
 
-    grid = session_grid(bars, MINUTE, table, MARCH_5, MARCH_9)
-    days = session_grid(
-        resample_bars(bars, DAY, table, march_9.close), DAY, table, MARCH_5, MARCH_9
-    )
+    grid = session_grid(bars, MINUTE, table, until, MARCH_5, MARCH_9)
+    days = session_grid(resample_bars(bars, DAY, table, until), DAY, table, until, MARCH_5, MARCH_9)
 
     first = grid.filter(pl.col("instrument_id") == 1).get_column("close").to_list()
     second = grid.filter(pl.col("instrument_id") == 2).get_column("close").to_list()
@@ -306,9 +345,9 @@ def test_the_grid_up_to_an_instant_never_changes_when_later_bars_are_removed(
     tables: dict[CalendarId, SessionTable],
 ) -> None:
     # The truncation test of D-12 on the grid: instrument 1 trades on 2026-03-05 and 03-09 and
-    # not on 03-06, instrument 2 first on 03-09. Cut at 12:00 UTC on Friday 03-06, the bars
-    # leave every grid row closing by then as it was: no row exists, or is missing, because of
-    # a bar to come.
+    # not on 03-06, instrument 2 first on 03-09. With the data ending at 12:00 UTC on Friday
+    # 03-06, the grid holds exactly the rows of the whole data closing by then: no row exists,
+    # is missing, or holds a value because of a bar to come, and none runs past the end.
     table = tables[EQUITY_INDEX]
     march_5, march_9 = table.session(MARCH_5), table.session(MARCH_9)
     bars = one_minute_bars(
@@ -317,14 +356,13 @@ def test_the_grid_up_to_an_instant_never_changes_when_later_bars_are_removed(
         (march_9.open, MARCH_9, 2, 200),
     )
     cut = utc(2026, 3, 6, 12)
-    whole = session_grid(bars, MINUTE, table, MARCH_5, MARCH_9)
-    truncated = session_grid(
-        bars.filter(pl.col("ts_close") <= cut), MINUTE, table, MARCH_5, MARCH_9
-    )
+    whole = session_grid(bars, MINUTE, table, table.following(MARCH_9).open, MARCH_5, MARCH_9)
+    in_hand = bars.filter(pl.col("ts_close") <= cut)
+    truncated = session_grid(in_hand, MINUTE, table, cut, MARCH_5, MARCH_9)
 
-    before_the_cut = pl.col("ts_close") <= cut
-    assert whole.filter(before_the_cut & (pl.col("trade_date") == MARCH_6)).height > 0
-    assert_frame_equal(truncated.filter(before_the_cut), whole.filter(before_the_cut))
+    before_the_cut = whole.filter(pl.col("ts_close") <= cut)
+    assert before_the_cut.filter(pl.col("trade_date") == MARCH_6).height > 0
+    assert_frame_equal(truncated, before_the_cut)
 
 
 def trades_of(*prints: tuple[int, int]) -> pl.DataFrame:
@@ -352,7 +390,7 @@ def test_a_bucket_the_close_cuts_in_two_is_two_bars(tables: dict[CalendarId, Ses
 
     hours = build_bars(trades, hour, table, received_until)
     day = resample_bars(hours, DAY, table, received_until)
-    grid = session_grid(hours, hour, table, friday, friday)
+    grid = session_grid(hours, hour, table, received_until, friday, friday)
 
     assert session.close == utc(2026, 11, 27, 18, 15)
     assert hours.select("ts_open", "ts_close", "trade_date", "close", "volume").rows() == [
@@ -364,17 +402,23 @@ def test_a_bucket_the_close_cuts_in_two_is_two_bars(tables: dict[CalendarId, Ses
     assert grid.select("ts_open", "ts_close").row(-1) == (utc(2026, 11, 27, 18), session.close)
 
 
-def test_bars_on_a_day_without_a_session_and_bars_twice_in_the_grid_are_refused(
+def test_bars_outside_their_sessions_and_bars_twice_in_the_grid_are_refused(
     tables: dict[CalendarId, SessionTable],
 ) -> None:
+    # A bar on Saturday 2026-03-07, which has no session; a bar dated 03-05 opening at 16:59
+    # CST on 03-04, a minute before that session opens; and one bar given twice to the grid.
     table = tables[EQUITY_INDEX]
     saturday = one_minute_bars((utc(2026, 3, 7, 12), date(2026, 3, 7), 1, 100))
+    early = one_minute_bars((utc(2026, 3, 4, 22, 59), MARCH_5, 1, 100))
     twice = one_minute_bars(*[(table.session(MARCH_5).open, MARCH_5, 1, 100)] * 2)
+    until = table.following(MARCH_5).open
 
     with pytest.raises(ValueError, match="Expected a session on the trade date of every bar"):
-        resample_bars(saturday, FIVE_MINUTES, table, 0)
+        resample_bars(saturday, FIVE_MINUTES, table, until)
+    with pytest.raises(ValueError, match="at or after the open of their session, got one at"):
+        resample_bars(early, DAY, table, until)
     with pytest.raises(ValueError, match="Expected one bar for each instrument and ts_open"):
-        session_grid(twice, MINUTE, table, MARCH_5, MARCH_5)
+        session_grid(twice, MINUTE, table, until, MARCH_5, MARCH_5)
 
 
 def test_the_grid_leaves_out_the_hours_a_halt_closes(
@@ -383,7 +427,8 @@ def test_the_grid_leaves_out_the_hours_a_halt_closes(
     # Friday 2025-11-28's session runs from Wednesday 17:00 CST to Friday's early close at 12:15,
     # 2,595 minutes, less Thanksgiving's halt from 12:00 to 17:00, 300 minutes. Friday
     # 2021-06-25's 1,380 minutes lose the daily halt from 15:15 to 15:30 CDT, 20:15 to 20:30
-    # UTC, where a bar at 15:20 stays out; Monday 06-28's keep them all.
+    # UTC, where a bar at 15:20 stays out of the grid but counts in the day's bar, as the
+    # vendor's prints inside halts do; Monday 06-28's keep them all.
     table = tables[EQUITY_INDEX]
     thanksgiving, june_25, june_28 = date(2025, 11, 28), date(2021, 6, 25), date(2021, 6, 28)
     bars = one_minute_bars(
@@ -393,8 +438,16 @@ def test_the_grid_leaves_out_the_hours_a_halt_closes(
     )
     halt = table.session(thanksgiving).halts[0]
 
-    after_thanksgiving = session_grid(bars, MINUTE, table, thanksgiving, thanksgiving)
-    june = session_grid(bars, MINUTE, table, june_25, june_28)
+    until_thanksgiving = table.following(thanksgiving).open
+    until_june = table.following(june_28).open
+
+    after_thanksgiving = session_grid(
+        bars, MINUTE, table, until_thanksgiving, thanksgiving, thanksgiving
+    )
+    june = session_grid(bars, MINUTE, table, until_june, june_25, june_28)
+    june_25_day = resample_bars(
+        bars.filter(pl.col("trade_date") == june_25), DAY, table, table.following(june_25).open
+    )
 
     assert after_thanksgiving.height == 2_295
     assert after_thanksgiving.filter(
@@ -405,11 +458,24 @@ def test_the_grid_leaves_out_the_hours_a_halt_closes(
         (june_28, 1_380),
     ]
     assert june.filter(pl.col("ts_open") == utc(2021, 6, 25, 20, 20)).is_empty()
+    assert june_25_day.select("volume", "close").rows() == [(2, 101)]
 
 
 def test_the_grid_refuses_bars_of_another_timeframe(tables: dict[CalendarId, SessionTable]) -> None:
+    # The fixture's 1-minute bars in a 5-minute grid, and a 1-second bar that no 1-minute
+    # bucket starts at in a 1-minute grid.
     table = tables[EQUITY_INDEX]
     minutes = fixture_rows("ohlcv-1m", "ES", "ESH2026", MARCH_5)
+    since_the_open = pl.col("ts_open") - table.session(MARCH_5).open
+    second = (
+        fixture_rows("ohlcv-1s", "ES", "ESH2026", MARCH_5)
+        .filter(since_the_open % NANOSECONDS_PER_MINUTE != 0)
+        .head(1)
+    )
+    until = table.following(MARCH_5).open
 
     with pytest.raises(ValueError, match="Expected bars of 5m in the buckets of their sessions"):
-        session_grid(minutes, FIVE_MINUTES, table, MARCH_5, MARCH_5)
+        session_grid(minutes, FIVE_MINUTES, table, until, MARCH_5, MARCH_5)
+    with pytest.raises(ValueError, match="Expected bars of 1m in the buckets of their sessions"):
+        session_grid(second, MINUTE, table, until, MARCH_5, MARCH_5)
+    assert second.height == 1

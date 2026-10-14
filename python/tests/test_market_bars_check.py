@@ -7,10 +7,12 @@ import pytest
 
 from fefat.market.bars import build_bars
 from fefat.market.bars_check import (
-    BarDifference,
     BarsReport,
+    ColumnDifference,
     ComparedBars,
     ComparisonStatus,
+    OneSidedBar,
+    Side,
     UncomparedBars,
     verify_bars,
 )
@@ -134,20 +136,14 @@ def test_a_stored_bar_that_differs_or_is_missing_is_listed_with_both_sides(tmp_p
     report = verify_bars(store, "ES", MARCH_6, tmp_path / "cache")
 
     differences = (
-        BarDifference(
+        ColumnDifference(
             instrument_id=1001,
             ts_open=changed,
             column="close",
             rebuilt=format_price(original),
             reference=format_price(original + 250_000_000),
         ),
-        BarDifference(
-            instrument_id=1001,
-            ts_open=removed,
-            column="bar",
-            rebuilt="present",
-            reference="missing",
-        ),
+        OneSidedBar(instrument_id=1001, ts_open=removed, held_by=Side.REBUILT),
     )
     by_route = {
         comparison.route: comparison
@@ -166,6 +162,9 @@ def test_a_stored_bar_that_differs_or_is_missing_is_listed_with_both_sides(tmp_p
     assert (
         "  instrument_id 1001, bar opening 2026-03-06T14:30:00Z: close rebuilt "
         f"{format_price(original)}, reference {format_price(original + 250_000_000)}"
+    ) in report.summary().splitlines()
+    assert (
+        "  instrument_id 1001, bar opening 2026-03-06T14:31:00Z: only the rebuilt bars hold it"
     ) in report.summary().splitlines()
 
 
