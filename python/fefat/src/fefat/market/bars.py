@@ -164,12 +164,16 @@ def _require_volume(bars: pl.DataFrame) -> None:
 def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable) -> pl.DataFrame:
     """The bars beside the bucket of `timeframe` each opens in, `bucket_open` to `bucket_close`:
     a bucket the session's close cuts in two is two, the bars before the close ending at it and
-    those after it, in the break, starting at it; a daily bucket leaves out the bars from the
-    close on."""
+    those after it, in the break, starting at it and ending by the next session's open, so a
+    trade date's bars are all complete then; a daily bucket leaves out the bars from the close
+    on."""
     dates = pl.col("trade_date")
     first, last = bars.select(first=dates.min(), last=dates.max()).row(0)
     bounds = sessions.between(first, last).select(
-        "trade_date", session_open="open", session_close="close"
+        "trade_date",
+        session_open="open",
+        session_close="close",
+        next_open=pl.col("open").shift(-1).fill_null(sessions.following(last).open),
     )
     joined = bars.join(bounds, on="trade_date", how="left", maintain_order="left")
     _require_their_sessions(joined)
@@ -181,16 +185,13 @@ def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable
     width = timeframe.nominal_nanoseconds()
     start = session_open + (pl.col("ts_open") - session_open) // width * width
     before_the_close = pl.col("ts_open") < session_close
-    # shortcut: a bucket after the close ends at its full width, past the next session's open
-    # for a timeframe that does not divide the break (5h or 7m on CME); cap it at that open
-    # before such a timeframe is used.
     return joined.with_columns(
         bucket_open=pl.when(before_the_close)
         .then(start)
         .otherwise(pl.max_horizontal(start, session_close)),
         bucket_close=pl.when(before_the_close)
         .then(pl.min_horizontal(start + width, session_close))
-        .otherwise(start + width),
+        .otherwise(pl.min_horizontal(start + width, pl.col("next_open"))),
     )
 
 
