@@ -379,6 +379,62 @@ def test_the_new_fronts_first_bar_is_flagged_though_it_skips_the_roll_session(
     assert flagged.select("trade_date", "contract").rows() == [(date(2026, 3, 23), "ESM2026")]
 
 
+def test_a_window_of_bars_after_a_roll_flags_no_roll(table: SessionTable) -> None:
+    # The bars given start on 03-10, after the roll at the open of 03-09: their first ESM2026
+    # bar follows no ESH2026 bar, so nothing in the window marks a roll.
+    bars = fixture_bars("ohlcv-1m")
+    calendar = volume_rolls(bars, table, ES, the_end(table))
+    window = bars.filter(pl.col("ts_open") >= table.session(MARCH_9).open + HOUR)
+
+    assert calendar.continuous_bars(window).filter(pl.col("roll_flag")).is_empty()
+
+
+def test_a_contract_listed_past_the_session_table_does_not_stop_the_calendar(
+    table: SessionTable,
+) -> None:
+    # A far-dated listing, ESH2032, whose last trade date lies past the session table's last
+    # (2030-12-31), trades once on 03-06: it cannot stop serving within the calendar, so it
+    # needs no last trade date and is never front.
+    bars = fixture_bars("ohlcv-1m")
+    session = table.session(MARCH_6)
+    price = 28_000 * TICK
+    minute_later = session.open + 60_000_000_000
+    far = pl.DataFrame(
+        [(session.open, minute_later, MARCH_6, 1009, *(price,) * 4, 1, 1, price, "ESH2032")],
+        schema=CONTRACT_BAR_COLUMNS,
+        orient="row",
+    )
+
+    calendar = volume_rolls(pl.concat([bars, far]), table, ES, the_end(table))
+
+    assert calendar.rows.get_column("contract").to_list() == ["ESH2026", "ESM2026", "ESM2026"]
+
+
+def test_of_two_figures_received_at_one_instant_the_later_in_sequence_counts(
+    table: SessionTable,
+) -> None:
+    # Two open-interest figures of ESM2026 are received at one instant, the later in sequence
+    # above March's: it counts, so June leads from the next open.
+    days = trade_dates(table, date(2026, 3, 9), date(2026, 3, 11))
+    bars = session_bars(
+        [(day, "ESH2026", 27_000, 10) for day in days]
+        + [(day, "ESM2026", 27_100, 10) for day in days],
+        table,
+    )
+    at = table.session(days[0]).open + HOUR
+    statistics = open_interest(
+        [(at, "ESM2026", 3_000), (at, "ESM2026", 500), (at, "ESH2026", 2_000)]
+    ).with_columns(sequence=pl.Series([2, 1, 3], dtype=pl.UInt32))
+
+    calendar = open_interest_rolls(bars, statistics, table, ES, table.following(days[-1]).open)
+
+    assert calendar.rows.select("trade_date", "contract").rows() == [
+        (date(2026, 3, 10), "ESM2026"),
+        (date(2026, 3, 11), "ESM2026"),
+        (date(2026, 3, 12), "ESM2026"),
+    ]
+
+
 def test_a_bar_closing_after_the_next_open_is_refused(table: SessionTable) -> None:
     # A 4-hour bar on UTC hours, from 20:00 to 00:00 UTC and dated 03-05, closes an hour after
     # 03-06's session opens, where a decision would read it before it is in hand.

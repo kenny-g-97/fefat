@@ -176,18 +176,20 @@ class RollCalendar:
 
     def continuous_bars(self, bars: pl.DataFrame) -> pl.DataFrame:
         """The bars of each session's front among `bars`, which have the columns of
-        `CONTRACT_BAR_COLUMNS`, sorted by `ts_open`, with the columns of `CONTINUOUS_COLUMNS`.
-        Bars of other contracts, and of sessions without a row, are left out."""
+        `CONTRACT_BAR_COLUMNS`, sorted by `ts_open`, with the columns of `CONTINUOUS_COLUMNS`;
+        `roll_flag` marks a bar whose contract is not that of the bar before it, a new front's
+        first, which the first bar given never is. Bars of other contracts, and of sessions
+        without a row, are left out."""
         require_columns(CONTRACT_BAR_COLUMNS, bars.schema, f"the bars of {self._root} to splice")
         fronts = self._rows.select("trade_date", "contract", "adj_offset")
-        rolled_into = self.rolls().get_column("contract").to_list()
-        first_as_front = pl.col("ts_open") == pl.col("ts_open").min().over("contract")
-        spliced = bars.join(fronts, on=["trade_date", "contract"]).with_columns(
-            close_raw=pl.col("close"),
-            roll_flag=first_as_front & pl.col("contract").is_in(rolled_into),
-        )
+        spliced = bars.join(fronts, on=["trade_date", "contract"]).sort("ts_open")
+        new_front = pl.col("contract") != pl.col("contract").shift(1)
         adjusted = [pl.col(column) + pl.col("adj_offset") for column in _ADJUSTED_COLUMNS]
-        return spliced.with_columns(adjusted).sort("ts_open").select(CONTINUOUS_COLUMNS.names())
+        return (
+            spliced.with_columns(close_raw=pl.col("close"), roll_flag=new_front.fill_null(False))
+            .with_columns(adjusted)
+            .select(CONTINUOUS_COLUMNS.names())
+        )
 
 
 def volume_rolls(
