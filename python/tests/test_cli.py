@@ -103,6 +103,22 @@ def test_verifying_bars_that_differ_from_their_trades_prints_them_and_exits_with
     )
 
 
+def test_verifying_a_day_without_bars_compares_nothing_and_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The batch ends with Monday 2026-03-09: Tuesday 03-10 is a trade date without bars, so
+    # nothing is compared, which is no pass.
+    main(["data", "import", "databento", str(BATCH)])
+    capsys.readouterr()
+
+    code = main(["data", "verify-bars", "ES", "2026-03-10"])
+
+    assert code == 1
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "Bars of ES on 2026-03-10. Comparisons run: 0. Differences: none."
+    )
+
+
 def test_verifying_bars_of_a_store_without_them_prints_the_reason_and_exits_with_1(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

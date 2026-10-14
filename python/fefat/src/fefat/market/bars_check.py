@@ -175,6 +175,10 @@ class BarsReport(FrozenModel):
     trade_date: date
     comparisons: tuple[BarsComparison, ...]
 
+    def comparisons_run(self) -> int:
+        """How many comparisons ran: none means nothing was verified."""
+        return len(self._compared())
+
     def difference_count(self) -> int:
         """How many differences the comparisons that ran found."""
         return sum(len(compared.differences) for compared in self._compared())
@@ -186,7 +190,7 @@ class BarsReport(FrozenModel):
         differences = str(found) if found else "none"
         heading = (
             f"Bars of {self.root} on {self.trade_date}. Comparisons run: "
-            f"{len(self._compared())}. Differences: {differences}."
+            f"{self.comparisons_run()}. Differences: {differences}."
         )
         lines = (line for comparison in self.comparisons for line in comparison.lines())
         return "\n".join([heading, *lines])

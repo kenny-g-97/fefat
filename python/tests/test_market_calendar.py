@@ -524,6 +524,23 @@ def test_a_halt_outside_its_session_is_refused() -> None:
         build_sessions(early, date(2026, 11, 25), date(2026, 11, 27))
 
 
+def test_halts_that_overlap_are_refused() -> None:
+    # Two daily halts, 12:00 to 13:00 and 12:30 to 13:30 New York time: the grid reads each
+    # session's halts one after another, so they must be apart.
+    overlapping = Calendar(
+        name="overlapping",
+        hours=new_york_cash_hours(),
+        holidays=(),
+        former_daily_halts=tuple(
+            FormerDailyHalt(until=date(2027, 1, 4), halts_at=start, resumes_at=end, source=A_SOURCE)
+            for start, end in ((time(12), time(13)), (time(12, 30), time(13, 30)))
+        ),
+    )
+
+    with pytest.raises(ValueError, match="and apart from each other, got one from"):
+        build_sessions(overlapping, date(2026, 11, 25), date(2026, 11, 25))
+
+
 def test_a_daily_halt_that_resumes_before_it_halts_is_refused() -> None:
     with pytest.raises(ValueError, match="Expected a daily halt to resume after it halts"):
         FormerDailyHalt(

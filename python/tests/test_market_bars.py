@@ -421,6 +421,18 @@ def test_bars_outside_their_sessions_and_bars_twice_in_the_grid_are_refused(
         session_grid(twice, MINUTE, table, until, MARCH_5, MARCH_5)
 
 
+def test_prints_of_no_size_are_refused(tables: dict[CalendarId, SessionTable]) -> None:
+    # A print of size 0 would make a bar of no volume, whose vwap divides by zero.
+    table = tables[EQUITY_INDEX]
+    minute = utc(2026, 3, 5, 15)
+    trades = trades_of((minute + 1, 100), (minute + 2, 101)).with_columns(
+        size=pl.Series([1, 0], dtype=pl.UInt32)
+    )
+
+    with pytest.raises(ValueError, match="Expected bars of some volume, got 1 without, the first"):
+        build_bars(trades, MINUTE, table, table.following(MARCH_5).open)
+
+
 def test_the_grid_leaves_out_the_hours_a_halt_closes(
     tables: dict[CalendarId, SessionTable],
 ) -> None:

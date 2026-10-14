@@ -8,7 +8,7 @@ The first imports a Databento batch download, or a single DBN file, into the sto
 rebuilds a trade date's bars from the finer data in the store and prints how they compare with
 the stored ones (`fefat.market.bars_check`). A command exits with 0 when it succeeds, and with 1
 and the reason when it refuses its input; `verify-bars` also exits with 1 when it finds bars
-that differ. A command line that names no command, or a date that is no date, exits with 2 and
+that differ, or nothing to compare. A command line that names no command, or a date that is no date, exits with 2 and
 the usage, as `argparse` does.
 """
 
@@ -80,4 +80,5 @@ def verify_bars_of_a_trade_date(arguments: argparse.Namespace) -> int:
     trade_date: date = arguments.trade_date
     report = verify_bars(Store(paths.data_dir), root, trade_date, paths.cache_dir)
     print(report.summary())
-    return EXIT_REFUSED if report.difference_count() else EXIT_OK
+    verified = report.comparisons_run() > 0 and report.difference_count() == 0
+    return EXIT_OK if verified else EXIT_REFUSED

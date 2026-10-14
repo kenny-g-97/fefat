@@ -45,7 +45,6 @@ GRID_COLUMNS = pl.Schema({**BAR_COLUMNS, "zero_volume": pl.Boolean})
 """The columns of the session grid: a bar's, and whether its bucket holds no print."""
 
 _TRADES_COLUMNS = polars_schema(parse_schema_name("trades"))
-_NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
 def build_bars(
@@ -79,12 +78,13 @@ def resample_bars(
 ) -> pl.DataFrame:
     """The bars of `timeframe` from finer `bars` of the same sessions, in the buckets that
     `build_bars` uses, sorted by instrument and `ts_open`, with the bars closing after
-    `received_until` held back. A finer bar must lie inside one bucket, and a daily bar leaves
-    out the finer bars opening at or after its session's close."""
+    `received_until` held back. A finer bar must lie inside one bucket and hold some volume,
+    and a daily bar leaves out the finer bars opening at or after its session's close."""
     require_columns(BAR_COLUMNS, bars.schema, "the bars to resample")
     _require_a_bar_timeframe(timeframe)
     if bars.is_empty():
         return bars
+    _require_volume(bars)
     bucketed = _in_buckets(bars, timeframe, sessions)
     _require_nested(bucketed, timeframe)
     return (
@@ -150,6 +150,17 @@ def _require_a_bar_timeframe(timeframe: Timeframe) -> None:
         )
 
 
+def _require_volume(bars: pl.DataFrame) -> None:
+    """Refuse a bar, or a print, of no volume, whose vwap would divide by zero."""
+    empty = bars.filter(pl.col("volume") == 0)
+    if empty.is_empty():
+        return
+    raise ValueError(
+        f"Expected bars of some volume, got {empty.height} without, the first opening at "
+        f"{utc_text(empty.item(0, 'ts_open'))}."
+    )
+
+
 def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable) -> pl.DataFrame:
     """The bars beside the bucket of `timeframe` each opens in, `bucket_open` to `bucket_close`:
     a bucket the session's close cuts in two is two, the bars before the close ending at it and
@@ -167,9 +178,12 @@ def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable
         return joined.filter(pl.col("ts_open") < session_close).with_columns(
             bucket_open=session_open, bucket_close=session_close
         )
-    width = timeframe.nominal_seconds() * _NANOSECONDS_PER_SECOND
+    width = timeframe.nominal_nanoseconds()
     start = session_open + (pl.col("ts_open") - session_open) // width * width
     before_the_close = pl.col("ts_open") < session_close
+    # shortcut: a bucket after the close ends at its full width, past the next session's open
+    # for a timeframe that does not divide the break (5h or 7m on CME); cap it at that open
+    # before such a timeframe is used.
     return joined.with_columns(
         bucket_open=pl.when(before_the_close)
         .then(start)
@@ -225,7 +239,7 @@ def _session_buckets(sessions: pl.DataFrame, timeframe: Timeframe) -> pl.DataFra
     the last one cut at the close."""
     if timeframe.unit is TimeUnit.DAY:
         return sessions.select("trade_date", ts_open="open", ts_close="close")
-    width = timeframe.nominal_seconds() * _NANOSECONDS_PER_SECOND
+    width = timeframe.nominal_nanoseconds()
     return (
         sessions.select("trade_date", "close", ts_open=pl.int_ranges("open", "close", width))
         .explode("ts_open")

@@ -77,6 +77,10 @@ class Timeframe(FrozenModel):
         """The length in seconds, nominal for daily bars, whose sessions differ in length."""
         return self.count * _SECONDS_PER_TIME_UNIT[self.unit]
 
+    def nominal_nanoseconds(self) -> int:
+        """The length in nanoseconds, the unit of the store's clock."""
+        return self.nominal_seconds() * 1_000_000_000
+
 
 class RecordSchemaName(FrozenModel):
     """The schema of records other than bars, named by its kind alone."""

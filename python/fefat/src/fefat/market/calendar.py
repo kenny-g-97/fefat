@@ -264,20 +264,18 @@ def _holiday_halt(hours: SessionHours) -> pl.Expr:
 
 
 def _with_daily_halts(calendar: Calendar) -> pl.Expr:
-    """A session's halts: those of its halt days, then each former daily halt of a trade date
-    before the halt's end, on the trade date and cut at the close, unless the session closes
-    before the halt starts (an early close)."""
+    """A session's halts in order: those of its halt days and each former daily halt of a
+    trade date before the halt's end, on the trade date and cut at the close, unless the
+    session closes before the halt starts (an early close)."""
     time_zone = calendar.hours.time_zone
     daily: list[pl.Expr] = []
-    for former in sorted(calendar.former_daily_halts, key=lambda former: former.halts_at):
+    for former in calendar.former_daily_halts:
         start = _utc_nanoseconds(pl.col("trade_date"), pl.lit(former.halts_at), time_zone)
         resumes = _utc_nanoseconds(pl.col("trade_date"), pl.lit(former.resumes_at), time_zone)
         end = pl.min_horizontal(resumes, pl.col("close"))
         in_force = (pl.col("trade_date") < former.until) & (start < end)
         daily.append(pl.when(in_force).then(pl.struct(start=start, end=end)))
-    if not daily:
-        return pl.col("halts")
-    return pl.concat_list("halts", *daily).list.drop_nulls()
+    return pl.concat_list("halts", *daily).list.drop_nulls().list.sort()
 
 
 def _require_halts_inside_their_sessions(calendar: Calendar, sessions: pl.DataFrame) -> None:
@@ -286,6 +284,7 @@ def _require_halts_inside_their_sessions(calendar: Calendar, sessions: pl.DataFr
         (pl.col("start") <= pl.col("open"))
         | (pl.col("end") <= pl.col("start"))
         | (pl.col("end") > pl.col("close"))
+        | (pl.col("start") < pl.col("end").shift(1).over("trade_date"))
     )
     if misplaced.is_empty():
         return
@@ -293,9 +292,9 @@ def _require_halts_inside_their_sessions(calendar: Calendar, sessions: pl.DataFr
         "trade_date", "open", "close", "start", "end"
     ).row(0)
     raise ValueError(
-        f"Expected the halts of {calendar.name} inside their sessions, after the open and by the "
-        f"close, got one from {utc_text(start)} to {utc_text(end)} in the session of "
-        f"{trade_date}, {utc_text(opens)} to {utc_text(closes)}."
+        f"Expected the halts of {calendar.name} inside their sessions, after the open, by the "
+        f"close, and apart from each other, got one from {utc_text(start)} to {utc_text(end)} in "
+        f"the session of {trade_date}, {utc_text(opens)} to {utc_text(closes)}."
     )
 
 
