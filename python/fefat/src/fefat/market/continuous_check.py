@@ -50,6 +50,7 @@ class DifferenceKind(StrEnum):
 
     VENDOR_A_SESSION_LATER = "vendor-a-session-later"
     VENDOR_A_SESSION_EARLIER = "vendor-a-session-earlier"
+    NOT_IN_THE_BARS = "not-in-the-bars"
     OTHER = "other"
 
 
@@ -125,6 +126,7 @@ def compare_fronts(
         .join(named, on="instrument_id", how="left")
         .select(
             "trade_date",
+            in_the_bars=pl.col("contract").is_not_null(),
             vendors=pl.col("contract").fill_null(
                 pl.format("instrument_id {}, in none of the bars", "instrument_id")
             ),
@@ -164,7 +166,9 @@ def _contracts_by_instrument(bars: pl.DataFrame) -> pl.DataFrame:
 def _difference(row: dict[str, object]) -> FrontDifference:
     vendors = row["vendors"]
     kind = DifferenceKind.OTHER
-    if vendors == row["before"]:
+    if not row["in_the_bars"]:
+        kind = DifferenceKind.NOT_IN_THE_BARS
+    elif vendors == row["before"]:
         kind = DifferenceKind.VENDOR_A_SESSION_LATER
     elif vendors == row["after"]:
         kind = DifferenceKind.VENDOR_A_SESSION_EARLIER

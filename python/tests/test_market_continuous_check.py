@@ -148,7 +148,7 @@ def test_an_instrument_the_bars_lack_is_named_by_its_id(
     ]
     assert [difference.kind for difference in comparison.differences] == [
         DifferenceKind.VENDOR_A_SESSION_LATER,
-        DifferenceKind.OTHER,
+        DifferenceKind.NOT_IN_THE_BARS,
     ]
 
 
