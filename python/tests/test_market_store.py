@@ -145,6 +145,21 @@ def test_a_request_reads_the_trades_of_its_dates_and_no_others() -> None:
     assert FIXTURE_STORE.scan(request).collect().height == expected_rows
 
 
+def test_a_scan_of_contracts_labels_each_row_with_the_contract_of_its_partition() -> None:
+    request = PartitionRequest(
+        dataset=MINUTE_BARS_OF_MARCH.dataset, start=date(2026, 3, 6), end=date(2026, 3, 9)
+    )
+
+    labelled = FIXTURE_STORE.scan_contracts(request).collect()
+
+    assert_frame_equal(labelled.drop("contract"), FIXTURE_STORE.scan(request).collect())
+    assert labelled.columns[-1] == "contract"
+    assert labelled.select("contract", "instrument_id").unique().sort("contract").rows() == [
+        ("ESH2026", 1001),
+        ("ESM2026", 1003),
+    ]
+
+
 def test_a_scan_of_a_month_is_unchanged_when_later_trade_dates_join_it(tmp_path: Path) -> None:
     every_day = FIXTURE_STORE.scan_partition(MINUTE_BARS_OF_MARCH).collect()
     dataset = MINUTE_BARS_OF_MARCH.dataset
