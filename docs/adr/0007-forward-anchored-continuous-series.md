@@ -20,4 +20,4 @@ If a roll ever changed values already in a forward-anchored series, so that cach
 
 ## Status
 
-Accepted; recorded in step 0.7.
+Accepted; recorded in step 0.7. Amended by D-44 (step 1.7): the series also carry `roll_flag`, and the roll calendar that splices them records, at each roll, both contracts, the gap between their last closes before the session, and the session open at which a position is transferred; `docs/masterplan/02-engine-and-data.md` §1.5 has the rule.
