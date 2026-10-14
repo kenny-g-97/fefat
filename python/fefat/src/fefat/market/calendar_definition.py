@@ -1,7 +1,7 @@
-"""What a session calendar is (`02-engine-and-data.md` §1.3, D-41): regular hours in an IANA time
-zone, the holidays that change them (full closes, halts whose trading belongs to the next trade
-date, and early closes), and the regular closes of earlier eras. `fefat.market.calendar` builds
-a calendar's session table from it; the built-in calendars are
+"""What a session calendar is (`02-engine-and-data.md` §1.3, D-41, D-43): regular hours in an
+IANA time zone, the holidays that change them (full closes, halts whose trading belongs to the
+next trade date, and early closes), and the regular closes and daily halts of earlier eras.
+`fefat.market.calendar` builds a calendar's session table from it; the built-in calendars are
 `fefat.market.builtin_calendars.BUILT_IN`.
 """
 
@@ -91,11 +91,14 @@ class FullClose(FrozenModel):
 
 
 class Halt(FrozenModel):
-    """A holiday that trades until a midday halt but has no trade date of its own: its trading
-    belongs to the next trade date, whose session opens at the regular open before it."""
+    """A holiday that trades until a halt at `closes_at` local time but has no trade date of its
+    own: its trading belongs to the next trade date, whose session opens at the regular open
+    before it and holds the halt, from `closes_at` to the regular open of the next day that
+    trades."""
 
     kind: Literal["halt"] = "halt"
     day: date
+    closes_at: time
     source: SourceLink
 
 
@@ -122,16 +125,37 @@ class FormerClose(FrozenModel):
     source: SourceLink
 
 
+class FormerDailyHalt(FrozenModel):
+    """A halt inside every session of the trade dates before `until`, from `halts_at` to
+    `resumes_at` local time on the trade date, such as 15:15 to 15:30 Chicago on CME Globex's
+    equity index until trade date 2021-06-28; a session that closes before it has none."""
+
+    until: date
+    halts_at: time
+    resumes_at: time
+    source: SourceLink
+
+    @model_validator(mode="after")
+    def _resumes_after_it_halts(self) -> Self:
+        if self.resumes_at <= self.halts_at:
+            raise ValueError(
+                f"Expected a daily halt to resume after it halts at {self.halts_at}, got "
+                f"{self.resumes_at}."
+            )
+        return self
+
+
 class Calendar(FrozenModel):
     """A session calendar: regular hours, the holidays that change them, at most one a day,
-    each on one of the calendar's weekdays, and the regular closes of earlier eras. The
-    built-in calendars are `fefat.market.builtin_calendars.BUILT_IN`; a product a trader
-    imports on hours of its own gets a calendar built the same way, with its own name."""
+    each on one of the calendar's weekdays, and the regular closes and daily halts of earlier
+    eras. The built-in calendars are `fefat.market.builtin_calendars.BUILT_IN`; a product a
+    trader imports on hours of its own gets a calendar built the same way, with its own name."""
 
     name: FolderName
     hours: SessionHours
     holidays: tuple[Holiday, ...]
     former_closes: tuple[FormerClose, ...] = ()
+    former_daily_halts: tuple[FormerDailyHalt, ...] = ()
 
     @model_validator(mode="after")
     def _one_holiday_a_day_on_a_trading_weekday(self) -> Self:

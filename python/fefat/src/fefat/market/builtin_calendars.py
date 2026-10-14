@@ -16,6 +16,10 @@ both the same way in every year, the trade date CME Clearing used before that ch
   observed when it falls on a Saturday), Good Friday, and Christmas (on the nearest weekday).
 - Halts, every group: Martin Luther King Jr. Day, Presidents' Day, Memorial Day, Juneteenth
   (from 2022), Independence Day (both on the nearest weekday), Labor Day, and Thanksgiving.
+  Equity index halts at 12:00, and energy and metals halted at 12:15 until 2012, at 12:00 from
+  2013, and at 13:30 from 2022, except on a Friday, at 12:00.
+- Equity index also halted from 15:15 to 15:30 inside every session until trade date
+  2021-06-28 (`FORMER_DAILY_HALTS`).
 - Early closes: the day after Thanksgiving (equity index 12:15, energy and metals 13:45),
   Christmas Eve from Monday to Thursday (12:15, and 12:45), and for equity index July 3, the
   day before Independence Day, from Monday to Thursday (12:15). When Independence Day is a
@@ -40,6 +44,7 @@ from fefat.market.calendar_definition import (
     CalendarId,
     EarlyClose,
     FormerClose,
+    FormerDailyHalt,
     FullClose,
     Halt,
     Holiday,
@@ -92,6 +97,39 @@ FORMER_CLOSES = (
 markets will now occur 15 minutes earlier Monday through Friday at 16:00 CT", NYMEX, COMEX, and
 CME Equity among them (the CME Globex notice of 2015-09-07), which the real MGC bars show,
 ending up to 16:15 until 2015-09-18 and by 16:00 after."""
+
+FORMER_DAILY_HALTS = (
+    FormerDailyHalt(
+        until=date(2021, 6, 28),
+        halts_at=time(15, 15),
+        resumes_at=time(15, 30),
+        source="https://ampfutures.com/news/"
+        "cme-equity-index-products-trading-halt-between-315-and-330-pm-removed",
+    ),
+)
+"""Equity index's daily halt before trade date 2021-06-28: "effective June 28, 2021, CME and
+CBOT will eliminate the 3:15 p.m. - 3:30 p.m. Central Time (CT) trading halt", which the real
+MES and MNQ bars show, without a bar from 15:15 to 15:29 until trade date 2021-06-25."""
+
+
+def _halt_time(calendar_id: CalendarId, day: date) -> time:
+    """When a halt day of a CME group stops trading, in Chicago time: 12:00 for equity index
+    (the halt rules' sources; MES and MNQ end at 11:59 on every halt day from 2019). Energy and
+    metals halted at 12:15 until 2012 ("NYMEX, COMEX and DME Products ... Monday, Sep 5 1215 CT
+    - Trading halt", CME's 2011 Labor Day schedule as copied at
+    https://nexusfi.com/showthread.php?p=149538; the real MGC bars end at 12:11 to 12:14 on halt
+    days of 2011 and 2012), at 12:00 from 2013 (MGC ends by 11:59 from 2014, and has no print on
+    the halt days between), and at 13:30 from 2022 ("Energy, Metals: Trading halt at 1:30 p.m.",
+    https://iqhelp.dtn.com/?p=2655, Martin Luther King Jr. Day 2022), except on a Friday, at
+    12:00 (the Juneteenth and Independence Day schedules cited below, and the real MCL and MGC
+    bars of 2025-07-04, 2026-06-19, and 2026-07-03)."""
+    if calendar_id is CalendarId.CME_EQUITY_INDEX:
+        return time(12)
+    if day.year < 2013:
+        return time(12, 15)
+    if day.year < 2022 or day.isoweekday() == Weekday.FRIDAY:
+        return time(12)
+    return time(13, 30)
 
 
 def _observed(day: date) -> date:
@@ -326,7 +364,10 @@ def _rule_holidays(calendar_id: CalendarId, years: range) -> Iterator[Holiday]:
         for rule, source in _FULL_CLOSES:
             yield from (FullClose(day=day, source=source) for day in rule(year))
         for rule, source in _HALTS:
-            yield from (Halt(day=day, source=source) for day in rule(year))
+            yield from (
+                Halt(day=day, closes_at=_halt_time(calendar_id, day), source=source)
+                for day in rule(year)
+            )
         for rule, closes_at, source in _EARLY_CLOSES[calendar_id]:
             yield from (
                 EarlyClose(day=day, closes_at=closes_at, source=source) for day in rule(year)
@@ -335,11 +376,13 @@ def _rule_holidays(calendar_id: CalendarId, years: range) -> Iterator[Holiday]:
 
 def _cme_calendar(calendar_id: CalendarId) -> Calendar:
     holidays = cme_holidays(calendar_id, FIRST_SESSION_DATE.year, LAST_SESSION_DATE.year)
+    daily_halts = FORMER_DAILY_HALTS if calendar_id is CalendarId.CME_EQUITY_INDEX else ()
     return Calendar(
         name=calendar_id.value,
         hours=CME_GLOBEX_HOURS,
         holidays=holidays,
         former_closes=FORMER_CLOSES,
+        former_daily_halts=daily_halts,
     )
 
 
