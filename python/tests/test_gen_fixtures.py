@@ -19,28 +19,19 @@ BTC_TICK = 100_000_000
 FIXTURE_SIZE_LIMIT_BYTES = 20_000_000
 # ES sessions run from 17:00 Chicago the day before their trade date to 16:00 Chicago on it:
 # 23:00 to 22:00 UTC in standard time (UTC-6), 22:00 to 21:00 UTC once daylight saving starts
-# on 2026-03-08 (UTC-5). The BTC day runs from 00:00 UTC to 00:00 UTC the next day.
+# on 2026-03-08 (UTC-5). Both ES contracts trade them (step 1.7). The BTC day runs from 00:00
+# UTC to 00:00 UTC the next day.
+ES_CONTRACTS = ("ESH2026", "ESM2026")
+ES_SESSIONS = [
+    ("2026-03-05", datetime(2026, 3, 4, 23, tzinfo=UTC), datetime(2026, 3, 5, 22, tzinfo=UTC)),
+    ("2026-03-06", datetime(2026, 3, 5, 23, tzinfo=UTC), datetime(2026, 3, 6, 22, tzinfo=UTC)),
+    ("2026-03-09", datetime(2026, 3, 8, 22, tzinfo=UTC), datetime(2026, 3, 9, 21, tzinfo=UTC)),
+]
 SESSIONS = [
-    (
-        "ES",
-        "ESH2026",
-        "2026-03-05",
-        datetime(2026, 3, 4, 23, tzinfo=UTC),
-        datetime(2026, 3, 5, 22, tzinfo=UTC),
-    ),
-    (
-        "ES",
-        "ESH2026",
-        "2026-03-06",
-        datetime(2026, 3, 5, 23, tzinfo=UTC),
-        datetime(2026, 3, 6, 22, tzinfo=UTC),
-    ),
-    (
-        "ES",
-        "ESH2026",
-        "2026-03-09",
-        datetime(2026, 3, 8, 22, tzinfo=UTC),
-        datetime(2026, 3, 9, 21, tzinfo=UTC),
+    *(
+        ("ES", contract, day, open_utc, close_utc)
+        for contract in ES_CONTRACTS
+        for day, open_utc, close_utc in ES_SESSIONS
     ),
     (
         "BTCUSDT-PERP",
@@ -118,7 +109,7 @@ def test_every_committed_fixture_file_is_listed_with_its_hash() -> None:
         if path.is_file() and path != MANIFEST
     }
 
-    assert len(on_disk) == 20
+    assert len(on_disk) == 27
     assert on_disk == listed
 
 
@@ -266,11 +257,12 @@ def test_second_bars_hold_the_trades_received_in_their_second(
 
 
 @pytest.mark.parametrize(
-    ("root", "contract"), [("ES", "ESH2026"), ("BTCUSDT-PERP", "BTCUSDT-PERP")]
+    ("root", "contract"),
+    [("ES", "ESH2026"), ("ES", "ESM2026"), ("BTCUSDT-PERP", "BTCUSDT-PERP")],
 )
 def test_minute_bars_carry_exactly_the_volume_of_their_trades(root: str, contract: str) -> None:
     bars = rows(partition("ohlcv-1m", root, contract, "month=2026-03"))
-    trades_folder = FIXTURES / "trades" / f"root={root}"
+    trades_folder = FIXTURES / "trades" / f"root={root}" / f"contract={contract}"
     traded = sum(
         int(trade["size"]) for path in trades_folder.rglob("*.parquet") for trade in rows(path)
     )
@@ -335,11 +327,34 @@ def test_every_bar_lies_inside_the_session_of_its_trade_date(
         if not session_open <= bar["ts_open"] < bar["ts_close"] <= session_close
     ]
 
-    # The print received after the close of 2026-03-06 keeps that trade date, in a 1-second
-    # and a 1-minute bar opening at the close, as the vendor's bars do.
+    # The print ESH2026 received after the close of 2026-03-06 keeps that trade date, in a
+    # 1-second and a 1-minute bar opening at the close, as the vendor's bars do.
     opening_at_the_close = [
         (session_close, NANOSECONDS_PER_SECOND),
         (session_close, NANOSECONDS_PER_MINUTE),
     ]
+    planted_after_the_close = (contract, day) == ("ESH2026", AFTER_THE_CLOSE_DAY)
     assert bars
-    assert outside == (opening_at_the_close if day == AFTER_THE_CLOSE_DAY else [])
+    assert outside == (opening_at_the_close if planted_after_the_close else [])
+
+
+def test_the_june_contract_trades_more_than_march_on_03_06_only() -> None:
+    # Step 1.7's roll: ESM2026's volume crosses ESH2026's on 2026-03-06 and falls back below it
+    # on 2026-03-09, so a volume rule rolls at the open of 03-09 and must not roll back after.
+    def volume(contract: str, day: str) -> int:
+        trades = rows(partition("trades", "ES", contract, f"date={day}"))
+        return sum(int(trade["size"]) for trade in trades)
+
+    june_leads = [volume("ESM2026", day) > volume("ESH2026", day) for day, _, _ in ES_SESSIONS]
+
+    assert june_leads == [False, True, False]
+
+
+def test_the_two_es_contracts_draw_different_tapes() -> None:
+    # Each tape is seeded by its contract, not its root, so ESM2026 is no rescaled copy of
+    # ESH2026: their prints arrive at other instants from the open on.
+    def received(contract: str) -> list[int]:
+        trades = rows(partition("trades", "ES", contract, "date=2026-03-05"))
+        return [int(trade["ts_recv"]) for trade in trades[:50]]
+
+    assert set(received("ESH2026")).isdisjoint(received("ESM2026"))

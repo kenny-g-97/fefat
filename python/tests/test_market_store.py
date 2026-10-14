@@ -118,7 +118,7 @@ def test_the_fixture_store_lists_each_synthetic_partition_with_its_size() -> Non
         path: entry["bytes"] for path, entry in MANIFEST_ENTRIES.items()
     }
     assert paths == sorted(paths)
-    assert len(paths) == 10
+    assert len(paths) == 17
 
 
 def test_a_store_whose_folder_does_not_exist_yet_lists_nothing_and_creates_nothing(
@@ -135,8 +135,11 @@ def test_a_request_reads_the_trades_of_its_dates_and_no_others() -> None:
         dataset=ES_TRADES.dataset, start=date(2026, 3, 5), end=date(2026, 3, 6)
     )
     expected_rows = sum(
-        MANIFEST_ENTRIES[partition.relative_path().as_posix()]["rows"]
-        for partition in (TRADES_OF_MARCH_5, TRADES_OF_MARCH_6)
+        MANIFEST_ENTRIES[f"synthetic/trades/root=ES/contract={contract}/date={day}/part.parquet"][
+            "rows"
+        ]
+        for contract in ("ESH2026", "ESM2026")
+        for day in ("2026-03-05", "2026-03-06")
     )
 
     assert FIXTURE_STORE.scan(request).collect().height == expected_rows

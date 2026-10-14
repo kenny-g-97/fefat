@@ -29,6 +29,7 @@ MARCH_6 = date(2026, 3, 6)
 TRADES, SECONDS, MINUTES, FIVE_MINUTES, DAYS = (
     parse_schema_name(name) for name in ("trades", "ohlcv-1s", "ohlcv-1m", "ohlcv-5m", "ohlcv-1d")
 )
+ES_CONTRACTS = ("ESH2026", "ESM2026")
 ES_MINUTES = Partition(
     dataset=Dataset(provider="synthetic", schema_name=MINUTES, root="ES"),
     contract="ESH2026",
@@ -40,22 +41,26 @@ def stored_bars(store: Store, partition: Partition, day: date) -> pl.DataFrame:
     return store.scan_partition(partition).filter(pl.col("trade_date") == day).collect()
 
 
-def seconds_of_march_6() -> int:
-    partition = Partition(
-        dataset=Dataset(provider="synthetic", schema_name=SECONDS, root="ES"),
-        contract="ESH2026",
-        key=MARCH_6,
+def es_bars_of_march_6(schema_name: str) -> int:
+    """How many bars of `schema_name` both ES contracts hold on 2026-03-06."""
+    dataset = Dataset(provider="synthetic", schema_name=parse_schema_name(schema_name), root="ES")
+    key = YearMonth(year=2026, month=3) if schema_name == "ohlcv-1m" else MARCH_6
+    return sum(
+        stored_bars(
+            Store(FIXTURES), Partition(dataset=dataset, contract=contract, key=key), MARCH_6
+        ).height
+        for contract in ES_CONTRACTS
     )
-    return Store(FIXTURES).scan_partition(partition).collect().height
 
 
 def test_the_fixtures_bars_rebuilt_from_their_trades_show_no_differences(tmp_path: Path) -> None:
-    # The fixtures hold ES trades and their 1-second and 1-minute bars; no 5-minute or daily
-    # bars are stored, so those comparisons have nothing to compare with. The trades of
-    # Friday 2026-03-06 resampled to 5-minute and then daily bars equal their daily bar.
+    # The fixtures hold the trades of two ES contracts and their 1-second and 1-minute bars; no
+    # 5-minute or daily bars are stored, so those comparisons have nothing to compare with. The
+    # trades of Friday 2026-03-06 resampled to 5-minute and then daily bars equal their daily
+    # bars, one a contract.
     report = verify_bars(Store(FIXTURES), "ES", MARCH_6, tmp_path)
 
-    minutes = stored_bars(Store(FIXTURES), ES_MINUTES, MARCH_6).height
+    minutes = es_bars_of_march_6("ohlcv-1m")
     assert report == BarsReport(
         root="ES",
         trade_date=MARCH_6,
@@ -64,7 +69,7 @@ def test_the_fixtures_bars_rebuilt_from_their_trades_show_no_differences(tmp_pat
                 provider="synthetic",
                 route=(TRADES, SECONDS),
                 reference=(SECONDS,),
-                bars_compared=seconds_of_march_6(),
+                bars_compared=es_bars_of_march_6("ohlcv-1s"),
                 differences=(),
             ),
             ComparedBars(
@@ -97,21 +102,22 @@ def test_the_fixtures_bars_rebuilt_from_their_trades_show_no_differences(tmp_pat
                 provider="synthetic",
                 route=(TRADES, FIVE_MINUTES, DAYS),
                 reference=(TRADES, DAYS),
-                bars_compared=1,
+                bars_compared=2,
                 differences=(),
             ),
         ),
     )
-    assert minutes == 23 * 60 + 1
+    # Every minute of the session for each contract, and ESH2026's bar after the close.
+    assert minutes == 2 * 23 * 60 + 1
     assert report.summary().splitlines() == [
         "Bars of ES on 2026-03-06. Comparisons run: 4. Differences: none.",
-        f"synthetic: trades -> ohlcv-1s against ohlcv-1s: {seconds_of_march_6():,} compared, "
-        "no differences",
-        "synthetic: trades -> ohlcv-1m against ohlcv-1m: 1,381 compared, no differences",
-        "synthetic: ohlcv-1s -> ohlcv-1m against ohlcv-1m: 1,381 compared, no differences",
+        f"synthetic: trades -> ohlcv-1s against ohlcv-1s: {es_bars_of_march_6('ohlcv-1s'):,} "
+        "compared, no differences",
+        "synthetic: trades -> ohlcv-1m against ohlcv-1m: 2,761 compared, no differences",
+        "synthetic: ohlcv-1s -> ohlcv-1m against ohlcv-1m: 2,761 compared, no differences",
         "synthetic: ohlcv-1m -> ohlcv-5m against ohlcv-5m: no ohlcv-5m stored to compare with",
         "synthetic: ohlcv-1m -> ohlcv-1d against ohlcv-1d: no ohlcv-1d stored to compare with",
-        "synthetic: trades -> ohlcv-5m -> ohlcv-1d against trades -> ohlcv-1d: 1 compared, "
+        "synthetic: trades -> ohlcv-5m -> ohlcv-1d against trades -> ohlcv-1d: 2 compared, "
         "no differences",
     ]
 
@@ -153,9 +159,9 @@ def test_a_stored_bar_that_differs_or_is_missing_is_listed_with_both_sides(tmp_p
     assert by_route[(TRADES, MINUTES)].differences == differences
     assert by_route[(SECONDS, MINUTES)].differences == differences
     assert by_route[(TRADES, SECONDS)].differences == ()
-    # The bars compared are those either side holds: the 1,381 rebuilt ones, one of them gone
-    # from the stored bars.
-    assert by_route[(TRADES, MINUTES)].bars_compared == 23 * 60 + 1
+    # The bars compared are those either side holds: ESH2026's 1,381 rebuilt ones, one of them
+    # gone from the stored bars, and ESM2026's 1,380.
+    assert by_route[(TRADES, MINUTES)].bars_compared == 2 * 23 * 60 + 1
     assert report.summary().splitlines()[0] == (
         "Bars of ES on 2026-03-06. Comparisons run: 4. Differences: 4."
     )
@@ -191,7 +197,7 @@ def test_vendor_bars_without_their_trades_leave_the_rebuilding_pending(tmp_path:
         "from",
         "synthetic: ohlcv-1m -> ohlcv-5m against ohlcv-5m: no ohlcv-5m stored to compare with",
         "synthetic: ohlcv-1m -> ohlcv-1d against ohlcv-1d: no ohlcv-1d stored to compare with",
-        "synthetic: ohlcv-1m -> ohlcv-5m -> ohlcv-1d against ohlcv-1m -> ohlcv-1d: 1 compared, "
+        "synthetic: ohlcv-1m -> ohlcv-5m -> ohlcv-1d against ohlcv-1m -> ohlcv-1d: 2 compared, "
         "no differences",
     ]
 
