@@ -51,6 +51,7 @@ from fefat.market.roll_decisions import (
     RollReason,
     calendar_rows,
     decision_grid,
+    require_bars_apart,
 )
 from fefat.market.schema import FrozenModel, parse_schema_name, polars_schema, require_columns
 
@@ -180,7 +181,9 @@ class RollCalendar:
         `roll_flag` marks a bar whose contract is not that of the bar before it, a new front's
         first, which the first bar given never is. Bars of other contracts, and of sessions
         without a row, are left out."""
-        require_columns(CONTRACT_BAR_COLUMNS, bars.schema, f"the bars of {self._root} to splice")
+        source = f"the bars of {self._root} to splice"
+        require_columns(CONTRACT_BAR_COLUMNS, bars.schema, source)
+        require_bars_apart(bars, source)
         fronts = self._rows.select("trade_date", "contract", "adj_offset")
         spliced = bars.join(fronts, on=["trade_date", "contract"]).sort("ts_open")
         new_front = pl.col("contract") != pl.col("contract").shift(1)

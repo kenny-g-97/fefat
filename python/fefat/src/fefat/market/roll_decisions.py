@@ -7,7 +7,8 @@ A decision grid holds a row for each session from the second of the bars to the 
 month, the trade date from which it may no longer serve a session, its volume in the session
 before, and whether it has traded before. The calendar's rows follow from the grid and the rule's
 `measure` beside each contract; the gap of a roll is taken from the bars themselves, in the
-latest bar both contracts traded in before the roll's session.
+latest bar both contracts traded in before the roll's session. Only bars with trades count: a
+row of no volume, as the dense session grid adds, carries a close forward but is no trade.
 """
 
 from datetime import date, timedelta
@@ -43,6 +44,7 @@ the contract rolled from, the gap, and the `RollReason`, null on other rows."""
 _CONTRACT_COLUMNS = pl.Schema(
     {"contract": pl.String, "month_index": pl.Int32, "serves_until": pl.Date}
 )
+_HAS_TRADES = pl.col("volume") > 0
 
 
 class RollReason(StrEnum):
@@ -63,13 +65,19 @@ def decision_grid(
 ) -> pl.DataFrame:
     """A row for each session from the second of `bars` to the last opening by
     `received_until` and each contract: the session's open and the next one's, the contract's
-    `month_index` and `serves_until`, its volume in the session before (null without bars),
-    and whether it traded in a session before (`has_traded`). A bar closing after the open of
-    the session after its trade date, where a decision reads it (D-43), is refused."""
-    require_columns(CONTRACT_BAR_COLUMNS, bars.schema, f"the bars of {instrument.root}")
-    if bars.is_empty():
-        raise ValueError(f"Expected bars of at least one contract of {instrument.root}, got none.")
-    first: date = bars.select(pl.col("trade_date").min()).item()
+    `month_index` and `serves_until`, its volume in the session before (null without trades),
+    and whether it traded in a session before (`has_traded`). Bars of a contract that overlap,
+    and a bar closing after the open of the session after its trade date, where a decision
+    reads it (D-43), are refused."""
+    source = f"the bars of {instrument.root}"
+    require_columns(CONTRACT_BAR_COLUMNS, bars.schema, source)
+    require_bars_apart(bars, source)
+    traded = bars.filter(_HAS_TRADES)
+    if traded.is_empty():
+        raise ValueError(
+            f"Expected bars of at least one contract of {instrument.root} with trades, got none."
+        )
+    first: date = traded.select(pl.col("trade_date").min()).item()
     last = _last_session_by(sessions, received_until)
     in_range = sessions.between(first, last).select(
         "trade_date",
@@ -77,8 +85,8 @@ def decision_grid(
         next_open=pl.col("open").shift(-1).fill_null(sessions.following(last).open),
     )
     _require_bars_closing_by_the_next_open(bars, in_range)
-    contracts = _contracts(bars, instrument, sessions, sessions_before_expiry, last)
-    volumes = bars.group_by("trade_date", "contract").agg(pl.col("volume").sum())
+    contracts = _contracts(traded, instrument, sessions, sessions_before_expiry, last)
+    volumes = traded.group_by("trade_date", "contract").agg(pl.col("volume").sum())
     traded = pl.col("volume").is_not_null().cum_max()
     return (
         in_range.join(contracts, how="cross")
@@ -102,6 +110,22 @@ def calendar_rows(grid: pl.DataFrame, bars: pl.DataFrame, ranked_by: RollReason)
     fronts = _fronts(grid).join(names, left_on="front_month", right_on="month_index")
     forced_by = RollReason.CALENDAR if ranked_by is RollReason.CALENDAR else RollReason.EXPIRY
     return _with_rolls(fronts.sort("trade_date"), bars, ranked_by, forced_by)
+
+
+def require_bars_apart(bars: pl.DataFrame, source: str) -> None:
+    """Refuse a bar that opens before the bar of its contract before it closes, as bars of two
+    timeframes would: their volumes would count the same prints twice, and which bar comes
+    first as a new front would change with a cut."""
+    previous_close = pl.col("ts_close").shift(1).over("contract")
+    overlapping = bars.sort("contract", "ts_open").filter(pl.col("ts_open") < previous_close)
+    if overlapping.is_empty():
+        return
+    contract, ts_open = overlapping.select("contract", "ts_open").row(0)
+    raise ValueError(
+        f"Expected the bars of each contract one after another, as those of one timeframe are, "
+        f"got {overlapping.height} opening before the bar before them closes in {source}, the "
+        f"first of {contract} opening at {utc_text(ts_open)}."
+    )
 
 
 def _last_session_by(sessions: SessionTable, instant: int) -> date:
@@ -215,15 +239,19 @@ def _with_rolls(
 
 def _gaps(rolls: pl.DataFrame, bars: pl.DataFrame) -> pl.DataFrame:
     """Each roll's `gap`, by its trade date: the new contract's close minus the old one's in the
-    latest bar, by `ts_open`, that both traded in before the roll's session. A roll without one
-    is refused, since closes of different times would put the market's move into the gap."""
+    latest bar, the same `ts_open` and `ts_close`, that both traded in before the roll's
+    session. A roll without one is refused, since closes of different times would put the
+    market's move into the gap."""
     keys = rolls.select("trade_date", "rolled_from", "contract")
-    closes = bars.select("contract", "ts_open", "close", bar_date="trade_date")
+    closes = bars.filter(_HAS_TRADES).select(
+        "contract", "ts_open", "ts_close", "close", bar_date="trade_date"
+    )
     before_the_roll = pl.col("bar_date") < pl.col("trade_date")
     old = keys.join(closes, left_on="rolled_from", right_on="contract").filter(before_the_roll)
     new = keys.join(closes, on="contract").filter(before_the_roll)
     both = old.join(
-        new.select("trade_date", "ts_open", new_close="close"), on=["trade_date", "ts_open"]
+        new.select("trade_date", "ts_open", "ts_close", new_close="close"),
+        on=["trade_date", "ts_open", "ts_close"],
     )
     gap = (pl.col("new_close") - pl.col("close")).sort_by("ts_open").last()
     gaps = both.group_by("trade_date").agg(gap=gap)

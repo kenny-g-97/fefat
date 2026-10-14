@@ -3,6 +3,7 @@ volume crossover, prefix invariance (D-12) for every rule, within-contract diffe
 forced, open-interest, and calendar rules, the gap taken where both contracts traded, the span
 of each front, the gap recorded for a position's transfer, and the display view."""
 
+import re
 from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
@@ -435,6 +436,79 @@ def test_of_two_figures_received_at_one_instant_the_later_in_sequence_counts(
     ]
 
 
+def test_a_bar_without_trades_does_not_measure_the_gap(table: SessionTable) -> None:
+    # June trades on 03-16 only, and the dense grid's rows of no volume carry its close on to
+    # 03-19: the forced roll at 03-20 still measures the gap on 03-16, where both traded.
+    days = trade_dates(table, date(2026, 3, 16), date(2026, 3, 19))
+    march = [(day, "ESH2026", 27_000 + 100 * index, 100) for index, day in enumerate(days)]
+    june = [(days[0], "ESM2026", 27_050, 10)] + [(day, "ESM2026", 27_050, 0) for day in days[1:]]
+
+    calendar = volume_rolls(
+        session_bars(march + june, table), table, ES, table.following(days[-1]).open
+    )
+
+    assert calendar.rolls().select("trade_date", "gap").rows() == [(date(2026, 3, 20), 50 * TICK)]
+
+
+def test_bars_of_different_widths_share_no_bar(table: SessionTable) -> None:
+    # March's bars span each session and June's one bar is the first minute of 03-16: they open
+    # together but close 23 hours apart, so no bar measures the gap of the roll to June.
+    days = trade_dates(table, date(2026, 3, 16), date(2026, 3, 19))
+    march = [(day, "ESH2026", 27_000 + 100 * index, 100) for index, day in enumerate(days)]
+    session, price = table.session(days[0]), 27_050 * TICK
+    first_minute = (session.open, session.open + 60_000_000_000, days[0], 1003)
+    june = pl.DataFrame(
+        [(*first_minute, *(price,) * 4, 10, 1, price, "ESM2026")],
+        schema=CONTRACT_BAR_COLUMNS,
+        orient="row",
+    )
+
+    expected = "Expected a bar in which both ESH2026 and ESM2026 traded before the session"
+    with pytest.raises(ValueError, match=expected):
+        volume_rolls(
+            pl.concat([session_bars(march, table), june]),
+            table,
+            ES,
+            table.following(days[-1]).open,
+        )
+
+
+def test_bars_of_a_contract_that_overlap_are_refused(table: SessionTable) -> None:
+    # A 5-minute and a 1-minute bar of June from the open of 03-20, bars of two timeframes, count
+    # the same prints twice and would flag a roll on the bar that a cut leaves first.
+    days = trade_dates(table, date(2026, 3, 16), date(2026, 3, 19))
+    rows = [(day, "ESH2026", 27_000, 100) for day in days]
+    rows += [(day, "ESM2026", 27_100, 10) for day in days]
+    march_20, minute, price = date(2026, 3, 20), 60_000_000_000, 27_100 * TICK
+    open_20 = table.session(march_20).open
+    june = pl.DataFrame(
+        [
+            (open_20, open_20 + 5 * minute, march_20, 1003, *(price,) * 4, 5, 1, price, "ESM2026"),
+            (
+                open_20 + minute,
+                open_20 + 2 * minute,
+                march_20,
+                1003,
+                *(price,) * 4,
+                1,
+                1,
+                price,
+                "ESM2026",
+            ),
+        ],
+        schema=CONTRACT_BAR_COLUMNS,
+        orient="row",
+    )
+    bars = pl.concat([session_bars(rows, table), june])
+    calendar = volume_rolls(session_bars(rows, table), table, ES, open_20)
+
+    expected = "Expected the bars of each contract one after another"
+    with pytest.raises(ValueError, match=expected):
+        volume_rolls(bars, table, ES, table.following(march_20).open)
+    with pytest.raises(ValueError, match=expected):
+        calendar.continuous_bars(bars)
+
+
 def test_a_bar_closing_after_the_next_open_is_refused(table: SessionTable) -> None:
     # A 4-hour bar on UTC hours, from 20:00 to 00:00 UTC and dated 03-05, closes an hour after
     # 03-06's session opens, where a decision would read it before it is in hand.
@@ -618,16 +692,27 @@ SESSION_COUNT_OF_THE_PROPERTY = 35
 CONTRACTS_OF_THE_PROPERTY = ("ESH2026", "ESM2026", "ESU2026")
 
 
+NO_SHARED_BAR = re.compile(
+    r"Expected a bar in which both (\S+) and (\S+) traded before the session of (\S+), to "
+)
+
+
+def traded_sessions(bars: pl.DataFrame, contract: str, before: date) -> set[date]:
+    """The trade dates before `before` on which `contract` has a bar."""
+    rows = bars.filter(pl.col("contract") == contract, pl.col("trade_date") < before)
+    return set(rows.get_column("trade_date").to_list())
+
+
 @st.composite
 def random_bars(draw: st.DrawFn) -> list[tuple[int, str, int, int]]:
-    """For each of the 35 sessions and each contract, a close in ticks and a volume: the leader
-    moves from March to June to September, a session early or late at random, so the rolls fall
-    anywhere and the leader flips back now and then."""
+    """For each of the 35 sessions and each contract, a close in ticks and a volume, 0 for no
+    bar: the leader moves from March to June to September, a session early or late at random,
+    so the rolls fall anywhere and the leader flips back now and then."""
     rows = []
     for index in range(SESSION_COUNT_OF_THE_PROPERTY):
         leader = min(2, max(0, index // 12 + draw(st.integers(-1, 1))))
         for order, contract in enumerate(CONTRACTS_OF_THE_PROPERTY):
-            volume = draw(st.integers(60, 100)) if order == leader else draw(st.integers(1, 59))
+            volume = draw(st.integers(60, 100)) if order == leader else draw(st.integers(0, 59))
             rows.append((index, contract, draw(st.integers(26_000, 28_000)), volume))
     return rows
 
@@ -640,8 +725,16 @@ def test_any_volumes_give_a_calendar_that_never_rolls_back_or_changes_its_past(
     days = trade_dates(table, *SESSIONS_OF_THE_PROPERTY)
     assert len(days) == SESSION_COUNT_OF_THE_PROPERTY
     rows = [(days[index], contract, ticks, volume) for index, contract, ticks, volume in drawn]
-    bars = session_bars(rows, table)
-    calendar = volume_rolls(bars, table, ES, table.following(days[-1]).open)
+    bars = session_bars([row for row in rows if row[3] > 0], table)
+    try:
+        calendar = volume_rolls(bars, table, ES, table.following(days[-1]).open)
+    except ValueError as error:
+        refused = NO_SHARED_BAR.match(str(error))
+        assert refused is not None, str(error)
+        before = date.fromisoformat(refused[3])
+        old, new = (traded_sessions(bars, contract, before) for contract in refused.group(1, 2))
+        assert old.isdisjoint(new)
+        return
     fronts = calendar.rows
 
     contract_order = {contract: order for order, contract in enumerate(CONTRACTS_OF_THE_PROPERTY)}
