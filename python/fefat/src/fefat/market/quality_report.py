@@ -206,8 +206,9 @@ def quality_standing(reports_folder: Path, provider: str, root: str) -> QualityS
         return QualityStanding(status=QualityStatus.UNCHECKED, checked_through=None)
     days = pl.read_parquet(days_path)
     findings = pl.read_parquet(findings_path)
-    require_columns(DAY_COLUMNS, days.schema, str(days_path))
-    require_columns(FINDING_COLUMNS, findings.schema, str(findings_path))
+    again = f"; write it again with `fefat data quality {root}`"
+    require_columns(DAY_COLUMNS, days.schema, f"{days_path}{again}")
+    require_columns(FINDING_COLUMNS, findings.schema, f"{findings_path}{again}")
     status = QualityStatus.CLEAN if findings.is_empty() else QualityStatus.FLAGGED
     checked_through = days.select(pl.col("trade_date").max()).item()
     return QualityStanding(status=status, checked_through=checked_through)
@@ -283,8 +284,7 @@ def _vendor_line(report: QualityReport) -> str:
     touched = report.days.filter(_flagged_by_the_vendor()).get_column("trade_date")
     if report.vendor_days:
         flagged = ", ".join(f"{day.day} {day.condition}" for day in report.vendor_days)
-        dates = _dates(touched) if not touched.is_empty() else "none of these sessions"
-        return f"The vendor's UTC days {flagged}; the trade dates they touch: {dates}."
+        return f"The vendor's UTC days {flagged}; the trade dates they touch: {_dates(touched)}."
     if report.days.get_column("vendor_condition").is_null().all():
         return f"The provider {report.provider} gives no conditions."
     return "None: the vendor marks every day available."

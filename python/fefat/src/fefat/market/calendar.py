@@ -143,6 +143,14 @@ class SessionTable:
         self._require_within_the_span(pl.Series([first, last], dtype=pl.Date))
         return self._sessions.filter(pl.col("trade_date").is_between(first, last))
 
+    def between_with_next_opens(self, first: date, last: date) -> pl.DataFrame:
+        """The sessions of `between`, each with `next_open`, the open of the session after it,
+        which ends the break in which a print still takes its trade date (D-43)."""
+        after_last = self.following(last).open
+        return self.between(first, last).with_columns(
+            next_open=pl.col("open").shift(-1).fill_null(after_last)
+        )
+
     def assign_trade_dates(self, frame: pl.DataFrame, column: str) -> pl.DataFrame:
         """`frame` sorted by `column`, an Int64 instant in nanoseconds since the Unix epoch, UTC,
         keeping the order of equal instants (D-36), with the `trade_date` of the session each

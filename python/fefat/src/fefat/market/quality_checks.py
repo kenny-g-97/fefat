@@ -14,7 +14,6 @@ from datetime import date
 
 import polars as pl
 
-from fefat.market.calendar import SessionTable
 from fefat.market.coverage import DatasetCoverage
 from fefat.market.layout import Dataset, Partition
 from fefat.market.quality_report import FINDING_COLUMNS, QualityFinding
@@ -37,22 +36,13 @@ RECORD_FINDINGS = {
 """The counts of `checked_records` that are findings, with the finding each counts."""
 
 
-def session_bounds(sessions: SessionTable, first: date, last: date) -> pl.DataFrame:
-    """The sessions of the trade dates from `first` to `last`, each with the open of the next,
-    which ends the break in which a print still takes its trade date (D-43)."""
-    after_last = sessions.following(last).open
-    return sessions.between(first, last).with_columns(
-        next_open=pl.col("open").shift(-1).fill_null(after_last)
-    )
-
-
 def checked_records(
     store: Store, datasets: Mapping[Dataset, DatasetCoverage], bounds: pl.DataFrame, root: str
 ) -> pl.DataFrame:
     """Per schema, contract, and trade date of the `datasets`' records: their instruments
     (`instrument_ids`), how many there are (`records`), and how many are duplicates,
     out of session, received in the break or inside a halt, after a decrease of the clock,
-    or priced at zero or below. `bounds` are the sessions of `session_bounds`. Each partition
+    or priced at zero or below. `bounds` are the sessions of `SessionTable.between_with_next_opens`. Each partition
     marks its own records, in their stored order; one query then counts them all."""
     marked = pl.concat(
         [
@@ -67,6 +57,9 @@ def checked_records(
     )
     keys = ("schema", "contract", "trade_date")
     instant = pl.col("instant")
+    # shortcut: the halt join reads the marked rows a second time, which Polars may keep in
+    # memory, a few hundred MB for years of 1-minute bars; count by batches of partitions when
+    # a root holds years of ticks.
     halts = (
         bounds.select("trade_date", "halts").explode("halts").drop_nulls("halts").unnest("halts")
     )

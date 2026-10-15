@@ -50,7 +50,7 @@ from fefat.market.importers.databento import PROVIDER as DATABENTO
 from fefat.market.importers.databento import vendor_conditions
 from fefat.market.importers.report import ConditionDay, VendorCondition
 from fefat.market.layout import Dataset
-from fefat.market.quality_checks import RECORD_FINDINGS, checked_records, gaps, session_bounds
+from fefat.market.quality_checks import RECORD_FINDINGS, checked_records, gaps
 from fefat.market.quality_report import (
     DAY_COLUMNS,
     FINDING_COLUMNS,
@@ -86,7 +86,7 @@ def assess_quality(store: Store, provider: str, root: str, cache_folder: Path) -
     first = min(coverage.first_trade_date for coverage in covered.values())
     last = max(coverage.last_trade_date for coverage in covered.values())
     received_until = max(coverage.received_until for coverage in covered.values())
-    bounds = session_bounds(sessions, first, last)
+    bounds = sessions.between_with_next_opens(first, last)
     records = checked_records(store, covered, bounds, root)
     differences = _bar_differences(store, provider, root, covered, records, bounds, cache_folder)
     vendor_days = _vendor_days(store, provider)

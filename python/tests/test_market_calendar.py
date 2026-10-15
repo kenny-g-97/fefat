@@ -242,6 +242,19 @@ def test_the_session_preceding_a_trade_date_is_the_previous_trade_dates(
         equity_index.preceding(date(2010, 1, 4))
 
 
+def test_each_sessions_break_ends_at_the_next_sessions_open(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # Thursday 2026-03-05's break ends when Friday 03-06 opens, at 23:00 UTC, and Friday's when
+    # Monday 03-09 opens on Sunday at 22:00 UTC, after the last trade date asked.
+    sessions = tables[EQUITY_INDEX].between_with_next_opens(date(2026, 3, 5), date(2026, 3, 6))
+
+    assert sessions.select("trade_date", "next_open").rows() == [
+        (date(2026, 3, 5), utc(2026, 3, 5, 23)),
+        (date(2026, 3, 6), utc(2026, 3, 8, 22)),
+    ]
+
+
 def test_a_weekend_day_and_a_day_outside_the_table_have_no_session(
     tables: dict[CalendarId, SessionTable],
 ) -> None:

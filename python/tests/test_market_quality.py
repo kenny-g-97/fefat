@@ -405,3 +405,15 @@ def test_a_written_report_reads_back_with_its_status_and_last_trade_date(
 def test_a_root_without_trades_or_bars_from_the_provider_is_refused(cache: Path) -> None:
     with pytest.raises(ValueError, match="Expected trades or bars of NQ from synthetic"):
         assess_quality(FIXTURES, "synthetic", "NQ", cache)
+
+
+def test_a_report_with_other_columns_is_refused_with_how_to_write_it_again(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "synthetic" / "ES"
+    folder.mkdir(parents=True)
+    for table in ("days.parquet", "findings.parquet"):
+        pl.DataFrame({"trade_date": [MARCH_5]}).write_parquet(folder / table)
+
+    with pytest.raises(ValueError, match="write it again with `fefat data quality ES`"):
+        quality_standing(tmp_path, "synthetic", "ES")
