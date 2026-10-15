@@ -56,13 +56,14 @@ _MINUTES = _bars_of(1, TimeUnit.MINUTE)
 _FIVE_MINUTES = _bars_of(5, TimeUnit.MINUTE)
 _DAYS = _bars_of(1, TimeUnit.DAY)
 _FINEST_FIRST: tuple[SchemaName, ...] = (_TRADES, _SECONDS, _MINUTES)
-_STORED_FROM_FINER: tuple[tuple[SchemaName, BarSchemaName], ...] = (
+STORED_FROM_FINER: tuple[tuple[SchemaName, BarSchemaName], ...] = (
     (_TRADES, _SECONDS),
     (_TRADES, _MINUTES),
     (_SECONDS, _MINUTES),
     (_MINUTES, _FIVE_MINUTES),
     (_MINUTES, _DAYS),
 )
+"""Each finer schema beside the stored schema of bars the check rebuilds from it."""
 ComparedColumn = Literal[
     "ts_close", "trade_date", "open", "high", "low", "close", "volume", "trade_count"
 ]
@@ -244,7 +245,7 @@ def verify_bars(store: Store, root: str, trade_date: date, cache_folder: Path) -
         }
         comparisons.extend(
             _against_the_stored(provider, stored, source, target, rebuild)
-            for source, target in _STORED_FROM_FINER
+            for source, target in STORED_FROM_FINER
         )
         comparisons.append(_resampling_check(provider, stored, rebuild))
     return BarsReport(root=root, trade_date=trade_date, comparisons=tuple(comparisons))
