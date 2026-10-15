@@ -35,7 +35,7 @@ The vendor's continuous mapping `MES.v.0`, which you fetched once from the free 
 
 ## Quality reports (2026-10-15)
 
-`fefat data quality` writes each product's report under `data/reports/databento/<root>/` (`days.parquet`, `findings.parquet`, and `quality.md`, step 1.8), and `fefat data catalog` lists the products with their quality.
+`fefat data quality` writes each product's report under `data/reports/databento/<root>/` (`days.parquet`, `findings.parquet`, and `quality.md`, step 1.8), and `fefat data catalog` lists each dataset with its quality.
 
 | Root | Trade dates | Sessions | Contracts | Quality |
 | --- | --- | --- | --- | --- |
