@@ -6,19 +6,22 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
+import fefat
 from fefat.market import instruments
-from fefat.market.api import SIGNAL_BAR_COLUMNS, load
+from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.continuous import volume_rolls
 from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.quality import assess_quality
+from fefat.market.quality_report import write_quality_report
 from fefat.market.schema import parse_schema_name
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures"
 SYNTHETIC = FIXTURES / "synthetic"
-MARCH_6, MARCH_9 = date(2026, 3, 6), date(2026, 3, 9)
+MARCH_5, MARCH_6, MARCH_9 = date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)
 BUCKETS_OF_FIVE_MINUTES = 276
 """A CME equity index session of 23 hours, 17:00 to 16:00 Chicago, in 5-minute buckets."""
 
@@ -206,3 +209,35 @@ def test_a_root_under_two_providers_is_refused(
         ValueError, match="Expected one provider of ES in the store, got synthetic and vendor"
     ):
         load("ES", "1m", "2026-03-06", "2026-03-06")
+
+
+@pytest.mark.usefixtures("fixtures_as_data")
+def test_the_catalog_lists_each_root_with_its_trade_dates_fidelities_and_quality() -> None:
+    listed = catalog()
+
+    every_fidelity = ["tick", "1s", "1m"]
+    march_7 = date(2026, 3, 7)
+    assert listed.schema == CATALOG_COLUMNS
+    assert listed.rows() == [
+        ("synthetic", "BTCUSDT-PERP", 1, march_7, march_7, every_fidelity, "unchecked", None),
+        ("synthetic", "ES", 2, MARCH_5, MARCH_9, every_fidelity, "unchecked", None),
+    ]
+
+
+def test_the_catalog_shows_the_status_of_a_written_quality_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data = data_folder_with(monkeypatch, tmp_path / "data", "ohlcv-1m")
+    report = assess_quality(Store(data), "synthetic", "ES", tmp_path / "cache")
+    write_quality_report(report, data / "reports")
+
+    listed = catalog().filter(pl.col("root") == "ES")
+
+    assert listed.select("fidelities", "quality", "checked_through").rows() == [
+        (["1m"], "clean", MARCH_9)
+    ]
+
+
+def test_the_sdk_offers_the_data_api_as_ff_market() -> None:
+    assert fefat.market.load is load
+    assert fefat.market.catalog is catalog

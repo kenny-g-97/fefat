@@ -61,9 +61,10 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.contracts import parse_contract_name
-from fefat.market.coverage import SESSION_KINDS, dataset_coverage
+from fefat.market.coverage import SESSION_KINDS, DatasetCoverage, dataset_coverage
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.quality_report import QualityStanding, quality_standing
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
 from fefat.market.schema import (
     BarSchemaName,
@@ -79,6 +80,21 @@ SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean}
 offset of its prices, whether it is a new front's first, and whether its bucket is empty."""
 AUTO = "auto"
 """The fidelity of `load` that takes the finest data the store holds."""
+CATALOG_COLUMNS = pl.Schema(
+    {
+        "provider": pl.String,
+        "root": pl.String,
+        "contracts": pl.UInt32,
+        "first_trade_date": pl.Date,
+        "last_trade_date": pl.Date,
+        "fidelities": pl.List(pl.String),
+        "quality": pl.String,
+        "checked_through": pl.Date,
+    }
+)
+"""The catalog's row per root and provider: how many contracts the store holds, its first
+and last trade date, the fidelities of `Fidelity` it holds, finest first, and the status of
+its quality report with the last trade date it checked, none while unchecked."""
 
 
 class Fidelity(StrEnum):
@@ -128,6 +144,51 @@ def load(
         return _signal_bars(_unspliced(gridded), first, last, ("contract", "ts_open"))
     calendar = _roll_calendar(store, datasets, instrument, sessions)
     return _signal_bars(_spliced(gridded, calendar), first, last, ("ts_open",))
+
+
+def catalog() -> pl.DataFrame:
+    """Every root the store holds trades or bars of, with each provider of them, in the
+    columns of `CATALOG_COLUMNS`, sorted by provider and root."""
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    rows = [
+        _catalog_row(provider, root, coverages, quality_standing(paths.reports_dir, provider, root))
+        for (provider, root), coverages in _coverages_by_root(store).items()
+    ]
+    return pl.DataFrame(rows, schema=CATALOG_COLUMNS, orient="row").sort("provider", "root")
+
+
+def _coverages_by_root(store: Store) -> dict[tuple[str, str], dict[str, DatasetCoverage]]:
+    """The coverage of each dataset of trades, TBBO, or bars that holds partitions, by its
+    provider and root, then by its schema."""
+    by_root: dict[tuple[str, str], dict[str, DatasetCoverage]] = {}
+    held = (
+        dataset for dataset in store.list_datasets() if dataset.schema_name.kind in SESSION_KINDS
+    )
+    for dataset in held:
+        coverage = dataset_coverage(store, dataset)
+        if coverage is None:
+            continue
+        schemas = by_root.setdefault((dataset.provider, dataset.root), {})
+        schemas[str(dataset.schema_name)] = coverage
+    return by_root
+
+
+def _catalog_row(
+    provider: str, root: str, coverages: dict[str, DatasetCoverage], standing: QualityStanding
+) -> tuple[object, ...]:
+    contracts = {contract for coverage in coverages.values() for contract in coverage.contracts}
+    fidelities = [str(held) for held in Fidelity if str(held.schema_name()) in coverages]
+    return (
+        provider,
+        root,
+        len(contracts),
+        min(coverage.first_trade_date for coverage in coverages.values()),
+        max(coverage.last_trade_date for coverage in coverages.values()),
+        fidelities,
+        str(standing.status),
+        standing.checked_through,
+    )
 
 
 def _root_and_contract(symbol: str) -> tuple[str, str | None]:

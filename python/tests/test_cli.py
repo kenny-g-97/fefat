@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import date
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -126,3 +127,84 @@ def test_verifying_bars_of_a_store_without_them_prints_the_reason_and_exits_with
 
     assert code == 1
     assert "fefat: Expected trades or bars of ES in the store, got none" in capsys.readouterr().err
+
+
+def fixtures_in_the_data_folder() -> Path:
+    data = resolve_paths(os.environ).data_dir
+    shutil.copytree(ROOT / "fixtures" / "synthetic", data / "synthetic")
+    return data
+
+
+def test_the_data_catalog_prints_every_dataset_with_its_range_fidelities_and_quality(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixtures_in_the_data_folder()
+
+    code = main(["data", "catalog"])
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "synthetic BTCUSDT-PERP: 2026-03-07 to 2026-03-07, 1 contract, fidelities tick/1s/1m, "
+        "quality unchecked",
+        "synthetic ES: 2026-03-05 to 2026-03-09, 2 contracts, fidelities tick/1s/1m, "
+        "quality unchecked",
+    ]
+
+
+def test_the_catalog_of_an_empty_store_says_so_and_exits_with_0(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "catalog"])
+
+    assert code == 0
+    assert capsys.readouterr().out == f"No datasets in {resolve_paths(os.environ).data_dir}.\n"
+
+
+def test_quality_reports_of_clean_data_are_written_and_the_catalog_shows_them(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data = fixtures_in_the_data_folder()
+
+    code = main(["data", "quality"])
+
+    reports = data / "reports" / "synthetic"
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "Quality of synthetic BTCUSDT-PERP, 2026-03-07 to 2026-03-07: clean.",
+        f"Report: {reports / 'BTCUSDT-PERP' / 'quality.md'}",
+        "Quality of synthetic ES, 2026-03-05 to 2026-03-09: clean.",
+        f"Report: {reports / 'ES' / 'quality.md'}",
+    ]
+    main(["data", "catalog"])
+    assert capsys.readouterr().out.splitlines()[-1].endswith("quality clean through 2026-03-09")
+
+
+def test_a_quality_report_with_findings_prints_them_and_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The 101st trade of ESH2026 on 2026-03-05 repeated right after itself.
+    store = Store(fixtures_in_the_data_folder())
+    trades = Partition(
+        dataset=Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES"),
+        contract="ESH2026",
+        key=date(2026, 3, 5),
+    )
+    rows = store.scan_partition(trades).collect()
+    store.write_partition(trades, pl.concat([rows.head(101), rows.slice(100)]))
+
+    code = main(["data", "quality", "ES"])
+
+    assert code == 1
+    assert capsys.readouterr().out.splitlines()[:2] == [
+        "Quality of synthetic ES, 2026-03-05 to 2026-03-09: flagged, 1 finding.",
+        "  2026-03-05 duplicates in trades ESH2026: 1",
+    ]
+
+
+def test_a_quality_report_of_a_product_without_data_is_refused_and_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "quality", "ZZ"])
+
+    assert code == 1
+    assert "fefat: Expected trades or bars of ZZ in the store, got none" in capsys.readouterr().err
