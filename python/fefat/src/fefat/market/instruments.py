@@ -7,7 +7,8 @@ venue's symbol for crypto spot (`BTCUSDT`), and that symbol with `-PERP` for a p
 for `BTCUSDT`), in steps of `lot_step`; `point_value` is what one unit of quantity gains, in
 `currency`, when the price rises by 1. Each version holds from `valid_from` until the day
 before `valid_to` (open-ended without one), and a root's first version starts on the
-product's first trade date. `get("ES")` reads the static table below, where each version
+product's first trade date. A futures product's contracts end by its `last_trade_rule`
+(`fefat.market.last_trade_rules`). `get("ES")` reads the static table below, where each version
 names its sources. The contracts of a futures root are `fefat.market.contracts`; what a run
 pays per trade is `fefat.market.fees`, since a run names its fee table.
 """
@@ -20,8 +21,15 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
+from fefat.market.calendar import SessionTable
 from fefat.market.calendar_definition import CalendarId
-from fefat.market.layout import FolderName
+from fefat.market.last_trade_rules import (
+    BusinessDaysBeforeThe25th,
+    LastTradeRule,
+    ThirdFriday,
+    ThirdLastBusinessDay,
+)
+from fefat.market.layout import FolderName, YearMonth
 from fefat.market.schema import FrozenModel
 
 
@@ -43,7 +51,8 @@ class Currency(StrEnum):
 class Instrument(FrozenModel):
     """One version of a product's specification, in force from `valid_from` until the day
     before `valid_to`. `calendar_id` names its session calendar, one of the built-in
-    calendars of `fefat.market.builtin_calendars`."""
+    calendars of `fefat.market.builtin_calendars`; a futures product's contracts end by its
+    `last_trade_rule`, and spot pairs and perpetuals, which never expire, have none."""
 
     root: FolderName
     kind: InstrumentKind
@@ -52,6 +61,7 @@ class Instrument(FrozenModel):
     lot_step: Decimal = Field(gt=0)
     currency: Currency
     calendar_id: CalendarId
+    last_trade_rule: LastTradeRule | None
     valid_from: date
     valid_to: date | None
     sources: tuple[str, ...] = Field(min_length=1)
@@ -65,9 +75,29 @@ class Instrument(FrozenModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _futures_end_by_a_rule(self) -> Self:
+        futures = self.kind is InstrumentKind.FUTURES
+        if futures == (self.last_trade_rule is not None):
+            return self
+        expected = "a last trade rule" if futures else "no last trade rule"
+        raise ValueError(
+            f"Expected {expected} for the {self.kind} {self.root}, got {self.last_trade_rule!r}."
+        )
+
     def in_force_on(self, day: date) -> bool:
         """Whether this version applies on `day`."""
         return self.valid_from <= day and (self.valid_to is None or day < self.valid_to)
+
+    def last_trade_date(self, contract_month: YearMonth, sessions: SessionTable) -> date:
+        """The last trade date of the contract of `contract_month`, by the product's rule, in
+        the sessions of its calendar."""
+        if self.last_trade_rule is None:
+            raise ValueError(
+                f"Expected a futures product, whose contracts end by a rule, got the {self.kind} "
+                f"{self.root}, which never expires."
+            )
+        return self.last_trade_rule.last_trade_date(contract_month, sessions)
 
 
 class InstrumentTable(FrozenModel):
@@ -133,6 +163,7 @@ def _cme_futures(
     tick_size: str,
     point_value: str,
     calendar_id: CalendarId,
+    last_trade_rule: LastTradeRule,
     first_trade_date: date,
     sources: tuple[str, ...],
 ) -> Instrument:
@@ -144,6 +175,7 @@ def _cme_futures(
         lot_step=Decimal(1),
         currency=Currency.USD,
         calendar_id=calendar_id,
+        last_trade_rule=last_trade_rule,
         valid_from=first_trade_date,
         valid_to=None,
         sources=sources,
@@ -166,6 +198,7 @@ def _binance(
         lot_step=Decimal(lot_step),
         currency=Currency.USDT,
         calendar_id=CalendarId.CRYPTO_24X7,
+        last_trade_rule=None,
         valid_from=first_trade_date,
         valid_to=None,
         sources=sources,
@@ -176,6 +209,10 @@ _CME_SPECIFICATIONS = "https://www.cmegroup.com/markets"
 _MICRO_E_MINI_LAUNCH = (
     "https://www.cmegroup.com/media-room/press-releases/2019/5/07/"
     "micro_e-mini_futuresmakebigimpressiononfirstdayoftrading.html"
+)
+_MICRO_E_MINI_FAQ = (
+    "https://www.cmegroup.com/articles/faqs/"
+    "micro-e-mini-equity-index-futures-frequently-asked-questions.html"
 )
 _BINANCE_SPOT_SYMBOLS = "https://api.binance.com/api/v3/exchangeInfo"
 _BINANCE_SPOT_KLINES = "https://data.binance.vision/?prefix=data/spot/monthly/klines"
@@ -190,6 +227,7 @@ STATIC_TABLE = InstrumentTable(
             "0.25",
             "50",
             CalendarId.CME_EQUITY_INDEX,
+            ThirdFriday(),
             date(1997, 9, 9),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/sp/e-mini-sandp500.contractSpecs.html",
@@ -204,6 +242,7 @@ STATIC_TABLE = InstrumentTable(
             "0.25",
             "20",
             CalendarId.CME_EQUITY_INDEX,
+            ThirdFriday(),
             date(1999, 6, 21),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/nasdaq/e-mini-nasdaq-100.contractSpecs.html",
@@ -218,6 +257,7 @@ STATIC_TABLE = InstrumentTable(
             "0.01",
             "1000",
             CalendarId.CME_ENERGY,
+            BusinessDaysBeforeThe25th(business_days=3),
             date(1983, 3, 30),
             sources=(
                 f"{_CME_SPECIFICATIONS}/energy/crude-oil/light-sweet-crude.contractSpecs.html",
@@ -232,6 +272,7 @@ STATIC_TABLE = InstrumentTable(
             "0.10",
             "100",
             CalendarId.CME_METALS,
+            ThirdLastBusinessDay(),
             date(1974, 12, 31),
             sources=(
                 f"{_CME_SPECIFICATIONS}/metals/precious/gold.contractSpecs.html",
@@ -243,10 +284,12 @@ STATIC_TABLE = InstrumentTable(
             "0.25",
             "5",
             CalendarId.CME_EQUITY_INDEX,
+            ThirdFriday(),
             date(2019, 5, 6),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/sp/micro-e-mini-sandp-500.contractSpecs.html",
                 _MICRO_E_MINI_LAUNCH,
+                _MICRO_E_MINI_FAQ,
             ),
         ),
         _cme_futures(
@@ -254,10 +297,12 @@ STATIC_TABLE = InstrumentTable(
             "0.25",
             "2",
             CalendarId.CME_EQUITY_INDEX,
+            ThirdFriday(),
             date(2019, 5, 6),
             sources=(
                 f"{_CME_SPECIFICATIONS}/equities/nasdaq/micro-e-mini-nasdaq-100.contractSpecs.html",
                 _MICRO_E_MINI_LAUNCH,
+                _MICRO_E_MINI_FAQ,
             ),
         ),
         _cme_futures(
@@ -265,11 +310,13 @@ STATIC_TABLE = InstrumentTable(
             "0.01",
             "100",
             CalendarId.CME_ENERGY,
+            BusinessDaysBeforeThe25th(business_days=4),
             date(2021, 7, 12),
             sources=(
                 f"{_CME_SPECIFICATIONS}/energy/crude-oil/micro-wti-crude-oil.contractSpecs.html",
                 "https://www.cmegroup.com/education/articles-and-reports/"
                 "micro-wti-crude-oil-futures-faq.html",
+                "https://www.cftc.gov/filings/ptc/ptc060721nymexdcm001.pdf",
             ),
         ),
         _cme_futures(
@@ -277,11 +324,13 @@ STATIC_TABLE = InstrumentTable(
             "0.10",
             "10",
             CalendarId.CME_METALS,
+            ThirdLastBusinessDay(),
             date(2010, 10, 4),
             sources=(
                 f"{_CME_SPECIFICATIONS}/metals/precious/e-micro-gold.contractSpecs.html",
                 "https://www.cmegroup.com/media-room/press-releases/2010/9/09/"
                 "cme_group_announceslaunchofe-microgoldcontracts.html",
+                "https://www.cmegroup.com/rulebook/COMEX/1a/120.pdf",
             ),
         ),
         _binance(

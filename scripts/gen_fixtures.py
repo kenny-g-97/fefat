@@ -11,7 +11,10 @@ section 1.1, with this folder as the provider `synthetic`: Parquet with zstd,
 prices as int64 in 1e-9 units, timestamps as int64 nanoseconds UTC, laid out as
 `<schema>/root=…/contract=…/date=…/part.parquet` (1-minute bars per month as
 `month=…`). They hold three CME-like ES sessions across the start of US
-daylight saving on 2026-03-08 (the UTC open moves from 23:00 to 22:00), a 24x7
+daylight saving on 2026-03-08 (the UTC open moves from 23:00 to 22:00), traded by
+two contracts, `ESH2026` and `ESM2026`, whose volumes cross for the roll calendar
+of step 1.7 (June trades less than March on 2026-03-05, more on 03-06, and less
+again on 03-09, each session's trade chances scaled by `activity_scale`), a 24x7
 BTC perpetual-like UTC day, and the 1-second and 1-minute bars built from their
 trades the way section 1.4 builds bars: bucketed by `ts_recv` into
 `[t, t + width)` from the session open, sparse, with `ts_open`, `ts_close`,
@@ -19,15 +22,16 @@ the session's `trade_date` (the first hour of an ES session falls on the UTC
 day before its trade date), and the `vwap` rounded down to 1e-9 units. Each
 session also holds planted prints at the edges of bars (step 1.5): one received
 exactly on a minute boundary, 90 minutes after the open, one in the last 100 ms
-before the close, and, on ES's Friday 2026-03-06, one received 400 ms after the
+before the close, and, on ESH2026's Friday 2026-03-06, one received 400 ms after the
 close, which keeps that trade date in bars opening at the close, as the vendor's
 bars do (the importer of step 1.6 dates such prints the same way). A session
 opens and closes at local times of its product's time zone, as the calendar of
 `fefat.market.calendar` does: ES from
 17:00 Chicago the day before its trade date to 16:00 Chicago on it, BTC from
-00:00 UTC to 00:00 UTC the next day. The labels follow the SDK: the ES contract
-is `ESH2026` (root, month code, four-digit year, `fefat.market.contracts`) and
-the BTC root is the instrument key `BTCUSDT-PERP` (`fefat.market.instruments`).
+00:00 UTC to 00:00 UTC the next day. The labels follow the SDK: the ES contracts
+are `ESH2026` and `ESM2026` (root, month code, four-digit year,
+`fefat.market.contracts`) and the BTC root is the instrument key `BTCUSDT-PERP`
+(`fefat.market.instruments`).
 
 Trades carry `ts_recv`, `ts_event`, `instrument_id`, `price`, `size` (contracts
 for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
@@ -43,8 +47,9 @@ importer of step 1.6 reads one: the ES 1-minute bars as a DBN file (`ESH6`, inst
 skips, encoded by the vendor's own encoder; `metadata.json` with the query, `condition.json`
 with each day's condition (one degraded), and `manifest.json` with each other file's size and
 SHA-256, as Databento writes them. Each session draws from its own
-`random.Random`, seeded with "<seed>/<root>/<trade date>". Times and durations
-here are integer nanoseconds; instants count from the Unix epoch in UTC.
+`random.Random`, seeded with "<seed>/<contract>/<trade date>", so the two ES
+contracts draw different tapes. Times and durations here are integer
+nanoseconds; instants count from the Unix epoch in UTC.
 
 The same seed gives byte-identical files: the randomness uses `random.Random`
 draws, comparisons, and integer arithmetic only (no `gauss` or `expovariate`,
@@ -64,7 +69,7 @@ import json
 import random
 import sys
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from itertools import groupby
 from pathlib import Path
@@ -154,7 +159,8 @@ class ActivityWindow:
 
 @dataclass(frozen=True)
 class FixtureProduct:
-    """An instrument in the fixture set: its specification, its trading day, and its sessions."""
+    """An instrument in the fixture set: its specification, its trading day, and its sessions,
+    each with a factor on the trade chances of its activity windows (`activity_scale`)."""
 
     root: str
     contract: str
@@ -172,6 +178,17 @@ class FixtureProduct:
     opening_auction: bool
     opening_gap_ticks: int
     trade_dates: tuple[date, ...]
+    activity_scale: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        if len(self.activity_scale) != len(self.trade_dates):
+            raise ValueError(
+                f"Expected an activity factor for each of the {len(self.trade_dates)} trade dates "
+                f"of {self.contract}, got {len(self.activity_scale)}."
+            )
+
+    def scale_on(self, trade_date: date) -> float:
+        return self.activity_scale[self.trade_dates.index(trade_date)]
 
 
 ES = FixtureProduct(
@@ -207,6 +224,14 @@ ES = FixtureProduct(
     opening_auction=True,
     opening_gap_ticks=12,
     trade_dates=(date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)),
+    activity_scale=(1.0, 1.0, 1.0),
+)
+ES_JUNE = replace(
+    ES,
+    contract="ESM2026",
+    instrument_id=1003,
+    first_price_ticks=27_500,
+    activity_scale=(0.3, 1.5, 0.6),
 )
 BTC = FixtureProduct(
     root="BTCUSDT-PERP",
@@ -239,8 +264,9 @@ BTC = FixtureProduct(
     opening_auction=False,
     opening_gap_ticks=0,
     trade_dates=(date(2026, 3, 7),),
+    activity_scale=(1.0,),
 )
-PRODUCTS = (ES, BTC)
+PRODUCTS = (ES, ES_JUNE, BTC)
 
 
 @dataclass(frozen=True)
@@ -279,13 +305,14 @@ class Session:
         """Yield each 100 ms slot after the opening print with the chance of a trade in it."""
         first_slot = self.open_time() + SLOT_LENGTH
         last_slot = self.close_time() - QUIET_BEFORE_CLOSE
+        scale = self.product.scale_on(self.trade_date)
         for window in self.product.activity:
             window_start = self.open_time() + window.start_minute * NANOSECONDS_PER_MINUTE
             window_end = self.open_time() + window.end_minute * NANOSECONDS_PER_MINUTE
             for slot_start in range(
                 max(window_start, first_slot), min(window_end, last_slot), SLOT_LENGTH
             ):
-                yield slot_start, window.trade_chance
+                yield slot_start, window.trade_chance * scale
 
 
 class TapeRecorder:
@@ -511,14 +538,14 @@ def month_of(product: FixtureProduct) -> str:
 
 
 def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[str, str | int]]:
-    """Write a product's trades and 1-second bars per trade date, its 1-minute bars per month,
-    and the `dataset.json` of each of its datasets."""
+    """Write a contract's trades and 1-second bars per trade date and its 1-minute bars per
+    month."""
     entries: list[dict[str, str | int]] = []
     minute_bars: list[pa.Table] = []
     price_ticks = product.first_price_ticks
     for trade_date in product.trade_dates:
         session = Session(product, trade_date)
-        random_source = random.Random(f"{seed}/{product.root}/{trade_date.isoformat()}")
+        random_source = random.Random(f"{seed}/{product.contract}/{trade_date.isoformat()}")
         tape, price_ticks = simulate_session(
             session, random_source, opening_price_ticks(price_ticks, session, random_source)
         )
@@ -535,10 +562,6 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
     month = f"month={month_of(product)}"
     month_path = partition_path(out, "ohlcv-1m", product, month)
     entries.append(written_partition(pa.concat_tables(minute_bars), month_path, out, seed))
-    entries.extend(
-        written_dataset_metadata(product, schema, out, seed)
-        for schema in ("trades", "ohlcv-1s", "ohlcv-1m")
-    )
     return entries
 
 
@@ -720,6 +743,12 @@ def main(argv: Sequence[str]) -> int:
         for product in PRODUCTS
         for entry in written_product(product, arguments.out, arguments.seed)
     ]
+    one_product_a_root = {product.root: product for product in PRODUCTS}.values()
+    entries.extend(
+        written_dataset_metadata(product, schema, arguments.out, arguments.seed)
+        for product in one_product_a_root
+        for schema in ("trades", "ohlcv-1s", "ohlcv-1m")
+    )
     entries.extend(written_databento_batch(arguments.out, arguments.seed))
     write_manifest(arguments.out, entries)
     total_bytes = sum(int(entry["bytes"]) for entry in entries)

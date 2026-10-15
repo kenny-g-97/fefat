@@ -39,6 +39,9 @@ MONTH_CODES = "FGHJKMNQUVXZ"
 OUTRIGHT_SYMBOL = re.compile(f"([A-Z0-9]{{1,4}})([{MONTH_CODES}])([0-9])")
 """A CME Globex outright: its root, its month code, and the last digit of its year (`ESZ6`)."""
 
+CONTRACT_NAME = re.compile(f"([A-Z0-9]{{1,4}})([{MONTH_CODES}])([0-9]{{4}})")
+"""A contract as `Contract` writes it: its root, its month code, and its year (`ESZ2026`)."""
+
 OUTRIGHT_FUTURE = "F"
 """The `instrument_class` of an outright future in definition records; a spread's is `S`."""
 
@@ -102,6 +105,17 @@ class Contract(FrozenModel):
 
     def __str__(self) -> str:
         return f"{self.root}{MONTH_CODES[self.expiry.month - 1]}{self.expiry.year:04d}"
+
+
+def parse_contract_name(name: str) -> tuple[str, YearMonth]:
+    """The root and month of a contract written `ESZ2026`, as `Contract` writes it and the
+    store names its `contract=` folders."""
+    found = CONTRACT_NAME.fullmatch(name)
+    if found is None:
+        raise ValueError(
+            f"Expected a contract written <root><month code><four-digit year>, got {name!r}."
+        )
+    return found[1], YearMonth(year=int(found[3]), month=MONTH_CODES.index(found[2]) + 1)
 
 
 def is_outright(raw_symbol: str) -> bool:

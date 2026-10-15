@@ -12,14 +12,14 @@
       "generator": "scripts/gen_fixtures.py",
       "path": "databento-batch/GLBX-20260310-SYNTHETIC0/glbx-mdp3-20260304-20260309.ohlcv-1m.dbn",
       "seed": 20260308,
-      "sha256": "42be79d10f8fcf8321ad98435c3173d29c0e8b1baed517b620b9ab1b99c6f11f"
+      "sha256": "a74734f4d844d9ed16a0984713dc7b789ee8ef2764a657a191619c91f980f022"
     },
     {
       "bytes": 640,
       "generator": "scripts/gen_fixtures.py",
       "path": "databento-batch/GLBX-20260310-SYNTHETIC0/manifest.json",
       "seed": 20260308,
-      "sha256": "57526fb1d8f5e5eb9c19c4c74e110baee4df943475efe98c69a746dc5bd38716"
+      "sha256": "c9df282cf1a8c748f5f7616fc8f96ddc1064238a9c2d4970d9cea2571e94f3e8"
     },
     {
       "bytes": 536,
@@ -44,12 +44,20 @@
       "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
-      "bytes": 106868,
+      "bytes": 107085,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=ES/contract=ESH2026/month=2026-03/part.parquet",
       "rows": 4141,
       "seed": 20260308,
-      "sha256": "8c85d91e23dfdabac43460e6527fc16bed6fbc881d46aed60b331ce5af03a890"
+      "sha256": "ead715f6f1329e34184fe4135917e65565d8e41010ab1eebb5b1bc3d2c3dd122"
+    },
+    {
+      "bytes": 105333,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1m/root=ES/contract=ESM2026/month=2026-03/part.parquet",
+      "rows": 4114,
+      "seed": 20260308,
+      "sha256": "ddbb31f042bcbff39f7ed4850c6272e769edebb0e713d3f0501fc34860a7ff44"
     },
     {
       "bytes": 65,
@@ -74,28 +82,52 @@
       "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
-      "bytes": 474984,
+      "bytes": 481522,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-05/part.parquet",
-      "rows": 30590,
+      "rows": 30828,
       "seed": 20260308,
-      "sha256": "d32c85b6d1ff8139945225c98e50318c18d394668d2bc94e146969f6dd6cbcbd"
+      "sha256": "623b3fea51bb3864eebe43613ec8b0c2c80535fcdb31e3d43622d36579f84ad7"
     },
     {
-      "bytes": 473943,
+      "bytes": 476280,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-06/part.parquet",
-      "rows": 30635,
+      "rows": 31005,
       "seed": 20260308,
-      "sha256": "ce43b572620d6452a88f9bc78927accfee4a636e38f2f9b3cfcd157dc945ccac"
+      "sha256": "44996076498765ffcb13f0a050999e1886ec7430bdf56c2dcb7588afb8a17f67"
     },
     {
-      "bytes": 486277,
+      "bytes": 491071,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1s/root=ES/contract=ESH2026/date=2026-03-09/part.parquet",
-      "rows": 30666,
+      "rows": 30880,
       "seed": 20260308,
-      "sha256": "765ce0d5fd7ac121821a64650209d67ffc6777a2643c94ae1188251c5dfc0bf4"
+      "sha256": "f51bfb5f135f5f9af1eb07b3a3d7a27248e0894478a560b49cfbee20fe1ac672"
+    },
+    {
+      "bytes": 199905,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/contract=ESM2026/date=2026-03-05/part.parquet",
+      "rows": 12924,
+      "seed": 20260308,
+      "sha256": "30f0f74d7654d2b3b6cb19bd3f8fd7ff2ceea2819c840ae0315b2c94b5e0ca5a"
+    },
+    {
+      "bytes": 641581,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/contract=ESM2026/date=2026-03-06/part.parquet",
+      "rows": 38212,
+      "seed": 20260308,
+      "sha256": "9571778d11a007be5991fd017c2e8d9b0aa376ec6be54c2f5389b32b1765e853"
+    },
+    {
+      "bytes": 345140,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "ohlcv-1s/root=ES/contract=ESM2026/date=2026-03-09/part.parquet",
+      "rows": 22061,
+      "seed": 20260308,
+      "sha256": "100993528a5db7e30d82e4495620470431517c63b4bc5556ef8b7bf954745a94"
     },
     {
       "bytes": 65,
@@ -120,28 +152,52 @@
       "sha256": "9101486aab1d7b10b2099740a18f799855f0eca8533f740822b4260a11d69ea0"
     },
     {
-      "bytes": 1283956,
+      "bytes": 1287128,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet",
-      "rows": 71297,
+      "rows": 71549,
       "seed": 20260308,
-      "sha256": "c446c7c4118c0d8ce13d0ee0e9d9c1bfae28c13cc7ac6540260fce4c8af05161"
+      "sha256": "84ed49bc1894570b96b11390ccc433da83d12f23bc36512dc3e5e3332c2562dd"
     },
     {
-      "bytes": 1291942,
+      "bytes": 1292953,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=ES/contract=ESH2026/date=2026-03-06/part.parquet",
-      "rows": 71074,
+      "rows": 71906,
       "seed": 20260308,
-      "sha256": "eb266d1f5e954e2def0119752f8bf9467c5ffeb8c736f70d55204ca05fba5fec"
+      "sha256": "a6ba18889bd9bd0780b42e3add191697e16c6d2800ddf35f72c0e361853b973c"
     },
     {
-      "bytes": 1264739,
+      "bytes": 1272073,
       "generator": "scripts/gen_fixtures.py",
       "path": "trades/root=ES/contract=ESH2026/date=2026-03-09/part.parquet",
-      "rows": 70849,
+      "rows": 71586,
       "seed": 20260308,
-      "sha256": "f4f5b1d38238ae9a831a5ac4fea406e1f2f1f711909c3e71f67309ca4810b517"
+      "sha256": "6d0323c30e14164c461aa0e421ff58a7550dc2470294cbe180572a02f3e4b74d"
+    },
+    {
+      "bytes": 365505,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/contract=ESM2026/date=2026-03-05/part.parquet",
+      "rows": 21535,
+      "seed": 20260308,
+      "sha256": "cbe86ad394a8da443dc7d172957dd0cf7b80cda0f273cc5646728ee3eae4726f"
+    },
+    {
+      "bytes": 1876794,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/contract=ESM2026/date=2026-03-06/part.parquet",
+      "rows": 106822,
+      "seed": 20260308,
+      "sha256": "8b28cf8c3f4a48d6fe8bbbc036963c2aa009183f1d853ca535b60a69df69b5c2"
+    },
+    {
+      "bytes": 704384,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "trades/root=ES/contract=ESM2026/date=2026-03-09/part.parquet",
+      "rows": 42843,
+      "seed": 20260308,
+      "sha256": "08e94142d3f46412a2fdabe1a5ac9f300f8462290972a5abe1d8fef0ca6f8329"
     },
     {
       "bytes": 65,

@@ -118,7 +118,7 @@ def test_the_fixture_store_lists_each_synthetic_partition_with_its_size() -> Non
         path: entry["bytes"] for path, entry in MANIFEST_ENTRIES.items()
     }
     assert paths == sorted(paths)
-    assert len(paths) == 10
+    assert len(paths) == 17
 
 
 def test_a_store_whose_folder_does_not_exist_yet_lists_nothing_and_creates_nothing(
@@ -135,11 +135,29 @@ def test_a_request_reads_the_trades_of_its_dates_and_no_others() -> None:
         dataset=ES_TRADES.dataset, start=date(2026, 3, 5), end=date(2026, 3, 6)
     )
     expected_rows = sum(
-        MANIFEST_ENTRIES[partition.relative_path().as_posix()]["rows"]
-        for partition in (TRADES_OF_MARCH_5, TRADES_OF_MARCH_6)
+        MANIFEST_ENTRIES[f"synthetic/trades/root=ES/contract={contract}/date={day}/part.parquet"][
+            "rows"
+        ]
+        for contract in ("ESH2026", "ESM2026")
+        for day in ("2026-03-05", "2026-03-06")
     )
 
     assert FIXTURE_STORE.scan(request).collect().height == expected_rows
+
+
+def test_a_scan_of_contracts_labels_each_row_with_the_contract_of_its_partition() -> None:
+    request = PartitionRequest(
+        dataset=MINUTE_BARS_OF_MARCH.dataset, start=date(2026, 3, 6), end=date(2026, 3, 9)
+    )
+
+    labelled = FIXTURE_STORE.scan_contracts(request).collect()
+
+    assert_frame_equal(labelled.drop("contract"), FIXTURE_STORE.scan(request).collect())
+    assert labelled.columns[-1] == "contract"
+    assert labelled.select("contract", "instrument_id").unique().sort("contract").rows() == [
+        ("ESH2026", 1001),
+        ("ESM2026", 1003),
+    ]
 
 
 def test_a_scan_of_a_month_is_unchanged_when_later_trade_dates_join_it(tmp_path: Path) -> None:

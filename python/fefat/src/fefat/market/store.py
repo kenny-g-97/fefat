@@ -89,7 +89,20 @@ class Store:
         carry no trade date and come whole, for the reader to cut at `ts_recv`. Rows come file
         by file in path order (contract, then date): sort them before relying on time order.
         A run reads through `snapshot` and `read` instead."""
-        rows = pl.concat([self.scan_partition(file.partition) for file in self._selected(request)])
+        return self.scan_contracts(request).drop("contract")
+
+    def scan_contracts(self, request: PartitionRequest) -> pl.LazyFrame:
+        """`scan`'s rows with the `contract` of the partition each comes from as a last column,
+        since records name their instrument but not their contract (the roll calendar of
+        `fefat.market.continuous` reads them)."""
+        rows = pl.concat(
+            [
+                self.scan_partition(file.partition).with_columns(
+                    contract=pl.lit(file.partition.contract)
+                )
+                for file in self._selected(request)
+            ]
+        )
         return rows.filter(_within_the_dates(request))
 
     def has_partition(self, partition: Partition) -> bool:

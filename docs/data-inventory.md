@@ -23,6 +23,16 @@ Two batch jobs on the dataset `GLBX.MDP3`, schema `ohlcv-1m`, parent symbology i
 - Each product starts at its launch, not at the dataset's start: the first outrights in the metadata are MGCG1 (mapped from 2010-09-12), MCLF3 (2012-12-16), and MESH0 and MNQH0 (2019-04-14); the newest listings are MESZ7 and MNQZ7 (2026-09-06).
 - `condition.json`: 5,113 and 5,114 dates `available`, and the same 32 dates `degraded` in both jobs: 2014-06-11, 2014-06-12, 2014-06-13, 2014-06-15, 2014-09-22, 2014-09-23, 2014-09-24, 2014-09-25, 2017-11-13, 2018-10-21, 2019-01-15, 2019-02-22, 2019-03-13, 2019-03-26, 2020-02-27, 2020-02-28, 2020-05-05, 2020-06-30, 2020-07-01, 2021-12-05, 2022-01-02, 2024-09-18, 2025-09-17, 2025-09-24, 2025-11-28, 2026-01-31, 2026-03-15, 2026-03-16, 2026-03-21, 2026-04-10, 2026-05-24, 2026-08-29. The newest `last_modified_date` is 2026-09-23, after the vendor's re-normalisation of the CME history on 2026-08-08.
 
+## Databento symbology (2026-10-15)
+
+The vendor's continuous mapping `MES.v.0`, which you fetched once from the free `symbology.resolve` endpoint for step 1.7's roll check: dataset `GLBX.MDP3`, `stype_in` continuous, `stype_out` instrument_id, from 2019-05-05 to 2026-09-24.
+
+| File | Size | Holds |
+| --- | --- | --- |
+| `market_data\databento-symbology\MES.v.0.json` | 1,765 bytes | 31 intervals from 2019-05-03 to 2026-09-24, one front contract each |
+
+- Filed in the store as `raw/databento/symbology/GLBX.MDP3-MES.v.0.json`, with its SHA-256 in the raw manifest, where `fefat.market.continuous_check` reads it; the original stays in its folder.
+
 ## Not on this PC
 
 - Nothing else from Databento (confirmed at the kickoff): no ES, NQ, CL, or GC; no trades, TBBO, 1-second bars, definitions, or statistics.

@@ -15,7 +15,14 @@ from fefat.market.calendar_check import (
     SessionWithoutPrints,
     validate_calendar,
 )
-from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    Partition,
+    PartitionRequest,
+    SizeUnit,
+    YearMonth,
+)
 from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
 
@@ -39,7 +46,13 @@ def first_and_last(frame: pl.DataFrame, first: str, last: str) -> tuple[int, int
 
 
 def copied_fixtures(folder: Path) -> Store:
-    shutil.copytree(FIXTURES / "synthetic", folder / "synthetic")
+    """The fixtures with one ES contract, ESH2026, so that each edit of a test decides the
+    first and last prints of its root's trade dates."""
+    shutil.copytree(
+        FIXTURES / "synthetic",
+        folder / "synthetic",
+        ignore=shutil.ignore_patterns("contract=ESM2026"),
+    )
     return Store(folder)
 
 
@@ -47,20 +60,19 @@ MARCH_6 = date(2026, 3, 6)
 MARCH_6_SESSION = Session(trade_date=MARCH_6, open=utc(2026, 3, 5, 23), close=utc(2026, 3, 6, 22))
 
 
-def after_the_close_of_march_6() -> tuple[SessionMismatch, ...]:
-    """The fixtures' own mismatches: the print planted 400 ms after the close of ES's Friday
-    2026-03-06 keeps that trade date (step 1.5), so its trades, and its 1-second and 1-minute
-    bars opening at the close, print after the close."""
-    store = Store(FIXTURES)
+def after_the_close_of_march_6(store: Store) -> tuple[SessionMismatch, ...]:
+    """The fixtures' own mismatches in `store`: the print planted 400 ms after the close of
+    ESH2026's Friday 2026-03-06 keeps that trade date (step 1.5), so its trades, and its
+    1-second and 1-minute bars opening at the close, print after the close; the first print is
+    the earliest of the root's contracts."""
     found = []
-    for dataset, key in ((ES_MINUTES, YearMonth(year=2026, month=3)), (ES_SECONDS, MARCH_6)):
-        bars = store.scan_partition(Partition(dataset=dataset, contract="ESH2026", key=key))
-        first, last = first_and_last(
-            bars.filter(pl.col("trade_date") == MARCH_6).collect(), "ts_open", "ts_close"
-        )
-        found.append((dataset, first, last))
-    trades = store.scan_partition(Partition(dataset=ES_TRADES, contract="ESH2026", key=MARCH_6))
-    found.append((ES_TRADES, *first_and_last(trades.collect(), "ts_recv", "ts_recv")))
+    for dataset, first_column, last_column in (
+        (ES_MINUTES, "ts_open", "ts_close"),
+        (ES_SECONDS, "ts_open", "ts_close"),
+        (ES_TRADES, "ts_recv", "ts_recv"),
+    ):
+        rows = store.scan(PartitionRequest(dataset=dataset, start=MARCH_6, end=MARCH_6))
+        found.append((dataset, *first_and_last(rows.collect(), first_column, last_column)))
     return tuple(
         SessionMismatch(
             dataset=dataset,
@@ -77,12 +89,13 @@ def after_the_close_of_march_6() -> tuple[SessionMismatch, ...]:
 def test_the_synthetic_fixtures_match_their_calendars_but_for_a_print_after_a_close(
     tmp_path: Path,
 ) -> None:
-    # ES trades, 1-second bars, and 1-minute bars on three trade dates, and the same three
-    # schemas of BTCUSDT-PERP on one UTC day. The print received 400 ms after the close of
-    # 2026-03-06, at 22:00 UTC, ends that day's trades, a 1-second bar, and a 1-minute bar.
+    # ES trades, 1-second bars, and 1-minute bars of two contracts on three trade dates, and
+    # the same three schemas of BTCUSDT-PERP on one UTC day. The print ESH2026 received 400 ms
+    # after the close of 2026-03-06, at 22:00 UTC, ends that day's trades, a 1-second bar, and
+    # a 1-minute bar.
     report = validate_calendar(Store(FIXTURES), tmp_path)
 
-    mismatches = after_the_close_of_march_6()
+    mismatches = after_the_close_of_march_6(Store(FIXTURES))
     assert report == CalendarReport(days_checked=12, mismatches=mismatches)
     assert [mismatch.last_print for mismatch in mismatches] == [
         utc(2026, 3, 6, 22, 1),
@@ -114,7 +127,7 @@ def test_ticks_filed_under_another_trade_date_are_reported_with_their_times(
 
     assert report.days_checked == 13
     assert report.mismatches == (
-        *after_the_close_of_march_6(),
+        *after_the_close_of_march_6(store),
         *(
             SessionMismatch(
                 dataset=ES_TRADES,
