@@ -29,6 +29,7 @@ from typing import Any
 from fefat.config import FefatPaths, resolve_paths
 from fefat.market.api import catalog
 from fefat.market.bars_check import verify_bars
+from fefat.market.coverage import session_datasets
 from fefat.market.importers.databento import import_databento
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
@@ -128,11 +129,14 @@ def _catalog_line(row: dict[str, Any]) -> str:
 def report_the_quality(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     root: str | None = arguments.root
-    held = [
-        (row["provider"], row["root"])
-        for row in catalog().iter_rows(named=True)
-        if root is None or row["root"] == root
-    ]
+    datasets = session_datasets(Store(paths.data_dir))
+    held = sorted(
+        {
+            (dataset.provider, dataset.root)
+            for dataset in datasets
+            if root is None or dataset.root == root
+        }
+    )
     if not held:
         named = "any product" if root is None else root
         raise ValueError(f"Expected trades or bars of {named} in the store, got none.")

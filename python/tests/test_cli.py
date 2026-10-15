@@ -201,6 +201,24 @@ def test_a_quality_report_with_findings_prints_them_and_exits_with_1(
     ]
 
 
+def test_a_report_whose_columns_changed_is_written_again(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A report of an older version, whose tables lack today's columns, is no reason to refuse
+    # writing the new one.
+    stale = fixtures_in_the_data_folder() / "reports" / "synthetic" / "ES"
+    stale.mkdir(parents=True)
+    for table in ("days.parquet", "findings.parquet"):
+        pl.DataFrame({"trade_date": [date(2026, 3, 5)]}).write_parquet(stale / table)
+
+    code = main(["data", "quality", "ES"])
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "Quality of synthetic ES, 2026-03-05 to 2026-03-09: clean."
+    )
+
+
 def test_a_quality_report_of_a_product_without_data_is_refused_and_exits_with_1(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

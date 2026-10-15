@@ -190,10 +190,12 @@ def test_a_first_session_the_data_starts_inside_decides_no_front(
         (("ES", "1w", "2026-03-06", "2026-03-06"), "Expected a timeframe such as 1s, 5m"),
         (("ES", "1m", "2026-03-9", "2026-03-09"), "Expected the start as a date such as"),
         (("ES", "1m", "2026-03-09", "2026-03-06"), "Expected the start 2026-03-09 on or before"),
+        (("ES", "1m", datetime(2026, 3, 6, tzinfo=UTC), "2026-03-06"), "got the instant"),
+        (("ESZ2026", "1m", "2026-03-06", "2026-03-06"), "Expected bars of ESZ2026 from"),
     ],
 )
 def test_arguments_that_name_no_load_are_refused(
-    arguments: tuple[str, str, str, str], refusal: str
+    arguments: tuple[str, str, str | date, str | date], refusal: str
 ) -> None:
     with pytest.raises(ValueError, match=refusal):
         load(*arguments)
@@ -241,3 +243,18 @@ def test_the_catalog_shows_the_status_of_a_written_quality_report(
 def test_the_sdk_offers_the_data_api_as_ff_market() -> None:
     assert fefat.market.load is load
     assert fefat.market.catalog is catalog
+
+
+def test_bars_of_sessions_no_one_minute_bars_decide_the_front_of_are_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The copy's trades run to 2026-03-09 and its 1-minute bars stop with 03-06, so no front of
+    # 03-09 is decided: splicing would leave that session out.
+    store = Store(data_folder_with(monkeypatch, tmp_path, "trades", "ohlcv-1m"))
+    for file in store.list_partitions():
+        if str(file.partition.dataset.schema_name) == "ohlcv-1m":
+            rows = store.scan_partition(file.partition).collect()
+            store.write_partition(file.partition, rows.filter(pl.col("trade_date") <= MARCH_6))
+
+    with pytest.raises(ValueError, match="through 2026-03-09, got fronts through 2026-03-06"):
+        load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="tick")

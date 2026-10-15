@@ -30,6 +30,13 @@ class DatasetCoverage(FrozenModel):
     received_until: int
 
 
+def session_datasets(store: Store) -> tuple[Dataset, ...]:
+    """The store's datasets of trades, TBBO, and bars, sorted by folder."""
+    return tuple(
+        dataset for dataset in store.list_datasets() if dataset.schema_name.kind in SESSION_KINDS
+    )
+
+
 def dataset_coverage(store: Store, dataset: Dataset) -> DatasetCoverage | None:
     """The coverage of a dataset of trades, TBBO, or bars, read from its partitions at either
     end (all of them where its schema has no keys); None while it has no partition."""

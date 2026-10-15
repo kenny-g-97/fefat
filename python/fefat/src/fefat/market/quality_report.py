@@ -186,11 +186,13 @@ class QualityReport:
 
 def write_quality_report(report: QualityReport, reports_folder: Path) -> Path:
     """Write the report's two tables and its summary to `<reports_folder>/<provider>/<root>/`,
-    each file replaced in one step, and return the folder."""
+    each file replaced in one step, and return the folder. The findings go first, so that a
+    write cut short leaves the new status beside an older last trade date, never an older
+    status beside the new date."""
     folder = reports_folder / report.provider / report.root
     markdown = report.markdown().encode("utf-8")
-    write_atomically(folder / DAYS_FILE_NAME, report.days.write_parquet)
     write_atomically(folder / FINDINGS_FILE_NAME, report.findings.write_parquet)
+    write_atomically(folder / DAYS_FILE_NAME, report.days.write_parquet)
     write_atomically(folder / MARKDOWN_FILE_NAME, lambda temporary: temporary.write_bytes(markdown))
     return folder
 

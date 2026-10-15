@@ -1,8 +1,10 @@
+import hashlib
+import json
 import shutil
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import polars as pl
 import pytest
@@ -21,6 +23,7 @@ from fefat.market.quality_report import (
     quality_standing,
     write_quality_report,
 )
+from fefat.market.raw_manifest import BatchJob
 from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
 
@@ -248,6 +251,43 @@ def test_the_vendors_conditions_mark_the_trade_dates_their_days_touch(
     ]
     assert report.vendor_days == (ConditionDay(day=MARCH_6, condition=VendorCondition.DEGRADED),)
     assert report.days.get_column("bar_differences").null_count() == report.days.height
+
+
+def record_conditions(store: Store, folder: Path, job: str, *days: dict[str, str]) -> None:
+    """A second batch download's condition.json in the store, as the importer records it."""
+    content = json.dumps(list(days)).encode()
+    source = folder / f"{job}-condition.json"
+    source.write_bytes(content)
+    sha256 = hashlib.sha256(content).hexdigest()
+    path = PurePosixPath("databento", job, "condition.json")
+    store.write_raw_file(path, source, sha256)
+    store.record_raw_file(
+        path,
+        provider="databento",
+        vendor_version="revised 2026-03-09",
+        downloaded_on=date(2026, 3, 11),
+        batch_job=BatchJob(job_id=job, published_sha256=sha256),
+    )
+
+
+@pytest.mark.parametrize(
+    ("revised_on", "condition"), [("2026-03-09", "available"), ("2026-03-07", "degraded")]
+)
+def test_the_newest_revision_of_a_vendors_day_wins(
+    tmp_path: Path, cache: Path, revised_on: str, condition: str
+) -> None:
+    # The first batch marks 2026-03-06 degraded, revised on 03-08; a second batch marks it
+    # available, revised later or earlier than that.
+    store = Store(tmp_path / "data")
+    import_databento(BATCH, store, cache)
+    revision = {"date": "2026-03-06", "condition": "available", "last_modified_date": revised_on}
+    record_conditions(store, tmp_path, "GLBX-20260311-SYNTHETIC1", revision)
+
+    report = assess_quality(store, "databento", "ES", cache)
+
+    assert report.days.filter(pl.col("trade_date") == MARCH_6).item(0, "vendor_condition") == (
+        condition
+    )
 
 
 def test_the_vendors_days_outside_the_roots_sessions_are_not_listed(

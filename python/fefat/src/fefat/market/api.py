@@ -49,7 +49,7 @@ before it collects.
 """
 
 import os
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 import polars as pl
@@ -61,7 +61,7 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.contracts import parse_contract_name
-from fefat.market.coverage import SESSION_KINDS, DatasetCoverage, dataset_coverage
+from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.quality_report import QualityStanding, quality_standing
@@ -141,9 +141,15 @@ def load(
     source = _source(datasets, _fidelity(fidelity), bar_timeframe, root)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
-        return _signal_bars(_unspliced(gridded), first, last, ("contract", "ts_open"))
+        bars = _signal_bars(_unspliced(gridded), first, last, ("contract", "ts_open"))
+        if contract is not None and bars.is_empty():
+            raise ValueError(
+                f"Expected bars of {contract} from {first} to {last} in the store, got none."
+            )
+        return bars.lazy()
     calendar = _roll_calendar(store, datasets, instrument, sessions)
-    return _signal_bars(_spliced(gridded, calendar), first, last, ("ts_open",))
+    _require_fronts_for(gridded, calendar)
+    return _signal_bars(_spliced(gridded, calendar), first, last, ("ts_open",)).lazy()
 
 
 def catalog() -> pl.DataFrame:
@@ -162,10 +168,7 @@ def _coverages_by_root(store: Store) -> dict[tuple[str, str], dict[str, DatasetC
     """The coverage of each dataset of trades, TBBO, or bars that holds partitions, by its
     provider and root, then by its schema."""
     by_root: dict[tuple[str, str], dict[str, DatasetCoverage]] = {}
-    held = (
-        dataset for dataset in store.list_datasets() if dataset.schema_name.kind in SESSION_KINDS
-    )
-    for dataset in held:
+    for dataset in session_datasets(store):
         coverage = dataset_coverage(store, dataset)
         if coverage is None:
             continue
@@ -224,6 +227,10 @@ def _splices(instrument: Instrument, contract: str | None, continuous: bool | No
 
 
 def _trade_date(value: str | date, name: str) -> date:
+    if isinstance(value, datetime):
+        raise ValueError(
+            f"Expected the {name} as a date such as 2024-01-31, got the instant {value!r}."
+        )
     if isinstance(value, date):
         return value
     try:
@@ -247,11 +254,7 @@ def _fidelity(text: str) -> Fidelity | None:
 
 def _datasets_of(store: Store, root: str) -> dict[str, Dataset]:
     """The root's datasets of trades, TBBO, and bars by their schema, all from one provider."""
-    found = [
-        dataset
-        for dataset in store.list_datasets()
-        if dataset.root == root and dataset.schema_name.kind in SESSION_KINDS
-    ]
+    found = [dataset for dataset in session_datasets(store) if dataset.root == root]
     providers = sorted({dataset.provider for dataset in found})
     if len(providers) != 1:
         held = " and ".join(providers) if providers else "none"
@@ -292,8 +295,11 @@ def _gridded(
     contract: str | None,
 ) -> pl.DataFrame:
     """The bars of `timeframe` built from `source` on the session grid, with the columns of
-    `CONTRACT_BAR_COLUMNS`, from the session before `first`, so that the grid of `first` is
-    the same whatever day a window starts, to `last` and the end of the data."""
+    `CONTRACT_BAR_COLUMNS`, from the session before `first`, so that a contract that traded in
+    it has the same rows on `first` whatever day a window starts, up to `last` and the end of
+    the data."""
+    # shortcut: one session of lead-in, so a contract without trades in it starts its grid on
+    # `first` at its first bar; read back to each contract's last bar when a strategy needs it.
     lead_in = sessions.preceding(first).trade_date
     rows = store.scan_contracts(PartitionRequest(dataset=source, start=lead_in, end=last))
     if contract is not None:
@@ -346,6 +352,22 @@ def _roll_calendar(
     return volume_rolls(bars, sessions, instrument, received_until)
 
 
+def _require_fronts_for(gridded: pl.DataFrame, calendar: RollCalendar) -> None:
+    """Refuse bars of sessions after the roll calendar's last, whose fronts no 1-minute bars
+    decided, as finer data that runs past the 1-minute bars gives: splicing would drop them."""
+    decided = calendar.rows.get_column("trade_date")
+    beyond = gridded.get_column("trade_date")
+    if not decided.is_empty():
+        beyond = beyond.filter(beyond > decided.max())
+    if beyond.is_empty():
+        return
+    through = "no session" if decided.is_empty() else f"{decided.max()}"
+    raise ValueError(
+        f"Expected 1-minute bars of {calendar.root} that decide the front contracts through "
+        f"{beyond.max()}, got fronts through {through}."
+    )
+
+
 def _spliced(gridded: pl.DataFrame, calendar: RollCalendar) -> pl.DataFrame:
     """The front's grid rows of each session, adjusted (`RollCalendar.continuous_bars`), with
     `roll_flag` on the first bar of each new front on the trade date it rolled, whatever bars
@@ -370,7 +392,7 @@ def _unspliced(gridded: pl.DataFrame) -> pl.DataFrame:
 
 def _signal_bars(
     bars: pl.DataFrame, first: date, last: date, order: tuple[str, ...]
-) -> pl.LazyFrame:
+) -> pl.DataFrame:
     """The bars of the trade dates from `first` to `last`, with the columns of
     `SIGNAL_BAR_COLUMNS`, sorted by `order`."""
     return (
@@ -378,5 +400,4 @@ def _signal_bars(
         .with_columns(zero_volume=pl.col("volume") == 0)
         .select(SIGNAL_BAR_COLUMNS.names())
         .sort(*order)
-        .lazy()
     )

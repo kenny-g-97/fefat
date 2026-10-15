@@ -45,7 +45,7 @@ from fefat.market import instruments
 from fefat.market.bars_check import STORED_FROM_FINER, BarsReport, ComparedBars, verify_bars
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
-from fefat.market.coverage import SESSION_KINDS, DatasetCoverage, dataset_coverage
+from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
 from fefat.market.importers.databento import PROVIDER as DATABENTO
 from fefat.market.importers.databento import vendor_conditions
 from fefat.market.importers.report import ConditionDay, VendorCondition
@@ -68,6 +68,7 @@ _WORST_LAST = (
     VendorCondition.PENDING,
     VendorCondition.MISSING,
 )
+_SEVERITY = {str(condition): rank for rank, condition in enumerate(_WORST_LAST)}
 _DIFFERENCE_COLUMNS = pl.Schema(
     {"trade_date": pl.Date, "schema": pl.String, "instrument_id": pl.UInt32, "count": pl.Int64}
 )
@@ -106,10 +107,8 @@ def _covered_datasets(store: Store, provider: str, root: str) -> dict[Dataset, D
     their coverage; none is refused."""
     checked = (
         dataset
-        for dataset in store.list_datasets()
-        if dataset.provider == provider
-        and dataset.root == root
-        and dataset.schema_name.kind in SESSION_KINDS
+        for dataset in session_datasets(store)
+        if dataset.provider == provider and dataset.root == root
     )
     covered = {
         dataset: coverage
@@ -194,7 +193,8 @@ def _differences_on(
 
 def _vendor_days(store: Store, provider: str) -> pl.DataFrame:
     """The condition the vendor gives each UTC day of the provider's batch downloads, from
-    their `condition.json`; none for a provider that gives none."""
+    their `condition.json`, the newest revision of a day winning and the worse condition among
+    revisions of one date; none for a provider that gives none."""
     jobs = sorted(
         {
             file.batch_job.job_id
@@ -206,18 +206,23 @@ def _vendor_days(store: Store, provider: str) -> pl.DataFrame:
         return pl.DataFrame(schema=_VENDOR_DAY_COLUMNS)
     # shortcut: every batch's conditions apply to every root of the provider; read a batch's
     # products from its metadata.json when a provider's batches hold different products.
-    return pl.concat([vendor_conditions(store, job).select("date", "condition") for job in jobs])
+    revisions = pl.concat([vendor_conditions(store, job) for job in jobs])
+    severity = pl.col("condition").replace_strict(_SEVERITY, return_dtype=pl.Int8)
+    return (
+        revisions.sort("date", "last_modified_date", severity)
+        .unique(subset="date", keep="last", maintain_order=True)
+        .select("date", "condition")
+    )
 
 
 def _conditions(bounds: pl.DataFrame, vendor_days: pl.DataFrame) -> pl.DataFrame:
     """Each session's worst condition among the vendor's UTC days it touches, from its open to
     the next session's; sessions the vendor gives no day of are left out."""
-    severity = {str(condition): rank for rank, condition in enumerate(_WORST_LAST)}
     start = pl.col("date").cast(pl.Int64) * _DAY
     days = vendor_days.select(
         start=start,
         end=start + _DAY,
-        severity=pl.col("condition").replace_strict(severity, return_dtype=pl.Int8),
+        severity=pl.col("condition").replace_strict(_SEVERITY, return_dtype=pl.Int8),
     )
     worst = (
         bounds.select("trade_date", "open", "next_open")
