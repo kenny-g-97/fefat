@@ -64,3 +64,9 @@ def test_code_that_runs_before_any_fixture_sees_temporary_fefat_folders_too() ->
 
     assert temporary_folder in PATHS_WHEN_COLLECTED.home.parents
     assert temporary_folder in PATHS_WHEN_COLLECTED.data_dir.parents
+
+
+def test_the_quality_reports_live_in_the_data_folder(tmp_path: Path) -> None:
+    paths = resolve_paths({"FEFAT_DATA_DIR": str(tmp_path / "market-data")})
+
+    assert paths.reports_dir == tmp_path / "market-data" / "reports"

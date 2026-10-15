@@ -28,8 +28,10 @@ import polars as pl
 from pydantic import BaseModel, Field, ValidationError
 
 from fefat.market.layout import (
+    DATASET_METADATA_FILE_NAME,
     PARTITION_FILE_NAME,
     RAW_FOLDER_NAME,
+    RESERVED_FOLDERS,
     Dataset,
     DatasetMetadata,
     Partition,
@@ -47,6 +49,7 @@ from fefat.market.schema import (
     FrozenModel,
     SchemaKind,
     SchemaName,
+    parse_schema_name,
     polars_schema,
     require_columns,
 )
@@ -69,19 +72,28 @@ class Store:
     def __repr__(self) -> str:
         return f"Store({str(self._folder)!r})"
 
-    def list_partitions(self) -> tuple[PartitionFile, ...]:
-        """Every partition in the store with the size of its file, sorted by path; empty while
-        the folder does not exist."""
-        if not self._folder.is_dir():
-            return ()
-        providers = (
-            folder
-            for folder in self._folder.iterdir()
-            if folder.is_dir() and folder.name.lower() != RAW_FOLDER_NAME
-        )
+    def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
+        """Every partition in the store, or only `dataset`'s, with the size of its file, sorted
+        by path; empty while the folder does not exist."""
+        if dataset is not None:
+            return _sorted_by_path(self._partition_files(self._folder / dataset.relative_folder()))
         return _sorted_by_path(
-            file for provider in providers for file in self._partition_files(provider)
+            file for provider in self._providers() for file in self._partition_files(provider)
         )
+
+    def list_datasets(self) -> tuple[Dataset, ...]:
+        """Every dataset in the store, found by its `dataset.json` without listing its
+        partitions, sorted by folder."""
+        found = (
+            Dataset(
+                provider=provider.name,
+                schema_name=parse_schema_name(metadata.parent.parent.name),
+                root=metadata.parent.name.removeprefix("root="),
+            )
+            for provider in self._providers()
+            for metadata in provider.glob(f"*/root=*/{DATASET_METADATA_FILE_NAME}")
+        )
+        return tuple(sorted(found, key=lambda dataset: dataset.relative_folder().as_posix()))
 
     def scan(self, request: PartitionRequest) -> pl.LazyFrame:
         """The rows of the request's dataset on its trade dates, read lazily: trades and TBBO
@@ -256,6 +268,14 @@ class Store:
                 "of the raw manifest."
             )
         return file
+
+    def _providers(self) -> Iterator[Path]:
+        """The providers' folders: every folder of the store but `raw` and `reports`."""
+        if not self._folder.is_dir():
+            return
+        for folder in self._folder.iterdir():
+            if folder.is_dir() and folder.name.lower() not in RESERVED_FOLDERS:
+                yield folder
 
     def _partition_files(self, folder: Path) -> Iterator[PartitionFile]:
         for path in folder.rglob(PARTITION_FILE_NAME):

@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from fefat.market.schema import parse_schema_name, polars_schema
+from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name, polars_schema
 
 SCHEMA_NAMES = [
     "trades",
@@ -87,3 +87,23 @@ def test_a_schema_hands_out_a_copy_of_its_columns() -> None:
     polars_schema(trades)["extra"] = pl.Int64
 
     assert "extra" not in polars_schema(trades)
+
+
+@pytest.mark.parametrize(
+    ("text", "timeframe"),
+    [
+        ("1s", Timeframe(count=1, unit=TimeUnit.SECOND)),
+        ("5m", Timeframe(count=5, unit=TimeUnit.MINUTE)),
+        ("4h", Timeframe(count=4, unit=TimeUnit.HOUR)),
+        ("1d", Timeframe(count=1, unit=TimeUnit.DAY)),
+    ],
+)
+def test_a_timeframe_reads_back_as_written(text: str, timeframe: Timeframe) -> None:
+    assert Timeframe.parse(text) == timeframe
+    assert str(Timeframe.parse(text)) == text
+
+
+@pytest.mark.parametrize("text", ["", "5", "m", "05m", "0m", "5 m", "5min", "1w", "ohlcv-5m"])
+def test_text_that_names_no_timeframe_is_refused(text: str) -> None:
+    with pytest.raises(ValueError, match="Expected a timeframe such as 1s, 5m, 1h, or 1d"):
+        Timeframe.parse(text)

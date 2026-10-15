@@ -11,8 +11,8 @@ Trades, TBBO, and bars finer than a minute are split per trade date, one-minute 
 month of their trade dates, and coarser bars, definitions, statistics, and funding are one
 file per contract (`partitioning`). `dataset.json` holds what every partition of the dataset
 shares, such as the unit of its sizes. The folder `raw` beside the providers keeps the
-vendors' original files (`fefat.market.raw_manifest`). What the files hold is
-`fefat.market.schema`.
+vendors' original files (`fefat.market.raw_manifest`), and the folder `reports` the quality
+reports (`fefat.market.quality`). What the files hold is `fefat.market.schema`.
 """
 
 import re
@@ -24,6 +24,7 @@ from typing import Annotated, Self
 
 from pydantic import AfterValidator, Field, StringConstraints, model_validator
 
+from fefat.config import REPORTS_FOLDER_NAME
 from fefat.market.schema import (
     FrozenModel,
     RecordSchemaName,
@@ -35,6 +36,11 @@ from fefat.market.schema import (
 )
 
 RAW_FOLDER_NAME = "raw"
+RESERVED_FOLDERS = {
+    RAW_FOLDER_NAME: "the vendors' raw files",
+    REPORTS_FOLDER_NAME: "the quality reports",
+}
+"""The folders beside the providers that are no provider, with what each holds."""
 PARTITION_FILE_NAME = "part.parquet"
 DATASET_METADATA_FILE_NAME = "dataset.json"
 PARTITION_LAYOUT = (
@@ -43,11 +49,10 @@ PARTITION_LAYOUT = (
 )
 
 
-def _not_the_raw_folder(name: str) -> str:
-    if name.lower() == RAW_FOLDER_NAME:
-        raise ValueError(
-            f"Expected a provider, got {name!r}, the folder of the vendors' raw files."
-        )
+def _not_a_reserved_folder(name: str) -> str:
+    held = RESERVED_FOLDERS.get(name.lower())
+    if held is not None:
+        raise ValueError(f"Expected a provider, got {name!r}, the folder of {held}.")
     return name
 
 
@@ -57,8 +62,9 @@ FolderName = Annotated[
 """A provider, root, or contract as a folder name: letters and digits, with dots, dashes,
 and underscores inside (Windows drops a trailing dot, and the layout uses `/` and `=`)."""
 
-ProviderName = Annotated[FolderName, AfterValidator(_not_the_raw_folder)]
-"""A provider's folder name; `raw`, in any case, is the folder of the vendors' files."""
+ProviderName = Annotated[FolderName, AfterValidator(_not_a_reserved_folder)]
+"""A provider's folder name; `raw` and `reports`, in any case, are the folders of the vendors'
+files and of the quality reports."""
 
 
 class Partitioning(StrEnum):

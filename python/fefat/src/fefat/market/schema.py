@@ -56,6 +56,8 @@ class TimeUnit(StrEnum):
     DAY = "d"
 
 
+_TIMEFRAME_TEXT = "([1-9][0-9]*)([smhd])"
+"""A timeframe as schema names write it: a count without leading zeros and a unit."""
 _SECONDS_PER_TIME_UNIT = {
     TimeUnit.SECOND: 1,
     TimeUnit.MINUTE: 60,
@@ -72,6 +74,14 @@ class Timeframe(FrozenModel):
 
     def __str__(self) -> str:
         return f"{self.count}{self.unit}"
+
+    @classmethod
+    def parse(cls, text: str) -> Self:
+        """Read a timeframe written `<count><s|m|h|d>`, such as `5m`, as schema names write it."""
+        found = re.fullmatch(_TIMEFRAME_TEXT, text)
+        if found is None:
+            raise ValueError(f"Expected a timeframe such as 1s, 5m, 1h, or 1d, got {text!r}.")
+        return cls(count=int(found[1]), unit=TimeUnit(found[2]))
 
     def nominal_seconds(self) -> int:
         """The length in seconds, nominal for daily bars, whose sessions differ in length."""
@@ -113,7 +123,7 @@ class BarSchemaName(FrozenModel):
         return f"{SchemaKind.OHLCV}-{self.timeframe}"
 
 
-BAR_SCHEMA_NAME = re.compile(r"ohlcv-([1-9][0-9]*)([smhd])")
+BAR_SCHEMA_NAME = re.compile(f"ohlcv-{_TIMEFRAME_TEXT}")
 RECORD_KINDS = tuple(kind for kind in SchemaKind if kind is not SchemaKind.OHLCV)
 
 
