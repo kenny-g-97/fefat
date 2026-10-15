@@ -116,7 +116,7 @@ def compare_fronts(
     the columns of `CONTRACT_BAR_COLUMNS`."""
     require_columns(VENDOR_MAPPING_COLUMNS, mapping.schema, f"the mapping of {vendor_symbol}")
     require_columns(CONTRACT_BAR_COLUMNS, bars.schema, f"the bars compared with {vendor_symbol}")
-    named = _contracts_by_instrument(bars)
+    named = contracts_by_instrument(bars)
     vendor_days = (
         mapping.select(
             "instrument_id",
@@ -148,7 +148,7 @@ def compare_fronts(
     )
 
 
-def _contracts_by_instrument(bars: pl.DataFrame) -> pl.DataFrame:
+def contracts_by_instrument(bars: pl.DataFrame) -> pl.DataFrame:
     """The contract each instrument_id of `bars` names; one naming two is refused, since the
     vendor's mapping gives the instrument_id alone."""
     named = bars.select("instrument_id", "contract").unique()

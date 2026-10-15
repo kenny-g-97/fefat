@@ -165,14 +165,32 @@ def test_without_finer_data_auto_loads_the_one_minute_bars_and_tick_is_refused(
         load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="tick")
 
 
+def test_a_window_whose_front_opens_without_trades_fills_from_the_session_before(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The copy's bars of 2026-03-09 start 10 minutes after the open. A window starting that day
+    # reads the session before it too, so its first rows are the zero-volume buckets priced at
+    # ESM2026's last close of 03-06, as in a window that starts earlier.
+    store = Store(data_folder_with(monkeypatch, tmp_path, "ohlcv-1m"))
+    late_open = (pl.col("trade_date") != MARCH_9) | (pl.col("ts_open") >= utc(2026, 3, 8, 22, 10))
+    for file in store.list_partitions():
+        rows = store.scan_partition(file.partition).collect()
+        store.write_partition(file.partition, rows.filter(late_open))
+
+    whole = load("ES", "1m", "2026-03-05", "2026-03-09").collect()
+    one_day = load("ES", "1m", "2026-03-09", "2026-03-09").collect()
+
+    assert one_day.height == 1380
+    assert_frame_equal(one_day, whole.filter(pl.col("trade_date") == MARCH_9))
+
+
 def test_a_first_session_the_data_starts_inside_decides_no_front(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The copy's bars of 2026-03-05 start at 12:00 UTC, 13 hours after that session's open, so
     # its volumes are partial: the roll calendar starts from 03-06's bars, and its rows, which
     # run from the second session of the bars, from 03-09.
-    data = data_folder_with(monkeypatch, tmp_path, "ohlcv-1m")
-    store = Store(data)
+    store = Store(data_folder_with(monkeypatch, tmp_path, "ohlcv-1m"))
     for file in store.list_partitions():
         rows = store.scan_partition(file.partition).collect()
         store.write_partition(file.partition, rows.filter(pl.col("ts_open") >= utc(2026, 3, 5, 12)))
@@ -214,29 +232,33 @@ def test_a_root_under_two_providers_is_refused(
 
 
 @pytest.mark.usefixtures("fixtures_as_data")
-def test_the_catalog_lists_each_root_with_its_trade_dates_fidelities_and_quality() -> None:
+def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_quality() -> None:
     listed = catalog()
 
-    every_fidelity = ["tick", "1s", "1m"]
     march_7 = date(2026, 3, 7)
+    btc, es = ("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES")
     assert listed.schema == CATALOG_COLUMNS
     assert listed.rows() == [
-        ("synthetic", "BTCUSDT-PERP", 1, march_7, march_7, every_fidelity, "unchecked", None),
-        ("synthetic", "ES", 2, MARCH_5, MARCH_9, every_fidelity, "unchecked", None),
+        (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None),
+        (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None),
+        (*btc, "trades", "tick", 1, march_7, march_7, "unchecked", None),
+        (*es, "ohlcv-1m", "1m", 2, MARCH_5, MARCH_9, "unchecked", None),
+        (*es, "ohlcv-1s", "1s", 2, MARCH_5, MARCH_9, "unchecked", None),
+        (*es, "trades", "tick", 2, MARCH_5, MARCH_9, "unchecked", None),
     ]
 
 
 def test_the_catalog_shows_the_status_of_a_written_quality_report(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    data = data_folder_with(monkeypatch, tmp_path / "data", "ohlcv-1m")
-    report = assess_quality(Store(data), "synthetic", "ES", tmp_path / "cache")
-    write_quality_report(report, data / "reports")
+    store_folder = data_folder_with(monkeypatch, tmp_path / "store", "ohlcv-1m")
+    report = assess_quality(Store(store_folder), "synthetic", "ES", tmp_path / "cache")
+    write_quality_report(report, store_folder / "reports")
 
     listed = catalog().filter(pl.col("root") == "ES")
 
-    assert listed.select("fidelities", "quality", "checked_through").rows() == [
-        (["1m"], "clean", MARCH_9)
+    assert listed.select("schema", "fidelity", "quality", "checked_through").rows() == [
+        ("ohlcv-1m", "1m", "clean", MARCH_9)
     ]
 
 

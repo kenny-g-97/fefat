@@ -35,9 +35,10 @@ halt, from each contract's first bar in the range on, up to the end of the data,
 buckets not yet complete are held back (D-43); a print in the break after a close is in no
 row. A futures product (`MES`) is spliced by default into one forward-anchored series
 (`fefat.market.continuous`, D-44): each session's front contract, chosen by volume from the
-1-minute bars of the whole dataset, so that a window's fronts, prices, and roll flags never
-depend on where it starts, with `adj_offset` 0 for the dataset's first contract and moved by
-each roll's gap since. `continuous=False` gives every contract's own bars instead, each with
+1-minute bars of the whole dataset, so that a window's fronts and prices never depend on
+where it starts, with `adj_offset` 0 for the dataset's first contract and moved by each roll's
+gap since; the window is read from the session before its start, so that a front that traded
+there has the same first rows and roll flag as in a longer window. `continuous=False` gives every contract's own bars instead, each with
 `adj_offset` 0, sorted by contract; a contract (`MESH2024`) and a perpetual or spot pair load
 alone, and a continuous load of them is refused. A contract that stopped trading keeps its
 rows to `end`, as zero-volume bars, since the grid adds no row because of a later one.
@@ -60,6 +61,7 @@ from fefat.market.bars import build_bars, resample_bars, session_grid
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
+from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
 from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
 from fefat.market.instruments import Instrument, InstrumentKind
@@ -84,17 +86,19 @@ CATALOG_COLUMNS = pl.Schema(
     {
         "provider": pl.String,
         "root": pl.String,
+        "schema": pl.String,
+        "fidelity": pl.String,
         "contracts": pl.UInt32,
         "first_trade_date": pl.Date,
         "last_trade_date": pl.Date,
-        "fidelities": pl.List(pl.String),
         "quality": pl.String,
         "checked_through": pl.Date,
     }
 )
-"""The catalog's row per root and provider: how many contracts the store holds, its first
-and last trade date, the fidelities of `Fidelity` it holds, finest first, and the status of
-its quality report with the last trade date it checked, none while unchecked."""
+"""The catalog's row per dataset of trades, TBBO, or bars: its provider, root, and schema; its
+fidelity, `tick` for trades and TBBO, else the timeframe of its bars; how many contracts it
+holds; its first and last trade date; and the status of its root's quality report from its
+provider, with the last trade date the report checked, none while unchecked."""
 
 
 class Fidelity(StrEnum):
@@ -138,7 +142,7 @@ def load(
     # takes it; load by version when a root's calendar changes over time.
     sessions = sessions_of(BUILT_IN[instrument.calendar_id], paths.cache_dir)
     datasets = _datasets_of(store, root)
-    source = _source(datasets, _fidelity(fidelity), bar_timeframe, root)
+    source = _source(datasets, fidelity, bar_timeframe, root)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
         bars = _signal_bars(_unspliced(gridded), first, last, ("contract", "ts_open"))
@@ -153,42 +157,36 @@ def load(
 
 
 def catalog() -> pl.DataFrame:
-    """Every root the store holds trades or bars of, with each provider of them, in the
-    columns of `CATALOG_COLUMNS`, sorted by provider and root."""
+    """Every dataset of trades, TBBO, or bars the store holds, with the columns of
+    `CATALOG_COLUMNS`, sorted by provider, root, and schema."""
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     rows = [
-        _catalog_row(provider, root, coverages, quality_standing(paths.reports_dir, provider, root))
-        for (provider, root), coverages in _coverages_by_root(store).items()
+        _catalog_row(
+            dataset, coverage, quality_standing(paths.reports_dir, dataset.provider, dataset.root)
+        )
+        for dataset in session_datasets(store)
+        if (coverage := dataset_coverage(store, dataset)) is not None
     ]
-    return pl.DataFrame(rows, schema=CATALOG_COLUMNS, orient="row").sort("provider", "root")
-
-
-def _coverages_by_root(store: Store) -> dict[tuple[str, str], dict[str, DatasetCoverage]]:
-    """The coverage of each dataset of trades, TBBO, or bars that holds partitions, by its
-    provider and root, then by its schema."""
-    by_root: dict[tuple[str, str], dict[str, DatasetCoverage]] = {}
-    for dataset in session_datasets(store):
-        coverage = dataset_coverage(store, dataset)
-        if coverage is None:
-            continue
-        schemas = by_root.setdefault((dataset.provider, dataset.root), {})
-        schemas[str(dataset.schema_name)] = coverage
-    return by_root
+    return pl.DataFrame(rows, schema=CATALOG_COLUMNS, orient="row").sort(
+        "provider", "root", "schema"
+    )
 
 
 def _catalog_row(
-    provider: str, root: str, coverages: dict[str, DatasetCoverage], standing: QualityStanding
+    dataset: Dataset, coverage: DatasetCoverage, standing: QualityStanding
 ) -> tuple[object, ...]:
-    contracts = {contract for coverage in coverages.values() for contract in coverage.contracts}
-    fidelities = [str(held) for held in Fidelity if str(held.schema_name()) in coverages]
+    fidelity = str(Fidelity.TICK)
+    if isinstance(dataset.schema_name, BarSchemaName):
+        fidelity = str(dataset.schema_name.timeframe)
     return (
-        provider,
-        root,
-        len(contracts),
-        min(coverage.first_trade_date for coverage in coverages.values()),
-        max(coverage.last_trade_date for coverage in coverages.values()),
-        fidelities,
+        dataset.provider,
+        dataset.root,
+        str(dataset.schema_name),
+        fidelity,
+        len(coverage.contracts),
+        coverage.first_trade_date,
+        coverage.last_trade_date,
         str(standing.status),
         standing.checked_through,
     )
@@ -241,17 +239,6 @@ def _trade_date(value: str | date, name: str) -> date:
         ) from error
 
 
-def _fidelity(text: str) -> Fidelity | None:
-    """The fidelity named, or None for the finest the store holds."""
-    if text == AUTO:
-        return None
-    try:
-        return Fidelity(text)
-    except ValueError as error:
-        named = ", ".join(fidelity.value for fidelity in Fidelity)
-        raise ValueError(f"Expected a fidelity of {AUTO}, {named}, got {text!r}.") from error
-
-
 def _datasets_of(store: Store, root: str) -> dict[str, Dataset]:
     """The root's datasets of trades, TBBO, and bars by their schema, all from one provider."""
     found = [dataset for dataset in session_datasets(store) if dataset.root == root]
@@ -263,16 +250,12 @@ def _datasets_of(store: Store, root: str) -> dict[str, Dataset]:
 
 
 def _source(
-    datasets: dict[str, Dataset], fidelity: Fidelity | None, timeframe: Timeframe, root: str
+    datasets: dict[str, Dataset], fidelity: str, timeframe: Timeframe, root: str
 ) -> Dataset:
-    """The dataset of the fidelity named, or of the finest the store holds, whose data is no
-    coarser than `timeframe`."""
+    """The dataset of the fidelity named, or with `auto` of the finest the store holds, whose
+    data is no coarser than `timeframe`."""
     held = [held for held in Fidelity if str(held.schema_name()) in datasets]
-    if not held:
-        raise ValueError(f"Expected trades, 1-second, or 1-minute bars of {root}, got none.")
-    chosen = held[0] if fidelity is None else fidelity
-    if chosen not in held:
-        raise ValueError(f"Expected {chosen.records()} of {root} in the store, got none.")
+    chosen = _chosen_fidelity(fidelity, held, root)
     finest = chosen.schema_name()
     if (
         isinstance(finest, BarSchemaName)
@@ -283,6 +266,23 @@ def _source(
             f"got {timeframe}."
         )
     return datasets[str(finest)]
+
+
+def _chosen_fidelity(fidelity: str, held: list[Fidelity], root: str) -> Fidelity:
+    """The fidelity named, or with `auto` the finest of those `held`; one the store does not
+    hold is refused."""
+    if fidelity == AUTO and held:
+        return held[0]
+    if fidelity == AUTO:
+        raise ValueError(f"Expected trades, 1-second, or 1-minute bars of {root}, got none.")
+    try:
+        chosen = Fidelity(fidelity)
+    except ValueError as error:
+        named = ", ".join(choice.value for choice in Fidelity)
+        raise ValueError(f"Expected a fidelity of {AUTO}, {named}, got {fidelity!r}.") from error
+    if chosen not in held:
+        raise ValueError(f"Expected {chosen.records()} of {root} in the store, got none.")
+    return chosen
 
 
 def _gridded(
@@ -305,13 +305,13 @@ def _gridded(
     if contract is not None:
         rows = rows.filter(pl.col("contract") == contract)
     window = rows.collect()
+    contracts = contracts_by_instrument(window)
     coverage = dataset_coverage(store, source)
     if coverage is None:
         raise ValueError(f"Expected partitions of {source.relative_folder()}, got none.")
     received_until = min(sessions.following(last).open, coverage.received_until)
     bars = _bars_of(window.drop("contract"), source, timeframe, sessions, received_until)
     grid = session_grid(bars, timeframe, sessions, received_until, lead_in, last)
-    contracts = window.select("instrument_id", "contract").unique()
     return grid.join(contracts, on="instrument_id").select(CONTRACT_BAR_COLUMNS.names())
 
 

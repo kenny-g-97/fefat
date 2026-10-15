@@ -130,24 +130,25 @@ def test_verifying_bars_of_a_store_without_them_prints_the_reason_and_exits_with
 
 
 def fixtures_in_the_data_folder() -> Path:
-    data = resolve_paths(os.environ).data_dir
-    shutil.copytree(ROOT / "fixtures" / "synthetic", data / "synthetic")
-    return data
+    store_folder = resolve_paths(os.environ).data_dir
+    shutil.copytree(ROOT / "fixtures" / "synthetic", store_folder / "synthetic")
+    return store_folder
 
 
-def test_the_data_catalog_prints_every_dataset_with_its_range_fidelities_and_quality(
+def test_the_data_catalog_prints_every_dataset_with_its_range_fidelity_and_quality(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     fixtures_in_the_data_folder()
 
     code = main(["data", "catalog"])
 
+    btc = "synthetic BTCUSDT-PERP {}: 2026-03-07 to 2026-03-07, 1 contract, fidelity {}"
+    es = "synthetic ES {}: 2026-03-05 to 2026-03-09, 2 contracts, fidelity {}"
     assert code == 0
     assert capsys.readouterr().out.splitlines() == [
-        "synthetic BTCUSDT-PERP: 2026-03-07 to 2026-03-07, 1 contract, fidelities tick/1s/1m, "
-        "quality unchecked",
-        "synthetic ES: 2026-03-05 to 2026-03-09, 2 contracts, fidelities tick/1s/1m, "
-        "quality unchecked",
+        f"{dataset.format(schema, fidelity)}, quality unchecked"
+        for dataset in (btc, es)
+        for schema, fidelity in (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "tick"))
     ]
 
 
@@ -163,11 +164,11 @@ def test_the_catalog_of_an_empty_store_says_so_and_exits_with_0(
 def test_quality_reports_of_clean_data_are_written_and_the_catalog_shows_them(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    data = fixtures_in_the_data_folder()
+    store_folder = fixtures_in_the_data_folder()
 
     code = main(["data", "quality"])
 
-    reports = data / "reports" / "synthetic"
+    reports = store_folder / "reports" / "synthetic"
     assert code == 0
     assert capsys.readouterr().out.splitlines() == [
         "Quality of synthetic BTCUSDT-PERP, 2026-03-07 to 2026-03-07: clean.",

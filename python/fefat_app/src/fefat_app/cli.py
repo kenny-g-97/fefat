@@ -8,8 +8,8 @@
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
 rebuilds a trade date's bars from the finer data in the store and prints how they compare with
-the stored ones (`fefat.market.bars_check`); the third prints each product in the store with
-its trade dates, contracts, fidelities, and quality (`fefat.market.api.catalog`); the fourth
+the stored ones (`fefat.market.bars_check`); the third prints each dataset in the store with
+its trade dates, contracts, fidelity, and quality (`fefat.market.api.catalog`); the fourth
 writes the quality report of a product, or of every product, under `FEFAT_DATA_DIR/reports/`
 and prints its summary (`fefat.market.quality`). A command exits with 0 when it succeeds, and
 with 1 and the reason when it refuses its input; `verify-bars` also exits with 1 when it finds
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verify.set_defaults(run=verify_bars_of_a_trade_date)
     listing = data_commands.add_parser(
-        "catalog", help="list each product in the store with its coverage and quality"
+        "catalog", help="list each dataset in the store with its coverage and quality"
     )
     listing.set_defaults(run=print_the_catalog)
     quality = data_commands.add_parser(
@@ -116,14 +116,13 @@ def print_the_catalog(arguments: argparse.Namespace) -> int:
 
 def _catalog_line(row: dict[str, Any]) -> str:
     contracts: int = row["contracts"]
-    fidelities: list[str] = row["fidelities"]
     held = "1 contract" if contracts == 1 else f"{contracts:,} contracts"
-    named = "/".join(fidelities) if fidelities else "none"
     quality = f"quality {row['quality']}"
     if row["checked_through"] is not None:
         quality = f"{quality} through {row['checked_through']}"
+    dataset = f"{row['provider']} {row['root']} {row['schema']}"
     dates = f"{row['first_trade_date']} to {row['last_trade_date']}"
-    return f"{row['provider']} {row['root']}: {dates}, {held}, fidelities {named}, {quality}"
+    return f"{dataset}: {dates}, {held}, fidelity {row['fidelity']}, {quality}"
 
 
 def report_the_quality(arguments: argparse.Namespace) -> int:

@@ -29,7 +29,8 @@ def es_trades(contract: str, day: date) -> Partition:
 
 
 def test_a_datasets_coverage_runs_from_its_first_trade_date_to_its_last(tmp_path: Path) -> None:
-    last_trades = [FIXTURES.scan_partition(es_trades(c, MARCH_9)) for c in ("ESH2026", "ESM2026")]
+    contracts = ("ESH2026", "ESM2026")
+    last_trades = [FIXTURES.scan_partition(es_trades(contract, MARCH_9)) for contract in contracts]
     last_received = pl.concat(last_trades).select(pl.col("ts_recv").max()).collect().item()
 
     assert dataset_coverage(FIXTURES, es("ohlcv-1m")) == DatasetCoverage(
