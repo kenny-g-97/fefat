@@ -250,6 +250,26 @@ def test_the_vendors_conditions_mark_the_trade_dates_their_days_touch(
     assert report.days.get_column("bar_differences").null_count() == report.days.height
 
 
+def test_the_vendors_days_outside_the_roots_sessions_are_not_listed(
+    tmp_path: Path, cache: Path
+) -> None:
+    # A batch covers every product it holds from its first day: with the bars of 2026-03-09
+    # alone, whose session opens on Sunday 03-08, the degraded 03-06 touches none of them.
+    store = Store(tmp_path / "data")
+    import_databento(BATCH, store, cache)
+    minutes = Partition(
+        dataset=Dataset(provider="databento", schema_name=parse_schema_name("ohlcv-1m"), root="ES"),
+        contract="ESH2026",
+        key=YearMonth(year=2026, month=3),
+    )
+    rewrite(store, minutes, lambda bars: bars.filter(pl.col("trade_date") == MARCH_9))
+
+    report = assess_quality(store, "databento", "ES", cache)
+
+    assert report.vendor_days == ()
+    assert report.days.select("trade_date", "vendor_condition").rows() == [(MARCH_9, "available")]
+
+
 def test_bars_after_the_end_of_the_data_are_held_back_on_its_last_trade_date(
     tmp_path: Path, cache: Path
 ) -> None:

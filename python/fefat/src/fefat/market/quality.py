@@ -95,7 +95,7 @@ def assess_quality(store: Store, provider: str, root: str, cache_folder: Path) -
         root=root,
         contracts=tuple(sorted(contracts)),
         received_until=received_until,
-        vendor_days=_flagged(vendor_days),
+        vendor_days=_flagged(vendor_days, bounds),
         days=_days(bounds, records, differences, _conditions(bounds, vendor_days), received_until),
         findings=_findings(records, gaps(records, covered, bounds), differences),
     )
@@ -232,10 +232,17 @@ def _conditions(bounds: pl.DataFrame, vendor_days: pl.DataFrame) -> pl.DataFrame
     )
 
 
-def _flagged(vendor_days: pl.DataFrame) -> tuple[ConditionDay, ...]:
-    """The vendor's days other than available, in order."""
+def _flagged(vendor_days: pl.DataFrame, bounds: pl.DataFrame) -> tuple[ConditionDay, ...]:
+    """The vendor's days other than available that touch the sessions of `bounds`, in order: a
+    batch download covers every product it holds, from the first one's first day."""
+    first_open, last_open = bounds.select(pl.col("open").min(), pl.col("next_open").max()).row(0)
+    start = pl.col("date").cast(pl.Int64) * _DAY
     flagged = (
-        vendor_days.filter(pl.col("condition") != str(VendorCondition.AVAILABLE))
+        vendor_days.filter(
+            pl.col("condition") != str(VendorCondition.AVAILABLE),
+            start < last_open,
+            start + _DAY > first_open,
+        )
         .unique()
         .sort("date", "condition")
     )
