@@ -150,3 +150,9 @@ def test_a_request_that_ends_before_it_starts_is_refused() -> None:
         PartitionRequest(
             dataset=TRADES_OF_MARCH_5.dataset, start=date(2026, 3, 9), end=date(2026, 3, 5)
         )
+
+
+@pytest.mark.parametrize("provider", ["reports", "REPORTS", "Reports"])
+def test_reports_is_kept_for_the_quality_reports(provider: str) -> None:
+    with pytest.raises(ValueError, match="the folder of the quality reports"):
+        Dataset(provider=provider, schema_name=parse_schema_name("trades"), root="ES")

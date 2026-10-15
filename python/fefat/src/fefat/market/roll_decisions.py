@@ -79,10 +79,8 @@ def decision_grid(
         )
     first: date = traded.select(pl.col("trade_date").min()).item()
     last = _last_session_by(sessions, received_until)
-    in_range = sessions.between(first, last).select(
-        "trade_date",
-        session_open="open",
-        next_open=pl.col("open").shift(-1).fill_null(sessions.following(last).open),
+    in_range = sessions.between_with_next_opens(first, last).select(
+        "trade_date", "next_open", session_open="open"
     )
     _require_bars_closing_by_the_next_open(bars, in_range)
     contracts = _contracts(traded, instrument, sessions, sessions_before_expiry, last)

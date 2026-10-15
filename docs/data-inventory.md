@@ -33,6 +33,19 @@ The vendor's continuous mapping `MES.v.0`, which you fetched once from the free 
 
 - Filed in the store as `raw/databento/symbology/GLBX.MDP3-MES.v.0.json`, with its SHA-256 in the raw manifest, where `fefat.market.continuous_check` reads it; the original stays in its folder.
 
+## Quality reports (2026-10-15)
+
+`fefat data quality` writes each product's report under `data/reports/databento/<root>/` (`days.parquet`, `findings.parquet`, and `quality.md`, step 1.8), and `fefat data catalog` lists each dataset with its quality.
+
+| Root | Trade dates | Sessions | Contracts | Quality |
+| --- | --- | --- | --- | --- |
+| MES | 2019-05-06 to 2026-09-23 | 1,861 | 34 | clean |
+| MNQ | 2019-05-06 to 2026-09-23 | 1,861 | 34 | clean |
+| MCL | 2021-07-12 to 2026-09-23 | 1,308 | 84 | clean |
+| MGC | 2010-10-04 to 2026-09-23 | 4,021 | 106 | flagged: no 1-minute bars on 2014-09-23, 24, and 25, inside the vendor's degraded days, and 2014-12-31 |
+
+- Each file ends inside the session of trade date 2026-09-23, so its last session's buckets after the end are held back: 1,260 one-minute buckets for MES, MCL, and MGC, whose files end at 00:00 UTC, and 340 for MNQ, whose file ends at 15:20 UTC.
+
 ## Not on this PC
 
 - Nothing else from Databento (confirmed at the kickoff): no ES, NQ, CL, or GC; no trades, TBBO, 1-second bars, definitions, or statistics.

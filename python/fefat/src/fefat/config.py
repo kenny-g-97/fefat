@@ -20,6 +20,7 @@ HOME_VARIABLE = "FEFAT_HOME"
 DATA_DIR_VARIABLE = "FEFAT_DATA_DIR"
 DATA_FOLDER_NAME = "data"
 CACHE_FOLDER_NAME = "cache"
+REPORTS_FOLDER_NAME = "reports"
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,12 @@ class FefatPaths:
         """`<FEFAT_HOME>/cache`: what FEFAT can rebuild, such as the session tables, so the
         folder may be deleted at any time (`01-architecture.md` section 4)."""
         return self.home / CACHE_FOLDER_NAME
+
+    @property
+    def reports_dir(self) -> Path:
+        """`<FEFAT_DATA_DIR>/reports`: the quality reports of the market data beside it
+        (`fefat.market.quality`), which the store never reads as a provider."""
+        return self.data_dir / REPORTS_FOLDER_NAME
 
 
 def resolve_paths(environment: Mapping[str, str]) -> FefatPaths:

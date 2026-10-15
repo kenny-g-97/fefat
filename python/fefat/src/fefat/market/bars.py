@@ -169,11 +169,8 @@ def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable
     on."""
     dates = pl.col("trade_date")
     first, last = bars.select(first=dates.min(), last=dates.max()).row(0)
-    bounds = sessions.between(first, last).select(
-        "trade_date",
-        session_open="open",
-        session_close="close",
-        next_open=pl.col("open").shift(-1).fill_null(sessions.following(last).open),
+    bounds = sessions.between_with_next_opens(first, last).select(
+        "trade_date", "next_open", session_open="open", session_close="close"
     )
     joined = bars.join(bounds, on="trade_date", how="left", maintain_order="left")
     _require_their_sessions(joined)

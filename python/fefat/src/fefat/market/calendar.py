@@ -126,11 +126,30 @@ class SessionTable:
             )
         return Session.model_validate(found.row(0, named=True))
 
+    def preceding(self, trade_date: date) -> Session:
+        """The session of the last trade date before `trade_date`, whose break ends at the open
+        of `trade_date`'s session; none before the table's first is refused."""
+        found = self._sessions.filter(pl.col("trade_date") < trade_date).tail(1)
+        if found.is_empty():
+            raise ValueError(
+                f"Expected a trade date of {self._calendar.name} before {trade_date}, got none "
+                "in its session table."
+            )
+        return Session.model_validate(found.row(0, named=True))
+
     def between(self, first: date, last: date) -> pl.DataFrame:
         """The sessions of the trade dates from `first` to `last`, with the columns of
         `SESSION_COLUMNS`; dates outside the table's span are refused."""
         self._require_within_the_span(pl.Series([first, last], dtype=pl.Date))
         return self._sessions.filter(pl.col("trade_date").is_between(first, last))
+
+    def between_with_next_opens(self, first: date, last: date) -> pl.DataFrame:
+        """The sessions of `between`, each with `next_open`, the open of the session after it,
+        which ends the break in which a print still takes its trade date (D-43)."""
+        after_last = self.following(last).open
+        return self.between(first, last).with_columns(
+            next_open=pl.col("open").shift(-1).fill_null(after_last)
+        )
 
     def assign_trade_dates(self, frame: pl.DataFrame, column: str) -> pl.DataFrame:
         """`frame` sorted by `column`, an Int64 instant in nanoseconds since the Unix epoch, UTC,

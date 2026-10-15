@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
@@ -127,7 +128,48 @@ def test_a_store_whose_folder_does_not_exist_yet_lists_nothing_and_creates_nothi
     folder = tmp_path / "not-yet"
 
     assert Store(folder).list_partitions() == ()
+    assert Store(folder).list_datasets() == ()
     assert not folder.exists()
+
+
+def test_the_fixture_store_lists_its_datasets_from_their_folders() -> None:
+    folders = [dataset.relative_folder().as_posix() for dataset in FIXTURE_STORE.list_datasets()]
+
+    assert folders == [
+        "synthetic/ohlcv-1m/root=BTCUSDT-PERP",
+        "synthetic/ohlcv-1m/root=ES",
+        "synthetic/ohlcv-1s/root=BTCUSDT-PERP",
+        "synthetic/ohlcv-1s/root=ES",
+        "synthetic/trades/root=BTCUSDT-PERP",
+        "synthetic/trades/root=ES",
+    ]
+
+
+def test_listing_one_dataset_lists_its_partitions_and_no_others() -> None:
+    files = FIXTURE_STORE.list_partitions(ES_TRADES.dataset)
+
+    assert files == tuple(
+        file
+        for file in FIXTURE_STORE.list_partitions()
+        if file.partition.dataset == ES_TRADES.dataset
+    )
+    assert len(files) == 6
+
+
+def test_the_raw_and_reports_folders_beside_the_providers_hold_no_dataset(tmp_path: Path) -> None:
+    # A copy of the dataset's files under each folder, as if it were a provider.
+    store = store_with_the_es_trades(tmp_path)
+    for reserved in ("raw", "reports"):
+        for relative in (ES_TRADES.dataset.metadata_path(), TRADES_OF_MARCH_5.relative_path()):
+            copy = tmp_path / reserved / PurePosixPath(*relative.parts[1:])
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(tmp_path / relative, copy)
+
+    assert store.list_datasets() == (ES_TRADES.dataset,)
+    assert [file.partition for file in store.list_partitions()] == [
+        TRADES_OF_MARCH_5,
+        TRADES_OF_MARCH_6,
+    ]
 
 
 def test_a_request_reads_the_trades_of_its_dates_and_no_others() -> None:

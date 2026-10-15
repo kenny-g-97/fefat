@@ -1,5 +1,6 @@
 import os
 import shutil
+from datetime import date
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -126,3 +127,103 @@ def test_verifying_bars_of_a_store_without_them_prints_the_reason_and_exits_with
 
     assert code == 1
     assert "fefat: Expected trades or bars of ES in the store, got none" in capsys.readouterr().err
+
+
+def fixtures_in_the_data_folder() -> Path:
+    store_folder = resolve_paths(os.environ).data_dir
+    shutil.copytree(ROOT / "fixtures" / "synthetic", store_folder / "synthetic")
+    return store_folder
+
+
+def test_the_data_catalog_prints_every_dataset_with_its_range_fidelity_and_quality(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixtures_in_the_data_folder()
+
+    code = main(["data", "catalog"])
+
+    btc = "synthetic BTCUSDT-PERP {}: 2026-03-07 to 2026-03-07, 1 contract, fidelity {}"
+    es = "synthetic ES {}: 2026-03-05 to 2026-03-09, 2 contracts, fidelity {}"
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        f"{dataset.format(schema, fidelity)}, quality unchecked"
+        for dataset in (btc, es)
+        for schema, fidelity in (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "tick"))
+    ]
+
+
+def test_the_catalog_of_an_empty_store_says_so_and_exits_with_0(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "catalog"])
+
+    assert code == 0
+    assert capsys.readouterr().out == f"No datasets in {resolve_paths(os.environ).data_dir}.\n"
+
+
+def test_quality_reports_of_clean_data_are_written_and_the_catalog_shows_them(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store_folder = fixtures_in_the_data_folder()
+
+    code = main(["data", "quality"])
+
+    reports = store_folder / "reports" / "synthetic"
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "Quality of synthetic BTCUSDT-PERP, 2026-03-07 to 2026-03-07: clean.",
+        f"Report: {reports / 'BTCUSDT-PERP' / 'quality.md'}",
+        "Quality of synthetic ES, 2026-03-05 to 2026-03-09: clean.",
+        f"Report: {reports / 'ES' / 'quality.md'}",
+    ]
+    main(["data", "catalog"])
+    assert capsys.readouterr().out.splitlines()[-1].endswith("quality clean through 2026-03-09")
+
+
+def test_a_quality_report_with_findings_prints_them_and_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The 101st trade of ESH2026 on 2026-03-05 repeated right after itself.
+    store = Store(fixtures_in_the_data_folder())
+    trades = Partition(
+        dataset=Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES"),
+        contract="ESH2026",
+        key=date(2026, 3, 5),
+    )
+    rows = store.scan_partition(trades).collect()
+    store.write_partition(trades, pl.concat([rows.head(101), rows.slice(100)]))
+
+    code = main(["data", "quality", "ES"])
+
+    assert code == 1
+    assert capsys.readouterr().out.splitlines()[:2] == [
+        "Quality of synthetic ES, 2026-03-05 to 2026-03-09: flagged, 1 finding.",
+        "  2026-03-05 duplicates in trades ESH2026: 1",
+    ]
+
+
+def test_a_report_whose_columns_changed_is_written_again(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A report of an older version, whose tables lack today's columns, is no reason to refuse
+    # writing the new one.
+    stale = fixtures_in_the_data_folder() / "reports" / "synthetic" / "ES"
+    stale.mkdir(parents=True)
+    for table in ("days.parquet", "findings.parquet"):
+        pl.DataFrame({"trade_date": [date(2026, 3, 5)]}).write_parquet(stale / table)
+
+    code = main(["data", "quality", "ES"])
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "Quality of synthetic ES, 2026-03-05 to 2026-03-09: clean."
+    )
+
+
+def test_a_quality_report_of_a_product_without_data_is_refused_and_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "quality", "ZZ"])
+
+    assert code == 1
+    assert "fefat: Expected trades or bars of ZZ in the store, got none" in capsys.readouterr().err
