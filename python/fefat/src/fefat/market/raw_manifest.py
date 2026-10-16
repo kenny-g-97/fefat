@@ -1,8 +1,11 @@
 """The raw manifest: the vendors' original files under `raw`, which never change (ADR-0019).
 
 `raw/MANIFEST.json` lists each file with its path, size, and SHA-256, its provider, the
-vendor's version, the download date, and, for a vendor's batch download, the job id and the
-SHA-256 the vendor published. `Store.record_raw_file` keeps it.
+vendor's version, the download date, for a vendor's batch download the job id and the SHA-256
+the vendor published, and the day it was imported with the roots its records fed (step 1.9),
+which `fefat data status` reads as each product's last import. `Store.record_raw_file` keeps
+it. The import lives here rather than in `dataset.json`, which a snapshot pins, so that an
+import never changes a snapshot taken before it.
 """
 
 from datetime import date
@@ -11,7 +14,7 @@ from typing import Annotated, Self
 
 from pydantic import AfterValidator, Field, model_validator
 
-from fefat.market.layout import ProviderName
+from fefat.market.layout import FolderName, ProviderName
 from fefat.market.schema import FrozenModel
 from fefat.market.snapshot import Sha256
 
@@ -47,7 +50,9 @@ class BatchJob(FrozenModel):
 
 
 class RawFile(FrozenModel):
-    """A vendor's original file under `raw`, as the raw manifest records it."""
+    """A vendor's original file under `raw`, as the raw manifest records it: also the day it
+    was imported and the roots its records fed, none for a file of the vendor's that holds no
+    records, such as a batch's `condition.json`."""
 
     path: RawPath
     size_bytes: int = Field(ge=0)
@@ -56,6 +61,8 @@ class RawFile(FrozenModel):
     vendor_version: str = Field(min_length=1)
     downloaded_on: date
     batch_job: BatchJob | None
+    imported_on: date
+    roots: tuple[FolderName, ...]
 
 
 class RawManifest(FrozenModel):
@@ -78,3 +85,12 @@ class RawManifest(FrozenModel):
         """The manifest with one more file recorded."""
         files = sorted((*self.files, raw_file), key=lambda file: file.path)
         return type(self)(files=tuple(files))
+
+    def last_import(self, provider: str, root: str) -> date | None:
+        """The last day a file of `provider` whose records fed `root` was imported, if any was."""
+        days = [
+            file.imported_on
+            for file in self.files
+            if file.provider == provider and root in file.roots
+        ]
+        return max(days, default=None)

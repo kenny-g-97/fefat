@@ -85,13 +85,17 @@ def store_with_a_raw_file(folder: Path) -> Store:
     return Store(folder)
 
 
-def record(store: Store, vendor_version: str = "DBN 3") -> RawFile:
+def record(
+    store: Store, vendor_version: str = "DBN 3", imported_on: date = date(2026, 10, 13)
+) -> RawFile:
     return store.record_raw_file(
         RAW_PATH,
         provider="vendor",
         vendor_version=vendor_version,
         downloaded_on=date(2026, 9, 23),
         batch_job=JOB,
+        imported_on=imported_on,
+        roots=("ES", "MES"),
     )
 
 
@@ -416,6 +420,8 @@ def test_recording_a_raw_file_keeps_its_size_hash_and_vendor_details(tmp_path: P
         vendor_version="DBN 3",
         downloaded_on=date(2026, 9, 23),
         batch_job=JOB,
+        imported_on=date(2026, 10, 13),
+        roots=("ES", "MES"),
     )
     assert store.raw_manifest() == RawManifest(files=(recorded,))
     assert b"\r\n" not in manifest
@@ -448,7 +454,37 @@ def test_a_raw_file_recorded_again_with_other_details_is_refused(tmp_path: Path)
 
     with pytest.raises(ValueError, match="Expected the raw file"):
         record(store, vendor_version="DBN 2")
+    with pytest.raises(ValueError, match="Expected the raw file"):
+        record(store, imported_on=date(2026, 10, 16))
     assert store.raw_manifest() == RawManifest(files=(first,))
+
+
+def test_the_last_import_of_a_root_is_its_newest_file_from_the_provider() -> None:
+    def imported(path: str, provider: str, day: int, *roots: str) -> RawFile:
+        return RawFile(
+            path=path,
+            size_bytes=1,
+            sha256="0" * 64,
+            provider=provider,
+            vendor_version="DBN 3",
+            downloaded_on=date(2026, 9, 23),
+            batch_job=None,
+            imported_on=date(2026, 10, day),
+            roots=roots,
+        )
+
+    manifest = RawManifest(
+        files=(
+            imported("vendor/a.dbn", "vendor", 13, "ES", "MES"),
+            imported("vendor/b.dbn", "vendor", 15, "MES"),
+            imported("vendor/b.json", "vendor", 16),
+            imported("other/c.dbn", "other", 17, "ES"),
+        )
+    )
+
+    assert manifest.last_import("vendor", "ES") == date(2026, 10, 13)
+    assert manifest.last_import("vendor", "MES") == date(2026, 10, 15)
+    assert manifest.last_import("vendor", "MNQ") is None
 
 
 def test_recording_a_raw_file_that_does_not_exist_is_refused(tmp_path: Path) -> None:
@@ -481,6 +517,8 @@ def test_a_raw_path_that_leaves_the_raw_folder_or_names_the_manifest_is_refused(
             vendor_version="DBN 3",
             downloaded_on=date(2026, 9, 23),
             batch_job=None,
+            imported_on=date(2026, 10, 13),
+            roots=(),
         )
 
 
@@ -496,6 +534,8 @@ def test_another_name_of_the_raw_manifest_is_refused(tmp_path: Path) -> None:
             vendor_version="DBN 3",
             downloaded_on=date(2026, 9, 23),
             batch_job=None,
+            imported_on=date(2026, 10, 13),
+            roots=(),
         )
 
 

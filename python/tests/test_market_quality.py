@@ -252,7 +252,7 @@ def test_the_vendors_conditions_mark_the_trade_dates_their_days_touch(
     # date 03-06: it opens on 03-05 at 23:00 UTC and lasts until the next open, on Sunday. The
     # batch holds the vendor's 1-minute bars only, so no day is rebuilt.
     store = Store(tmp_path / "data")
-    import_databento(BATCH, store, cache)
+    import_databento(BATCH, store, cache, imported_on=date(2026, 10, 16))
 
     report = assess_quality(store, "databento", "ES", cache)
 
@@ -279,6 +279,8 @@ def record_conditions(store: Store, folder: Path, job: str, *days: dict[str, str
         vendor_version="revised 2026-03-09",
         downloaded_on=date(2026, 3, 11),
         batch_job=BatchJob(job_id=job, published_sha256=sha256),
+        imported_on=date(2026, 10, 16),
+        roots=(),
     )
 
 
@@ -291,7 +293,7 @@ def test_the_newest_revision_of_a_vendors_day_wins(
     # The first batch marks 2026-03-06 degraded, revised on 03-08; a second batch marks it
     # available, revised later or earlier than that.
     store = Store(tmp_path / "data")
-    import_databento(BATCH, store, cache)
+    import_databento(BATCH, store, cache, imported_on=date(2026, 10, 16))
     revision = {"date": "2026-03-06", "condition": "available", "last_modified_date": revised_on}
     record_conditions(store, tmp_path, "GLBX-20260311-SYNTHETIC1", revision)
 
@@ -308,7 +310,7 @@ def test_the_vendors_days_outside_the_roots_sessions_are_not_listed(
     # A batch covers every product it holds from its first day: with the bars of 2026-03-09
     # alone, whose session opens on Sunday 03-08, the degraded 03-06 touches none of them.
     store = Store(tmp_path / "data")
-    import_databento(BATCH, store, cache)
+    import_databento(BATCH, store, cache, imported_on=date(2026, 10, 16))
     minutes = Partition(
         dataset=Dataset(provider="databento", schema_name=parse_schema_name("ohlcv-1m"), root="ES"),
         contract="ESH2026",

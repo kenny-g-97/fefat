@@ -66,11 +66,12 @@ IMPORTED_MINUTES = Partition(
 ONE_MINUTE = int(RType.from_str("ohlcv-1m"))
 ONE_DAY = int(RType.from_str("ohlcv-1d"))
 ESH6 = [mapping("ESH6", 1001, date(2025, 3, 21), date(2026, 3, 21))]
+IMPORTED_ON = date(2026, 10, 16)
 
 
 def imported(folder: Path, source: Path = BATCH) -> tuple[Store, DatabentoImport]:
     store = Store(folder / "data")
-    return store, import_databento(source, store, folder / "cache")
+    return store, import_databento(source, store, folder / "cache", imported_on=IMPORTED_ON)
 
 
 def sha256_of(path: Path) -> str:
@@ -127,6 +128,8 @@ def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_pat
                 batch_job=None
                 if name == "manifest.json"
                 else BatchJob(job_id=JOB, published_sha256=published[name]),
+                imported_on=IMPORTED_ON,
+                roots=("ES",) if name == DATA_FILE else (),
             )
             for name in names
         )
@@ -204,7 +207,7 @@ def test_a_recorded_file_whose_bytes_changed_is_refused_with_both_hashes(tmp_pat
     recorded, changed = sha256_of(BATCH / DATA_FILE), sha256_of(data_file)
 
     with pytest.raises(ValueError, match=f"recorded with the SHA-256 {recorded}, got {changed}"):
-        import_databento(batch, store, tmp_path / "first" / "cache")
+        import_databento(batch, store, tmp_path / "first" / "cache", imported_on=IMPORTED_ON)
 
     assert store_files(tmp_path / "first" / "data") == before
 
@@ -485,15 +488,23 @@ def test_single_files_of_one_name_are_told_apart_by_their_content(tmp_path: Path
     store = Store(tmp_path / "data")
     name = "glbx-mdp3-20260309-20260309.ohlcv-1m.dbn"
 
-    import_databento(write_dbn(tmp_path / "es" / name, es_content), store, tmp_path / "cache")
+    es = write_dbn(tmp_path / "es" / name, es_content)
+    import_databento(es, store, tmp_path / "cache", imported_on=IMPORTED_ON)
     mes = import_databento(
-        write_dbn(tmp_path / "mes" / name, mes_content), store, tmp_path / "cache"
+        write_dbn(tmp_path / "mes" / name, mes_content),
+        store,
+        tmp_path / "cache",
+        imported_on=date(2026, 10, 17),
     )
-    again = import_databento(tmp_path / "es" / name, store, tmp_path / "cache")
+    again = import_databento(es, store, tmp_path / "cache", imported_on=date(2026, 10, 18))
 
     assert [file.partition.dataset.root for file in store.list_partitions()] == ["ES", "MES"]
     assert mes.files[0].contracts[0].contract == "MESH2026"
     assert again.already_imported == (f"databento/{hashlib.sha256(es_content).hexdigest()}/{name}",)
+    assert {file.roots: file.imported_on for file in store.raw_manifest().files} == {
+        ("ES",): IMPORTED_ON,
+        ("MES",): date(2026, 10, 17),
+    }
 
 
 def test_bars_a_minute_apart_are_one_minute_long(tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ import argparse
 import os
 import sys
 from collections.abc import Callable, Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -99,7 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
 def import_databento_files(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     source: Path = arguments.path
-    report = import_databento(source, Store(paths.data_dir), paths.cache_dir)
+    today = datetime.now(UTC).date()
+    report = import_databento(source, Store(paths.data_dir), paths.cache_dir, imported_on=today)
     print(report.summary())
     return EXIT_OK
 

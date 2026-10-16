@@ -225,8 +225,11 @@ class Store:
         vendor_version: str,
         downloaded_on: date,
         batch_job: BatchJob | None,
+        imported_on: date,
+        roots: tuple[str, ...],
     ) -> RawFile:
-        """Record a vendor's file under `raw` in the raw manifest, with its size and SHA-256.
+        """Record a vendor's file under `raw` in the raw manifest, with its size and SHA-256,
+        the day it was imported, and the roots its records fed.
 
         Recording the same file again changes nothing. Raw files are immutable, so a recorded
         file whose bytes or details changed is refused: a vendor's re-normalised history
@@ -241,6 +244,8 @@ class Store:
             vendor_version=vendor_version,
             downloaded_on=downloaded_on,
             batch_job=batch_job,
+            imported_on=imported_on,
+            roots=roots,
         )
         manifest = self.raw_manifest()
         recorded = manifest.file_at(relative)

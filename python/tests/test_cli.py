@@ -1,6 +1,6 @@
 import os
 import shutil
-from datetime import date
+from datetime import UTC, date, datetime
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -33,6 +33,17 @@ def test_a_databento_import_prints_its_summary_into_the_data_folder_and_exits_wi
     assert code == 0
     assert printed.startswith(f"Imported 1 file from {BATCH}.\n")
     assert len(Store(resolve_paths(os.environ).data_dir).list_partitions()) == 1
+
+
+def test_a_databento_import_records_today_as_the_import_date_of_its_files() -> None:
+    before = datetime.now(UTC).date()
+
+    main(["data", "import", "databento", str(BATCH)])
+
+    after = datetime.now(UTC).date()
+    files = Store(resolve_paths(os.environ).data_dir).raw_manifest().files
+    assert len(files) == 4
+    assert all(before <= file.imported_on <= after for file in files)
 
 
 def test_a_second_import_of_the_same_batch_says_there_is_nothing_to_import(
