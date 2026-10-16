@@ -1,15 +1,24 @@
+import hashlib
 import os
 import shutil
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from importlib.metadata import entry_points
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import polars as pl
 import pytest
 
 from fefat.config import resolve_paths
-from fefat.market.layout import Dataset, Partition, YearMonth
-from fefat.market.schema import parse_schema_name
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    SizeUnit,
+    YearMonth,
+)
+from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 from fefat_app.cli import main
@@ -281,3 +290,149 @@ def test_the_source_guide_names_the_presets_of_databento_and_ninjatrader(
     assert "\nDatabento, vendor\n" in f"\n{printed}"
     assert "    databento (available): Databento DBN batch download." in printed
     assert "    ninjatrader (planned): NinjaTrader 8 export." in printed
+
+
+CATALOG_LINE = "Catalog version 1: MES, MNQ, MCL, MGC."
+MISSING = [
+    f"{root}: missing; Databento is its first recommended source"
+    for root in ("MES", "MNQ", "MCL", "MGC")
+]
+
+
+def one_minute_bar_on(store: Store, root: str, contract: str, trade_date: date) -> None:
+    """A dataset of `root` from Databento holding one 1-minute bar of `contract`."""
+    dataset = Dataset(provider="databento", schema_name=parse_schema_name("ohlcv-1m"), root=root)
+    store.write_dataset_metadata(
+        dataset,
+        DatasetMetadata(
+            size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+            origin=DatasetOrigin.IMPORT,
+            licence_scope=SOURCE_GUIDE.source("databento").licence_scope,
+        ),
+    )
+    bar = pl.DataFrame(
+        {"ts_open": [0], "ts_close": [60_000_000_000], "trade_date": [trade_date], "instrument_id": [1], "open": [1], "high": [1], "low": [1], "close": [1], "volume": [1], "trade_count": [None], "vwap": [None]},
+        schema=polars_schema(dataset.schema_name),
+    )  # fmt: skip
+    month = YearMonth(year=trade_date.year, month=trade_date.month)
+    store.write_partition(Partition(dataset=dataset, contract=contract, key=month), bar)
+
+
+def imported_on_october_13(store: Store, folder: Path, *roots: str) -> None:
+    """A Databento file in the raw manifest, imported on 2026-10-13, that fed `roots`."""
+    source = folder / "bars.dbn"
+    source.write_bytes(b"bars")
+    path = PurePosixPath("databento", "job", "bars.dbn")
+    store.write_raw_file(path, source, hashlib.sha256(b"bars").hexdigest())
+    store.record_raw_file(
+        path,
+        provider="databento",
+        vendor_version="DBN 3",
+        downloaded_on=date(2026, 9, 23),
+        batch_job=None,
+        imported_on=date(2026, 10, 13),
+        roots=roots,
+    )
+
+
+def test_the_status_of_an_empty_store_lists_every_catalog_product_as_missing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "status"])
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [CATALOG_LINE, *MISSING]
+
+
+def test_the_status_reads_complete_at_1_minute_fidelity_for_bars_from_each_launch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = Store(resolve_paths(os.environ).data_dir)
+    launches = (
+        ("MES", "MESM2019", date(2019, 5, 6)),
+        ("MNQ", "MNQM2019", date(2019, 5, 6)),
+        ("MCL", "MCLU2021", date(2021, 7, 12)),
+        ("MGC", "MGCZ2010", date(2010, 10, 4)),
+    )
+    for root, contract, launch in launches:
+        one_minute_bar_on(store, root, contract, launch)
+    imported_on_october_13(store, tmp_path, "MCL", "MES", "MGC", "MNQ")
+
+    code = main(["data", "status"])
+
+    assert code == 0
+    assert capsys.readouterr().out.splitlines() == [
+        CATALOG_LINE,
+        *(
+            f"{root} databento ohlcv-1m: {launch} to {launch}, complete at 1-minute fidelity, "
+            "last import 2026-10-13, quality unchecked"
+            for root, _, launch in launches
+        ),
+    ]
+
+
+def test_the_status_reads_partial_for_bars_from_after_a_launch(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = Store(resolve_paths(os.environ).data_dir)
+    one_minute_bar_on(store, "MES", "MESU2019", date(2019, 6, 3))
+
+    main(["data", "status"])
+
+    assert capsys.readouterr().out.splitlines()[1] == (
+        "MES databento ohlcv-1m: 2019-06-03 to 2019-06-03, partial at 1-minute fidelity, the "
+        "history starts on 2019-05-06, no import record, quality unchecked"
+    )
+
+
+def test_the_status_lists_the_fixtures_as_unlisted_with_their_quality_verdicts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def unlisted(checked: bool) -> list[str]:
+        return [
+            f"{root} synthetic {schema}: {first} to {last}, not in the catalog, {fidelity} "
+            f"fidelity, no import record, quality {f'clean through {last}' if checked else 'unchecked'}"
+            for root, first, last in (
+                ("BTCUSDT-PERP", "2026-03-07", "2026-03-07"),
+                ("ES", "2026-03-05", "2026-03-09"),
+            )
+            for schema, fidelity in (
+                ("ohlcv-1m", "1-minute"),
+                ("ohlcv-1s", "1-second"),
+                ("trades", "tick"),
+            )
+        ]
+
+    fixtures_in_the_data_folder()
+
+    main(["data", "status"])
+    before = capsys.readouterr().out.splitlines()
+    main(["data", "quality"])
+    capsys.readouterr()
+    main(["data", "status"])
+    after = capsys.readouterr().out.splitlines()
+
+    assert before == [CATALOG_LINE, *MISSING, *unlisted(checked=False)]
+    assert after == [CATALOG_LINE, *MISSING, *unlisted(checked=True)]
+
+
+def test_a_report_older_than_its_data_reads_stale_in_the_status_and_the_catalog(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = Store(fixtures_in_the_data_folder())
+    main(["data", "quality", "ES"])
+    trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
+    march_9 = Partition(dataset=trades, contract="ESH2026", key=date(2026, 3, 9))
+    march_10 = Partition(dataset=trades, contract="ESH2026", key=date(2026, 3, 10))
+    store.write_partition(march_10, store.scan_partition(march_9).collect())
+    capsys.readouterr()
+
+    main(["data", "status"])
+    status = capsys.readouterr().out.splitlines()
+    main(["data", "catalog"])
+    listed = capsys.readouterr().out.splitlines()
+
+    stale = "quality stale, checked through 2026-03-09"
+    assert status[-1].startswith("ES synthetic trades: 2026-03-05 to 2026-03-10")
+    assert status[-1].endswith(stale)
+    assert listed[-1].endswith(stale)

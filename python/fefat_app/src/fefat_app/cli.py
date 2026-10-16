@@ -5,6 +5,7 @@
     fefat data catalog
     fefat data quality [<root>]
     fefat data sources
+    fefat data status
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -14,7 +15,9 @@ its trade dates, contracts, fidelity, and quality (`fefat.market.api.catalog`); 
 writes the quality report of a product, or of every product, under `FEFAT_DATA_DIR/reports/`
 and prints its summary (`fefat.market.quality`); the fifth prints the source guide, each
 known source with what it offers, its cost and terms, and the presets that read its files
-(`fefat.market.sources`). A command exits with 0 when it succeeds, and
+(`fefat.market.sources`); the sixth prints each product of the catalog with its datasets,
+their coverage and fidelity, last import, and quality, then the datasets of other products
+(`fefat.market.status`). A command exits with 0 when it succeeds, and
 with 1 and the reason when it refuses its input; `verify-bars` also exits with 1 when it finds
 bars that differ, or nothing to compare, and `quality` when a report holds findings. A command
 line that names no command, or a date that is no date, exits with 2 and the usage, as
@@ -32,11 +35,13 @@ from typing import Any
 from fefat.config import FefatPaths, resolve_paths
 from fefat.market.api import catalog
 from fefat.market.bars_check import verify_bars
+from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
 from fefat.market.importers.databento import import_databento
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
 from fefat.market.sources import SOURCE_GUIDE, Source
+from fefat.market.status import CoverageStatus, fidelity_in_words, product_status
 from fefat.market.store import Store
 
 EXIT_OK = 0
@@ -93,6 +98,10 @@ def build_parser() -> argparse.ArgumentParser:
         "sources", help="list the known data sources, their costs and terms, and their presets"
     )
     guide.set_defaults(run=print_the_source_guide)
+    status = data_commands.add_parser(
+        "status", help="list each catalog product with its coverage, last import, and quality"
+    )
+    status.set_defaults(run=print_the_status)
     return parser
 
 
@@ -126,12 +135,17 @@ def print_the_catalog(arguments: argparse.Namespace) -> int:
 def _catalog_line(row: dict[str, Any]) -> str:
     contracts: int = row["contracts"]
     held = "1 contract" if contracts == 1 else f"{contracts:,} contracts"
-    quality = f"quality {row['quality']}"
-    if row["checked_through"] is not None:
-        quality = f"{quality} through {row['checked_through']}"
     dataset = f"{row['provider']} {row['root']} {row['schema']}"
     dates = f"{row['first_trade_date']} to {row['last_trade_date']}"
-    return f"{dataset}: {dates}, {held}, fidelity {row['fidelity']}, {quality}"
+    return f"{dataset}: {dates}, {held}, fidelity {row['fidelity']}, {_quality(row)}"
+
+
+def _quality(row: dict[str, Any]) -> str:
+    if row["quality"] == QualityStatus.STALE:
+        return f"quality stale, checked through {row['checked_through']}"
+    if row["checked_through"] is None:
+        return f"quality {row['quality']}"
+    return f"quality {row['quality']} through {row['checked_through']}"
 
 
 def report_the_quality(arguments: argparse.Namespace) -> int:
@@ -187,3 +201,30 @@ def _source_block(source: Source) -> str:
         *(["  Presets:", *presets] if presets else ["  Presets: none yet"]),
     ]
     return "\n".join(lines)
+
+
+def print_the_status(arguments: argparse.Namespace) -> int:
+    paths = resolve_paths(os.environ)
+    status = product_status(Store(paths.data_dir), paths.reports_dir, CATALOG)
+    header = f"Catalog version {CATALOG.version}: {', '.join(CATALOG.roots())}."
+    print("\n".join([header, *(_status_line(row) for row in status.iter_rows(named=True))]))
+    return EXIT_OK
+
+
+def _status_line(row: dict[str, Any]) -> str:
+    coverage = CoverageStatus(row["coverage"])
+    if coverage is CoverageStatus.MISSING:
+        source: str = row["recommended_source"]
+        return f"{row['root']}: missing; {source} is its first recommended source"
+    fidelity = f"{fidelity_in_words(row['fidelity'])} fidelity"
+    held = {
+        CoverageStatus.COMPLETE: f"complete at {fidelity}",
+        CoverageStatus.PARTIAL: f"partial at {fidelity}, the history starts on "
+        f"{row['history_from']}",
+        CoverageStatus.UNLISTED: f"not in the catalog, {fidelity}",
+    }[coverage]
+    last_import = row["last_import"]
+    imported = "no import record" if last_import is None else f"last import {last_import}"
+    dataset = f"{row['root']} {row['provider']} {row['schema']}"
+    dates = f"{row['first_trade_date']} to {row['last_trade_date']}"
+    return f"{dataset}: {dates}, {held}, {imported}, {_quality(row)}"
