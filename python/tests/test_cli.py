@@ -269,7 +269,7 @@ def test_the_source_guide_prints_each_source_with_its_offer_cost_terms_and_prese
             f"  Offers: {source.offers}",
             f"  Cost: {source.cost}",
             f"  Terms: {source.terms}",
-            f"  Terms page: {'none published' if source.terms_url is None else source.terms_url}",
+            f"  Terms page: {'none published' if source.terms_page is None else source.terms_page}",
             "  Your own account or files in a desktop app: "
             f"{source.desktop_use.verdict()}. {source.desktop_use_note}",
             f"  Licence scope: {source.licence_scope}",

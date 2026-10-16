@@ -104,6 +104,21 @@ def test_an_imported_dataset_records_its_origin_and_databento_s_licence_scope(
     )
 
 
+def test_the_licence_scope_comes_from_the_guide_the_import_is_given(tmp_path: Path) -> None:
+    reworded = tuple(
+        source.model_copy(update={"licence_scope": "Reworded terms"})
+        if source.id == "databento"
+        else source
+        for source in SOURCE_GUIDE.sources
+    )
+    guide = SOURCE_GUIDE.model_copy(update={"sources": reworded})
+    store = Store(tmp_path / "data")
+
+    import_databento(BATCH, store, tmp_path / "cache", imported_on=IMPORTED_ON, guide=guide)
+
+    assert store.dataset_metadata(IMPORTED_MINUTES.dataset).licence_scope == "Reworded terms"
+
+
 def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_path: Path) -> None:
     store, report = imported(tmp_path)
 

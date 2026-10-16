@@ -1,12 +1,14 @@
+import re
 import sys
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 import fefat.market
 from fefat.market.api import catalog
 from fefat.market.builtin_calendars import BUILT_IN
-from fefat.market.catalog import CATALOG, RollRule, parse_catalog
+from fefat.market.catalog import CATALOG, RollRule, load_catalog, parse_catalog
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.sources import SOURCE_GUIDE
 
@@ -54,12 +56,9 @@ def test_each_product_s_history_starts_at_its_launch() -> None:
         assert product.history_from == STATIC_TABLE.first_trade_date(product.root)
 
 
-def test_a_product_is_found_by_its_root() -> None:
-    mes = CATALOG.product("MES")
-
-    assert mes is not None
-    assert "ohlcv-1m" in [str(schema) for schema in mes.schemas]
-    assert CATALOG.product("ES") is None
+def test_each_product_lists_the_schemas_of_its_sources_with_the_1_minute_bars() -> None:
+    for product in CATALOG.products:
+        assert "ohlcv-1m" in [str(schema) for schema in product.schemas]
 
 
 @pytest.mark.parametrize(
@@ -75,7 +74,10 @@ def test_a_product_is_found_by_its_root() -> None:
             "Expected the history of MES from 2019-05-06, when it began trading, or later, "
             "got 2019-05-03",
         ),
-        (("[databento, kibot]", "[databento, nowhere]"), "Expected a source of the guide"),
+        (
+            ("[databento, kibot]", "[databento, nowhere]"),
+            "Expected the sources of MES in the guide, got nowhere, which it lacks",
+        ),
         (("roll_rule: volume", "roll_rule: settlement"), "Input should be 'volume'"),
         (("[trades, ohlcv-1m]", "[quotes]"), "Expected a schema name"),
         (("version: 1", "version: 0"), "Input should be greater than or equal to 1"),
@@ -94,6 +96,26 @@ def test_a_catalog_listing_a_product_twice_is_refused() -> None:
         ValueError, match="Expected each product listed once, got MES more than once"
     ):
         parse_catalog(twice)
+
+
+@pytest.mark.parametrize(
+    ("change", "refusal"),
+    [
+        (("calendar: cme-equity-index", "calendar: cme-energy"), "Expected the calendar of MES"),
+        (("products:\n", "products: [\n"), "while parsing a flow"),
+    ],
+)
+def test_a_catalog_file_that_breaks_a_rule_is_refused_with_its_path(
+    tmp_path: Path, change: tuple[str, str], refusal: str
+) -> None:
+    path = tmp_path / "catalog.yaml"
+    path.write_text(ONE_PRODUCT.replace(*change), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=f"(?s)Expected {re.escape(str(path))} to hold the product catalog, got: .*{refusal}",
+    ):
+        load_catalog(path)
 
 
 def test_a_catalog_written_as_its_schema_is_read() -> None:

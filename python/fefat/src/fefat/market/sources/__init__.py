@@ -25,7 +25,7 @@ from fefat.market.schema import FrozenModel
 
 GUIDE_FILE_NAME = "sources.yaml"
 
-HttpsUrl = Annotated[str, Field(pattern=r"^https://\S+$")]
+WebPage = Annotated[str, Field(pattern=r"^https://\S+$")]
 """A web page's address, over HTTPS."""
 
 
@@ -74,7 +74,7 @@ class Preset(FrozenModel):
 
 
 class Source(FrozenModel):
-    """A source of market data as the guide describes it; `terms_url` is null where the source
+    """A source of market data as the guide describes it; `terms_page` is null where the source
     publishes no terms page, and `licence_scope` is copied into every dataset imported from it."""
 
     id: FolderName
@@ -83,7 +83,7 @@ class Source(FrozenModel):
     offers: str = Field(min_length=1)
     cost: str = Field(min_length=1)
     terms: str = Field(min_length=1)
-    terms_url: HttpsUrl | None
+    terms_page: WebPage | None
     desktop_use: DesktopUse
     desktop_use_note: str = Field(min_length=1)
     licence_scope: str = Field(min_length=1)
@@ -138,7 +138,14 @@ def parse_source_guide(text: str) -> SourceGuide:
     return SourceGuide.model_validate(yaml.safe_load(text))
 
 
-SOURCE_GUIDE = parse_source_guide(
-    Path(__file__).with_name(GUIDE_FILE_NAME).read_text(encoding="utf-8")
-)
+def load_source_guide(path: Path) -> SourceGuide:
+    """The source guide in the YAML file at `path`, validated; a file that is no guide is
+    refused with its path."""
+    try:
+        return parse_source_guide(path.read_text(encoding="utf-8"))
+    except (ValueError, yaml.YAMLError) as error:
+        raise ValueError(f"Expected {path} to hold the source guide, got: {error}") from error
+
+
+SOURCE_GUIDE = load_source_guide(Path(__file__).with_name(GUIDE_FILE_NAME))
 """The source guide FEFAT ships, read from `sources.yaml` beside this module."""

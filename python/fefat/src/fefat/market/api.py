@@ -129,7 +129,8 @@ def load(
 
 def catalog() -> pl.DataFrame:
     """Every dataset of trades, TBBO, or bars the store holds, with the columns of
-    `CATALOG_COLUMNS`, sorted by provider, root, and schema."""
+    `CATALOG_COLUMNS`, sorted by provider, root, and schema; an empty store gives no rows, and
+    `ff.market.CATALOG.version` the catalog's version whatever the store holds."""
     paths = resolve_paths(os.environ)
     datasets = dataset_status(Store(paths.data_dir), paths.reports_dir)
     return datasets.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))

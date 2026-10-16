@@ -54,7 +54,7 @@ from fefat.market.instruments import STATIC_TABLE, InstrumentTable
 from fefat.market.layout import DatasetMetadata, DatasetOrigin
 from fefat.market.raw_manifest import BatchJob
 from fefat.market.schema import parse_schema_name
-from fefat.market.sources import SOURCE_GUIDE
+from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
 PROVIDER = "databento"
@@ -155,7 +155,12 @@ class _DataFileImporter:
     cache folder and naming their contracts within the instrument table."""
 
     def __init__(
-        self, store: Store, cache_folder: Path, instruments: InstrumentTable, imported_on: date
+        self,
+        store: Store,
+        cache_folder: Path,
+        instruments: InstrumentTable,
+        imported_on: date,
+        guide: SourceGuide,
     ) -> None:
         self._store = store
         self._cache_folder = cache_folder
@@ -164,7 +169,7 @@ class _DataFileImporter:
         self._metadata = DatasetMetadata(
             size_unit=CONTRACT_SIZE,
             origin=DatasetOrigin.IMPORT,
-            licence_scope=SOURCE_GUIDE.source_of_preset(PROVIDER).licence_scope,
+            licence_scope=guide.source_of_preset(PROVIDER).licence_scope,
         )
 
     def imported(
@@ -205,11 +210,13 @@ def import_databento(
     *,
     imported_on: date,
     instruments: InstrumentTable = STATIC_TABLE,
+    guide: SourceGuide = SOURCE_GUIDE,
 ) -> DatabentoImport:
     """Import a Databento batch-download folder or a single DBN file into `store`, with the
     session tables built in `cache_folder`, recording `imported_on` as the day its files were
-    imported, and report what was imported."""
-    importer = _DataFileImporter(store, cache_folder, instruments, imported_on)
+    imported and the licence scope of Databento's entry in `guide`, and report what was
+    imported."""
+    importer = _DataFileImporter(store, cache_folder, instruments, imported_on, guide)
     if source.is_dir():
         return _import_batch(_batch(source), store, importer)
     if source.is_file():

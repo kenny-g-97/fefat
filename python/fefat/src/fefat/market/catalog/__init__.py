@@ -8,7 +8,7 @@ sources supply, the day its history starts, and the sources of the guide
 The catalog is `catalog.yaml` beside this module, and its `version` grows with each change:
 
     from fefat.market.catalog import CATALOG
-    CATALOG.product("MES").history_from
+    CATALOG.roots()
 
 The data API's `catalog()`, `ff.market.catalog()`, lists the datasets in the store; import this
 package's names with `from fefat.market.catalog import ...`, since `import fefat.market.catalog
@@ -68,8 +68,13 @@ class CatalogProduct(FrozenModel):
                 f"Expected the history of {self.root} from {first_trade_date}, when it began "
                 f"trading, or later, got {self.history_from}."
             )
-        for source in self.sources:
-            guide.source(source)
+        known = {source.id for source in guide.sources}
+        unknown = [source for source in self.sources if source not in known]
+        if unknown:
+            raise ValueError(
+                f"Expected the sources of {self.root} in the guide, got {', '.join(unknown)}, "
+                "which it lacks."
+            )
 
 
 class Catalog(FrozenModel):
@@ -92,10 +97,6 @@ class Catalog(FrozenModel):
         """The products' roots, in catalog order."""
         return tuple(product.root for product in self.products)
 
-    def product(self, root: str) -> CatalogProduct | None:
-        """The product of this root, or None when the catalog does not list it."""
-        return next((product for product in self.products if product.root == root), None)
-
 
 def parse_catalog(
     text: str, instruments: InstrumentTable = STATIC_TABLE, guide: SourceGuide = SOURCE_GUIDE
@@ -108,5 +109,16 @@ def parse_catalog(
     return catalog
 
 
-CATALOG = parse_catalog(Path(__file__).with_name(CATALOG_FILE_NAME).read_text(encoding="utf-8"))
+def load_catalog(
+    path: Path, instruments: InstrumentTable = STATIC_TABLE, guide: SourceGuide = SOURCE_GUIDE
+) -> Catalog:
+    """The catalog in the YAML file at `path`, validated; a file that is no catalog is refused
+    with its path."""
+    try:
+        return parse_catalog(path.read_text(encoding="utf-8"), instruments, guide)
+    except (ValueError, yaml.YAMLError) as error:
+        raise ValueError(f"Expected {path} to hold the product catalog, got: {error}") from error
+
+
+CATALOG = load_catalog(Path(__file__).with_name(CATALOG_FILE_NAME))
 """The catalog FEFAT ships, read from `catalog.yaml` beside this module."""

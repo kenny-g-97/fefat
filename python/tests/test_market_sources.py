@@ -1,6 +1,15 @@
+import re
+from pathlib import Path
+
 import pytest
 
-from fefat.market.sources import SOURCE_GUIDE, DesktopUse, PresetStatus, parse_source_guide
+from fefat.market.sources import (
+    SOURCE_GUIDE,
+    DesktopUse,
+    PresetStatus,
+    load_source_guide,
+    parse_source_guide,
+)
 
 ONE_SOURCE = """\
 researched_on: 2026-10-12
@@ -11,7 +20,7 @@ sources:
     offers: "Every CME contract since 2010-06-06."
     cost: "Standard plan $199 a month."
     terms: "Internal purposes of the customer only."
-    terms_url: "https://databento.com/legal/databento-user-agreement"
+    terms_page: "https://databento.com/legal/databento-user-agreement"
     desktop_use: check-the-terms
     desktop_use_note: "No clause forbids your own key in software on your own machine."
     licence_scope: "Internal use by the account holder; no redistribution"
@@ -77,7 +86,7 @@ def test_no_source_reads_as_confirmed_before_it_confirms_in_writing() -> None:
 
 def test_a_source_whose_terms_the_research_found_no_page_for_names_none() -> None:
     # The platforms' exports stay under the terms of the feed the data came from.
-    unpublished = {source.id for source in SOURCE_GUIDE.sources if source.terms_url is None}
+    unpublished = {source.id for source in SOURCE_GUIDE.sources if source.terms_page is None}
 
     assert unpublished == {
         "kraken",
@@ -133,6 +142,52 @@ def test_a_guide_entry_outside_its_schema_is_refused(change: tuple[str, str], re
         parse_source_guide(ONE_SOURCE.replace(*change))
 
 
+def test_the_guide_registers_the_researched_sources_but_those_it_leaves_out() -> None:
+    # Left out (the step's amendment of 2026-10-16): CCXT, a library; Stooq, Nasdaq's CHRIS, and
+    # Yahoo, daily only, dead, or forbidding automated use; Tradovate and Rithmic, which export
+    # no bars; and the file conventions of Backtrader, Zipline, and Lean.
+    assert [source.id for source in SOURCE_GUIDE.sources] == [
+        "databento",
+        "massive",
+        "firstrate-data",
+        "kibot",
+        "portara-cqg",
+        "tickdata",
+        "iqfeed",
+        "dxfeed",
+        "interactive-brokers",
+        "barchart",
+        "cme-datamine",
+        "norgate",
+        "binance-vision",
+        "bybit",
+        "okx",
+        "kraken",
+        "coinbase",
+        "hyperliquid",
+        "tardis",
+        "coinapi",
+        "kaiko",
+        "ninjatrader",
+        "tradingview",
+        "sierra-chart",
+        "tradestation",
+        "multicharts",
+        "motivewave",
+    ]
+
+
+def test_a_guide_file_that_breaks_its_schema_is_refused_with_its_path(tmp_path: Path) -> None:
+    path = tmp_path / "sources.yaml"
+    path.write_text(ONE_SOURCE.replace("kind: vendor", "kind: broker"), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=f"(?s)Expected {re.escape(str(path))} to hold the source guide, got: .*kind",
+    ):
+        load_source_guide(path)
+
+
 def test_a_guide_written_as_its_schema_is_read() -> None:
     guide = parse_source_guide(ONE_SOURCE)
 
@@ -146,10 +201,10 @@ def test_a_terms_page_is_named_or_written_as_null_but_never_left_out() -> None:
         ONE_SOURCE.replace('"https://databento.com/legal/databento-user-agreement"', "null")
     )
 
-    assert unpublished.sources[0].terms_url is None
-    with pytest.raises(ValueError, match="terms_url\n  Field required"):
+    assert unpublished.sources[0].terms_page is None
+    with pytest.raises(ValueError, match="terms_page\n  Field required"):
         parse_source_guide(
             ONE_SOURCE.replace(
-                '    terms_url: "https://databento.com/legal/databento-user-agreement"\n', ""
+                '    terms_page: "https://databento.com/legal/databento-user-agreement"\n', ""
             )
         )
