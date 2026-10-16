@@ -246,6 +246,9 @@ class SizeUnit(FrozenModel):
     lot: Decimal = Field(gt=0)
     asset: str = Field(min_length=1)
 
+    def __str__(self) -> str:
+        return f"{self.lot} {self.asset}"
+
 
 class DatasetOrigin(StrEnum):
     """How a dataset came into the store (D-37): imported from the trader's files, or synced

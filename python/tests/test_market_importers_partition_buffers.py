@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
@@ -6,7 +7,14 @@ import pytest
 
 from dbn_files import NANOSECONDS_PER_MINUTE, utc
 from fefat.market.importers.partition_buffers import CONTRACT_SIZE, PartitionBuffers
-from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition, YearMonth
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    SizeUnit,
+    YearMonth,
+)
 from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
 
@@ -111,3 +119,48 @@ def test_a_partition_stored_with_these_rows_is_left_alone_and_one_with_others_re
     assert (tmp_path / MARCH.relative_path()).stat().st_mtime_ns == written
     with pytest.raises(ValueError, match="got 2 other rows: a file that overlaps"):
         overlapping.write_all()
+
+
+APRIL = Partition(dataset=MARCH.dataset, contract="ESH2026", key=YearMonth(year=2026, month=4))
+APRIL_BARS = march_bars(utc(2026, 4, 1, 14, 30)).with_columns(trade_date=pl.lit(date(2026, 4, 1)))
+
+
+def test_a_later_import_keeps_the_dataset_json_its_first_import_wrote(tmp_path: Path) -> None:
+    # A snapshot pins dataset.json by its bytes (D-11), so rewording a source's licence scope
+    # in the guide must leave the file of a dataset already imported as it was.
+    store = Store(tmp_path)
+    first = PartitionBuffers(store, "ts_open", IMPORTED)
+    first.add(in_march(MONDAY_BARS))
+    first.write_all()
+    pinned = (tmp_path / MARCH.dataset.metadata_path()).read_bytes()
+    reworded = IMPORTED.model_copy(update={"licence_scope": "Reworded terms of the source"})
+
+    later = PartitionBuffers(store, "ts_open", reworded)
+    later.add(dict([(APRIL, APRIL_BARS)]))
+    later.write_all()
+
+    assert store.has_partition(APRIL)
+    assert (tmp_path / MARCH.dataset.metadata_path()).read_bytes() == pinned
+
+
+def test_an_import_counting_sizes_in_another_unit_than_its_dataset_is_refused(
+    tmp_path: Path,
+) -> None:
+    store = Store(tmp_path)
+    first = PartitionBuffers(store, "ts_open", IMPORTED)
+    first.add(in_march(MONDAY_BARS))
+    first.write_all()
+    tenths = IMPORTED.model_copy(
+        update={"size_unit": SizeUnit(lot=Decimal("0.1"), asset="contract")}
+    )
+
+    later = PartitionBuffers(store, "ts_open", tenths)
+    later.add(dict([(APRIL, APRIL_BARS)]))
+
+    with pytest.raises(
+        ValueError,
+        match=r"Expected the size unit of databento/ohlcv-1m/root=ES, 1 contract, got 0.1 "
+        "contract from this import",
+    ):
+        later.write_all()
+    assert not store.has_partition(APRIL)

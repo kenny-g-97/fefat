@@ -6,7 +6,9 @@ A partition is complete once the file's clock has passed its last trade date by 
 partition already written means the file is out of order across partitions, and is refused. A
 partition the store already holds is left alone when it holds exactly these rows, which is
 how an interrupted import runs again, and refused otherwise: a file that overlaps an imported
-one is not merged into it.
+one is not merged into it. A dataset's `dataset.json` is written by its first import and kept
+by the later ones, since snapshots pin it (D-11); an import that counts sizes in another unit
+than the dataset's is refused.
 """
 
 from collections.abc import Mapping
@@ -79,10 +81,22 @@ class PartitionBuffers:
             self._keep_stored(partition, rows)
             return
         if partition.dataset not in self._described:
-            self._store.write_dataset_metadata(partition.dataset, self._metadata)
+            self._describe(partition.dataset)
             self._described.add(partition.dataset)
         self._store.write_partition(partition, rows)
         self.written += 1
+
+    def _describe(self, dataset: Dataset) -> None:
+        if not self._store.has_dataset_metadata(dataset):
+            self._store.write_dataset_metadata(dataset, self._metadata)
+            return
+        stored = self._store.dataset_metadata(dataset).size_unit
+        if stored != self._metadata.size_unit:
+            raise ValueError(
+                f"Expected the size unit of {dataset.relative_folder()}, {stored}, got "
+                f"{self._metadata.size_unit} from this import: a dataset counts its sizes in one "
+                "unit."
+            )
 
     def _keep_stored(self, partition: Partition, rows: pl.DataFrame) -> None:
         stored = self._store.scan_partition(partition).collect()

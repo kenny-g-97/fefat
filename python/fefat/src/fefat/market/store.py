@@ -141,6 +141,10 @@ class Store:
         write_atomically(path, lambda temporary: frame.write_parquet(temporary, compression="zstd"))
         return PartitionFile(partition=partition, size_bytes=path.stat().st_size)
 
+    def has_dataset_metadata(self, dataset: Dataset) -> bool:
+        """Whether the store holds the dataset's `dataset.json`."""
+        return (self._folder / dataset.metadata_path()).is_file()
+
     def dataset_metadata(self, dataset: Dataset) -> DatasetMetadata:
         """The dataset's metadata, from its `dataset.json`."""
         path = self._folder / dataset.metadata_path()

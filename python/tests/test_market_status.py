@@ -160,3 +160,26 @@ def test_a_report_older_than_its_dataset_is_stale(tmp_path: Path) -> None:
 )
 def test_a_fidelity_reads_as_words(fidelity: str, words: str) -> None:
     assert fidelity_in_words(fidelity) == words
+
+
+def test_a_flagged_report_older_than_its_dataset_stays_flagged(tmp_path: Path) -> None:
+    # The 101st trade of ESH2026 on 2026-03-05 repeated right after itself is a finding.
+    store = copied_fixtures(tmp_path / "store")
+    reports = tmp_path / "store" / "reports"
+    trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
+    march_5 = Partition(dataset=trades, contract="ESH2026", key=MARCH_5)
+    rows = store.scan_partition(march_5).collect()
+    store.write_partition(march_5, pl.concat([rows.head(101), rows.slice(100)]))
+    write_quality_report(assess_quality(store, "synthetic", "ES", tmp_path / "cache"), reports)
+    march_9 = Partition(dataset=trades, contract="ESH2026", key=MARCH_9)
+    march_10 = Partition(dataset=trades, contract="ESH2026", key=date(2026, 3, 10))
+    store.write_partition(march_10, store.scan_partition(march_9).collect())
+
+    status = product_status(store, reports, catalog_of_mes_and_es(MARCH_5))
+
+    es = status.filter(pl.col("root") == "ES").select("schema", "quality", "checked_through")
+    assert es.rows() == [
+        ("ohlcv-1m", "flagged", MARCH_9),
+        ("ohlcv-1s", "flagged", MARCH_9),
+        ("trades", "flagged", MARCH_9),
+    ]
