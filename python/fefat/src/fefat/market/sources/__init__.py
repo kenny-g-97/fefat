@@ -15,7 +15,7 @@ The guide is `sources.yaml` beside this module, written from
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Annotated, Self
 
 import yaml
 from pydantic import Field, model_validator
@@ -24,6 +24,9 @@ from fefat.market.layout import FolderName
 from fefat.market.schema import FrozenModel
 
 GUIDE_FILE_NAME = "sources.yaml"
+
+HttpsUrl = Annotated[str, Field(pattern=r"^https://\S+$")]
+"""A web page's address, over HTTPS."""
 
 
 class SourceKind(StrEnum):
@@ -71,8 +74,8 @@ class Preset(FrozenModel):
 
 
 class Source(FrozenModel):
-    """A source of market data as the guide describes it; `licence_scope` is copied into every
-    dataset imported from it."""
+    """A source of market data as the guide describes it; `terms_url` is null where the source
+    publishes no terms page, and `licence_scope` is copied into every dataset imported from it."""
 
     id: FolderName
     name: str = Field(min_length=1)
@@ -80,7 +83,7 @@ class Source(FrozenModel):
     offers: str = Field(min_length=1)
     cost: str = Field(min_length=1)
     terms: str = Field(min_length=1)
-    terms_url: str = Field(pattern=r"^https://\S+$")
+    terms_url: HttpsUrl | None
     desktop_use: DesktopUse
     desktop_use_note: str = Field(min_length=1)
     licence_scope: str = Field(min_length=1)

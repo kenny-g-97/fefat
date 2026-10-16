@@ -190,7 +190,7 @@ sources:
     offers: "Spot OHLCVT bars at 1, 5, 15, 30, 60, 240, 720, and 1440 minutes and trade history for every pair from its first trade through 2026-06-30, as a full archive in parts with SHA-256 sums and quarterly updates. The archive is spot only, and Kraken Futures history comes from the REST API."
     cost: "Free."
     terms: "The download pages carry no licence text beyond a disclaimer that the data is for general information, and no API legal terms are published. Kraken serves US clients except residents of New York and Maine."
-    terms_url: "https://support.kraken.com/hc/en-us/articles/360047124832-Downloadable-historical-OHLCVT-Open-High-Low-Close-Volume-Trades-data"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Kraken's support pages let third-party services such as trading bots and mobile apps use an API key you create for them, and the archive needs no key, but no data licence covers the downloaded files."
     licence_scope: "No data licence published"
@@ -245,7 +245,7 @@ sources:
     offers: "Institutional crypto data feeds of trades, order books, and aggregates, plus analytics, indices, and oracles, across 200+ exchanges, with Amberdata's derivatives and on-chain data since Kaiko bought it on 2026-06-02. History depth depends on the package."
     cost: "No public price list, only enterprise quotes; a third-party marketplace reports about $9,500 to $55,000 a year, around $28,500 on average."
     terms: "No public terms or data licence are published."
-    terms_url: "https://www.kaiko.com/"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "No terms on personal use or third-party applications are published."
     licence_scope: "No public licence published"
@@ -256,7 +256,7 @@ sources:
     offers: "Exports tick, minute, and daily history of Last, Bid, or Ask data from the Historical Data window, only for data already stored on your machine, downloaded from your data provider or collected live."
     cost: "Not published in the research."
     terms: "An exported file stays under the terms of the data feed it came from."
-    terms_url: "https://ninjatrader.com/support/helpGuides/nt8/exporting.htm"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
     licence_scope: "The terms of the data feed the export came from"
@@ -271,7 +271,7 @@ sources:
     offers: "Downloads the bars loaded on a chart as CSV, with OHLC, volume when the Volume indicator is on the chart, and every indicator plot, capped by plan at 10,000 to 40,000 bars."
     cost: "Export comes with the Essential, Plus, Premium, and Ultimate plans, whose prices are not published in the research."
     terms: "An exported file stays under the terms of the data feed it came from."
-    terms_url: "https://www.tradingview.com/support/solutions/43000537255-how-to-export-chart-data/"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
     licence_scope: "The terms of the data feed the export came from"
@@ -286,7 +286,7 @@ sources:
     offers: "Text exports of the bars loaded in a chart at its bar period, of a whole intraday .scid file with records from one trade to one minute, and of daily .dly files, with data from the data service you connect. The .scid export of a continuous futures chart covers only the current contract."
     cost: "Not published in the research."
     terms: "An exported file stays under the terms of the data feed it came from."
-    terms_url: "https://www.sierrachart.com/index.php?page=doc/ImportExport.html"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
     licence_scope: "The terms of the data feed the export came from"
@@ -301,7 +301,7 @@ sources:
     offers: "Saves the Data window's open, high, low, close, volume, and study values at the chart's interval as an ASCII .txt file, one symbol at a time."
     cost: "Not published in the research."
     terms: "An exported file stays under the terms of the data feed it came from."
-    terms_url: "https://help.tradestation.com/10_00/eng/TradeStationHelp/chart_analysis/data_window.htm"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
     licence_scope: "The terms of the data feed the export came from"
@@ -316,7 +316,7 @@ sources:
     offers: "Exports tick, minute, and daily Ask, Bid, or Trade data from QuoteManager, or bars at the chart's resolution with its sessions and time zone, as comma-separated .txt, .asc, or .csv files, with the time zone chosen per export and data from the data source you connect. Bars are stamped at the close per MultiCharts staff, and the header row and date format are not published."
     cost: "Not published in the research."
     terms: "An exported file stays under the terms of the data feed it came from."
-    terms_url: "https://www.multicharts.com/trading-software/index.php/Exporting_Data"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
     licence_scope: "The terms of the data feed the export came from"
@@ -327,7 +327,7 @@ sources:
     offers: "Exports any bar size in its historical database as CSV with yyyyMMdd HHmmss or dd/MM/yyyy HH:mm:ss times followed by O, H, L, C, V, or in NinjaTrader's start-of-bar or end-of-bar layouts, with the time zone selectable in export groups. The header row and the bar stamping of the plain CSV formats are not published."
     cost: "Not published in the research."
     terms: "An exported file stays under the terms of the data feed it came from."
-    terms_url: "https://docs.motivewave.com/user-guide/charts-1/exporting-data"
+    terms_url: null
     desktop_use: check-the-terms
     desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
     licence_scope: "The terms of the data feed the export came from"

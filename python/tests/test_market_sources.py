@@ -75,6 +75,22 @@ def test_no_source_reads_as_confirmed_before_it_confirms_in_writing() -> None:
     assert DesktopUse.CHECK_THE_TERMS.verdict() == "check the terms yourself"
 
 
+def test_a_source_whose_terms_the_research_found_no_page_for_names_none() -> None:
+    # The platforms' exports stay under the terms of the feed the data came from.
+    unpublished = {source.id for source in SOURCE_GUIDE.sources if source.terms_url is None}
+
+    assert unpublished == {
+        "kraken",
+        "kaiko",
+        "ninjatrader",
+        "tradingview",
+        "sierra-chart",
+        "tradestation",
+        "multicharts",
+        "motivewave",
+    }
+
+
 def test_a_preset_names_the_source_whose_files_it_reads() -> None:
     assert SOURCE_GUIDE.source_of_preset("databento-csv").id == "databento"
     assert SOURCE_GUIDE.source("ninjatrader").presets[0].id == "ninjatrader"
@@ -123,3 +139,17 @@ def test_a_guide_written_as_its_schema_is_read() -> None:
     assert guide.source_of_preset("databento").licence_scope == (
         "Internal use by the account holder; no redistribution"
     )
+
+
+def test_a_terms_page_is_named_or_written_as_null_but_never_left_out() -> None:
+    unpublished = parse_source_guide(
+        ONE_SOURCE.replace('"https://databento.com/legal/databento-user-agreement"', "null")
+    )
+
+    assert unpublished.sources[0].terms_url is None
+    with pytest.raises(ValueError, match="terms_url\n  Field required"):
+        parse_source_guide(
+            ONE_SOURCE.replace(
+                '    terms_url: "https://databento.com/legal/databento-user-agreement"\n', ""
+            )
+        )
