@@ -54,7 +54,6 @@ and the frame is lazy so that a notebook adds its own columns and filters before
 
 import os
 from datetime import date, datetime
-from enum import StrEnum
 
 import polars as pl
 
@@ -67,18 +66,16 @@ from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
-from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
+from fefat.market.coverage import Fidelity, dataset_coverage, session_datasets
 from fefat.market.instruments import Instrument, InstrumentKind
-from fefat.market.layout import Dataset, DatasetMetadata, PartitionRequest
-from fefat.market.quality_report import QualityStanding, quality_standing
+from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
 from fefat.market.schema import (
     BarSchemaName,
     SchemaKind,
-    SchemaName,
     Timeframe,
-    parse_schema_name,
 )
+from fefat.market.status import DATASET_COLUMNS, dataset_status
 from fefat.market.store import Store
 
 SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean})
@@ -86,45 +83,9 @@ SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean}
 offset of its prices, whether it is a new front's first, and whether its bucket is empty."""
 AUTO = "auto"
 """The fidelity of `load` that takes the finest data the store holds."""
-CATALOG_COLUMNS = pl.Schema(
-    {
-        "provider": pl.String,
-        "root": pl.String,
-        "schema": pl.String,
-        "fidelity": pl.String,
-        "contracts": pl.UInt32,
-        "first_trade_date": pl.Date,
-        "last_trade_date": pl.Date,
-        "quality": pl.String,
-        "checked_through": pl.Date,
-        "origin": pl.String,
-        "licence_scope": pl.String,
-        "catalog_version": pl.UInt32,
-    }
-)
-"""The catalog's row per dataset of trades, TBBO, or bars: its provider, root, and schema; its
-fidelity, `tick` for trades and TBBO, else the timeframe of its bars; how many contracts it
-holds; its first and last trade date; the status of its root's quality report from its
-provider, with the last trade date the report checked, none while unchecked; its origin and
-the licence scope of its source, from its `dataset.json`; and the version of the product
-catalog (`fefat.market.catalog`)."""
-
-
-class Fidelity(StrEnum):
-    """The finest data a load builds its bars from, finest first: trades, 1-second bars, or
-    1-minute bars."""
-
-    TICK = "tick"
-    SECOND = "1s"
-    MINUTE = "1m"
-
-    def schema_name(self) -> SchemaName:
-        """The schema of the data of this fidelity."""
-        return parse_schema_name("trades" if self is Fidelity.TICK else f"ohlcv-{self}")
-
-    def records(self) -> str:
-        """What the data of this fidelity is called."""
-        return {"tick": "trades", "1s": "1-second bars", "1m": "1-minute bars"}[self]
+CATALOG_COLUMNS = pl.Schema({**DATASET_COLUMNS, "catalog_version": pl.UInt32})
+"""The catalog's row per dataset of trades, TBBO, or bars: the columns of `DATASET_COLUMNS`
+(`fefat.market.status`) and the version of the product catalog (`fefat.market.catalog`)."""
 
 
 def load(
@@ -170,45 +131,8 @@ def catalog() -> pl.DataFrame:
     """Every dataset of trades, TBBO, or bars the store holds, with the columns of
     `CATALOG_COLUMNS`, sorted by provider, root, and schema."""
     paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
-    rows = [
-        _catalog_row(
-            dataset,
-            coverage,
-            quality_standing(paths.reports_dir, dataset.provider, dataset.root),
-            store.dataset_metadata(dataset),
-        )
-        for dataset in session_datasets(store)
-        if (coverage := dataset_coverage(store, dataset)) is not None
-    ]
-    return pl.DataFrame(rows, schema=CATALOG_COLUMNS, orient="row").sort(
-        "provider", "root", "schema"
-    )
-
-
-def _catalog_row(
-    dataset: Dataset,
-    coverage: DatasetCoverage,
-    standing: QualityStanding,
-    metadata: DatasetMetadata,
-) -> tuple[object, ...]:
-    fidelity = str(Fidelity.TICK)
-    if isinstance(dataset.schema_name, BarSchemaName):
-        fidelity = str(dataset.schema_name.timeframe)
-    return (
-        dataset.provider,
-        dataset.root,
-        str(dataset.schema_name),
-        fidelity,
-        len(coverage.contracts),
-        coverage.first_trade_date,
-        coverage.last_trade_date,
-        str(standing.status),
-        standing.checked_through,
-        str(metadata.origin),
-        metadata.licence_scope,
-        CATALOG.version,
-    )
+    datasets = dataset_status(Store(paths.data_dir), paths.reports_dir)
+    return datasets.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))
 
 
 def _root_and_contract(symbol: str) -> tuple[str, str | None]:

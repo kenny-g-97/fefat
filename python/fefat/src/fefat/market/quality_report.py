@@ -86,11 +86,13 @@ class QualityFinding(StrEnum):
 
 
 class QualityStatus(StrEnum):
-    """A root's verdict from one provider: no finding, some, or no report yet."""
+    """A root's verdict from one provider: no finding, some, no report yet, or a report whose
+    last trade date checked is before a dataset's last (step 1.9)."""
 
     CLEAN = "clean"
     FLAGGED = "flagged"
     UNCHECKED = "unchecked"
+    STALE = "stale"
 
 
 class QualityStanding(FrozenModel):
@@ -212,6 +214,16 @@ def quality_standing(reports_folder: Path, provider: str, root: str) -> QualityS
     status = QualityStatus.CLEAN if findings.is_empty() else QualityStatus.FLAGGED
     checked_through = days.select(pl.col("trade_date").max()).item()
     return QualityStanding(status=status, checked_through=checked_through)
+
+
+def quality_verdict(standing: QualityStanding, last_trade_date: date) -> QualityStanding:
+    """The standing as a dataset whose last trade date is `last_trade_date` reads it: stale
+    when the report checked up to an earlier trade date, so that it needs writing again."""
+    # shortcut: compares trade dates only, so a backfill or a rewrite that keeps the last trade
+    # date reads as current; compare the report's time with the partitions' when imports backfill.
+    if standing.checked_through is None or standing.checked_through >= last_trade_date:
+        return standing
+    return QualityStanding(status=QualityStatus.STALE, checked_through=standing.checked_through)
 
 
 def _counted(count: int, noun: str) -> str:

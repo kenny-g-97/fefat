@@ -276,7 +276,7 @@ def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_qualit
 
     march_7 = date(2026, 3, 7)
     btc, es = ("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES")
-    imported = ("import", "Synthetic data of scripts/gen_fixtures.py; no licence applies", 1)
+    imported = ("import", "Synthetic data of scripts/gen_fixtures.py; no licence applies", None, 1)
     assert listed.schema == CATALOG_COLUMNS
     assert listed.rows() == [
         (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None, *imported),
