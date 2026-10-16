@@ -60,6 +60,7 @@ from fefat.market import instruments
 from fefat.market.bars import build_bars, resample_bars, session_grid
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
@@ -93,12 +94,14 @@ CATALOG_COLUMNS = pl.Schema(
         "last_trade_date": pl.Date,
         "quality": pl.String,
         "checked_through": pl.Date,
+        "catalog_version": pl.UInt32,
     }
 )
 """The catalog's row per dataset of trades, TBBO, or bars: its provider, root, and schema; its
 fidelity, `tick` for trades and TBBO, else the timeframe of its bars; how many contracts it
-holds; its first and last trade date; and the status of its root's quality report from its
-provider, with the last trade date the report checked, none while unchecked."""
+holds; its first and last trade date; the status of its root's quality report from its
+provider, with the last trade date the report checked, none while unchecked; and the version
+of the product catalog (`fefat.market.catalog`)."""
 
 
 class Fidelity(StrEnum):
@@ -189,6 +192,7 @@ def _catalog_row(
         coverage.last_trade_date,
         str(standing.status),
         standing.checked_through,
+        CATALOG.version,
     )
 
 

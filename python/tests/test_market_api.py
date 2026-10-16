@@ -11,6 +11,7 @@ from fefat.market import instruments
 from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
+from fefat.market.catalog import CATALOG
 from fefat.market.continuous import volume_rolls
 from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.quality import assess_quality
@@ -239,13 +240,18 @@ def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_qualit
     btc, es = ("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES")
     assert listed.schema == CATALOG_COLUMNS
     assert listed.rows() == [
-        (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None),
-        (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None),
-        (*btc, "trades", "tick", 1, march_7, march_7, "unchecked", None),
-        (*es, "ohlcv-1m", "1m", 2, MARCH_5, MARCH_9, "unchecked", None),
-        (*es, "ohlcv-1s", "1s", 2, MARCH_5, MARCH_9, "unchecked", None),
-        (*es, "trades", "tick", 2, MARCH_5, MARCH_9, "unchecked", None),
+        (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None, 1),
+        (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None, 1),
+        (*btc, "trades", "tick", 1, march_7, march_7, "unchecked", None, 1),
+        (*es, "ohlcv-1m", "1m", 2, MARCH_5, MARCH_9, "unchecked", None, 1),
+        (*es, "ohlcv-1s", "1s", 2, MARCH_5, MARCH_9, "unchecked", None, 1),
+        (*es, "trades", "tick", 2, MARCH_5, MARCH_9, "unchecked", None, 1),
     ]
+
+
+@pytest.mark.usefixtures("fixtures_as_data")
+def test_the_catalog_shows_the_version_of_the_product_catalog() -> None:
+    assert catalog().get_column("catalog_version").unique().to_list() == [CATALOG.version]
 
 
 def test_the_catalog_shows_the_status_of_a_written_quality_report(
