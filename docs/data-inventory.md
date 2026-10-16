@@ -46,6 +46,21 @@ The vendor's continuous mapping `MES.v.0`, which you fetched once from the free 
 
 - Each file ends inside the session of trade date 2026-09-23, so its last session's buckets after the end are held back: 1,260 one-minute buckets for MES, MCL, and MGC, whose files end at 00:00 UTC, and 340 for MNQ, whose file ends at 15:20 UTC.
 
+## Catalog metadata (2026-10-16)
+
+Step 1.9 added each dataset's `origin` and `licence_scope` to its `dataset.json`, and each raw file's `imported_on` and `roots` to `raw/MANIFEST.json`. Your store's four `dataset.json` files and its raw manifest gained them in place on 2026-10-16, with your approval, written through the store's own models after a copy of the five files was taken; the partitions and the raw files stayed as they were. The import dates are those of the raw copies under `raw/`.
+
+| File | Added |
+| --- | --- |
+| `databento/ohlcv-1m/root=<MES, MNQ, MCL, MGC>/dataset.json` | `origin` import, and `licence_scope` from Databento's entry in the source guide |
+| The DBN file of `GLBX-20260923-KYNG8TXEXQ` | `imported_on` 2026-10-13, `roots` MCL, MES, and MGC |
+| The DBN file of `GLBX-20260923-KF6FGGLH79` | `imported_on` 2026-10-13, `roots` MNQ |
+| The six sidecars of both jobs | `imported_on` 2026-10-13, no roots |
+| `symbology/GLBX.MDP3-MES.v.0.json` | `imported_on` 2026-10-15, no roots |
+
+- `fefat data status` reads each product complete at 1-minute fidelity from its launch to 2026-09-23, last imported on 2026-10-13: MES, MNQ, and MCL clean, and MGC flagged.
+- A store copied from before that date is refused until it gets the same keys (`docs/masterplan/BACKLOG.md`, upgrading a store's metadata).
+
 ## Not on this PC
 
 - Nothing else from Databento (confirmed at the kickoff): no ES, NQ, CL, or GC; no trades, TBBO, 1-second bars, definitions, or statistics.
