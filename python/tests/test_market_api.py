@@ -220,16 +220,54 @@ def test_arguments_that_name_no_load_are_refused(
         load(*arguments)
 
 
-def test_a_root_under_two_providers_is_refused(
+def two_providers_of_es(monkeypatch: pytest.MonkeyPatch, folder: Path) -> None:
+    """The fixtures' 1-minute bars from `synthetic`, and those of ESH2026 alone from `vendor`."""
+    data_folder_with(monkeypatch, folder, "ohlcv-1m")
+    shutil.copytree(
+        SYNTHETIC / "ohlcv-1m",
+        folder / "vendor" / "ohlcv-1m",
+        ignore=shutil.ignore_patterns("contract=ESM2026"),
+    )
+
+
+def test_a_root_under_two_providers_is_refused_unless_a_provider_is_named(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    data_folder_with(monkeypatch, tmp_path, "ohlcv-1m")
-    shutil.copytree(SYNTHETIC / "ohlcv-1m", tmp_path / "vendor" / "ohlcv-1m")
+    two_providers_of_es(monkeypatch, tmp_path)
 
     with pytest.raises(
-        ValueError, match="Expected one provider of ES in the store, got synthetic and vendor"
+        ValueError,
+        match="Expected one provider of ES in the store, got synthetic and vendor; name one "
+        "with provider=",
     ):
         load("ES", "1m", "2026-03-06", "2026-03-06")
+
+
+@pytest.mark.parametrize(
+    ("provider", "contracts"), [("vendor", ["ESH2026"]), ("synthetic", ["ESH2026", "ESM2026"])]
+)
+def test_a_named_provider_loads_its_own_datasets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, provider: str, contracts: list[str]
+) -> None:
+    two_providers_of_es(monkeypatch, tmp_path)
+
+    bars = load("ES", "1m", "2026-03-06", "2026-03-06", continuous=False, provider=provider)
+
+    assert bars.select("contract").unique().sort("contract").collect().to_series().to_list() == (
+        contracts
+    )
+
+
+def test_a_provider_without_the_root_is_refused_with_the_providers_that_hold_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    two_providers_of_es(monkeypatch, tmp_path)
+
+    with pytest.raises(
+        ValueError,
+        match=r"Expected a provider of ES in the store \(synthetic and vendor\), got 'databento'",
+    ):
+        load("ES", "1m", "2026-03-06", "2026-03-06", provider="databento")
 
 
 @pytest.mark.usefixtures("fixtures_as_data")

@@ -1,19 +1,20 @@
-"""The SDK's data API (step 1.8): `load` gives the signal bars of a product or a contract in one
-call, and `catalog` lists what the store holds.
+"""The SDK's data API (steps 1.8 and 1.9): `load` gives the signal bars of a product or a
+contract in one call, and `catalog` lists what the store holds.
 
     import fefat as ff
 
     bars = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31").collect()
     march = ff.market.load("MESH2024", "1m", "2024-03-01", "2024-03-15").collect()
     ticks = ff.market.load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="tick")
+    from_databento = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31", provider="databento")
     ff.market.catalog()
 
 Both read the store in `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`), and the session tables
 cached in `FEFAT_HOME`.
 
-`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto")` returns the
-bars of `timeframe` (`1s`, `5m`, `1h`, `1d`, ...) of the trade dates from `start` to `end`,
-dates or text such as `2024-01-31`, as a Polars LazyFrame with the columns of
+`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto", provider=None)`
+returns the bars of `timeframe` (`1s`, `5m`, `1h`, `1d`, ...) of the trade dates from `start`
+to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the columns of
 `SIGNAL_BAR_COLUMNS`:
 
 - `ts_open`, `ts_close`: the bucket of the session, `[open + k·Δ, open + (k+1)·Δ)` anchored at
@@ -44,9 +45,11 @@ alone, and a continuous load of them is refused. A contract that stopped trading
 rows to `end`, as zero-volume bars, since the grid adds no row because of a later one.
 
 `fidelity` names the data the bars are built from: `tick` (trades), `1s`, or `1m` bars, or
-`auto`, the finest the store holds; a timeframe finer than it is refused. The bars are built
-when `load` runs, and the frame is lazy so that a notebook adds its own columns and filters
-before it collects.
+`auto`, the finest the store holds; a timeframe finer than it is refused. `provider` names the
+provider whose datasets the bars come from, such as `databento`, where several hold the root;
+without it a root that several hold is refused, since choosing by the catalog's
+recommendation waits for a second provider (step 1.10). The bars are built when `load` runs,
+and the frame is lazy so that a notebook adds its own columns and filters before it collects.
 """
 
 import os
@@ -131,6 +134,7 @@ def load(
     end: str | date,
     continuous: bool | None = None,
     fidelity: str = AUTO,
+    provider: str | None = None,
 ) -> pl.LazyFrame:
     """The signal bars of `root_or_symbol` (a root such as `MES`, or a contract such as
     `MESH2024`) of `timeframe` on the trade dates from `start` to `end`, with the columns of
@@ -147,7 +151,7 @@ def load(
     # shortcut: the calendar of the root's newest instrument version, as the quality report
     # takes it; load by version when a root's calendar changes over time.
     sessions = sessions_of(BUILT_IN[instrument.calendar_id], paths.cache_dir)
-    datasets = _datasets_of(store, root)
+    datasets = _datasets_of(store, root, provider)
     source = _source(datasets, fidelity, bar_timeframe, root)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
@@ -254,14 +258,19 @@ def _trade_date(value: str | date, name: str) -> date:
         ) from error
 
 
-def _datasets_of(store: Store, root: str) -> dict[str, Dataset]:
-    """The root's datasets of trades, TBBO, and bars by their schema, all from one provider."""
+def _datasets_of(store: Store, root: str, provider: str | None) -> dict[str, Dataset]:
+    """The root's datasets of trades, TBBO, and bars by their schema, from `provider`, or from
+    the one provider that holds the root when it is None."""
     found = [dataset for dataset in session_datasets(store) if dataset.root == root]
     providers = sorted({dataset.provider for dataset in found})
-    if len(providers) != 1:
-        held = " and ".join(providers) if providers else "none"
-        raise ValueError(f"Expected one provider of {root} in the store, got {held}.")
-    return {str(dataset.schema_name): dataset for dataset in found}
+    held = " and ".join(providers) if providers else "none"
+    if provider is not None and provider not in providers:
+        raise ValueError(f"Expected a provider of {root} in the store ({held}), got {provider!r}.")
+    if provider is None and len(providers) != 1:
+        hint = "; name one with provider=" if providers else ""
+        raise ValueError(f"Expected one provider of {root} in the store, got {held}{hint}.")
+    chosen = providers[0] if provider is None else provider
+    return {str(dataset.schema_name): dataset for dataset in found if dataset.provider == chosen}
 
 
 def _source(
