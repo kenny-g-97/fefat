@@ -2,5 +2,7 @@
   "size_unit": {
     "lot": "0.001",
     "asset": "BTC"
-  }
+  },
+  "origin": "import",
+  "licence_scope": "Synthetic data of scripts/gen_fixtures.py; no licence applies"
 }

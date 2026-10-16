@@ -11,7 +11,14 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from fefat.market.layout import Dataset, DatasetMetadata, Partition, PartitionRequest, SizeUnit
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    PartitionRequest,
+    SizeUnit,
+)
 from fefat.market.schema import parse_schema_name
 from fefat.market.snapshot import FileDigest, Snapshot
 from fefat.market.store import Store
@@ -28,7 +35,12 @@ ES_TRADES = PartitionRequest(
     start=date(2026, 3, 5),
     end=date(2026, 3, 9),
 )
-ES_SIZE = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+NO_LICENCE = "Synthetic test data; no licence applies"
+ES_SIZE = DatasetMetadata(
+    size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+    origin=DatasetOrigin.IMPORT,
+    licence_scope=NO_LICENCE,
+)
 TRADES_OF_MARCH_5 = Partition.from_relative_path(
     PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
 )
@@ -112,7 +124,11 @@ def test_a_snapshot_is_byte_identical_across_two_runs_and_changes_with_one_parti
 def test_a_snapshot_changes_when_the_size_unit_of_its_dataset_changes(tmp_path: Path) -> None:
     store = store_with_the_es_trades(tmp_path)
     before = store.snapshot(ES_TRADES)
-    mini_lots = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"))
+    mini_lots = DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=NO_LICENCE,
+    )
 
     store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)
 
@@ -213,7 +229,11 @@ def test_reading_a_snapshot_refuses_a_partition_that_changed_after_it(tmp_path: 
 def test_reading_a_snapshot_refuses_metadata_that_changed_after_it(tmp_path: Path) -> None:
     store = store_with_the_es_trades(tmp_path)
     pinned = store.snapshot(ES_TRADES)
-    mini_lots = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"))
+    mini_lots = DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=NO_LICENCE,
+    )
 
     store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)
 
@@ -237,7 +257,11 @@ def test_reading_a_snapshot_keeps_only_the_bars_of_its_dates() -> None:
 def test_the_pinned_metadata_is_the_one_the_snapshot_pinned(tmp_path: Path) -> None:
     store = store_with_the_es_trades(tmp_path)
     pinned = store.snapshot(ES_TRADES)
-    mini_lots = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"))
+    mini_lots = DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal("0.1"), asset="contract"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=NO_LICENCE,
+    )
 
     assert store.pinned_metadata(pinned) == ES_SIZE
     store.write_dataset_metadata(ES_TRADES.dataset, mini_lots)

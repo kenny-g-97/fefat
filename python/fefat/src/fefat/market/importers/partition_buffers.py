@@ -18,7 +18,7 @@ import polars as pl
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
 from fefat.market.store import Store
 
-CONTRACT_SIZES = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+CONTRACT_SIZE = SizeUnit(lot=Decimal(1), asset="contract")
 """A futures dataset's sizes and volumes count contracts."""
 
 COMPLETE_AFTER = timedelta(days=7)
@@ -32,14 +32,12 @@ _NANOSECONDS_PER_SECOND = 1_000_000_000
 
 class PartitionBuffers:
     """One file's rows by partition until each is complete, written sorted by `order_column`,
-    keeping the order of equal instants (D-36)."""
+    keeping the order of equal instants (D-36), each dataset described by `metadata`."""
 
-    def __init__(
-        self, store: Store, order_column: str, size_unit: DatasetMetadata = CONTRACT_SIZES
-    ) -> None:
+    def __init__(self, store: Store, order_column: str, metadata: DatasetMetadata) -> None:
         self._store = store
         self._order_column = order_column
-        self._size_unit = size_unit
+        self._metadata = metadata
         self._waiting: dict[Partition, list[pl.DataFrame]] = {}
         self._done: set[Partition] = set()
         self._described: set[Dataset] = set()
@@ -81,7 +79,7 @@ class PartitionBuffers:
             self._keep_stored(partition, rows)
             return
         if partition.dataset not in self._described:
-            self._store.write_dataset_metadata(partition.dataset, self._size_unit)
+            self._store.write_dataset_metadata(partition.dataset, self._metadata)
             self._described.add(partition.dataset)
         self._store.write_partition(partition, rows)
         self.written += 1

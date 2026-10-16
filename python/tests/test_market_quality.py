@@ -12,7 +12,14 @@ from polars.testing import assert_frame_equal
 
 from fefat.market.importers.databento import import_databento
 from fefat.market.importers.report import ConditionDay, VendorCondition
-from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    SizeUnit,
+    YearMonth,
+)
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import (
     DAY_COLUMNS,
@@ -34,7 +41,12 @@ BATCH = SYNTHETIC / "databento-batch" / "GLBX-20260310-SYNTHETIC0"
 MARCH_5, MARCH_6, MARCH_9 = (date(2026, 3, day) for day in (5, 6, 9))
 DAY = 86_400_000_000_000
 QUARTER_POINT = 250_000_000
-CONTRACT_SIZES = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+NO_LICENCE = "Synthetic test data; no licence applies"
+CONTRACT_SIZES = DatasetMetadata(
+    size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+    origin=DatasetOrigin.IMPORT,
+    licence_scope=NO_LICENCE,
+)
 
 # Per session of ES in the fixtures: every record, the trades of both contracts, their
 # 1-second and 1-minute bars, the prints in the break after the close (the trade received

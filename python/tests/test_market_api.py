@@ -238,14 +238,15 @@ def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_qualit
 
     march_7 = date(2026, 3, 7)
     btc, es = ("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES")
+    imported = ("import", "Synthetic data of scripts/gen_fixtures.py; no licence applies", 1)
     assert listed.schema == CATALOG_COLUMNS
     assert listed.rows() == [
-        (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None, 1),
-        (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None, 1),
-        (*btc, "trades", "tick", 1, march_7, march_7, "unchecked", None, 1),
-        (*es, "ohlcv-1m", "1m", 2, MARCH_5, MARCH_9, "unchecked", None, 1),
-        (*es, "ohlcv-1s", "1s", 2, MARCH_5, MARCH_9, "unchecked", None, 1),
-        (*es, "trades", "tick", 2, MARCH_5, MARCH_9, "unchecked", None, 1),
+        (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None, *imported),
+        (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None, *imported),
+        (*btc, "trades", "tick", 1, march_7, march_7, "unchecked", None, *imported),
+        (*es, "ohlcv-1m", "1m", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
+        (*es, "ohlcv-1s", "1s", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
+        (*es, "trades", "tick", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
     ]
 
 

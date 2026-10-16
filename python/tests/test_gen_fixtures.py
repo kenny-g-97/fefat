@@ -300,13 +300,15 @@ def test_bars_carry_the_session_trade_date_not_the_utc_date_of_ts_open(
     ("root", "lot", "asset"), [("ES", "1", "contract"), ("BTCUSDT-PERP", "0.001", "BTC")]
 )
 @pytest.mark.parametrize("schema", ["trades", "ohlcv-1s", "ohlcv-1m"])
-def test_each_dataset_states_the_unit_of_its_sizes_and_volumes(
+def test_each_dataset_states_its_size_unit_origin_and_licence_scope(
     schema: str, root: str, lot: str, asset: str
 ) -> None:
     metadata = FIXTURES / schema / f"root={root}" / "dataset.json"
 
     assert json.loads(metadata.read_text(encoding="utf-8")) == {
-        "size_unit": {"lot": lot, "asset": asset}
+        "size_unit": {"lot": lot, "asset": asset},
+        "origin": "import",
+        "licence_scope": "Synthetic data of scripts/gen_fixtures.py; no licence applies",
     }
 
 

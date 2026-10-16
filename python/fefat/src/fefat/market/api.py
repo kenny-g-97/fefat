@@ -66,7 +66,7 @@ from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
 from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
 from fefat.market.instruments import Instrument, InstrumentKind
-from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.layout import Dataset, DatasetMetadata, PartitionRequest
 from fefat.market.quality_report import QualityStanding, quality_standing
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
 from fefat.market.schema import (
@@ -94,14 +94,17 @@ CATALOG_COLUMNS = pl.Schema(
         "last_trade_date": pl.Date,
         "quality": pl.String,
         "checked_through": pl.Date,
+        "origin": pl.String,
+        "licence_scope": pl.String,
         "catalog_version": pl.UInt32,
     }
 )
 """The catalog's row per dataset of trades, TBBO, or bars: its provider, root, and schema; its
 fidelity, `tick` for trades and TBBO, else the timeframe of its bars; how many contracts it
 holds; its first and last trade date; the status of its root's quality report from its
-provider, with the last trade date the report checked, none while unchecked; and the version
-of the product catalog (`fefat.market.catalog`)."""
+provider, with the last trade date the report checked, none while unchecked; its origin and
+the licence scope of its source, from its `dataset.json`; and the version of the product
+catalog (`fefat.market.catalog`)."""
 
 
 class Fidelity(StrEnum):
@@ -166,7 +169,10 @@ def catalog() -> pl.DataFrame:
     store = Store(paths.data_dir)
     rows = [
         _catalog_row(
-            dataset, coverage, quality_standing(paths.reports_dir, dataset.provider, dataset.root)
+            dataset,
+            coverage,
+            quality_standing(paths.reports_dir, dataset.provider, dataset.root),
+            store.dataset_metadata(dataset),
         )
         for dataset in session_datasets(store)
         if (coverage := dataset_coverage(store, dataset)) is not None
@@ -177,7 +183,10 @@ def catalog() -> pl.DataFrame:
 
 
 def _catalog_row(
-    dataset: Dataset, coverage: DatasetCoverage, standing: QualityStanding
+    dataset: Dataset,
+    coverage: DatasetCoverage,
+    standing: QualityStanding,
+    metadata: DatasetMetadata,
 ) -> tuple[object, ...]:
     fidelity = str(Fidelity.TICK)
     if isinstance(dataset.schema_name, BarSchemaName):
@@ -192,6 +201,8 @@ def _catalog_row(
         coverage.last_trade_date,
         str(standing.status),
         standing.checked_through,
+        str(metadata.origin),
+        metadata.licence_scope,
         CATALOG.version,
     )
 

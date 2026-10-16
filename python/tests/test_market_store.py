@@ -11,7 +11,14 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from fefat.market.layout import Dataset, DatasetMetadata, Partition, PartitionRequest, SizeUnit
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    PartitionRequest,
+    SizeUnit,
+)
 from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import SchemaKind, parse_schema_name
 from fefat.market.store import Store
@@ -29,7 +36,12 @@ ES_TRADES = PartitionRequest(
     start=date(2026, 3, 5),
     end=date(2026, 3, 9),
 )
-ES_SIZE = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+NO_LICENCE = "Synthetic test data; no licence applies"
+ES_SIZE = DatasetMetadata(
+    size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+    origin=DatasetOrigin.IMPORT,
+    licence_scope=NO_LICENCE,
+)
 TRADES_OF_MARCH_5 = Partition.from_relative_path(
     PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
 )
@@ -349,7 +361,11 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
 
 def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    btc = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.001"), asset="BTC"))
+    btc = DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal("0.001"), asset="BTC"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=NO_LICENCE,
+    )
 
     store.write_dataset_metadata(ES_TRADES.dataset, btc)
 
@@ -361,9 +377,28 @@ def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
 def test_a_broken_dataset_json_is_refused_with_its_path(tmp_path: Path) -> None:
     path = tmp_path / ES_TRADES.dataset.metadata_path()
     path.parent.mkdir(parents=True)
-    path.write_text('{"size_unit": {"lot": "-1", "asset": "contract"}}', encoding="utf-8")
+    path.write_text(
+        '{"size_unit": {"lot": "-1", "asset": "contract"}, "origin": "import", '
+        '"licence_scope": "Synthetic test data; no licence applies"}',
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ValueError, match=r"Expected .*dataset\.json to hold a DatasetMetadata"):
+    with pytest.raises(
+        ValueError, match=r"Expected .*dataset\.json to hold a DatasetMetadata.*\n.*size_unit.lot"
+    ):
+        Store(tmp_path).dataset_metadata(ES_TRADES.dataset)
+
+
+def test_a_dataset_json_written_before_origins_and_licence_scopes_is_refused(
+    tmp_path: Path,
+) -> None:
+    # Step 1.9 added both fields: a store written earlier gets them by importing its files
+    # again, or by the rewrite docs/data-inventory.md records.
+    path = tmp_path / ES_TRADES.dataset.metadata_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('{"size_unit": {"lot": "1", "asset": "contract"}}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"(?s)dataset\.json.*origin\n  Field required.*licence"):
         Store(tmp_path).dataset_metadata(ES_TRADES.dataset)
 
 

@@ -4,6 +4,7 @@ import os
 import shutil
 import time
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +35,17 @@ from dbn_files import NANOSECONDS_PER_MINUTE, dbn_content, mapping, utc, write_d
 from fefat.market.calendar import utc_text
 from fefat.market.importers.databento import import_databento, vendor_conditions
 from fefat.market.importers.report import DatabentoImport, DayRecords, EarlySymbol, SymbolRecords
-from fefat.market.layout import Dataset, Partition, YearMonth
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    SizeUnit,
+    YearMonth,
+)
 from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import parse_schema_name
+from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -80,6 +89,18 @@ def store_files(folder: Path) -> dict[str, tuple[int, int]]:
         for path in folder.rglob("*")
         if path.is_file()
     }
+
+
+def test_an_imported_dataset_records_its_origin_and_databento_s_licence_scope(
+    tmp_path: Path,
+) -> None:
+    store, _ = imported(tmp_path)
+
+    assert store.dataset_metadata(IMPORTED_MINUTES.dataset) == DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=SOURCE_GUIDE.source("databento").licence_scope,
+    )
 
 
 def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_path: Path) -> None:

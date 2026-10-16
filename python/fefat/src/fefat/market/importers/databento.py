@@ -6,12 +6,14 @@ the vendor's website, and its files come through here.
 `import_databento` checks every file it is about to read against the SHA-256 the batch's
 `manifest.json` publishes, refusing a mismatch with both hashes, before it writes anything; a
 batch split into several DBN files is refused, since its files can share partitions, which are
-not merged yet. It writes the records as canonical partitions (`file_writer`), then keeps the
-file unchanged under `raw/databento/<job>/` (a single file under `raw/databento/<its
-SHA-256>/`, since the vendor names files by dates and schema, not by product) with its entry in
-the raw manifest, recorded last: the job id and the published SHA-256, the DBN version
-and the newest revision date in `condition.json` (`DBN 3, revised 2026-09-23`), and the
-download date the job id carries, or, for a single file, the UTC date it was last written. So
+not merged yet. It writes the records as canonical partitions (`file_writer`), each dataset's
+`dataset.json` naming its origin, an import, and the licence scope of Databento's entry in the
+source guide (`fefat.market.sources`), then keeps the file unchanged under
+`raw/databento/<job>/` (a single file under `raw/databento/<its SHA-256>/`, since the vendor
+names files by dates and schema, not by product) with its entry in the raw manifest, recorded
+last: the job id and the published SHA-256, the DBN version and the newest revision date in
+`condition.json` (`DBN 3, revised 2026-09-23`), and the download date the job id carries, or,
+for a single file, the UTC date it was last written. So
 an interrupted import runs again, a refused one leaves no copy behind, and a finished one
 imports nothing twice and reads none of its files again.
 A file the raw manifest records with other bytes is refused: raw files never change, so a
@@ -36,6 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from fefat.market.importers.canonical import RecordPlacement, active_days
 from fefat.market.importers.dbn import read_dbn
 from fefat.market.importers.file_writer import write_records
+from fefat.market.importers.partition_buffers import CONTRACT_SIZE
 from fefat.market.importers.report import (
     BatchReport,
     ConditionDay,
@@ -44,8 +47,10 @@ from fefat.market.importers.report import (
     VendorCondition,
 )
 from fefat.market.instruments import STATIC_TABLE, InstrumentTable
+from fefat.market.layout import DatasetMetadata, DatasetOrigin
 from fefat.market.raw_manifest import BatchJob
 from fefat.market.schema import parse_schema_name
+from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 
 PROVIDER = "databento"
@@ -149,6 +154,11 @@ class _DataFileImporter:
         self._store = store
         self._cache_folder = cache_folder
         self._instruments = instruments
+        self._metadata = DatasetMetadata(
+            size_unit=CONTRACT_SIZE,
+            origin=DatasetOrigin.IMPORT,
+            licence_scope=SOURCE_GUIDE.source_of_preset(PROVIDER).licence_scope,
+        )
 
     def imported(
         self, original: _Original, revision: str, downloaded_on: date
@@ -165,7 +175,9 @@ class _DataFileImporter:
             original.source, metadata, days, PROVIDER, self._instruments, self._cache_folder
         )
         _, frames = read_dbn(original.source)
-        report = write_records(frames, placement, self._store, original.raw_path.as_posix())
+        report = write_records(
+            frames, placement, self._store, original.raw_path.as_posix(), self._metadata
+        )
         self._store.write_raw_file(original.raw_path, original.source, original.sha256)
         self._store.record_raw_file(
             original.raw_path,

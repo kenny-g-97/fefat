@@ -24,6 +24,7 @@ from fefat.market.instruments import Currency, Instrument, InstrumentKind, Instr
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
+    DatasetOrigin,
     Partition,
     PartitionRequest,
     SizeUnit,
@@ -52,6 +53,7 @@ __all__ = [
     "Currency",
     "Dataset",
     "DatasetMetadata",
+    "DatasetOrigin",
     "EarlyClose",
     "FeeSchedule",
     "FeeTable",

@@ -2,5 +2,7 @@
   "size_unit": {
     "lot": "1",
     "asset": "contract"
-  }
+  },
+  "origin": "import",
+  "licence_scope": "Synthetic data of scripts/gen_fixtures.py; no licence applies"
 }
