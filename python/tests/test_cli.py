@@ -10,6 +10,7 @@ import pytest
 from fefat.config import resolve_paths
 from fefat.market.layout import Dataset, Partition, YearMonth
 from fefat.market.schema import parse_schema_name
+from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 from fefat_app.cli import main
 
@@ -227,3 +228,45 @@ def test_a_quality_report_of_a_product_without_data_is_refused_and_exits_with_1(
 
     assert code == 1
     assert "fefat: Expected trades or bars of ZZ in the store, got none" in capsys.readouterr().err
+
+
+def test_the_source_guide_prints_each_source_with_its_offer_cost_terms_and_presets(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "sources"])
+
+    header, *blocks = capsys.readouterr().out.rstrip("\n").split("\n\n")
+    assert code == 0
+    assert header == (
+        f"Source guide, researched {SOURCE_GUIDE.researched_on}. Prices and terms change: "
+        "check a source's own pages before you rely on them."
+    )
+    assert len(blocks) == len(SOURCE_GUIDE.sources)
+    for block, source in zip(blocks, SOURCE_GUIDE.sources, strict=True):
+        lines = block.splitlines()
+        assert lines[:7] == [
+            f"{source.name}, {source.kind.replace('-', ' ')}",
+            f"  Offers: {source.offers}",
+            f"  Cost: {source.cost}",
+            f"  Terms: {source.terms}",
+            f"  Terms page: {source.terms_url}",
+            "  Your own account or files in a desktop app: "
+            f"{source.desktop_use.verdict()}. {source.desktop_use_note}",
+            f"  Licence scope: {source.licence_scope}",
+        ]
+        presets = [
+            f"    {preset.id} ({preset.status}): {preset.name}. {preset.reads}"
+            for preset in source.presets
+        ]
+        assert lines[7:] == (["  Presets:", *presets] if presets else ["  Presets: none yet"])
+
+
+def test_the_source_guide_names_the_presets_of_databento_and_ninjatrader(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    main(["data", "sources"])
+
+    printed = capsys.readouterr().out
+    assert "\nDatabento, vendor\n" in f"\n{printed}"
+    assert "    databento (available): Databento DBN batch download." in printed
+    assert "    ninjatrader (planned): NinjaTrader 8 export." in printed

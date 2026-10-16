@@ -1,0 +1,334 @@
+# The source guide (02-engine-and-data.md section 1.8, D-37, D-38), read by fefat.market.sources
+# and printed by fefat data sources. Written from docs/masterplan/appendix/research-data-sources.md
+# as read on researched_on; no source has confirmed desktop use in writing yet (ADR-0018).
+researched_on: 2026-10-12
+sources:
+  - id: databento
+    name: "Databento"
+    kind: vendor
+    offers: "Every CME, CBOT, NYMEX, and COMEX futures and options contract since 2010-06-06: trades, top-of-book, depth, and full order book ticks with nanosecond timestamps, OHLCV bars at 1 second, 1 minute, 1 hour, and 1 day, instrument definitions, and statistics with settlement prices and open interest. Continuous symbols such as ES.c.0, ES.n.0, and ES.v.0 follow the front contract by expiry, open interest, or volume, with unadjusted prices."
+    cost: "Standard plan $199 a month since 2026-06-22, up from $179, with live data, 1 year of L1 history, 1 month of L2 and L3, and 16+ years of bars, definitions, and statistics; Plus $1,750 and Unlimited $4,500 a month on annual contracts; or usage-based per GB at a rate the pricing page does not print, with $125 of free credit for new accounts."
+    terms: "The User Agreement, effective 2024-01-31, licenses the data for internal business purposes only, requires keeping your credentials confidential, and forbids redistribution without exchange or Databento approval (§1.1, §1.3, §1.5(e)). Live CME data on the Standard plan is for personal use on two or fewer devices with a funded futures account, under the Exchange Data Policy of 2025-04-08."
+    terms_url: "https://databento.com/legal/databento-user-agreement"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app using your own key or files on your machine is internal use, since no clause forbids third-party software for historical data and §1.3 only bars sharing credentials with other people, while live CME data may only run in software that routes orders through your broker (Exchange Data Policy Q6)."
+    licence_scope: "Internal use by the account holder; no redistribution (user agreement §1.1, §1.5(e))"
+    presets:
+      - id: databento
+        name: "Databento DBN batch download"
+        reads: "Binary DBN files of a batch download with their metadata.json, manifest.json, and condition.json, or a single .dbn or .dbn.zst file, through fefat data import databento, with nanosecond UTC timestamps and bars stamped at the open by ts_event."
+        status: available
+      - id: databento-csv
+        name: "Databento CSV export"
+        reads: "CSV with one header line and the index timestamp first, prices as integers in 1e-9 units or as decimals, and timestamps as integer nanoseconds or ISO 8601 strings, all in UTC, with bars stamped at the open by ts_event; it arrives with fefat data import file in step 1.10."
+        status: planned
+  - id: massive
+    name: "Massive (formerly Polygon.io)"
+    kind: vendor
+    offers: "CME, CBOT, NYMEX, and COMEX trades and best bid and offer quotes with nanosecond timestamps, bars from seconds to a year built from trades, with settlement prices on session bars, and contract definitions, from 2017-04-03, through REST, WebSocket, and S3 flat files. Individual contracts only: the docs publish no continuous-contract endpoint and no open interest field."
+    cost: "Individual plans billed monthly: Basic $0 with 2 years of history at 5 calls a minute, Starter $29 with 2 years and Developer $79 with 5 years plus trades and quotes, both delayed 10 minutes, and Advanced $199 in real time with 7+ years; business plan prices are not published."
+    terms: "The Terms of Service for individuals, updated 2025-07-18, allow only personal, non-commercial, non-business use and forbid sharing an account or API keys with others (§2, §3.3). The Market Data Terms, updated 2025-08-28, require Non-Professional status, allow CME data on at most two Order Routing Devices, and forbid redistributing the data or derived works (§3, §4.3, §5(c))."
+    terms_url: "https://massive.com/legal/market-data-terms-of-service"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, your own key inside a local desktop app used only by you is personal use, since no clause addresses third-party applications and the prohibitions are on sharing keys with others (§3.3) and on redistribution (§5(c))."
+    licence_scope: "Personal non-business use by a Non-Professional; no redistribution (§3, §5(c))"
+    presets: []
+  - id: firstrate-data
+    name: "FirstRate Data"
+    kind: vendor
+    offers: "1-minute, 5-minute, 30-minute, 1-hour, and daily OHLCV bars for 122 futures tickers, ES from 2008-01-02, as individual contracts and as unadjusted, absolute-adjusted, or ratio-adjusted continuous series rolled at midnight Eastern; MCL and MGC come only in the Most Active bundle. Daily bars carry open interest, and there are no futures ticks, settlements, or definitions."
+    cost: "A one-off purchase per ticker with one month of updates, its price shown only at checkout; further updates cost $99.95 a year per ticker, or $59.95 a month for the Most Active bundle of 130 tickers."
+    terms: "A perpetual licence to copy and use the data, import it into your own databases, and make derivative works, with no device count stated. The data is for your private use only: no resale or redistribution of raw data and no sharing of your user details, while rendered charts and derived results are allowed."
+    terms_url: "https://firstratedata.com/about/license"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app reading your own CSV files on your machine is private use of the Subscriber, since the licence lets service providers work on the data for you and allows loading it into your own systems; only exposing raw bars to other people is ruled out."
+    licence_scope: "Private use of the subscriber only; no resale or redistribution of raw data"
+    presets: []
+  - id: kibot
+    name: "Kibot"
+    kind: vendor
+    offers: "83 futures on CME, CBOT, NYMEX, COMEX, and CFE, including ES, NQ, CL, GC, MES, MNQ, and MGC but not MCL, as individual contract months and unadjusted calendar-roll continuous series, with minute and tick data back to 2009. Intervals are ticks, ticks with bid and ask, 1 and 10 seconds, 1, 5, 15, and 30 minutes, and daily, where the daily close is the settlement price."
+    cost: "One-off packages with full history and a year of updates, such as the top 10 futures continuous at $220 for 1-minute bars, $580 for ticks, or $800 for ticks with bid and ask; custom orders from $40, such as ES and NQ 1-minute bars since 2009 for $135 as of 2026-10-09; and update subscriptions from $14 to $139 a month, which never include ticks."
+    terms: "The licence is for your own internal use on two computers you normally use, with no resale or redistribution and no sharing of account details, and all API and Agent requests must come from a single IP address. Downloaded data stays yours after a subscription lapses."
+    terms_url: "https://www.kibot.com/license.html"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app on one of your two licensed computers using your own login or files is your own internal use, since no clause addresses third-party applications and the API is offered to third-party developers."
+    licence_scope: "Own internal use on two computers; no resale or redistribution"
+    presets: []
+  - id: portara-cqg
+    name: "Portara / CQG Data Factory"
+    kind: vendor
+    offers: "CQG Data Factory history sold per symbol: daily bars from 1899, 1-minute bars from 1987, and trades-only or Level 1 ticks, with E-mini S&P from 1997-09-08, MES from 2019-05-06, and millisecond timestamps only from 2013. Individual contracts or continuous series built to order with zero, back, forward, or ratio adjustment, delivered as CSV with a choice of time zone and of start-of-bar or end-of-bar stamps."
+    cost: "One-off per symbol: 1-minute full history $330, or $220 on special; daily $180 for the last 30 years or $360 for full history; E-mini S&P trades-only ticks $695 to $1,095; Level 1 ticks $795 to $2,295 by file size; second bars $495; and software subscriptions by quote."
+    terms: "The one-off licence is perpetual and non-transferable, for up to five people in your organisation on your own computers, servers, or cloud instances, for research, backtesting, model and AI training, and live trading (§1, §3, §4). Passing the data outside the organisation or building it into any product or service ends the licence (§5)."
+    terms_url: "https://portaracqg.com/license/"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app reading the purchased CSV files on your own machine is within §3, which allows use on your own computers, and the only limits are the five-person scope and no redistribution; there is no account or API key."
+    licence_scope: "Perpetual, up to five people in your organisation; no redistribution (§3, §5)"
+    presets: []
+  - id: tickdata
+    name: "TickData"
+    kind: vendor
+    offers: "Tick-by-tick trades and Level I quotes with sizes for over 280 global futures, stamped to the millisecond since July 2011 and to the second since 2003-06-01, with all contract months since July 2003 and quotes from 2010-01-04. Bars and continuous series at any interval are built by the customer in TickWrite with several roll methods, and a separate subscription gives contract dates and trading hours."
+    cost: "No public price list for one-off data, which is quoted per order; the TickAPI service costs at least $250 a month on a one-year term, plus $0.03 a request, a $250 yearly delivery fee, and $2.00 to $0.26 per symbol-month."
+    terms: "The Leased Data License Agreement, 2021 form, allows use and derived data only in your internal business, with no distribution, sublicensing, or third-party access through a computer services business (§2.1, §2.3). The licence renews every twelve months, and when it is not renewed you must destroy the software and all data (§2.2, §7.1)."
+    terms_url: "https://f.hubspotusercontent30.net/hubfs/4429683/Google%20Cloud%20(TM)%20Tick_Data_LLC-Leased_Data_License_Agreement.pdf"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a local app reading the delivered files is internal use under §2.1, since the FAQ expects the files to be read by third-party software, but the data must be deleted if the subscription lapses (§7.1)."
+    licence_scope: "Leased, internal business use; no third-party access; delete on lapse (§2.1, §7.1)"
+    presets: []
+  - id: iqfeed
+    name: "IQFeed (DTN)"
+    kind: vendor
+    offers: "180 calendar days of ticks with microsecond timestamps where the exchange provides them, 1-minute bars for E-minis from September 2005 and other US futures from May 2007, and daily bars with open interest back to 1959, plus expired contracts and front-month and back-adjusted continuous symbols such as @ES# and @ES#C. Data comes only through the Windows IQConnect client over local sockets."
+    cost: "Price list of 2025-12-01: a $50 startup fee, then $108.15 a month for the core service, $24.87 for US futures, and exchange fees of $78.58 for CME E-mini or $139.57 each for CME, CBOT, NYMEX, and COMEX."
+    terms: "Your IQFeed user ID connects on one computer at a time, with several connections allowed from that computer, and non-professional status is judged at registration. The subscriber agreement text is not published online."
+    terms_url: "https://www.dtn.com/wp-content/uploads/2019/05/IQFeed_FAQs.pdf"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, the app vendor registers once as a developer for $597 a year and each trader logs in with their own IQFeed credentials, since third-party software on the customer's own login is IQFeed's product model."
+    licence_scope: "Own use on one computer at a time; non-professional status set at registration"
+    presets: []
+  - id: dxfeed
+    name: "dxFeed"
+    kind: vendor
+    offers: "CME, CBOT, NYMEX, and COMEX tick-level and OHLCV history since 2010, some markets from 2009 and the tick service from 2014, with quotes, trades, depth, candles from ticks to months, rolling continuous symbols, and summary events with settlement and open interest. Default candle depth is 43 days for 1- to 4-minute candles, 90 days for 5 minutes and up, 285 days for 1 hour and up, and all history for daily and longer candles."
+    cost: "Retail CME Group top of book costs $19 a month and market depth $99 a month through a partner platform such as Quantower, with non-professional self-certification; bulk history is a custom package whose price for individuals is not published."
+    terms: "The retail agreement allows use only by the customer, with no third-party access, and forbids downloading or extracting data except to view it where a link is provided. CME non-professional use is personal or private only, on your own assets, through at most two trading terminals."
+    terms_url: "https://get.dxfeed.com/api/files/The_Small_Exchange_Customer_Services_Agreement.pdf"
+    desktop_use: forbidden
+    desktop_use_note: "By inference, a new desktop app cannot use a retail key until its vendor joins dxFeed as a partner platform, since retail keys are sold per approved platform and dxFeed's REST access table states \"B2C usage of B2B service: not allowed\"."
+    licence_scope: "Customer's own use only; no third-party access or data extraction"
+    presets: []
+  - id: interactive-brokers
+    name: "Interactive Brokers"
+    kind: vendor
+    offers: "Futures bars from 1 second to 1 month of trades, midpoint, bid, or ask through the TWS API, historical time and sales, and continuous futures, where a daily close can be the exchange settlement. Bars of 30 seconds or less go back only six months and expired futures only two years from expiry, and the earliest history per contract is not published."
+    cost: "Non-professional CME real-time L1 data costs $1.55 a month per exchange, the same for CBOT, NYMEX, and COMEX, or $10.00 a month for a bundle with top of book on all four, waived at $30 of commissions; historical data needs the same subscription, US futures trading permissions, and $500 minimum equity."
+    terms: "The market data subscriber agreement licenses data to non-professionals for personal use only, through one internet-connected computer or mobile device at a time. The TWS API licence is non-commercial, for your own tools that manage your own IB accounts, and using the API to disseminate information needs IB's written approval."
+    terms_url: "https://gdcdyn.interactivebrokers.com/Universal/servlet/Registration_v2.formSampleView?formdb=4383"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app on your machine talking to your own TWS or IB Gateway is the documented pattern and needs no approval, while selling that app for a fee falls outside the non-commercial API licence and needs IB's consent."
+    licence_scope: "Personal use by a non-professional, one device at a time; no dissemination"
+    presets:
+      - id: ibkr
+        name: "IBKR bars from the TWS API"
+        reads: "CSV saved from TWS API historical bars with date, open, high, low, close, volume, average, and barCount columns, dates as yyyymmdd hh:mm:ss in the time zone chosen at TWS login or as epoch seconds, daily bars as yyyymmdd dated by the day they close, and intraday stamping not documented; it arrives with fefat data import file in step 1.10."
+        status: planned
+  - id: barchart
+    name: "Barchart (OnDemand and Premier)"
+    kind: vendor
+    offers: "The OnDemand API serves ticks, minute bars, and end-of-day history with nearest and continuous series, optional back-adjustment, and futures specifications, with history depth not published. Premier members download CSV files by hand: daily bars from 2000, about 10 years of 1-minute bars, and weekly to yearly bars from 1980, up to 20,000 records a file."
+    cost: "OnDemand is priced by usage with no public price list, and a self-serve data service form lists $149, $199, or $249 a month plus exchange fees; Premier costs $29.95 a month, $239.95 a year, or $419.95 for two years, with the first 30 days free."
+    terms: "The site terms, updated 2026-02-03, forbid reproducing, retransmitting, or distributing any Barchart content for personal or business purposes without written consent, and their CME rider forbids commercial use and any machine learning or artificial intelligence use. The web-service user agreement lets you store, analyse, and display data only for your personal use."
+    terms_url: "https://www.barchart.com/terms"
+    desktop_use: check-the-terms
+    desktop_use_note: "The terms do not mention third-party applications: OnDemand keys are issued per client under an order form through sales, and Premier has only manual CSV downloads, whose use by an app is not addressed."
+    licence_scope: "Personal use only; no retransmission, commercial use, or machine learning"
+    presets: []
+  - id: cme-datamine
+    name: "CME DataMine"
+    kind: exchange-archive
+    offers: "CME's own archive of time and sales from 1982, top of book from 1999 to 2008 depending on the exchange, market depth from 2009, and end-of-day, block trade, and volume and open interest datasets, for individual instruments with definition files. Current CSV versions carry nanosecond UTC timestamps, delivered gzipped through a download API, SFTP, or S3."
+    cost: "Prices are quoted inside the portal and no public price list is published; CME information fees rose by up to 3.5% from 2026-01-01, and annual DataMine subscription fees apply at renewal."
+    terms: "Every order goes through a usage questionnaire, a signed agreement, and a CME licensing review. The Information License Agreement of June 2026 allows internal business use and limited derivative works, and forbids distributing the information and text and data mining as defined in EU Directive 2019/790."
+    terms_url: "https://www.cmegroup.com/market-data/files/information-license-agreement-june-2026.pdf"
+    desktop_use: check-the-terms
+    desktop_use_note: "Access is by your own CME Group Login and API ID under an agreement for internal purposes, and no published term permits or forbids a third-party desktop app on your machine using that API ID."
+    licence_scope: "Internal business purposes of the licensee; no distribution or text and data mining"
+    presets: []
+  - id: norgate
+    name: "Norgate Data"
+    kind: vendor
+    offers: "Daily bars only for around 100 futures markets on 11 exchanges, back to around 1980 or each market's first day, ES from 1997-09-09 and MES and MNQ from 2019-05-06, with the settlement price as the close, open interest, contract specifications, and individual contracts plus unadjusted and back-adjusted continuous series. The data lives in a local database kept by the Windows-only Norgate Data Updater."
+    cost: "Futures package $148.50 for 6 months or $270 for 12 months, with no monthly term, no cancellation, and no auto-renewal."
+    terms: "The EULA of 2026-10-02 licenses one individual for personal, non-commercial trading, research, and backtesting on two computers, allows exporting and processing the content anywhere for that use, also with third-party software (clause 2(iv)), and requires deleting exported content when the subscription expires."
+    terms_url: "https://norgatedata.com/subscribe/eula.php"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app can read your ASCII exports or call the norgatedata Python package on your machine, since the EULA lets third-party software process the data for your own use, while a built-in integration needs Norgate's agreement because there is no generic API."
+    licence_scope: "Personal use by one individual on two computers; delete exports on expiry"
+    presets: []
+  - id: binance-vision
+    name: "Binance Vision (data.binance.vision)"
+    kind: exchange-archive
+    offers: "Daily and monthly ZIP archives of spot and USD-M futures klines from 1 second to 1 month, trades, and aggregated trades, with BTCUSDT and ETHUSDT spot from 2017-08 and USD-M futures from 2020-01, plus funding rates, open interest metrics from 2020-09-01, and mark, index, and premium klines for futures. Daily files appear the next day and monthly files on the first Monday of the month."
+    cost: "Free for any individual or legal entity (clause 2.3)."
+    terms: "The Binance Vision Dataset Terms, version 1.0 of 2026-08-26, license the data under CC BY-NC-SA 4.0 and allow algorithmic historical backtesting for purely personal, non-production research (clauses 3.1, 4.1). They forbid live proprietary trading execution, signal distribution to third parties for compensation, hosting or selling the data, and integration into commercial products (clauses 4.2 to 4.4)."
+    terms_url: "https://data.binance.vision/Binance_Vision-Terms_of_Use.pdf"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a local app you run for personal, non-production backtesting sits inside clause 4.1, since no clause addresses a desktop tool downloading for you, while a paid app that ships or hosts the data breaches clauses 4.3 and 4.4."
+    licence_scope: "CC BY-NC-SA 4.0; personal non-production backtesting only (clauses 3.1, 4.1)"
+    presets:
+      - id: binance-vision
+        name: "Binance Vision monthly archives"
+        reads: "Monthly ZIPs of one CSV each beside a .CHECKSUM file: spot klines without a header row and futures klines with one since about May 2022, Unix timestamps in milliseconds or, for spot from 2025-01-01, microseconds, and bars stamped at the open with an inclusive close_time; it arrives when crypto files are fed."
+        status: planned
+  - id: bybit
+    name: "Bybit public archive"
+    kind: exchange-archive
+    offers: "Gzipped CSV files of derivatives trade prints by day from 2019-10-01 for BTCUSD and 2020-03-25 for BTCUSDT, spot trade prints by day and month from 2022-11, and 15- and 60-minute MetaTrader 4 klines for 23 symbols from 2020 to 2024 only. Funding and open interest files are not published on the archive, and other candles come from the REST API."
+    cost: "Free, over anonymous HTTP."
+    terms: "The archive's own licence is not published, and the API terms, updated 2024-11-14, forbid commercially exploiting the APIs, repackaging or reselling Service Data, and using the API for benchmarking. The general terms of 2026-01-23 exclude users in the United States, the Chinese Mainland, Hong Kong, Singapore, Canada, France, the United Kingdom, and other jurisdictions (clause 3.4)."
+    terms_url: "https://www.bybitglobal.com/en/help-center/article/API-Terms"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a local desktop app holding your own key is an API Client you authorise, which the API terms explicitly provide for, and the no-resale and no-benchmarking clauses bind its use of Service Data."
+    licence_scope: "Archive licence not published; API terms bar resale and commercial use"
+    presets: []
+  - id: okx
+    name: "OKX historical data portal"
+    kind: exchange-archive
+    offers: "A download page for spot and contract data: tick-level trades from September 2021, candlesticks from July 2023, perpetual funding rates from March 2022, L2 order books from March 2023, and borrowing rates from December 2021. Downloads run through buttons on the page, and file names, columns, and timestamp units are not published."
+    cost: "Free; the download page shows no price."
+    terms: "The OKX API Agreement, updated 2026-07-28, allows market data only for your own personal, non-commercial trading and account management, including data from public endpoints, and forbids redistributing, reselling, or commercially exploiting it (clause 9.4). The licence is limited, revocable, non-exclusive, and non-transferable (clause 9.2)."
+    terms_url: "https://www.okx.com/en-us/help/okx-api-agreement"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, the agreement does not settle whether a local app holding your own key is a third party under clauses 5.1 and 8.2(a), which forbid sharing keys or access, and clause 9.4 binds anyone who calls the public endpoints, which need no key."
+    licence_scope: "Personal, non-commercial trading use; no redistribution or resale (API Agreement 9.4)"
+    presets: []
+  - id: kraken
+    name: "Kraken downloadable history"
+    kind: exchange-archive
+    offers: "Spot OHLCVT bars at 1, 5, 15, 30, 60, 240, 720, and 1440 minutes and trade history for every pair from its first trade through 2026-06-30, as a full archive in parts with SHA-256 sums and quarterly updates. The archive is spot only, and Kraken Futures history comes from the REST API."
+    cost: "Free."
+    terms: "The download pages carry no licence text beyond a disclaimer that the data is for general information, and no API legal terms are published. Kraken serves US clients except residents of New York and Maine."
+    terms_url: "https://support.kraken.com/hc/en-us/articles/360047124832-Downloadable-historical-OHLCVT-Open-High-Low-Close-Volume-Trades-data"
+    desktop_use: check-the-terms
+    desktop_use_note: "Kraken's support pages let third-party services such as trading bots and mobile apps use an API key you create for them, and the archive needs no key, but no data licence covers the downloaded files."
+    licence_scope: "No data licence published"
+    presets: []
+  - id: coinbase
+    name: "Coinbase Exchange and Advanced Trade"
+    kind: exchange-archive
+    offers: "Spot candles from 1 minute to 1 day and trades through the Advanced Trade and Exchange REST APIs, at most 350 or 300 candles a request; Advanced Trade also covers US futures for eligible US clients and perpetuals for eligible non-US clients. There is no bulk archive, and the earliest candle date is not published."
+    cost: "Free API access, with no fee schedule for market data published."
+    terms: "The Market Data Terms of Use, updated 2026-08-07, license the data only for your own or your entity's personal or research purposes, forbid building an application for end users other than you, forbid redistributing the data or derived works outside your organisation, and forbid using it to train or improve AI or machine learning models."
+    terms_url: "https://www.coinbase.com/legal/market_data"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a desktop app you run for your own research is use for you, but the terms forbid applications built for other end users and do not say whether each user supplying their own key changes that."
+    licence_scope: "Personal or research use; no redistribution, apps for others, or AI training"
+    presets: []
+  - id: hyperliquid
+    name: "Hyperliquid historical data"
+    kind: exchange-archive
+    offers: "S3 archives of L2 order book snapshots by hour, daily asset contexts with funding and open interest, and trade fills from a non-validating node, uploaded about once a month with no guarantee of timely updates; candles come only from the API, which keeps the most recent 5,000. The first available date in the archive is not published."
+    cost: "The data is free, but the requester pays transfer costs, which needs an AWS account; AWS gives 100 GB a month free and lists $0.09 per GB to the internet as an example S3 rate."
+    terms: "No data licence for the S3 buckets or the API is published. The Interface Terms of Use, updated 2026-06-15, bar persons in the United States or Ontario, Canada, from the app (clause 1.6)."
+    terms_url: "https://app.hyperliquid.xyz/terms"
+    desktop_use: check-the-terms
+    desktop_use_note: "The info endpoints need no API key, but no terms on third-party software using the API or the archive are published."
+    licence_scope: "No data licence published"
+    presets: []
+  - id: tardis
+    name: "Tardis.dev"
+    kind: vendor
+    offers: "Daily gzipped CSV files with microsecond UTC timestamps of order book updates and snapshots, trades, quotes, options chains, liquidations, and derivative tickers with funding, open interest, and mark and index prices, since 2019-03-30 for most exchanges. Exchanges include Binance, OKX, Bybit, Kraken Futures, and Hyperliquid, and there is no candle dataset."
+    cost: "Perpetuals plans cost $350, $700, $1,000, or $3,000 a month from Academic to Business, Spot and Derivatives $450 to $3,500, and All Exchanges $650 to $6,000, with a $300 minimum order, no discounts or one-off purchases, and 4 months of history on monthly billing, 12 on quarterly, and 4 years or all on yearly; first-of-month CSV files are free without an API key."
+    terms: "The Terms of Service, modified 2026-09-13, permit internal business, research, educational, or personal use by the customer only (clause 1.1), forbid redistributing or reselling the data except aggregated candles of 10 minutes or longer (clause 9.2), and make the licence to downloaded data perpetual (clause 9.4)."
+    terms_url: "https://docs.tardis.dev/legal/terms-of-service.md"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, a local app for your own use is within the permitted personal use, while shipping Tardis data inside a distributed app is redistribution unless it is candles of 10 minutes or coarser."
+    licence_scope: "Personal or internal use by the customer; no redistribution (clauses 1.1, 9.2)"
+    presets: []
+  - id: coinapi
+    name: "CoinAPI"
+    kind: vendor
+    offers: "Crypto quotes, trades, full and snapshot order books, OHLCV at 1 second, 1 minute, 1 hour, and 1 day, metrics, and Hyperliquid oracle prices, through REST, WebSocket, JSON-RPC, and FIX APIs and as gzipped CSV flat files on S3 in UTC. History depth per exchange is not published."
+    cost: "The Market Data API is pay as you go with $25 of free credit, or Startup $79, Streamer $249, and Pro $599 a month, $69, $199, and $499 on annual billing; flat files cost $1 a credit pay as you go or $64 to $1,024 a month committed, with usage metered per GiB or MiB."
+    terms: "The Usage Policy forbids redistributing raw or normalised data on any plan and sharing API keys with third parties, counts internal trading systems, quant research, and AI and machine learning work as internal use, and warns that showing data to external users may count as redistribution."
+    terms_url: "https://www.coinapi.io/usage-policy"
+    desktop_use: check-the-terms
+    desktop_use_note: "By inference, your own key inside a local app is internal use, while an app vendor must not embed its own key for other users, under the rule against sharing keys with third parties."
+    licence_scope: "Internal use by your organisation; no raw redistribution or key sharing"
+    presets: []
+  - id: kaiko
+    name: "Kaiko"
+    kind: vendor
+    offers: "Institutional crypto data feeds of trades, order books, and aggregates, plus analytics, indices, and oracles, across 200+ exchanges, with Amberdata's derivatives and on-chain data since Kaiko bought it on 2026-06-02. History depth depends on the package."
+    cost: "No public price list, only enterprise quotes; a third-party marketplace reports about $9,500 to $55,000 a year, around $28,500 on average."
+    terms: "No public terms or data licence are published."
+    terms_url: "https://www.kaiko.com/"
+    desktop_use: check-the-terms
+    desktop_use_note: "No terms on personal use or third-party applications are published."
+    licence_scope: "No public licence published"
+    presets: []
+  - id: ninjatrader
+    name: "NinjaTrader 8"
+    kind: platform
+    offers: "Exports tick, minute, and daily history of Last, Bid, or Ask data from the Historical Data window, only for data already stored on your machine, downloaded from your data provider or collected live."
+    cost: "Not published in the research."
+    terms: "An exported file stays under the terms of the data feed it came from."
+    terms_url: "https://ninjatrader.com/support/helpGuides/nt8/exporting.htm"
+    desktop_use: check-the-terms
+    desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
+    licence_scope: "The terms of the data feed the export came from"
+    presets:
+      - id: ninjatrader
+        name: "NinjaTrader 8 export"
+        reads: "Semicolon-separated .txt with no header row, yyyyMMdd HHmmss timestamps, or yyyyMMdd for daily bars, always in UTC, bars stamped at the close, and the contract in the file name, such as ES 12-09.Last.txt; it arrives with fefat data import file in step 1.10."
+        status: planned
+  - id: tradingview
+    name: "TradingView"
+    kind: platform
+    offers: "Downloads the bars loaded on a chart as CSV, with OHLC, volume when the Volume indicator is on the chart, and every indicator plot, capped by plan at 10,000 to 40,000 bars."
+    cost: "Export comes with the Essential, Plus, Premium, and Ultimate plans, whose prices are not published in the research."
+    terms: "An exported file stays under the terms of the data feed it came from."
+    terms_url: "https://www.tradingview.com/support/solutions/43000537255-how-to-export-chart-data/"
+    desktop_use: check-the-terms
+    desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
+    licence_scope: "The terms of the data feed the export came from"
+    presets:
+      - id: tradingview
+        name: "TradingView chart export"
+        reads: "CSV with the header time,open,high,low,close, plus Volume and indicator columns when they are on the chart, time in Unix seconds or ISO 8601, in UTC, bars stamped at the open, and as many bars as the plan allows; it arrives with fefat data import file in step 1.10."
+        status: planned
+  - id: sierra-chart
+    name: "Sierra Chart"
+    kind: platform
+    offers: "Text exports of the bars loaded in a chart at its bar period, of a whole intraday .scid file with records from one trade to one minute, and of daily .dly files, with data from the data service you connect. The .scid export of a continuous futures chart covers only the current contract."
+    cost: "Not published in the research."
+    terms: "An exported file stays under the terms of the data feed it came from."
+    terms_url: "https://www.sierrachart.com/index.php?page=doc/ImportExport.html"
+    desktop_use: check-the-terms
+    desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
+    licence_scope: "The terms of the data feed the export came from"
+    presets:
+      - id: sierra-chart
+        name: "Sierra Chart text export"
+        reads: "Comma- or tab-separated text with the header Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume, dates as YYYY/MM/DD that may be unpadded and times as hh:mm:ss, in UTC for the intraday file export and in the chart's time zone for the bar export, and bars stamped at the open; it arrives with fefat data import file in step 1.10."
+        status: planned
+  - id: tradestation
+    name: "TradeStation"
+    kind: platform
+    offers: "Saves the Data window's open, high, low, close, volume, and study values at the chart's interval as an ASCII .txt file, one symbol at a time."
+    cost: "Not published in the research."
+    terms: "An exported file stays under the terms of the data feed it came from."
+    terms_url: "https://help.tradestation.com/10_00/eng/TradeStationHelp/chart_analysis/data_window.htm"
+    desktop_use: check-the-terms
+    desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
+    licence_scope: "The terms of the data feed the export came from"
+    presets:
+      - id: tradestation
+        name: "TradeStation export"
+        reads: "Bars stamped at the close in the chart's time zone, local or exchange per Format Symbol, with the midnight bar dated the next day, and a layout to confirm on a real file: the community sample has the header Date,Time,Open,High,Low,Close,Vol,OI with MM/DD/YYYY dates and HHMM times; it arrives with fefat data import file in step 1.10."
+        status: planned
+  - id: multicharts
+    name: "MultiCharts"
+    kind: platform
+    offers: "Exports tick, minute, and daily Ask, Bid, or Trade data from QuoteManager, or bars at the chart's resolution with its sessions and time zone, as comma-separated .txt, .asc, or .csv files, with the time zone chosen per export and data from the data source you connect. Bars are stamped at the close per MultiCharts staff, and the header row and date format are not published."
+    cost: "Not published in the research."
+    terms: "An exported file stays under the terms of the data feed it came from."
+    terms_url: "https://www.multicharts.com/trading-software/index.php/Exporting_Data"
+    desktop_use: check-the-terms
+    desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
+    licence_scope: "The terms of the data feed the export came from"
+    presets: []
+  - id: motivewave
+    name: "MotiveWave"
+    kind: platform
+    offers: "Exports any bar size in its historical database as CSV with yyyyMMdd HHmmss or dd/MM/yyyy HH:mm:ss times followed by O, H, L, C, V, or in NinjaTrader's start-of-bar or end-of-bar layouts, with the time zone selectable in export groups. The header row and the bar stamping of the plain CSV formats are not published."
+    cost: "Not published in the research."
+    terms: "An exported file stays under the terms of the data feed it came from."
+    terms_url: "https://docs.motivewave.com/user-guide/charts-1/exporting-data"
+    desktop_use: check-the-terms
+    desktop_use_note: "Whether a desktop app may read an exported file depends on the terms of the data feed it came from."
+    licence_scope: "The terms of the data feed the export came from"
+    presets: []
