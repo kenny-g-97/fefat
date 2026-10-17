@@ -6,7 +6,9 @@ A partition is complete once the file's clock has passed its last trade date by 
 partition already written means the file is out of order across partitions, and is refused. A
 partition the store already holds is left alone when it holds exactly these rows, which is
 how an interrupted import runs again, and refused otherwise: a file that overlaps an imported
-one is not merged into it.
+one is not merged into it. A dataset's `dataset.json` is written by its first import and kept
+by the later ones, since snapshots pin it (D-11); an import that counts sizes in another unit
+than the dataset's is refused.
 """
 
 from collections.abc import Mapping
@@ -18,7 +20,7 @@ import polars as pl
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
 from fefat.market.store import Store
 
-CONTRACT_SIZES = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+CONTRACT_SIZE = SizeUnit(lot=Decimal(1), asset="contract")
 """A futures dataset's sizes and volumes count contracts."""
 
 COMPLETE_AFTER = timedelta(days=7)
@@ -32,14 +34,12 @@ _NANOSECONDS_PER_SECOND = 1_000_000_000
 
 class PartitionBuffers:
     """One file's rows by partition until each is complete, written sorted by `order_column`,
-    keeping the order of equal instants (D-36)."""
+    keeping the order of equal instants (D-36), each dataset described by `metadata`."""
 
-    def __init__(
-        self, store: Store, order_column: str, size_unit: DatasetMetadata = CONTRACT_SIZES
-    ) -> None:
+    def __init__(self, store: Store, order_column: str, metadata: DatasetMetadata) -> None:
         self._store = store
         self._order_column = order_column
-        self._size_unit = size_unit
+        self._metadata = metadata
         self._waiting: dict[Partition, list[pl.DataFrame]] = {}
         self._done: set[Partition] = set()
         self._described: set[Dataset] = set()
@@ -81,10 +81,22 @@ class PartitionBuffers:
             self._keep_stored(partition, rows)
             return
         if partition.dataset not in self._described:
-            self._store.write_dataset_metadata(partition.dataset, self._size_unit)
+            self._describe(partition.dataset)
             self._described.add(partition.dataset)
         self._store.write_partition(partition, rows)
         self.written += 1
+
+    def _describe(self, dataset: Dataset) -> None:
+        if not self._store.has_dataset_metadata(dataset):
+            self._store.write_dataset_metadata(dataset, self._metadata)
+            return
+        stored = self._store.dataset_metadata(dataset).size_unit
+        if stored != self._metadata.size_unit:
+            raise ValueError(
+                f"Expected the size unit of {dataset.relative_folder()}, {stored}, got "
+                f"{self._metadata.size_unit} from this import: a dataset counts its sizes in one "
+                "unit."
+            )
 
     def _keep_stored(self, partition: Partition, rows: pl.DataFrame) -> None:
         stored = self._store.scan_partition(partition).collect()

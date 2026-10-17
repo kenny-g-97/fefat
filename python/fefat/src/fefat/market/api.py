@@ -1,19 +1,20 @@
-"""The SDK's data API (step 1.8): `load` gives the signal bars of a product or a contract in one
-call, and `catalog` lists what the store holds.
+"""The SDK's data API (steps 1.8 and 1.9): `load` gives the signal bars of a product or a
+contract in one call, and `catalog` lists what the store holds.
 
     import fefat as ff
 
     bars = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31").collect()
     march = ff.market.load("MESH2024", "1m", "2024-03-01", "2024-03-15").collect()
     ticks = ff.market.load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="tick")
+    from_databento = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31", provider="databento")
     ff.market.catalog()
 
 Both read the store in `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`), and the session tables
 cached in `FEFAT_HOME`.
 
-`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto")` returns the
-bars of `timeframe` (`1s`, `5m`, `1h`, `1d`, ...) of the trade dates from `start` to `end`,
-dates or text such as `2024-01-31`, as a Polars LazyFrame with the columns of
+`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto", provider=None)`
+returns the bars of `timeframe` (`1s`, `5m`, `1h`, `1d`, ...) of the trade dates from `start`
+to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the columns of
 `SIGNAL_BAR_COLUMNS`:
 
 - `ts_open`, `ts_close`: the bucket of the session, `[open + k·Δ, open + (k+1)·Δ)` anchored at
@@ -44,14 +45,15 @@ alone, and a continuous load of them is refused. A contract that stopped trading
 rows to `end`, as zero-volume bars, since the grid adds no row because of a later one.
 
 `fidelity` names the data the bars are built from: `tick` (trades), `1s`, or `1m` bars, or
-`auto`, the finest the store holds; a timeframe finer than it is refused. The bars are built
-when `load` runs, and the frame is lazy so that a notebook adds its own columns and filters
-before it collects.
+`auto`, the finest the store holds; a timeframe finer than it is refused. `provider` names the
+provider whose datasets the bars come from, such as `databento`, where several hold the root;
+without it a root that several hold is refused, since choosing by the catalog's
+recommendation waits for a second provider (step 1.10). The bars are built when `load` runs,
+and the frame is lazy so that a notebook adds its own columns and filters before it collects.
 """
 
 import os
 from datetime import date, datetime
-from enum import StrEnum
 
 import polars as pl
 
@@ -60,21 +62,20 @@ from fefat.market import instruments
 from fefat.market.bars import build_bars, resample_bars, session_grid
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
-from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
+from fefat.market.coverage import Fidelity, dataset_coverage, session_datasets
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest
-from fefat.market.quality_report import QualityStanding, quality_standing
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
 from fefat.market.schema import (
     BarSchemaName,
     SchemaKind,
-    SchemaName,
     Timeframe,
-    parse_schema_name,
 )
+from fefat.market.status import DATASET_COLUMNS, dataset_status
 from fefat.market.store import Store
 
 SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean})
@@ -82,40 +83,9 @@ SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean}
 offset of its prices, whether it is a new front's first, and whether its bucket is empty."""
 AUTO = "auto"
 """The fidelity of `load` that takes the finest data the store holds."""
-CATALOG_COLUMNS = pl.Schema(
-    {
-        "provider": pl.String,
-        "root": pl.String,
-        "schema": pl.String,
-        "fidelity": pl.String,
-        "contracts": pl.UInt32,
-        "first_trade_date": pl.Date,
-        "last_trade_date": pl.Date,
-        "quality": pl.String,
-        "checked_through": pl.Date,
-    }
-)
-"""The catalog's row per dataset of trades, TBBO, or bars: its provider, root, and schema; its
-fidelity, `tick` for trades and TBBO, else the timeframe of its bars; how many contracts it
-holds; its first and last trade date; and the status of its root's quality report from its
-provider, with the last trade date the report checked, none while unchecked."""
-
-
-class Fidelity(StrEnum):
-    """The finest data a load builds its bars from, finest first: trades, 1-second bars, or
-    1-minute bars."""
-
-    TICK = "tick"
-    SECOND = "1s"
-    MINUTE = "1m"
-
-    def schema_name(self) -> SchemaName:
-        """The schema of the data of this fidelity."""
-        return parse_schema_name("trades" if self is Fidelity.TICK else f"ohlcv-{self}")
-
-    def records(self) -> str:
-        """What the data of this fidelity is called."""
-        return {"tick": "trades", "1s": "1-second bars", "1m": "1-minute bars"}[self]
+CATALOG_COLUMNS = pl.Schema({**DATASET_COLUMNS, "catalog_version": pl.UInt32})
+"""The catalog's row per dataset of trades, TBBO, or bars: the columns of `DATASET_COLUMNS`
+(`fefat.market.status`) and the version of the product catalog (`fefat.market.catalog`)."""
 
 
 def load(
@@ -125,6 +95,7 @@ def load(
     end: str | date,
     continuous: bool | None = None,
     fidelity: str = AUTO,
+    provider: str | None = None,
 ) -> pl.LazyFrame:
     """The signal bars of `root_or_symbol` (a root such as `MES`, or a contract such as
     `MESH2024`) of `timeframe` on the trade dates from `start` to `end`, with the columns of
@@ -141,7 +112,7 @@ def load(
     # shortcut: the calendar of the root's newest instrument version, as the quality report
     # takes it; load by version when a root's calendar changes over time.
     sessions = sessions_of(BUILT_IN[instrument.calendar_id], paths.cache_dir)
-    datasets = _datasets_of(store, root)
+    datasets = _datasets_of(store, root, provider)
     source = _source(datasets, fidelity, bar_timeframe, root)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
@@ -158,38 +129,11 @@ def load(
 
 def catalog() -> pl.DataFrame:
     """Every dataset of trades, TBBO, or bars the store holds, with the columns of
-    `CATALOG_COLUMNS`, sorted by provider, root, and schema."""
+    `CATALOG_COLUMNS`, sorted by provider, root, and schema; an empty store gives no rows, and
+    `ff.market.CATALOG.version` the catalog's version whatever the store holds."""
     paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
-    rows = [
-        _catalog_row(
-            dataset, coverage, quality_standing(paths.reports_dir, dataset.provider, dataset.root)
-        )
-        for dataset in session_datasets(store)
-        if (coverage := dataset_coverage(store, dataset)) is not None
-    ]
-    return pl.DataFrame(rows, schema=CATALOG_COLUMNS, orient="row").sort(
-        "provider", "root", "schema"
-    )
-
-
-def _catalog_row(
-    dataset: Dataset, coverage: DatasetCoverage, standing: QualityStanding
-) -> tuple[object, ...]:
-    fidelity = str(Fidelity.TICK)
-    if isinstance(dataset.schema_name, BarSchemaName):
-        fidelity = str(dataset.schema_name.timeframe)
-    return (
-        dataset.provider,
-        dataset.root,
-        str(dataset.schema_name),
-        fidelity,
-        len(coverage.contracts),
-        coverage.first_trade_date,
-        coverage.last_trade_date,
-        str(standing.status),
-        standing.checked_through,
-    )
+    datasets = dataset_status(Store(paths.data_dir), paths.reports_dir)
+    return datasets.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))
 
 
 def _root_and_contract(symbol: str) -> tuple[str, str | None]:
@@ -239,14 +183,19 @@ def _trade_date(value: str | date, name: str) -> date:
         ) from error
 
 
-def _datasets_of(store: Store, root: str) -> dict[str, Dataset]:
-    """The root's datasets of trades, TBBO, and bars by their schema, all from one provider."""
+def _datasets_of(store: Store, root: str, provider: str | None) -> dict[str, Dataset]:
+    """The root's datasets of trades, TBBO, and bars by their schema, from `provider`, or from
+    the one provider that holds the root when it is None."""
     found = [dataset for dataset in session_datasets(store) if dataset.root == root]
     providers = sorted({dataset.provider for dataset in found})
-    if len(providers) != 1:
-        held = " and ".join(providers) if providers else "none"
-        raise ValueError(f"Expected one provider of {root} in the store, got {held}.")
-    return {str(dataset.schema_name): dataset for dataset in found}
+    held = " and ".join(providers) if providers else "none"
+    if provider is not None and provider not in providers:
+        raise ValueError(f"Expected a provider of {root} in the store ({held}), got {provider!r}.")
+    if provider is None and len(providers) != 1:
+        hint = "; name one with provider=" if providers else ""
+        raise ValueError(f"Expected one provider of {root} in the store, got {held}{hint}.")
+    chosen = providers[0] if provider is None else provider
+    return {str(dataset.schema_name): dataset for dataset in found if dataset.provider == chosen}
 
 
 def _source(

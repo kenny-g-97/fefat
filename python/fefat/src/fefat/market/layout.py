@@ -10,9 +10,10 @@ A store folder holds a folder per provider, a folder per schema in each, and bel
 Trades, TBBO, and bars finer than a minute are split per trade date, one-minute bars per
 month of their trade dates, and coarser bars, definitions, statistics, and funding are one
 file per contract (`partitioning`). `dataset.json` holds what every partition of the dataset
-shares, such as the unit of its sizes. The folder `raw` beside the providers keeps the
-vendors' original files (`fefat.market.raw_manifest`), and the folder `reports` the quality
-reports (`fefat.market.quality`). What the files hold is `fefat.market.schema`.
+shares: the unit of its sizes, its origin, and the licence scope its source gives the trader
+(step 1.9). The folder `raw` beside the providers keeps the vendors' original files
+(`fefat.market.raw_manifest`), and the folder `reports` the quality reports
+(`fefat.market.quality`). What the files hold is `fefat.market.schema`.
 """
 
 import re
@@ -245,8 +246,23 @@ class SizeUnit(FrozenModel):
     lot: Decimal = Field(gt=0)
     asset: str = Field(min_length=1)
 
+    def __str__(self) -> str:
+        return f"{self.lot} {self.asset}"
+
+
+class DatasetOrigin(StrEnum):
+    """How a dataset came into the store (D-37): imported from the trader's files, or synced
+    through a connector to a source the trader connects, which waits for a later phase (D-38)."""
+
+    IMPORT = "import"
+    SYNC = "sync"
+
 
 class DatasetMetadata(FrozenModel):
-    """What every partition of a dataset shares, kept in the dataset's `dataset.json`."""
+    """What every partition of a dataset shares, kept in the dataset's `dataset.json`: the unit
+    of its sizes, its origin, and the licence scope the terms of its source give the trader
+    (`fefat.market.sources`). Its provider is the folder it lies in."""
 
     size_unit: SizeUnit
+    origin: DatasetOrigin
+    licence_scope: str = Field(min_length=1)

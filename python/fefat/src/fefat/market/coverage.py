@@ -1,22 +1,41 @@
 """What a dataset of trades, TBBO, or bars holds: its contracts, its first and last trade date,
 and the instant by which every record was received, read from its partitions at either end
-(step 1.8). The quality report (`fefat.market.quality`) and the load API and catalog
-(`fefat.market.api`) start from it.
+(step 1.8), and the fidelities of the data a load builds bars from. The quality report
+(`fefat.market.quality`), the load API (`fefat.market.api`), and the status of datasets and
+products (`fefat.market.status`) start from it.
 
     es_trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
     dataset_coverage(Store(Path("fixtures")), es_trades)
 """
 
 from datetime import date
+from enum import StrEnum
 
 import polars as pl
 
 from fefat.market.layout import Dataset, Partition
-from fefat.market.schema import FrozenModel, SchemaKind
+from fefat.market.schema import FrozenModel, SchemaKind, SchemaName, parse_schema_name
 from fefat.market.store import Store
 
 SESSION_KINDS = frozenset({SchemaKind.TRADES, SchemaKind.TBBO, SchemaKind.OHLCV})
 """The schemas whose records fall in sessions: trades, TBBO, and bars."""
+
+
+class Fidelity(StrEnum):
+    """The finest data a load builds its bars from, finest first: trades, 1-second bars, or
+    1-minute bars."""
+
+    TICK = "tick"
+    SECOND = "1s"
+    MINUTE = "1m"
+
+    def schema_name(self) -> SchemaName:
+        """The schema of the data of this fidelity."""
+        return parse_schema_name("trades" if self is Fidelity.TICK else f"ohlcv-{self}")
+
+    def records(self) -> str:
+        """What the data of this fidelity is called."""
+        return {"tick": "trades", "1s": "1-second bars", "1m": "1-minute bars"}[self]
 
 
 class DatasetCoverage(FrozenModel):

@@ -8,10 +8,17 @@ from dbn_files import dbn_content, mapping, utc, write_dbn
 from fefat.market.importers.canonical import RecordPlacement, active_days
 from fefat.market.importers.dbn import read_dbn
 from fefat.market.importers.file_writer import write_records
+from fefat.market.importers.partition_buffers import CONTRACT_SIZE
 from fefat.market.instruments import STATIC_TABLE
+from fefat.market.layout import DatasetMetadata, DatasetOrigin
 from fefat.market.store import Store
 
 ESH6 = [mapping("ESH6", 1001, date(2025, 3, 21), date(2026, 3, 21))]
+IMPORTED = DatasetMetadata(
+    size_unit=CONTRACT_SIZE,
+    origin=DatasetOrigin.IMPORT,
+    licence_scope="Synthetic test data; no licence applies",
+)
 TRADE_BYTES = 48
 """A trade record's size: a chunk this long completes at most one record, so each frame holds
 one trade, as the chunks of a large file split its records."""
@@ -35,7 +42,9 @@ def test_a_record_earlier_than_the_last_of_the_previous_frame_is_counted(tmp_pat
     path = trades_file(tmp_path, utc(2026, 3, 9, 14, 31), utc(2026, 3, 9, 14, 30))
     _, frames = read_dbn(path, TRADE_BYTES)
 
-    report = write_records(frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x")
+    report = write_records(
+        frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x", IMPORTED
+    )
 
     assert report.clock_decreases == 1
     assert report.first_clock_decrease is not None
@@ -53,7 +62,7 @@ def test_a_partition_completes_while_the_file_streams_and_refuses_later_rows(
     _, frames = read_dbn(path, TRADE_BYTES)
 
     with pytest.raises(ValueError, match="got more after it was complete and written"):
-        write_records(frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x")
+        write_records(frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x", IMPORTED)
 
 
 def test_a_day_the_symbology_does_not_cover_is_refused_before_anything_is_written(

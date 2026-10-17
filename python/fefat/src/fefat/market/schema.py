@@ -58,6 +58,12 @@ class TimeUnit(StrEnum):
 
 _TIMEFRAME_TEXT = "([1-9][0-9]*)([smhd])"
 """A timeframe as schema names write it: a count without leading zeros and a unit."""
+_UNIT_WORDS = {
+    TimeUnit.SECOND: "second",
+    TimeUnit.MINUTE: "minute",
+    TimeUnit.HOUR: "hour",
+    TimeUnit.DAY: "day",
+}
 _SECONDS_PER_TIME_UNIT = {
     TimeUnit.SECOND: 1,
     TimeUnit.MINUTE: 60,
@@ -82,6 +88,10 @@ class Timeframe(FrozenModel):
         if found is None:
             raise ValueError(f"Expected a timeframe such as 1s, 5m, 1h, or 1d, got {text!r}.")
         return cls(count=int(found[1]), unit=TimeUnit(found[2]))
+
+    def in_words(self) -> str:
+        """The timeframe as prose writes it before a noun, such as `1-minute` or `5-second`."""
+        return f"{self.count}-{_UNIT_WORDS[self.unit]}"
 
     def nominal_seconds(self) -> int:
         """The length in seconds, nominal for daily bars, whose sessions differ in length."""

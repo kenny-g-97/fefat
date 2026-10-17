@@ -37,7 +37,8 @@ Trades carry `ts_recv`, `ts_event`, `instrument_id`, `price`, `size` (contracts
 for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
 `N` for the opening print), and `sequence`. Each dataset folder
 `<schema>/root=…/` holds a `dataset.json` with the unit of its sizes and volumes
-(`size_unit`: one unit is `lot` of `asset`). MANIFEST.json lists every file with
+(`size_unit`: one unit is `lot` of `asset`), its `origin`, an import, and its
+`licence_scope`, which no licence limits. MANIFEST.json lists every file with
 the generator, the seed, its size, and its SHA-256, and each Parquet file's row
 count.
 
@@ -86,6 +87,7 @@ DEFAULT_SEED = 20260308
 GENERATOR = "scripts/gen_fixtures.py"
 MANIFEST_NAME = "MANIFEST.json"
 DATASET_METADATA_NAME = "dataset.json"
+LICENCE_SCOPE = "Synthetic data of scripts/gen_fixtures.py; no licence applies"
 
 DATABENTO_JOB = "GLBX-20260310-SYNTHETIC0"
 DATABENTO_DATA_FILE = "glbx-mdp3-20260304-20260309.ohlcv-1m.dbn"
@@ -510,9 +512,14 @@ def written_partition(table: pa.Table, path: Path, out: Path, seed: int) -> dict
 def written_dataset_metadata(
     product: FixtureProduct, schema: str, out: Path, seed: int
 ) -> dict[str, str | int]:
-    """Write a dataset's `dataset.json`, the unit of its sizes and volumes, and return its entry."""
+    """Write a dataset's `dataset.json`, the unit of its sizes and volumes, its origin, and its
+    licence scope, and return its entry."""
     path = out / schema / f"root={product.root}" / DATASET_METADATA_NAME
-    metadata = {"size_unit": {"lot": product.size_lot, "asset": product.size_asset}}
+    metadata = {
+        "size_unit": {"lot": product.size_lot, "asset": product.size_asset},
+        "origin": "import",
+        "licence_scope": LICENCE_SCOPE,
+    }
     path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")
     return manifest_entry(path, out, seed)
 

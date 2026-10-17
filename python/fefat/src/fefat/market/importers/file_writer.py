@@ -27,6 +27,7 @@ from fefat.market.importers.report import (
     FileImport,
     SymbolRecords,
 )
+from fefat.market.layout import DatasetMetadata
 from fefat.market.store import Store
 
 
@@ -66,12 +67,17 @@ class FileClock:
 
 
 def write_records(
-    records: Iterable[pl.DataFrame], placement: RecordPlacement, store: Store, raw_path: str
+    records: Iterable[pl.DataFrame],
+    placement: RecordPlacement,
+    store: Store,
+    raw_path: str,
+    metadata: DatasetMetadata,
 ) -> FileImport:
-    """Place and write a file's record frames, in file order, and report what was written and
-    what was set aside; `raw_path` names the file in the report."""
+    """Place and write a file's record frames, in file order, each dataset they reach described
+    by `metadata`, and report what was written and what was set aside; `raw_path` names the
+    file in the report."""
     clock = FileClock(placement.clock_column())
-    buffers = PartitionBuffers(store, placement.order_column())
+    buffers = PartitionBuffers(store, placement.order_column(), metadata)
     placed: list[PlacedRecords] = []
     for frame in records:
         clock.observe(frame)

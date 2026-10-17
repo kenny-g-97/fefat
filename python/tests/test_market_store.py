@@ -11,7 +11,14 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from fefat.market.layout import Dataset, DatasetMetadata, Partition, PartitionRequest, SizeUnit
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    PartitionRequest,
+    SizeUnit,
+)
 from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import SchemaKind, parse_schema_name
 from fefat.market.store import Store
@@ -29,7 +36,12 @@ ES_TRADES = PartitionRequest(
     start=date(2026, 3, 5),
     end=date(2026, 3, 9),
 )
-ES_SIZE = DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+NO_LICENCE = "Synthetic test data; no licence applies"
+ES_SIZE = DatasetMetadata(
+    size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+    origin=DatasetOrigin.IMPORT,
+    licence_scope=NO_LICENCE,
+)
 TRADES_OF_MARCH_5 = Partition.from_relative_path(
     PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
 )
@@ -73,13 +85,17 @@ def store_with_a_raw_file(folder: Path) -> Store:
     return Store(folder)
 
 
-def record(store: Store, vendor_version: str = "DBN 3") -> RawFile:
+def record(
+    store: Store, vendor_version: str = "DBN 3", imported_on: date = date(2026, 10, 13)
+) -> RawFile:
     return store.record_raw_file(
         RAW_PATH,
         provider="vendor",
         vendor_version=vendor_version,
         downloaded_on=date(2026, 9, 23),
         batch_job=JOB,
+        imported_on=imported_on,
+        roots=("ES", "MES"),
     )
 
 
@@ -349,7 +365,11 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
 
 def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
     store = Store(tmp_path)
-    btc = DatasetMetadata(size_unit=SizeUnit(lot=Decimal("0.001"), asset="BTC"))
+    btc = DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal("0.001"), asset="BTC"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=NO_LICENCE,
+    )
 
     store.write_dataset_metadata(ES_TRADES.dataset, btc)
 
@@ -361,9 +381,28 @@ def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
 def test_a_broken_dataset_json_is_refused_with_its_path(tmp_path: Path) -> None:
     path = tmp_path / ES_TRADES.dataset.metadata_path()
     path.parent.mkdir(parents=True)
-    path.write_text('{"size_unit": {"lot": "-1", "asset": "contract"}}', encoding="utf-8")
+    path.write_text(
+        '{"size_unit": {"lot": "-1", "asset": "contract"}, "origin": "import", '
+        '"licence_scope": "Synthetic test data; no licence applies"}',
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ValueError, match=r"Expected .*dataset\.json to hold a DatasetMetadata"):
+    with pytest.raises(
+        ValueError, match=r"Expected .*dataset\.json to hold a DatasetMetadata.*\n.*size_unit.lot"
+    ):
+        Store(tmp_path).dataset_metadata(ES_TRADES.dataset)
+
+
+def test_a_dataset_json_written_before_origins_and_licence_scopes_is_refused(
+    tmp_path: Path,
+) -> None:
+    # Step 1.9 added both fields: a store written earlier gets them by importing its files
+    # again, or by the rewrite docs/data-inventory.md records.
+    path = tmp_path / ES_TRADES.dataset.metadata_path()
+    path.parent.mkdir(parents=True)
+    path.write_text('{"size_unit": {"lot": "1", "asset": "contract"}}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"(?s)dataset\.json.*origin\n  Field required.*licence"):
         Store(tmp_path).dataset_metadata(ES_TRADES.dataset)
 
 
@@ -381,6 +420,8 @@ def test_recording_a_raw_file_keeps_its_size_hash_and_vendor_details(tmp_path: P
         vendor_version="DBN 3",
         downloaded_on=date(2026, 9, 23),
         batch_job=JOB,
+        imported_on=date(2026, 10, 13),
+        roots=("ES", "MES"),
     )
     assert store.raw_manifest() == RawManifest(files=(recorded,))
     assert b"\r\n" not in manifest
@@ -413,7 +454,37 @@ def test_a_raw_file_recorded_again_with_other_details_is_refused(tmp_path: Path)
 
     with pytest.raises(ValueError, match="Expected the raw file"):
         record(store, vendor_version="DBN 2")
+    with pytest.raises(ValueError, match="Expected the raw file"):
+        record(store, imported_on=date(2026, 10, 16))
     assert store.raw_manifest() == RawManifest(files=(first,))
+
+
+def test_the_last_import_of_a_root_is_its_newest_file_from_the_provider() -> None:
+    def imported(path: str, provider: str, day: int, *roots: str) -> RawFile:
+        return RawFile(
+            path=path,
+            size_bytes=1,
+            sha256="0" * 64,
+            provider=provider,
+            vendor_version="DBN 3",
+            downloaded_on=date(2026, 9, 23),
+            batch_job=None,
+            imported_on=date(2026, 10, day),
+            roots=roots,
+        )
+
+    manifest = RawManifest(
+        files=(
+            imported("vendor/a.dbn", "vendor", 13, "ES", "MES"),
+            imported("vendor/b.dbn", "vendor", 15, "MES"),
+            imported("vendor/b.json", "vendor", 16),
+            imported("other/c.dbn", "other", 17, "ES"),
+        )
+    )
+
+    assert manifest.last_import("vendor", "ES") == date(2026, 10, 13)
+    assert manifest.last_import("vendor", "MES") == date(2026, 10, 15)
+    assert manifest.last_import("vendor", "MNQ") is None
 
 
 def test_recording_a_raw_file_that_does_not_exist_is_refused(tmp_path: Path) -> None:
@@ -446,6 +517,8 @@ def test_a_raw_path_that_leaves_the_raw_folder_or_names_the_manifest_is_refused(
             vendor_version="DBN 3",
             downloaded_on=date(2026, 9, 23),
             batch_job=None,
+            imported_on=date(2026, 10, 13),
+            roots=(),
         )
 
 
@@ -461,6 +534,8 @@ def test_another_name_of_the_raw_manifest_is_refused(tmp_path: Path) -> None:
             vendor_version="DBN 3",
             downloaded_on=date(2026, 9, 23),
             batch_job=None,
+            imported_on=date(2026, 10, 13),
+            roots=(),
         )
 
 

@@ -1,0 +1,30 @@
+# The product catalog (02-engine-and-data.md section 1.8, D-38), read by fefat.market.catalog.
+# Each product names its root in the instrument table, its calendar, its roll rule, the schemas
+# its sources supply, the first trade date of its history, and the ids of the source guide's
+# sources that can supply it, the recommended one first. Raise the version with every change.
+version: 1
+products:
+  - root: MES
+    calendar: cme-equity-index
+    roll_rule: volume
+    schemas: [trades, tbbo, ohlcv-1s, ohlcv-1m, definitions, statistics]
+    history_from: 2019-05-06
+    sources: [databento, firstrate-data, kibot, portara-cqg, massive, interactive-brokers]
+  - root: MNQ
+    calendar: cme-equity-index
+    roll_rule: volume
+    schemas: [trades, tbbo, ohlcv-1s, ohlcv-1m, definitions, statistics]
+    history_from: 2019-05-06
+    sources: [databento, firstrate-data, kibot, massive, interactive-brokers]
+  - root: MCL
+    calendar: cme-energy
+    roll_rule: volume
+    schemas: [trades, tbbo, ohlcv-1s, ohlcv-1m, definitions, statistics]
+    history_from: 2021-07-12
+    sources: [databento, firstrate-data, massive, interactive-brokers]
+  - root: MGC
+    calendar: cme-metals
+    roll_rule: volume
+    schemas: [trades, tbbo, ohlcv-1s, ohlcv-1m, definitions, statistics]
+    history_from: 2010-10-04
+    sources: [databento, firstrate-data, kibot, massive, interactive-brokers]

@@ -4,6 +4,7 @@ import os
 import shutil
 import time
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +35,17 @@ from dbn_files import NANOSECONDS_PER_MINUTE, dbn_content, mapping, utc, write_d
 from fefat.market.calendar import utc_text
 from fefat.market.importers.databento import import_databento, vendor_conditions
 from fefat.market.importers.report import DatabentoImport, DayRecords, EarlySymbol, SymbolRecords
-from fefat.market.layout import Dataset, Partition, YearMonth
+from fefat.market.layout import (
+    Dataset,
+    DatasetMetadata,
+    DatasetOrigin,
+    Partition,
+    SizeUnit,
+    YearMonth,
+)
 from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import parse_schema_name
+from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -57,11 +66,12 @@ IMPORTED_MINUTES = Partition(
 ONE_MINUTE = int(RType.from_str("ohlcv-1m"))
 ONE_DAY = int(RType.from_str("ohlcv-1d"))
 ESH6 = [mapping("ESH6", 1001, date(2025, 3, 21), date(2026, 3, 21))]
+IMPORTED_ON = date(2026, 10, 16)
 
 
 def imported(folder: Path, source: Path = BATCH) -> tuple[Store, DatabentoImport]:
     store = Store(folder / "data")
-    return store, import_databento(source, store, folder / "cache")
+    return store, import_databento(source, store, folder / "cache", imported_on=IMPORTED_ON)
 
 
 def sha256_of(path: Path) -> str:
@@ -80,6 +90,33 @@ def store_files(folder: Path) -> dict[str, tuple[int, int]]:
         for path in folder.rglob("*")
         if path.is_file()
     }
+
+
+def test_an_imported_dataset_records_its_origin_and_databento_s_licence_scope(
+    tmp_path: Path,
+) -> None:
+    store, _ = imported(tmp_path)
+
+    assert store.dataset_metadata(IMPORTED_MINUTES.dataset) == DatasetMetadata(
+        size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+        origin=DatasetOrigin.IMPORT,
+        licence_scope=SOURCE_GUIDE.source("databento").licence_scope,
+    )
+
+
+def test_the_licence_scope_comes_from_the_guide_the_import_is_given(tmp_path: Path) -> None:
+    reworded = tuple(
+        source.model_copy(update={"licence_scope": "Reworded terms"})
+        if source.id == "databento"
+        else source
+        for source in SOURCE_GUIDE.sources
+    )
+    guide = SOURCE_GUIDE.model_copy(update={"sources": reworded})
+    store = Store(tmp_path / "data")
+
+    import_databento(BATCH, store, tmp_path / "cache", imported_on=IMPORTED_ON, guide=guide)
+
+    assert store.dataset_metadata(IMPORTED_MINUTES.dataset).licence_scope == "Reworded terms"
 
 
 def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_path: Path) -> None:
@@ -106,6 +143,8 @@ def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_pat
                 batch_job=None
                 if name == "manifest.json"
                 else BatchJob(job_id=JOB, published_sha256=published[name]),
+                imported_on=IMPORTED_ON,
+                roots=("ES",) if name == DATA_FILE else (),
             )
             for name in names
         )
@@ -183,7 +222,7 @@ def test_a_recorded_file_whose_bytes_changed_is_refused_with_both_hashes(tmp_pat
     recorded, changed = sha256_of(BATCH / DATA_FILE), sha256_of(data_file)
 
     with pytest.raises(ValueError, match=f"recorded with the SHA-256 {recorded}, got {changed}"):
-        import_databento(batch, store, tmp_path / "first" / "cache")
+        import_databento(batch, store, tmp_path / "first" / "cache", imported_on=IMPORTED_ON)
 
     assert store_files(tmp_path / "first" / "data") == before
 
@@ -464,15 +503,23 @@ def test_single_files_of_one_name_are_told_apart_by_their_content(tmp_path: Path
     store = Store(tmp_path / "data")
     name = "glbx-mdp3-20260309-20260309.ohlcv-1m.dbn"
 
-    import_databento(write_dbn(tmp_path / "es" / name, es_content), store, tmp_path / "cache")
+    es = write_dbn(tmp_path / "es" / name, es_content)
+    import_databento(es, store, tmp_path / "cache", imported_on=IMPORTED_ON)
     mes = import_databento(
-        write_dbn(tmp_path / "mes" / name, mes_content), store, tmp_path / "cache"
+        write_dbn(tmp_path / "mes" / name, mes_content),
+        store,
+        tmp_path / "cache",
+        imported_on=date(2026, 10, 17),
     )
-    again = import_databento(tmp_path / "es" / name, store, tmp_path / "cache")
+    again = import_databento(es, store, tmp_path / "cache", imported_on=date(2026, 10, 18))
 
     assert [file.partition.dataset.root for file in store.list_partitions()] == ["ES", "MES"]
     assert mes.files[0].contracts[0].contract == "MESH2026"
     assert again.already_imported == (f"databento/{hashlib.sha256(es_content).hexdigest()}/{name}",)
+    assert {file.roots: file.imported_on for file in store.raw_manifest().files} == {
+        ("ES",): IMPORTED_ON,
+        ("MES",): date(2026, 10, 17),
+    }
 
 
 def test_bars_a_minute_apart_are_one_minute_long(tmp_path: Path) -> None:

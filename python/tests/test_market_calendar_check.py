@@ -18,6 +18,7 @@ from fefat.market.calendar_check import (
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
+    DatasetOrigin,
     Partition,
     PartitionRequest,
     SizeUnit,
@@ -33,6 +34,7 @@ ES_SECONDS = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-
 ES_MINUTES = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
 ES_FIXTURE_DAYS = (date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9))
 HOUR = 3_600 * 1_000_000_000
+NO_LICENCE = "Synthetic test data; no licence applies"
 
 
 def utc(*fields: int) -> int:
@@ -201,7 +203,12 @@ def test_a_root_without_a_known_calendar_is_refused(tmp_path: Path) -> None:
     store = copied_fixtures(tmp_path / "store")
     unknown = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ZZ")
     store.write_dataset_metadata(
-        unknown, DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+        unknown,
+        DatasetMetadata(
+            size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+            origin=DatasetOrigin.IMPORT,
+            licence_scope=NO_LICENCE,
+        ),
     )
     trades = store.scan_partition(
         Partition(dataset=ES_TRADES, contract="ESH2026", key=date(2026, 3, 9))
@@ -224,7 +231,12 @@ def test_a_coarse_bar_that_straddles_an_early_close_is_not_a_print_after_it(
     store = Store(tmp_path / "store")
     hours = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1h"), root="ES")
     store.write_dataset_metadata(
-        hours, DatasetMetadata(size_unit=SizeUnit(lot=Decimal(1), asset="contract"))
+        hours,
+        DatasetMetadata(
+            size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
+            origin=DatasetOrigin.IMPORT,
+            licence_scope=NO_LICENCE,
+        ),
     )
     bars = pl.DataFrame(
         {
