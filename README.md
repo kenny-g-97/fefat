@@ -25,7 +25,7 @@ just test     # the engine build, then pytest, the Claude Code hook smoke tests,
 
 Python imports the Rust engine as `fefat_engine`, compiled into the workspace environment (`.venv`). After changing code under `engine/`, `just build-engine` rebuilds it; `just setup` and `just test` run it too, and a plain `uv sync` removes it, because it is not in `uv.lock`. The notebooks in `notebooks/` run in VS Code on the `.venv` kernel, starting with `00-hello-engine.ipynb`; a running kernel keeps the engine it loaded until you restart it.
 
-`just setup` also runs `git config core.hooksPath .githooks`: a clone copies no git settings, and without that one the pre-commit guard, which refuses market data, secrets, and notebook outputs, never runs.
+`just setup` also runs `git config core.hooksPath .githooks`: a clone copies no git settings, and without that one the pre-commit and pre-push guards, which refuse market data, secrets, and notebook outputs in each commit and in each commit a push sends, never run.
 
 On this project, Python always runs through `uv run python` (a bare `python` is a Microsoft Store stub on Windows).
 
@@ -43,7 +43,7 @@ Changes reach `main` through pull requests, squash-merged with the routine in [d
 - `scripts/`: the project scripts, in Python.
 - `docs/masterplan/`: the build plan, with its progress table, backlog, and decision log.
 - `docs/adr/`: the architecture decision records.
-- `.claude/`, `.githooks/`, `.github/`: Claude Code's configuration, the pre-commit hook, and the CI workflow with the pull request template.
+- `.claude/`, `.githooks/`, `.github/`: Claude Code's configuration, the pre-commit and pre-push hooks, and the CI workflow with the pull request template.
 
 The full tree, including the folders later steps add, and the rule that dependencies point inward are in [docs/masterplan/01-architecture.md](docs/masterplan/01-architecture.md#3-repository-layout) §3.
 
