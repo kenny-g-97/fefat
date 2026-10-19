@@ -6,15 +6,19 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from fefat.market.calendar import Session, utc_text
+from fefat.market.builtin_calendars import BUILT_IN
+from fefat.market.calendar import Session, SessionTable, sessions_of, utc_text
 from fefat.market.calendar_check import (
     CalendarReport,
     MismatchKind,
     MissingSession,
     SessionMismatch,
     SessionWithoutPrints,
+    check_records,
     validate_calendar,
 )
+from fefat.market.calendar_definition import CalendarId
+from fefat.market.calendar_offset import CalendarOffset, OffsetCause
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -197,6 +201,9 @@ def test_bars_an_hour_late_open_late_and_print_after_the_close(tmp_path: Path) -
     assert {mismatch.kind for mismatch in within_two_hours.mismatches} == {
         MismatchKind.PRINT_AFTER_CLOSE
     }
+    assert report.offsets == (
+        CalendarOffset(dataset=ES_MINUTES, nanoseconds=HOUR, cause=OffsetCause.TIME_ZONE),
+    )
 
 
 def test_a_root_without_a_known_calendar_is_refused(tmp_path: Path) -> None:
@@ -307,3 +314,63 @@ def test_an_empty_tick_file_adds_no_trade_date(tmp_path: Path) -> None:
         (ES_SECONDS, MARCH_6, MismatchKind.PRINT_AFTER_CLOSE),
         (ES_TRADES, MARCH_6, MismatchKind.NO_PRINTS),
     ]
+
+
+ESH2026_MINUTES = Partition(
+    dataset=ES_MINUTES, contract="ESH2026", key=YearMonth(year=2026, month=3)
+)
+MINUTE = 60 * 1_000_000_000
+
+
+def minute_bars_moved_by(nanoseconds: int, cache: Path) -> tuple[pl.LazyFrame, SessionTable]:
+    """The fixtures' ESH2026 1-minute bars moved later by `nanoseconds`, dated again as an
+    import dates them, beside the session table of their calendar."""
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], cache)
+    bars = Store(FIXTURES).scan_partition(ESH2026_MINUTES).collect()
+    moved = bars.drop("trade_date").with_columns(
+        pl.col("ts_open") + nanoseconds, pl.col("ts_close") + nanoseconds
+    )
+    dated = sessions.assign_trade_dates_or_previous(moved, "ts_open")
+    return dated.select(bars.columns).lazy(), sessions
+
+
+def test_the_fixtures_bars_run_neither_late_nor_early(tmp_path: Path) -> None:
+    bars, sessions = minute_bars_moved_by(0, tmp_path)
+
+    assert check_records(ES_MINUTES, bars, sessions).offsets == ()
+
+
+@pytest.mark.parametrize("hours", [6, 5, -6])
+def test_bars_read_in_the_wrong_time_zone_show_its_offset_in_hours(
+    tmp_path: Path, hours: int
+) -> None:
+    # UTC times read as Chicago's, CST until 2026-03-08, run 6 hours late on 03-05 and 03-06
+    # and, once CDT starts, 5 on 03-09; the offset of most of the bars wins.
+    bars, sessions = minute_bars_moved_by(hours * HOUR, tmp_path)
+
+    report = check_records(ES_MINUTES, bars, sessions)
+
+    assert report.offsets == (
+        CalendarOffset(dataset=ES_MINUTES, nanoseconds=hours * HOUR, cause=OffsetCause.TIME_ZONE),
+    )
+    direction = "late" if hours > 0 else "early"
+    assert report.summary().splitlines()[1] == (
+        f"synthetic/ohlcv-1m/root=ES offset: its records run {abs(hours)} hours {direction} "
+        "against the calendar; check the time zone of the file's times"
+    )
+
+
+@pytest.mark.parametrize("minutes", [1, -1])
+def test_bars_read_with_the_wrong_stamping_show_an_offset_of_one_bar(
+    tmp_path: Path, minutes: int
+) -> None:
+    # A file that stamps each bar's close, read as its open, puts each session's last bar at
+    # the close; a file that stamps the open, read as the close, puts each first bar in the
+    # break before the open.
+    bars, sessions = minute_bars_moved_by(minutes * MINUTE, tmp_path)
+
+    assert check_records(ES_MINUTES, bars, sessions).offsets == (
+        CalendarOffset(
+            dataset=ES_MINUTES, nanoseconds=minutes * MINUTE, cause=OffsetCause.BAR_STAMPING
+        ),
+    )
