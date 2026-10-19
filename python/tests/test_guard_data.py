@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import re
 from itertools import takewhile
@@ -12,6 +13,20 @@ from git_repository import GitRepository
 ROOT = Path(__file__).resolve().parents[2]
 GUARD_COMMAND = "uv run --no-project python scripts/guard_data.py"
 FIXTURE_BYTES = b"PAR1 synthetic fixture bytes PAR1"
+NINJATRADER_BARS = "".join(
+    f"20260305 23{minute:02d}00;5432.25;5432.50;5432.00;5432.25;{minute + 1}\n"
+    for minute in range(12)
+).encode()
+"""Twelve 1-minute bars as NinjaTrader 8 exports them: semicolons, no header, a `.txt` file."""
+TRADESTATION_BARS = (
+    "Date,Time,Open,High,Low,Close,Vol,OI\n"
+    + "".join(
+        f"03/05/2026,17{minute:02d},5432.25,5432.5,5432,5432.25,12,0\n" for minute in range(12)
+    )
+).encode()
+"""The same bars as TradeStation's ASCII layout writes them, under one header line."""
+SMALL_CSV = b"time,close\n1772751600,5432.25\n"
+NO_OBJECT = "0" * 40
 NOTEBOOK_WITH_OUTPUTS = {
     "cells": [
         {
@@ -298,6 +313,16 @@ def test_ordinary_files_pass(repository: GitRepository) -> None:
         ("data/es.npz", b"PK\x03\x04" + bytes(16)),
         ("data/trades.json.gz", b"\x1f\x8b\x08" + bytes(16)),
         ("data/es.dat", b"DBN\x02" + bytes(16)),
+        ("backups/store-7z.bin", b"7z\xbc\xaf\x27\x1c" + bytes(16)),
+        ("backups/store-xz.bin", b"\xfd7zXZ\x00" + bytes(16)),
+        ("backups/store-bzip2.bin", b"BZh91AY&SY" + bytes(16)),
+        ("backups/store-lz4.bin", b"\x04\x22\x4d\x18" + bytes(16)),
+        ("backups/posix-tar.bin", bytes(257) + b"ustar\x0000" + bytes(16)),
+        ("backups/gnu-tar.bin", bytes(257) + b"ustar  \x00" + bytes(16)),
+        ("data/bars-xls.bin", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(16)),
+        ("data/bars-feather.bin", b"FEA1" + bytes(16)),
+        ("data/bars-arrow-stream.bin", b"\xff\xff\xff\xff\x10\x01\x00\x00" + bytes(16)),
+        ("data/store-duckdb.bin", bytes(8) + b"DUCK" + bytes(16)),
     ],
 )
 def test_data_under_another_name_is_refused_by_its_first_bytes(
@@ -314,7 +339,7 @@ def test_main_refuses_with_exit_2_when_git_cannot_be_read(
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     monkeypatch.chdir(tmp_path)
 
-    assert guard_data.main() == 2
+    assert guard_data.main([]) == 2
     assert "could not read git's index" in capsys.readouterr().err
 
 
@@ -325,7 +350,7 @@ def test_main_lists_every_problem_and_exits_1(
     repository.stage(".env", b"FEFAT_HOME=\n")
     monkeypatch.chdir(repository.folder)
 
-    assert guard_data.main() == 1
+    assert guard_data.main([]) == 1
 
     output = capsys.readouterr().out
     assert "data/ES.parquet" in output
@@ -363,3 +388,172 @@ def test_data_under_another_name_in_the_fixtures_needs_its_manifest_entry(
     assert rules_by_path(repository) == {
         "fixtures/synthetic/es_notes.bin": [guard_data.Rule.FIXTURE_NOT_IN_MANIFEST]
     }
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "exports/ES 03-26.csv",
+        "exports/es_bars.TSV",
+        "data/trades.jsonl",
+        "data/trades.ndjson",
+        "data/bars.xls",
+        "data/bars.xlsx",
+        "data/bars.gz",
+        "backups/store.tar",
+        "backups/store.7z",
+        "data/bars.xz",
+        "data/bars.bz2",
+        "data/bars.lz4",
+        "data/bars.arrows",
+    ],
+)
+def test_text_tables_spreadsheets_and_archives_are_refused_by_name(
+    repository: GitRepository, path: str
+) -> None:
+    repository.stage(path, SMALL_CSV)
+
+    assert rules_by_path(repository) == {path: [guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES]}
+
+
+def test_a_table_of_prices_in_a_text_file_is_refused_outside_the_fixtures(
+    repository: GitRepository,
+) -> None:
+    repository.stage("exports/ES 03-26.Last.txt", NINJATRADER_BARS)
+    repository.stage("exports/ESH26.prn", TRADESTATION_BARS)
+
+    problems = guard_data.find_problems(repository.folder)
+
+    assert [(problem.path, problem.rule) for problem in problems] == [
+        ("exports/ES 03-26.Last.txt", guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES),
+        ("exports/ESH26.prn", guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES),
+    ]
+    assert "tabular price data under another name" in problems[0].describe()
+
+
+def test_prose_requirements_and_a_few_rows_of_numbers_in_text_files_pass(
+    repository: GitRepository,
+) -> None:
+    repository.stage(
+        "notes/measurements.txt",
+        b"Load times on 2026-10-15:\n- MES 5m, 2024 Q1: 1.2 s warm\n- four reports: 17 s\n",
+    )
+    repository.stage("requirements.txt", b"polars==2.0.0\npyyaml>=6.0.3,<7\n")
+    repository.stage("notes/five-bars.txt", b"".join(NINJATRADER_BARS.splitlines(True)[:5]))
+
+    assert guard_data.find_problems(repository.folder) == []
+
+
+def test_a_table_of_numbers_in_markdown_passes(repository: GitRepository) -> None:
+    # Scenario tables and goldens are specifications written by hand, not exports.
+    rows = "".join(f"| 09:30:{second:02d} | 5432.25 | 2 |\n" for second in range(12))
+    repository.stage("fixtures/scenarios/stop-gap.md", f"# A gap\n\n{rows}".encode())
+
+    assert guard_data.find_problems(repository.folder) == []
+
+
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        ("fixtures/synthetic/exports/tradingview/ESH2026.csv", SMALL_CSV),
+        ("fixtures/synthetic/exports/ninjatrader/ES 03-26.Last.txt", NINJATRADER_BARS),
+    ],
+)
+def test_a_text_table_in_the_fixtures_needs_its_manifest_entry(
+    repository: GitRepository, path: str, content: bytes
+) -> None:
+    repository.stage(path, content)
+    repository.stage("fixtures/synthetic/MANIFEST.json", manifest_listing({}))
+
+    assert rules_by_path(repository) == {path: [guard_data.Rule.FIXTURE_NOT_IN_MANIFEST]}
+
+
+def committed(repository: GitRepository, message: str) -> str:
+    """Commit what is staged, without the commit gate, and return the commit's id."""
+    done = repository.commit(message)
+    assert done.returncode == 0, done.stdout + done.stderr
+    return repository.git("rev-parse", "HEAD").stdout.strip()
+
+
+def a_branch_that_adds_and_removes_bars(repository: GitRepository) -> tuple[str, str]:
+    """A first commit, one that adds `data/bars.csv`, and one that removes it: the first
+    commit's id and the last's."""
+    repository.stage("README.md", b"# Notes\n")
+    first = committed(repository, "Start the notes")
+    repository.stage("data/bars.csv", SMALL_CSV)
+    committed(repository, "Add the bars")
+    assert repository.git("rm", "--quiet", "data/bars.csv").returncode == 0
+    return first, committed(repository, "Remove the bars")
+
+
+def test_every_commit_of_a_range_is_checked_not_only_its_last(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first, _ = a_branch_that_adds_and_removes_bars(repository)
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.find_problems(repository.folder) == []
+    assert guard_data.main(["--commits", f"{first}..HEAD"]) == 1
+
+    output = capsys.readouterr().out
+    assert "1 problem in 1 of 2 commits" in output
+    assert "Add the bars" in output
+    assert "data/bars.csv" in output
+    assert "Remove the bars" not in output
+
+
+def test_a_range_without_commits_passes(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository.stage("README.md", b"# Notes\n")
+    committed(repository, "Start the notes")
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--commits", "HEAD..HEAD"]) == 0
+    assert "no commits to check" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("remote_object", ["first", NO_OBJECT])
+def test_a_push_checks_each_commit_the_remote_does_not_have(
+    repository: GitRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    remote_object: str,
+) -> None:
+    first, last = a_branch_that_adds_and_removes_bars(repository)
+    repository.git("update-ref", "refs/remotes/origin/main", first)
+    remote = first if remote_object == "first" else NO_OBJECT
+    pushed = f"refs/heads/notes {last} refs/heads/notes {remote}\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(pushed))
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--pushed", "origin"]) == 1
+
+    output = capsys.readouterr().out
+    assert "1 problem in 1 of 2 commits" in output
+    assert "Add the bars" in output
+
+
+def test_a_push_that_only_deletes_a_branch_has_no_commits_to_check(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first, _ = a_branch_that_adds_and_removes_bars(repository)
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(f"(delete) {NO_OBJECT} refs/heads/old-notes {first}\n")
+    )
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--pushed", "origin"]) == 0
+    assert "no commits to check" in capsys.readouterr().out
+
+
+def test_a_push_line_git_would_not_write_is_refused(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository.stage("README.md", b"# Notes\n")
+    committed(repository, "Start the notes")
+    monkeypatch.setattr("sys.stdin", io.StringIO("refs/heads/notes\n"))
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--pushed", "origin"]) == 2
+    assert "Expected" in capsys.readouterr().err

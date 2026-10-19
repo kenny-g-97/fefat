@@ -1,6 +1,7 @@
 # Licensed market data never enters git: real data lives outside the repository
 # under FEFAT_DATA_DIR. Only generated fixtures under fixtures/synthetic/ are
-# committed. Step 0.5 adds a pre-commit guard that also catches forced adds.
+# committed. The commit guard (scripts/guard_data.py, run by .githooks/pre-commit
+# and pre-push) also catches forced adds, and data saved under other names.
 
 # --- Market data and other data files -----------------------------------------
 *.dbn
@@ -8,6 +9,7 @@
 *.zst
 *.parquet
 *.arrow
+*.arrows
 *.feather
 *.ipc
 *.csv.gz
@@ -19,6 +21,19 @@
 *.sqlite
 *.sqlite3
 *.db
+# plain-text tables, spreadsheets, archives, and compressors (D-48)
+*.csv
+*.tsv
+*.jsonl
+*.ndjson
+*.xls
+*.xlsx
+*.gz
+*.tar
+*.7z
+*.xz
+*.bz2
+*.lz4
 # ...except generated synthetic fixtures (each listed in its MANIFEST.json)
 !fixtures/synthetic/**
 

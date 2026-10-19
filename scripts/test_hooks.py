@@ -292,6 +292,18 @@ def file_guard_cases() -> list[Case]:
         ),
         case("write app.duckdb is denied", write(ROOT / "app.duckdb"), Expect.DENY),
         case(
+            "write data/bars.csv is denied",
+            write(ROOT / "data" / "bars.csv"),
+            Expect.DENY,
+            ".csv",
+        ),
+        case(
+            "write fixtures/synthetic/exports/bars.csv is allowed",
+            write(ROOT / "fixtures" / "synthetic" / "exports" / "bars.csv"),
+            Expect.ALLOW,
+        ),
+        case("write backups/store.7z is denied", write(ROOT / "backups" / "store.7z"), Expect.DENY),
+        case(
             "write x.parquet outside the project is denied",
             write(outside / "x.parquet"),
             Expect.DENY,

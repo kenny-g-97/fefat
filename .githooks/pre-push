@@ -1,0 +1,19 @@
+#!/bin/sh
+# Git runs this file before every push, with the remote's name as the first
+# argument and a line per pushed branch on standard input, and stops the push
+# when it exits non-zero. Git finds it, like the pre-commit hook beside it,
+# because `core.hooksPath` is `.githooks`, which `just setup` sets in a clone.
+#
+# It runs the data guard, `scripts/guard_data.py`, over each commit the push
+# sends that no branch of the remote has yet. A data file that one commit adds
+# and a later one removes passes the pre-commit hook of the later commit and
+# CI's check of the final tree, but its commit still travels with the push and
+# stays on GitHub (D-48). Python always runs through uv; `--no-project` keeps
+# a push from syncing `.venv` or relocking `uv.lock`.
+#
+# To check by hand the commits a push of this branch would send:
+#     uv run --no-project python scripts/guard_data.py --commits origin/main..HEAD
+#
+# This and the pre-commit hook are the repository's only shell files (D-22,
+# superseded in part by D-48).
+exec uv run --no-project python scripts/guard_data.py --pushed "$1"

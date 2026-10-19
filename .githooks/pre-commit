@@ -19,6 +19,7 @@
 # which `just check` runs too. The commit stops when what it would contain
 # holds market-data files outside fixtures/synthetic/, fixtures missing from
 # their manifest, files over 25 MB, secrets, or notebooks with outputs
-# (docs/masterplan/05-build-process.md section 5). This is the one shell file
-# in the repository (D-22).
+# (docs/masterplan/05-build-process.md section 5). This and the pre-push hook,
+# which checks each commit a push sends, are the repository's only shell files
+# (D-22, superseded in part by D-48).
 exec uv run --no-project python scripts/guard_data.py
