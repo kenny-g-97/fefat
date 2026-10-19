@@ -22,7 +22,7 @@ const GOLDENS = "fixtures/goldens/";
 const MARKET_DATA_SUFFIXES = [
   ".dbn.zst", ".csv.gz", ".duckdb.wal", ".dbn", ".zst", ".parquet", ".arrow", ".arrows", ".feather",
   ".ipc", ".zip", ".h5", ".hdf5", ".duckdb", ".sqlite", ".sqlite3", ".db", ".csv", ".tsv", ".jsonl",
-  ".ndjson", ".xls", ".xlsx", ".gz", ".tar", ".7z", ".xz", ".bz2", ".lz4",
+  ".ndjson", ".xls", ".xlsx", ".gz", ".tar", ".7z", ".xz", ".bz2", ".lz4", ".ncd", ".scid",
 ];
 const KEY_SUFFIXES = [".pem", ".key", ".pfx", ".p12"];
 const SSH_PRIVATE_KEY = /^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$/;

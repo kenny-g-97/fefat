@@ -12,11 +12,12 @@ the tracked files plus everything staged, including files forced past
 (docs/masterplan/05-build-process.md section 5, decisions D-21 and D-48), it refuses:
 
 - market-data files by name (.parquet, .dbn, .csv, .tsv, .xls, .zip, .gz, .7z,
-  ...) anywhere outside fixtures/synthetic/; files under any other name whose
-  first bytes are a data format (Parquet, Arrow, Feather, DBN, zstd, gzip, zip,
-  7z, xz, bzip2, lz4, tar, SQLite, DuckDB, HDF5, OLE2, NumPy, pickle); and text
-  files whose first lines are a table of numbers, such as a NinjaTrader or
-  TradeStation export saved as .txt;
+  NinjaTrader's .ncd, ...) anywhere outside fixtures/synthetic/; files under any
+  other name whose first bytes are a data format (Parquet, Arrow, Feather, Sierra
+  Chart intraday, DBN, zstd, gzip, zip, 7z, xz, bzip2, lz4, tar, SQLite, DuckDB,
+  HDF5, OLE2, NumPy, pickle); and text exports (.txt, .prn, .asc, .dat, .itxt,
+  .dly, or no suffix) whose first lines are a table of numbers, such as a
+  NinjaTrader or TradeStation export;
 - data files under fixtures/synthetic/ that its MANIFEST.json does not list with
   their exact SHA-256, so a file dropped there cannot pass for a generated
   fixture (a hand-written manifest entry is caught by the regeneration test in
@@ -92,12 +93,14 @@ MARKET_DATA_SUFFIXES = (
     ".xz",
     ".bz2",
     ".lz4",
+    ".ncd",
+    ".scid",
 )
 DATA_SIGNATURES = (
     (0, b"PAR1", "Parquet"),
     (0, b"ARROW1", "Arrow"),
-    (0, b"\xff\xff\xff\xff", "Arrow stream"),
     (0, b"FEA1", "Feather"),
+    (0, b"SCID" + bytes([56, 0, 0, 0]), "Sierra Chart intraday"),
     *((0, b"DBN" + bytes([version]), "DBN") for version in (1, 2, 3)),
     (0, b"\x28\xb5\x2f\xfd", "zstd"),
     (0, b"\x1f\x8b", "gzip"),
@@ -124,8 +127,10 @@ TEXT_EXPORT_SUFFIXES = (".txt", ".prn", ".asc", ".dat", ".itxt", ".dly")
 """The names platforms save bar and tick exports under as plain text (NinjaTrader, TradeStation,
 Sierra Chart, MultiCharts), which are checked for a table of prices, as are names without a
 suffix; Markdown, JSON, YAML, and source files are not, so a scenario table in Markdown passes."""
-NUMERIC_ROW = re.compile(r"[0-9.,;:/|+\-TZ\s]+")
+NUMERIC_FIELD = re.compile(r"[+\-]?[0-9][0-9.:/+\-TZ]*")
+"""A number, date, or time as an export writes one: 5432.25, 20260305, 23:01:00, 03/05/2026."""
 FIELD_SEPARATORS = re.compile(r"[,;|\s]+")
+CLOCK_WORDS = frozenset({"am", "pm"})
 NO_OBJECT = re.compile(r"0+")
 """The object id git writes for a branch a push deletes, or one the remote does not have."""
 KEY_SUFFIXES = (".pem", ".key", ".pfx", ".p12")
@@ -405,11 +410,12 @@ def is_price_table(text: str) -> bool:
 
 
 def is_numeric_row(line: str) -> bool:
-    return (
-        NUMERIC_ROW.fullmatch(line) is not None
-        and any(character.isdigit() for character in line)
-        and len(FIELD_SEPARATORS.split(line)) >= 3
-    )
+    """Whether a line holds three or more numbers, dates, or times, quoted or not, beside at
+    most one other field such as a symbol; `AM` and `PM` belong to their time."""
+    fields = [field.strip("\"'") for field in FIELD_SEPARATORS.split(line)]
+    kept = [field for field in fields if field and field.lower() not in CLOCK_WORDS]
+    numbers = sum(NUMERIC_FIELD.fullmatch(field) is not None for field in kept)
+    return numbers >= 3 and len(kept) - numbers <= 1
 
 
 def content_problems(file: IndexedFile, content: bytes) -> Iterator[Problem]:
@@ -562,16 +568,34 @@ def report(problems: Sequence[Problem]) -> str:
     )
 
 
+PUSH_REMEDY = (
+    "Nothing was pushed. A file that a later commit removes stays in the commit that added it, "
+    "and a push sends that commit too: rewrite the commits the remote does not have yet so that "
+    "none holds the file, for example with `git reset --soft origin/main` on a branch you have "
+    "not pushed before, or `git reset --soft origin/<branch>` on one you have, then commit again "
+    "and push."
+)
+PULL_REQUEST_REMEDY = (
+    "These commits are on GitHub already, and GitHub keeps a pull request's commits even after "
+    "its branch changes: close the pull request without merging it, push the work again on a new "
+    "branch whose commits never held the file, and if the file is licensed data, ask GitHub "
+    "Support to remove the closed pull request's commits."
+)
+
+
 @dataclass(frozen=True)
 class CommitProblems:
-    """A commit whose own files break the data policy: its id, its subject, and the problems."""
+    """A commit and the problems it brings: those its own files show that no earlier commit of
+    the check showed, so a file one commit adds is reported there and not again after it."""
 
     commit: str
     subject: str
     problems: Sequence[Problem]
 
 
-def commits_report(found: Sequence[CommitProblems], checked: int, described: str) -> str:
+def commits_report(
+    found: Sequence[CommitProblems], checked: int, described: str, remedy: str
+) -> str:
     total = sum(len(commit.problems) for commit in found)
     blocks = "\n\n".join(
         f"{commit.commit[:12]} {commit.subject}\n\n"
@@ -580,10 +604,7 @@ def commits_report(found: Sequence[CommitProblems], checked: int, described: str
     )
     return (
         f"Data guard: {counted(total, 'problem')} in {len(found)} of "
-        f"{counted(checked, 'commit')} ({described}).\n\n{blocks}\n\n"
-        "A file that a later commit removes stays in the commit that added it, and a push sends "
-        "that commit too: rewrite the branch so that no commit holds the file, for example with "
-        "`git reset --soft origin/main` and one new commit, then check it again. "
+        f"{counted(checked, 'commit')} ({described}).\n\n{blocks}\n\n{remedy} "
         f"The data policy: {POLICY}."
     )
 
@@ -625,22 +646,34 @@ def check_index() -> int:
     return 0
 
 
-def check_commits(revisions: Sequence[str], described: str) -> int:
+def problems_by_commit(repository: Path, commits: Sequence[str]) -> list[CommitProblems]:
+    """The problems each commit brings, oldest first, each reported at the first commit that
+    shows it."""
+    seen: set[tuple[str, Rule]] = set()
+    found: list[CommitProblems] = []
+    for commit in commits:
+        # shortcut: each commit's whole tree is read again, about 0.4 s a commit in 2026-10;
+        # cache blobs by object id when a push of a usual branch takes over 30 s.
+        problems = find_problems(repository, commit=commit)
+        new = [problem for problem in problems if (problem.path, problem.rule) not in seen]
+        seen.update((problem.path, problem.rule) for problem in new)
+        if new:
+            found.append(CommitProblems(commit, subject_of(repository, commit), new))
+    return found
+
+
+def check_commits(revisions: Sequence[str], described: str, remedy: str) -> int:
     """Check each commit `git rev-list <revisions>` names, oldest first."""
     try:
         repository = repository_root()
         listed = git_output(repository, ["rev-list", "--reverse", *revisions]) if revisions else b""
         commits = listed.decode("ascii").split()
-        found = [
-            CommitProblems(commit, subject_of(repository, commit), problems)
-            for commit in commits
-            if (problems := find_problems(repository, commit=commit))
-        ]
+        found = problems_by_commit(repository, commits)
     except GitError as error:
         print(f"Data guard: could not read the commits of {described}. {error}", file=sys.stderr)
         return 2
     if found:
-        print(commits_report(found, len(commits), described))
+        print(commits_report(found, len(commits), described, remedy))
         return 1
     if not commits:
         print(f"Data guard: no commits to check in {described}.")
@@ -682,7 +715,8 @@ def main(argv: Sequence[str]) -> int:
             stream.reconfigure(errors="replace")
     arguments = parsed_arguments(argv)
     if arguments.commits is not None:
-        return check_commits([arguments.commits], arguments.commits)
+        range_only = ["--end-of-options", arguments.commits]
+        return check_commits(range_only, arguments.commits, PULL_REQUEST_REMEDY)
     if arguments.pushed is None:
         return check_index()
     described = f"the push to {arguments.pushed}"
@@ -691,7 +725,7 @@ def main(argv: Sequence[str]) -> int:
     except GitError as error:
         print(f"Data guard: could not read {described}. {error}", file=sys.stderr)
         return 2
-    return check_commits(revisions, described)
+    return check_commits(revisions, described, PUSH_REMEDY)
 
 
 if __name__ == "__main__":

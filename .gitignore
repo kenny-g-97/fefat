@@ -34,6 +34,9 @@
 *.xz
 *.bz2
 *.lz4
+# the platforms' own history files: NinjaTrader 8 and Sierra Chart
+*.ncd
+*.scid
 # ...except generated synthetic fixtures (each listed in its MANIFEST.json)
 !fixtures/synthetic/**
 

@@ -321,7 +321,7 @@ def test_ordinary_files_pass(repository: GitRepository) -> None:
         ("backups/gnu-tar.bin", bytes(257) + b"ustar  \x00" + bytes(16)),
         ("data/bars-xls.bin", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(16)),
         ("data/bars-feather.bin", b"FEA1" + bytes(16)),
-        ("data/bars-arrow-stream.bin", b"\xff\xff\xff\xff\x10\x01\x00\x00" + bytes(16)),
+        ("data/es-sierra.bin", b"SCID8\x00\x00\x00" + bytes(16)),
         ("data/store-duckdb.bin", bytes(8) + b"DUCK" + bytes(16)),
     ],
 )
@@ -379,6 +379,12 @@ def test_the_guard_and_the_claude_code_file_guard_know_the_same_market_data_exte
     )
 
 
+def test_gitignore_ignores_every_market_data_extension_the_guard_refuses() -> None:
+    patterns = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+
+    assert {f"*{suffix}" for suffix in guard_data.MARKET_DATA_SUFFIXES} <= patterns
+
+
 def test_data_under_another_name_in_the_fixtures_needs_its_manifest_entry(
     repository: GitRepository,
 ) -> None:
@@ -406,6 +412,8 @@ def test_data_under_another_name_in_the_fixtures_needs_its_manifest_entry(
         "data/bars.bz2",
         "data/bars.lz4",
         "data/bars.arrows",
+        "ninjatrader/db/minute/MES 12-26/202610.Last.ncd",
+        "sierra/ESZ26-CME.scid",
     ],
 )
 def test_text_tables_spreadsheets_and_archives_are_refused_by_name(
@@ -416,17 +424,37 @@ def test_text_tables_spreadsheets_and_archives_are_refused_by_name(
     assert rules_by_path(repository) == {path: [guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES]}
 
 
-def test_a_table_of_prices_in_a_text_file_is_refused_outside_the_fixtures(
-    repository: GitRepository,
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        ("exports/ES 03-26.Last.txt", NINJATRADER_BARS),
+        ("exports/ESH26.prn", TRADESTATION_BARS),
+        ("exports/MES_1min", NINJATRADER_BARS),
+        (
+            "exports/quoted.txt",
+            "".join(
+                f'"03/05/2026","5:{minute:02d} PM",5432.25,5432.5,5432,5432.25,12\n'
+                for minute in range(12)
+            ).encode(),
+        ),
+        (
+            "exports/with-symbol.asc",
+            "".join(
+                f"ES,20260305,17{minute:02d}00,5432.25,5432.5,5432,5432.25,12\n"
+                for minute in range(12)
+            ).encode(),
+        ),
+    ],
+)
+def test_a_table_of_prices_in_a_text_export_is_refused_outside_the_fixtures(
+    repository: GitRepository, path: str, content: bytes
 ) -> None:
-    repository.stage("exports/ES 03-26.Last.txt", NINJATRADER_BARS)
-    repository.stage("exports/ESH26.prn", TRADESTATION_BARS)
+    repository.stage(path, content)
 
     problems = guard_data.find_problems(repository.folder)
 
     assert [(problem.path, problem.rule) for problem in problems] == [
-        ("exports/ES 03-26.Last.txt", guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES),
-        ("exports/ESH26.prn", guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES),
+        (path, guard_data.Rule.MARKET_DATA_OUTSIDE_FIXTURES)
     ]
     assert "tabular price data under another name" in problems[0].describe()
 
@@ -500,6 +528,37 @@ def test_every_commit_of_a_range_is_checked_not_only_its_last(
     assert "Add the bars" in output
     assert "data/bars.csv" in output
     assert "Remove the bars" not in output
+    assert "close the pull request" in output
+
+
+def test_a_problem_is_reported_once_at_the_commit_that_brings_it(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository.stage("README.md", b"# Notes\n")
+    first = committed(repository, "Start the notes")
+    repository.stage("data/bars.csv", SMALL_CSV)
+    committed(repository, "Add the bars")
+    repository.stage("README.md", b"# Notes\n\nMore notes.\n")
+    committed(repository, "Edit the notes")
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--commits", f"{first}..HEAD"]) == 1
+
+    output = capsys.readouterr().out
+    assert "1 problem in 1 of 2 commits" in output
+    assert "Add the bars" in output
+    assert "Edit the notes" not in output
+
+
+def test_a_range_is_never_read_as_an_option(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository.stage("README.md", b"# Notes\n")
+    committed(repository, "Start the notes")
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--commits=--all"]) == 2
+    assert "could not read the commits of --all" in capsys.readouterr().err
 
 
 def test_a_range_without_commits_passes(
@@ -532,6 +591,7 @@ def test_a_push_checks_each_commit_the_remote_does_not_have(
     output = capsys.readouterr().out
     assert "1 problem in 1 of 2 commits" in output
     assert "Add the bars" in output
+    assert "Nothing was pushed" in output
 
 
 def test_a_push_that_only_deletes_a_branch_has_no_commits_to_check(
