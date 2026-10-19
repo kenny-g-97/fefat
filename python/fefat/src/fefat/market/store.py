@@ -72,6 +72,12 @@ class Store:
     def __repr__(self) -> str:
         return f"Store({str(self._folder)!r})"
 
+    @property
+    def folder(self) -> Path:
+        """The store's folder, `FEFAT_DATA_DIR` in the app, where the instruments an import
+        saved lie beside the data (`fefat.market.saved_instruments`)."""
+        return self._folder
+
     def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
         """Every partition in the store, or only `dataset`'s, with the size of its file, sorted
         by path; empty while the folder does not exist."""

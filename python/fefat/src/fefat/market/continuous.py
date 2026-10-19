@@ -33,7 +33,7 @@ first bar. No row or bar depends on later data: those by any instant are the sam
 stops there (D-12).
 
     mes = instruments.get("MES")
-    sessions = sessions_of(BUILT_IN[mes.calendar_id], paths.cache_dir)
+    sessions = sessions_of(mes.session_calendar(), paths.cache_dir)
     bars = store.scan_contracts(request).collect()
     calendar = volume_rolls(bars, sessions, mes, bars.get_column("ts_close").max())
     signal_bars = calendar.continuous_bars(bars)

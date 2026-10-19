@@ -10,10 +10,12 @@ A store folder holds a folder per provider, a folder per schema in each, and bel
 Trades, TBBO, and bars finer than a minute are split per trade date, one-minute bars per
 month of their trade dates, and coarser bars, definitions, statistics, and funding are one
 file per contract (`partitioning`). `dataset.json` holds what every partition of the dataset
-shares: the unit of its sizes, its origin, and the licence scope its source gives the trader
-(step 1.9). The folder `raw` beside the providers keeps the vendors' original files
-(`fefat.market.raw_manifest`), and the folder `reports` the quality reports
-(`fefat.market.quality`). What the files hold is `fefat.market.schema`.
+shares: the unit of its sizes, its origin, the licence scope its source gives the trader
+(step 1.9), and whether its contracts are dated or one continuous series (step 1.10). The
+folder `raw` beside the providers keeps the vendors' original files
+(`fefat.market.raw_manifest`), the folder `reports` the quality reports
+(`fefat.market.quality`), and the folder `instruments` the specifications of products an
+import added (`fefat.market.saved_instruments`). What the files hold is `fefat.market.schema`.
 """
 
 import re
@@ -37,9 +39,11 @@ from fefat.market.schema import (
 )
 
 RAW_FOLDER_NAME = "raw"
+INSTRUMENTS_FOLDER_NAME = "instruments"
 RESERVED_FOLDERS = {
     RAW_FOLDER_NAME: "the vendors' raw files",
     REPORTS_FOLDER_NAME: "the quality reports",
+    INSTRUMENTS_FOLDER_NAME: "the instruments saved by imports",
 }
 """The folders beside the providers that are no provider, with what each holds."""
 PARTITION_FILE_NAME = "part.parquet"
@@ -258,11 +262,22 @@ class DatasetOrigin(StrEnum):
     SYNC = "sync"
 
 
+class SeriesKind(StrEnum):
+    """What a dataset's contracts are (step 1.10): dated contracts, or one continuous series
+    imported as a synthetic contract, its prices as the file gives them or back-adjusted."""
+
+    CONTRACT = "contract"
+    CONTINUOUS = "continuous"
+    CONTINUOUS_BACK_ADJUSTED = "continuous-back-adjusted"
+
+
 class DatasetMetadata(FrozenModel):
     """What every partition of a dataset shares, kept in the dataset's `dataset.json`: the unit
-    of its sizes, its origin, and the licence scope the terms of its source give the trader
-    (`fefat.market.sources`). Its provider is the folder it lies in."""
+    of its sizes, its origin, the licence scope the terms of its source give the trader
+    (`fefat.market.sources`), and its series kind, dated contracts unless an import of a
+    continuous series wrote another. Its provider is the folder it lies in."""
 
     size_unit: SizeUnit
     origin: DatasetOrigin
     licence_scope: str = Field(min_length=1)
+    series: SeriesKind = SeriesKind.CONTRACT

@@ -57,8 +57,8 @@ class CatalogProduct(FrozenModel):
         """Refuse the product unless its root is an instrument of the table on the calendar
         it names, its history starts on or after the root's first trade date, and the guide
         holds each of its sources."""
-        calendar = instruments.get(self.root).calendar_id
-        if self.calendar is not calendar:
+        calendar = instruments.get(self.root).calendar
+        if self.calendar != calendar:
             raise ValueError(
                 f"Expected the calendar of {self.root}, {calendar}, got {self.calendar}."
             )

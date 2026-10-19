@@ -26,7 +26,7 @@ def es_version(tick_size: str, valid_from: date, valid_to: date | None) -> Instr
         point_value=Decimal(50),
         lot_step=Decimal(1),
         currency=Currency.USD,
-        calendar_id=CalendarId.CME_EQUITY_INDEX,
+        calendar=CalendarId.CME_EQUITY_INDEX,
         last_trade_rule=ThirdFriday(),
         valid_from=valid_from,
         valid_to=valid_to,
@@ -156,13 +156,13 @@ def test_a_currency_fefat_does_not_know_is_refused() -> None:
         Instrument.model_validate(in_lowercase)
 
 
-def test_a_calendar_id_that_names_no_built_in_calendar_is_refused() -> None:
+def test_a_calendar_that_names_no_built_in_calendar_is_refused() -> None:
     misspelled = {
         **es_version("0.25", date(1997, 9, 9), None).model_dump(),
-        "calendar_id": "cme-equities",
+        "calendar": "cme-equities",
     }
 
-    with pytest.raises(ValueError, match="calendar_id"):
+    with pytest.raises(ValueError, match="calendar"):
         Instrument.model_validate(misspelled)
 
 

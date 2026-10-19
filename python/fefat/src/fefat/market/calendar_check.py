@@ -5,7 +5,7 @@ For each dataset of bars or ticks, the check takes each trade date's first and l
 first bar's `ts_open` and the last bar's `ts_close`, or the first and last `ts_recv` of trades
 and TBBO (keyed by their partition's trade date), across all of the root's contracts, and
 compares them with that trade date's session in the root's calendar
-(`fefat.market.instruments`, `fefat.market.builtin_calendars`). It reports a print before the
+(`fefat.market.saved_instruments`, `fefat.market.builtin_calendars`). It reports a print before the
 open or after the close (for bars, a bar wholly outside the session, since a bar's prints lie
 somewhere inside it), a first print more than `tolerance` after the open, a last print more
 than `tolerance` before the close, a trade date the calendar has no session for, and a session
@@ -29,10 +29,9 @@ from typing import Annotated, Any, Literal
 import polars as pl
 from pydantic import Field
 
-from fefat.market import instruments
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import Session, SessionTable, sessions_of, utc_text
 from fefat.market.layout import Dataset, Partition
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import FrozenModel, SchemaKind
 from fefat.market.store import Store
 
@@ -143,7 +142,7 @@ def validate_calendar(
             continue
         # shortcut: the calendar of the root's newest instrument version; split the check by
         # version when a root's calendar changes over time.
-        calendar = BUILT_IN[instruments.get(dataset.root).calendar_id]
+        calendar = instrument_table(store.folder).get(dataset.root).session_calendar()
         joined = _beside_their_sessions(prints, sessions_of(calendar, cache_folder))
         days_checked += joined.height
         mismatches.extend(_mismatches(dataset, joined, tolerance))

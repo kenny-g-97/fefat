@@ -40,6 +40,7 @@ from fefat.market.coverage import session_datasets
 from fefat.market.importers.databento import import_databento
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.sources import SOURCE_GUIDE, Source
 from fefat.market.status import CoverageStatus, fidelity_in_words, product_status
 from fefat.market.store import Store
@@ -109,7 +110,11 @@ def import_databento_files(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     source: Path = arguments.path
     today = datetime.now(UTC).date()
-    report = import_databento(source, Store(paths.data_dir), paths.cache_dir, imported_on=today)
+    store = Store(paths.data_dir)
+    instruments = instrument_table(store.folder)
+    report = import_databento(
+        source, store, paths.cache_dir, imported_on=today, instruments=instruments
+    )
     print(report.summary())
     return EXIT_OK
 

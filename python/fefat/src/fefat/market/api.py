@@ -58,18 +58,17 @@ from datetime import date, datetime
 import polars as pl
 
 from fefat.config import resolve_paths
-from fefat.market import instruments
 from fefat.market.bars import build_bars, resample_bars, session_grid
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
 from fefat.market.coverage import Fidelity, dataset_coverage, session_datasets
-from fefat.market.instruments import Instrument, InstrumentKind
+from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import (
     BarSchemaName,
     SchemaKind,
@@ -100,18 +99,19 @@ def load(
     """The signal bars of `root_or_symbol` (a root such as `MES`, or a contract such as
     `MESH2024`) of `timeframe` on the trade dates from `start` to `end`, with the columns of
     `SIGNAL_BAR_COLUMNS`; the module docstring has the details and examples."""
-    root, contract = _root_and_contract(root_or_symbol)
-    instrument = instruments.get(root)
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    table = instrument_table(paths.data_dir)
+    root, contract = _root_and_contract(root_or_symbol, table)
+    instrument = table.get(root)
     splices = _splices(instrument, contract, continuous)
     first, last = _trade_date(start, "start"), _trade_date(end, "end")
     if last < first:
         raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
     bar_timeframe = Timeframe.parse(timeframe)
-    paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
     # shortcut: the calendar of the root's newest instrument version, as the quality report
     # takes it; load by version when a root's calendar changes over time.
-    sessions = sessions_of(BUILT_IN[instrument.calendar_id], paths.cache_dir)
+    sessions = sessions_of(instrument.session_calendar(), paths.cache_dir)
     datasets = _datasets_of(store, root, provider)
     source = _source(datasets, fidelity, bar_timeframe, root)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
@@ -136,9 +136,9 @@ def catalog() -> pl.DataFrame:
     return datasets.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))
 
 
-def _root_and_contract(symbol: str) -> tuple[str, str | None]:
+def _root_and_contract(symbol: str, table: InstrumentTable) -> tuple[str, str | None]:
     """The root a symbol names, and the contract when it names one (`MESH2024`)."""
-    roots = instruments.STATIC_TABLE.roots()
+    roots = table.roots()
     if symbol in roots:
         return symbol, None
     try:
@@ -147,7 +147,7 @@ def _root_and_contract(symbol: str) -> tuple[str, str | None]:
         raise ValueError(
             f"Expected a root ({', '.join(roots)}) or a contract such as MESH2024, got {symbol!r}."
         ) from error
-    instruments.get(root)
+    table.get(root)
     return root, symbol
 
 

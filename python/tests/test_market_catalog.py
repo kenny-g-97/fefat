@@ -34,7 +34,7 @@ def test_each_product_names_an_instrument_of_the_table_and_its_built_in_calendar
     for product in CATALOG.products:
         instrument = STATIC_TABLE.get(product.root)
 
-        assert product.calendar is instrument.calendar_id
+        assert product.calendar is instrument.calendar
         assert product.calendar in BUILT_IN
 
 

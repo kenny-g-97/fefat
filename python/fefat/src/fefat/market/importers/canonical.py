@@ -27,7 +27,6 @@ from pathlib import Path
 
 import polars as pl
 
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.contracts import ACTIVE_DAYS_COLUMNS, symbology_contracts
 from fefat.market.importers.dbn import DbnMetadata
@@ -183,7 +182,7 @@ class RecordPlacement:
         if root not in self._sessions:
             # shortcut: the calendar of the root's newest instrument version, as the calendar
             # check takes it; date by version when a root's calendar changes over time.
-            calendar = BUILT_IN[self._instruments.get(root).calendar_id]
+            calendar = self._instruments.get(root).session_calendar()
             self._sessions[root] = sessions_of(calendar, self._cache_folder)
         return self._sessions[root]
 
