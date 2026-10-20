@@ -148,6 +148,10 @@ class SessionTable:
         UTC: an instant outside them has no trade date here."""
         return self._sessions.item(0, "open"), self._sessions.item(-1, "close")
 
+    def time_zone(self) -> str:
+        """The time zone the calendar's hours are kept in, such as `America/Chicago`."""
+        return self._calendar.hours.time_zone
+
     def between_with_next_opens(self, first: date, last: date) -> pl.DataFrame:
         """The sessions of `between`, each with `next_open`, the open of the session after it,
         which ends the break in which a print still takes its trade date (D-43)."""

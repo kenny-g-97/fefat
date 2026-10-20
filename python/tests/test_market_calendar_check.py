@@ -202,7 +202,13 @@ def test_bars_an_hour_late_open_late_and_print_after_the_close(tmp_path: Path) -
         MismatchKind.PRINT_AFTER_CLOSE
     }
     assert report.offsets == (
-        CalendarOffset(dataset=ES_MINUTES, nanoseconds=HOUR, cause=OffsetCause.TIME_ZONE),
+        CalendarOffset(
+            dataset=ES_MINUTES,
+            nanoseconds=HOUR,
+            cause=OffsetCause.TIME_ZONE,
+            first_trade_date=ES_FIXTURE_DAYS[0],
+            last_trade_date=ES_FIXTURE_DAYS[-1],
+        ),
     )
 
 
@@ -351,12 +357,19 @@ def test_bars_read_in_the_wrong_time_zone_show_its_offset_in_hours(
     report = check_records(ES_MINUTES, bars, sessions)
 
     assert report.offsets == (
-        CalendarOffset(dataset=ES_MINUTES, nanoseconds=hours * HOUR, cause=OffsetCause.TIME_ZONE),
+        CalendarOffset(
+            dataset=ES_MINUTES,
+            nanoseconds=hours * HOUR,
+            cause=OffsetCause.TIME_ZONE,
+            first_trade_date=ES_FIXTURE_DAYS[0],
+            last_trade_date=ES_FIXTURE_DAYS[-1],
+        ),
     )
     direction = "late" if hours > 0 else "early"
     assert report.summary().splitlines()[1] == (
         f"synthetic/ohlcv-1m/root=ES offset: its records run {abs(hours)} hours {direction} "
-        "against the calendar; check the time zone of the file's times"
+        "against the calendar on the trade dates 2026-03-05 to 2026-03-09; check the time "
+        "zone of the file's times"
     )
 
 
@@ -371,6 +384,53 @@ def test_bars_read_with_the_wrong_stamping_show_an_offset_of_one_bar(
 
     assert check_records(ES_MINUTES, bars, sessions).offsets == (
         CalendarOffset(
-            dataset=ES_MINUTES, nanoseconds=minutes * MINUTE, cause=OffsetCause.BAR_STAMPING
+            dataset=ES_MINUTES,
+            nanoseconds=minutes * MINUTE,
+            cause=OffsetCause.BAR_STAMPING,
+            first_trade_date=ES_FIXTURE_DAYS[0],
+            last_trade_date=ES_FIXTURE_DAYS[-1],
         ),
     )
+
+
+def moved_on_march_9(nanoseconds: int, cache: Path) -> tuple[pl.LazyFrame, SessionTable]:
+    """The fixtures' ESH2026 1-minute bars, those of the 03-09 session moved later by
+    `nanoseconds`, dated again as an import dates them, beside their session table."""
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], cache)
+    bars = Store(FIXTURES).scan_partition(ESH2026_MINUTES).collect()
+    shift = pl.when(pl.col("trade_date") == date(2026, 3, 9)).then(nanoseconds).otherwise(0)
+    moved = bars.with_columns(pl.col("ts_open") + shift, pl.col("ts_close") + shift)
+    dated = sessions.assign_trade_dates_or_previous(moved.drop("trade_date"), "ts_open")
+    return dated.select(bars.columns).lazy(), sessions
+
+
+def test_bars_an_hour_early_once_daylight_saving_starts_show_that_offset_from_then(
+    tmp_path: Path,
+) -> None:
+    # Times in fixed standard time read as Chicago's run an hour early once CDT starts on
+    # 2026-03-08: only the 03-09 session moves, too few bars for an offset of the whole file.
+    bars, sessions = moved_on_march_9(-HOUR, tmp_path)
+
+    report = check_records(ES_MINUTES, bars, sessions)
+
+    assert [(offset.nanoseconds, offset.cause) for offset in report.offsets] == [
+        (-HOUR, OffsetCause.TIME_ZONE)
+    ]
+    assert report.offsets[0].describe() == (
+        "synthetic/ohlcv-1m/root=ES offset: its records run 1 hour early against the calendar "
+        "on the trade date 2026-03-09; check the time zone of the file's times"
+    )
+
+
+def test_one_session_with_a_bar_in_the_break_before_its_open_shows_an_offset_of_one_bar(
+    tmp_path: Path,
+) -> None:
+    # Nothing prints in the minute before an open, so one session whose bars run a bar early
+    # shows the stamping.
+    bars, sessions = moved_on_march_9(-MINUTE, tmp_path)
+
+    report = check_records(ES_MINUTES, bars, sessions)
+
+    assert [(offset.nanoseconds, offset.cause) for offset in report.offsets] == [
+        (-MINUTE, OffsetCause.BAR_STAMPING)
+    ]

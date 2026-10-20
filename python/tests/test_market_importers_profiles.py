@@ -9,6 +9,7 @@ from fefat.market.importers.profiles import (
     load_profile,
     parse_profile,
     preset_profiles,
+    save_profile,
 )
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.sources import SOURCE_GUIDE, PresetStatus
@@ -46,13 +47,18 @@ def a_profile_file(folder: Path, name: str = "es-tradingview-5m", **changes: obj
     return path
 
 
-def test_a_profile_file_is_saved_on_first_use_and_found_by_its_name_afterwards(
+def test_a_profile_file_is_saved_by_its_first_import_and_found_by_its_name_afterwards(
     tmp_path: Path,
 ) -> None:
     home = tmp_path / "home"
+    path = str(a_profile_file(tmp_path))
 
-    first = load_profile(str(a_profile_file(tmp_path)), home)
+    first = load_profile(path, home)
+    loading_saves_nothing = not (home / "profiles").exists()
+    saved = save_profile(path, home)
 
+    assert loading_saves_nothing and saved
+    assert not save_profile(path, home)
     assert (home / "profiles" / "es-tradingview-5m.yaml").is_file()
     assert load_profile("es-tradingview-5m", home) == first
     assert str(first.timeframe) == "5m"
@@ -60,7 +66,7 @@ def test_a_profile_file_is_saved_on_first_use_and_found_by_its_name_afterwards(
 
 def test_a_different_profile_under_a_saved_name_is_refused(tmp_path: Path) -> None:
     home = tmp_path / "home"
-    load_profile(str(a_profile_file(tmp_path)), home)
+    save_profile(str(a_profile_file(tmp_path)), home)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     other = a_profile_file(elsewhere, timeframe="15m")
@@ -111,3 +117,19 @@ def test_every_preset_round_trips_through_its_yaml() -> None:
     for profile in preset_profiles().values():
         text = yaml.safe_dump(profile.model_dump(mode="json"))
         assert ImportProfile.model_validate(yaml.safe_load(text)) == profile
+
+
+@pytest.mark.parametrize(
+    ("pattern", "refusal"),
+    [
+        ("(?P<root>[A-Z]+)(?P<year>[0-9]{2})", "the group contract, or root and year with month"),
+        ("(?P<root>[A-Z]+", "a regular expression"),
+    ],
+)
+def test_a_file_name_pattern_that_finds_no_contract_is_refused(
+    tmp_path: Path, pattern: str, refusal: str
+) -> None:
+    path = a_profile_file(tmp_path, contract_in_file_name=pattern)
+
+    with pytest.raises(ValueError, match=refusal):
+        load_profile(str(path), tmp_path / "home")

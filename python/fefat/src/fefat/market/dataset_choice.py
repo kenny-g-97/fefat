@@ -9,19 +9,25 @@ both. A load builds its bars from the finest data the provider holds, or the dat
 trades (`tick`), then bars by their timeframe, finest first, none coarser than the bars asked
 for; bars coarser than a minute are an import's finest data, which fill backtests at their own
 fidelity. The roll calendar reads the 1-minute bars, or else the finest bars held.
+`dataset_warnings` names what every load of a dataset, and its import, warns of.
 """
+
+from typing import Final, Literal
 
 from fefat.market.catalog import CATALOG, Catalog
 from fefat.market.coverage import session_datasets
 from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind
-from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe
+from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe, TimeUnit
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
-AUTO = "auto"
+AUTO: Final = "auto"
 """The fidelity of `load` that takes the finest data the store holds."""
-TICK = "tick"
+TICK: Final = "tick"
 """The fidelity of trades."""
+SourceFidelity = Literal["tick"] | Timeframe
+"""The data a load builds its bars from: trades, or bars of a timeframe."""
+_ONE_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
 
 
 def provider_datasets(
@@ -85,30 +91,50 @@ def series_of(store: Store, datasets: dict[str, Dataset]) -> SeriesKind:
     return kinds.pop()
 
 
+def dataset_warnings(dataset: Dataset, series: SeriesKind) -> list[str]:
+    """What every load of `dataset`, and its import, warns of: bars coarser than a minute,
+    which fill backtests at their own fidelity, and a continuous series, which runs without
+    rolls and, back-adjusted, at prices no order traded at (D-49)."""
+    folder = dataset.relative_folder()
+    schema_name = dataset.schema_name
+    found = []
+    if (
+        isinstance(schema_name, BarSchemaName)
+        and schema_name.timeframe.nominal_seconds() > _ONE_MINUTE.nominal_seconds()
+    ):
+        found.append(
+            f"{folder} holds {schema_name.timeframe.in_words()} bars, coarser than a minute: "
+            "backtests on them fill at that fidelity"
+        )
+    if series is not SeriesKind.CONTRACT:
+        distortion = (
+            ", and its back-adjusted prices distort price levels and are no prices an order "
+            "traded at, so its bars have no raw close"
+            if series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
+            else ""
+        )
+        found.append(
+            f"{folder} is a {series} series, one synthetic contract with roll handling "
+            f"off{distortion}"
+        )
+    return found
+
+
 def source_dataset(
     datasets: dict[str, Dataset], fidelity: str, timeframe: Timeframe, root: str
 ) -> Dataset:
     """The dataset of the fidelity named, `tick` or a timeframe such as `1m`, or with `auto` of
     the finest held, whose data is no coarser than `timeframe`."""
+    wanted = _parsed_fidelity(fidelity)
     held = _finest_first(datasets)
-    if fidelity != AUTO and fidelity != TICK:
-        _require_a_timeframe(fidelity)
-    chosen = [pair for pair in held if fidelity in (AUTO, pair[0])]
-    if not chosen and fidelity == AUTO:
-        raise ValueError(f"Expected trades or bars of {root}, got none.")
+    if wanted == AUTO:
+        if not held:
+            raise ValueError(f"Expected trades or bars of {root}, got none.")
+        return _no_coarser_than(held[0], timeframe, root)
+    chosen = [pair for pair in held if pair[0] == wanted]
     if not chosen:
-        raise ValueError(f"Expected {_records(fidelity)} of {root} in the store, got none.")
-    label, source = chosen[0]
-    schema_name = source.schema_name
-    if (
-        isinstance(schema_name, BarSchemaName)
-        and timeframe.nominal_seconds() < schema_name.timeframe.nominal_seconds()
-    ):
-        raise ValueError(
-            f"Expected a timeframe of {label} or coarser from {_records(label)} of {root}, "
-            f"got {timeframe}."
-        )
-    return source
+        raise ValueError(f"Expected {_records(wanted)} of {root} in the store, got none.")
+    return _no_coarser_than(chosen[0], timeframe, root)
 
 
 def roll_dataset(datasets: dict[str, Dataset], root: str) -> Dataset:
@@ -116,41 +142,61 @@ def roll_dataset(datasets: dict[str, Dataset], root: str) -> Dataset:
     minutes = datasets.get("ohlcv-1m")
     if minutes is not None:
         return minutes
-    bars = [dataset for label, dataset in _finest_first(datasets) if label != TICK]
+    bars = [
+        dataset for fidelity, dataset in _finest_first(datasets) if isinstance(fidelity, Timeframe)
+    ]
     if not bars:
         raise ValueError(f"Expected bars of {root} to splice its contracts, got none.")
     return bars[0]
 
 
-def _finest_first(datasets: dict[str, Dataset]) -> list[tuple[str, Dataset]]:
-    """The datasets a load builds bars from, by their fidelity: trades, then bars by timeframe."""
-    trades = [
-        (TICK, dataset)
-        for dataset in datasets.values()
-        if dataset.schema_name.kind is SchemaKind.TRADES
-    ]
-    bars = sorted(
-        (
-            (str(dataset.schema_name.timeframe), dataset)
-            for dataset in datasets.values()
-            if isinstance(dataset.schema_name, BarSchemaName)
-        ),
-        key=lambda pair: Timeframe.parse(pair[0]).nominal_seconds(),
-    )
-    return [*trades, *bars]
-
-
-def _require_a_timeframe(fidelity: str) -> None:
+def _parsed_fidelity(fidelity: str) -> Literal["auto"] | SourceFidelity:
+    """`fidelity` as `load` takes it: `auto`, `tick`, or a timeframe such as `1m`."""
+    if fidelity == AUTO:
+        return AUTO
+    if fidelity == TICK:
+        return TICK
     try:
-        Timeframe.parse(fidelity)
+        return Timeframe.parse(fidelity)
     except ValueError as error:
         raise ValueError(
             f"Expected a fidelity of {AUTO}, {TICK}, or a timeframe such as 1m, got {fidelity!r}."
         ) from error
 
 
-def _records(label: str) -> str:
+def _finest_first(datasets: dict[str, Dataset]) -> list[tuple[SourceFidelity, Dataset]]:
+    """The datasets a load builds bars from, by their fidelity: trades, then bars by timeframe."""
+    trades: list[tuple[SourceFidelity, Dataset]] = [
+        (TICK, dataset)
+        for dataset in datasets.values()
+        if dataset.schema_name.kind is SchemaKind.TRADES
+    ]
+    bars = sorted(
+        (
+            (dataset.schema_name.timeframe, dataset)
+            for dataset in datasets.values()
+            if isinstance(dataset.schema_name, BarSchemaName)
+        ),
+        key=lambda pair: pair[0].nominal_seconds(),
+    )
+    return [*trades, *bars]
+
+
+def _no_coarser_than(
+    pair: tuple[SourceFidelity, Dataset], timeframe: Timeframe, root: str
+) -> Dataset:
+    """The dataset of `pair`, refused where its bars are coarser than `timeframe`."""
+    fidelity, source = pair
+    if isinstance(fidelity, Timeframe) and timeframe.nominal_seconds() < fidelity.nominal_seconds():
+        raise ValueError(
+            f"Expected a timeframe of {fidelity} or coarser from {_records(fidelity)} of {root}, "
+            f"got {timeframe}."
+        )
+    return source
+
+
+def _records(fidelity: SourceFidelity) -> str:
     """What the data of a fidelity is called: trades, or bars such as 1-minute bars."""
-    if label == TICK:
-        return "trades"
-    return f"{Timeframe.parse(label).in_words()} bars"
+    if isinstance(fidelity, Timeframe):
+        return f"{fidelity.in_words()} bars"
+    return "trades"

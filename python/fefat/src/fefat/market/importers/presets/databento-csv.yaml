@@ -2,7 +2,9 @@
 # ohlcv-1m: one header line, `ts_event,rtype,publisher_id,instrument_id,open,high,low,close,
 # volume,symbol` (the symbol column when symbols are mapped, the default for CSV), timestamps as
 # ISO 8601 (pretty_ts) or integer nanoseconds, prices with nine decimals (pretty_px) or as
-# integers in 1e-9 units, all in UTC, and each bar stamped at its open by ts_event.
+# integers in 1e-9 units, all in UTC, and each bar stamped at its open by ts_event. Each row's
+# rtype must be 33, the type of 1-minute bars: a copy of this preset for trades, of timeframe
+# ticks, reads type 0, and Databento's daily bars, type 35, span UTC days, not sessions.
 # Source: docs/masterplan/appendix/research-data-sources.md, Part D, Databento (CSV export).
 kind: market_data
 name: databento-csv
@@ -16,6 +18,7 @@ columns:
   bars: {open: open, high: high, low: low, close: close, volume: volume}
   instrument_id: instrument_id
   symbol: symbol
+  record_type: rtype
 timestamp:
   format: databento
   time_zone: UTC

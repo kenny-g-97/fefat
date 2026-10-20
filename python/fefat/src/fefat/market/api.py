@@ -27,8 +27,10 @@ to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the col
   series; `vwap` is null where the data has none, as on a vendor's bars;
 - `volume`, `trade_count`: what traded in the bucket;
 - `contract`: the contract the bar belongs to, such as `MESH2024`;
-- `close_raw`: the contract's own close, which orders execute against;
-- `adj_offset`: what was added to the raw prices, so that `close = close_raw + adj_offset`;
+- `close_raw`: the contract's own close, which orders execute against, and null on a
+  back-adjusted series an import holds, whose prices no order traded at (D-49);
+- `adj_offset`: what was added to the raw prices, so that `close = close_raw + adj_offset`,
+  null where `close_raw` is;
 - `roll_flag`: true on the first bar of each new front contract, on the trade date it rolled;
 - `zero_volume`: true on a bucket without trades, priced at the close before it.
 
@@ -54,7 +56,8 @@ catalog's recommended source among them is taken, and a root the catalog does no
 several hold is refused (`fefat.market.dataset_choice`). `origin` (`import`, or `sync` once
 connectors exist) narrows the datasets to those of that origin. A continuous series an import
 stored as one synthetic contract (step 1.10) loads as it is, never spliced, and every load of it
-warns that roll handling is off, and, back-adjusted, that its prices distort price levels. The
+warns that roll handling is off, and, back-adjusted, that its prices distort price levels
+and its bars have no raw close. The
 bars are built when `load` runs, and the frame is lazy so that a notebook adds its own columns
 and filters before it collects.
 """
@@ -75,6 +78,7 @@ from fefat.market.contracts import parse_contract_name
 from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import (
     AUTO,
+    dataset_warnings,
     provider_datasets,
     roll_dataset,
     series_of,
@@ -85,7 +89,6 @@ from fefat.market.layout import Dataset, DatasetOrigin, PartitionRequest, Series
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import (
-    BarSchemaName,
     SchemaKind,
     Timeframe,
 )
@@ -132,7 +135,7 @@ def load(
     _warn_of(source, series)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
-        bars = _signal_bars(_unspliced(gridded), first, last, ("contract", "ts_open"))
+        bars = _signal_bars(_unspliced(gridded, series), first, last, ("contract", "ts_open"))
         if contract is not None and bars.is_empty():
             raise ValueError(
                 f"Expected bars of {contract} from {first} to {last} in the store, got none."
@@ -218,29 +221,10 @@ def _origin(origin: str | None) -> DatasetOrigin | None:
 
 
 def _warn_of(source: Dataset, series: SeriesKind) -> None:
-    """Warn, on every load, of bars coarser than a minute as the finest data, which fill
-    backtests at their own fidelity, and of a continuous series, which runs without rolls."""
-    schema_name = source.schema_name
-    named = f"{source.root} from {source.provider}"
-    if isinstance(schema_name, BarSchemaName) and schema_name.timeframe.nominal_seconds() > 60:
-        warnings.warn(
-            f"The finest data of {named} is {schema_name.timeframe.in_words()} bars: backtests "
-            "on them fill at that fidelity.",
-            UserWarning,
-            stacklevel=3,
-        )
-    if series is SeriesKind.CONTRACT:
-        return
-    distortion = (
-        ", and its back-adjusted prices distort price levels"
-        if series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
-        else ""
-    )
-    warnings.warn(
-        f"{named} is a {series} series, one synthetic contract with roll handling off{distortion}.",
-        UserWarning,
-        stacklevel=3,
-    )
+    """Warn, on every load, of what `dataset_warnings` names: bars coarser than a minute as the
+    finest data, and a continuous series."""
+    for warning in dataset_warnings(source, series):
+        warnings.warn(warning, UserWarning, stacklevel=3)
 
 
 def _gridded(
@@ -338,10 +322,13 @@ def _spliced(gridded: pl.DataFrame, calendar: RollCalendar) -> pl.DataFrame:
     )
 
 
-def _unspliced(gridded: pl.DataFrame) -> pl.DataFrame:
+def _unspliced(gridded: pl.DataFrame, series: SeriesKind) -> pl.DataFrame:
+    """Each contract's own bars; a back-adjusted series has neither a raw close nor an offset,
+    since its prices hold the gaps of rolls after them (D-49)."""
+    adjusted = series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
     return gridded.with_columns(
-        close_raw=pl.col("close"),
-        adj_offset=pl.lit(0, dtype=pl.Int64),
+        close_raw=pl.lit(None, dtype=pl.Int64) if adjusted else pl.col("close"),
+        adj_offset=pl.lit(None if adjusted else 0, dtype=pl.Int64),
         roll_flag=pl.lit(False),
     )
 

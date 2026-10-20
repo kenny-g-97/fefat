@@ -40,7 +40,8 @@ class Weekday(IntEnum):
     SUNDAY = 7
 
 
-def _known_time_zone(name: str) -> str:
+def known_time_zone(name: str) -> str:
+    """`name`, refused unless Polars knows it as a time zone."""
     try:
         pl.Series([0], dtype=pl.Datetime("ns")).dt.replace_time_zone(name)
     except ComputeError as error:
@@ -50,7 +51,7 @@ def _known_time_zone(name: str) -> str:
     return name
 
 
-TimeZoneName = Annotated[str, AfterValidator(_known_time_zone)]
+TimeZoneName = Annotated[str, AfterValidator(known_time_zone)]
 """An IANA time-zone name that Polars knows, such as `America/Chicago` or `UTC`."""
 
 SourceLink = Annotated[str, StringConstraints(pattern=r"^https://\S+$")]

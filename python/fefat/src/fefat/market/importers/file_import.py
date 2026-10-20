@@ -3,15 +3,17 @@
 
 `preview_file` reads and maps the whole file (`fefat.market.importers.profile_records`), runs
 the calendar check on its records (`fefat.market.calendar_check.check_records`), and reports
-the first rows as the store would hold them, the problems, and the check, writing nothing.
-`import_file` does the same, refuses a file with problems or whose records run late or early
-against their calendar, and otherwise writes: the new instrument the profile specifies, unless
-the store has it; the records, in the dataset `<provider>/<schema>/root=<root>`, tagged
-`origin: import` with the licence scope of the provider's source in the guide, through the
-partition buffers, so that an equal partition is kept and a different one refused; then the
-original file under `raw/user/<sha256>/<name>`, recorded in the raw manifest last. A file the
-raw manifest records is imported already: importing it again changes nothing. Where imported
-and synced data overlap, each provider keeps its own dataset. Nothing is uploaded anywhere.
+the first rows as the store would hold them, the problems, the check, and the warnings, among
+them a calendar that could not test the file's timing (`fefat.market.calendar_offset`), writing
+nothing. `import_file` does the same, refuses a file with problems or whose records run late or
+early against their calendar, and otherwise writes: the records, in the dataset
+`<provider>/<schema>/root=<root>`, tagged `origin: import` with the licence scope of the
+provider's source in the guide, through the partition buffers, so that an equal partition is
+kept and a different one refused; then the new instrument the profile specifies, unless the
+store has it; then the original file under `raw/user/<sha256>/<name>`, recorded in the raw
+manifest last. The file is read once, for its hash and its rows. A file the raw manifest
+records is imported already: importing it again changes nothing. Where imported and synced
+data overlap, each provider keeps its own dataset. Nothing is uploaded anywhere.
 """
 
 import hashlib
@@ -23,23 +25,18 @@ import polars as pl
 
 from fefat.market.calendar import utc_text
 from fefat.market.calendar_check import CalendarReport, check_records
+from fefat.market.calendar_offset import TIMING_UNCHECKED, timing_checked
+from fefat.market.dataset_choice import dataset_warnings
 from fefat.market.importers.canonical import partition_key, partition_of
 from fefat.market.importers.partition_buffers import PartitionBuffers
 from fefat.market.importers.profile_contracts import ImportFacts
 from fefat.market.importers.profile_records import MappedRecords, mapped_records
 from fefat.market.importers.profiles import ImportProfile
-from fefat.market.importers.tabular import inner_file_name, read_table
+from fefat.market.importers.tabular import read_table
 from fefat.market.instruments import InstrumentTable
-from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition, SeriesKind
+from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition
 from fefat.market.saved_instruments import save_instrument
-from fefat.market.schema import (
-    BarSchemaName,
-    FrozenModel,
-    SchemaKind,
-    Timeframe,
-    TimeUnit,
-    polars_schema,
-)
+from fefat.market.schema import FrozenModel, SchemaKind, polars_schema
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
@@ -47,7 +44,6 @@ USER_RAW_FOLDER = "user"
 """The folder under `raw` that keeps a trader's own files."""
 PREVIEW_ROWS = 10
 _NANO = 1_000_000_000
-_ONE_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
 
 
 @dataclass(frozen=True)
@@ -65,7 +61,8 @@ class FileImportRequest:
 class FileReading(FrozenModel):
     """What a file holds once read with its profile: the dataset its records go to, how many
     rows and records there are, their contracts and trade dates, what was left out, the
-    problems, the calendar check, and the warnings every load of them repeats."""
+    problems, the calendar check, and the warnings: what every load of them repeats, and a
+    calendar check that could not test their timing."""
 
     source: str
     profile: str
@@ -130,20 +127,17 @@ class FilePreview(FrozenModel):
 
 
 class FileImportReport(FrozenModel):
-    """What `import_file` did: the file kept under `raw`, whether it was imported before, and
-    else what was read and written."""
+    """What `import_file` wrote: the file kept under `raw`, what was read, the partitions
+    written and those stored already, and whether the new instrument was saved."""
 
     source: str
     raw_path: str
-    already_imported: bool
-    reading: FileReading | None
+    reading: FileReading
     partitions_written: int
     partitions_kept: int
     instrument_saved: bool
 
     def summary(self) -> str:
-        if self.reading is None:
-            return f"Nothing to import from {self.source}: it is imported already, as raw/{self.raw_path}."
         saved = (
             ["  New instrument saved for later imports and loads."] if self.instrument_saved else []
         )
@@ -159,6 +153,18 @@ class FileImportReport(FrozenModel):
         )
 
 
+class AlreadyImported(FrozenModel):
+    """A file `import_file` found imported before, kept under `raw` as `raw_path`."""
+
+    source: str
+    raw_path: str
+
+    def summary(self) -> str:
+        return (
+            f"Nothing to import from {self.source}: it is imported already, as raw/{self.raw_path}."
+        )
+
+
 def preview_file(
     request: FileImportRequest,
     instruments: InstrumentTable,
@@ -166,7 +172,7 @@ def preview_file(
     guide: SourceGuide = SOURCE_GUIDE,
 ) -> FilePreview:
     """The file read and checked as an import would, and nothing written."""
-    mapped = _mapped(request, instruments, cache_folder)
+    mapped = _mapped(request, _file_bytes(request.path), instruments, cache_folder)
     reading = _reading(request, mapped)
     _metadata(request.profile, guide)
     return FilePreview(reading=reading, first_rows=tuple(_shown(mapped)))
@@ -180,35 +186,21 @@ def import_file(
     imported_on: date,
     instruments: InstrumentTable,
     guide: SourceGuide = SOURCE_GUIDE,
-) -> FileImportReport:
+) -> FileImportReport | AlreadyImported:
     """Import the file into `store` (module docstring); a file with problems, or whose records
     run late or early against their calendar, is refused with them, and nothing is written."""
-    sha256 = hashlib.sha256(_file_bytes(request.path)).hexdigest()
+    content = _file_bytes(request.path)
+    sha256 = hashlib.sha256(content).hexdigest()
     raw_path = PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
     if store.raw_manifest().file_at(raw_path.as_posix()) is not None:
-        return FileImportReport(
-            source=str(request.path),
-            raw_path=raw_path.as_posix(),
-            already_imported=True,
-            reading=None,
-            partitions_written=0,
-            partitions_kept=0,
-            instrument_saved=False,
-        )
-    mapped = _mapped(request, instruments, cache_folder)
+        return AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
+    mapped = _mapped(request, content, instruments, cache_folder)
     reading = _reading(request, mapped)
-    refusals = reading.refusals()
-    if refusals:
-        listed = "\n".join(f"  {refusal}" for refusal in refusals)
-        raise ValueError(
-            f"Expected {request.path} to read with the profile {request.profile.name} without "
-            f"problems, got:\n{listed}\nNothing was written; --preview shows the records."
-        )
-    metadata = _metadata(request.profile, guide)
-    saved = mapped.new_instrument and save_instrument(store.folder, mapped.instrument)
-    buffers = PartitionBuffers(store, _clock(mapped), metadata)
+    _require_no_refusals(request, reading)
+    buffers = PartitionBuffers(store, _clock(mapped), _metadata(request.profile, guide))
     buffers.add(_partitions(reading.dataset, mapped))
     buffers.write_all()
+    saved = mapped.new_instrument and save_instrument(store.folder, mapped.instrument)
     store.write_raw_file(raw_path, request.path, sha256)
     store.record_raw_file(
         raw_path,
@@ -222,7 +214,6 @@ def import_file(
     return FileImportReport(
         source=str(request.path),
         raw_path=raw_path.as_posix(),
-        already_imported=False,
         reading=reading,
         partitions_written=buffers.written,
         partitions_kept=buffers.kept,
@@ -237,11 +228,11 @@ def _file_bytes(path: Path) -> bytes:
 
 
 def _mapped(
-    request: FileImportRequest, instruments: InstrumentTable, cache_folder: Path
+    request: FileImportRequest, content: bytes, instruments: InstrumentTable, cache_folder: Path
 ) -> MappedRecords:
-    table = read_table(request.path, request.profile.layout)
+    file_name, table = read_table(request.path, content, request.profile.layout)
     facts = ImportFacts(
-        file_name=inner_file_name(request.path),
+        file_name=file_name,
         contract=request.contract,
         root=request.root,
         time_zone=request.time_zone,
@@ -257,6 +248,8 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
     records = mapped.records
     dates = records.select(pl.col("trade_date").min(), pl.col("trade_date").max().alias("last"))
     first, last = dates.row(0) if not records.is_empty() else (None, None)
+    calendar = check_records(dataset, records.lazy(), mapped.sessions)
+    unchecked = not calendar.offsets and not timing_checked(dataset, records, mapped.sessions)
     return FileReading(
         source=str(request.path),
         profile=profile.name,
@@ -269,33 +262,23 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
         bars_without_volume=mapped.bars_without_volume,
         spread_rows=mapped.spread_rows,
         problems=tuple(problem.describe() for problem in mapped.problems),
-        calendar=check_records(dataset, records.lazy(), mapped.sessions),
-        warnings=tuple(_warnings(profile, mapped)),
+        calendar=calendar,
+        warnings=(
+            *dataset_warnings(dataset, profile.series),
+            *([TIMING_UNCHECKED] if unchecked else []),
+        ),
     )
 
 
-def _warnings(profile: ImportProfile, mapped: MappedRecords) -> list[str]:
-    """What every load of these records repeats: bars coarser than a minute fill backtests at
-    their own fidelity, and a continuous series runs without rolls."""
-    found = []
-    schema_name = mapped.schema_name
-    if isinstance(schema_name, BarSchemaName) and (
-        schema_name.timeframe.nominal_seconds() > _ONE_MINUTE.nominal_seconds()
-    ):
-        found.append(
-            f"{schema_name.timeframe.in_words()} bars are the finest data of this dataset, so "
-            "backtests on it fill at that fidelity"
-        )
-    if profile.series is not SeriesKind.CONTRACT:
-        found.append(
-            f"a {profile.series} series is one synthetic contract with roll handling off"
-            + (
-                ", and back-adjusted prices distort price levels"
-                if profile.series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
-                else ""
-            )
-        )
-    return found
+def _require_no_refusals(request: FileImportRequest, reading: FileReading) -> None:
+    refusals = reading.refusals()
+    if not refusals:
+        return
+    listed = "\n".join(f"  {refusal}" for refusal in refusals)
+    raise ValueError(
+        f"Expected {request.path} to read with the profile {request.profile.name} without "
+        f"problems, got:\n{listed}\nNothing was written; --preview shows the records."
+    )
 
 
 def _metadata(profile: ImportProfile, guide: SourceGuide) -> DatasetMetadata:

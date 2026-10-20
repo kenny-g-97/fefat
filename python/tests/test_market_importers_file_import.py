@@ -1,6 +1,6 @@
 import gzip
 import zipfile
-from datetime import date, time
+from datetime import date
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
 
@@ -8,26 +8,42 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
+from export_samples import (
+    ESH2026_MARCH_6_TRADES,
+    HOUR,
+    IMPORTED_ON,
+    MINUTE,
+    PRESETS,
+    SAMPLES,
+    a_new_product_profile,
+    expected_minutes,
+    five_minute_file,
+    imported,
+    minutes_of,
+    rolled_databento_lines,
+    sample_lines,
+    sample_request,
+    store_files,
+    written_export,
+)
 from fefat.market.api import load
-from fefat.market.bars import resample_bars
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
-from fefat.market.calendar_definition import CalendarId, SessionHours, Weekday
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.calendar_offset import CalendarOffset, OffsetCause
 from fefat.market.importers.file_import import (
+    AlreadyImported,
+    FileImportReport,
     FileImportRequest,
     import_file,
     preview_file,
 )
+from fefat.market.importers.profile_contracts import ImportFacts
+from fefat.market.importers.profile_records import mapped_records
 from fefat.market.importers.profile_values import ProblemKind
-from fefat.market.importers.profiles import (
-    BarStamp,
-    ImportProfile,
-    NewInstrument,
-    preset_profiles,
-)
-from fefat.market.instruments import STATIC_TABLE, Currency, InstrumentKind
-from fefat.market.last_trade_rules import ThirdFriday
+from fefat.market.importers.profiles import BarStamp, ImportProfile
+from fefat.market.importers.tabular import read_table
+from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -35,84 +51,11 @@ from fefat.market.layout import (
     Partition,
     SeriesKind,
     SizeUnit,
-    YearMonth,
 )
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
-
-ROOT = Path(__file__).resolve().parents[2]
-SYNTHETIC = ROOT / "fixtures" / "synthetic"
-EXPORTS = SYNTHETIC / "exports"
-ESH2026_MINUTES = (
-    SYNTHETIC / "ohlcv-1m" / "root=ES" / "contract=ESH2026" / "month=2026-03" / "part.parquet"
-)
-ESH2026_MARCH_6_TRADES = (
-    SYNTHETIC / "trades" / "root=ES" / "contract=ESH2026" / "date=2026-03-06" / "part.parquet"
-)
-IMPORTED_ON = date(2026, 10, 20)
-HOUR = 3_600_000_000_000
-MINUTE = 60_000_000_000
-PRESETS = preset_profiles()
-SAMPLES = {
-    "ninjatrader": (EXPORTS / "ninjatrader" / "ES 03-26.Last.txt", None),
-    "tradingview": (EXPORTS / "tradingview" / "CME_MINI_ESH2026, 1.csv", None),
-    "databento-csv": (
-        EXPORTS / "databento-csv" / "glbx-mdp3-20260304-20260309.ohlcv-1m.csv",
-        None,
-    ),
-    "ibkr": (EXPORTS / "ibkr" / "ESH2026-1min.csv", "America/New_York"),
-    "sierra-chart": (EXPORTS / "sierra-chart" / "ESH26-CME.txt", None),
-    "tradestation": (EXPORTS / "tradestation" / "ESH26.txt", "America/Chicago"),
-}
-"""Each preset's sample of the fixtures' ESH2026 1-minute bars, and the time zone the import
-names where the preset leaves it to the import."""
-
-
-def sample_request(preset: str, **changes: object) -> FileImportRequest:
-    path, time_zone = SAMPLES[preset]
-    request = FileImportRequest(path=path, profile=PRESETS[preset], time_zone=time_zone)
-    return FileImportRequest(**{**request.__dict__, **changes})
-
-
-def imported(folder: Path, request: FileImportRequest) -> Store:
-    store = Store(folder / "data")
-    import_file(
-        request,
-        store,
-        folder / "cache",
-        imported_on=IMPORTED_ON,
-        instruments=instrument_table(store.folder),
-    )
-    return store
-
-
-def minutes_of(provider: str) -> Partition:
-    dataset = Dataset(provider=provider, schema_name=parse_schema_name("ohlcv-1m"), root="ES")
-    return Partition(dataset=dataset, contract="ESH2026", key=YearMonth(year=2026, month=3))
-
-
-def expected_minutes(preset: str) -> pl.DataFrame:
-    """The fixtures' ESH2026 1-minute bars as the preset's sample gives them: the vendor's
-    instrument id from Databento's file, else the contract's, and the trade count and vwap
-    only where the layout carries them."""
-    bars = pl.read_parquet(ESH2026_MINUTES)
-    instrument_id = 1001 if preset == "databento-csv" else 202603
-    keeps_count = preset in ("ibkr", "sierra-chart")
-    return bars.with_columns(
-        instrument_id=pl.lit(instrument_id, dtype=pl.UInt32),
-        trade_count=pl.col("trade_count") if keeps_count else pl.lit(None, dtype=pl.UInt32),
-        vwap=pl.col("vwap") if preset == "ibkr" else pl.lit(None, dtype=pl.Int64),
-    )
-
-
-def store_files(folder: Path) -> dict[str, tuple[int, int]]:
-    return {
-        path.relative_to(folder).as_posix(): (path.stat().st_size, path.stat().st_mtime_ns)
-        for path in folder.rglob("*")
-        if path.is_file()
-    }
 
 
 @pytest.mark.parametrize("preset", SAMPLES)
@@ -163,6 +106,8 @@ def test_a_sample_read_in_the_wrong_time_zone_is_flagged_with_the_offset_the_che
             dataset=minutes_of("ninjatrader").dataset,
             nanoseconds=6 * HOUR,
             cause=OffsetCause.TIME_ZONE,
+            first_trade_date=date(2026, 3, 5),
+            last_trade_date=date(2026, 3, 9),
         ),
     )
     with pytest.raises(ValueError, match="its records run 6 hours late against the calendar"):
@@ -186,58 +131,11 @@ def test_a_sample_read_with_the_wrong_bar_stamping_is_flagged_with_one_bar(
             dataset=minutes_of("ninjatrader").dataset,
             nanoseconds=MINUTE,
             cause=OffsetCause.BAR_STAMPING,
+            first_trade_date=date(2026, 3, 5),
+            last_trade_date=date(2026, 3, 9),
         ),
     )
     assert "It would be refused" in preview.summary()
-
-
-XES_HOURS = SessionHours(
-    time_zone="America/Chicago",
-    opens_at=time(17, 0),
-    closes_at=time(16, 0),
-    opens_on_previous_day=True,
-    weekdays=frozenset(
-        {Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY}
-    ),
-)
-
-
-def a_new_product_profile() -> ImportProfile:
-    """A TradingView export of 5-minute bars of XES, a product FEFAT does not know, on hours of
-    its own: 17:00 to 16:00 Chicago, Monday to Friday, without holidays."""
-    return PRESETS["tradingview"].model_copy(
-        update={
-            "name": "xes-5m",
-            "timeframe": Timeframe(count=5, unit=TimeUnit.MINUTE),
-            "instrument": NewInstrument(
-                root="XES",
-                kind=InstrumentKind.FUTURES,
-                tick_size=Decimal("0.25"),
-                point_value=Decimal(50),
-                currency=Currency.USD,
-                last_trade_rule=ThirdFriday(),
-                calendar=XES_HOURS,
-                first_trade_date=date(2026, 3, 2),
-            ),
-        }
-    )
-
-
-def five_minute_file(folder: Path) -> Path:
-    """The fixtures' ESH2026 bars resampled to 5 minutes by the bar builder, written as
-    TradingView writes a 5-minute chart of XES March 2026."""
-    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], folder / "cache")
-    minutes = pl.read_parquet(ESH2026_MINUTES)
-    five = resample_bars(minutes, Timeframe(count=5, unit=TimeUnit.MINUTE), sessions, 2**62)
-    rows = [
-        f"{bar['ts_open'] // 1_000_000_000},{bar['open'] / 1e9},{bar['high'] / 1e9},"
-        f"{bar['low'] / 1e9},{bar['close'] / 1e9},{bar['volume']}\n"
-        for bar in five.iter_rows(named=True)
-    ]
-    path = folder / "exports" / "XESH2026, 5.csv"
-    path.parent.mkdir(parents=True)
-    path.write_bytes(("time,open,high,low,close,Volume\n" + "".join(rows)).encode())
-    return path
 
 
 def test_a_product_with_a_new_instrument_on_a_calendar_of_its_own_loads_at_its_fidelity(
@@ -248,7 +146,7 @@ def test_a_product_with_a_new_instrument_on_a_calendar_of_its_own_loads_at_its_f
     monkeypatch.setenv("FEFAT_DATA_DIR", str(store.folder))
     monkeypatch.setenv("FEFAT_HOME", str(tmp_path))
 
-    with pytest.warns(UserWarning, match="finest data of XES from tradingview is 5-minute bars"):
+    with pytest.warns(UserWarning, match="ohlcv-5m/root=XES holds 5-minute bars"):
         bars = load("XES", "5m", "2026-03-05", "2026-03-09", origin="import").collect()
 
     assert instrument_table(store.folder).get("XES").session_calendar().name == "XES-sessions"
@@ -297,20 +195,23 @@ def test_a_continuous_back_adjusted_file_is_one_synthetic_contract_that_warns_on
     assert [file.partition.contract for file in store.list_partitions()] == ["ES-CONTINUOUS"]
     assert bars.get_column("contract").unique().to_list() == ["ES-CONTINUOUS"]
     assert not bars.get_column("roll_flag").any()
+    assert bars.get_column("close_raw").null_count() == bars.height
+    assert bars.get_column("adj_offset").null_count() == bars.height
     with pytest.raises(ValueError, match="Expected continuous=False or no continuous"):
         load("ES", "1m", "2026-03-06", "2026-03-06", continuous=True)
 
 
 def test_a_preview_writes_nothing_to_the_data_folder(tmp_path: Path) -> None:
-    data = tmp_path / "data"
-    data.mkdir()
+    data_folder = tmp_path / "data"
+    data_folder.mkdir()
     request = FileImportRequest(path=five_minute_file(tmp_path), profile=a_new_product_profile())
 
-    preview = preview_file(request, instrument_table(data), tmp_path / "cache")
+    preview = preview_file(request, instrument_table(data_folder), tmp_path / "cache")
 
-    assert store_files(data) == {}
+    assert store_files(data_folder) == {}
     assert "nothing was written" in preview.summary()
     assert preview.first_rows[0].startswith("    2026-03-04T23:00:00Z to 2026-03-04T23:05:00Z")
+    assert not any("could not check" in warning for warning in preview.reading.warnings)
 
 
 def test_a_re_import_changes_nothing(tmp_path: Path) -> None:
@@ -325,7 +226,7 @@ def test_a_re_import_changes_nothing(tmp_path: Path) -> None:
         instruments=STATIC_TABLE,
     )
 
-    assert report.already_imported
+    assert isinstance(report, AlreadyImported)
     assert report.summary().startswith("Nothing to import from")
     assert store_files(store.folder) == before
 
@@ -450,3 +351,169 @@ def test_a_databento_trades_export_imports_its_ticks(tmp_path: Path) -> None:
     dataset = Dataset(provider="databento-csv", schema_name=parse_schema_name("trades"), root="ES")
     partition = Partition(dataset=dataset, contract="ESH2026", key=date(2026, 3, 6))
     assert_frame_equal(store.scan_partition(partition).collect(), trades)
+
+
+def test_a_spot_pair_named_by_its_root_imports_as_its_one_contract(tmp_path: Path) -> None:
+    # A product that never expires has no contract to name, so its records are the root's. On
+    # a calendar without breaks, the calendar check cannot test the file's timing.
+    path = written_export(
+        tmp_path / "exports", "BINANCE_ETHUSDT, 1.csv", sample_lines("tradingview")
+    )
+    store = Store(tmp_path / "data")
+
+    report = import_file(
+        sample_request("tradingview", path=path, root="ETHUSDT"),
+        store,
+        tmp_path / "cache",
+        imported_on=IMPORTED_ON,
+        instruments=STATIC_TABLE,
+    )
+
+    assert [file.partition.contract for file in store.list_partitions()] == ["ETHUSDT"]
+    assert isinstance(report, FileImportReport)
+    assert any("could not check" in warning for warning in report.reading.warnings)
+
+
+def test_an_hourly_bar_at_an_early_close_ends_at_the_close(tmp_path: Path) -> None:
+    # The day after Thanksgiving, CME's equity session closes at 12:15 Chicago time: the bar
+    # opening at 12:00 is the bucket from 12:00 to the close, as the bar builder cuts it.
+    session = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path / "cache").session(
+        date(2026, 11, 27)
+    )
+    rows = [
+        f"{instant // 1_000_000_000},6850,6851,6849.75,6850.5,10"
+        for instant in range(session.open, session.close, HOUR)
+    ]
+    path = written_export(
+        tmp_path / "exports",
+        "CME_MINI_ESZ2026, 60.csv",
+        ["time,open,high,low,close,Volume", *rows],
+    )
+    profile = PRESETS["tradingview"].model_copy(
+        update={"name": "tradingview-hourly", "timeframe": Timeframe(count=1, unit=TimeUnit.HOUR)}
+    )
+
+    store = imported(tmp_path, FileImportRequest(path=path, profile=profile))
+
+    [stored] = [store.scan_partition(file.partition).collect() for file in store.list_partitions()]
+    last = stored.row(-1, named=True)
+    assert (last["ts_open"], last["ts_close"]) == (session.close - 15 * MINUTE, session.close)
+
+
+def test_an_ibkr_average_with_more_decimals_than_the_store_keeps_is_cut_to_them(
+    tmp_path: Path,
+) -> None:
+    # The TWS API writes the average as a float, with more digits than the nine decimals the
+    # store keeps: the first row's are cut after the ninth.
+    header, first, *rows = sample_lines("ibkr")
+    fields = first.split(",")
+    whole, _, part = fields[6].partition(".")
+    fields[6] = f"{whole}.{part.ljust(9, '0')}000033"
+    path = written_export(
+        tmp_path / "exports", "ESH2026-1min.csv", [header, ",".join(fields), *rows]
+    )
+
+    store = imported(tmp_path, sample_request("ibkr", path=path))
+
+    stored = store.scan_partition(minutes_of("ibkr")).collect()
+    assert_frame_equal(stored, expected_minutes("ibkr"))
+
+
+def test_a_continuous_series_takes_instrument_id_1_whatever_ids_its_file_gives(
+    tmp_path: Path,
+) -> None:
+    path = written_export(
+        tmp_path / "exports",
+        "glbx-mdp3-20260304-20260309.ohlcv-1m.csv",
+        rolled_databento_lines(),
+    )
+    profile = PRESETS["databento-csv"].model_copy(
+        update={"name": "es-continuous-csv", "series": SeriesKind.CONTINUOUS, "instrument": "ES"}
+    )
+
+    store = imported(tmp_path, FileImportRequest(path=path, profile=profile))
+
+    [partition] = [file.partition for file in store.list_partitions()]
+    instrument_ids = store.scan_partition(partition).collect().get_column("instrument_id")
+    assert (partition.contract, instrument_ids.unique().to_list()) == ("ES-CONTINUOUS", [1])
+
+
+def databento_parquet(folder: Path, *, empty_close_in_row: int | None = None) -> Path:
+    """The Databento sample as its Parquet export writes it, with typed columns and instants in
+    UTC, and, where `empty_close_in_row` names a row, no close in that row."""
+    table = pl.read_csv(SAMPLES["databento-csv"][0], infer_schema=False).with_columns(
+        pl.col("ts_event").str.to_datetime(
+            "%Y-%m-%dT%H:%M:%S%.fZ", time_unit="ns", time_zone="UTC"
+        ),
+        pl.col("rtype").cast(pl.UInt8),
+        pl.col("publisher_id").cast(pl.UInt16),
+        pl.col("instrument_id").cast(pl.UInt32),
+        pl.col("open", "high", "low", "close").cast(pl.Float64),
+        pl.col("volume").cast(pl.UInt64),
+    )
+    if empty_close_in_row is not None:
+        emptied = pl.int_range(pl.len()) == empty_close_in_row
+        table = table.with_columns(close=pl.when(~emptied).then(pl.col("close")))
+    path = folder / "exports" / "glbx-mdp3-20260304-20260309.ohlcv-1m.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table.write_parquet(path)
+    return path
+
+
+def test_a_parquet_export_imports_to_the_same_frame(tmp_path: Path) -> None:
+    request = sample_request("databento-csv", path=databento_parquet(tmp_path))
+
+    store = imported(tmp_path, request)
+
+    stored = store.scan_partition(minutes_of("databento-csv")).collect()
+    assert_frame_equal(stored, expected_minutes("databento-csv"))
+
+
+def test_an_empty_value_in_a_parquet_export_is_a_problem(tmp_path: Path) -> None:
+    request = sample_request(
+        "databento-csv", path=databento_parquet(tmp_path, empty_close_in_row=0)
+    )
+
+    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+
+    assert preview.reading.problems[0].startswith("unreadable-value, 1 row: ")
+
+
+def test_a_symbol_seen_ten_years_apart_names_a_contract_in_each_decade(tmp_path: Path) -> None:
+    # ESH6 names the March contract of 2016 and of 2026: each run of its rows is dated alone.
+    rows = [
+        f"{day}T15:00:00.000000000Z,33,1,{instrument_id},6850.25,6850.25,6850.25,6850.25,1,ESH6"
+        for day, instrument_id in (("2016-03-01", 1001), ("2026-03-02", 1002))
+    ]
+    path = written_export(
+        tmp_path / "exports",
+        "glbx-mdp3-20160301-20260302.ohlcv-1m.csv",
+        [sample_lines("databento-csv")[0], *rows],
+    )
+
+    preview = preview_file(
+        sample_request("databento-csv", path=path), STATIC_TABLE, tmp_path / "cache"
+    )
+
+    assert preview.reading.contracts == ("ESH2016", "ESH2026")
+
+
+@pytest.mark.parametrize("preset", SAMPLES)
+def test_the_records_of_a_files_first_half_are_those_the_whole_file_gives_them(
+    tmp_path: Path, preset: str
+) -> None:
+    # No look-ahead inside a file (D-12): a record never depends on the rows after it.
+    path, time_zone = SAMPLES[preset]
+    lines = path.read_bytes().splitlines(keepends=True)
+    prefix = tmp_path / path.name
+    prefix.write_bytes(b"".join(lines[: len(lines) // 2]))
+
+    def records_of(file: Path) -> pl.DataFrame:
+        name, table = read_table(file, file.read_bytes(), PRESETS[preset].layout)
+        facts = ImportFacts(file_name=name, contract=None, root=None, time_zone=time_zone)
+        mapped = mapped_records(table, PRESETS[preset], facts, STATIC_TABLE, tmp_path / "cache")
+        return mapped.records
+
+    cut = records_of(prefix)
+    whole = records_of(path).filter(pl.col("ts_close") <= cut.get_column("ts_close").max())
+    assert_frame_equal(cut, whole)

@@ -8,8 +8,10 @@ from pathlib import Path, PurePosixPath
 
 import polars as pl
 import pytest
+import yaml
 
 from fefat.config import resolve_paths
+from fefat.market.importers.profiles import preset_profiles
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -512,3 +514,26 @@ def test_the_profiles_command_lists_the_presets_and_prints_one_as_yaml(
     assert "none yet" in listed
     assert "name: ninjatrader\n" in printed
     assert "  stamp: close\n" in printed
+
+
+def test_a_refused_file_import_saves_no_profile_and_its_fixed_profile_imports(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A price scale of 0.1 puts most prices off the tick: the file is refused, and the profile
+    # is saved only by the import that writes, after the trader fixes it.
+    home = resolve_paths(os.environ).home
+    preset = preset_profiles()["ninjatrader"].model_dump(mode="json")
+    profile = tmp_path / "my-ninjatrader.yaml"
+    arguments = ["data", "import", "file", str(NINJATRADER_SAMPLE), "--profile", str(profile)]
+    broken = {**preset, "name": "my-ninjatrader", "price": {"unit": "decimal", "scale": "0.1"}}
+    profile.write_text(yaml.safe_dump(broken))
+
+    previewed = main([*arguments, "--preview"])
+    refused = main(arguments)
+    saved_when_refused = (home / "profiles").exists()
+    profile.write_text(yaml.safe_dump({**preset, "name": "my-ninjatrader"}))
+    fixed = main(arguments)
+
+    assert (previewed, refused, saved_when_refused, fixed) == (1, 1, False, 0)
+    assert (home / "profiles" / "my-ninjatrader.yaml").is_file()
+    assert "off-the-tick" in capsys.readouterr().err

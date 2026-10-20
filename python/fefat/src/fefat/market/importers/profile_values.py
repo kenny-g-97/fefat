@@ -6,12 +6,14 @@ its volume, or a tick's size, in lots of the profile's volume unit
 A timestamp is read in the profile's form: seconds, milliseconds, microseconds, or nanoseconds
 since the Unix epoch; ISO 8601, with a `T` or a space, fractional seconds or none, and an offset
 or `Z`, which wins, or none, when it is local; Databento's, ISO 8601 or integer nanoseconds; or a
-strptime pattern, local, a trailing zone name such as the TWS API writes dropped. Local times
-are in the import's time zone, and one that a daylight-saving change skips or repeats is
-unreadable. A price is a decimal of at most nine decimals, or an integer of 1e-9 units, times
-the profile's scale. What cannot be read is a problem (`RecordProblem`) with the rows it
-touches, and the rows are left out; so are bars without volume, which the store never holds,
-since a bucket without trades has no bar.
+strptime pattern, local. Local times are in the import's time zone, and one that a
+daylight-saving change skips or repeats is unreadable; a zone name written after a time, as the
+TWS API writes its login's, must give the same instants as the import's zone. A price is a
+decimal of at most nine decimals, or an integer of 1e-9 units, times the profile's scale; an
+average, such as a vwap, keeps its first nine decimals. Where the profile maps Databento's
+record type, each record must be of the type of the profile's timeframe. What cannot be read is
+a problem (`RecordProblem`) with the rows it touches, and the rows are left out; so are bars
+without volume, which the store never holds, since a bucket without trades has no bar.
 """
 
 from dataclasses import dataclass
@@ -20,13 +22,16 @@ from enum import StrEnum
 import polars as pl
 from pydantic import Field
 
+from fefat.market.calendar_definition import known_time_zone
 from fefat.market.importers.profiles import ColumnName, ImportProfile, PriceUnit, TimestampForm
 from fefat.market.schema import FrozenModel
 
 _NANO = 1_000_000_000
 _DECIMAL_TEXT = r"^([+-]?[0-9]+)(?:\.([0-9]{1,9}))?$"
+_AVERAGE_TEXT = r"^([+-]?[0-9]+)(?:\.([0-9]{1,9})[0-9]*)?$"
+"""An average's decimals, of which the first nine are kept, as the TWS API's floats write more."""
 _INTEGER_TEXT = r"^[+-]?[0-9]+$"
-_ZONE_NAME_AFTER_A_TIME = r"\s+[A-Za-z]+/[A-Za-z0-9_+\-/]+$"
+_ZONE_NAME_AFTER_A_TIME = r"\s+([A-Za-z]+/[A-Za-z0-9_+\-/]+)$"
 _SIDES = ("A", "B", "N")
 _UNIT_NANOSECONDS = {
     TimestampForm.UNIX_SECONDS: _NANO,
@@ -34,6 +39,9 @@ _UNIT_NANOSECONDS = {
     TimestampForm.UNIX_MICROSECONDS: 1_000,
     TimestampForm.UNIX_NANOSECONDS: 1,
 }
+_DATABENTO_RECORD_TYPES = {"ticks": 0, "1s": 32, "1m": 33, "1h": 34}
+"""The `rtype` of Databento's records of each timeframe it gives; its daily bars, type 35, span
+UTC days, which FEFAT never stores as sessions (`02-engine-and-data.md` §1.1)."""
 _ROW_COLUMNS = ("row", "line", "instant", "symbol")
 
 
@@ -42,7 +50,9 @@ class ProblemKind(StrEnum):
 
     UNREADABLE_TIMESTAMP = "unreadable-timestamp"
     UNREADABLE_VALUE = "unreadable-value"
+    OTHER_RECORD_TYPE = "other-record-type"
     PART_VOLUME = "part-volume"
+    OUTSIDE_THE_CALENDAR = "outside-the-calendar"
     OFF_THE_TICK = "off-the-tick"
     BEFORE_FIRST_TRADE_DATE = "before-first-trade-date"
     DUPLICATE_BAR = "duplicate-bar"
@@ -94,6 +104,7 @@ def read_rows(
 ) -> ReadRows:
     """The rows of `table` read with `profile`, local times in `time_zone`."""
     columns = _Columns(table, file_name)
+    _require_the_import_zone(table, columns, profile, time_zone, file_name)
     parsed = {
         "row": pl.int_range(1, pl.len() + 1, dtype=pl.UInt32),
         "line": pl.concat_str(pl.all(), separator=profile.layout.delimiter),
@@ -117,15 +128,17 @@ def read_rows(
         problem_of(
             values.filter(~unreadable_time & unreadable_value),
             ProblemKind.UNREADABLE_VALUE,
-            "a price, volume, count, side, or id that is no value of the profile's form (prices "
-            "with at most nine decimals, sides A, B, or N)",
+            "a price, volume, count, side, id, or record type that is no value of the profile's "
+            "form (prices with at most nine decimals, sides A, B, or N)",
         ),
     ]
-    readable = values.filter(~unreadable_time & ~unreadable_value)
-    in_lots, part = _in_lots(readable, profile)
+    typed, other_type = _of_its_record_type(
+        values.filter(~unreadable_time & ~unreadable_value), profile
+    )
+    in_lots, part = _in_lots(typed, profile)
     bars = profile.bar_timeframe() is not None
     traded = in_lots.filter(pl.col("volume") > 0) if bars else in_lots
-    problems = tuple(problem for problem in (*found, part) if problem is not None)
+    problems = tuple(problem for problem in (*found, other_type, part) if problem is not None)
     return ReadRows(traded, problems, bars_without_volume=in_lots.height - traded.height)
 
 
@@ -155,6 +168,36 @@ class _Columns:
     @staticmethod
     def _name(reference: ColumnName) -> str:
         return f"column_{reference}" if isinstance(reference, int) else reference
+
+
+def _require_the_import_zone(
+    table: pl.DataFrame,
+    columns: _Columns,
+    profile: ImportProfile,
+    time_zone: str,
+    file_name: str,
+) -> None:
+    """Refuse times written with a zone name, as the TWS API writes its login's, whose zone
+    gives other instants than the import's; another name of the same zone, such as
+    `US/Eastern` for `America/New_York`, gives the same."""
+    form = profile.timestamp.format
+    if isinstance(form, TimestampForm) or "%z" in form:
+        return
+    text = _timestamp_text(columns, profile)
+    zoned = table.select(
+        zone=text.str.extract(_ZONE_NAME_AFTER_A_TIME, 1),
+        local=text.str.replace(_ZONE_NAME_AFTER_A_TIME, "").str.to_datetime(
+            form, strict=False, time_unit="ns"
+        ),
+    )
+    for zone in zoned.get_column("zone").drop_nulls().unique().sort().to_list():
+        named = zoned.filter(pl.col("zone") == known_time_zone(zone))
+        moved = _from_local(pl.col("local"), zone) != _from_local(pl.col("local"), time_zone)
+        if named.select(moved.any()).item():
+            raise ValueError(
+                f"Expected the times of {file_name} in {time_zone}, the import's time zone, got "
+                f"times written in {zone}, which gives other instants: name --time-zone {zone}."
+            )
 
 
 def _timestamp_text(columns: _Columns, profile: ImportProfile) -> pl.Expr:
@@ -219,10 +262,11 @@ def _from_local(local: pl.Expr, time_zone: str) -> pl.Expr:
     return zoned.dt.epoch("ns")
 
 
-def _nano_units(text: pl.Expr) -> pl.Expr:
-    """A decimal of at most nine decimals in exact 1e-9 units; null for anything else."""
-    whole = text.str.extract(_DECIMAL_TEXT, 1)
-    part = text.str.extract(_DECIMAL_TEXT, 2).fill_null("").str.pad_end(9, "0")
+def _nano_units(text: pl.Expr, decimals: str = _DECIMAL_TEXT) -> pl.Expr:
+    """A decimal in exact 1e-9 units, of at most nine decimals, or, read with `_AVERAGE_TEXT`,
+    its first nine; null for anything else."""
+    whole = text.str.extract(decimals, 1)
+    part = text.str.extract(decimals, 2).fill_null("").str.pad_end(9, "0")
     return (whole + part).cast(pl.Int64, strict=False)
 
 
@@ -239,8 +283,10 @@ def _price_unit(columns: _Columns, profile: ImportProfile) -> PriceUnit:
     return PriceUnit.DECIMAL if columns.any_text(reference, r"\.") else PriceUnit.NANO_INTEGER
 
 
-def _price(text: pl.Expr, unit: PriceUnit, profile: ImportProfile) -> pl.Expr:
-    units = _integer(text) if unit is PriceUnit.NANO_INTEGER else _nano_units(text)
+def _price(
+    text: pl.Expr, unit: PriceUnit, profile: ImportProfile, decimals: str = _DECIMAL_TEXT
+) -> pl.Expr:
+    units = _integer(text) if unit is PriceUnit.NANO_INTEGER else _nano_units(text, decimals)
     numerator, denominator = profile.price.scale.as_integer_ratio()
     if (numerator, denominator) == (1, 1):
         return units
@@ -265,7 +311,7 @@ def _values(
         if bars.trade_count is not None:
             found["trade_count"] = columns.text(bars.trade_count).cast(pl.UInt32, strict=False)
         if bars.vwap is not None:
-            found["vwap"] = _price(columns.text(bars.vwap), unit, profile)
+            found["vwap"] = _price(columns.text(bars.vwap), unit, profile, _AVERAGE_TEXT)
         return found
     ticks = profile.columns.ticks
     if ticks is None:
@@ -286,14 +332,38 @@ def _values(
 
 
 def _identities(columns: _Columns, profile: ImportProfile) -> dict[str, pl.Expr]:
-    """Each row's symbol and instrument id, where the profile maps them and the file has them."""
+    """Each row's symbol and instrument id, where the profile maps them and the file has them,
+    and its record type, where the profile maps it."""
     mapping = profile.columns
     found: dict[str, pl.Expr] = {}
     if mapping.symbol is not None and columns.holds(mapping.symbol):
         found["symbol"] = columns.text(mapping.symbol)
     if mapping.instrument_id is not None and columns.holds(mapping.instrument_id):
         found["instrument_id"] = columns.text(mapping.instrument_id).cast(pl.UInt32, strict=False)
+    if mapping.record_type is not None:
+        found["record_type"] = columns.text(mapping.record_type).cast(pl.UInt8, strict=False)
     return found
+
+
+def _of_its_record_type(
+    rows: pl.DataFrame, profile: ImportProfile
+) -> tuple[pl.DataFrame, RecordProblem | None]:
+    """The rows of the record type of the profile's timeframe, where it maps Databento's
+    `rtype`; the others are a problem, as Databento's daily bars are."""
+    if profile.columns.record_type is None:
+        return rows, None
+    expected = _DATABENTO_RECORD_TYPES.get(str(profile.timeframe))
+    fits = pl.lit(False) if expected is None else pl.col("record_type") == expected
+    reason = (
+        f"a Databento record read by a profile of timeframe {profile.timeframe}, of which "
+        "Databento gives no bars by session (its daily bars span UTC days): import its "
+        "1-minute bars"
+        if expected is None
+        else f"a record whose rtype is not {expected}, Databento's type of "
+        f"{profile.timeframe} records"
+    )
+    problem = problem_of(rows.filter(~fits), ProblemKind.OTHER_RECORD_TYPE, reason)
+    return rows.filter(fits).drop("record_type"), problem
 
 
 def _in_lots(

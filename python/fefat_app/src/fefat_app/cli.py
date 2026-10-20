@@ -48,12 +48,18 @@ from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
 from fefat.market.importers.databento import import_databento
-from fefat.market.importers.file_import import FileImportRequest, import_file, preview_file
+from fefat.market.importers.file_import import (
+    FileImportReport,
+    FileImportRequest,
+    import_file,
+    preview_file,
+)
 from fefat.market.importers.profiles import (
     PROFILES_FOLDER_NAME,
     load_profile,
     preset_profiles,
     profile_yaml,
+    save_profile,
     saved_profiles,
 )
 from fefat.market.quality import assess_quality
@@ -176,13 +182,15 @@ def import_databento_files(arguments: argparse.Namespace) -> int:
 
 
 def import_a_file(arguments: argparse.Namespace) -> int:
-    """Preview or import a trader's file; after an import, write its product's quality report."""
+    """Preview or import a trader's file; after an import that wrote, save its profile, where a
+    YAML file gave it, and write its product's quality report."""
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     preview: bool = arguments.preview
+    reference: str = arguments.profile
     request = FileImportRequest(
         path=arguments.path,
-        profile=load_profile(arguments.profile, paths.home, save=not preview),
+        profile=load_profile(reference, paths.home),
         contract=arguments.contract,
         root=arguments.root,
         time_zone=arguments.time_zone,
@@ -197,7 +205,8 @@ def import_a_file(arguments: argparse.Namespace) -> int:
         request, store, paths.cache_dir, imported_on=today, instruments=instruments
     )
     print(report.summary())
-    if report.reading is not None:
+    if isinstance(report, FileImportReport):
+        save_profile(reference, paths.home)
         dataset = report.reading.dataset
         _write_the_report(paths, dataset.provider, dataset.root)
     return EXIT_OK
@@ -207,7 +216,7 @@ def print_the_profiles(arguments: argparse.Namespace) -> int:
     home = resolve_paths(os.environ).home
     name: str | None = arguments.name
     if name is not None:
-        print(profile_yaml(load_profile(name, home, save=False)), end="")
+        print(profile_yaml(load_profile(name, home)), end="")
         return EXIT_OK
     saved = saved_profiles(home)
     lines = [

@@ -15,12 +15,12 @@ Definitions, statistics, and funding hold no session prints and are not checked.
 the holiday rules lack shows as an early last print: add it to
 `fefat.market.builtin_calendars.OVERRIDES` with its source.
 
-It also finds a dataset's offset (step 1.10), the time by which all its records run late or
-early against the calendar, as an import read in the wrong time zone or with the wrong bar
-stamping gives (`02-engine-and-data.md` §1.8): whole or half hours when moving the records
-by them puts inside the sessions most of those outside, and one bar when most sessions have a
-bar just past an edge, opening at the close, or closing at the next open in the break
-(`fefat.market.calendar_offset`).
+It also finds a dataset's offset (step 1.10), the time by which its records run late or early
+against the calendar, as an import read in the wrong time zone or with the wrong bar stamping
+gives (`02-engine-and-data.md` §1.8): whole or half hours when moving the records, or those on
+one side of a change of the calendar's offset from UTC, by them puts inside the sessions most
+of those outside, and one bar when any session's break holds a bar closing at the next open,
+or most sessions a bar opening at the close (`fefat.market.calendar_offset`).
 `check_records` runs the same check on records an import has not stored yet.
 
     paths = resolve_paths(os.environ)

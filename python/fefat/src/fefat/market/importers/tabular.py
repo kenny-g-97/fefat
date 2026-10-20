@@ -4,9 +4,10 @@ profile's layout describes it (`fefat.market.importers.profiles`).
 
 Every value is read as text, stripped of the spaces around it, so that the profile parses it
 (`fefat.market.importers.profile_records`): Parquet's typed columns are written as text too,
-instants as ISO 8601. A header row's names are stripped as well, of a byte-order mark too;
-without a header the columns are `column_0`, `column_1`, ... by position. Empty lines are
-left out.
+instants as ISO 8601, and an empty value as empty text, as a delimited file gives it. A header
+row's names are stripped as well, of a byte-order mark too; without a header the columns are
+`column_0`, `column_1`, ... by position. Empty lines are left out, and a file without a line
+is refused.
 """
 
 import gzip
@@ -21,41 +22,42 @@ from fefat.market.importers.profiles import FileLayout
 _PARQUET_SUFFIX = ".parquet"
 
 
-def read_table(path: Path, layout: FileLayout) -> pl.DataFrame:
-    """The file at `path` as text columns, laid out as `layout` says, or as Parquet."""
-    name, content = _decompressed(path)
-    if name.lower().endswith(_PARQUET_SUFFIX):
-        return _as_text(pl.read_parquet(io.BytesIO(content)))
-    table = pl.read_csv(
-        io.BytesIO(content),
-        separator=layout.delimiter,
-        has_header=layout.header,
-        infer_schema=False,
-    )
+def read_table(path: Path, content: bytes, layout: FileLayout) -> tuple[str, pl.DataFrame]:
+    """The name of the file the records are in, `path`'s own or the one a `.gz` or `.zip`
+    holds, which the profile's contract pattern reads, and its rows as text columns, laid out
+    as `layout` says, or as Parquet; `content` is the bytes of `path`, read once."""
+    name, unpacked = _unpacked(path, content)
+    table = _raw_table(name, unpacked, layout)
     named = table.rename({column: column.lstrip("﻿").strip() for column in table.columns})
     stripped = named.with_columns(pl.all().fill_null("").str.strip_chars())
-    return stripped.filter(pl.any_horizontal(pl.all() != ""))
+    return name, stripped.filter(pl.any_horizontal(pl.all() != ""))
 
 
-def inner_file_name(path: Path) -> str:
-    """The name of the file the records are in: the path's own, or the one a `.gz` or `.zip`
-    holds, which the profile's contract pattern reads."""
-    return _decompressed(path)[0]
+def _raw_table(name: str, content: bytes, layout: FileLayout) -> pl.DataFrame:
+    if name.lower().endswith(_PARQUET_SUFFIX):
+        return _as_text(pl.read_parquet(io.BytesIO(content)))
+    try:
+        return pl.read_csv(
+            io.BytesIO(content),
+            separator=layout.delimiter,
+            has_header=layout.header,
+            infer_schema=False,
+        )
+    except pl.exceptions.NoDataError as error:
+        raise ValueError(f"Expected rows in {name}, got an empty file.") from error
 
 
-def _decompressed(path: Path) -> tuple[str, bytes]:
-    if not path.is_file():
-        raise FileNotFoundError(f"Expected a file to import, got no such file: {path}.")
+def _unpacked(path: Path, content: bytes) -> tuple[str, bytes]:
     lowered = path.name.lower()
     if lowered.endswith(".gz"):
-        return path.name[: -len(".gz")], gzip.decompress(path.read_bytes())
+        return path.name[: -len(".gz")], gzip.decompress(content)
     if lowered.endswith(".zip"):
-        return _single_member(path)
-    return path.name, path.read_bytes()
+        return _single_member(path, content)
+    return path.name, content
 
 
-def _single_member(path: Path) -> tuple[str, bytes]:
-    with zipfile.ZipFile(path) as archive:
+def _single_member(path: Path, content: bytes) -> tuple[str, bytes]:
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
         members = [member for member in archive.infolist() if not member.is_dir()]
         if len(members) != 1:
             names = ", ".join(member.filename for member in members) or "none"

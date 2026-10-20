@@ -15,9 +15,11 @@ the source guide (`fefat.market.sources`), and a trader's own profiles are YAML 
 same form, saved under `<FEFAT_HOME>/profiles/` by their first import:
 
     load_profile("ninjatrader", paths.home)
-    load_profile("C:/exports/fdax-5m.yaml", paths.home)  # saved as fdax-5m for later imports
+    profile = load_profile("C:/exports/fdax-5m.yaml", paths.home)
+    save_profile("C:/exports/fdax-5m.yaml", paths.home)  # once an import with it wrote
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
@@ -25,7 +27,14 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 
 import yaml
-from pydantic import BeforeValidator, Field, PlainSerializer, StringConstraints, model_validator
+from pydantic import (
+    BeforeValidator,
+    Field,
+    PlainSerializer,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from fefat.market.calendar_definition import CalendarId, SessionHours, TimeZoneName
 from fefat.market.instruments import Currency, InstrumentKind
@@ -117,8 +126,9 @@ class TickColumns(FrozenModel):
 
 class ColumnMapping(FrozenModel):
     """Which columns hold what: the timestamp in one column, or a date and a time joined with a
-    space; the bars' or the ticks' values; and, where the file has them, each record's
-    instrument id and contract symbol."""
+    space; the bars' or the ticks' values; where the file has them, each record's instrument
+    id and contract symbol; and Databento's record type (`rtype`), which must be the one of
+    the profile's timeframe."""
 
     timestamp: ColumnName | None = None
     date: ColumnName | None = None
@@ -127,6 +137,7 @@ class ColumnMapping(FrozenModel):
     ticks: TickColumns | None = None
     instrument_id: ColumnName | None = None
     symbol: ColumnName | None = None
+    record_type: ColumnName | None = None
 
     @model_validator(mode="after")
     def _one_timestamp(self) -> Self:
@@ -187,6 +198,14 @@ ProfileTimeframe = Annotated[
 """`ticks`, or a bar timeframe written as schema names write it, such as `1m` or `5m`."""
 
 
+def names_a_contract(groups: set[str]) -> bool:
+    """Whether the groups of a file-name pattern name a contract: `contract`, or `root` and
+    `year` with `month` or `code`."""
+    return "contract" in groups or (
+        {"root", "year"} <= groups and not groups.isdisjoint({"month", "code"})
+    )
+
+
 class ImportProfile(FrozenModel):
     """A file layout of market data and how its records become the store's (module docstring)."""
 
@@ -228,6 +247,24 @@ class ImportProfile(FrozenModel):
             )
         return self
 
+    @field_validator("contract_in_file_name")
+    @classmethod
+    def _finds_a_contract(cls, pattern: str | None) -> str | None:
+        if pattern is None:
+            return None
+        try:
+            groups = set(re.compile(pattern).groupindex)
+        except re.error as error:
+            raise ValueError(
+                f"Expected a regular expression in contract_in_file_name, got {pattern!r}: {error}."
+            ) from error
+        if not names_a_contract(groups):
+            raise ValueError(
+                "Expected contract_in_file_name to have the group contract, or root and year "
+                f"with month or code, got {pattern!r}."
+            )
+        return pattern
+
     def bar_timeframe(self) -> Timeframe | None:
         """The timeframe of the bars the profile reads; None for ticks."""
         return None if isinstance(self.timeframe, str) else self.timeframe
@@ -260,13 +297,13 @@ def saved_profiles(home: Path) -> dict[str, ImportProfile]:
     return {profile.name: profile for profile in profiles}
 
 
-def load_profile(reference: str, home: Path, *, save: bool = True) -> ImportProfile:
+def load_profile(reference: str, home: Path) -> ImportProfile:
     """The profile `reference` names: a preset, a profile saved in `<home>/profiles/`, or a YAML
-    file, which is saved there under its name for later imports unless `save` is False, as
-    for a preview (a different profile saved under that name is refused)."""
+    file, refused under a preset's name or where another profile is saved under its name; an
+    import that writes with it saves it (`save_profile`)."""
     path = Path(reference)
-    if path.suffix.lower() in (".yaml", ".yml"):
-        return _saved_from(path, home, save=save)
+    if _is_profile_file(path):
+        return _profile_file(path, home)
     presets = preset_profiles()
     saved = saved_profiles(home)
     if reference in presets:
@@ -280,7 +317,30 @@ def load_profile(reference: str, home: Path, *, save: bool = True) -> ImportProf
     )
 
 
-def _saved_from(path: Path, home: Path, *, save: bool) -> ImportProfile:
+def save_profile(reference: str, home: Path) -> bool:
+    """Save the YAML file `reference` under `<home>/profiles/` by its profile's name, for later
+    imports to name, once an import with it has written: True when it was written, False for a
+    preset, a saved profile's name, or a file saved already."""
+    path = Path(reference)
+    if not _is_profile_file(path):
+        return False
+    saved_path = _saved_path(home, _profile_file(path, home).name)
+    if saved_path.is_file():
+        return False
+    content = path.read_bytes()
+    write_atomically(saved_path, lambda temporary: temporary.write_bytes(content))
+    return True
+
+
+def _is_profile_file(path: Path) -> bool:
+    return path.suffix.lower() in (".yaml", ".yml")
+
+
+def _saved_path(home: Path, name: str) -> Path:
+    return home / PROFILES_FOLDER_NAME / f"{name}.yaml"
+
+
+def _profile_file(path: Path, home: Path) -> ImportProfile:
     if not path.is_file():
         raise FileNotFoundError(f"Expected an import profile at {path}, got no such file.")
     profile = parse_profile(path.read_text(encoding="utf-8"), str(path))
@@ -288,7 +348,7 @@ def _saved_from(path: Path, home: Path, *, save: bool) -> ImportProfile:
         raise ValueError(
             f"Expected a profile name other than the presets', got {profile.name!r} in {path}."
         )
-    saved_path = home / PROFILES_FOLDER_NAME / f"{profile.name}.yaml"
+    saved_path = _saved_path(home, profile.name)
     if saved_path.is_file():
         saved = parse_profile(saved_path.read_text(encoding="utf-8"), str(saved_path))
         if saved != profile:
@@ -296,11 +356,6 @@ def _saved_from(path: Path, home: Path, *, save: bool) -> ImportProfile:
                 f"Expected {path} to hold the profile {profile.name} as saved in {saved_path}, "
                 "got another: rename one of them."
             )
-        return profile
-    if not save:
-        return profile
-    content = path.read_bytes()
-    write_atomically(saved_path, lambda temporary: temporary.write_bytes(content))
     return profile
 
 
