@@ -1,0 +1,23 @@
+# Interactive Brokers bars pulled through the TWS API (reqHistoricalData, formatDate 1, what to
+# show TRADES) and saved as CSV with the bar's fields as columns: `date,open,high,low,close,
+# volume,average,barCount`, dates as yyyymmdd hh:mm:ss in the time zone chosen at the TWS login,
+# which each import names with --time-zone, and a trailing time-zone name, when the API adds
+# one, dropped. The API's intraday bars are labelled by their start. Name the file after its
+# contract, such as `ESH2026-1min.csv`, or give --contract.
+# Source: docs/masterplan/appendix/research-data-sources.md, Parts B and D, Interactive Brokers.
+kind: market_data
+name: ibkr
+provider: ibkr
+description: "IBKR TWS API 1-minute bars saved as CSV: TWS login time zone, stamped at the open"
+layout:
+  delimiter: ","
+  header: true
+columns:
+  timestamp: date
+  bars: {open: open, high: high, low: low, close: close, volume: volume, trade_count: barCount, vwap: average}
+timestamp:
+  format: "%Y%m%d %H:%M:%S"
+  time_zone: null
+  stamp: open
+timeframe: 1m
+contract_in_file_name: '(?P<contract>[A-Z0-9]{1,4}[FGHJKMNQUVXZ][0-9]{4})'

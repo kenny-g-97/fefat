@@ -195,7 +195,7 @@ class RecordPlacement:
     def _partitions(self, kept: pl.DataFrame) -> dict[Partition, pl.DataFrame]:
         columns = list(polars_schema(self.schema_name))
         canonical = _canonical(kept, self.schema_name).with_columns(
-            partition_key=_partition_key(self.schema_name)
+            partition_key=partition_key(self.schema_name)
         )
         groups = canonical.partition_by(
             "root", "contract", "partition_key", as_dict=True, maintain_order=True
@@ -207,13 +207,7 @@ class RecordPlacement:
 
     def _partition(self, root: str, contract: str, key: object) -> Partition:
         dataset = Dataset(provider=self._provider, schema_name=self.schema_name, root=root)
-        if partitioning(self.schema_name) is Partitioning.MONTH and isinstance(key, date):
-            return Partition(
-                dataset=dataset, contract=contract, key=YearMonth(year=key.year, month=key.month)
-            )
-        if isinstance(key, date):
-            return Partition(dataset=dataset, contract=contract, key=key)
-        return Partition(dataset=dataset, contract=contract, key=None)
+        return partition_of(dataset, contract, key)
 
 
 def _require_covered(days: pl.DataFrame, contracts: pl.DataFrame, source: Path) -> None:
@@ -271,7 +265,18 @@ def _canonical(kept: pl.DataFrame, schema_name: SchemaName) -> pl.DataFrame:
     )
 
 
-def _partition_key(schema_name: SchemaName) -> pl.Expr:
+def partition_of(dataset: Dataset, contract: str, key: object) -> Partition:
+    """The partition of a contract's rows whose `partition_key` is `key`: a trade date, the
+    first day of a month, or null, as the dataset's schema is split."""
+    if partitioning(dataset.schema_name) is Partitioning.MONTH and isinstance(key, date):
+        month = YearMonth(year=key.year, month=key.month)
+        return Partition(dataset=dataset, contract=contract, key=month)
+    if isinstance(key, date):
+        return Partition(dataset=dataset, contract=contract, key=key)
+    return Partition(dataset=dataset, contract=contract, key=None)
+
+
+def partition_key(schema_name: SchemaName) -> pl.Expr:
     split = partitioning(schema_name)
     if split is Partitioning.TRADE_DATE:
         return pl.col("trade_date")

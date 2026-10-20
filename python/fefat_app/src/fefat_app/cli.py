@@ -6,6 +6,9 @@
     fefat data quality [<root>]
     fefat data sources
     fefat data status
+    fefat data import file <path> --profile <name> [--contract] [--root] [--time-zone]
+        [--preview]
+    fefat data profiles [<name>]
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -17,8 +20,15 @@ and prints its summary (`fefat.market.quality`); the fifth prints the source gui
 known source with what it offers, its cost and terms, and the presets that read its files
 (`fefat.market.sources`); the sixth prints each product of the catalog with its datasets,
 their coverage and fidelity, last import, and quality, then the datasets of other products
-(`fefat.market.status`). A command exits with 0 when it succeeds, and
-with 1 and the reason when it refuses its input; `verify-bars` also exits with 1 when it finds
+(`fefat.market.status`). `import file` brings in a bar or tick file of your own through an
+import profile, a preset or your own profile's YAML file, which it saves for later imports
+(`fefat.market.importers.file_import`): with `--preview` it prints the first records as they
+would be stored and the problems found, and writes nothing; else it imports the file and
+writes its product's quality report. `profiles` lists the presets and your saved profiles,
+or prints one as YAML to copy into a profile of your own.
+
+A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
+a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
 bars that differ, or nothing to compare, and `quality` when a report holds findings. A command
 line that names no command, or a date that is no date, exits with 2 and the usage, as
 `argparse` does.
@@ -38,6 +48,14 @@ from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
 from fefat.market.importers.databento import import_databento
+from fefat.market.importers.file_import import FileImportRequest, import_file, preview_file
+from fefat.market.importers.profiles import (
+    PROFILES_FOLDER_NAME,
+    load_profile,
+    preset_profiles,
+    profile_yaml,
+    saved_profiles,
+)
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
 from fefat.market.saved_instruments import instrument_table
@@ -75,6 +93,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     databento.add_argument("path", type=Path, help="the batch folder or the DBN file")
     databento.set_defaults(run=import_databento_files)
+    exports = import_sources.add_parser(
+        "file", help="your own bar or tick file through an import profile"
+    )
+    _add_the_file_import_arguments(exports)
     verify = data_commands.add_parser(
         "verify-bars",
         help="rebuild a trade date's bars from finer data and compare them with the stored ones",
@@ -103,7 +125,41 @@ def build_parser() -> argparse.ArgumentParser:
         "status", help="list each catalog product with its coverage, last import, and quality"
     )
     status.set_defaults(run=print_the_status)
+    profiles = data_commands.add_parser(
+        "profiles", help="list the import presets and your saved profiles, or print one"
+    )
+    profiles.add_argument("name", nargs="?", help="a preset or saved profile to print as YAML")
+    profiles.set_defaults(run=print_the_profiles)
     return parser
+
+
+def _add_the_file_import_arguments(exports: argparse.ArgumentParser) -> None:
+    exports.add_argument(
+        "path", type=Path, help="the file: CSV, TSV, text, or Parquet, or a .gz or .zip of one"
+    )
+    exports.add_argument(
+        "--profile",
+        required=True,
+        help="a preset (fefat data profiles lists them), a saved profile, or a profile's YAML file",
+    )
+    exports.add_argument(
+        "--contract", help="the file's contract, such as ESH2026, where its name does not say"
+    )
+    exports.add_argument(
+        "--root", help="the product, such as ES, of a continuous series or a perpetual"
+    )
+    exports.add_argument(
+        "--time-zone",
+        help="the time zone of the file's times, such as America/New_York, where the "
+        "profile leaves it to the import",
+    )
+    exports.add_argument(
+        "--preview",
+        action="store_true",
+        help="print the first records as they would be stored and the problems found, and "
+        "write nothing",
+    )
+    exports.set_defaults(run=import_a_file)
 
 
 def import_databento_files(arguments: argparse.Namespace) -> int:
@@ -116,6 +172,52 @@ def import_databento_files(arguments: argparse.Namespace) -> int:
         source, store, paths.cache_dir, imported_on=today, instruments=instruments
     )
     print(report.summary())
+    return EXIT_OK
+
+
+def import_a_file(arguments: argparse.Namespace) -> int:
+    """Preview or import a trader's file; after an import, write its product's quality report."""
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    preview: bool = arguments.preview
+    request = FileImportRequest(
+        path=arguments.path,
+        profile=load_profile(arguments.profile, paths.home, save=not preview),
+        contract=arguments.contract,
+        root=arguments.root,
+        time_zone=arguments.time_zone,
+    )
+    instruments = instrument_table(store.folder)
+    if preview:
+        shown = preview_file(request, instruments, paths.cache_dir)
+        print(shown.summary())
+        return EXIT_REFUSED if shown.reading.refusals() else EXIT_OK
+    today = datetime.now(UTC).date()
+    report = import_file(
+        request, store, paths.cache_dir, imported_on=today, instruments=instruments
+    )
+    print(report.summary())
+    if report.reading is not None:
+        dataset = report.reading.dataset
+        _write_the_report(paths, dataset.provider, dataset.root)
+    return EXIT_OK
+
+
+def print_the_profiles(arguments: argparse.Namespace) -> int:
+    home = resolve_paths(os.environ).home
+    name: str | None = arguments.name
+    if name is not None:
+        print(profile_yaml(load_profile(name, home, save=False)), end="")
+        return EXIT_OK
+    saved = saved_profiles(home)
+    lines = [
+        "Import presets (fefat data sources names the source each reads):",
+        *(f"  {profile.name}: {profile.description}" for profile in preset_profiles().values()),
+        f"Your saved profiles, in {home / PROFILES_FOLDER_NAME}:",
+        *(f"  {profile.name}: {profile.description}" for profile in saved.values()),
+        *([] if saved else ["  none yet: give --profile a profile's YAML file to save one"]),
+    ]
+    print("\n".join(lines))
     return EXIT_OK
 
 

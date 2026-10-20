@@ -8,7 +8,7 @@ partition the store already holds is left alone when it holds exactly these rows
 how an interrupted import runs again, and refused otherwise: a file that overlaps an imported
 one is not merged into it. A dataset's `dataset.json` is written by its first import and kept
 by the later ones, since snapshots pin it (D-11); an import that counts sizes in another unit
-than the dataset's is refused.
+than the dataset's, or holds another series kind (step 1.10), is refused.
 """
 
 from collections.abc import Mapping
@@ -90,12 +90,18 @@ class PartitionBuffers:
         if not self._store.has_dataset_metadata(dataset):
             self._store.write_dataset_metadata(dataset, self._metadata)
             return
-        stored = self._store.dataset_metadata(dataset).size_unit
-        if stored != self._metadata.size_unit:
+        stored = self._store.dataset_metadata(dataset)
+        if stored.size_unit != self._metadata.size_unit:
             raise ValueError(
-                f"Expected the size unit of {dataset.relative_folder()}, {stored}, got "
+                f"Expected the size unit of {dataset.relative_folder()}, {stored.size_unit}, got "
                 f"{self._metadata.size_unit} from this import: a dataset counts its sizes in one "
                 "unit."
+            )
+        if stored.series != self._metadata.series:
+            raise ValueError(
+                f"Expected a {stored.series} series in {dataset.relative_folder()}, got a "
+                f"{self._metadata.series} series from this import: dated contracts and a "
+                "continuous series are kept in datasets of their own, under providers of their own."
             )
 
     def _keep_stored(self, partition: Partition, rows: pl.DataFrame) -> None:

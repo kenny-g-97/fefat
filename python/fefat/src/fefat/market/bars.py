@@ -85,7 +85,7 @@ def resample_bars(
     if bars.is_empty():
         return bars
     _require_volume(bars)
-    bucketed = _in_buckets(bars, timeframe, sessions)
+    bucketed = in_buckets(bars, timeframe, sessions)
     _require_nested(bucketed, timeframe)
     return (
         bucketed.sort("instrument_id", "ts_open", maintain_order=True)
@@ -161,7 +161,7 @@ def _require_volume(bars: pl.DataFrame) -> None:
     )
 
 
-def _in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable) -> pl.DataFrame:
+def in_buckets(bars: pl.DataFrame, timeframe: Timeframe, sessions: SessionTable) -> pl.DataFrame:
     """The bars beside the bucket of `timeframe` each opens in, `bucket_open` to `bucket_close`:
     a bucket the session's close cuts in two is two, the bars before the close ending at it and
     those after it, in the break, starting at it and ending by the next session's open, so a
@@ -271,7 +271,7 @@ def _require_bars_of_the_timeframe(
     timeframe are, wherever it lies."""
     if bars.is_empty():
         return
-    bucketed = _in_buckets(bars, timeframe, sessions)
+    bucketed = in_buckets(bars, timeframe, sessions)
     misfits = bucketed.filter(
         (pl.col("ts_open") != pl.col("bucket_open"))
         | (pl.col("ts_close") != pl.col("bucket_close"))

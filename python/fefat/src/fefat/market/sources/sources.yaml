@@ -20,8 +20,8 @@ sources:
         status: available
       - id: databento-csv
         name: "Databento CSV export"
-        reads: "CSV with one header line and the index timestamp first, prices as integers in 1e-9 units or as decimals, and timestamps as integer nanoseconds or ISO 8601 strings, all in UTC, with bars stamped at the open by ts_event; it arrives with fefat data import file in step 1.10."
-        status: planned
+        reads: "CSV with one header line and the index timestamp first, prices as integers in 1e-9 units or as decimals, and timestamps as integer nanoseconds or ISO 8601 strings, all in UTC, with bars stamped at the open by ts_event, and contracts from the symbol column; fefat data import file reads its 1-minute bars, and a profile saved from it reads its other bars and its trades."
+        status: available
   - id: massive
     name: "Massive (formerly Polygon.io)"
     kind: vendor
@@ -112,8 +112,8 @@ sources:
     presets:
       - id: ibkr
         name: "IBKR bars from the TWS API"
-        reads: "CSV saved from TWS API historical bars with date, open, high, low, close, volume, average, and barCount columns, dates as yyyymmdd hh:mm:ss in the time zone chosen at TWS login or as epoch seconds, daily bars as yyyymmdd dated by the day they close, and intraday stamping not documented; it arrives with fefat data import file in step 1.10."
-        status: planned
+        reads: "CSV saved from TWS API 1-minute bars with date, open, high, low, close, volume, average, and barCount columns, dates as yyyymmdd hh:mm:ss in the time zone chosen at TWS login, which each import names with --time-zone, a trailing zone name dropped, and bars taken as stamped at their open, which the API does not document and the calendar check confirms; fefat data import file reads it."
+        status: available
   - id: barchart
     name: "Barchart (OnDemand and Premier)"
     kind: vendor
@@ -263,8 +263,8 @@ sources:
     presets:
       - id: ninjatrader
         name: "NinjaTrader 8 export"
-        reads: "Semicolon-separated .txt with no header row, yyyyMMdd HHmmss timestamps, or yyyyMMdd for daily bars, always in UTC, bars stamped at the close, and the contract in the file name, such as ES 12-09.Last.txt; it arrives with fefat data import file in step 1.10."
-        status: planned
+        reads: "Semicolon-separated .txt with no header row, yyyyMMdd HHmmss timestamps always in UTC, minute bars of Last data stamped at their close, and the contract in the file name, such as ES 03-26.Last.txt; fefat data import file reads it, and a profile saved from it reads daily bars, stamped yyyyMMdd."
+        status: available
   - id: tradingview
     name: "TradingView"
     kind: platform
@@ -278,8 +278,8 @@ sources:
     presets:
       - id: tradingview
         name: "TradingView chart export"
-        reads: "CSV with the header time,open,high,low,close, plus Volume and indicator columns when they are on the chart, time in Unix seconds or ISO 8601, in UTC, bars stamped at the open, and as many bars as the plan allows; it arrives with fefat data import file in step 1.10."
-        status: planned
+        reads: "CSV with the header time,open,high,low,close, plus Volume, which the import needs, and indicator columns when they are on the chart, time in Unix seconds in UTC, bars stamped at the open, as many bars as the plan allows, and the contract in the chart's name, such as CME_MINI_ESH2026, 1.csv; fefat data import file reads 1-minute charts, and a profile saved from it other timeframes."
+        status: available
   - id: sierra-chart
     name: "Sierra Chart"
     kind: platform
@@ -293,8 +293,8 @@ sources:
     presets:
       - id: sierra-chart
         name: "Sierra Chart text export"
-        reads: "Comma- or tab-separated text with the header Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume, dates as YYYY/MM/DD that may be unpadded and times as hh:mm:ss, in UTC for the intraday file export and in the chart's time zone for the bar export, and bars stamped at the open; it arrives with fefat data import file in step 1.10."
-        status: planned
+        reads: "Comma- or tab-separated text with the header Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume, dates as YYYY/MM/DD that may be unpadded and times as hh:mm:ss, in UTC for the intraday file export and in the chart's time zone for the bar export, which the import then names with --time-zone, and bars stamped at the open; fefat data import file reads it."
+        status: available
   - id: tradestation
     name: "TradeStation"
     kind: platform
@@ -308,8 +308,8 @@ sources:
     presets:
       - id: tradestation
         name: "TradeStation export"
-        reads: "Bars stamped at the close in the chart's time zone, local or exchange per Format Symbol, with the midnight bar dated the next day, and a layout to confirm on a real file: the community sample has the header Date,Time,Open,High,Low,Close,Vol,OI with MM/DD/YYYY dates and HHMM times; it arrives with fefat data import file in step 1.10."
-        status: planned
+        reads: "Bars stamped at the close in the chart's time zone, local or exchange per Format Symbol, which each import names with --time-zone, with the midnight bar dated the next day, and a layout to confirm on a real file: the community sample has the header Date,Time,Open,High,Low,Close,Vol,OI with MM/DD/YYYY dates and HHMM times; fefat data import file reads that layout."
+        status: available
   - id: multicharts
     name: "MultiCharts"
     kind: platform

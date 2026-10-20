@@ -49,7 +49,7 @@ def test_the_guide_names_databento_first_with_the_presets_that_read_its_files() 
     assert databento.name == "Databento"
     assert [(preset.id, preset.status) for preset in databento.presets] == [
         ("databento", PresetStatus.AVAILABLE),
-        ("databento-csv", PresetStatus.PLANNED),
+        ("databento-csv", PresetStatus.AVAILABLE),
     ]
 
 

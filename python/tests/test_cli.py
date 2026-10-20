@@ -289,7 +289,7 @@ def test_the_source_guide_names_the_presets_of_databento_and_ninjatrader(
     printed = capsys.readouterr().out
     assert "\nDatabento, vendor\n" in f"\n{printed}"
     assert "    databento (available): Databento DBN batch download." in printed
-    assert "    ninjatrader (planned): NinjaTrader 8 export." in printed
+    assert "    ninjatrader (available): NinjaTrader 8 export." in printed
 
 
 CATALOG_LINE = "Catalog version 1: MES, MNQ, MCL, MGC."
@@ -436,3 +436,79 @@ def test_a_report_older_than_its_data_reads_stale_in_the_status_and_the_catalog(
     assert status[-1].startswith("ES synthetic trades: 2026-03-05 to 2026-03-10")
     assert status[-1].endswith(stale)
     assert listed[-1].endswith(stale)
+
+
+EXPORTS = ROOT / "fixtures" / "synthetic" / "exports"
+NINJATRADER_SAMPLE = EXPORTS / "ninjatrader" / "ES 03-26.Last.txt"
+
+
+def test_a_preview_of_a_file_prints_its_first_records_and_writes_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    paths = resolve_paths(os.environ)
+
+    code = main(
+        ["data", "import", "file", str(NINJATRADER_SAMPLE), "--profile", "ninjatrader", "--preview"]
+    )
+
+    printed = capsys.readouterr().out
+    assert code == 0
+    assert printed.startswith(
+        f"Preview of {NINJATRADER_SAMPLE} with the profile ninjatrader; nothing was written.\n"
+    )
+    assert (
+        "    2026-03-04T23:00:00Z to 2026-03-04T23:01:00Z, 2026-03-05, ESH2026: open 6850, high "
+        "6850, low 6849, close 6849, volume 248\n"
+    ) in printed
+    assert printed.endswith("It would import as it is.\n")
+    assert not paths.data_dir.exists()
+
+
+def test_a_file_import_writes_its_products_quality_report(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "import", "file", str(NINJATRADER_SAMPLE), "--profile", "ninjatrader"])
+
+    printed = capsys.readouterr().out
+    report = resolve_paths(os.environ).reports_dir / "ninjatrader" / "ES" / "quality.md"
+    assert code == 0
+    assert printed.startswith(f"Imported {NINJATRADER_SAMPLE} with the profile ninjatrader.\n")
+    assert f"Report: {report}" in printed
+    assert report.is_file()
+
+
+def test_a_second_file_import_says_there_is_nothing_to_import(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = ["data", "import", "file", str(NINJATRADER_SAMPLE), "--profile", "ninjatrader"]
+    main(arguments)
+    capsys.readouterr()
+
+    assert main(arguments) == 0
+    assert capsys.readouterr().out.startswith(f"Nothing to import from {NINJATRADER_SAMPLE}")
+
+
+def test_a_file_import_without_the_time_zone_its_profile_leaves_to_it_exits_with_1(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sample = EXPORTS / "ibkr" / "ESH2026-1min.csv"
+
+    code = main(["data", "import", "file", str(sample), "--profile", "ibkr"])
+
+    assert code == 1
+    assert "name it, such as --time-zone America/New_York" in capsys.readouterr().err
+
+
+def test_the_profiles_command_lists_the_presets_and_prints_one_as_yaml(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["data", "profiles"]) == 0
+    listed = capsys.readouterr().out
+    assert main(["data", "profiles", "ninjatrader"]) == 0
+    printed = capsys.readouterr().out
+
+    for preset in ("databento-csv", "ibkr", "ninjatrader", "sierra-chart", "tradestation"):
+        assert f"\n  {preset}: " in listed
+    assert "none yet" in listed
+    assert "name: ninjatrader\n" in printed
+    assert "  stamp: close\n" in printed

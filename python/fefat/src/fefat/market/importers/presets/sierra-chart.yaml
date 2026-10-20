@@ -1,0 +1,24 @@
+# Sierra Chart, Edit > Export Intraday Data to Text File, of a 1-minute intraday file: a header
+# row `Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume`, fields
+# separated by commas with a space after each, dates as YYYY/MM/DD, perhaps unpadded, and times
+# as hh:mm:ss, always in UTC, and each bar stamped at its open. A bar export (Export Bar Data to
+# Text File) carries the chart's time zone instead: set the chart to UTC, or give --time-zone.
+# The file is named after the symbol, such as `ESH26-CME.txt`.
+# Source: docs/masterplan/appendix/research-data-sources.md, Part D, Sierra Chart.
+kind: market_data
+name: sierra-chart
+provider: sierra-chart
+description: "Sierra Chart intraday text export of 1-minute bars: UTC, stamped at the open"
+layout:
+  delimiter: ","
+  header: true
+columns:
+  date: Date
+  time: Time
+  bars: {open: Open, high: High, low: Low, close: Last, volume: Volume, trade_count: NumberOfTrades}
+timestamp:
+  format: "%Y/%m/%d %H:%M:%S"
+  time_zone: UTC
+  stamp: open
+timeframe: 1m
+contract_in_file_name: '^(?P<root>[A-Z0-9]{1,4})(?P<code>[FGHJKMNQUVXZ])(?P<year>[0-9]{2})(?![0-9])'
