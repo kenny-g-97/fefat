@@ -118,7 +118,8 @@ FEFAT_HOME/
   config.toml                 port, bind address, Tailscale exposure, data dir, model defaults
   fefat.sqlite                app state
   logs/
-  data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports)
+  data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports) + instruments/ (products your imports added, step 1.10)
+  profiles/                   your saved import profiles (YAML, step 1.10)
   cache/                      engine Arrow IPC cache, feature cache, session tables (all rebuildable)
   workspaces/default/
     features/<name>/v<n>.json file-based feature versions from Phase 3 (imported into the database in 4.1, kept as backup)
