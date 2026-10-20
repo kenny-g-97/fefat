@@ -33,7 +33,7 @@
       "generator": "scripts/gen_fixtures.py",
       "path": "exports/databento-csv/glbx-mdp3-20260304-20260309.ohlcv-1m.csv",
       "seed": 20260308,
-      "sha256": "82d892e15e66b1401dfe3a1d20b40ae51dca587338b7fbea22f30259b2e61f96"
+      "sha256": "b903f69a0a7afa49cb7b5193789b56de14f5d3a9a5fad603eb705438ff5ec7df"
     },
     {
       "bytes": 322996,

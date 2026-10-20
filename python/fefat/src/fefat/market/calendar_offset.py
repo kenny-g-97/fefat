@@ -6,7 +6,8 @@ on one side of a change of the calendar's offset from UTC, as times kept in stan
 a daylight-saving change give. One bar shows when any session's break holds a bar that opens
 after the close and closes at the next open (a file that stamps each bar's open, read as its
 close), since nothing prints in the minute before an open, or when most sessions hold a bar
-opening at the close (the opposite mistake), since a correct file may hold a straggler there.
+opening at the close and open their first a bar after the open (the opposite mistake), since
+a correct file may hold a straggler at the close, or start inside a session.
 The calendar check (`fefat.market.calendar_check`) reports it beside its mismatches.
 
 An offset shows only where records reach the edges of sessions that a break bounds:
@@ -37,6 +38,10 @@ _OFFSET_SAMPLE = 50_000
 _SIGNIFICANT_SHARE = 0.01
 """The share of a dataset's minutes that must lie outside every session for an offset to be
 looked for: a correct file has a few, such as prints received in the break after a close."""
+_SIGNIFICANT_MINUTES = 10
+"""How many minutes must lie outside every session for an offset to be looked for, so that
+a straggler after a close in a small part of a file, which any move into the session would
+fix, shows none."""
 TIMING_UNCHECKED = (
     "the calendar could not check the file's time zone and bar stamping: its records moved by "
     "an hour or a bar would still fit their sessions, as records of regular hours only, thin "
@@ -108,7 +113,7 @@ def records_offset(
     clock = "ts_recv" if timeframe is None else "ts_open"
     minutes = (
         records.select((pl.col(clock) // _MINUTE * _MINUTE).unique().sort())
-        .collect()
+        .collect(engine="streaming")
         .get_column(clock)
     )
     width = None if timeframe is None else timeframe.nominal_nanoseconds()
@@ -157,12 +162,12 @@ def _timeframe(dataset: Dataset) -> Timeframe | None:
 
 
 def _zone_offset(minutes: pl.Series, sessions: SessionTable) -> int | None:
-    """The half hours by which the minutes run late, when at least `_SIGNIFICANT_SHARE` of
-    them lie outside every session and moving them back by it leaves under half of those
-    outside; the smallest such offset that leaves fewest outside."""
+    """The half hours by which the minutes run late, when at least `_SIGNIFICANT_MINUTES`
+    and `_SIGNIFICANT_SHARE` of them lie outside every session and moving them back by it
+    leaves under half of those outside; the smallest such offset that leaves fewest outside."""
     sampled = minutes.gather_every(minutes.len() // _OFFSET_SAMPLE + 1)
     outside = _outside(sampled, sessions)
-    if outside == 0 or outside < _SIGNIFICANT_SHARE * sampled.len():
+    if outside < _SIGNIFICANT_MINUTES or outside < _SIGNIFICANT_SHARE * sampled.len():
         return None
     moved = {offset: _outside(sampled - offset, sessions) for offset in _ZONE_OFFSETS}
     best = min(_ZONE_OFFSETS, key=lambda offset: (moved[offset], abs(offset)))
@@ -209,17 +214,18 @@ def _outside(instants: pl.Series, sessions: SessionTable) -> int:
 def _stamping_offset(bars: pl.LazyFrame, sessions: SessionTable, width: int) -> int | None:
     """One bar early, when any session's break holds a bar that opens after the close and
     closes at the next open, as a file that stamps each bar's open, read as its close, gives;
-    one bar late, when at least half the sessions with bars hold one opening at the close, as
-    the opposite mistake gives, since a correct file may hold one straggler there."""
+    one bar late, when at least half the sessions with bars hold one opening at the close and
+    open their first one bar after the open, as the opposite mistake gives, since a correct
+    file may hold a straggler at the close, or start inside a session."""
     first, last = (
         bars.select(first=pl.col("trade_date").min(), last=pl.col("trade_date").max())
-        .collect()
+        .collect(engine="streaming")
         .row(0)
     )
     if first is None:
         return None
     bounds = sessions.between_with_next_opens(first, last).select(
-        "trade_date", "next_open", session_close="close"
+        "trade_date", "next_open", session_open="open", session_close="close"
     )
     after_the_close = pl.col("ts_open") > pl.col("session_close")
     edges = (
@@ -227,10 +233,11 @@ def _stamping_offset(bars: pl.LazyFrame, sessions: SessionTable, width: int) -> 
         .join(bounds.lazy(), on="trade_date")
         .group_by("trade_date")
         .agg(
-            late=(pl.col("ts_open") == pl.col("session_close")).any(),
+            late=(pl.col("ts_open") == pl.col("session_close")).any()
+            & (pl.col("ts_open").min() == pl.col("session_open").first() + width),
             early=(after_the_close & (pl.col("ts_close") == pl.col("next_open"))).any(),
         )
-        .collect()
+        .collect(engine="streaming")
     )
     late, early = (int(edges.get_column(column).sum()) for column in ("late", "early"))
     if early > 0:
@@ -274,9 +281,9 @@ def _first_and_last(dated: pl.DataFrame) -> tuple[date, date]:
 def _moved(
     records: pl.DataFrame, clocks: tuple[str, ...], nanoseconds: int, sessions: SessionTable
 ) -> pl.DataFrame:
-    """The records moved later by `nanoseconds` and dated again by their first clock, as an
+    """The records' clocks moved later by `nanoseconds` and dated again by the first, as an
     import dates them; those the move takes beyond the session table are left out."""
     first_open, last_close = sessions.span()
-    moved = records.drop("trade_date").with_columns(pl.col(name) + nanoseconds for name in clocks)
+    moved = records.select(pl.col(name) + nanoseconds for name in clocks)
     kept = moved.filter(pl.col(clocks[0]).is_between(first_open, last_close, closed="left"))
     return sessions.assign_trade_dates_or_previous(kept, clocks[0]).drop("in_session")

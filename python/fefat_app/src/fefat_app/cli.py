@@ -21,7 +21,8 @@ known source with what it offers, its cost and terms, and the presets that read 
 (`fefat.market.sources`); the sixth prints each product of the catalog with its datasets,
 their coverage and fidelity, last import, and quality, then the datasets of other products
 (`fefat.market.status`). `import file` brings in a bar or tick file of your own through an
-import profile, a preset or your own profile's YAML file, which it saves for later imports
+import profile, a preset or your own profile's YAML file, which an import that writes saves
+for later imports
 (`fefat.market.importers.file_import`): with `--preview` it prints the first records as they
 would be stored and the problems found, and writes nothing; else it imports the file and
 writes its product's quality report. `profiles` lists the presets and your saved profiles,

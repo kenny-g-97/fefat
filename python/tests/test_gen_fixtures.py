@@ -410,3 +410,17 @@ def test_the_two_es_contracts_draw_different_tapes() -> None:
         return [int(trade["ts_recv"]) for trade in trades[:50]]
 
     assert set(received("ESH2026")).isdisjoint(received("ESM2026"))
+
+
+@pytest.mark.parametrize(
+    ("nano", "decimals", "text"),
+    [
+        (-45_250_000_000, 9, "-45.250000000"),
+        (-500_000_000, None, "-0.5"),
+        (6_849_750_000_000, None, "6849.75"),
+    ],
+)
+def test_a_price_is_written_as_its_decimal_with_its_sign(
+    nano: int, decimals: int | None, text: str
+) -> None:
+    assert gen_fixtures.decimal_text(nano, decimals) == text

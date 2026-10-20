@@ -434,3 +434,15 @@ def test_one_session_with_a_bar_in_the_break_before_its_open_shows_an_offset_of_
     assert [(offset.nanoseconds, offset.cause) for offset in report.offsets] == [
         (-MINUTE, OffsetCause.BAR_STAMPING)
     ]
+
+
+def test_an_honest_file_with_a_small_part_before_daylight_saving_starts_shows_no_offset(
+    tmp_path: Path,
+) -> None:
+    # The file starts 15 minutes before the close of 2026-03-06, the last CST session, and holds
+    # the straggler bar at that close: one minute of sixteen outside a session is no offset.
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path)
+    bars = Store(FIXTURES).scan_partition(ESH2026_MINUTES).collect()
+    tail = bars.filter(pl.col("ts_open") >= utc(2026, 3, 6, 21, 45))
+
+    assert check_records(ES_MINUTES, tail.lazy(), sessions).offsets == ()

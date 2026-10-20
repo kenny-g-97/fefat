@@ -20,7 +20,8 @@ against the calendar, as an import read in the wrong time zone or with the wrong
 gives (`02-engine-and-data.md` §1.8): whole or half hours when moving the records, or those on
 one side of a change of the calendar's offset from UTC, by them puts inside the sessions most
 of those outside, and one bar when any session's break holds a bar closing at the next open,
-or most sessions a bar opening at the close (`fefat.market.calendar_offset`).
+or most sessions a bar opening at the close and their first a bar after the open
+(`fefat.market.calendar_offset`).
 `check_records` runs the same check on records an import has not stored yet.
 
     paths = resolve_paths(os.environ)
@@ -212,7 +213,7 @@ def _prints_by_trade_date(prints: pl.LazyFrame) -> pl.DataFrame:
         )
         .drop_nulls("first_print")
         .sort("trade_date")
-        .collect()
+        .collect(engine="streaming")
     )
 
 

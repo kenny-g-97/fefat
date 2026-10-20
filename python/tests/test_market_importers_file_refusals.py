@@ -3,6 +3,7 @@ cannot place in time, products it cannot name, Databento's daily bars, times wri
 zone than the import's, and timing the calendar check cannot test."""
 
 import re
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -22,7 +23,11 @@ from export_samples import (
     store_files,
     written_export,
 )
+from fefat.market.builtin_calendars import BUILT_IN
+from fefat.market.calendar import sessions_of
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.importers.file_import import FileImportRequest, preview_file
+from fefat.market.importers.profiles import BarStamp
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, SeriesKind, SizeUnit
 from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name
@@ -187,13 +192,19 @@ def test_databento_daily_bars_are_refused_as_another_record_type(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
-    ("stamped_at", "problems"), [("date", []), ("open", ["off-the-buckets, 3 rows"])]
+    ("stamped_at", "problems"),
+    [("date", []), ("open", ["off-the-buckets, 3 rows"]), ("close", [])],
 )
 def test_a_daily_bar_is_dated_by_its_session_and_refused_at_a_time_of_day(
     tmp_path: Path, stamped_at: str, problems: list[str]
 ) -> None:
-    # A daily bar names its session by its date. One stamped at a time of day, such as its
-    # session's open on the evening before, would take the wrong day's session.
+    # A daily bar names its session by its date, or by its close where the profile stamps the
+    # close. One stamped at another time of day, such as its session's open on the evening
+    # before, would take the wrong day's session.
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path / "cache")
+    closes = sessions.between(date(2026, 3, 5), date(2026, 3, 9)).select(
+        "trade_date", session_close="close"
+    )
     days = (
         pl.read_parquet(ESH2026_MINUTES)
         .sort("ts_open")
@@ -206,16 +217,27 @@ def test_a_daily_bar_is_dated_by_its_session_and_refused_at_a_time_of_day(
             pl.col("close").last(),
             pl.col("volume").sum(),
         )
+        .join(closes, on="trade_date", maintain_order="left")
     )
-    midnight = pl.col("trade_date").cast(pl.Datetime("ns")).dt.epoch("s")
-    stamp = midnight if stamped_at == "date" else pl.col("ts_open") // 1_000_000_000
-    bars = days.select(stamp.alias("time"), pl.col("open", "high", "low", "close") / 1e9, "volume")
+    stamps = {
+        "date": pl.col("trade_date").cast(pl.Datetime("ns")).dt.epoch("s"),
+        "open": pl.col("ts_open") // 1_000_000_000,
+        "close": pl.col("session_close") // 1_000_000_000,
+    }
+    bars = days.select(
+        stamps[stamped_at].alias("time"), pl.col("open", "high", "low", "close") / 1e9, "volume"
+    )
     lines = [",".join(str(value) for value in bar) for bar in bars.iter_rows()]
     path = written_export(
         tmp_path, "CME_MINI_ESH2026, 1D.csv", ["time,open,high,low,close,Volume", *lines]
     )
+    stamp = BarStamp.CLOSE if stamped_at == "close" else BarStamp.OPEN
     profile = PRESETS["tradingview"].model_copy(
-        update={"name": "tradingview-daily", "timeframe": Timeframe(count=1, unit=TimeUnit.DAY)}
+        update={
+            "name": "tradingview-daily",
+            "timeframe": Timeframe(count=1, unit=TimeUnit.DAY),
+            "timestamp": PRESETS["tradingview"].timestamp.model_copy(update={"stamp": stamp}),
+        }
     )
 
     preview = preview_file(

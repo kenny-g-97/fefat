@@ -730,10 +730,12 @@ def written_databento_batch(out: Path, seed: int) -> list[dict[str, str | int]]:
 def decimal_text(nano: int, decimals: int | None = None) -> str:
     """A price in 1e-9 units as a decimal: with exactly `decimals` decimals, or as few as it
     needs, as most platforms write prices."""
-    whole, part = divmod(nano, NANOSECONDS_PER_SECOND)
+    whole, part = divmod(abs(nano), NANOSECONDS_PER_SECOND)
+    sign = "-" if nano < 0 else ""
+    written = f"{sign}{whole}.{part:09d}"
     if decimals is not None:
-        return f"{whole}.{part:09d}"[: len(str(whole)) + 1 + decimals]
-    return f"{whole}.{part:09d}".rstrip("0").rstrip(".")
+        return written[: len(written) - 9 + decimals]
+    return written.rstrip("0").rstrip(".")
 
 
 def local_time(instant: int, time_zone: str) -> datetime:
