@@ -35,6 +35,7 @@ from fefat.market.importers.profiles import ImportProfile
 from fefat.market.importers.tabular import read_table
 from fefat.market.instruments import InstrumentTable
 from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition
+from fefat.market.raw_manifest import checked_raw_path
 from fefat.market.saved_instruments import save_instrument
 from fefat.market.schema import FrozenModel, SchemaKind, polars_schema
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
@@ -192,6 +193,7 @@ def import_file(
     content = _file_bytes(request.path)
     sha256 = hashlib.sha256(content).hexdigest()
     raw_path = PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
+    checked_raw_path(raw_path.as_posix())
     if store.raw_manifest().file_at(raw_path.as_posix()) is not None:
         return AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
     mapped = _mapped(request, content, instruments, cache_folder)
