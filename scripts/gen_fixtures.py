@@ -47,7 +47,13 @@ importer of step 1.6 reads one: the ES 1-minute bars as a DBN file (`ESH6`, inst
 1001), with a calendar spread `ESH6-ESM6` (1002) trading now and then, which the importer
 skips, encoded by the vendor's own encoder; `metadata.json` with the query, `condition.json`
 with each day's condition (one degraded), and `manifest.json` with each other file's size and
-SHA-256, as Databento writes them. Each session draws from its own
+SHA-256, as Databento writes them. Beside them, `exports/<preset>/` holds each import preset's
+sample (step 1.10): ESH2026's 1-minute bars of the three sessions in the exact layout of the
+platform's export, as `docs/masterplan/appendix/research-data-sources.md` (Part D) gives it,
+NinjaTrader's stamped at the close in UTC, TradingView's in Unix seconds, IBKR's in New York
+time with the zone name the TWS API adds, Sierra Chart's with unpadded dates, TradeStation's
+stamped at the close in Chicago time with its times as numbers, and Databento's CSV export of
+the batch, spreads included. Each session draws from its own
 `random.Random`, seeded with "<seed>/<contract>/<trade date>", so the two ES
 contracts draw different tapes. Times and durations here are integer
 nanoseconds; instants count from the Unix epoch in UTC.
@@ -721,6 +727,122 @@ def written_databento_batch(out: Path, seed: int) -> list[dict[str, str | int]]:
     return [manifest_entry(path, out, seed) for path in (data_file, *sidecars, manifest)]
 
 
+def decimal_text(nano: int, decimals: int | None = None) -> str:
+    """A price in 1e-9 units as a decimal: with exactly `decimals` decimals, or as few as it
+    needs, as most platforms write prices."""
+    whole, part = divmod(abs(nano), NANOSECONDS_PER_SECOND)
+    sign = "-" if nano < 0 else ""
+    written = f"{sign}{whole}.{part:09d}"
+    if decimals is not None:
+        return written[: len(written) - 9 + decimals]
+    return written.rstrip("0").rstrip(".")
+
+
+def local_time(instant: int, time_zone: str) -> datetime:
+    return datetime.fromtimestamp(instant // NANOSECONDS_PER_SECOND, ZoneInfo(time_zone))
+
+
+def ninjatrader_line(bar: dict[str, int]) -> str:
+    """NinjaTrader 8's minute bar: stamped at its close, in UTC, separated by semicolons."""
+    stamp = local_time(bar["ts_close"], "UTC").strftime("%Y%m%d %H%M%S")
+    prices = ";".join(decimal_text(bar[price]) for price in ("open", "high", "low", "close"))
+    return f"{stamp};{prices};{bar['volume']}"
+
+
+def tradingview_line(bar: dict[str, int]) -> str:
+    """TradingView's bar: its open in Unix seconds, prices, and the Volume column."""
+    prices = ",".join(decimal_text(bar[price]) for price in ("open", "high", "low", "close"))
+    return f"{bar['ts_open'] // NANOSECONDS_PER_SECOND},{prices},{bar['volume']}"
+
+
+def ibkr_line(bar: dict[str, int]) -> str:
+    """A TWS API bar saved as CSV: its open in the login's zone, here New York, with the zone
+    name the API adds after the time, and the bar's average price and trade count."""
+    stamp = local_time(bar["ts_open"], "America/New_York").strftime("%Y%m%d %H:%M:%S")
+    prices = ",".join(decimal_text(bar[price]) for price in ("open", "high", "low", "close"))
+    return f"{stamp} US/Eastern,{prices},{bar['volume']},{decimal_text(bar['vwap'])},{bar['trade_count']}"
+
+
+def sierra_chart_line(bar: dict[str, int]) -> str:
+    """Sierra Chart's intraday export: its open in UTC, an unpadded date, a space after each
+    comma, and its number of trades."""
+    stamp = local_time(bar["ts_open"], "UTC")
+    day = f"{stamp.year}/{stamp.month}/{stamp.day}"
+    prices = ", ".join(decimal_text(bar[price]) for price in ("open", "high", "low", "close"))
+    return f"{day}, {stamp:%H:%M:%S}, {prices}, {bar['volume']}, {bar['trade_count']}, 0, 0"
+
+
+def tradestation_line(bar: dict[str, int]) -> str:
+    """TradeStation's ASCII bar: stamped at its close in the chart's zone, here Chicago, the
+    time written as a number (930, 0 at midnight), open interest 0."""
+    stamp = local_time(bar["ts_close"], "America/Chicago")
+    prices = ",".join(decimal_text(bar[price]) for price in ("open", "high", "low", "close"))
+    return f"{stamp:%m/%d/%Y},{stamp.hour * 100 + stamp.minute},{prices},{bar['volume']},0"
+
+
+def databento_csv_lines(bars: list[dict[str, int]], seed: int) -> list[str]:
+    """The records of the Databento batch download, with the spread beside every hundredth
+    bar, as a CSV export with pretty prices and timestamps and mapped symbols writes them."""
+    symbols = {ES.instrument_id: DATABENTO_OUTRIGHT, DATABENTO_SPREAD[1]: DATABENTO_SPREAD[0]}
+    records = databento_bars(bars, random.Random(f"{seed}/databento-batch"))
+    lines = []
+    for record in records:
+        stamp = local_time(record.ts_event, "UTC").strftime("%Y-%m-%dT%H:%M:%S")
+        nanoseconds = record.ts_event % NANOSECONDS_PER_SECOND
+        prices = ",".join(
+            decimal_text(getattr(record, price), decimals=9)
+            for price in ("open", "high", "low", "close")
+        )
+        lines.append(
+            f"{stamp}.{nanoseconds:09d}Z,{int(record.rtype)},{record.publisher_id},"
+            f"{record.instrument_id},{prices},{record.volume},{symbols[record.instrument_id]}"
+        )
+    return lines
+
+
+PRESET_SAMPLES = (
+    ("ninjatrader", "ES 03-26.Last.txt", None, ninjatrader_line),
+    ("tradingview", "CME_MINI_ESH2026, 1.csv", "time,open,high,low,close,Volume", tradingview_line),
+    ("ibkr", "ESH2026-1min.csv", "date,open,high,low,close,volume,average,barCount", ibkr_line),
+    (
+        "sierra-chart",
+        "ESH26-CME.txt",
+        "Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume",
+        sierra_chart_line,
+    ),
+    ("tradestation", "ESH26.txt", "Date,Time,Open,High,Low,Close,Vol,OI", tradestation_line),
+)
+"""Each preset's sample of the ES March bars: its folder, file name, header, and line."""
+DATABENTO_CSV_SAMPLE = "glbx-mdp3-20260304-20260309.ohlcv-1m.csv"
+DATABENTO_CSV_HEADER = "ts_event,rtype,publisher_id,instrument_id,open,high,low,close,volume,symbol"
+
+
+def written_text(path: Path, lines: Sequence[str]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes("".join(f"{line}\n" for line in lines).encode("utf-8"))
+    return path
+
+
+def written_preset_samples(out: Path, seed: int) -> list[dict[str, str | int]]:
+    """Write each import preset's sample of ESH2026's 1-minute bars of all three sessions,
+    across the start of US daylight saving, in the exact layout of its platform's export
+    (docs/masterplan/appendix/research-data-sources.md, Part D), under `exports/<preset>/`, and
+    return their entries."""
+    month = f"month={month_of(ES)}"
+    bars = pq.read_table(partition_path(out, "ohlcv-1m", ES, month)).to_pylist()
+    folder = out / "exports"
+    paths = [
+        written_text(
+            folder / preset / name,
+            [*([header] if header else []), *(line(bar) for bar in bars)],
+        )
+        for preset, name, header, line in PRESET_SAMPLES
+    ]
+    databento = [DATABENTO_CSV_HEADER, *databento_csv_lines(bars, seed)]
+    paths.append(written_text(folder / "databento-csv" / DATABENTO_CSV_SAMPLE, databento))
+    return [manifest_entry(path, out, seed) for path in paths]
+
+
 def write_manifest(out: Path, entries: Sequence[dict[str, str | int]]) -> None:
     ordered = sorted(entries, key=lambda entry: str(entry["path"]))
     text = json.dumps({"files": ordered}, indent=2, sort_keys=True) + "\n"
@@ -757,6 +879,7 @@ def main(argv: Sequence[str]) -> int:
         for schema in ("trades", "ohlcv-1s", "ohlcv-1m")
     )
     entries.extend(written_databento_batch(arguments.out, arguments.seed))
+    entries.extend(written_preset_samples(arguments.out, arguments.seed))
     write_manifest(arguments.out, entries)
     total_bytes = sum(int(entry["bytes"]) for entry in entries)
     print(

@@ -1,0 +1,22 @@
+# TradingView, chart menu, Download chart data, time format UNIX timestamp: a header row
+# `time,open,high,low,close`, with `Volume` only when the Volume indicator is on the chart (this
+# preset needs it) and a column per indicator plot after it, times in Unix seconds, in UTC, each
+# bar stamped at its open, and as many bars as the plan loads. The file is named after the
+# chart, such as `CME_MINI_ESH2026, 1.csv`, which names the contract.
+# Source: docs/masterplan/appendix/research-data-sources.md, Part D, TradingView.
+kind: market_data
+name: tradingview
+provider: tradingview
+description: "TradingView chart export of 1-minute bars: time in Unix seconds, UTC, stamped at the open"
+layout:
+  delimiter: ","
+  header: true
+columns:
+  timestamp: time
+  bars: {open: open, high: high, low: low, close: close, volume: Volume}
+timestamp:
+  format: unix_s
+  time_zone: UTC
+  stamp: open
+timeframe: 1m
+contract_in_file_name: '(?P<contract>[A-Z0-9]{1,4}[FGHJKMNQUVXZ][0-9]{4})'

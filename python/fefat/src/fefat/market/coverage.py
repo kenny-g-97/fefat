@@ -14,7 +14,7 @@ from enum import StrEnum
 import polars as pl
 
 from fefat.market.layout import Dataset, Partition
-from fefat.market.schema import FrozenModel, SchemaKind, SchemaName, parse_schema_name
+from fefat.market.schema import FrozenModel, SchemaKind
 from fefat.market.store import Store
 
 SESSION_KINDS = frozenset({SchemaKind.TRADES, SchemaKind.TBBO, SchemaKind.OHLCV})
@@ -22,20 +22,13 @@ SESSION_KINDS = frozenset({SchemaKind.TRADES, SchemaKind.TBBO, SchemaKind.OHLCV}
 
 
 class Fidelity(StrEnum):
-    """The finest data a load builds its bars from, finest first: trades, 1-second bars, or
-    1-minute bars."""
+    """The fidelities of the data FEFAT fills at, finest first: trades, 1-second bars, and
+    1-minute bars; `load` also takes the coarser bars an import holds
+    (`fefat.market.dataset_choice`)."""
 
     TICK = "tick"
     SECOND = "1s"
     MINUTE = "1m"
-
-    def schema_name(self) -> SchemaName:
-        """The schema of the data of this fidelity."""
-        return parse_schema_name("trades" if self is Fidelity.TICK else f"ohlcv-{self}")
-
-    def records(self) -> str:
-        """What the data of this fidelity is called."""
-        return {"tick": "trades", "1s": "1-second bars", "1m": "1-minute bars"}[self]
 
 
 class DatasetCoverage(FrozenModel):

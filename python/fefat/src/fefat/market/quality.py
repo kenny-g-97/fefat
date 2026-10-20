@@ -41,9 +41,7 @@ from pathlib import Path
 
 import polars as pl
 
-from fefat.market import instruments
 from fefat.market.bars_check import STORED_FROM_FINER, BarsReport, ComparedBars, verify_bars
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
 from fefat.market.importers.databento import PROVIDER as DATABENTO
@@ -57,6 +55,7 @@ from fefat.market.quality_report import (
     QualityFinding,
     QualityReport,
 )
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.store import Store
 
 _TICK_SCHEMAS = ("trades", "tbbo")
@@ -82,7 +81,8 @@ def assess_quality(store: Store, provider: str, root: str, cache_folder: Path) -
     covered = _covered_datasets(store, provider, root)
     # shortcut: the calendar of the root's newest instrument version, as the calendar check
     # takes it; split the report by version when a root's calendar changes over time.
-    sessions = sessions_of(BUILT_IN[instruments.get(root).calendar_id], cache_folder)
+    instrument = instrument_table(store.folder).get(root)
+    sessions = sessions_of(instrument.session_calendar(), cache_folder)
     first = min(coverage.first_trade_date for coverage in covered.values())
     last = max(coverage.last_trade_date for coverage in covered.values())
     received_until = max(coverage.received_until for coverage in covered.values())

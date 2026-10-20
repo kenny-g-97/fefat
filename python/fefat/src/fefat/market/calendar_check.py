@@ -5,7 +5,7 @@ For each dataset of bars or ticks, the check takes each trade date's first and l
 first bar's `ts_open` and the last bar's `ts_close`, or the first and last `ts_recv` of trades
 and TBBO (keyed by their partition's trade date), across all of the root's contracts, and
 compares them with that trade date's session in the root's calendar
-(`fefat.market.instruments`, `fefat.market.builtin_calendars`). It reports a print before the
+(`fefat.market.saved_instruments`, `fefat.market.builtin_calendars`). It reports a print before the
 open or after the close (for bars, a bar wholly outside the session, since a bar's prints lie
 somewhere inside it), a first print more than `tolerance` after the open, a last print more
 than `tolerance` before the close, a trade date the calendar has no session for, and a session
@@ -14,6 +14,15 @@ vendor missed or a session the calendar should not have, such as a full close it
 Definitions, statistics, and funding hold no session prints and are not checked. A half-day
 the holiday rules lack shows as an early last print: add it to
 `fefat.market.builtin_calendars.OVERRIDES` with its source.
+
+It also finds a dataset's offset (step 1.10), the time by which its records run late or early
+against the calendar, as an import read in the wrong time zone or with the wrong bar stamping
+gives (`02-engine-and-data.md` §1.8): whole or half hours when moving the records, or those on
+one side of a change of the calendar's offset from UTC, by them puts inside the sessions most
+of those outside, and one bar when any session's break holds a bar closing at the next open,
+or most sessions a bar opening at the close and their first a bar after the open
+(`fefat.market.calendar_offset`).
+`check_records` runs the same check on records an import has not stored yet.
 
     paths = resolve_paths(os.environ)
     print(validate_calendar(Store(paths.data_dir), paths.cache_dir).summary())
@@ -29,10 +38,10 @@ from typing import Annotated, Any, Literal
 import polars as pl
 from pydantic import Field
 
-from fefat.market import instruments
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import Session, SessionTable, sessions_of, utc_text
+from fefat.market.calendar_offset import CalendarOffset, records_offset
 from fefat.market.layout import Dataset, Partition
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import FrozenModel, SchemaKind
 from fefat.market.store import Store
 
@@ -115,18 +124,26 @@ def _observed(mismatch: SessionMismatch | MissingSession) -> str:
 
 
 class CalendarReport(FrozenModel):
-    """What `validate_calendar` found: how many dataset trade dates it checked, and the
-    mismatches, sorted by dataset, trade date, and kind."""
+    """What `validate_calendar` or `check_records` found: how many dataset trade dates were
+    checked, the mismatches, sorted by dataset, trade date, and kind, and each dataset's
+    offset, where its records run late or early as a whole."""
 
     days_checked: int = Field(ge=0)
     mismatches: tuple[CalendarMismatch, ...]
+    offsets: tuple[CalendarOffset, ...] = ()
 
     def summary(self) -> str:
-        """A line per mismatch with its trade date and times, or one line saying there are none."""
-        if not self.mismatches:
+        """A line per offset and per mismatch, or one line saying there are none."""
+        if not self.mismatches and not self.offsets:
             return f"Trade dates checked: {self.days_checked}. Mismatches: none."
         heading = f"Trade dates checked: {self.days_checked}. Mismatches: {len(self.mismatches)}."
-        return "\n".join([heading, *(mismatch.describe() for mismatch in self.mismatches)])
+        return "\n".join(
+            [
+                heading,
+                *(offset.describe() for offset in self.offsets),
+                *(mismatch.describe() for mismatch in self.mismatches),
+            ]
+        )
 
 
 def validate_calendar(
@@ -135,19 +152,39 @@ def validate_calendar(
     """Compare each bar and tick dataset of `store` with its root's session calendar, whose
     table `fefat.market.calendar.sessions_of` keeps in `cache_folder`. A root missing from
     the instrument table is refused, since its calendar is unknown."""
-    days_checked = 0
-    mismatches: list[Mismatch] = []
+    instruments = instrument_table(store.folder)
+    reports: list[CalendarReport] = []
     for dataset, partitions in _checked_datasets(store):
-        prints = _prints_by_trade_date(store, partitions)
-        if prints.is_empty():
-            continue
         # shortcut: the calendar of the root's newest instrument version; split the check by
         # version when a root's calendar changes over time.
-        calendar = BUILT_IN[instruments.get(dataset.root).calendar_id]
-        joined = _beside_their_sessions(prints, sessions_of(calendar, cache_folder))
-        days_checked += joined.height
-        mismatches.extend(_mismatches(dataset, joined, tolerance))
-    return CalendarReport(days_checked=days_checked, mismatches=tuple(mismatches))
+        calendar = instruments.get(dataset.root).session_calendar()
+        rows = pl.concat([_dated_rows(store, partition) for partition in partitions])
+        reports.append(check_records(dataset, rows, sessions_of(calendar, cache_folder), tolerance))
+    return CalendarReport(
+        days_checked=sum(report.days_checked for report in reports),
+        mismatches=tuple(mismatch for report in reports for mismatch in report.mismatches),
+        offsets=tuple(offset for report in reports for offset in report.offsets),
+    )
+
+
+def check_records(
+    dataset: Dataset,
+    records: pl.LazyFrame,
+    sessions: SessionTable,
+    tolerance: timedelta = DEFAULT_TOLERANCE,
+) -> CalendarReport:
+    """The calendar check of one dataset's `records`, stored or not, which carry the columns
+    of the dataset's schema and each record's `trade_date`, against `sessions`."""
+    prints = _prints_by_trade_date(_record_prints(records, dataset.schema_name.kind))
+    if prints.is_empty():
+        return CalendarReport(days_checked=0, mismatches=())
+    joined = _beside_their_sessions(prints, sessions)
+    offset = records_offset(dataset, records, sessions)
+    return CalendarReport(
+        days_checked=joined.height,
+        mismatches=tuple(_mismatches(dataset, joined, tolerance)),
+        offsets=() if offset is None else (offset,),
+    )
 
 
 def _checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]:
@@ -162,13 +199,12 @@ def _checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]
         yield dataset, list(partitions)
 
 
-def _prints_by_trade_date(store: Store, partitions: list[Partition]) -> pl.DataFrame:
-    """Per trade date, across the partitions: the first and last print, the end of the first
-    print, and the start of the last (a bar's `ts_close` and `ts_open`, a tick's own time). An
-    empty file adds no trade date."""
+def _prints_by_trade_date(prints: pl.LazyFrame) -> pl.DataFrame:
+    """Per trade date: the first and last print, the end of the first print, and the start of
+    the last (a bar's `ts_close` and `ts_open`, a tick's own time). An empty file adds no trade
+    date."""
     return (
-        pl.concat([_partition_prints(store, partition) for partition in partitions])
-        .group_by("trade_date")
+        prints.group_by("trade_date")
         .agg(
             pl.col("first_print").min(),
             pl.col("first_end").min(),
@@ -177,7 +213,7 @@ def _prints_by_trade_date(store: Store, partitions: list[Partition]) -> pl.DataF
         )
         .drop_nulls("first_print")
         .sort("trade_date")
-        .collect()
+        .collect(engine="streaming")
     )
 
 
@@ -190,22 +226,32 @@ def _beside_their_sessions(prints: pl.DataFrame, table: SessionTable) -> pl.Data
     return prints.join(sessions, on="trade_date", how="full", coalesce=True).sort("trade_date")
 
 
-def _partition_prints(store: Store, partition: Partition) -> pl.LazyFrame:
+def _dated_rows(store: Store, partition: Partition) -> pl.LazyFrame:
+    """A partition's rows with their trade date: a bar's own, a tick's its partition's."""
     rows = store.scan_partition(partition)
     if partition.dataset.schema_name.kind is SchemaKind.OHLCV:
-        return rows.group_by("trade_date").agg(
-            first_print=pl.col("ts_open").min(),
-            first_end=pl.col("ts_close").min(),
-            last_start=pl.col("ts_open").max(),
-            last_print=pl.col("ts_close").max(),
+        return rows
+    return rows.with_columns(trade_date=pl.lit(partition.key, dtype=pl.Date))
+
+
+def _record_prints(rows: pl.LazyFrame, kind: SchemaKind) -> pl.LazyFrame:
+    """Each record's print as the check reads it: a bar from its `ts_open` to its `ts_close`,
+    a tick at its `ts_recv`, beside its trade date."""
+    if kind is SchemaKind.OHLCV:
+        return rows.select(
+            "trade_date",
+            first_print=pl.col("ts_open"),
+            first_end=pl.col("ts_close"),
+            last_start=pl.col("ts_open"),
+            last_print=pl.col("ts_close"),
         )
     received = pl.col("ts_recv")
     return rows.select(
-        trade_date=pl.lit(partition.key, dtype=pl.Date),
-        first_print=received.min(),
-        first_end=received.min() + 1,
-        last_start=received.max(),
-        last_print=received.max(),
+        "trade_date",
+        first_print=received,
+        first_end=received + 1,
+        last_start=received,
+        last_print=received,
     )
 
 

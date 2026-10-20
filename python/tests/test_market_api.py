@@ -9,7 +9,6 @@ from polars.testing import assert_frame_equal
 import fefat
 from fefat.market import instruments
 from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.catalog import CATALOG
 from fefat.market.continuous import volume_rolls
@@ -51,7 +50,7 @@ def fixture_gap(tmp_path: Path) -> int:
     """The gap of the fixtures' roll from ESH2026 to ESM2026 at the open of 2026-03-09, from
     the roll calendar of their 1-minute bars (`fefat.market.continuous`)."""
     es = instruments.get("ES")
-    sessions = sessions_of(BUILT_IN[es.calendar_id], tmp_path)
+    sessions = sessions_of(es.session_calendar(), tmp_path)
     dataset = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
     request = PartitionRequest(dataset=dataset, start=date(2026, 3, 5), end=MARCH_9)
     bars = Store(FIXTURES).scan_contracts(request).collect()

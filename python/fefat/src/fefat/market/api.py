@@ -12,7 +12,8 @@ contract in one call, and `catalog` lists what the store holds.
 Both read the store in `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`), and the session tables
 cached in `FEFAT_HOME`.
 
-`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto", provider=None)`
+`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto", provider=None,
+origin=None)`
 returns the bars of `timeframe` (`1s`, `5m`, `1h`, `1d`, ...) of the trade dates from `start`
 to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the columns of
 `SIGNAL_BAR_COLUMNS`:
@@ -26,8 +27,10 @@ to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the col
   series; `vwap` is null where the data has none, as on a vendor's bars;
 - `volume`, `trade_count`: what traded in the bucket;
 - `contract`: the contract the bar belongs to, such as `MESH2024`;
-- `close_raw`: the contract's own close, which orders execute against;
-- `adj_offset`: what was added to the raw prices, so that `close = close_raw + adj_offset`;
+- `close_raw`: the contract's own close, which orders execute against, and null on a
+  back-adjusted series an import holds, whose prices no order traded at (D-49);
+- `adj_offset`: what was added to the raw prices, so that `close = close_raw + adj_offset`,
+  null where `close_raw` is;
 - `roll_flag`: true on the first bar of each new front contract, on the trade date it rolled;
 - `zero_volume`: true on a bucket without trades, priced at the close before it.
 
@@ -44,34 +47,48 @@ there has the same first rows and roll flag as in a longer window. `continuous=F
 alone, and a continuous load of them is refused. A contract that stopped trading keeps its
 rows to `end`, as zero-volume bars, since the grid adds no row because of a later one.
 
-`fidelity` names the data the bars are built from: `tick` (trades), `1s`, or `1m` bars, or
-`auto`, the finest the store holds; a timeframe finer than it is refused. `provider` names the
-provider whose datasets the bars come from, such as `databento`, where several hold the root;
-without it a root that several hold is refused, since choosing by the catalog's
-recommendation waits for a second provider (step 1.10). The bars are built when `load` runs,
-and the frame is lazy so that a notebook adds its own columns and filters before it collects.
+`fidelity` names the data the bars are built from: `tick` (trades), bars of a timeframe such
+as `1s`, `1m`, or an import's `5m`, or `auto`, the finest the store holds; a timeframe finer
+than it is refused, and bars coarser than a minute as the finest data are warned of on every
+load, since backtests on them fill at that fidelity. `provider` names the provider whose
+datasets the bars come from, such as `databento`, where several hold the root; without it the
+catalog's recommended source among them is taken, and a root the catalog does not list that
+several hold is refused (`fefat.market.dataset_choice`). `origin` (`import`, or `sync` once
+connectors exist) narrows the datasets to those of that origin. A continuous series an import
+stored as one synthetic contract (step 1.10) loads as it is, never spliced, and every load of it
+warns that roll handling is off, and, back-adjusted, that its prices distort price levels
+and its bars have no raw close. The
+bars are built when `load` runs, and the frame is lazy so that a notebook adds its own columns
+and filters before it collects.
 """
 
 import os
+import warnings
 from datetime import date, datetime
 
 import polars as pl
 
 from fefat.config import resolve_paths
-from fefat.market import instruments
 from fefat.market.bars import build_bars, resample_bars, session_grid
-from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
-from fefat.market.coverage import Fidelity, dataset_coverage, session_datasets
-from fefat.market.instruments import Instrument, InstrumentKind
-from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.coverage import dataset_coverage
+from fefat.market.dataset_choice import (
+    AUTO,
+    dataset_warnings,
+    provider_datasets,
+    roll_dataset,
+    series_of,
+    source_dataset,
+)
+from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
+from fefat.market.layout import Dataset, DatasetOrigin, PartitionRequest, SeriesKind
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import (
-    BarSchemaName,
     SchemaKind,
     Timeframe,
 )
@@ -81,8 +98,6 @@ from fefat.market.store import Store
 SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean})
 """The columns `load` returns, whatever the mode: a bar's, its contract, its raw close, the
 offset of its prices, whether it is a new front's first, and whether its bucket is empty."""
-AUTO = "auto"
-"""The fidelity of `load` that takes the finest data the store holds."""
 CATALOG_COLUMNS = pl.Schema({**DATASET_COLUMNS, "catalog_version": pl.UInt32})
 """The catalog's row per dataset of trades, TBBO, or bars: the columns of `DATASET_COLUMNS`
 (`fefat.market.status`) and the version of the product catalog (`fefat.market.catalog`)."""
@@ -96,27 +111,31 @@ def load(
     continuous: bool | None = None,
     fidelity: str = AUTO,
     provider: str | None = None,
+    origin: str | None = None,
 ) -> pl.LazyFrame:
     """The signal bars of `root_or_symbol` (a root such as `MES`, or a contract such as
     `MESH2024`) of `timeframe` on the trade dates from `start` to `end`, with the columns of
     `SIGNAL_BAR_COLUMNS`; the module docstring has the details and examples."""
-    root, contract = _root_and_contract(root_or_symbol)
-    instrument = instruments.get(root)
-    splices = _splices(instrument, contract, continuous)
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    table = instrument_table(paths.data_dir)
+    root, contract = _root_and_contract(root_or_symbol, table)
+    instrument = table.get(root)
     first, last = _trade_date(start, "start"), _trade_date(end, "end")
     if last < first:
         raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
     bar_timeframe = Timeframe.parse(timeframe)
-    paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
     # shortcut: the calendar of the root's newest instrument version, as the quality report
     # takes it; load by version when a root's calendar changes over time.
-    sessions = sessions_of(BUILT_IN[instrument.calendar_id], paths.cache_dir)
-    datasets = _datasets_of(store, root, provider)
-    source = _source(datasets, fidelity, bar_timeframe, root)
+    sessions = sessions_of(instrument.session_calendar(), paths.cache_dir)
+    datasets = provider_datasets(store, root, provider, _origin(origin))
+    series = series_of(store, datasets)
+    splices = _splices(instrument, contract, continuous, series)
+    source = source_dataset(datasets, fidelity, bar_timeframe, root)
+    _warn_of(source, series)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
-        bars = _signal_bars(_unspliced(gridded), first, last, ("contract", "ts_open"))
+        bars = _signal_bars(_unspliced(gridded, series), first, last, ("contract", "ts_open"))
         if contract is not None and bars.is_empty():
             raise ValueError(
                 f"Expected bars of {contract} from {first} to {last} in the store, got none."
@@ -136,9 +155,9 @@ def catalog() -> pl.DataFrame:
     return datasets.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))
 
 
-def _root_and_contract(symbol: str) -> tuple[str, str | None]:
+def _root_and_contract(symbol: str, table: InstrumentTable) -> tuple[str, str | None]:
     """The root a symbol names, and the contract when it names one (`MESH2024`)."""
-    roots = instruments.STATIC_TABLE.roots()
+    roots = table.roots()
     if symbol in roots:
         return symbol, None
     try:
@@ -147,20 +166,28 @@ def _root_and_contract(symbol: str) -> tuple[str, str | None]:
         raise ValueError(
             f"Expected a root ({', '.join(roots)}) or a contract such as MESH2024, got {symbol!r}."
         ) from error
-    instruments.get(root)
+    table.get(root)
     return root, symbol
 
 
-def _splices(instrument: Instrument, contract: str | None, continuous: bool | None) -> bool:
+def _splices(
+    instrument: Instrument, contract: str | None, continuous: bool | None, series: SeriesKind
+) -> bool:
     """Whether the load splices the root's contracts: by default for a futures root, and
-    never for a contract or a product that does not expire."""
-    splices_by_default = contract is None and instrument.kind is InstrumentKind.FUTURES
+    never for a contract, a product that does not expire, or a continuous series."""
+    splices_by_default = (
+        contract is None
+        and instrument.kind is InstrumentKind.FUTURES
+        and series is SeriesKind.CONTRACT
+    )
     if continuous is None:
         return splices_by_default
     if continuous and not splices_by_default:
-        named = (
-            f"the contract {contract}" if contract else f"the {instrument.kind} {instrument.root}"
-        )
+        named = f"the {instrument.kind} {instrument.root}"
+        if series is not SeriesKind.CONTRACT:
+            named = f"the {series} series of {instrument.root}"
+        if contract:
+            named = f"the contract {contract}"
         raise ValueError(
             f"Expected continuous=False or no continuous for {named}, which no roll calendar "
             "splices, got True."
@@ -183,55 +210,21 @@ def _trade_date(value: str | date, name: str) -> date:
         ) from error
 
 
-def _datasets_of(store: Store, root: str, provider: str | None) -> dict[str, Dataset]:
-    """The root's datasets of trades, TBBO, and bars by their schema, from `provider`, or from
-    the one provider that holds the root when it is None."""
-    found = [dataset for dataset in session_datasets(store) if dataset.root == root]
-    providers = sorted({dataset.provider for dataset in found})
-    held = " and ".join(providers) if providers else "none"
-    if provider is not None and provider not in providers:
-        raise ValueError(f"Expected a provider of {root} in the store ({held}), got {provider!r}.")
-    if provider is None and len(providers) != 1:
-        hint = "; name one with provider=" if providers else ""
-        raise ValueError(f"Expected one provider of {root} in the store, got {held}{hint}.")
-    chosen = providers[0] if provider is None else provider
-    return {str(dataset.schema_name): dataset for dataset in found if dataset.provider == chosen}
-
-
-def _source(
-    datasets: dict[str, Dataset], fidelity: str, timeframe: Timeframe, root: str
-) -> Dataset:
-    """The dataset of the fidelity named, or with `auto` of the finest the store holds, whose
-    data is no coarser than `timeframe`."""
-    held = [held for held in Fidelity if str(held.schema_name()) in datasets]
-    chosen = _chosen_fidelity(fidelity, held, root)
-    finest = chosen.schema_name()
-    if (
-        isinstance(finest, BarSchemaName)
-        and timeframe.nominal_seconds() < finest.timeframe.nominal_seconds()
-    ):
-        raise ValueError(
-            f"Expected a timeframe of {chosen} or coarser from {chosen.records()} of {root}, "
-            f"got {timeframe}."
-        )
-    return datasets[str(finest)]
-
-
-def _chosen_fidelity(fidelity: str, held: list[Fidelity], root: str) -> Fidelity:
-    """The fidelity named, or with `auto` the finest of those `held`; one the store does not
-    hold is refused."""
-    if fidelity == AUTO and held:
-        return held[0]
-    if fidelity == AUTO:
-        raise ValueError(f"Expected trades, 1-second, or 1-minute bars of {root}, got none.")
+def _origin(origin: str | None) -> DatasetOrigin | None:
+    if origin is None:
+        return None
     try:
-        chosen = Fidelity(fidelity)
+        return DatasetOrigin(origin)
     except ValueError as error:
-        named = ", ".join(choice.value for choice in Fidelity)
-        raise ValueError(f"Expected a fidelity of {AUTO}, {named}, got {fidelity!r}.") from error
-    if chosen not in held:
-        raise ValueError(f"Expected {chosen.records()} of {root} in the store, got none.")
-    return chosen
+        named = ", ".join(choice.value for choice in DatasetOrigin)
+        raise ValueError(f"Expected an origin of {named}, got {origin!r}.") from error
+
+
+def _warn_of(source: Dataset, series: SeriesKind) -> None:
+    """Warn, on every load, of what `dataset_warnings` names: bars coarser than a minute as the
+    finest data, and a continuous series."""
+    for warning in dataset_warnings(source, series):
+        warnings.warn(warning, UserWarning, stacklevel=3)
 
 
 def _gridded(
@@ -283,15 +276,13 @@ def _bars_of(
 def _roll_calendar(
     store: Store, datasets: dict[str, Dataset], instrument: Instrument, sessions: SessionTable
 ) -> RollCalendar:
-    """The root's roll calendar, from the 1-minute bars of its whole dataset, whatever the
-    window, and from its first whole session: the bars of a first session the data starts
+    """The root's roll calendar, from the 1-minute bars of its whole dataset, or else its
+    finest bars (an import's 5-minute bars), whatever the window, and from its first whole
+    session: the bars of a first session the data starts
     inside are left out, since their volumes are partial."""
-    minutes = datasets.get("ohlcv-1m")
-    if minutes is None:
-        raise ValueError(
-            f"Expected 1-minute bars of {instrument.root} to splice its contracts, got none."
-        )
-    request = PartitionRequest(dataset=minutes, start=date.min, end=date.max)
+    request = PartitionRequest(
+        dataset=roll_dataset(datasets, instrument.root), start=date.min, end=date.max
+    )
     bars = store.scan_contracts(request).collect()
     first_day, first_open, received_until = bars.select(
         pl.col("trade_date").min(), pl.col("ts_open").min(), pl.col("ts_close").max()
@@ -331,10 +322,13 @@ def _spliced(gridded: pl.DataFrame, calendar: RollCalendar) -> pl.DataFrame:
     )
 
 
-def _unspliced(gridded: pl.DataFrame) -> pl.DataFrame:
+def _unspliced(gridded: pl.DataFrame, series: SeriesKind) -> pl.DataFrame:
+    """Each contract's own bars; a back-adjusted series has neither a raw close nor an offset,
+    since its prices hold the gaps of rolls after them (D-49)."""
+    adjusted = series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
     return gridded.with_columns(
-        close_raw=pl.col("close"),
-        adj_offset=pl.lit(0, dtype=pl.Int64),
+        close_raw=pl.lit(None, dtype=pl.Int64) if adjusted else pl.col("close"),
+        adj_offset=pl.lit(None if adjusted else 0, dtype=pl.Int64),
         roll_flag=pl.lit(False),
     )
 

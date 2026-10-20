@@ -29,6 +29,48 @@
       "sha256": "a297df4ed7d2a8c1a23e6ec1ef7b09382b905bd9855c498b98a16b4b1f786911"
     },
     {
+      "bytes": 458581,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "exports/databento-csv/glbx-mdp3-20260304-20260309.ohlcv-1m.csv",
+      "seed": 20260308,
+      "sha256": "b903f69a0a7afa49cb7b5193789b56de14f5d3a9a5fad603eb705438ff5ec7df"
+    },
+    {
+      "bytes": 322996,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "exports/ibkr/ESH2026-1min.csv",
+      "seed": 20260308,
+      "sha256": "2d1eb40c4ff1253a794526e893cc9af93b3f24c5ab52a31b45aa7dde5601452d"
+    },
+    {
+      "bytes": 196760,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "exports/ninjatrader/ES 03-26.Last.txt",
+      "seed": 20260308,
+      "sha256": "dc985d4719c955ba1a5f36938307fd276eed3651ce8a7441299baaa0160e7be1"
+    },
+    {
+      "bytes": 272328,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "exports/sierra-chart/ESH26-CME.txt",
+      "seed": 20260308,
+      "sha256": "9e48a4ad34ceb7de446d485d639951f4a204823ca0cd69b4f9785abc5b308785"
+    },
+    {
+      "bytes": 203069,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "exports/tradestation/ESH26.txt",
+      "seed": 20260308,
+      "sha256": "485d035d963a5300c84ba37e905bd9e891b2ebfe63fbecd3536fed27d4b564f5"
+    },
+    {
+      "bytes": 176087,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "exports/tradingview/CME_MINI_ESH2026, 1.csv",
+      "seed": 20260308,
+      "sha256": "7cffabee6d59f0005981977854fac9c93fa540f07a302e9806338e4c8c8b7c99"
+    },
+    {
       "bytes": 40140,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/month=2026-03/part.parquet",

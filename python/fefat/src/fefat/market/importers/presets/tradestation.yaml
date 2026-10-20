@@ -1,0 +1,24 @@
+# TradeStation ASCII bars, as the Data window saves them and traders keep them "in TS format":
+# a header row `Date,Time,Open,High,Low,Close,Vol,OI`, dates as MM/DD/YYYY and times as HHMM, in
+# the chart's time zone (local or exchange, per Format Symbol), which each import names with
+# --time-zone, and each bar stamped at its close, so the midnight bar is dated the next day. The
+# layout rests on a community sample: check the preview against a real file. The file is named
+# after the symbol, such as `ESH26.txt`.
+# Source: docs/masterplan/appendix/research-data-sources.md, Part D, TradeStation.
+kind: market_data
+name: tradestation
+provider: tradestation
+description: "TradeStation ASCII 1-minute bars: the chart's time zone, stamped at the close"
+layout:
+  delimiter: ","
+  header: true
+columns:
+  date: Date
+  time: Time
+  bars: {open: Open, high: High, low: Low, close: Close, volume: Vol}
+timestamp:
+  format: "%m/%d/%Y %H%M"
+  time_zone: null
+  stamp: close
+timeframe: 1m
+contract_in_file_name: '^(?P<root>[A-Z0-9]{1,4})(?P<code>[FGHJKMNQUVXZ])(?P<year>[0-9]{2})(?![0-9])'

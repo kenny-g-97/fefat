@@ -9,8 +9,10 @@ for `BTCUSDT`), in steps of `lot_step`; `point_value` is what one unit of quanti
 before `valid_to` (open-ended without one), and a root's first version starts on the
 product's first trade date. A futures product's contracts end by its `last_trade_rule`
 (`fefat.market.last_trade_rules`). `get("ES")` reads the static table below, where each version
-names its sources. The contracts of a futures root are `fefat.market.contracts`; what a run
-pays per trade is `fefat.market.fees`, since a run names its fee table.
+names its sources; a product a trader imports joins it from the data folder
+(`fefat.market.saved_instruments`). The contracts of a futures root are
+`fefat.market.contracts`; what a run pays per trade is `fefat.market.fees`, since a run names
+its fee table.
 """
 
 import itertools
@@ -21,8 +23,9 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
+from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import SessionTable
-from fefat.market.calendar_definition import CalendarId
+from fefat.market.calendar_definition import Calendar, CalendarId
 from fefat.market.last_trade_rules import (
     BusinessDaysBeforeThe25th,
     LastTradeRule,
@@ -46,12 +49,19 @@ class Currency(StrEnum):
 
     USD = "USD"
     USDT = "USDT"
+    EUR = "EUR"
+    GBP = "GBP"
+    JPY = "JPY"
+    CHF = "CHF"
+    AUD = "AUD"
+    CAD = "CAD"
 
 
 class Instrument(FrozenModel):
     """One version of a product's specification, in force from `valid_from` until the day
-    before `valid_to`. `calendar_id` names its session calendar, one of the built-in
-    calendars of `fefat.market.builtin_calendars`; a futures product's contracts end by its
+    before `valid_to`. `calendar` is its session calendar: the id of a built-in calendar of
+    `fefat.market.builtin_calendars`, or, for a product a trader imports on hours of its own, a
+    calendar of its own (step 1.10). A futures product's contracts end by its
     `last_trade_rule`, and spot pairs and perpetuals, which never expire, have none."""
 
     root: FolderName
@@ -60,7 +70,7 @@ class Instrument(FrozenModel):
     point_value: Decimal = Field(gt=0)
     lot_step: Decimal = Field(gt=0)
     currency: Currency
-    calendar_id: CalendarId
+    calendar: CalendarId | Calendar
     last_trade_rule: LastTradeRule | None
     valid_from: date
     valid_to: date | None
@@ -88,6 +98,12 @@ class Instrument(FrozenModel):
     def in_force_on(self, day: date) -> bool:
         """Whether this version applies on `day`."""
         return self.valid_from <= day and (self.valid_to is None or day < self.valid_to)
+
+    def session_calendar(self) -> Calendar:
+        """The calendar of the product's sessions: the built-in one its id names, or its own."""
+        if isinstance(self.calendar, Calendar):
+            return self.calendar
+        return BUILT_IN[self.calendar]
 
     def last_trade_date(self, contract_month: YearMonth, sessions: SessionTable) -> date:
         """The last trade date of the contract of `contract_month`, by the product's rule, in
@@ -174,7 +190,7 @@ def _cme_futures(
         point_value=Decimal(point_value),
         lot_step=Decimal(1),
         currency=Currency.USD,
-        calendar_id=calendar_id,
+        calendar=calendar_id,
         last_trade_rule=last_trade_rule,
         valid_from=first_trade_date,
         valid_to=None,
@@ -197,7 +213,7 @@ def _binance(
         point_value=Decimal(1),
         lot_step=Decimal(lot_step),
         currency=Currency.USDT,
-        calendar_id=CalendarId.CRYPTO_24X7,
+        calendar=CalendarId.CRYPTO_24X7,
         last_trade_rule=None,
         valid_from=first_trade_date,
         valid_to=None,

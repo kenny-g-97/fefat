@@ -106,6 +106,8 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | Sync | Bringing a catalog product up to date through a connected source, on the trader's machine. |
 | Imported data | Market data a trader brings in from their own files; it never leaves their machine. |
 | Import profile | A saved description of a file layout (columns, time zone, bar stamping, instrument) used to import market data or trade logs. |
+| Preset | An import profile FEFAT ships for a common export (NinjaTrader, TradingView, Databento CSV, ...); its name is the provider the imported datasets are stored under. |
+| Synthetic contract | The one contract, `<root>-CONTINUOUS`, a continuous series imported from a file is stored as: it never rolls, and every load of it warns so. |
 | Rule set | A prop firm plan expressed as data. |
 | Prop strategy | Account-level decisions over time for prop accounts: accounts, sizing, payouts, allocation. |
 | Backtest file | An existing backtest with its full trade log — a saved FEFAT run, or a trade log imported from another platform: the input of a prop simulation. |

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -109,8 +110,57 @@ def test_every_committed_fixture_file_is_listed_with_its_hash() -> None:
         if path.is_file() and path != MANIFEST
     }
 
-    assert len(on_disk) == 27
+    assert len(on_disk) == 33
     assert on_disk == listed
+
+
+@pytest.mark.parametrize(
+    ("sample", "header", "first_line"),
+    [
+        # semicolons, no header, yyyyMMdd HHmmss in UTC, stamped at the close
+        ("ninjatrader/ES 03-26.Last.txt", None, r"20260304 230100;6850;6850;6849;6849;248"),
+        # time,open,high,low,close,Volume with Unix seconds, stamped at the open
+        (
+            "tradingview/CME_MINI_ESH2026, 1.csv",
+            "time,open,high,low,close,Volume",
+            r"1772665200,6850,6850,6849,6849,248",
+        ),
+        # the TWS API's fields, yyyymmdd hh:mm:ss in New York with the zone's name
+        (
+            "ibkr/ESH2026-1min.csv",
+            "date,open,high,low,close,volume,average,barCount",
+            r"20260304 18:00:00 US/Eastern,6850,6850,6849,6849,248,[0-9.]+,[0-9]+",
+        ),
+        # a space after each comma, an unpadded date, hh:mm:ss in UTC, stamped at the open
+        (
+            "sierra-chart/ESH26-CME.txt",
+            "Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume",
+            r"2026/3/4, 23:00:00, 6850, 6850, 6849, 6849, 248, [0-9]+, 0, 0",
+        ),
+        # MM/DD/YYYY and the time as a number, in Chicago, stamped at the close
+        (
+            "tradestation/ESH26.txt",
+            "Date,Time,Open,High,Low,Close,Vol,OI",
+            r"03/04/2026,1701,6850,6850,6849,6849,248,0",
+        ),
+        # ts_event first in ISO 8601 with nanoseconds, nine decimals, the mapped symbol
+        (
+            "databento-csv/glbx-mdp3-20260304-20260309.ohlcv-1m.csv",
+            "ts_event,rtype,publisher_id,instrument_id,open,high,low,close,volume,symbol",
+            r"2026-03-04T23:00:00\.000000000Z,33,1,1001,6850\.000000000,6850\.000000000,"
+            r"6849\.000000000,6849\.000000000,248,ESH6",
+        ),
+    ],
+)
+def test_each_preset_sample_has_the_layout_of_its_platforms_export(
+    sample: str, header: str | None, first_line: str
+) -> None:
+    lines = (FIXTURES / "exports" / sample).read_bytes().decode("utf-8").split("\n")
+
+    assert lines[-1] == ""
+    assert lines[:1] == ([header] if header else lines[:1])
+    assert re.fullmatch(first_line, lines[1] if header else lines[0])
+    assert len(lines) - 1 - (header is not None) >= 4_141
 
 
 def test_the_databento_batch_lists_each_files_size_and_sha256_as_the_vendor_does() -> None:
@@ -360,3 +410,17 @@ def test_the_two_es_contracts_draw_different_tapes() -> None:
         return [int(trade["ts_recv"]) for trade in trades[:50]]
 
     assert set(received("ESH2026")).isdisjoint(received("ESM2026"))
+
+
+@pytest.mark.parametrize(
+    ("nano", "decimals", "text"),
+    [
+        (-45_250_000_000, 9, "-45.250000000"),
+        (-500_000_000, None, "-0.5"),
+        (6_849_750_000_000, None, "6849.75"),
+    ],
+)
+def test_a_price_is_written_as_its_decimal_with_its_sign(
+    nano: int, decimals: int | None, text: str
+) -> None:
+    assert gen_fixtures.decimal_text(nano, decimals) == text

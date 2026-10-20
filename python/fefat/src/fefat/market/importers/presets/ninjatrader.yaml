@@ -1,0 +1,22 @@
+# NinjaTrader 8, Historical Data window, Export, interval type Minute, data type Last: one bar
+# per line, fields separated by semicolons, no header row, timestamps as yyyyMMdd HHmmss in UTC
+# ("NinjaTrader exports are always done in the UTC time zone"), each bar stamped at its close
+# (a bar stamped 133100 holds the ticks from 13:30:00.001 to 13:31:00.000), and the instrument
+# in the file's name, such as `ES 03-26.Last.txt` for ES March 2026.
+# Source: docs/masterplan/appendix/research-data-sources.md, Part D, NinjaTrader 8.
+kind: market_data
+name: ninjatrader
+provider: ninjatrader
+description: "NinjaTrader 8 minute bars (Last): semicolons, no header, UTC, stamped at the close"
+layout:
+  delimiter: ";"
+  header: false
+columns:
+  timestamp: 0
+  bars: {open: 1, high: 2, low: 3, close: 4, volume: 5}
+timestamp:
+  format: "%Y%m%d %H%M%S"
+  time_zone: UTC
+  stamp: close
+timeframe: 1m
+contract_in_file_name: '^(?P<root>[A-Z0-9]{1,4}) (?P<month>[0-9]{2})-(?P<year>[0-9]{2})\.Last\.txt$'

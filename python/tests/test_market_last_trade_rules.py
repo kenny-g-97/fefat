@@ -23,7 +23,7 @@ def cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def sessions_of_root(root: str, cache: Path) -> SessionTable:
-    return sessions_of(BUILT_IN[instruments.get(root).calendar_id], cache)
+    return sessions_of(instruments.get(root).session_calendar(), cache)
 
 
 @pytest.mark.parametrize(
@@ -75,7 +75,7 @@ def instrument(kind: InstrumentKind, last_trade_rule: ThirdFriday | None) -> Ins
         point_value=Decimal(50),
         lot_step=Decimal(1),
         currency=Currency.USD,
-        calendar_id=CalendarId.CME_EQUITY_INDEX,
+        calendar=CalendarId.CME_EQUITY_INDEX,
         valid_from=date(1997, 9, 9),
         valid_to=None,
         last_trade_rule=last_trade_rule,
