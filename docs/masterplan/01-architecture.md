@@ -70,7 +70,7 @@ Three principles hold everything together:
 fefat/
   CLAUDE.md                     working agreements for Claude Code
   .claude/                      settings, rules/, skills/ (step, verify, …, and the three design skills), agents/, hooks/
-  .githooks/                    pre-commit guard (same checks as CI)
+  .githooks/                    pre-commit and pre-push guards (same checks as CI)
   justfile                      setup · check · test · e2e · dev · doctor
   pyproject.toml                uv workspace root: dev tools, ruff, pyright, pytest, import-linter contracts
   .python-version               3.12
@@ -222,6 +222,6 @@ Each seam except the data source (`Provider`, SDK code in `fefat.market.sources`
 - Money and prices are integers in the engine (prices in Databento's 1e-9 units; money in micro-units of the account currency); floats appear only at the SDK boundary.
 - Hashes are BLAKE3 (engine) and SHA-256 (app), hex, lower case.
 - IDs: UUIDv7. Version numbers: integers starting at 1 per feature/strategy.
-- Line endings LF everywhere (`.gitattributes`); paths through `pathlib`; project scripts are Python run through `uv run python` (bare `python` is a Store stub on this PC) plus `just` recipes; Claude Code hooks are Node scripts; the only shell file is the one-line git pre-commit launcher.
+- Line endings LF everywhere (`.gitattributes`); paths through `pathlib`; project scripts are Python run through `uv run python` (bare `python` is a Store stub on this PC) plus `just` recipes; Claude Code hooks are Node scripts; the only shell files are the one-line git pre-commit and pre-push launchers (D-48).
 - Python: ruff + pyright strict for `fefat_app`, basic for `fefat`; Rust: clippy with `unwrap_used`, `panic`, `indexing_slicing` denied in core crates; TypeScript: strict.
 - Code design: `08-code-design.md` — the dependency rule (`web → fefat_app.http → services → fefat → fefat_engine`), intention-revealing names (never `data`, `utils`, `helpers`, `manager`, …), fail-fast errors, an enum for every state, injected ports, immutable values, small units; one design system in `web/DESIGN.md`, built with the `frontend-design` skill.

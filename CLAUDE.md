@@ -16,7 +16,7 @@ This file holds what every session needs. Language conventions live in `.claude/
 - `scripts/`: `doctor.py`, `masterplan_step.py` (reads steps for `/step` and the session hook), `test_hooks.py`, `gen_fixtures.py` (the synthetic fixtures), `guard_data.py` (the commit guard), and `strip_notebooks.py`.
 - `docs/masterplan/`: the plan with `PROGRESS.md`, `BACKLOG.md`, and `DECISIONS.md`. [docs/adr/](docs/adr/): a record for each decision the log marks ADR. `docs/spec/`: normative specifications.
 - `.github/`: the pull request template (and the CI workflow from step 0.6).
-- `.claude/`: `settings.json`, `hooks/`, `rules/`, `skills/`, `agents/`. `.githooks/pre-commit`: the commit gate (it runs `scripts/guard_data.py`), active once `just setup` has set `core.hooksPath` in the clone.
+- `.claude/`: `settings.json`, `hooks/`, `rules/`, `skills/`, `agents/`. `.githooks/pre-commit` and `pre-push`: the commit gate and the push gate (both run `scripts/guard_data.py`, the second over each commit a push sends), active once `just setup` has set `core.hooksPath` in the clone.
 
 ## Commands
 
@@ -84,7 +84,7 @@ Each is a decision in `docs/masterplan/DECISIONS.md`, with its record where it h
 
 ## Never
 
-- Commit, attach, or paste licensed market data. Real data lives outside the repository under `FEFAT_DATA_DIR` and is referenced by path only: code gets the folder from `fefat.config.resolve_paths` (default `<FEFAT_HOME>/data`), never from a hard-coded path. Only generated fixtures under `fixtures/synthetic/` are committed, and the commit guard refuses market-data files anywhere else, fixtures missing from their manifest, files over 25 MB, secrets, and notebooks with outputs. Read aggregates (counts, statistics, a few sample rows) into the conversation, never raw data.
+- Commit, attach, or paste licensed market data. Real data lives outside the repository under `FEFAT_DATA_DIR` and is referenced by path only: code gets the folder from `fefat.config.resolve_paths` (default `<FEFAT_HOME>/data`), never from a hard-coded path. Only generated fixtures under `fixtures/synthetic/` are committed, and the commit guard refuses market-data files anywhere else (binary formats, archives, CSV and other text tables of prices, under any name), fixtures missing from their manifest, files over 25 MB, secrets, and notebooks with outputs, in every commit a push sends as well. Read aggregates (counts, statistics, a few sample rows) into the conversation, never raw data.
 - Commit secrets (`.env*`, API keys, certificates). Keys go in the operating system's credential store.
 - Weaken, skip, or delete a test to make it pass, or change a scenario's expected value to match the code.
 - Commit on or push to `main`, force-push, pass `--no-verify`, or change `core.hooksPath`. The shell hook refuses all of these except the commit on `main`, before which it asks.

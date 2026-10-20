@@ -1,4 +1,5 @@
-"""Refuse commits that would put market data, secrets, oversized files, or notebook outputs into git.
+"""Refuse commits and pushes that would put market data, secrets, oversized files, or notebook
+outputs into git.
 
 The pre-commit hook (.githooks/pre-commit) runs it before every commit, and
 `just check` runs it with the other checks:
@@ -8,11 +9,15 @@ The pre-commit hook (.githooks/pre-commit) runs it before every commit, and
 It reads git's index, which holds exactly what the next commit will contain:
 the tracked files plus everything staged, including files forced past
 .gitignore with `git add -f`. Following the test-data policy
-(docs/masterplan/05-build-process.md section 5, decision D-21), it refuses:
+(docs/masterplan/05-build-process.md section 5, decisions D-21 and D-48), it refuses:
 
-- market-data files (.parquet, .dbn, .zip, ...) anywhere outside fixtures/synthetic/,
-  and files under any other name whose first bytes are a data format (Parquet,
-  Arrow, DBN, zstd, gzip, zip, SQLite, HDF5, NumPy, pickle);
+- market-data files by name (.parquet, .dbn, .csv, .tsv, .xls, .zip, .gz, .7z,
+  NinjaTrader's .ncd, ...) anywhere outside fixtures/synthetic/; files under any
+  other name whose first bytes are a data format (Parquet, Arrow, Feather, Sierra
+  Chart intraday, DBN, zstd, gzip, zip, 7z, xz, bzip2, lz4, tar, SQLite, DuckDB,
+  HDF5, OLE2, NumPy, pickle); and text exports (.txt, .prn, .asc, .dat, .itxt,
+  .dly, or no suffix) whose first lines are a table of numbers, such as a
+  NinjaTrader or TradeStation export;
 - data files under fixtures/synthetic/ that its MANIFEST.json does not list with
   their exact SHA-256, so a file dropped there cannot pass for a generated
   fixture (a hand-written manifest entry is caught by the regeneration test in
@@ -22,12 +27,22 @@ the tracked files plus everything staged, including files forced past
   passwords, or private keys inside text files (UTF-8, or UTF-16 with a byte-order mark);
 - notebooks with cell outputs, which can hold licensed data.
 
-Exits 0 when the index is clean, 1 with every problem listed, and 2 when git's
-index cannot be read; a commit stops on anything but 0. Standard library only.
+A file that one commit adds and a later one removes stays in the history that a
+push sends, so two more modes check every commit's own files: CI checks a pull
+request's commits, and the pre-push hook (.githooks/pre-push) what a push sends,
+from the ref lines git writes to its standard input:
+
+    uv run --no-project python scripts/guard_data.py --commits origin/main..HEAD
+    uv run --no-project python scripts/guard_data.py --pushed origin
+
+Exits 0 when the index (or every commit) is clean, 1 with every problem listed,
+and 2 when git cannot be read; a commit or a push stops on anything but 0.
+Standard library only.
 """
 
 from __future__ import annotations
 
+import argparse
 import codecs
 import hashlib
 import io
@@ -56,6 +71,7 @@ MARKET_DATA_SUFFIXES = (
     ".zst",
     ".parquet",
     ".arrow",
+    ".arrows",
     ".feather",
     ".ipc",
     ".zip",
@@ -65,19 +81,58 @@ MARKET_DATA_SUFFIXES = (
     ".sqlite",
     ".sqlite3",
     ".db",
+    ".csv",
+    ".tsv",
+    ".jsonl",
+    ".ndjson",
+    ".xls",
+    ".xlsx",
+    ".gz",
+    ".tar",
+    ".7z",
+    ".xz",
+    ".bz2",
+    ".lz4",
+    ".ncd",
+    ".scid",
 )
 DATA_SIGNATURES = (
-    (b"PAR1", "Parquet"),
-    (b"ARROW1", "Arrow"),
-    *((b"DBN" + bytes([version]), "DBN") for version in (1, 2, 3)),
-    (b"\x28\xb5\x2f\xfd", "zstd"),
-    (b"\x1f\x8b", "gzip"),
-    (b"PK\x03\x04", "zip"),
-    (b"SQLite format 3\x00", "SQLite"),
-    (b"\x89HDF\r\n\x1a\n", "HDF5"),
-    (b"\x93NUMPY", "NumPy"),
-    *((bytes([0x80, protocol]), "pickle") for protocol in (2, 3, 4, 5)),
+    (0, b"PAR1", "Parquet"),
+    (0, b"ARROW1", "Arrow"),
+    (0, b"FEA1", "Feather"),
+    (0, b"SCID" + bytes([56, 0, 0, 0]), "Sierra Chart intraday"),
+    *((0, b"DBN" + bytes([version]), "DBN") for version in (1, 2, 3)),
+    (0, b"\x28\xb5\x2f\xfd", "zstd"),
+    (0, b"\x1f\x8b", "gzip"),
+    (0, b"PK\x03\x04", "zip"),
+    (0, b"7z\xbc\xaf\x27\x1c", "7z"),
+    (0, b"\xfd7zXZ\x00", "xz"),
+    (4, b"1AY&SY", "bzip2"),
+    (0, b"\x04\x22\x4d\x18", "lz4"),
+    (257, b"ustar\x0000", "tar"),
+    (257, b"ustar  \x00", "tar"),
+    (0, b"SQLite format 3\x00", "SQLite"),
+    (8, b"DUCK", "DuckDB"),
+    (0, b"\x89HDF\r\n\x1a\n", "HDF5"),
+    (0, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "OLE2 (.xls)"),
+    (0, b"\x93NUMPY", "NumPy"),
+    *((0, bytes([0x80, protocol]), "pickle") for protocol in (2, 3, 4, 5)),
 )
+"""Where a data format's signature sits (its offset), the signature, and the format's name."""
+PRICE_TABLE = "tabular price"
+PRICE_TABLE_ROWS = 10
+"""How many of a text file's first 20 lines (after at most one header line) must be rows of
+numbers for the file to be a table of prices, such as an export saved as .txt or .prn."""
+TEXT_EXPORT_SUFFIXES = (".txt", ".prn", ".asc", ".dat", ".itxt", ".dly")
+"""The names platforms save bar and tick exports under as plain text (NinjaTrader, TradeStation,
+Sierra Chart, MultiCharts), which are checked for a table of prices, as are names without a
+suffix; Markdown, JSON, YAML, and source files are not, so a scenario table in Markdown passes."""
+NUMERIC_FIELD = re.compile(r"[+\-]?[0-9][0-9.:/+\-TZ]*")
+"""A number, date, or time as an export writes one: 5432.25, 20260305, 23:01:00, 03/05/2026."""
+FIELD_SEPARATORS = re.compile(r"[,;|\s]+")
+CLOCK_WORDS = frozenset({"am", "pm"})
+NO_OBJECT = re.compile(r"0+")
+"""The object id git writes for a branch a push deletes, or one the remote does not have."""
 KEY_SUFFIXES = (".pem", ".key", ".pfx", ".p12")
 SSH_PRIVATE_KEY = re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)(_sk)?$")
 ENV_FILE = ".env"
@@ -176,6 +231,10 @@ class IndexedFile:
             (suffix for suffix in MARKET_DATA_SUFFIXES if self.name().endswith(suffix)), None
         )
 
+    def may_be_a_text_export(self) -> bool:
+        name = self.name()
+        return name.endswith(TEXT_EXPORT_SUFFIXES) or "." not in name.lstrip(".")
+
     def is_secret_file(self) -> bool:
         name = self.name()
         if name == ENV_EXAMPLE:
@@ -213,6 +272,18 @@ def indexed_files(repository: Path) -> list[IndexedFile]:
 def parsed_index_record(record: bytes) -> IndexedFile:
     metadata, path = record.split(b"\t", 1)
     mode, object_id, _stage = metadata.decode("ascii").split(" ")
+    return IndexedFile(path.decode("utf-8", errors="replace"), object_id, mode)
+
+
+def tree_files(repository: Path, commit: str) -> list[IndexedFile]:
+    """The files of a commit's tree, as `git ls-tree` lists them; a submodule keeps its mode."""
+    listing = git_output(repository, ["ls-tree", "-r", "-z", "--full-tree", commit])
+    return [parsed_tree_record(record) for record in listing.split(b"\0") if record]
+
+
+def parsed_tree_record(record: bytes) -> IndexedFile:
+    metadata, path = record.split(b"\t", 1)
+    mode, _kind, object_id = metadata.decode("ascii").split(" ")
     return IndexedFile(path.decode("utf-8", errors="replace"), object_id, mode)
 
 
@@ -311,14 +382,44 @@ def readable_text(content: bytes) -> str | None:
     return content.decode("utf-8", errors="replace")
 
 
-def data_format(content: bytes) -> str | None:
-    return next(
-        (name for signature, name in DATA_SIGNATURES if content.startswith(signature)), None
+def data_format(file: IndexedFile, content: bytes) -> str | None:
+    """The data format a file's first bytes name, `tabular price` for a text export that begins
+    with a table of numbers, or None."""
+    signed = next(
+        (
+            name
+            for offset, signature, name in DATA_SIGNATURES
+            if content.startswith(signature, offset)
+        ),
+        None,
     )
+    if signed is not None or not file.may_be_a_text_export():
+        return signed
+    text = readable_text(content[:BINARY_SNIFF_BYTES])
+    return PRICE_TABLE if text is not None and is_price_table(text) else None
+
+
+def is_price_table(text: str) -> bool:
+    """Whether at least `PRICE_TABLE_ROWS` of the text's first 20 non-empty lines, after at most
+    one header line, are rows of three or more numbers, dates, or times."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines and not is_numeric_row(lines[0]):
+        lines = lines[1:]
+    rows = lines[: 2 * PRICE_TABLE_ROWS]
+    return sum(is_numeric_row(line) for line in rows) >= PRICE_TABLE_ROWS
+
+
+def is_numeric_row(line: str) -> bool:
+    """Whether a line holds three or more numbers, dates, or times, quoted or not, beside at
+    most one other field such as a symbol; `AM` and `PM` belong to their time."""
+    fields = [field.strip("\"'") for field in FIELD_SEPARATORS.split(line)]
+    kept = [field for field in fields if field and field.lower() not in CLOCK_WORDS]
+    numbers = sum(NUMERIC_FIELD.fullmatch(field) is not None for field in kept)
+    return numbers >= 3 and len(kept) - numbers <= 1
 
 
 def content_problems(file: IndexedFile, content: bytes) -> Iterator[Problem]:
-    found_format = data_format(content)
+    found_format = data_format(file, content)
     if found_format is not None and not file.is_fixture() and file.market_data_suffix() is None:
         yield market_data_outside_fixtures(file, f"{found_format} data under another name")
     if file.name().endswith(".ipynb"):
@@ -391,7 +492,7 @@ def manifest_problems(files: Sequence[IndexedFile], contents: dict[str, bytes]) 
         if file.is_fixture()
         and (
             file.market_data_suffix() is not None
-            or data_format(contents.get(file.object_id, b"")) is not None
+            or data_format(file, contents.get(file.object_id, b"")) is not None
         )
     ]
     manifest = next((file for file in files if file.path == MANIFEST), None)
@@ -423,9 +524,13 @@ def manifest_problems(files: Sequence[IndexedFile], contents: dict[str, bytes]) 
     return [problem for problem in problems if problem is not None] + unstaged
 
 
-def find_problems(repository: Path, max_file_bytes: int = MAX_FILE_BYTES) -> list[Problem]:
-    """Every way the files in the repository's index break the data policy, sorted by path."""
-    files = [file for file in indexed_files(repository) if not file.is_submodule()]
+def find_problems(
+    repository: Path, max_file_bytes: int = MAX_FILE_BYTES, commit: str | None = None
+) -> list[Problem]:
+    """Every way the files in the repository's index, or in `commit`'s tree, break the data
+    policy, sorted by path."""
+    listed = indexed_files(repository) if commit is None else tree_files(repository, commit)
+    files = [file for file in listed if not file.is_submodule()]
     object_ids = sorted({file.object_id for file in files})
     sizes = object_sizes(repository, object_ids)
     readable_ids = [object_id for object_id in object_ids if sizes[object_id] <= max_file_bytes]
@@ -451,22 +556,83 @@ def find_problems(repository: Path, max_file_bytes: int = MAX_FILE_BYTES) -> lis
     return sorted(problems, key=lambda problem: (problem.path, problem.rule))
 
 
+def counted(count: int, noun: str) -> str:
+    return f"{count} {noun}" + ("" if count == 1 else "s")
+
+
 def report(problems: Sequence[Problem]) -> str:
-    count = f"{len(problems)} problem" + ("" if len(problems) == 1 else "s")
     listed = "\n\n".join(problem.describe() for problem in problems)
     return (
-        f"Data guard: {count} in git's index (what the next commit would contain).\n\n"
-        f"{listed}\n\nThe data policy: {POLICY}."
+        f"Data guard: {counted(len(problems), 'problem')} in git's index (what the next commit "
+        f"would contain).\n\n{listed}\n\nThe data policy: {POLICY}."
     )
 
 
-def main() -> int:
-    for stream in (sys.stdout, sys.stderr):
-        if isinstance(stream, io.TextIOWrapper):
-            stream.reconfigure(errors="replace")
+PUSH_REMEDY = (
+    "Nothing was pushed. A file that a later commit removes stays in the commit that added it, "
+    "and a push sends that commit too: rewrite the commits the remote does not have yet so that "
+    "none holds the file, for example with `git reset --soft origin/main` on a branch you have "
+    "not pushed before, or `git reset --soft origin/<branch>` on one you have, then commit again "
+    "and push."
+)
+PULL_REQUEST_REMEDY = (
+    "These commits are on GitHub already, and GitHub keeps a pull request's commits even after "
+    "its branch changes: close the pull request without merging it, push the work again on a new "
+    "branch whose commits never held the file, and if the file is licensed data, ask GitHub "
+    "Support to remove the closed pull request's commits."
+)
+
+
+@dataclass(frozen=True)
+class CommitProblems:
+    """A commit and the problems it brings: those its own files show that no earlier commit of
+    the check showed, so a file one commit adds is reported there and not again after it."""
+
+    commit: str
+    subject: str
+    problems: Sequence[Problem]
+
+
+def commits_report(
+    found: Sequence[CommitProblems], checked: int, described: str, remedy: str
+) -> str:
+    total = sum(len(commit.problems) for commit in found)
+    blocks = "\n\n".join(
+        f"{commit.commit[:12]} {commit.subject}\n\n"
+        + "\n\n".join(problem.describe() for problem in commit.problems)
+        for commit in found
+    )
+    return (
+        f"Data guard: {counted(total, 'problem')} in {len(found)} of "
+        f"{counted(checked, 'commit')} ({described}).\n\n{blocks}\n\n{remedy} "
+        f"The data policy: {POLICY}."
+    )
+
+
+def repository_root() -> Path:
+    return Path(git_output(Path.cwd(), ["rev-parse", "--show-toplevel"]).decode().strip())
+
+
+def pushed_revisions(ref_lines: str, remote: str) -> list[str]:
+    """The `git rev-list` arguments for what a push sends, from the lines git writes to the
+    pre-push hook (`<local ref> <local object> <remote ref> <remote object>`): each pushed
+    commit that no branch of `remote` already has; a push that only deletes sends none."""
+    tips: list[str] = []
+    for line in ref_lines.splitlines():
+        fields = line.split()
+        if len(fields) != 4:
+            raise GitError(
+                "Expected the pre-push lines '<local ref> <local object> <remote ref> "
+                f"<remote object>' on standard input, got {line!r}."
+            )
+        if NO_OBJECT.fullmatch(fields[1]) is None:
+            tips.append(fields[1])
+    return [*tips, "--not", f"--remotes={remote}"] if tips else []
+
+
+def check_index() -> int:
     try:
-        repository = Path(git_output(Path.cwd(), ["rev-parse", "--show-toplevel"]).decode().strip())
-        problems = find_problems(repository)
+        problems = find_problems(repository_root())
     except GitError as error:
         print(f"Data guard: could not read git's index. {error}", file=sys.stderr)
         return 2
@@ -480,5 +646,87 @@ def main() -> int:
     return 0
 
 
+def problems_by_commit(repository: Path, commits: Sequence[str]) -> list[CommitProblems]:
+    """The problems each commit brings, oldest first, each reported at the first commit that
+    shows it."""
+    seen: set[tuple[str, Rule]] = set()
+    found: list[CommitProblems] = []
+    for commit in commits:
+        # shortcut: each commit's whole tree is read again, about 0.4 s a commit in 2026-10;
+        # cache blobs by object id when a push of a usual branch takes over 30 s.
+        problems = find_problems(repository, commit=commit)
+        new = [problem for problem in problems if (problem.path, problem.rule) not in seen]
+        seen.update((problem.path, problem.rule) for problem in new)
+        if new:
+            found.append(CommitProblems(commit, subject_of(repository, commit), new))
+    return found
+
+
+def check_commits(revisions: Sequence[str], described: str, remedy: str) -> int:
+    """Check each commit `git rev-list <revisions>` names, oldest first."""
+    try:
+        repository = repository_root()
+        listed = git_output(repository, ["rev-list", "--reverse", *revisions]) if revisions else b""
+        commits = listed.decode("ascii").split()
+        found = problems_by_commit(repository, commits)
+    except GitError as error:
+        print(f"Data guard: could not read the commits of {described}. {error}", file=sys.stderr)
+        return 2
+    if found:
+        print(commits_report(found, len(commits), described, remedy))
+        return 1
+    if not commits:
+        print(f"Data guard: no commits to check in {described}.")
+        return 0
+    print(
+        f"Data guard: the {counted(len(commits), 'commit')} of {described} hold no market data "
+        "outside fixtures/synthetic/, no secrets, no files over 25 MB, and no notebook outputs."
+    )
+    return 0
+
+
+def subject_of(repository: Path, commit: str) -> str:
+    return git_output(repository, ["show", "-s", "--format=%s", commit]).decode().strip()
+
+
+def parsed_arguments(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Refuse market data, secrets, files over 25 MB, and notebook outputs in "
+        "git's index (by default), in each commit of a range, or in what a push sends."
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--commits",
+        metavar="RANGE",
+        help="check each commit of a revision range, such as origin/main..HEAD",
+    )
+    mode.add_argument(
+        "--pushed",
+        metavar="REMOTE",
+        help="check what a push to REMOTE sends, from the ref lines git writes to the pre-push "
+        "hook's standard input",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str]) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="replace")
+    arguments = parsed_arguments(argv)
+    if arguments.commits is not None:
+        range_only = ["--end-of-options", arguments.commits]
+        return check_commits(range_only, arguments.commits, PULL_REQUEST_REMEDY)
+    if arguments.pushed is None:
+        return check_index()
+    described = f"the push to {arguments.pushed}"
+    try:
+        revisions = pushed_revisions(sys.stdin.read(), arguments.pushed)
+    except GitError as error:
+        print(f"Data guard: could not read {described}. {error}", file=sys.stderr)
+        return 2
+    return check_commits(revisions, described, PUSH_REMEDY)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -39,9 +39,12 @@ jobs:
       run:
         shell: bash
     steps:
+      # The whole history, so that the data guard below can check each commit
+      # since main, not only the final tree.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # The active .venv is where PyO3's build script finds Python 3.12 on Linux.
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -73,6 +76,13 @@ jobs:
 
       - run: just setup
       - run: just check
+
+      # `just check` guards the final tree; a data file that one commit of a
+      # pull request adds and a later one removes is still in its history,
+      # which GitHub keeps (D-48). Nothing to check on a push to main.
+      - name: Run the data guard over each commit since main
+        run: uv run --no-project python scripts/guard_data.py --commits origin/main..HEAD
+
       - run: just test
 
       # A release build, like `just build-engine`, so it reuses the compiled
