@@ -127,3 +127,9 @@ On this machine on 2026-10-09: Node 24.18, uv 0.11.33, Rust 1.99.0 with `rust-an
 1. Hooks declared in a subagent's frontmatter do not run, on 2.1.295 and on 2.1.296, although the docs list `hooks` among the subagent fields (item 6 above): a `step-reviewer` wrote a probe file through its shell. A hook registered in `.claude/settings.json` runs for subagents' tool calls as well, with the agent's name in `agent_type` and an `agent_id` in its input, and a change to the settings applies to the running session; the reviewers' guard is registered there now (§5).
 
 On this machine on 2026-10-11: git 2.55.0, gh 2.97.0, Node 24.18.0, pnpm 12.10.1, uv 0.11.33, Python 3.12.13, Rust 1.99.0, `just` 1.58.0, MSVC linker 14.44.35207.
+
+### Re-verified on 2026-10-21 (VS Code extension 2.1.304, Phase 1 exit)
+
+1. The reviewers' guard holds on 2.1.304 (action 7 of `docs/demos/phase-0.md`, run by a `step-reviewer`): `printf probe > reviewer-probe.txt` was refused with `Reviewers are read-only: … writes to reviewer-probe.txt`, and `git status --short` ran. `just doctor` is refused inside a reviewer, since the allow-list names `just check` and `just test` only, as intended; the demo's action 8 runs it in the main session.
+
+On this machine on 2026-10-21: git 2.55.0, gh 2.97.0, Node 24.18.0, pnpm 12.10.1, uv 0.11.33, Python 3.12.13, Rust 1.99.1 (the exit's upgrade step), `just` 1.58.0, MSVC linker 14.44.35207.

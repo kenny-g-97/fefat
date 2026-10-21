@@ -18,6 +18,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-10-12 — FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and presets, and sync (D-37, ADR-0018, superseding the data delivery of D-24). Steps 1.9, 5.1, 5.3, 5.4, 5.6, 14.6, 14.7, 14.8, and 14.9 amended (1.9, 14.6, and 14.7 renamed) and 1.4, 1.6, 1.10, 1.11, 4.1, 5.13, and 14.5 reworded, before any Phase 1 step started; `00`, `01`, `02` §1.8, `05` §8, `07`, `08`, both READMEs, and the milestones updated. No step ID changed.
 - 2026-10-12 — Phase 1 kickoff (D-38, pull request #10): no connector and no sync in Phase 1, since the data layer takes only the files you feed it: step 1.4 skipped, 1.6 reduced to a file importer (no download, no key), 1.9 reduced to the catalog, the source guide, and `fefat data status`, and the credential store deferred to the first step that needs a key; the catalog is MES, MNQ, MCL, and MGC, the products on this PC (`docs/data-inventory.md`); the presets are Databento CSV, IBKR, NinjaTrader, and TradingView first; the other Phase 1 steps were reconciled with the Phase 0 code, the fixtures, and the exit reviews (an Amendment under each step); the source research is `appendix/research-data-sources.md`. No step ID changed.
 - 2026-10-19 — Before step 1.10 imports your platforms' exports, the commit guard refuses CSV and other plain-text tables, spreadsheets, archives, and compressors by name, more data formats by their first bytes, and text exports that begin with a table of numbers, and it checks every commit: a new `pre-push` hook checks each commit a push sends, and CI each commit of a pull request (D-48, the `config/data-guard-text-and-push` pull request). No step changed.
+- 2026-10-21 — The Phase 1 exit (D-50, pull request #23) fixed what the phase-wide reviews found (a re-import with other arguments refused, the Thanksgiving Friday close of energy and metals, a daily import's warning, a close-stamped bar at an early close, a spliced load gridding the fronts only, an empty load refused, the push guard's URL and tree cases), took the upgrade step (Rust 1.99.1, the lockfiles, `rust-cache` v2.9.3), and wrote the retro into `CLAUDE.md`, the `step` skill, and 05 §2: a step's closing message names the next step, a prerequisite pull request is merged before a step continues, and a store change is explained in plain words. No step changed.
 
 ## Steps
 
@@ -163,7 +164,7 @@ Phase kickoffs and exits are tracked in the second table.
 | Phase | Kickoff PR | Kickoff date | Exit PR | Exit date | Tag |
 | --- | --- | --- | --- | --- | --- |
 | P0 | (no kickoff) | | #8 | 2026-10-11 | phase-0 |
-| P1 | #10 | 2026-10-12 | | | |
+| P1 | #10 | 2026-10-12 | #23 | 2026-10-21 | phase-1 |
 | P2 | | | | | |
 | P3 | | | | | |
 | P4 | | | | | |
