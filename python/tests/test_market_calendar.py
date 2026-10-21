@@ -119,6 +119,13 @@ GOLDEN_SESSIONS = [
     # The day after Thanksgiving 2023, Friday 11-24, CST: energy and metals closed at 12:45 CST,
     # 18:45 UTC, an hour before the 13:45 close of 2024 on.
     (ENERGY, date(2023, 11, 24), utc(2023, 11, 22, 23), utc(2023, 11, 24, 18, 45)),
+    # The same 12:45 close every year from 2010 to 2023: MGC's last bar closes by 12:45 CST on
+    # each of those Fridays and at 13:45 from 2024 (the Phase 1 exit), as the brokers' notices
+    # of 2016, 2017, 2021, and 2022 say.
+    (METALS, date(2017, 11, 24), utc(2017, 11, 22, 23), utc(2017, 11, 24, 18, 45)),
+    (ENERGY, date(2018, 11, 23), utc(2018, 11, 21, 23), utc(2018, 11, 23, 18, 45)),
+    (METALS, date(2022, 11, 25), utc(2022, 11, 23, 23), utc(2022, 11, 25, 18, 45)),
+    (ENERGY, date(2024, 11, 29), utc(2024, 11, 27, 23), utc(2024, 11, 29, 19, 45)),
 ]
 
 
@@ -138,6 +145,12 @@ GOLDEN_HALTS = [
     (METALS, date(2026, 6, 22), (halt(utc(2026, 6, 19, 17), utc(2026, 6, 21, 22)),)),
     # Thanksgiving 2023, CST: energy halts at 13:30, 19:30 UTC.
     (ENERGY, date(2023, 11, 24), (halt(utc(2023, 11, 23, 19, 30), utc(2023, 11, 23, 23)),)),
+    # Thanksgiving 2017 and 2018, CST: energy and metals halted at 12:00, 18:00 UTC (Dukascopy's
+    # and AMP's notices), and at 13:30, 19:30 UTC, from 2022 on.
+    (METALS, date(2017, 11, 24), (halt(utc(2017, 11, 23, 18), utc(2017, 11, 23, 23)),)),
+    (ENERGY, date(2018, 11, 23), (halt(utc(2018, 11, 22, 18), utc(2018, 11, 22, 23)),)),
+    (METALS, date(2022, 11, 25), (halt(utc(2022, 11, 24, 19, 30), utc(2022, 11, 24, 23)),)),
+    (ENERGY, date(2024, 11, 29), (halt(utc(2024, 11, 28, 19, 30), utc(2024, 11, 28, 23)),)),
     # Martin Luther King Jr. Day 2021, CST: metals halted at 12:00, 18:00 UTC, before 2022.
     (METALS, date(2021, 1, 19), (halt(utc(2021, 1, 18, 18), utc(2021, 1, 18, 23)),)),
     # Labor Day 2011, CDT: metals halted at 12:15, 17:15 UTC, and reopened at 17:00, 22:00 UTC.

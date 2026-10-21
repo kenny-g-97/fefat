@@ -20,7 +20,8 @@ both the same way in every year, the trade date CME Clearing used before that ch
   2013, and at 13:30 from 2022, except on a Friday, at 12:00.
 - Equity index also halted from 15:15 to 15:30 inside every session until trade date
   2021-06-28 (`FORMER_DAILY_HALTS`).
-- Early closes: the day after Thanksgiving (equity index 12:15, energy and metals 13:45),
+- Early closes: the day after Thanksgiving (equity index 12:15, energy and metals 12:45
+  through 2023, then 13:45),
   Christmas Eve from Monday to Thursday (12:15, and 12:45), and for equity index July 3, the
   day before Independence Day, from Monday to Thursday (12:15). When Independence Day is a
   Saturday, its Friday observance is a halt and the Thursday before trades in full: MES and MNQ
@@ -218,6 +219,23 @@ def _thanksgiving(year: int) -> tuple[date, ...]:
     return (_nth_weekday(year, 11, Weekday.THURSDAY, 4),)
 
 
+_THANKSGIVING_THROUGH_2023 = (
+    "https://www.ampfutures.com/news/thanksgiving-holiday-trading-schedule-2021"
+)
+"""The 12:45 close of energy and metals on the day after Thanksgiving through 2023, in the
+brokers' notices of 2016 (AMP), 2017 (Dukascopy, 18:45 GMT), 2021 (AMP), and 2022 (Ironbeam),
+TradeStation's of 2020, and CME's PDF of 2023; MGC's last bar closes by 12:45 on each of those
+Fridays from 2010 to 2023, and at 13:45 from 2024 (the Phase 1 exit)."""
+
+
+def _day_after_thanksgiving_through_2023(year: int) -> tuple[date, ...]:
+    return _day_after_thanksgiving(year) if year <= 2023 else ()
+
+
+def _day_after_thanksgiving_from_2024(year: int) -> tuple[date, ...]:
+    return _day_after_thanksgiving(year) if year >= 2024 else ()
+
+
 def _day_after_thanksgiving(year: int) -> tuple[date, ...]:
     return (_nth_weekday(year, 11, Weekday.THURSDAY, 4) + timedelta(days=1),)
 
@@ -245,7 +263,8 @@ _HALTS: tuple[tuple[DayRule, str], ...] = (
     (_thanksgiving, _THANKSGIVING),
 )
 _ENERGY_AND_METALS_EARLY_CLOSES: tuple[tuple[DayRule, time, str], ...] = (
-    (_day_after_thanksgiving, time(13, 45), _THANKSGIVING),
+    (_day_after_thanksgiving_through_2023, time(12, 45), _THANKSGIVING_THROUGH_2023),
+    (_day_after_thanksgiving_from_2024, time(13, 45), _THANKSGIVING),
     (_christmas_eve, time(12, 45), _CHRISTMAS_EVE),
 )
 _EARLY_CLOSES: Mapping[CalendarId, tuple[tuple[DayRule, time, str], ...]] = {
@@ -281,35 +300,6 @@ OVERRIDES: tuple[tuple[CalendarId, Holiday], ...] = (
             source="https://www.markettradingessentials.com/2021/04/u-s-stock-futures-edge-"
             "higher-ahead-of-march-jobs-report-regular-trading-closed-for-good-friday/",
         ),
-    ),
-    # The day after Thanksgiving in 2021, before the close moved to 13:45.
-    *(
-        (
-            calendar_id,
-            EarlyClose(
-                day=date(2021, 11, 26),
-                closes_at=time(12, 45),
-                source="https://www.ampfutures.com/news/thanksgiving-holiday-trading-schedule-2021",
-            ),
-        )
-        for calendar_id in (CalendarId.CME_ENERGY, CalendarId.CME_METALS)
-    ),
-    # The day after Thanksgiving before the close moved to 13:45: the real MGC bars end at 12:45
-    # in 2019 and 2020, and MCL's too in 2023 (step 1.6).
-    *(
-        (calendar_id, EarlyClose(day=day, closes_at=time(12, 45), source=source))
-        for day, source in (
-            (
-                date(2019, 11, 29),
-                "https://www.yuantafutures.com.hk/en/Uploads/file/20191121/1574278760128424.pdf",
-            ),
-            (date(2020, 11, 27), "https://cdn.tradestation.com/uploads/thanksgiving-day-2020.pdf"),
-            (
-                date(2023, 11, 24),
-                "https://www.cmegroup.com/trading-hours/files/thanksgiving-day-2023.pdf",
-            ),
-        )
-        for calendar_id in (CalendarId.CME_ENERGY, CalendarId.CME_METALS)
     ),
     # Good Friday with the March jobs report.
     (
