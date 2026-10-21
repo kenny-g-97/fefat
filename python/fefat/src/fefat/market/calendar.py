@@ -81,6 +81,11 @@ class Session(FrozenModel):
         return self
 
 
+def counted(count: int, noun: str) -> str:
+    """`count` with `noun`, plural but for one: `1 file`, `2,048 files`."""
+    return f"{count:,} {noun}{'' if count == 1 else 's'}"
+
+
 def utc_text(instant: int) -> str:
     """An instant in nanoseconds since the Unix epoch as ISO 8601 UTC text, such as
     `2026-03-08T22:00:00Z`, with the nanoseconds when there are any."""

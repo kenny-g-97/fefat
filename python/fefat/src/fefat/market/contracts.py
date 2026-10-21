@@ -230,7 +230,7 @@ class ContractResolver:
             raise ValueError(f"Expected one symbology interval covering {on}, got {intervals}.")
         if covering.is_empty():
             return None
-        return _symbology_contract(covering.row(0, named=True))
+        return _symbology_contract(covering.row(0, named=True), on)
 
 
 def symbology_contracts(symbology: pl.DataFrame, active_days: pl.DataFrame) -> pl.DataFrame:
@@ -263,16 +263,18 @@ def symbology_contracts(symbology: pl.DataFrame, active_days: pl.DataFrame) -> p
 def _contract_labels(interval: dict[str, Any]) -> tuple[str | None, str | None, str | None]:
     if not is_outright(interval["raw_symbol"]):
         return (None, None, None)
-    contract = _symbology_contract(interval)
+    contract = _symbology_contract(interval, interval["end_date"] - timedelta(days=1))
     return (contract.root, str(contract), str(contract.expiry))
 
 
-def _symbology_contract(interval: dict[str, Any]) -> Contract:
+def _symbology_contract(interval: dict[str, Any], last_seen: date) -> Contract:
+    """The contract of a symbology interval, its decade taken as of `last_seen`: the day asked
+    for a live contract, since the vendor's interval runs on to the end of its query."""
     raw_symbol = interval["raw_symbol"]
     last_day = interval["end_date"] - timedelta(days=1)
     return Contract(
         root=_outright(raw_symbol)[1],
-        expiry=expiry_month(raw_symbol, interval["start_date"], last_day),
+        expiry=expiry_month(raw_symbol, interval["start_date"], last_seen),
         first_trade_date=interval["start_date"],
         last_trade_date=last_day,
         raw_symbols=(raw_symbol,),

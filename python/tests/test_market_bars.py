@@ -491,3 +491,30 @@ def test_the_grid_refuses_bars_of_another_timeframe(tables: dict[CalendarId, Ses
     with pytest.raises(ValueError, match="Expected bars of 1m in the buckets of their sessions"):
         session_grid(second, MINUTE, table, until, MARCH_5, MARCH_5)
     assert second.height == 1
+
+
+def test_the_grid_holds_only_the_sessions_and_instruments_asked_for(
+    tables: dict[CalendarId, SessionTable],
+) -> None:
+    # A continuous load needs each session's front only: given those pairs, the grid builds
+    # rows for them alone, instead of every instrument on every session, cut afterwards.
+    table = tables[EQUITY_INDEX]
+    march_5, march_6, march_9 = (table.session(day) for day in (MARCH_5, MARCH_6, MARCH_9))
+    bars = one_minute_bars(
+        (march_5.open, MARCH_5, 1, 100),
+        (march_6.open, MARCH_6, 2, 200),
+        (march_9.open, MARCH_9, 2, 300),
+    )
+    until = table.following(MARCH_9).open
+    fronts = bars.select("trade_date", "instrument_id")
+
+    grid = session_grid(bars, MINUTE, table, until, MARCH_5, MARCH_9, rows_for=fronts)
+
+    per_session = 23 * 60
+    assert grid.group_by("instrument_id").len().sort("instrument_id").rows() == [
+        (1, per_session),
+        (2, 2 * per_session),
+    ]
+    assert grid.filter(pl.col("instrument_id") == 1).get_column(
+        "trade_date"
+    ).unique().to_list() == [MARCH_5]

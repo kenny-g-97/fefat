@@ -324,3 +324,10 @@ def test_bars_of_sessions_no_one_minute_bars_decide_the_front_of_are_refused(
 
     with pytest.raises(ValueError, match="through 2026-03-09, got fronts through 2026-03-06"):
         load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="tick")
+
+
+def test_a_root_load_without_bars_in_its_window_is_refused(fixtures_as_data: None) -> None:
+    # A window past the data, or on the dataset's first session, which never has a front, gave
+    # an empty frame; a notebook then computed over nothing without an error.
+    with pytest.raises(ValueError, match="Expected bars of ES from 2026-03-16 to 2026-03-18"):
+        load("ES", "1m", "2026-03-16", "2026-03-18", fidelity="1m")

@@ -70,7 +70,7 @@ import polars as pl
 
 from fefat.config import resolve_paths
 from fefat.market.bars import build_bars, resample_bars, session_grid
-from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.calendar import SessionTable
 from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
@@ -125,25 +125,28 @@ def load(
     if last < first:
         raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
     bar_timeframe = Timeframe.parse(timeframe)
-    # shortcut: the calendar of the root's newest instrument version, as the quality report
-    # takes it; load by version when a root's calendar changes over time.
-    sessions = sessions_of(instrument.session_calendar(), paths.cache_dir)
+    sessions = table.sessions_of(root, paths.cache_dir)
     datasets = provider_datasets(store, root, provider, _origin(origin))
     series = series_of(store, datasets)
     splices = _splices(instrument, contract, continuous, series)
     source = source_dataset(datasets, fidelity, bar_timeframe, root)
     _warn_of(source, series)
-    gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
     if not splices:
+        gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)
         bars = _signal_bars(_unspliced(gridded, series), first, last, ("contract", "ts_open"))
-        if contract is not None and bars.is_empty():
-            raise ValueError(
-                f"Expected bars of {contract} from {first} to {last} in the store, got none."
-            )
-        return bars.lazy()
+        return _some(bars, contract or root, first, last).lazy()
     calendar = _roll_calendar(store, datasets, instrument, sessions)
-    _require_fronts_for(gridded, calendar)
-    return _signal_bars(_spliced(gridded, calendar), first, last, ("ts_open",)).lazy()
+    gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract, calendar)
+    bars = _signal_bars(_spliced(gridded, calendar), first, last, ("ts_open",))
+    return _some(bars, root, first, last).lazy()
+
+
+def _some(bars: pl.DataFrame, named: str, first: date, last: date) -> pl.DataFrame:
+    """`bars`, refused when empty: a window past the data, or on a dataset's first session,
+    which never has a front, would otherwise read as a frame without an error."""
+    if bars.is_empty():
+        raise ValueError(f"Expected bars of {named} from {first} to {last} in the store, got none.")
+    return bars
 
 
 def catalog() -> pl.DataFrame:
@@ -235,11 +238,13 @@ def _gridded(
     first: date,
     last: date,
     contract: str | None,
+    calendar: RollCalendar | None = None,
 ) -> pl.DataFrame:
     """The bars of `timeframe` built from `source` on the session grid, with the columns of
     `CONTRACT_BAR_COLUMNS`, from the session before `first`, so that a contract that traded in
     it has the same rows on `first` whatever day a window starts, up to `last` and the end of
-    the data."""
+    the data; given the roll `calendar`, the rows of each session's front only, which a
+    spliced load keeps, instead of every contract's on every session."""
     # shortcut: one session of lead-in, so a contract without trades in it starts its grid on
     # `first` at its first bar; read back to each contract's last bar when a strategy needs it.
     lead_in = sessions.preceding(first).trade_date
@@ -253,7 +258,11 @@ def _gridded(
         raise ValueError(f"Expected partitions of {source.relative_folder()}, got none.")
     received_until = min(sessions.following(last).open, coverage.received_until)
     bars = _bars_of(window.drop("contract"), source, timeframe, sessions, received_until)
-    grid = session_grid(bars, timeframe, sessions, received_until, lead_in, last)
+    fronts = None
+    if calendar is not None:
+        _require_fronts_for(bars, calendar)
+        fronts = _fronts_with_their_lead_in(calendar, contracts)
+    grid = session_grid(bars, timeframe, sessions, received_until, lead_in, last, rows_for=fronts)
     return grid.join(contracts, on="instrument_id").select(CONTRACT_BAR_COLUMNS.names())
 
 
@@ -292,11 +301,25 @@ def _roll_calendar(
     return volume_rolls(bars, sessions, instrument, received_until)
 
 
-def _require_fronts_for(gridded: pl.DataFrame, calendar: RollCalendar) -> None:
+def _fronts_with_their_lead_in(calendar: RollCalendar, contracts: pl.DataFrame) -> pl.DataFrame:
+    """The sessions and instruments a spliced load grids: each session's front, and each front
+    on the session before it took over, so that a new front's rows on its first day start at
+    the open when it traded the session before, whatever day a window starts."""
+    fronts = calendar.rows.select("trade_date", "contract")
+    lead_in = fronts.with_columns(trade_date=pl.col("trade_date").shift(1)).drop_nulls()
+    return (
+        pl.concat([fronts, lead_in])
+        .unique()
+        .join(contracts, on="contract")
+        .select("trade_date", "instrument_id")
+    )
+
+
+def _require_fronts_for(bars: pl.DataFrame, calendar: RollCalendar) -> None:
     """Refuse bars of sessions after the roll calendar's last, whose fronts no 1-minute bars
     decided, as finer data that runs past the 1-minute bars gives: splicing would drop them."""
     decided = calendar.rows.get_column("trade_date")
-    beyond = gridded.get_column("trade_date")
+    beyond = bars.get_column("trade_date")
     if not decided.is_empty():
         beyond = beyond.filter(beyond > decided.max())
     if beyond.is_empty():

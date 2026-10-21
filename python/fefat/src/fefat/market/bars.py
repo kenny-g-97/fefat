@@ -113,11 +113,15 @@ def session_grid(
     received_until: int,
     first: date,
     last: date,
+    *,
+    rows_for: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """The dense view of sparse `bars` of `timeframe` for signals: for each instrument of
     `bars`, a row for every bucket of every session from trade date `first` to `last`, from
     the instrument's first bar in the grid on and up to the buckets closing by
-    `received_until`, but the buckets lying wholly inside a halt (`Session.halts`), sorted by
+    `received_until`, or, given `rows_for` (`trade_date` and `instrument_id`), rows for the
+    buckets of those sessions and instruments alone, as a continuous load needs each
+    session's front only, but the buckets lying wholly inside a halt (`Session.halts`), sorted by
     instrument and `ts_open`, with the columns of `GRID_COLUMNS`. A bucket with a bar holds it;
     one without is `zero_volume`, with volume and trade count 0, no vwap, and its prices at the
     close of the instrument's bar before it. No row exists, is missing, or is filled because of
@@ -133,14 +137,26 @@ def session_grid(
     buckets = _outside_halts(_session_buckets(in_range, timeframe), in_range).filter(
         pl.col("ts_close") <= received_until
     )
-    instruments = bars.select("instrument_id").unique()
+    pairs = _instrument_sessions(bars, in_range) if rows_for is None else rows_for
+    asked = buckets.join(pairs.select("trade_date", "instrument_id"), on="trade_date")
     sparse = bars.rename({"ts_close": "bar_close", "trade_date": "bar_trade_date"})
-    grid = buckets.join(instruments, how="cross").join(
-        sparse, on=["instrument_id", "ts_open"], how="left"
-    )
-    _require_one_bar_a_bucket(grid, buckets.height * instruments.height)
+    grid = asked.join(sparse, on=["instrument_id", "ts_open"], how="left")
+    _require_one_bar_a_bucket(grid, asked.height)
     traded = pl.col("bar_close").is_not_null().cum_max().over("instrument_id")
     return _with_empty_buckets_filled(grid.sort("instrument_id", "ts_open").filter(traded))
+
+
+def _instrument_sessions(bars: pl.DataFrame, sessions: pl.DataFrame) -> pl.DataFrame:
+    """Each instrument of `bars` with every session from its first bar's on: the pairs a grid
+    holds rows for when none are named, a cross join of sessions and instruments, not of
+    buckets and instruments."""
+    starts = bars.group_by("instrument_id").agg(start=pl.col("trade_date").min())
+    return (
+        sessions.select("trade_date")
+        .join(starts, how="cross")
+        .filter(pl.col("trade_date") >= pl.col("start"))
+        .select("trade_date", "instrument_id")
+    )
 
 
 def _require_a_bar_timeframe(timeframe: Timeframe) -> None:

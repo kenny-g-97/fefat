@@ -30,7 +30,7 @@ import polars as pl
 from pydantic import Field
 
 from fefat.market.bars import build_bars, resample_bars
-from fefat.market.calendar import SessionTable, sessions_of, utc_text
+from fefat.market.calendar import SessionTable, utc_text
 from fefat.market.layout import FolderName, Partition, PartitionRequest
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import (
@@ -230,10 +230,7 @@ def verify_bars(store: Store, root: str, trade_date: date, cache_folder: Path) -
     ]
     if not held:
         raise ValueError(f"Expected trades or bars of {root} in the store, got none.")
-    # shortcut: the calendar of the root's newest instrument version, as the calendar check
-    # takes it; split the check by version when a root's calendar changes over time.
-    instrument = instrument_table(store.folder).get(root)
-    sessions = sessions_of(instrument.session_calendar(), cache_folder)
+    sessions = instrument_table(store.folder).sessions_of(root, cache_folder)
     sessions.session(trade_date)
     rebuild = _Rebuild(sessions=sessions, received_until=sessions.following(trade_date).open)
     comparisons: list[ComparedBars | UncomparedBars] = []
