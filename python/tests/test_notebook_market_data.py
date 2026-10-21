@@ -8,10 +8,20 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import polars as pl
 import pytest
 
+from export_samples import ESH2026_MINUTES, IMPORTED_ON, PRESETS, written_export
 from fefat.config import resolve_paths
+from fefat.market.bars import resample_bars
 from fefat.market.bars_check import ComparisonStatus
+from fefat.market.builtin_calendars import BUILT_IN
+from fefat.market.calendar import sessions_of
+from fefat.market.calendar_definition import CalendarId
+from fefat.market.importers.file_import import FileImportRequest, import_file
+from fefat.market.saved_instruments import instrument_table
+from fefat.market.schema import Timeframe, TimeUnit
+from fefat.market.store import Store
 from fefat_app.cli import main
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +37,30 @@ def store_with(*schemas: str) -> None:
     data_dir = resolve_paths(os.environ).data_dir
     for schema in schemas:
         shutil.copytree(SYNTHETIC / schema, data_dir / "synthetic" / schema)
+
+
+def import_hourly_bars(folder: Path) -> None:
+    """The fixtures' ESH2026 bars resampled to hours, written as TradingView writes an hourly
+    chart, and imported through a copy of its preset: bars coarser than 5 minutes."""
+    paths = resolve_paths(os.environ)
+    hour = Timeframe(count=1, unit=TimeUnit.HOUR)
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], paths.cache_dir)
+    hours = resample_bars(pl.read_parquet(ESH2026_MINUTES), hour, sessions, 2**62)
+    rows = [
+        f"{bar['ts_open'] // 1_000_000_000},{bar['open'] / 1e9},{bar['high'] / 1e9},"
+        f"{bar['low'] / 1e9},{bar['close'] / 1e9},{bar['volume']}"
+        for bar in hours.iter_rows(named=True)
+    ]
+    path = written_export(
+        folder, "CME_MINI_ESH2026, 60.csv", ["time,open,high,low,close,Volume", *rows]
+    )
+    profile = PRESETS["tradingview"].model_copy(
+        update={"name": "tradingview-hourly", "timeframe": hour}
+    )
+    store = Store(paths.data_dir)
+    request = FileImportRequest(path=path, profile=profile)
+    instruments = instrument_table(store.folder)
+    import_file(request, store, paths.cache_dir, imported_on=IMPORTED_ON, instruments=instruments)
 
 
 def run_notebook() -> dict[str, Any]:
@@ -62,7 +96,7 @@ def test_the_notebook_runs_on_your_bars_and_on_an_import_through_a_preset(
     assert report.comparisons_run() > 0
     assert report.difference_count() == 0
     assert "Differences: none." in printed
-    assert "Skipped until a trades file of ES is imported" in printed
+    assert "Skipped until a whole session of ES's trades from synthetic is imported" in printed
     imported = namespace["IMPORTED"]
     assert (imported["provider"], imported["root"]) == ("ninjatrader", "ES")
     assert namespace["quality"].summary() in printed
@@ -78,9 +112,45 @@ def test_the_notebook_rebuilds_bars_from_trades_and_skips_the_import_it_lacks(
     printed = capsys.readouterr().out
     assert namespace["ticks"].status is ComparisonStatus.COMPARED
     assert namespace["report"].difference_count() == 0
-    assert "Skipped until a trades file" not in printed
+    assert "Skipped until" not in printed
     assert namespace["IMPORTED"] is None
     assert "Skipped: no dataset imported through a preset" in printed
+
+
+def test_the_notebook_rebuilds_bars_from_trades_that_end_before_the_minute_bars(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Trades of 2026-03-05 and 03-06 only, while the 1-minute bars run to 03-09: the rebuild
+    # takes 03-06, the last whole session of the trades, not 03-09, the last of the bars.
+    store_with("ohlcv-1m")
+    shutil.copytree(
+        SYNTHETIC / "trades",
+        resolve_paths(os.environ).data_dir / "synthetic" / "trades",
+        ignore=shutil.ignore_patterns("date=2026-03-09"),
+    )
+
+    namespace = run_notebook()
+
+    assert namespace["ticks"].status is ComparisonStatus.COMPARED
+    assert "Skipped until" not in capsys.readouterr().out
+    assert namespace["DAY"] == date(2026, 3, 9)
+    assert namespace["TICK_DAY"] == date(2026, 3, 6)
+
+
+def test_the_notebook_loads_an_import_coarser_than_five_minutes_at_its_own_timeframe(
+    tmp_path: Path, recwarn: pytest.WarningsRecorder
+) -> None:
+    store_with("ohlcv-1m")
+    import_hourly_bars(tmp_path)
+
+    namespace = run_notebook()
+
+    assert any("holds 1-hour bars" in str(warning.message) for warning in recwarn)
+    imported = namespace["IMPORTED"]
+    assert (imported["provider"], imported["schema"]) == ("tradingview", "ohlcv-1h")
+    assert namespace["timeframe"] == "1h"
+    assert namespace["week"].get_column("contract").unique().to_list() == ["ESH2026"]
+    assert namespace["quality"].provider == "tradingview"
 
 
 def test_the_notebook_says_what_to_do_on_a_store_without_minute_bars() -> None:
