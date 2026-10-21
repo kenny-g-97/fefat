@@ -1,6 +1,6 @@
 import gzip
 import zipfile
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
 
@@ -517,3 +517,71 @@ def test_the_records_of_a_files_first_half_are_those_the_whole_file_gives_them(
     cut = records_of(prefix)
     whole = records_of(path).filter(pl.col("ts_close") <= cut.get_column("ts_close").max())
     assert_frame_equal(cut, whole)
+
+
+def test_a_close_stamped_hourly_bar_straddling_an_early_close_goes_in_the_cut_bucket(
+    tmp_path: Path,
+) -> None:
+    # The same session from a platform that stamps each bar at its nominal end and does not cut
+    # at the early close: its last bar, stamped 13:00 Chicago time, holds the prints from 12:00
+    # to the 12:15 close and goes in the bar builder's cut bucket, not in the break after it.
+    session = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path / "cache").session(
+        date(2026, 11, 27)
+    )
+    rows = [
+        f"{datetime.fromtimestamp(instant // 1_000_000_000, UTC):%Y%m%d %H%M%S}"
+        ";6850;6851;6849.75;6850.5;10"
+        for instant in range(session.open + HOUR, session.close + HOUR, HOUR)
+    ]
+    path = written_export(tmp_path / "exports", "ES 12-26.Last.txt", rows)
+    profile = PRESETS["ninjatrader"].model_copy(
+        update={"name": "ninjatrader-hourly", "timeframe": Timeframe(count=1, unit=TimeUnit.HOUR)}
+    )
+
+    store = imported(tmp_path, FileImportRequest(path=path, profile=profile))
+
+    [stored] = [store.scan_partition(file.partition).collect() for file in store.list_partitions()]
+    assert stored.height == len(rows)
+    last = stored.row(-1, named=True)
+    assert (last["ts_open"], last["ts_close"]) == (session.close - 15 * MINUTE, session.close)
+
+
+def test_a_file_imported_before_with_other_arguments_is_refused_not_passed_over(
+    tmp_path: Path,
+) -> None:
+    # A re-import with a corrected time zone must not pass as "already imported": the stored
+    # dataset would keep the wrong records, since a store merges and rewrites nothing.
+    store = imported(tmp_path, sample_request("tradestation"))
+    before = store_files(store.folder)
+
+    with pytest.raises(ValueError, match="imported as it was"):
+        import_file(
+            sample_request("tradestation", time_zone="America/New_York"),
+            store,
+            tmp_path / "cache",
+            imported_on=date(2026, 10, 21),
+            instruments=STATIC_TABLE,
+        )
+
+    assert store_files(store.folder) == before
+
+
+def test_a_twelve_hour_clock_with_am_and_pm_keeps_its_time_of_day(tmp_path: Path) -> None:
+    # An export saved through a spreadsheet writes `06:00:00 PM`: a pattern with `%I` and `%p`
+    # names a time of day as `%H` does, and must not be read as a date alone.
+    header, *rows = sample_lines("ibkr")
+    twelve_hour = []
+    for row in rows:
+        stamp, _, rest = row.partition(",")
+        clock = datetime.strptime(stamp[:17], "%Y%m%d %H:%M:%S").strftime("%Y%m%d %I:%M:%S %p")
+        twelve_hour.append(f"{clock}{stamp[17:]},{rest}")
+    path = written_export(tmp_path / "exports", "ESH2026-1min.csv", [header, *twelve_hour])
+    timestamp = PRESETS["ibkr"].timestamp.model_copy(update={"format": "%Y%m%d %I:%M:%S %p"})
+    profile = PRESETS["ibkr"].model_copy(update={"name": "ibkr-12h", "timestamp": timestamp})
+
+    preview = preview_file(
+        sample_request("ibkr", path=path, profile=profile), STATIC_TABLE, tmp_path / "cache"
+    )
+
+    assert preview.reading.problems == ()
+    assert preview.reading.records == len(rows)

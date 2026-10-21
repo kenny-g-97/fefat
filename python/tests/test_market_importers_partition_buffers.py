@@ -164,3 +164,22 @@ def test_an_import_counting_sizes_in_another_unit_than_its_dataset_is_refused(
     ):
         later.write_all()
     assert not store.has_partition(APRIL)
+
+
+def test_a_file_whose_later_partition_is_refused_writes_none_of_its_earlier_ones(
+    tmp_path: Path,
+) -> None:
+    # The stored copies are compared before anything is written, so a refused file changes
+    # nothing: a store holding half a file, with no record of it, could not be put right.
+    store = Store(tmp_path)
+    first = PartitionBuffers(store, "ts_open", IMPORTED)
+    first.add(in_march(MONDAY_BARS))
+    first.write_all()
+    overlapping = PartitionBuffers(store, "ts_open", IMPORTED)
+    overlapping.add(dict([(APRIL, APRIL_BARS)]))
+    overlapping.add(in_march(MONDAY_BARS.head(1)))
+
+    with pytest.raises(ValueError, match="a file that overlaps"):
+        overlapping.write_all()
+
+    assert not (tmp_path / APRIL.relative_path()).exists()

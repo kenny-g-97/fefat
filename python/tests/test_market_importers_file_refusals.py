@@ -26,7 +26,11 @@ from export_samples import (
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.calendar_definition import CalendarId
-from fefat.market.importers.file_import import FileImportRequest, preview_file
+from fefat.market.importers.file_import import (
+    DAILY_SESSION_ASSUMED,
+    FileImportRequest,
+    preview_file,
+)
 from fefat.market.importers.profiles import BarStamp
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, SeriesKind, SizeUnit
@@ -261,3 +265,31 @@ def test_regular_hours_bars_whose_timing_the_calendar_cannot_check_are_warned_of
 
     assert preview.reading.calendar.offsets == ()
     assert any("could not check" in warning for warning in preview.reading.warnings)
+
+
+def test_a_daily_import_warns_that_each_bar_is_stored_as_its_whole_session(
+    tmp_path: Path,
+) -> None:
+    # The calendar cannot tell a session's daily bar from a UTC day's or a regular-hours one,
+    # whose prices come from outside the session, so every daily import says what it assumes;
+    # a minute import, whose timing the calendar checks, does not.
+    epoch = date(1970, 1, 1)
+    lines = [
+        f"{(day - epoch).days * 86_400},6850,6851,6849.75,6850.5,10"
+        for day in (date(2026, 3, 5), date(2026, 3, 6))
+    ]
+    path = written_export(
+        tmp_path, "CME_MINI_ESH2026, 1D.csv", ["time,open,high,low,close,Volume", *lines]
+    )
+    profile = PRESETS["tradingview"].model_copy(
+        update={"name": "tradingview-daily", "timeframe": Timeframe(count=1, unit=TimeUnit.DAY)}
+    )
+
+    daily = preview_file(
+        FileImportRequest(path=path, profile=profile), STATIC_TABLE, tmp_path / "cache"
+    )
+    minutes = preview_file(sample_request("tradingview"), STATIC_TABLE, tmp_path / "cache")
+
+    assert daily.reading.problems == ()
+    assert DAILY_SESSION_ASSUMED in daily.reading.warnings
+    assert DAILY_SESSION_ASSUMED not in minutes.reading.warnings

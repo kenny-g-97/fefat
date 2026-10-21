@@ -27,7 +27,7 @@ from pathlib import Path
 
 import polars as pl
 
-from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.calendar import SessionTable
 from fefat.market.contracts import ACTIVE_DAYS_COLUMNS, symbology_contracts
 from fefat.market.importers.dbn import DbnMetadata
 from fefat.market.instruments import InstrumentTable
@@ -180,10 +180,7 @@ class RecordPlacement:
 
     def _sessions_of(self, root: str) -> SessionTable:
         if root not in self._sessions:
-            # shortcut: the calendar of the root's newest instrument version, as the calendar
-            # check takes it; date by version when a root's calendar changes over time.
-            calendar = self._instruments.get(root).session_calendar()
-            self._sessions[root] = sessions_of(calendar, self._cache_folder)
+            self._sessions[root] = self._instruments.sessions_of(root, self._cache_folder)
         return self._sessions[root]
 
     def _contract_counts(self, kept: pl.DataFrame) -> pl.DataFrame:

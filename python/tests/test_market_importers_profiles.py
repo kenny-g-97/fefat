@@ -133,3 +133,13 @@ def test_a_file_name_pattern_that_finds_no_contract_is_refused(
 
     with pytest.raises(ValueError, match=refusal):
         load_profile(str(path), tmp_path / "home")
+
+
+def test_a_timestamp_format_polars_cannot_read_is_refused_when_the_profile_is_read() -> None:
+    # A pattern Polars refuses would fail inside the import with Polars' own error; the
+    # profile says what was expected when it is parsed instead.
+    fields = preset_profiles()["ninjatrader"].model_dump(mode="json")
+    fields["timestamp"]["format"] = "%Q %H"
+
+    with pytest.raises(ValueError, match="strptime pattern Polars reads"):
+        ImportProfile.model_validate(fields)

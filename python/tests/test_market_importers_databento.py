@@ -603,3 +603,18 @@ def test_a_contract_whose_symbology_runs_on_past_its_bars_is_named_by_its_bars(
 
     assert [file.partition.contract for file in store.list_partitions()] == ["MNQM2023"]
     assert report.files[0].contracts[0].expiry == "2023-06"
+
+
+def test_a_batch_whose_data_file_is_refused_records_none_of_its_sidecars(tmp_path: Path) -> None:
+    # A refused batch leaves no copy behind, as the module promises: the sidecars are copied
+    # and recorded only once the data file is imported.
+    batch = batch_copy(tmp_path)
+    (batch / DATA_FILE).write_bytes(
+        dbn_content(Schema("ohlcv-1m"), ESH6, es_bars(utc(2026, 3, 21, 14, 30)))
+    )
+    publish(batch, DATA_FILE)
+
+    with pytest.raises(ValueError, match="got none for instrument_id 1001"):
+        imported(tmp_path, batch)
+
+    assert not (tmp_path / "data" / "raw").exists()

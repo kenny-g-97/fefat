@@ -70,9 +70,15 @@ class PartitionBuffers:
             self._write(partition)
 
     def write_all(self) -> None:
-        """Write every partition still waiting, at the end of the file."""
-        for partition in list(self._waiting):
-            self._write(partition)
+        """Write every partition still waiting, at the end of the file: those the store holds
+        are compared first, so one that differs refuses the file before any is written."""
+        waiting = list(self._waiting)
+        for partition in waiting:
+            if self._store.has_partition(partition):
+                self._write(partition)
+        for partition in waiting:
+            if partition in self._waiting:
+                self._write(partition)
 
     def _write(self, partition: Partition) -> None:
         rows = pl.concat(self._waiting.pop(partition)).sort(self._order_column, maintain_order=True)

@@ -26,8 +26,10 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
+import polars as pl
 import yaml
 from pydantic import (
+    AfterValidator,
     BeforeValidator,
     Field,
     PlainSerializer,
@@ -74,7 +76,19 @@ class TimestampForm(StrEnum):
     DATABENTO = "databento"
 
 
-StrptimePattern = Annotated[str, StringConstraints(pattern=r"%")]
+def _a_pattern_polars_reads(pattern: str) -> str:
+    try:
+        pl.Series(["2026-01-02 03:04:05"]).str.to_datetime(pattern, strict=False)
+    except pl.exceptions.PolarsError as error:
+        raise ValueError(
+            f"Expected a strptime pattern Polars reads, got {pattern!r}: {error}"
+        ) from error
+    return pattern
+
+
+StrptimePattern = Annotated[
+    str, StringConstraints(pattern=r"%"), AfterValidator(_a_pattern_polars_reads)
+]
 """A strptime pattern such as `%Y%m%d %H%M%S`, as Polars reads it."""
 
 
