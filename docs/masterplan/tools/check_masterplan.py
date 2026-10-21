@@ -36,6 +36,9 @@ META_RE = re.compile(
     r"^Depends on: (.+?) · Plan mode: (required|optional|skip) · Reviews: (.+?) · Security: (yes|no) · Model hint: (default|hard)\s*$"
 )
 SECTIONS = ["Purpose", "Prerequisites", "Prompt", "Done means", "Your checks", "If it fails"]
+STATUSES = frozenset({"todo", "in progress", "pr open", "done", "skipped", "amended"})
+"""The statuses of a PROGRESS.md step row, which scripts/masterplan_step.py reads too."""
+STEP_ROW_RE = re.compile(r"^\| (\d+\.\d+) \|")
 
 
 @dataclass
@@ -143,6 +146,21 @@ def successor_errors(
     return []
 
 
+def status_errors(progress_text: str) -> list[str]:
+    """Each PROGRESS.md step row whose status is none of `STATUSES`, which would pass this
+    check and then break the step runner and the session brief."""
+    errors: list[str] = []
+    for line in progress_text.splitlines():
+        step = STEP_ROW_RE.match(line)
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if step is not None and len(cells) == 7 and cells[3] not in STATUSES:
+            errors.append(
+                f"PROGRESS.md: step {step.group(1)} has the status {cells[3]!r}, not one of "
+                f"{sorted(STATUSES)}"
+            )
+    return errors
+
+
 def main(argv: list[str]) -> int:
     errors: list[str] = []
     steps: list[Step] = []
@@ -192,6 +210,7 @@ def main(argv: list[str]) -> int:
         for s in steps:
             if not re.search(rf"^\| {re.escape(s.id)} \|", text, flags=re.M):
                 errors.append(f"PROGRESS.md: missing row for step {s.id}")
+        errors.extend(status_errors(text))
     else:
         errors.append("PROGRESS.md not found")
     errors.extend(adr_errors(DECISIONS, ADRS))
