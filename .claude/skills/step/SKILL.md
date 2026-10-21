@@ -21,7 +21,7 @@ The protocol is `docs/masterplan/05-build-process.md` §2, and this skill is its
 ## 2. Prerequisites and branch
 
 1. Run `masterplan_step.py status <ID>`.
-2. Every `Depends on` step must be `done` (or `skipped`) in PROGRESS.md **on origin/main**: a row turns true only when its pull request is merged. If one is not, stop and list it; continue only on the builder's explicit word, and record that under Deviations.
+2. Every `Depends on` step must be `done` (or `skipped`) in PROGRESS.md **on origin/main**: a row turns true only when its pull request is merged. If one is not, stop and list it; continue only on the builder's explicit word, and record that under Deviations. A prerequisite that is a pull request of its own (a `config/` change the kickoff asked for) is opened and handed to the builder to merge; the step then continues in a fresh session on the merged `main`, never stacked on the open pull request.
 3. `git status --porcelain` must show no changes to tracked files; untracked files are fine. Never stash, reset, or discard anything to get a clean tree: ask instead.
 4. Branch:
    - exactly one `step/<ID>-*` branch, local or on origin: switch to it (`git switch <branch>`, or `git switch --track origin/<branch>` when it exists only on origin);
@@ -68,7 +68,7 @@ Before the pull request, run these in order, fix what they find, and re-run what
 3. `git push -u origin HEAD` (the builder approves the push).
 4. Write the body from `.github/pull_request_template.md` into a file in the scratchpad and run `gh pr create --base main --title "<subject> (step <ID>)" --body-file <file>`. Sections: Summary (the step, linked to its phase file with a full github.com URL), Done means (every item in order with its evidence: the command and what it printed, the test that fails without the change, a file), Deviations (or "None."), Follow-ups (the BACKLOG lines added), Progress row (as committed), Screenshots or recordings (UI steps; otherwise "Not a UI step."). End with the attribution line configured for pull requests.
 5. If GitHub gave a different number than predicted, fix the row, commit, push, and update the body with `gh pr edit <number> --body-file <file>`.
-6. Finish with the pull request URL and the step's **Your checks**, word for word, for the builder.
+6. Finish with the pull request URL, the step's **Your checks**, word for word, for the builder, and the next step with the line to type in a fresh session once this one is merged (`/step N.M`, or `/phase-exit N` when the phase's last step is done).
 
 ## Never
 

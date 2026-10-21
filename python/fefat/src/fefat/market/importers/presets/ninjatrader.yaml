@@ -1,7 +1,9 @@
 # NinjaTrader 8, Historical Data window, Export, interval type Minute, data type Last: one bar
 # per line, fields separated by semicolons, no header row, timestamps as yyyyMMdd HHmmss in UTC
 # ("NinjaTrader exports are always done in the UTC time zone"), each bar stamped at its close
-# (a bar stamped 133100 holds the ticks from 13:30:00.001 to 13:31:00.000), and the instrument
+# (a bar stamped 133100 holds the ticks from 13:30:00.001 to 13:31:00.000, so a print at exactly
+# 17:00:00.000 Chicago time, the open, sits in the bar stamped 170000, which FEFAT reads as the
+# minute before the open, in the previous trade date's break), and the instrument
 # in the file's name, such as `ES 03-26.Last.txt` for ES March 2026.
 # Source: docs/masterplan/appendix/research-data-sources.md, Part D, NinjaTrader 8.
 kind: market_data

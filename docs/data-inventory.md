@@ -61,7 +61,14 @@ Step 1.9 added each dataset's `origin` and `licence_scope` to its `dataset.json`
 - `fefat data status` reads each product complete at 1-minute fidelity from its launch to 2026-09-23, last imported on 2026-10-13: MES, MNQ, and MCL clean, and MGC flagged.
 - A store copied from before that date is refused until it gets the same keys (`docs/masterplan/BACKLOG.md`, upgrading a store's metadata).
 
+## NinjaTrader 8 export (2026-10-20)
+
+Your NinjaTrader 8 export of MNQ minute bars (Historical Data window, Export, interval Minute, data type Last), one `.txt` file per contract in `C:\Users\kenji\Documents\AlgoTrading_app\market_data\NT8_data\raw\`: 30 files of 1.8 to 5.4 MB, 139 MB in all, named `MNQ MM-YY.Last.txt` from `MNQ 03-20` to `MNQ 12-25`, exported on 2026-10-13.
+
+- Imported by step 1.10 on 2026-10-20 with `fefat data import file <file> --profile ninjatrader`, one file at a time: 27 contracts into `ninjatrader/ohlcv-1m/root=MNQ`, each original kept under `raw/user/<sha256>/`. Three files were refused for spurious bars in NinjaTrader's history, under a wrong cause (`BACKLOG.md`, bars in a break that no offset explains): `MNQ 12-20.Last.txt` (a corrupt week, 2020-10-18 to 10-23), `MNQ 03-24.Last.txt` (extra bars in the hour before the 2024-03-10 open), and `MNQ 03-25.Last.txt` (a bar in the minute before the 2025-03-09 open).
+- `fefat data status` reads MNQ from `ninjatrader` as 2019-05-06 to 2026-09-18, complete at 1-minute fidelity, quality flagged: 175 sessions without records, where the three refused contracts were the front month. `load("MNQ", …)` reads Databento's MNQ first, the catalog's recommended source.
+
 ## Not on this PC
 
 - Nothing else from Databento (confirmed at the kickoff): no ES, NQ, CL, or GC; no trades, TBBO, 1-second bars, definitions, or statistics.
-- No crypto archives and no platform exports yet; the IBKR, NinjaTrader, and TradingView files for step 1.10 are exported when that step runs.
+- No crypto archives; no IBKR, TradingView, Sierra Chart, or TradeStation export yet (the NinjaTrader export is above).

@@ -156,3 +156,11 @@ def test_a_request_that_ends_before_it_starts_is_refused() -> None:
 def test_reports_is_kept_for_the_quality_reports(provider: str) -> None:
     with pytest.raises(ValueError, match="the folder of the quality reports"):
         Dataset(provider=provider, schema_name=parse_schema_name("trades"), root="ES")
+
+
+@pytest.mark.parametrize("name", ["CON", "nul", "COM1", "Aux.json", "lpt9"])
+def test_a_name_windows_keeps_for_a_device_is_refused_as_a_folder_name(name: str) -> None:
+    # A shared profile naming a product CON would make the store write to the console on
+    # Windows; such a name is refused wherever a folder name is.
+    with pytest.raises(ValueError, match="device"):
+        Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root=name)

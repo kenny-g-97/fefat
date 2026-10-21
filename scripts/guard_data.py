@@ -253,7 +253,11 @@ class ManifestError(Exception):
 
 def git_output(repository: Path, arguments: Sequence[str], stdin: bytes = b"") -> bytes:
     completed = subprocess.run(
-        ["git", *arguments], cwd=repository, input=stdin, capture_output=True, check=False
+        ["git", "--no-replace-objects", *arguments],
+        cwd=repository,
+        input=stdin,
+        capture_output=True,
+        check=False,
     )
     if completed.returncode != 0:
         stderr = completed.stderr.decode(errors="replace").strip()
@@ -616,8 +620,11 @@ def repository_root() -> Path:
 def pushed_revisions(ref_lines: str, remote: str) -> list[str]:
     """The `git rev-list` arguments for what a push sends, from the lines git writes to the
     pre-push hook (`<local ref> <local object> <remote ref> <remote object>`): each pushed
-    commit that no branch of `remote` already has; a push that only deletes sends none."""
+    commit that no branch of `remote` already has, nor the remote's own object of a pushed
+    ref, which bounds a push to a URL, whose branches git holds under no remote name; a push
+    that only deletes sends none."""
     tips: list[str] = []
+    on_the_remote: list[str] = []
     for line in ref_lines.splitlines():
         fields = line.split()
         if len(fields) != 4:
@@ -627,7 +634,21 @@ def pushed_revisions(ref_lines: str, remote: str) -> list[str]:
             )
         if NO_OBJECT.fullmatch(fields[1]) is None:
             tips.append(fields[1])
-    return [*tips, "--not", f"--remotes={remote}"] if tips else []
+        if NO_OBJECT.fullmatch(fields[3]) is None:
+            on_the_remote.append(fields[3])
+    return [*tips, "--not", *on_the_remote, f"--remotes={remote}"] if tips else []
+
+
+def refuse_tips_that_are_no_commits(repository: Path, revisions: Sequence[str]) -> None:
+    """Refuse a pushed tip that is no commit, such as a tag of a tree or a blob, which only
+    deliberate plumbing makes and `git rev-list` would list no commits for."""
+    for tip in revisions:
+        if tip == "--not":
+            return
+        try:
+            git_output(repository, ["rev-parse", "--verify", "--quiet", f"{tip}^{{commit}}"])
+        except GitError as error:
+            raise GitError(f"Expected a commit at the pushed tip {tip}, got no commit.") from error
 
 
 def check_index() -> int:
@@ -722,6 +743,7 @@ def main(argv: Sequence[str]) -> int:
     described = f"the push to {arguments.pushed}"
     try:
         revisions = pushed_revisions(sys.stdin.read(), arguments.pushed)
+        refuse_tips_that_are_no_commits(repository_root(), revisions)
     except GitError as error:
         print(f"Data guard: could not read {described}. {error}", file=sys.stderr)
         return 2

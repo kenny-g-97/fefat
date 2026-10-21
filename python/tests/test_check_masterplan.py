@@ -95,3 +95,12 @@ def test_a_superseded_record_without_a_link_to_its_successor_is_reported(tmp_pat
     errors = check_masterplan.adr_errors(decision_log(tmp_path), tmp_path)
 
     assert any("0001-old.md" in error and "successor" in error for error in errors), errors
+
+
+def test_a_progress_row_with_a_status_the_runner_does_not_read_is_reported() -> None:
+    rows = "| 0.4 | Configure | P0 | Done | | | |\n| 0.5 | Data | P0 | done | | | |\n"
+
+    assert check_masterplan.status_errors(rows) == [
+        "PROGRESS.md: step 0.4 has the status 'Done', not one of "
+        "['amended', 'done', 'in progress', 'pr open', 'skipped', 'todo']"
+    ]

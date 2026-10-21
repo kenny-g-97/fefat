@@ -299,6 +299,8 @@ def _intraday_bars(
     marked = rows.with_columns(ts_open=inside, ts_close=inside + 1)
     dated = sessions.assign_trade_dates_or_previous(marked, "ts_open").drop("in_session")
     bucketed = in_buckets(dated, timeframe, sessions)
+    if stamp is BarStamp.CLOSE:
+        bucketed = _cut_at_the_close(bucketed, timeframe.nominal_nanoseconds())
     edge = "bucket_open" if stamp is BarStamp.OPEN else "bucket_close"
     fits = pl.col("instant") == pl.col(edge)
     problem = problem_of(
@@ -313,6 +315,25 @@ def _intraday_bars(
     return placed.drop(
         "bucket_open", "bucket_close", "session_open", "session_close", "next_open"
     ), problem
+
+
+def _cut_at_the_close(bucketed: pl.DataFrame, width: int) -> pl.DataFrame:
+    """A close-stamped bar whose nominal span straddles its session's close, as a platform that
+    does not cut its bars at an early close stamps the prints before it: moved from the break
+    bucket its last instant lands in to the session's cut bucket, where the bar builder puts
+    those prints (D-49), and stamped at the close, as a platform that cuts there stamps it."""
+    nominal_open = pl.col("instant") - width
+    session_open, session_close = pl.col("session_open"), pl.col("session_close")
+    moved = (
+        (pl.col("bucket_open") == session_close)
+        & (nominal_open < session_close)
+        & ((nominal_open - session_open) % width == 0)
+    )
+    return bucketed.with_columns(
+        bucket_open=pl.when(moved).then(nominal_open).otherwise(pl.col("bucket_open")),
+        bucket_close=pl.when(moved).then(session_close).otherwise(pl.col("bucket_close")),
+        instant=pl.when(moved).then(session_close).otherwise(pl.col("instant")),
+    )
 
 
 def _daily_bars(

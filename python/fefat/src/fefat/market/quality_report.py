@@ -22,7 +22,7 @@ from typing import Any, Self
 import polars as pl
 from pydantic import model_validator
 
-from fefat.market.calendar import utc_text
+from fefat.market.calendar import counted, utc_text
 from fefat.market.importers.report import ConditionDay, VendorCondition
 from fefat.market.schema import FrozenModel, require_columns
 from fefat.market.store import write_atomically
@@ -143,7 +143,7 @@ class QualityReport:
         heading = f"Quality of {self.provider} {self.root}, {self._span()}: {self.status()}"
         if self.findings.is_empty():
             return f"{heading}."
-        lines = [f"{heading}, {_counted(self.findings.height, 'finding')}."]
+        lines = [f"{heading}, {counted(self.findings.height, 'finding')}."]
         listed = self.findings.head(_LISTED_AT_MOST).iter_rows(named=True)
         lines.extend(_finding_line(finding) for finding in listed)
         if self.findings.height > _LISTED_AT_MOST:
@@ -173,9 +173,9 @@ class QualityReport:
         return f"{dates.min()} to {dates.max()}"
 
     def _overview(self) -> str:
-        sessions = _counted(self.days.height, "session")
+        sessions = counted(self.days.height, "session")
         with_records = self.days.filter(pl.col("records") > 0).height
-        contracts = _counted(len(self.contracts), "contract")
+        contracts = counted(len(self.contracts), "contract")
         return (
             f"Trade dates {self._span()}: {sessions}, {with_records:,} with records, {contracts}."
         )
@@ -183,7 +183,7 @@ class QualityReport:
     def _status_line(self) -> str:
         if self.findings.is_empty():
             return f"Status: {self.status()}, no findings."
-        return f"Status: {self.status()}, {_counted(self.findings.height, 'finding')}."
+        return f"Status: {self.status()}, {counted(self.findings.height, 'finding')}."
 
 
 def write_quality_report(report: QualityReport, reports_folder: Path) -> Path:
@@ -227,10 +227,6 @@ def quality_verdict(standing: QualityStanding, last_trade_date: date) -> Quality
     if not clean or checked_through is None or checked_through >= last_trade_date:
         return standing
     return QualityStanding(status=QualityStatus.STALE, checked_through=checked_through)
-
-
-def _counted(count: int, noun: str) -> str:
-    return f"{count:,} {noun}" if count == 1 else f"{count:,} {noun}s"
 
 
 def _finding_line(finding: dict[str, Any]) -> str:
@@ -333,7 +329,7 @@ def _rebuilt_line(days: pl.DataFrame) -> str:
     if compared.is_empty():
         return f"Rebuilt and compared on none of the {days.height:,} trade dates."
     differences = int(compared.get_column("bar_differences").sum())
-    outcome = f"{_counted(differences, 'difference')}, in the findings"
+    outcome = f"{counted(differences, 'difference')}, in the findings"
     if differences == 0:
         outcome = "no differences"
     return f"Rebuilt and compared on {compared.height:,} of {days.height:,} trade dates: {outcome}."

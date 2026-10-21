@@ -260,7 +260,13 @@ def _offset(
     first_open, last_close = sessions.span()
     kept = moved.filter(moved.is_between(first_open, last_close, closed="left"))
     dated = sessions.assign_trade_dates_or_previous(kept.to_frame("instant"), "instant")
-    first, last = _first_and_last(dated.filter("in_session"))
+    in_session = dated.filter("in_session")
+    if in_session.is_empty():
+        raise ValueError(
+            f"Expected the records moved back by {duration_text(abs(nanoseconds))} to land in "
+            f"sessions, got none of {dataset.relative_folder()}: the offset cannot be described."
+        )
+    first, last = _first_and_last(in_session)
     return CalendarOffset(
         dataset=dataset,
         nanoseconds=nanoseconds,

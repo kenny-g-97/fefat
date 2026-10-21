@@ -319,11 +319,13 @@ def test_a_mapping_repeated_or_split_across_files_reads_as_one_interval() -> Non
         ("CLZ6", 9, date(2017, 1, 1), date(2026, 9, 23)),
     )
 
+    # One interval from 2016-11-22 to 2026-09-23; asked while CLZ6 was trading, it names
+    # December 2016, not the December 2026 that the interval's end would (the Phase 1 exit).
     assert resolver_of(symbology=from_two_files).by_instrument_id(
         9, date(2016, 12, 15)
     ) == Contract(
         root="CL",
-        expiry=YearMonth(year=2026, month=12),
+        expiry=YearMonth(year=2016, month=12),
         first_trade_date=date(2016, 11, 22),
         last_trade_date=date(2026, 9, 22),
         raw_symbols=("CLZ6",),
@@ -578,3 +580,13 @@ def test_an_interval_that_runs_on_past_its_records_takes_its_decade_from_them() 
 def test_symbology_contracts_refuse_other_columns() -> None:
     with pytest.raises(ValueError, match=r"Expected the columns .* in the symbology"):
         symbology_contracts(pl.DataFrame({"raw_symbol": ["ESH6"]}), active_days_frame())
+
+
+def test_the_resolver_names_a_live_contract_by_the_day_asked_not_by_the_intervals_end() -> None:
+    # The same interval, asked while MNQM3 was trading: the decade comes from the day asked,
+    # not from the end of the vendor's query three years after the contract expired.
+    resolver = resolver_of(
+        symbology=symbology_frame(("MNQM3", 4973, date(2022, 3, 6), date(2026, 9, 23)))
+    )
+
+    assert str(resolver.by_instrument_id(4973, date(2023, 4, 3))) == "MNQM2023"

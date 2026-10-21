@@ -149,7 +149,7 @@ An export from your platform comes in through an import profile, a YAML descript
 
 1. **Pick the profile.** `fefat data profiles` lists the presets and your saved profiles, and `fefat data profiles ninjatrader` prints one as YAML.
 2. **Preview.** `fefat data import file "D:\Exports\MNQ 09-26.Last.txt" --profile ninjatrader --preview` prints the first records as they would be stored and every problem found, and writes nothing.
-3. **Import.** Run the same command without `--preview`. It keeps the original as `raw\user\<SHA-256>\<file name>`, writes the records as the dataset `<provider>\<schema>\root=<root>`, such as `ninjatrader\ohlcv-1m\root=MNQ`, and writes the product's quality report. A second import of the same file changes nothing.
+3. **Import.** Run the same command without `--preview`. It keeps the original as `raw\user\<SHA-256>\<file name>`, writes the records as the dataset `<provider>\<schema>\root=<root>`, such as `ninjatrader\ohlcv-1m\root=MNQ`, and writes the product's quality report. A second import of the same file changes nothing; one with another profile, contract, root, or time zone is refused, since a stored dataset never changes: the first import stands.
 
 What the file does not say, the import names:
 
@@ -166,6 +166,7 @@ What the file does not say, the import names:
 - _its records run 6 hours late against the calendar ...; check the time zone of the file's times_: the times are in another zone than the profile says. Give `--time-zone`, or fix the profile's `time_zone`.
 - _its records run 1 minute early ...; check whether the file stamps each bar at its open or its close_: the profile's `stamp` names the wrong end of the bar.
 - _the calendar could not check the file's time zone and bar stamping_, a warning: a file of regular hours only, a thin file, or a calendar without breaks fits its sessions whatever its offset, so compare a few bars with your platform's chart.
+- _each daily bar is stored as its calendar session, open to close_, a warning on every daily import: the calendar cannot tell a session's daily bar from a UTC day's or a regular-hours one, whose prices come from outside the session, so compare one bar's open and close with your platform's session settings.
 - prices off the tick, volumes that are not whole lots, records before the product's first trade date, two bars in one bucket, or bars spaced as another timeframe: the profile reads the wrong columns or timeframe, or the file holds bad records.
 
 An offset can also come from bad bars rather than a wrong profile: three contracts of your NinjaTrader MNQ export were refused, as early by a minute or by hours, for spurious bars in NinjaTrader's own history, while the rest of the export imported with the same preset (`docs/masterplan/BACKLOG.md`). Compare a refused contract with another source before you change the profile.

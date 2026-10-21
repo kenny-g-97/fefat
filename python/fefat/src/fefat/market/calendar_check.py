@@ -38,7 +38,7 @@ from typing import Annotated, Any, Literal
 import polars as pl
 from pydantic import Field
 
-from fefat.market.calendar import Session, SessionTable, sessions_of, utc_text
+from fefat.market.calendar import Session, SessionTable, utc_text
 from fefat.market.calendar_offset import CalendarOffset, records_offset
 from fefat.market.layout import Dataset, Partition
 from fefat.market.saved_instruments import instrument_table
@@ -155,11 +155,9 @@ def validate_calendar(
     instruments = instrument_table(store.folder)
     reports: list[CalendarReport] = []
     for dataset, partitions in _checked_datasets(store):
-        # shortcut: the calendar of the root's newest instrument version; split the check by
-        # version when a root's calendar changes over time.
-        calendar = instruments.get(dataset.root).session_calendar()
+        sessions = instruments.sessions_of(dataset.root, cache_folder)
         rows = pl.concat([_dated_rows(store, partition) for partition in partitions])
-        reports.append(check_records(dataset, rows, sessions_of(calendar, cache_folder), tolerance))
+        reports.append(check_records(dataset, rows, sessions, tolerance))
     return CalendarReport(
         days_checked=sum(report.days_checked for report in reports),
         mismatches=tuple(mismatch for report in reports for mismatch in report.mismatches),

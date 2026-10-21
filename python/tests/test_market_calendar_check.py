@@ -6,6 +6,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from fefat.market import calendar_offset
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import Session, SessionTable, sessions_of, utc_text
 from fefat.market.calendar_check import (
@@ -446,3 +447,16 @@ def test_an_honest_file_with_a_small_part_before_daylight_saving_starts_shows_no
     tail = bars.filter(pl.col("ts_open") >= utc(2026, 3, 6, 21, 45))
 
     assert check_records(ES_MINUTES, tail.lazy(), sessions).offsets == ()
+
+
+def test_an_offset_after_which_no_record_lands_in_a_session_is_refused_not_misdescribed(
+    tmp_path: Path,
+) -> None:
+    # An offset is described by the trade dates its moved records land on; with none, the
+    # description failed inside its model instead of saying what was expected.
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path / "cache")
+    dataset = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
+    none = pl.Series("instant", [], dtype=pl.Int64)
+
+    with pytest.raises(ValueError, match="Expected the records moved back"):
+        calendar_offset._offset(dataset, none, 3_600_000_000_000, OffsetCause.TIME_ZONE, sessions)

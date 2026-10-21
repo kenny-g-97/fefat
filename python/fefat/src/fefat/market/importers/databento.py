@@ -52,7 +52,7 @@ from fefat.market.importers.report import (
 )
 from fefat.market.instruments import STATIC_TABLE, InstrumentTable
 from fefat.market.layout import DatasetMetadata, DatasetOrigin
-from fefat.market.raw_manifest import BatchJob
+from fefat.market.raw_manifest import BatchJob, checked_raw_path
 from fefat.market.schema import parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
@@ -251,6 +251,10 @@ def _import_batch(batch: _Batch, store: Store, importer: _DataFileImporter) -> D
     ]
     for original in unrecorded:
         _require_published(original, batch.folder)
+    raw_path = batch.data_file.raw_path.as_posix()
+    report = None
+    if batch.data_file in unrecorded:
+        report = importer.imported(batch.data_file, f", {batch.revision()}", batch.downloaded_on)
     for sidecar in batch.sidecars:
         if sidecar in unrecorded:
             store.write_raw_file(sidecar.raw_path, sidecar.source, sidecar.sha256)
@@ -263,10 +267,6 @@ def _import_batch(batch: _Batch, store: Store, importer: _DataFileImporter) -> D
                 imported_on=importer.imported_on,
                 roots=(),
             )
-    raw_path = batch.data_file.raw_path.as_posix()
-    report = None
-    if batch.data_file in unrecorded:
-        report = importer.imported(batch.data_file, f", {batch.revision()}", batch.downloaded_on)
     return DatabentoImport(
         source=str(batch.folder),
         batch=batch.report(),
@@ -321,7 +321,9 @@ def _batch(folder: Path) -> _Batch:
     def original(name: str) -> _Original:
         published = listed[name].published_sha256()
         batch_job = BatchJob(job_id=job, published_sha256=published)
-        return _Original(folder / name, PurePosixPath(PROVIDER, job, name), published, batch_job)
+        raw_path = PurePosixPath(PROVIDER, job, name)
+        checked_raw_path(raw_path.as_posix())
+        return _Original(folder / name, raw_path, published, batch_job)
 
     vendor_manifest = folder / _VENDOR_MANIFEST
     return _Batch(
@@ -358,7 +360,8 @@ def _data_file_name(folder: Path, listed: dict[str, BatchFile]) -> str:
         raise ValueError(
             f"Expected one DBN file in the batch {folder}, got {len(data_names)}: "
             f"{', '.join(data_names)}. A batch split by day, month, or symbol can give two files "
-            "rows of one partition, which the importer does not merge yet."
+            "rows of one partition, which the importer does not merge yet: order the batch "
+            "with the split duration none."
         )
     return data_names[0]
 

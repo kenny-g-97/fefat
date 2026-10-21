@@ -19,12 +19,13 @@ import itertools
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 from typing import Self
 
 from pydantic import Field, model_validator
 
 from fefat.market.builtin_calendars import BUILT_IN
-from fefat.market.calendar import SessionTable
+from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.calendar_definition import Calendar, CalendarId
 from fefat.market.last_trade_rules import (
     BusinessDaysBeforeThe25th,
@@ -141,6 +142,12 @@ class InstrumentTable(FrozenModel):
     def first_trade_date(self, root: str) -> date:
         """The day `root` began trading: the start of its first version."""
         return self._versions_of(root)[0].valid_from
+
+    def sessions_of(self, root: str, cache_folder: Path) -> SessionTable:
+        """The session table of `root`'s calendar, kept in `cache_folder`."""
+        # shortcut: the calendar of the root's newest instrument version; look the version up
+        # by the session's date when a root's calendar changes over time.
+        return sessions_of(self.get(root).session_calendar(), cache_folder)
 
     def get(self, root: str, on: date | None = None) -> Instrument:
         """The version of `root` in force on `on`, or its newest version without a date."""

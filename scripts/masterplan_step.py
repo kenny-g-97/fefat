@@ -62,7 +62,8 @@ PLAN_REQUIRED = "required"
 TODO_STATUS = "todo"
 SATISFIED_STATUSES = frozenset({"done", "skipped"})
 OPEN_STATUSES = frozenset({"in progress", "pr open", "amended"})
-KNOWN_STATUSES = SATISFIED_STATUSES | OPEN_STATUSES | {TODO_STATUS}
+KNOWN_STATUSES = check_masterplan.STATUSES
+BACKLOG = ROOT / "docs" / "masterplan" / "BACKLOG.md"
 
 SLUG_STOP_WORDS = frozenset(
     {"a", "an", "and", "at", "by", "for", "from", "in", "its", "of", "on", "the", "this", "to"}
@@ -598,6 +599,18 @@ def shortened(text: str, width: int) -> str:
     return text if len(text) <= width else f"{text[: width - 3].rstrip()}..."
 
 
+def backlog_lines_for(step_id: str) -> list[str]:
+    """The titles of the backlog items whose Target names the step: what arrived after the
+    phase kickoff, which pulls backlog lines into its steps once."""
+    named = re.compile(rf"Target:.*(?<![0-9.]){re.escape(step_id)}(?![0-9])")
+    titles: list[str] = []
+    for line in BACKLOG.read_text(encoding="utf-8").splitlines():
+        title = re.match(r"- \*\*(.+?)\*\*", line)
+        if title is not None and named.search(line):
+            titles.append(f"- {title.group(1)}")
+    return titles
+
+
 def render_brief(step: MasterplanStep, row: ProgressRow | None, branches: list[str]) -> list[str]:
     lines = [
         f"Step {step.step_id} - {step.title}",
@@ -608,6 +621,11 @@ def render_brief(step: MasterplanStep, row: ProgressRow | None, branches: list[s
     ]
     for section in step.sections:
         lines.extend([section.heading, *indented(section.body), ""])
+    named = backlog_lines_for(step.step_id)
+    if named:
+        lines.extend(
+            ["Backlog lines whose Target names this step", *indented("\n".join(named)), ""]
+        )
     note = phase_skills_note(step.phase)
     if note is not None:
         lines.extend([f"Phase {step.phase} skills note", f"  {note}", ""])

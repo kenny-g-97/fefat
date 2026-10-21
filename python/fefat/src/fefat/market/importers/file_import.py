@@ -37,13 +37,19 @@ from fefat.market.instruments import InstrumentTable
 from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition
 from fefat.market.raw_manifest import checked_raw_path
 from fefat.market.saved_instruments import save_instrument
-from fefat.market.schema import FrozenModel, SchemaKind, polars_schema
+from fefat.market.schema import FrozenModel, SchemaKind, Timeframe, TimeUnit, polars_schema
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
 USER_RAW_FOLDER = "user"
 """The folder under `raw` that keeps a trader's own files."""
 PREVIEW_ROWS = 10
+DAILY_SESSION_ASSUMED = (
+    "each daily bar is stored as its calendar session, open to close, which the calendar cannot "
+    "check: a bar of a UTC day or of regular hours only would carry prices from outside its "
+    "session, so compare one bar's open and close with the platform's session settings"
+)
+"""The warning of every daily import: a daily bar names its session by its date alone."""
 _NANO = 1_000_000_000
 
 
@@ -194,7 +200,15 @@ def import_file(
     sha256 = hashlib.sha256(content).hexdigest()
     raw_path = PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
     checked_raw_path(raw_path.as_posix())
-    if store.raw_manifest().file_at(raw_path.as_posix()) is not None:
+    arguments = _import_arguments(request)
+    recorded = store.raw_manifest().file_at(raw_path.as_posix())
+    if recorded is not None:
+        if recorded.vendor_version != arguments:
+            raise ValueError(
+                f"Expected {request.path} to be imported as it was on {recorded.imported_on}, "
+                f"{recorded.vendor_version}, got {arguments}: a stored dataset never changes, "
+                "so the first import stands."
+            )
         return AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
     mapped = _mapped(request, content, instruments, cache_folder)
     reading = _reading(request, mapped)
@@ -207,7 +221,7 @@ def import_file(
     store.record_raw_file(
         raw_path,
         provider=request.profile.provider,
-        vendor_version=f"import profile {request.profile.name}",
+        vendor_version=arguments,
         downloaded_on=datetime.fromtimestamp(request.path.stat().st_mtime, UTC).date(),
         batch_job=None,
         imported_on=imported_on,
@@ -267,9 +281,28 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
         calendar=calendar,
         warnings=(
             *dataset_warnings(dataset, profile.series),
+            *([DAILY_SESSION_ASSUMED] if _daily(profile) else []),
             *([TIMING_UNCHECKED] if unchecked else []),
         ),
     )
+
+
+def _daily(profile: ImportProfile) -> bool:
+    return isinstance(profile.timeframe, Timeframe) and profile.timeframe.unit is TimeUnit.DAY
+
+
+def _import_arguments(request: FileImportRequest) -> str:
+    """What besides the file decides its records, as the raw manifest records it: the profile,
+    and the contract, root, and time zone the command named, if any."""
+    # shortcut: a profile edited under its name is not told apart; record the profile's hash
+    # when profiles get versions.
+    named = (
+        ("contract", request.contract),
+        ("root", request.root),
+        ("time zone", request.time_zone),
+    )
+    given = "".join(f", {name} {value}" for name, value in named if value is not None)
+    return f"import profile {request.profile.name}{given}"
 
 
 def _require_no_refusals(request: FileImportRequest, reading: FileReading) -> None:

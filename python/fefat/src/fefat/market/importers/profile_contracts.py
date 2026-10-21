@@ -115,6 +115,8 @@ def _contract_in_name(profile: ImportProfile, facts: ImportFacts) -> str | None:
             f"a year, and a month or a code, in {facts.file_name}, got {groups}."
         )
     year = int(groups["year"])
+    # shortcut: a two-digit year means 20xx; resolve it from the rows' dates, as
+    # `expiry_month` does for symbols, when an export from before 2000 arrives.
     full_year = year + 2000 if year < 100 else year
     return f"{groups['root']}{_month_code(groups, facts.file_name)}{full_year:04d}"
 

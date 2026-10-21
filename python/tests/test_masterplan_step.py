@@ -161,3 +161,23 @@ def test_engine_steps_load_the_backtest_skill_and_ui_steps_the_frontend_skill() 
     assert "backtest-expert" in skills_for("2.6")
     assert "frontend-design:frontend-design" in skills_for("5.9")
     assert skills_for("0.5") == ["software-design-principles"]
+
+
+def test_the_runner_reads_the_statuses_the_checker_accepts() -> None:
+    import check_masterplan
+
+    satisfied_open_or_todo = (
+        masterplan_step.SATISFIED_STATUSES
+        | masterplan_step.OPEN_STATUSES
+        | {masterplan_step.TODO_STATUS}
+    )
+    assert masterplan_step.KNOWN_STATUSES == check_masterplan.STATUSES == satisfied_open_or_todo
+
+
+def test_the_brief_lists_the_backlog_lines_whose_target_names_the_step() -> None:
+    # The kickoff pulls backlog lines into its steps once; a line that arrives after it reaches
+    # its step through the brief, by the step id in its Target, 2.1 and not 2.10.
+    lines = masterplan_step.backlog_lines_for("2.1")
+
+    assert any("Goldens, scenario tables, and the commit guard" in line for line in lines)
+    assert not any("fee schedule" in line for line in lines)

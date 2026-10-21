@@ -250,7 +250,7 @@ def _pattern_instants(text: pl.Expr, pattern: str, time_zone: str) -> pl.Expr:
     bare = text.str.replace(_ZONE_NAME_AFTER_A_TIME, "")
     if "%z" in pattern:
         return bare.str.to_datetime(pattern, strict=False, time_unit="ns").dt.epoch("ns")
-    if "%H" not in pattern:
+    if not any(clock in pattern for clock in ("%H", "%I")):
         return _from_local(
             bare.str.to_date(pattern, strict=False).cast(pl.Datetime("ns")), time_zone
         )

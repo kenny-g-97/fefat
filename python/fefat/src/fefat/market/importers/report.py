@@ -12,7 +12,7 @@ from itertools import groupby
 
 from pydantic import Field
 
-from fefat.market.calendar import utc_text
+from fefat.market.calendar import counted, utc_text
 from fefat.market.schema import FrozenModel, SchemaKind, SchemaName
 
 _LISTED_AT_MOST = 10
@@ -122,7 +122,7 @@ class FileImport(FrozenModel):
         roots = groupby(self.contracts, key=lambda contract: contract.root)
         return [
             f"{self.path}: {self.schema_name}, DBN version {self.dbn_version}, "
-            f"{_counted(self.records, 'record')}{_range(self.first_instant, self.last_instant)}",
+            f"{counted(self.records, 'record')}{_range(self.first_instant, self.last_instant)}",
             *(f"  {_root_line(root, list(contracts))}" for root, contracts in roots),
             f"  Spreads and strategies set aside: {_spreads(self.spreads)}",
             f"  Before their product's first trade date: {_early(self.before_first_trade_date)}",
@@ -143,7 +143,7 @@ class FileImport(FrozenModel):
         if first is None:
             return "never decreases"
         return (
-            f"decreases {_counted(self.clock_decreases, 'time')}, the first at record "
+            f"decreases {counted(self.clock_decreases, 'time')}, the first at record "
             f"{first.record}: {utc_text(first.instant)} after {utc_text(first.before)}"
         )
 
@@ -176,14 +176,10 @@ class DatabentoImport(FrozenModel):
 
     def _heading(self) -> str:
         if self.files:
-            return f"Imported {_counted(len(self.files), 'file')} from {self.source}."
+            return f"Imported {counted(len(self.files), 'file')} from {self.source}."
         if self.already_imported:
             return f"Nothing to import from {self.source}: every file is already imported."
         return f"Nothing to import from {self.source}."
-
-
-def _counted(count: int, noun: str) -> str:
-    return f"{count:,} {noun}{'' if count == 1 else 's'}"
 
 
 def _range(first: int | None, last: int | None) -> str:
@@ -201,8 +197,8 @@ def _root_line(root: str, contracts: Sequence[ContractRecords]) -> str:
     first = min(contract.first_instant for contract in contracts)
     last = max(contract.last_instant for contract in contracts)
     return (
-        f"{root}: {_counted(len(contracts), 'contract')}, {names}, "
-        f"{_counted(records, 'record')}{_range(first, last)}"
+        f"{root}: {counted(len(contracts), 'contract')}, {names}, "
+        f"{counted(records, 'record')}{_range(first, last)}"
     )
 
 
@@ -210,18 +206,18 @@ def _spreads(spreads: Sequence[SymbolRecords]) -> str:
     if not spreads:
         return "none"
     records = sum(spread.records for spread in spreads)
-    return f"{_counted(len(spreads), 'symbol')}, {_counted(records, 'record')}"
+    return f"{counted(len(spreads), 'symbol')}, {counted(records, 'record')}"
 
 
 def _early(symbols: Sequence[EarlySymbol]) -> str:
     if not symbols:
         return "none"
     named = _listed(
-        f"{symbol.raw_symbol} {_counted(symbol.records, 'record')} on "
+        f"{symbol.raw_symbol} {counted(symbol.records, 'record')} on "
         f"{symbol.first_trade_date} to {symbol.last_trade_date}"
         for symbol in symbols
     )
-    return f"{_counted(len(symbols), 'symbol')}: {named}"
+    return f"{counted(len(symbols), 'symbol')}: {named}"
 
 
 def _days(days: Sequence[DayRecords]) -> str:
@@ -229,7 +225,7 @@ def _days(days: Sequence[DayRecords]) -> str:
         return "none"
     records = sum(day.records for day in days)
     named = _listed(f"{day.trade_date} ({day.records:,})" for day in days)
-    return f"{_counted(records, 'record')} on {_counted(len(days), 'trade date')}: {named}"
+    return f"{counted(records, 'record')} on {counted(len(days), 'trade date')}: {named}"
 
 
 def _listed(texts: Iterable[str]) -> str:

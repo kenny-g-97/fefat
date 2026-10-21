@@ -61,8 +61,28 @@ def _not_a_reserved_folder(name: str) -> str:
     return name
 
 
+_WINDOWS_DEVICE_NAMES = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{n}" for n in range(1, 10)),
+        *(f"LPT{n}" for n in range(1, 10)),
+    }
+)
+
+
+def _not_a_device_name(name: str) -> str:
+    if name.partition(".")[0].upper() in _WINDOWS_DEVICE_NAMES:
+        raise ValueError(f"Expected a folder name, got {name!r}, a device name on Windows.")
+    return name
+
+
 FolderName = Annotated[
-    str, StringConstraints(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
+    str,
+    StringConstraints(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"),
+    AfterValidator(_not_a_device_name),
 ]
 """A provider, root, or contract as a folder name: letters and digits, with dots, dashes,
 and underscores inside (Windows drops a trailing dot, and the layout uses `/` and `=`)."""
