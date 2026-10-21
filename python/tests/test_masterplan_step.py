@@ -174,9 +174,21 @@ def test_the_runner_reads_the_statuses_the_checker_accepts() -> None:
     assert masterplan_step.KNOWN_STATUSES == check_masterplan.STATUSES == satisfied_open_or_todo
 
 
-def test_the_brief_lists_the_backlog_lines_whose_target_names_the_step() -> None:
+def test_the_brief_lists_the_backlog_lines_whose_target_names_the_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The kickoff pulls backlog lines into its steps once; a line that arrives after it reaches
-    # its step through the brief, by the step id in its Target, 2.1 and not 2.10.
+    # its step through the brief, by the step id in its Target, 2.1 and not 2.10. Each kickoff
+    # empties the real backlog of its phase's targets, so the test writes the lines it reads.
+    backlog = tmp_path / "BACKLOG.md"
+    backlog.write_text(
+        "- **Goldens, scenario tables, and the commit guard** — the guard refuses CSV goldens."
+        " Target: before the first scenario table (step 2.1). Source: D-48.\n"
+        "- **How a run picks its fee schedule** — the tables start in 2026."
+        " Target: steps 2.9 and 2.10. Source: step 1.2.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(masterplan_step, "BACKLOG", backlog)
     lines = masterplan_step.backlog_lines_for("2.1")
 
     assert any("Goldens, scenario tables, and the commit guard" in line for line in lines)

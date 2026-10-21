@@ -19,6 +19,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-10-12 — Phase 1 kickoff (D-38, pull request #10): no connector and no sync in Phase 1, since the data layer takes only the files you feed it: step 1.4 skipped, 1.6 reduced to a file importer (no download, no key), 1.9 reduced to the catalog, the source guide, and `fefat data status`, and the credential store deferred to the first step that needs a key; the catalog is MES, MNQ, MCL, and MGC, the products on this PC (`docs/data-inventory.md`); the presets are Databento CSV, IBKR, NinjaTrader, and TradingView first; the other Phase 1 steps were reconciled with the Phase 0 code, the fixtures, and the exit reviews (an Amendment under each step); the source research is `appendix/research-data-sources.md`. No step ID changed.
 - 2026-10-19 — Before step 1.10 imports your platforms' exports, the commit guard refuses CSV and other plain-text tables, spreadsheets, archives, and compressors by name, more data formats by their first bytes, and text exports that begin with a table of numbers, and it checks every commit: a new `pre-push` hook checks each commit a push sends, and CI each commit of a pull request (D-48, the `config/data-guard-text-and-push` pull request). No step changed.
 - 2026-10-21 — The Phase 1 exit (D-50, pull request #23) fixed what the phase-wide reviews found (a re-import with other arguments refused, the Thanksgiving Friday close of energy and metals, a daily import's warning, a close-stamped bar at an early close, a spliced load gridding the fronts only, an empty load refused, the push guard's URL and tree cases), took the upgrade step (Rust 1.99.1, the lockfiles, `rust-cache` v2.9.3), and wrote the retro into `CLAUDE.md`, the `step` skill, and 05 §2: a step's closing message names the next step, a prerequisite pull request is merged before a step continues, and a store change is explained in plain words. No step changed.
+- 2026-10-21 — Phase 2 kickoff (D-51, pull request #24): your fill defaults (a limit fills on a trade through its price, one tick of slippage that each run can change, 100 ms latency), a reference capital of 50,000 USD, the NautilusTrader comparison on MES in August 2026, and no fill exports for now; every Phase 2 step reconciled with the data on this PC (1-minute bars for the four micros, so the real-data checks fill at bar fidelity on MES, while tick fills run on the fixtures and on generated tapes), with the backlog items aimed at the kickoff written into steps 2.1 to 2.7 and 2.9 to 2.11 (an Amendment under each step); scenarios are YAML and goldens JSON. No step ID changed.
 
 ## Steps
 
@@ -165,7 +166,7 @@ Phase kickoffs and exits are tracked in the second table.
 | --- | --- | --- | --- | --- | --- |
 | P0 | (no kickoff) | | #8 | 2026-10-11 | phase-0 |
 | P1 | #10 | 2026-10-12 | #23 | 2026-10-21 | phase-1 |
-| P2 | | | | | |
+| P2 | #24 | 2026-10-21 | | | |
 | P3 | | | | | |
 | P4 | | | | | |
 | P5 | | | | | |
