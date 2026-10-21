@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 NOTEBOOK = ROOT / "notebooks" / "01-market-data.ipynb"
 SYNTHETIC = ROOT / "fixtures" / "synthetic"
 NINJATRADER_SAMPLE = SYNTHETIC / "exports" / "ninjatrader" / "ES 03-26.Last.txt"
+NO_WHOLE_SESSION = "Skipped: your store holds no whole session of ES's trades from synthetic"
 
 
 def store_with(*schemas: str) -> None:
@@ -37,6 +38,24 @@ def store_with(*schemas: str) -> None:
     data_dir = resolve_paths(os.environ).data_dir
     for schema in schemas:
         shutil.copytree(SYNTHETIC / schema, data_dir / "synthetic" / schema)
+
+
+def store_minute_bars_before(day: date) -> None:
+    """The fixtures' ES 1-minute bars of the trade dates before `day`, from the provider
+    `synthetic`."""
+    minutes = resolve_paths(os.environ).data_dir / "synthetic" / "ohlcv-1m" / "root=ES"
+    shutil.copytree(SYNTHETIC / "ohlcv-1m" / "root=ES", minutes)
+    for part in minutes.rglob("part.parquet"):
+        pl.read_parquet(part).filter(pl.col("trade_date") < day).write_parquet(part)
+
+
+def store_trades_without(*trade_dates: str) -> None:
+    """The fixtures' trades from the provider `synthetic`, without those of `trade_dates`."""
+    shutil.copytree(
+        SYNTHETIC / "trades",
+        resolve_paths(os.environ).data_dir / "synthetic" / "trades",
+        ignore=shutil.ignore_patterns(*(f"date={day}" for day in trade_dates)),
+    )
 
 
 def import_hourly_bars(folder: Path) -> None:
@@ -96,7 +115,7 @@ def test_the_notebook_runs_on_your_bars_and_on_an_import_through_a_preset(
     assert report.comparisons_run() > 0
     assert report.difference_count() == 0
     assert "Differences: none." in printed
-    assert "Skipped until a whole session of ES's trades from synthetic is imported" in printed
+    assert NO_WHOLE_SESSION in printed
     imported = namespace["IMPORTED"]
     assert (imported["provider"], imported["root"]) == ("ninjatrader", "ES")
     assert namespace["quality"].summary() in printed
@@ -112,7 +131,7 @@ def test_the_notebook_rebuilds_bars_from_trades_and_skips_the_import_it_lacks(
     printed = capsys.readouterr().out
     assert namespace["ticks"].status is ComparisonStatus.COMPARED
     assert namespace["report"].difference_count() == 0
-    assert "Skipped until" not in printed
+    assert NO_WHOLE_SESSION not in printed
     assert namespace["IMPORTED"] is None
     assert "Skipped: no dataset imported through a preset" in printed
 
@@ -123,18 +142,69 @@ def test_the_notebook_rebuilds_bars_from_trades_that_end_before_the_minute_bars(
     # Trades of 2026-03-05 and 03-06 only, while the 1-minute bars run to 03-09: the rebuild
     # takes 03-06, the last whole session of the trades, not 03-09, the last of the bars.
     store_with("ohlcv-1m")
-    shutil.copytree(
-        SYNTHETIC / "trades",
-        resolve_paths(os.environ).data_dir / "synthetic" / "trades",
-        ignore=shutil.ignore_patterns("date=2026-03-09"),
-    )
+    store_trades_without("2026-03-09")
 
     namespace = run_notebook()
 
     assert namespace["ticks"].status is ComparisonStatus.COMPARED
-    assert "Skipped until" not in capsys.readouterr().out
+    assert NO_WHOLE_SESSION not in capsys.readouterr().out
     assert namespace["DAY"] == date(2026, 3, 9)
     assert namespace["TICK_DAY"] == date(2026, 3, 6)
+
+
+def test_the_notebook_rebuilds_bars_from_trades_that_run_past_the_minute_bars(
+    tmp_path: Path,
+) -> None:
+    # 1-minute bars of 2026-03-05 and 03-06 only, and trades to 03-09 with a print 400 ms after
+    # its close, as the fixtures have after 03-06's, so that 03-09 is a whole session of the
+    # trades: the rebuild takes 03-06, the last both cover, where there are bars to compare.
+    store_minute_bars_before(date(2026, 3, 9))
+    store_trades_without()
+    sessions = sessions_of(BUILT_IN[CalendarId.CME_EQUITY_INDEX], tmp_path / "cache")
+    in_the_break = sessions.session(date(2026, 3, 9)).close + 400_000_000
+    part = (
+        resolve_paths(os.environ).data_dir
+        / "synthetic/trades/root=ES/contract=ESM2026/date=2026-03-09/part.parquet"
+    )
+    trades = pl.read_parquet(part)
+    print_after_the_close = trades.tail(1).with_columns(
+        ts_recv=pl.lit(in_the_break, dtype=pl.Int64),
+        ts_event=pl.lit(in_the_break, dtype=pl.Int64),
+        sequence=pl.col("sequence") + 1,
+    )
+    pl.concat([trades, print_after_the_close]).write_parquet(part)
+
+    namespace = run_notebook()
+
+    assert namespace["ticks"].status is ComparisonStatus.COMPARED
+    assert namespace["DAY"] == namespace["TICK_DAY"] == date(2026, 3, 6)
+
+
+def test_the_notebook_never_rebuilds_the_first_session_of_a_trades_file(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A file's first session can start after its open, as a download from midnight UTC does,
+    # so trades of 2026-03-06 alone hold no session the rebuild can take as whole.
+    store_with("ohlcv-1m")
+    store_trades_without("2026-03-05", "2026-03-09")
+
+    namespace = run_notebook()
+
+    assert namespace["TICK_DAY"] is None
+    assert NO_WHOLE_SESSION in capsys.readouterr().out
+
+
+def test_the_notebook_skips_trades_that_share_no_session_with_the_minute_bars(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # 1-minute bars of 2026-03-05 and 03-06, and trades of 03-09 alone.
+    store_minute_bars_before(date(2026, 3, 9))
+    store_trades_without("2026-03-05", "2026-03-06")
+
+    namespace = run_notebook()
+
+    assert namespace["TICK_DAY"] is None
+    assert NO_WHOLE_SESSION in capsys.readouterr().out
 
 
 def test_the_notebook_loads_an_import_coarser_than_five_minutes_at_its_own_timeframe(
