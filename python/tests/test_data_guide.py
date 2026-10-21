@@ -31,20 +31,24 @@ def test_the_guide_has_a_section_for_each_question_it_answers() -> None:
     assert [question for question in QUESTIONS if question not in headings] == []
 
 
-def test_every_command_the_guide_names_is_one_the_cli_has(
+def test_every_command_and_option_the_guide_names_is_one_the_cli_has(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    named = sorted(set(re.findall(r"fefat data [a-z-]+(?: databento| file)?", guide_text())))
+    text = guide_text()
+    named = sorted(set(re.findall(r"fefat data [a-z-]+(?: databento| file)?", text)))
     refused = []
     for command in named:
         with pytest.raises(SystemExit) as exit_info:
             main([*command.split()[1:], "--help"])
         if exit_info.value.code != 0:
             refused.append(command)
+    helps = capsys.readouterr().out
+    options = sorted(set(re.findall(r"(?<![\w-])--[a-z][a-z-]*", text)))
 
-    capsys.readouterr()
     assert "fefat data import file" in named
     assert refused == []
+    assert "--preview" in options
+    assert [option for option in options if option not in helps] == []
 
 
 def test_the_guide_names_every_preset() -> None:

@@ -41,7 +41,7 @@ Leave the folder to FEFAT: the imports and the quality reports do all the writin
 
 The store keeps Databento's units, whatever a file's source:
 
-- **Prices** are whole numbers of billionths of a point: 6,850.25 is stored as 6850250000000. Divide by `1e9` for points, as the notebook's `readable` does.
+- **Prices** are whole numbers of billionths of the price as the exchange quotes it: 6,850.25 is stored as 6850250000000. Divide by `1e9` for points, as the notebook's `readable` does.
 - **Times** are whole numbers of nanoseconds since 1970-01-01, in UTC. `pl.from_epoch("ts_open", time_unit="ns")` turns them into Polars datetimes, and `.dt.replace_time_zone("UTC").dt.convert_time_zone("America/Chicago")` shows them in Chicago time.
 - **Volumes** count the dataset's unit, one contract for futures.
 
@@ -51,10 +51,10 @@ The store keeps Databento's units, whatever a file's source:
 | --- | --- |
 | `ts_open`, `ts_close` | the bar's bucket, from `ts_open` up to but not including `ts_close`; a strategy may use a bar from its `ts_close` on |
 | `trade_date` | the trade date of the bar's session |
-| `instrument_id` | the vendor's id of the contract |
+| `instrument_id` | the contract's id: the vendor's, or, for an export without one, an id made from the contract's year and month |
 | `open`, `high`, `low`, `close` | the bar's prices, adjusted on a continuous series |
 | `volume`, `trade_count` | what traded in the bar; `trade_count` is empty where the source gives none |
-| `vwap` | the volume-weighted average price, empty on a vendor's bars, which carry none |
+| `vwap` | the volume-weighted average price, empty where the source gives none, as on Databento's bars |
 | `contract` | the contract the bar belongs to, such as `MESZ2026` |
 | `close_raw` | the contract's own close, the price orders fill at |
 | `adj_offset` | what was added to the contract's prices: `close` is `close_raw + adj_offset` |
@@ -80,7 +80,7 @@ ff.market.load("MNQ", "5m", "2026-09-11", "2026-09-18", continuous=False, provid
 
 Each product follows a session calendar: the exchange's hours in its time zone, and its holidays. A CME session runs from 17:00 Chicago on the evening before its trade date to 16:00 Chicago on it, so Sunday evening's trading belongs to Monday. FEFAT dates every bar and tick by the session it falls in, never by its day in UTC or on your clock.
 
-- **Holidays** are of three kinds: a full close, on which no session ends; a halt, which trades until midday and whose trading belongs to the next trade date; and an early close of the trade date. A weekend or a halt folds into the next session, as CME dates it.
+- **Holidays** are of three kinds: a full close, on which no session ends; a halt, which trades until a halt during the day and whose trading belongs to the next trade date; and an early close of the trade date. A weekend or a halt folds into the next session, as CME dates it.
 - **Halts**: equity index futures halted daily from 15:15 to 15:30 Chicago until June 2021, and the bars leave halts out.
 - **The break**: a print received in the hour between a close and the next open keeps the trade date of the session it follows.
 - **Built-in calendars**: `cme-equity-index` (ES, NQ, MES, MNQ), `cme-energy` (CL, MCL), `cme-metals` (GC, MGC), and `crypto-24x7`, UTC days for crypto. A product you import on other hours gets a calendar of its own: a time zone, a daily open and close, and the weekdays it trades, without holidays.
@@ -117,8 +117,8 @@ Where each preset's files come from:
 
 | Preset | Where the file comes from | Mind |
 | --- | --- | --- |
-| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN | Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
-| `databento-csv` | the same download with encoding CSV, of 1-minute bars | Times are UTC. Copy the preset into a profile of your own for Databento's CSV of trades or of other bars. |
+| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: a job is split into a file per day unless you change it, and the import refuses a job of several DBN files, whose rows could share a partition it does not merge yet. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
+| `databento-csv` | the same download with encoding CSV, of 1-minute bars, also without a split | Times are UTC. Copy the preset into a profile of your own for Databento's CSV of trades or of other bars. |
 | `ninjatrader` | NinjaTrader 8's Historical Data window, Export: interval type Minute, data type Last, one instrument at a time | Files are named like `MNQ 09-26.Last.txt`. Times are always UTC, each bar stamped at its close. Only history NinjaTrader has downloaded can be exported. |
 | `tradingview` | the chart's menu, Download chart data, time format UNIX timestamp | Put the Volume indicator on the chart first, and scroll back until the bars you want are loaded; exporting needs a paid plan, which sets how much history loads. The file's name, such as `CME_MINI_ESH2026, 1.csv`, names the contract. |
 | `sierra-chart` | Edit, Export Intraday Data to Text File, of a 1-minute intraday file | Times are always UTC. A bar export (Export Bar Data to Text File) is in the chart's time zone instead: set the chart to UTC, or give `--time-zone`. |
@@ -147,7 +147,7 @@ An export from your platform comes in through an import profile, a YAML descript
 
 1. **Pick the profile.** `fefat data profiles` lists the presets and your saved profiles, and `fefat data profiles ninjatrader` prints one as YAML.
 2. **Preview.** `fefat data import file "D:\Exports\MNQ 09-26.Last.txt" --profile ninjatrader --preview` prints the first records as they would be stored and every problem found, and writes nothing.
-3. **Import.** Run the same command without `--preview`. It keeps the original as `raw\user\<SHA-256>\<file name>`, writes the bars as the dataset `<provider>\ohlcv-1m\root=<root>`, and writes the product's quality report. A second import of the same file changes nothing.
+3. **Import.** Run the same command without `--preview`. It keeps the original as `raw\user\<SHA-256>\<file name>`, writes the records as the dataset `<provider>\<schema>\root=<root>`, such as `ninjatrader\ohlcv-1m\root=MNQ`, and writes the product's quality report. A second import of the same file changes nothing.
 
 What the file does not say, the import names:
 
@@ -157,18 +157,18 @@ What the file does not say, the import names:
 
 **A profile of your own.** For a layout no preset reads, such as 5-minute bars, ticks, or a source without a preset, copy the closest preset from `python/fefat/src/fefat/market/importers/presets/` into a file of your own; each preset's comments describe its layout. Give it a `name` of its own, since the presets' names are taken, and change what differs. Keep its `provider` for the same platform's files; for another source, name a provider of your own and add a `licence_scope` line with the terms its data comes under. Import with `--profile` and the file's path. Once an import with it has written, the profile is saved in `<FEFAT_HOME>\profiles\`, and later imports name it alone.
 
-**A product FEFAT does not know** needs an `instrument:` block in the profile: its `root`, its `kind` (`futures`, `perpetual`, or `spot`), `tick_size`, `point_value`, `currency`, `calendar` (a built-in calendar's id, or hours of its own: `time_zone`, `opens_at`, `closes_at`, `opens_on_previous_day`, and `weekdays`), and `first_trade_date`, before which no record is imported. The first import saves it as `<FEFAT_DATA_DIR>\instruments\<root>.json`, and `ff.market.load` reads the product from then on.
+**A product FEFAT does not know** needs an `instrument:` block in the profile: its `root`, its `kind` (`futures`, `perpetual`, or `spot`), `tick_size`, `point_value`, `currency`, `calendar` (a built-in calendar's id, or hours of its own: `time_zone`, `opens_at`, `closes_at`, `opens_on_previous_day`, and `weekdays`), and `first_trade_date`, before which no record is imported. A futures product also needs its `last_trade_rule`, how its contracts end: `{kind: third-friday}`, `{kind: business-days-before-the-25th, business_days: 3}`, or `{kind: third-last-business-day}`. The first import saves it as `<FEFAT_DATA_DIR>\instruments\<root>.json`, and `ff.market.load` reads the product from then on.
 
 **When an import is refused,** the preview and the import name each problem with the first row that shows it:
 
-- *its records run 6 hours late against the calendar ...; check the time zone of the file's times*: the times are in another zone than the profile says. Give `--time-zone`, or fix the profile's `time_zone`.
-- *its records run 1 minute early ...; check whether the file stamps each bar at its open or its close*: the profile's `stamp` names the wrong end of the bar.
-- *the calendar could not check the file's time zone and bar stamping*, a warning: a file of regular hours only, a thin file, or a calendar without breaks fits its sessions whatever its offset, so compare a few bars with your platform's chart.
+- _its records run 6 hours late against the calendar ...; check the time zone of the file's times_: the times are in another zone than the profile says. Give `--time-zone`, or fix the profile's `time_zone`.
+- _its records run 1 minute early ...; check whether the file stamps each bar at its open or its close_: the profile's `stamp` names the wrong end of the bar.
+- _the calendar could not check the file's time zone and bar stamping_, a warning: a file of regular hours only, a thin file, or a calendar without breaks fits its sessions whatever its offset, so compare a few bars with your platform's chart.
 - prices off the tick, volumes that are not whole lots, records before the product's first trade date, two bars in one bucket, or bars spaced as another timeframe: the profile reads the wrong columns or timeframe, or the file holds bad records.
 
 An offset can also come from bad bars rather than a wrong profile: three contracts of your NinjaTrader MNQ export were refused, as early by a minute or by hours, for spurious bars in NinjaTrader's own history, while the rest of the export imported with the same preset (`docs/masterplan/BACKLOG.md`). Compare a refused contract with another source before you change the profile.
 
-Two warnings come with every load of some imports: bars coarser than a minute warn that backtests on them fill at that coarser fidelity, and a continuous series that its roll handling is off. Where several providers hold a product, `load` reads the catalog's recommended source among them; name another with `provider=`, such as `provider="ninjatrader"`. A product outside the catalog needs `provider=` whenever several providers hold it.
+Two warnings come with every load of some imports: bars coarser than a minute warn that backtests on them fill at that coarser fidelity, and a continuous series that its roll handling is off. Where several providers hold a product, `load` reads the first of them among the presets of the catalog's recommended sources, so `databento` before `ibkr` for MES; name another with `provider=`, such as `provider="ninjatrader"`. When none of them is such a preset, as with two platform exports, or for a product outside the catalog, `load` refuses to choose until you name one.
 
 ## Checking coverage and quality
 
@@ -195,7 +195,7 @@ MES databento ohlcv-1m: 2019-05-06 to 2026-09-23, complete at 1-minute fidelity,
 
 1. **Coverage by month**: the sessions, those with records, the days at each fidelity, the findings, and the days the vendor flagged. A month with fewer days than sessions has gaps.
 2. **Findings**, each with its trade date, kind, schema, contract, and count. The kinds are `gap`, a session without records; `duplicates`; `out-of-session`, records outside their session and its break; `clock-decreases`, times running backwards between stored rows; `non-positive-prices`, at zero or below, CL's of 2020-04-20 and 21 allowed; and `bar-differences`, bars that differ from those rebuilt from finer data.
-3. **Days the vendor flagged**: the days Databento's `condition.json` marks as other than available, such as `degraded`; a gap inside one is the vendor's.
+3. **Days the vendor flagged**: the days Databento's `condition.json` marks as other than available, such as `degraded`; a gap on such a day may be the vendor's.
 4. **Prints in breaks and halts**: records received after a close or inside a halt, which keep their trade date and are not errors.
 5. **Bars against finer data**: the trade dates whose bars were rebuilt from finer data and compared.
 6. **Last session**: where the data ends; the buckets of an unfinished session are held back until later data completes it.
