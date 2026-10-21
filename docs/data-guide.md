@@ -51,7 +51,7 @@ The store keeps Databento's units, whatever a file's source:
 | --- | --- |
 | `ts_open`, `ts_close` | the bar's bucket, from `ts_open` up to but not including `ts_close`; a strategy may use a bar from its `ts_close` on |
 | `trade_date` | the trade date of the bar's session |
-| `instrument_id` | the contract's id: the vendor's, or, for an export without one, an id made from the contract's year and month |
+| `instrument_id` | the contract's id: the file's own, or, where an export has none or holds a continuous series, one FEFAT gives the contract |
 | `open`, `high`, `low`, `close` | the bar's prices, adjusted on a continuous series |
 | `volume`, `trade_count` | what traded in the bar; `trade_count` is empty where the source gives none |
 | `vwap` | the volume-weighted average price, empty where the source gives none, as on Databento's bars |
@@ -80,7 +80,7 @@ ff.market.load("MNQ", "5m", "2026-09-11", "2026-09-18", continuous=False, provid
 
 Each product follows a session calendar: the exchange's hours in its time zone, and its holidays. A CME session runs from 17:00 Chicago on the evening before its trade date to 16:00 Chicago on it, so Sunday evening's trading belongs to Monday. FEFAT dates every bar and tick by the session it falls in, never by its day in UTC or on your clock.
 
-- **Holidays** are of three kinds: a full close, on which no session ends; a halt, which trades until a halt during the day and whose trading belongs to the next trade date; and an early close of the trade date. A weekend or a halt folds into the next session, as CME dates it.
+- **Holidays** are of three kinds: a full close, on which no session ends; a halt day, which trades until the exchange halts it during the day, at 12:00 Chicago for equity index, and whose trading belongs to the next trade date; and an early close of the trade date. A weekend or a halt folds into the next session, as CME dates it.
 - **Halts**: equity index futures halted daily from 15:15 to 15:30 Chicago until June 2021, and the bars leave halts out.
 - **The break**: a print received in the hour between a close and the next open keeps the trade date of the session it follows.
 - **Built-in calendars**: `cme-equity-index` (ES, NQ, MES, MNQ), `cme-energy` (CL, MCL), `cme-metals` (GC, MGC), and `crypto-24x7`, UTC days for crypto. A product you import on other hours gets a calendar of its own: a time zone, a daily open and close, and the weekdays it trades, without holidays.
@@ -117,7 +117,7 @@ Where each preset's files come from:
 
 | Preset | Where the file comes from | Mind |
 | --- | --- | --- |
-| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: a job is split into a file per day unless you change it, and the import refuses a job of several DBN files, whose rows could share a partition it does not merge yet. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
+| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: Databento's API splits a job into a file per day by default, and the import refuses a job of several DBN files, whose rows could share a partition it does not merge yet. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
 | `databento-csv` | the same download with encoding CSV, of 1-minute bars, also without a split | Times are UTC. Copy the preset into a profile of your own for Databento's CSV of trades or of other bars. |
 | `ninjatrader` | NinjaTrader 8's Historical Data window, Export: interval type Minute, data type Last, one instrument at a time | Files are named like `MNQ 09-26.Last.txt`. Times are always UTC, each bar stamped at its close. Only history NinjaTrader has downloaded can be exported. |
 | `tradingview` | the chart's menu, Download chart data, time format UNIX timestamp | Put the Volume indicator on the chart first, and scroll back until the bars you want are loaded; exporting needs a paid plan, which sets how much history loads. The file's name, such as `CME_MINI_ESH2026, 1.csv`, names the contract. |
@@ -140,6 +140,8 @@ Give the import the batch job's folder, or a single `.dbn` or `.dbn.zst` file. I
 4. writes each contract's bars into the store, and prints what it wrote and what it set aside.
 
 A second run of the same folder imports nothing and says so. A later download with rows of a contract's month that the store already holds is refused rather than merged, so until FEFAT merges overlapping files (`docs/masterplan/BACKLOG.md`), a purchase can only add months the store lacks. After an import, write the product's quality report with `fefat data quality <root>`: a file import writes it by itself, a Databento import does not. Record each purchase in `docs/data-inventory.md`, as the files on this PC are.
+
+To check your bars against ticks, buy trades that span at least one whole session the 1-minute bars also cover. A file's first and last sessions are partial, since a download from midnight UTC starts and ends inside one, so the notebook compares only the sessions between. The quality report still rebuilds those two sessions, and lists their bars as differences until it learns to leave them out (`docs/masterplan/BACKLOG.md`).
 
 ## Importing your own exports
 
