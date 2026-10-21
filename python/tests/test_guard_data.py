@@ -617,3 +617,46 @@ def test_a_push_line_git_would_not_write_is_refused(
 
     assert guard_data.main(["--pushed", "origin"]) == 2
     assert "Expected" in capsys.readouterr().err
+
+
+def test_a_push_to_a_url_checks_only_what_the_remote_branch_lacks(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # git hands the hook a URL when the push names one, so `--remotes=<url>` matches no ref;
+    # the remote object git writes on the ref line bounds the range instead of the whole history.
+    first, last = a_branch_that_adds_and_removes_bars(repository)
+    pushed = f"refs/heads/notes {last} refs/heads/notes {first}\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(pushed))
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--pushed", "https://github.com/user/fefat.git"]) == 1
+    assert "1 problem in 1 of 2 commits" in capsys.readouterr().out
+
+
+def test_a_pushed_tag_of_a_tree_is_refused_rather_than_passed_unchecked(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `git rev-list` lists no commits for a tree, so a tag of one, which only deliberate
+    # plumbing makes, would pass with "no commits to check".
+    _, last = a_branch_that_adds_and_removes_bars(repository)
+    tree = repository.git("rev-parse", f"{last}^{{tree}}").stdout.strip()
+    pushed = f"refs/tags/tree {tree} refs/tags/tree {NO_OBJECT}\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(pushed))
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--pushed", "origin"]) == 2
+    assert "Expected a commit" in capsys.readouterr().err
+
+
+def test_a_replaced_commit_is_checked_as_pushed_not_as_replaced(
+    repository: GitRepository, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `git replace` makes git read another object in a commit's place, which a push ignores,
+    # so the guard reads the commit as it will be pushed.
+    first, last = a_branch_that_adds_and_removes_bars(repository)
+    with_bars = repository.git("rev-parse", f"{last}~1").stdout.strip()
+    assert repository.git("replace", with_bars, first).returncode == 0
+    monkeypatch.chdir(repository.folder)
+
+    assert guard_data.main(["--commits", f"{first}..{last}"]) == 1
+    assert "Add the bars" in capsys.readouterr().out
