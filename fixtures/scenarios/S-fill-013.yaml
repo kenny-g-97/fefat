@@ -1,0 +1,21 @@
+id: S-fill-013
+title: A sell stop on an import's 5-minute bars fills a tick below its price, tagged 5m
+fidelity: 5m
+instrument: ES
+position: {side: long, quantity: 1, price: "5010.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:35:00Z", open: "5001.00", high: "5003.75", low: "4996.50", close: "4998.25", volume: 2100}
+  - {ts_open: "2026-03-06T14:35:00Z", ts_close: "2026-03-06T14:40:00Z", open: "4998.00", high: "4999.25", low: "4993.50", close: "4994.75", volume: 2600}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:40:00Z", price: "4994.75", rule: F-STP-04}
+rules: [F-BAR-02, F-BAR-07, F-SLP-01, F-STP-01, F-STP-04, F-TAG-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A long of 1 is protected
+# by the stop. 5-minute bars, an import's finest data, replay like 1-minute bars (F-BAR-07), and
+# with the long held each bar goes from its open to its low first (F-BAR-02):
+# the bar from 14:30 to 14:35 goes down to 4996.50, above the stop;
+# the bar from 14:35 to 14:40 goes from 4998.00 down to 4993.50, passing 4995.00 (F-STP-01);
+# fill = 4995.00 - 1 × 0.25 = 4994.75 (F-STP-04), at 14:40:00, tagged 5m (F-TAG-01).

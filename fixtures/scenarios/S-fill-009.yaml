@@ -1,0 +1,20 @@
+id: S-fill-009
+title: A buy stop on trades fills a tick above its price, and trades received at one instant keep their order
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5004.75", size: 2}
+  - {ts: "2026-03-06T14:30:00.500Z", price: "5005.00", size: 1}
+  - {ts: "2026-03-06T14:30:00.500Z", price: "5005.75", size: 4}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.500Z", price: "5005.25", rule: F-STP-03}
+rules: [F-CLK-03, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# two trades arrive at 14:30:00.500, 5005.00 and then 5005.75, in the tape's order (F-CLK-03);
+# the first of them is at the stop and triggers it (F-STP-01);
+# fill = higher of (5005.00 + 1 × 0.25, 5005.00) = 5005.25 (F-STP-03);
+# read the other way round, 5005.75 would trigger it: higher of (5005.25, 5005.75) = 5005.75.

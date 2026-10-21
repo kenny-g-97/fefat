@@ -1,0 +1,23 @@
+id: S-fill-030
+title: An open position is marked at each bar's close, not at its fill price
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5002.50", low: "4999.25", close: "5001.75", volume: 300}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5001.50", high: "5003.00", low: "5000.75", close: "5002.25", volume: 280}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03}
+  marks:
+    - {ts: "2026-03-06T14:31:00Z", price: "5001.75"}
+    - {ts: "2026-03-06T14:32:00Z", price: "5002.25"}
+rules: [F-BAR-06, F-MKT-03, F-MRK-01, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25, point value 50; one tick of slippage on bars: F-SLP-01):
+# the buy market order fills at the open of the bar from 14:30 to 14:31 plus a tick:
+# 5000.00 + 0.25 = 5000.25 (F-MKT-03), at the bar's close, 14:31:00 (F-BAR-06);
+# the mark is the last pseudo-tick replayed, so once the events of 14:31:00 are done it is that
+# bar's close, 5001.75, not the fill price (F-MRK-01); at 14:32:00 it is the next bar's close, 5002.25;
+# open profit at 14:31:00 = (5001.75 - 5000.25) × 50 = 75.00, before fees.

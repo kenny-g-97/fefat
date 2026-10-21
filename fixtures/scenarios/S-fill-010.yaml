@@ -1,0 +1,19 @@
+id: S-fill-010
+title: A buy stop on 1-second bars triggers when a bar's high reaches its price and fills a tick above it
+fidelity: 1s
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:30:01Z", open: "5004.50", high: "5004.75", low: "5004.25", close: "5004.75", volume: 6}
+  - {ts_open: "2026-03-06T14:30:01Z", ts_close: "2026-03-06T14:30:02Z", open: "5004.75", high: "5005.25", low: "5004.50", close: "5005.00", volume: 11}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:02Z", price: "5005.25", rule: F-STP-04}
+rules: [F-BAR-01, F-BAR-06, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# the bar from 14:30:00 to 14:30:01 reaches 5004.75 at most, below the stop;
+# the bar from 14:30:01 to 14:30:02 opens at 5004.75 and reaches 5005.25: on its path from the open
+# to the high the price passes 5005.00 (F-BAR-01), which triggers the stop (F-STP-01);
+# fill = 5005.00 + 1 × 0.25 = 5005.25 (F-STP-04), at the bar's close, 14:30:02 (F-BAR-06).

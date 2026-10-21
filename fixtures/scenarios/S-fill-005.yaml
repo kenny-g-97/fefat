@@ -1,0 +1,19 @@
+id: S-fill-005
+title: A sell market order on 1-minute bars fills at the next bar's open minus a tick, at that bar's close
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: market, quantity: 2}
+tape:
+  - {ts_open: "2026-03-06T14:29:00Z", ts_close: "2026-03-06T14:30:00Z", open: "5001.00", high: "5001.50", low: "5000.50", close: "5001.25", volume: 120}
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5001.25", high: "5002.00", low: "5000.75", close: "5001.75", volume: 150}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5001.00", rule: F-MKT-03}
+rules: [F-ACT-02, F-BAR-06, F-MKT-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# active at 14:30:00.000 + 100 ms = 14:30:00.100; the first bar closing after it runs from 14:30
+# to 14:31 (F-ACT-02);
+# fill = its open - 1 tick = 5001.25 - 0.25 = 5001.00 (F-MKT-03), both contracts, at its close,
+# 14:31:00 (F-BAR-06).

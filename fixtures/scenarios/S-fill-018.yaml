@@ -1,0 +1,21 @@
+id: S-fill-018
+title: With touch fills, a buy limit on trades fills on the first trade at its price
+fidelity: trades
+instrument: ES
+settings: {limit_fill: touch}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.400Z", price: "4995.50", size: 3}
+  - {ts: "2026-03-06T14:30:00.900Z", price: "4995.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.300Z", price: "4995.00", size: 5}
+  - {ts: "2026-03-06T14:30:01.800Z", price: "4995.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.900Z", price: "4995.00", rule: F-LMT-03}
+rules: [F-LMT-02, F-LMT-03]
+
+# Arithmetic (ES, tick 0.25; the run setting limit_fill: touch, on the tape of S-fill-017):
+# with touch, a trade at the limit is enough (F-LMT-02); the first trade at or below 4995.00 after
+# the activation prints 4995.00 at 14:30:00.900;
+# fill = the limit = 4995.00 (F-LMT-03), at 14:30:00.900.

@@ -1,0 +1,23 @@
+id: S-fill-012
+title: A sell stop gapped through on trades fills at the first trade past it
+fidelity: trades
+instrument: ES
+position: {side: long, quantity: 1, price: "5000.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "4996.00", size: 2}
+  - {ts: "2026-03-06T14:30:00.450Z", price: "4995.50", size: 1}
+  - {ts: "2026-03-06T14:30:01.250Z", price: "4990.25", size: 6}
+  - {ts: "2026-03-06T14:30:01.400Z", price: "4990.75", size: 3}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:01.250Z", price: "4990.25", rule: F-STP-03}
+rules: [F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01). A long of 1 is protected
+# by the stop:
+# the trades step from 4995.50 to 4990.25, with no trade at 4995.00 between them;
+# 4990.25 is the first trade at or below the stop, and triggers it (F-STP-01);
+# fill = lower of (4995.00 - 1 × 0.25, 4990.25) = lower of (4994.75, 4990.25) = 4990.25 (F-STP-03):
+# the gap price, with no tick added beyond it.

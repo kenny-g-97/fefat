@@ -1,0 +1,21 @@
+id: S-fill-025
+title: Of an OCO pair of entry stops on trades, the first to trigger fills and cancels the other
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, oco: breakout}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1, oco: breakout}
+tape:
+  - {ts: "2026-03-06T14:30:00.300Z", price: "5000.50", size: 2}
+  - {ts: "2026-03-06T14:30:02.100Z", price: "5005.00", size: 3}
+  - {ts: "2026-03-06T14:30:05.400Z", price: "4994.50", size: 4}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:02.100Z", price: "5005.25", rule: F-STP-03}
+rules: [F-OCO-01, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01). A buy stop at 5005.00 and a
+# sell stop at 4995.00 form one OCO group:
+# at 14:30:02.100 a trade at 5005.00 triggers the buy stop (F-STP-01);
+# fill = higher of (5005.00 + 1 × 0.25, 5005.00) = 5005.25 (F-STP-03);
+# the sell stop is cancelled at once (F-OCO-01), so the trade at 4994.50 later fills nothing.

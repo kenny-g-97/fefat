@@ -1,0 +1,23 @@
+id: S-fill-023
+title: A short's stop and target inside one 1-second bar resolve to the stop, flagged ambiguous
+fidelity: 1s
+instrument: ES
+position: {side: short, quantity: 2, price: "5000.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5004.00", quantity: 2, oco: exit}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4996.00", quantity: 2, oco: exit}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:30:01Z", open: "5000.00", high: "5000.75", low: "4999.50", close: "5000.25", volume: 9}
+  - {ts_open: "2026-03-06T14:30:01Z", ts_close: "2026-03-06T14:30:02Z", open: "5000.25", high: "5004.50", low: "4995.50", close: "4997.00", volume: 35}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:02Z", price: "5004.25", rule: F-STP-04, flags: [ambiguous]}
+rules: [F-BAR-02, F-BAR-05, F-OCO-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A short of 2 has its stop at
+# 5004.00 and its target at 4996.00, one OCO group:
+# the bar from 14:30:01 to 14:30:02 reaches both, high 5004.50 and low 4995.50; holding the short,
+# the path goes to the high first (F-BAR-02), passing 5004.00 and triggering the stop (F-STP-01);
+# fill = 5004.00 + 1 × 0.25 = 5004.25 for both contracts (F-STP-04); the target is cancelled (F-OCO-01);
+# with the low first the target would have filled at 4996.00 instead, so the fill is flagged
+# ambiguous (F-BAR-05).

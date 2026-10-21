@@ -1,0 +1,19 @@
+id: S-fill-001
+title: A buy market order on TBBO fills at the ask of the first record after its activation
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.099Z", price: "5000.00", size: 2, bid: "4999.75", ask: "5000.00", bid_size: 10, ask_size: 8}
+  - {ts: "2026-03-06T14:30:00.250Z", price: "5000.25", size: 1, bid: "5000.00", ask: "5000.25", bid_size: 12, ask_size: 6}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.250Z", price: "5000.25", rule: F-MKT-01}
+rules: [F-ACT-01, F-CLK-01, F-MKT-01, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01):
+# active at 14:30:00.000 + 100 ms = 14:30:00.100 (F-ACT-01), on the receive clock (F-CLK-01);
+# the record received at 14:30:00.099 comes 1 ms before that, so the order never sees it;
+# the first record at or after 14:30:00.100 is received at 14:30:00.250, with the ask at 5000.25;
+# fill = ask + 0 ticks = 5000.25 + 0 × 0.25 = 5000.25 (F-MKT-01).
