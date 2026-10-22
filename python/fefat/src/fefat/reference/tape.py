@@ -8,7 +8,7 @@ from typing import Annotated, Self
 from pydantic import BeforeValidator, Field, model_validator
 
 from fefat.market.schema import FrozenModel, Timeframe
-from fefat.reference.units import Instant, Price, price_text
+from fefat.reference.units import Instant, Price, instant_text, price_text
 
 Count = Annotated[int, Field(gt=0)]
 """A size or a volume, in the dataset's size unit."""
@@ -92,7 +92,10 @@ class BarRecord(FrozenModel):
     @model_validator(mode="after")
     def _a_bar_holds_its_prices(self) -> Self:
         if self.ts_open >= self.ts_close:
-            raise ValueError("Expected a bar to open before it closes.")
+            raise ValueError(
+                f"Expected a bar to open before it closes, got ts_open "
+                f"{instant_text(self.ts_open)} and ts_close {instant_text(self.ts_close)}."
+            )
         if not self.low <= min(self.open, self.close) <= max(self.open, self.close) <= self.high:
             prices = ", ".join(price_text(price) for price in self.prices())
             raise ValueError(

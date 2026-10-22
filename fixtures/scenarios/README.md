@@ -107,3 +107,4 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 | [S-fill-038](S-fill-038.yaml) | trades | A buy limit above a crypto market fills at its own price on the first trade, as a taker |
 | [S-fill-039](S-fill-039.yaml) | trades | A buy limit larger than the trade that goes through it fills whole, flagged size_exceeded |
 | [S-fill-040](S-fill-040.yaml) | 1m | A bracket stop placed through the market at its entry's bar open fills there, as a market order would |
+| [S-fill-041](S-fill-041.yaml) | tbbo | On TBBO a bracket stop at its entry record's trade price is through the market and fills on the next record |

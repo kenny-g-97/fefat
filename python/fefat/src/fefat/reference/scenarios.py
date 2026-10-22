@@ -34,6 +34,7 @@ from fefat.reference.units import (
     Price,
     Quantity,
     QuotedDecimal,
+    instant_text,
     price_text,
 )
 
@@ -335,9 +336,14 @@ class Scenario(FrozenModel):
                     f"Expected a fee on each fill of {self.id} exactly when it has fees, got "
                     f"order {fill.order}'s fill {'without' if fill.fee is None else 'with'} one."
                 )
-        times = {rate.ts for rate in self.funding}
-        if any(payment.ts not in times for payment in self.expected.funding):
-            raise ValueError(f"Expected each funding payment of {self.id} at a funding time.")
+        times = sorted({rate.ts for rate in self.funding})
+        unpaid = [payment.ts for payment in self.expected.funding if payment.ts not in times]
+        if unpaid:
+            raise ValueError(
+                f"Expected each funding payment of {self.id} at one of its funding times "
+                f"{[instant_text(time) for time in times]}, got "
+                f"{[instant_text(time) for time in unpaid]}."
+            )
 
 
 def load_scenario(path: Path) -> Scenario:

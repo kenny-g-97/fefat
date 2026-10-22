@@ -84,6 +84,22 @@ def test_every_scenario_shows_its_arithmetic_in_a_comment() -> None:
     assert [path.name for path in files if not shows_arithmetic(path)] == []
 
 
+def test_the_scenarios_folder_holds_only_yaml_scenarios_and_its_readme() -> None:
+    others = [path.name for path in SCENARIOS.iterdir() if path.suffix != ".yaml"]
+
+    assert others == ["README.md"]
+
+
+def test_a_funding_payment_off_the_funding_times_is_refused() -> None:
+    funding = [{"ts": "2026-03-06T16:00:00.000Z", "rate": "0.0001"}]
+    paid = {"ts": "2026-03-06T08:00:00.000Z", "amount": "-0.10"}
+    fills = {"order": 1, "ts": RECEIVED, "price": "5000.25", "rule": "F-MKT-02"}
+    off_time = a_scenario(funding=funding, expected={"fills": [fills], "funding": [paid]})
+
+    with pytest.raises(ValidationError, match=re.escape("got ['2026-03-06T08:00:00Z']")):
+        Scenario.model_validate(off_time)
+
+
 def test_the_readme_lists_every_scenario_with_its_fidelity_and_title() -> None:
     readme = (SCENARIOS / "README.md").read_text(encoding="utf-8")
     rows = {

@@ -72,6 +72,13 @@ def price_text(units: int) -> str:
     return format(Decimal(units).scaleb(-PRICE_DECIMALS).normalize(), "f")
 
 
+def instant_text(nanoseconds: int) -> str:
+    """An instant in nanoseconds as the UTC time it is written as, such as 2026-03-06T14:30:00.1Z."""
+    seconds, fraction = divmod(nanoseconds, 1_000_000_000)
+    clock = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    return f"{clock}.{fraction:09d}".rstrip("0").rstrip(".") + "Z"
+
+
 def _quoted_decimal(text: object) -> Decimal:
     if not isinstance(text, str) or _DECIMAL_TEXT.fullmatch(text) is None:
         raise ValueError(f'Expected a decimal written in quotes, such as "0.25", got {text!r}.')
