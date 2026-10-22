@@ -54,6 +54,8 @@ rules: [F-SLP-01, F-STP-01, F-STP-03]
 - Money is a decimal in quotes in the instrument's currency, `"2.50"`, read in micro-units.
 - Quantities count contracts for futures and the base asset for crypto: a whole number, or a decimal in quotes on the lot step, such as `"0.013"` BTC.
 - Every price lies on the instrument's tick, and every quantity on its lot step.
+- A key written twice in one mapping is refused, rather than YAML keeping the second silently, and so is a bar longer than its timeframe (a daily bar is a session, which a holiday can stretch).
+- Expected fills must be possible: an order fills once at most, one order of an OCO group or a bracket at most, and a bracket's leg only after its entry.
 
 ## The arithmetic
 

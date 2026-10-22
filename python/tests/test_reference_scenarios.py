@@ -11,12 +11,12 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from fefat.reference.orders import StopOrder
 from fefat.reference.scenarios import (
     LimitFill,
     Scenario,
     ScenarioSettings,
     SlippageTicks,
-    StopOrder,
     load_scenario,
     load_scenarios,
     specified_rules,
@@ -90,11 +90,22 @@ def test_the_scenarios_folder_holds_only_yaml_scenarios_and_its_readme() -> None
     assert others == ["README.md"]
 
 
+def a_perpetual_scenario(**changes: object) -> dict[str, object]:
+    """A scenario that loads, a buy market order filled on one BTCUSDT-PERP trade."""
+    fills = {"order": 1, "ts": RECEIVED, "price": "65000.1", "rule": "F-MKT-02"}
+    perpetual: dict[str, object] = {
+        "instrument": "BTCUSDT-PERP",
+        "tape": [{"ts": RECEIVED, "price": "65000.0", "size": 3}],
+        "expected": {"fills": [fills]},
+    }
+    return a_scenario(**{**perpetual, **changes})
+
+
 def test_a_funding_payment_off_the_funding_times_is_refused() -> None:
     funding = [{"ts": "2026-03-06T16:00:00.000Z", "rate": "0.0001"}]
     paid = {"ts": "2026-03-06T08:00:00.000Z", "amount": "-0.10"}
-    fills = {"order": 1, "ts": RECEIVED, "price": "5000.25", "rule": "F-MKT-02"}
-    off_time = a_scenario(funding=funding, expected={"fills": [fills], "funding": [paid]})
+    fills = {"order": 1, "ts": RECEIVED, "price": "65000.1", "rule": "F-MKT-02"}
+    off_time = a_perpetual_scenario(funding=funding, expected={"fills": [fills], "funding": [paid]})
 
     with pytest.raises(ValidationError, match=re.escape("got ['2026-03-06T08:00:00Z']")):
         Scenario.model_validate(off_time)
@@ -233,3 +244,82 @@ def test_a_file_named_otherwise_than_its_id_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=re.escape("named by its id, S-fill-900.yaml.")):
         load_scenario(misnamed)
+
+
+def test_a_key_given_twice_in_a_scenario_file_is_refused(tmp_path: Path) -> None:
+    written = tmp_path / "S-fill-900.yaml"
+    text = yaml.safe_dump(a_scenario(), sort_keys=False)
+    written.write_text(text.replace("rule: F-MKT-02", "rule: F-MKT-02\n    price: '4994.75'"))
+
+    with pytest.raises(ValueError, match=re.escape("each key once in a mapping, got ['price']")):
+        load_scenario(written)
+
+
+def test_an_order_filled_twice_is_refused() -> None:
+    fill = {"order": 1, "ts": RECEIVED, "price": "5000.25", "rule": "F-MKT-02"}
+
+    with pytest.raises(ValidationError, match=re.escape("to fill once at most, got [1] again")):
+        Scenario.model_validate(a_scenario(expected={"fills": [fill, fill]}))
+
+
+def test_both_orders_of_an_oco_group_filled_is_refused() -> None:
+    stop = {"id": 1, "placed_at": PLACED, "side": "buy", "kind": "stop", "price": "5000.00"}
+    limit = {"id": 2, "placed_at": PLACED, "side": "buy", "kind": "limit", "price": "5000.50"}
+    orders = [{**stop, "quantity": 1, "oco": "entry"}, {**limit, "quantity": 1, "oco": "entry"}]
+    fills = [
+        {"order": 1, "ts": RECEIVED, "price": "5000.25", "rule": "F-STP-03"},
+        {"order": 2, "ts": RECEIVED, "price": "5000.50", "rule": "F-LMT-03"},
+    ]
+    both = a_scenario(orders=orders, expected={"fills": fills}, rules=["F-STP-03", "F-LMT-03"])
+
+    with pytest.raises(ValidationError, match=re.escape("in each OCO group of S-fill-900")):
+        Scenario.model_validate(both)
+
+
+def test_a_bracket_leg_filled_without_its_entry_is_refused() -> None:
+    bracket = {"stop": {"id": 2, "price": "4995.00"}, "target": {"id": 3, "price": "5010.00"}}
+    order = {"id": 1, "placed_at": PLACED, "side": "buy", "kind": "market", "quantity": 1}
+    leg = {"order": 3, "ts": RECEIVED, "price": "5010.00", "rule": "F-LMT-03"}
+    alone = a_scenario(
+        orders=[{**order, "bracket": bracket}], expected={"fills": [leg]}, rules=["F-LMT-03"]
+    )
+
+    with pytest.raises(ValidationError, match="leg 3 of S-fill-900 to fill after its entry"):
+        Scenario.model_validate(alone)
+
+
+def test_a_bar_longer_than_its_fidelity_is_refused() -> None:
+    bar = {"open": "5000.00", "high": "5000.25", "low": "5000.00", "close": "5000.25", "volume": 9}
+    five_minutes = {"ts_open": "2026-03-06T14:30:00Z", "ts_close": "2026-03-06T14:35:00Z", **bar}
+    fill = {"order": 1, "ts": "2026-03-06T14:35:00Z", "price": "5000.25", "rule": "F-MKT-03"}
+    on_one_minute = a_scenario(
+        fidelity="1m", tape=[five_minutes], expected={"fills": [fill]}, rules=["F-MKT-03"]
+    )
+
+    with pytest.raises(ValidationError, match="bars of 1m at most, got record 1 longer"):
+        Scenario.model_validate(on_one_minute)
+
+
+def test_a_record_lacking_a_field_of_its_fidelity_names_the_field() -> None:
+    no_quote = a_scenario(fidelity="tbbo", rules=["F-MKT-02"])
+
+    with pytest.raises(ValidationError, match=r"tape of TBBO records for fidelity tbbo[\s\S]*bid"):
+        Scenario.model_validate(no_quote)
+
+
+def test_fees_or_funding_that_do_not_fit_the_instrument_are_refused() -> None:
+    crypto_fee = {"kind": "crypto", "maker_bps": "2", "taker_bps": "5"}
+    funding = [{"ts": "2026-03-06T16:00:00.000Z", "rate": "0.0001"}]
+
+    with pytest.raises(ValidationError, match="Expected futures fees for ES"):
+        Scenario.model_validate(a_scenario(fees=crypto_fee))
+    with pytest.raises(ValidationError, match="Expected funding rates on a perpetual only"):
+        Scenario.model_validate(a_scenario(funding=funding))
+    assert Scenario.model_validate(a_perpetual_scenario(funding=funding)).funding
+
+
+def test_an_inline_tick_finer_than_a_price_unit_is_refused() -> None:
+    fine = {"tick_size": "0.0000000001", "point_value": "1", "lot_step": "1"}
+
+    with pytest.raises(ValidationError, match="tick size in whole 1e-9 units"):
+        Scenario.model_validate(a_scenario(instrument=fine))

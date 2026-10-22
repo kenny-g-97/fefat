@@ -5,9 +5,9 @@ import itertools
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import BeforeValidator, Field, model_validator
+from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError, model_validator
 
-from fefat.market.schema import FrozenModel, Timeframe
+from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
 from fefat.reference.units import Instant, Price, instant_text, price_text
 
 Count = Annotated[int, Field(gt=0)]
@@ -117,27 +117,46 @@ class BarRecord(FrozenModel):
 Tape = tuple[TradeRecord, ...] | tuple[TbboRecord, ...] | tuple[BarRecord, ...]
 """The records of one fidelity, in the order the engine reads them."""
 
-_TICK_RECORDS: dict[TickFidelity, type[TradeRecord]] = {
-    TickFidelity.TBBO: TbboRecord,
-    TickFidelity.TRADES: TradeRecord,
-}
-_RECORD_WORDS: dict[type[FrozenModel], str] = {
-    TradeRecord: "trades",
-    TbboRecord: "TBBO records",
-    BarRecord: "bars",
-}
+_TRADES = TypeAdapter(tuple[TradeRecord, ...])
+_TBBO_RECORDS = TypeAdapter(tuple[TbboRecord, ...])
+_BARS = TypeAdapter(tuple[BarRecord, ...])
+
+
+def parse_tape(fidelity: TickFidelity | Timeframe, raw: object) -> Tape:
+    """`raw` read as the records `fidelity` names: bars of a timeframe, TBBO records, or
+    trades, so that an error names the record and the field that break it."""
+    if isinstance(fidelity, Timeframe):
+        return _parsed(_BARS, "bars", fidelity, raw)
+    if fidelity is TickFidelity.TBBO:
+        return _parsed(_TBBO_RECORDS, "TBBO records", fidelity, raw)
+    return _parsed(_TRADES, "trades", fidelity, raw)
+
+
+def _parsed[Records](
+    adapter: TypeAdapter[Records], words: str, fidelity: TickFidelity | Timeframe, raw: object
+) -> Records:
+    try:
+        return adapter.validate_python(raw)
+    except ValidationError as error:
+        raise ValueError(
+            f"Expected a tape of {words} for fidelity {fidelity}, got: {error}"
+        ) from None
 
 
 def check_tape(fidelity: TickFidelity | Timeframe, tape: Tape) -> None:
-    """Refuse a tape whose records are not those of `fidelity`, or out of time order: each
-    record starts no earlier than the one before it is received."""
-    wanted = BarRecord if isinstance(fidelity, Timeframe) else _TICK_RECORDS[fidelity]
-    found = {type(record) for record in tape}
-    if found != {wanted}:
-        got = " and ".join(sorted(_RECORD_WORDS[kind] for kind in found)) or "no records"
-        raise ValueError(
-            f"Expected a tape of {_RECORD_WORDS[wanted]} for fidelity {fidelity}, got {got}."
-        )
+    """Refuse an empty tape, a bar longer than its timeframe (a daily bar is a session, which a
+    holiday can stretch past a day), and records out of time order: each record starts no
+    earlier than the one before it is received."""
+    if not tape:
+        raise ValueError("Expected a tape of one record or more, got none.")
+    if isinstance(fidelity, Timeframe) and fidelity.unit is not TimeUnit.DAY:
+        longest = fidelity.nominal_nanoseconds()
+        spans = (record.available_at() - record.starts_at() for record in tape)
+        longer = [str(number) for number, span in enumerate(spans, start=1) if span > longest]
+        if longer:
+            raise ValueError(
+                f"Expected bars of {fidelity} at most, got record {', '.join(longer)} longer."
+            )
     for number, (earlier, later) in enumerate(itertools.pairwise(tape), start=2):
         if later.starts_at() < earlier.available_at():
             raise ValueError(

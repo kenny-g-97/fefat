@@ -1,11 +1,11 @@
 """Fill scenarios: the hand-computable cases that specify how the engines fill orders (D-10).
 
 A scenario is one YAML file in `fixtures/scenarios/`, named by its id (`S-fill-012.yaml`): a
-tape (`fefat.reference.tape`), an instrument, the orders placed at given instants, and the
-fills, marks, and funding payments the rules of `docs/spec/fill-semantics.md` give, with the
-identifiers of the rules it exercises; `fixtures/scenarios/README.md` documents the format.
-Its values are held in the units both engines count in (`fefat.reference.units`), so that
-their fills compare as integers:
+tape (`fefat.reference.tape`), an instrument, the orders placed at given instants
+(`fefat.reference.orders`), and the fills, marks, and funding payments the rules of
+`docs/spec/fill-semantics.md` give, with the identifiers of the rules it exercises;
+`fixtures/scenarios/README.md` documents the format. Its values are held in the units both
+engines count in (`fefat.reference.units`), so that their fills compare as integers:
 
     load_scenario(Path("fixtures/scenarios/S-fill-012.yaml")).expected.fills[0].price
     # 4_990_250_000_000, written "4990.25"
@@ -16,23 +16,30 @@ from collections import Counter
 from collections.abc import Iterator
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Self
 
 import yaml
-from pydantic import BeforeValidator, Field, ValidationError, model_validator
+from pydantic import (
+    BeforeValidator,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from fefat.market import instruments
-from fefat.market.fees import Fee
-from fefat.market.instruments import Instrument
+from fefat.market.fees import Fee, FuturesFee
+from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.schema import FrozenModel
-from fefat.reference.tape import Fidelity, Tape, TickFidelity, check_tape
+from fefat.reference.orders import OpenPosition, Order, OrderId, oco_groups
+from fefat.reference.tape import Fidelity, Tape, TickFidelity, check_tape, parse_tape
 from fefat.reference.units import (
     PRICE_DECIMALS,
     Instant,
     Money,
     PositiveDecimal,
     Price,
-    Quantity,
     QuotedDecimal,
     instant_text,
     price_text,
@@ -41,21 +48,10 @@ from fefat.reference.units import (
 DEFAULT_LATENCY_MS = 100
 """How long after the decision that placed it an order becomes active (F-ACT-01, D-51)."""
 
-OrderId = Annotated[int, Field(ge=1)]
 RuleId = Annotated[str, Field(pattern=r"^F-[A-Z]{3}-[0-9]{2}$")]
 """A rule of the fill specification, such as F-STP-03."""
 
 _RULE_DEFINITION = re.compile(r"^\*\*(F-[A-Z]{3}-[0-9]{2})\*\*", re.MULTILINE)
-
-
-class Side(StrEnum):
-    BUY = "buy"
-    SELL = "sell"
-
-
-class PositionSide(StrEnum):
-    LONG = "long"
-    SHORT = "short"
 
 
 class LimitFill(StrEnum):
@@ -68,7 +64,7 @@ class LimitFill(StrEnum):
 
 class FillFlag(StrEnum):
     """What a fill is flagged with: a bar's fills that depend on the order of its extremes
-    (F-BAR-05), or a size above the quote's on TBBO (F-QTY-01)."""
+    (F-BAR-05), or a size above the size its record shows (F-QTY-01)."""
 
     AMBIGUOUS = "ambiguous"
     SIZE_EXCEEDED = "size_exceeded"
@@ -82,6 +78,15 @@ class InlineInstrument(FrozenModel):
     point_value: PositiveDecimal
     lot_step: PositiveDecimal
 
+    @model_validator(mode="after")
+    def _tick_in_price_units(self) -> Self:
+        if self.tick_size.scaleb(PRICE_DECIMALS) % 1 != 0:
+            raise ValueError(
+                "Expected a tick size in whole 1e-9 units, nine decimal places at most, "
+                f"got {self.tick_size}."
+            )
+        return self
+
 
 def _instrument(value: object) -> object:
     """A root's text as the instrument table's version of it."""
@@ -90,96 +95,6 @@ def _instrument(value: object) -> object:
 
 
 ScenarioInstrument = Annotated[Instrument | InlineInstrument, BeforeValidator(_instrument)]
-
-
-class BracketLeg(FrozenModel):
-    """One exit of a bracket: the id the scenario gives it and its price."""
-
-    id: OrderId
-    price: Price
-
-
-class Bracket(FrozenModel):
-    """The stop and the target placed, as one OCO group, when their entry fills (F-OCO-02)."""
-
-    stop: BracketLeg
-    target: BracketLeg
-
-
-class ScenarioOrder(FrozenModel):
-    """What every order of a scenario states: its id, the decision instant it was placed at
-    (it becomes active the latency later, F-ACT-01), its side, its quantity in the
-    instrument's units, and optionally its OCO group and a bracket."""
-
-    id: OrderId
-    placed_at: Instant
-    side: Side
-    quantity: Quantity
-    oco: str | None = None
-    bracket: Bracket | None = None
-
-    @model_validator(mode="after")
-    def _bracket_stop_on_the_losing_side(self) -> Self:
-        if self.bracket is None:
-            return self
-        stop, target = self.bracket.stop.price, self.bracket.target.price
-        buying = self.side is Side.BUY
-        if not (stop < target if buying else stop > target):
-            raise ValueError(
-                f"Expected order {self.id}'s bracket stop {'below' if buying else 'above'} its "
-                f"target, got stop {price_text(stop)} and target {price_text(target)}."
-            )
-        return self
-
-    def ids(self) -> tuple[int, ...]:
-        """This order's id, then its bracket's."""
-        if self.bracket is None:
-            return (self.id,)
-        return (self.id, self.bracket.stop.id, self.bracket.target.id)
-
-    def prices(self) -> tuple[int, ...]:
-        """The prices this order names: its bracket's, and its own where its kind has one."""
-        if self.bracket is None:
-            return ()
-        return (self.bracket.stop.price, self.bracket.target.price)
-
-
-class MarketOrder(ScenarioOrder):
-    """An order to buy or sell at the market (F-MKT)."""
-
-    kind: Literal["market"]
-
-
-class PricedOrder(ScenarioOrder):
-    """An order that names its price: a stop or a limit."""
-
-    price: Price
-
-    def prices(self) -> tuple[int, ...]:
-        return (self.price, *super().prices())
-
-
-class StopOrder(PricedOrder):
-    """A stop-market order at `price` (F-STP)."""
-
-    kind: Literal["stop"]
-
-
-class LimitOrder(PricedOrder):
-    """A limit order at `price` (F-LMT)."""
-
-    kind: Literal["limit"]
-
-
-Order = Annotated[MarketOrder | StopOrder | LimitOrder, Field(discriminator="kind")]
-
-
-class OpenPosition(FrozenModel):
-    """A position held when the tape starts: its side, quantity, and average entry price."""
-
-    side: PositionSide
-    quantity: Quantity
-    price: Price
 
 
 class FundingRate(FrozenModel):
@@ -267,13 +182,25 @@ class Scenario(FrozenModel):
         ticks = 0 if raw.get("fidelity") == TickFidelity.TBBO else 1
         return {**raw, "settings": {**settings, "slippage_ticks": {"market": ticks, "stop": ticks}}}
 
+    @field_validator("tape", mode="before")
+    @classmethod
+    def _records_of_the_fidelity(cls, raw: object, info: ValidationInfo) -> object:
+        """The tape read as the records its fidelity names; without a valid fidelity, the
+        fidelity's own error says why."""
+        fidelity = info.data.get("fidelity")
+        if fidelity is None:
+            return raw
+        return parse_tape(fidelity, raw)
+
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         check_tape(self.fidelity, self.tape)
         self._check_prices_on_the_tick()
         self._check_quantities_on_the_lot_step()
         self._check_orders()
+        self._check_costs_fit_the_instrument()
         self._check_expected()
+        self._check_fills_are_possible()
         return self
 
     def _prices(self) -> Iterator[int]:
@@ -319,6 +246,22 @@ class Scenario(FrozenModel):
                 f"Expected two orders or more in each OCO group of {self.id}, got one in {alone}."
             )
 
+    def _check_costs_fit_the_instrument(self) -> None:
+        if not isinstance(self.instrument, Instrument):
+            return
+        root, kind = self.instrument.root, self.instrument.kind
+        futures = kind is InstrumentKind.FUTURES
+        if self.fees is not None and isinstance(self.fees, FuturesFee) != futures:
+            raise ValueError(
+                f"Expected {'futures' if futures else 'crypto'} fees for {root}, a {kind} "
+                f"instrument, got {self.fees.kind} fees."
+            )
+        if self.funding and kind is not InstrumentKind.PERPETUAL:
+            raise ValueError(
+                f"Expected funding rates on a perpetual only, got them on {root}, a {kind} "
+                "instrument."
+            )
+
     def _check_expected(self) -> None:
         ids = sorted(order_id for order in self.orders for order_id in order.ids())
         for fill in self.expected.fills:
@@ -345,11 +288,59 @@ class Scenario(FrozenModel):
                 f"{[instant_text(time) for time in unpaid]}."
             )
 
+    def _check_fills_are_possible(self) -> None:
+        """Orders fill whole and once (F-QTY-01), one order of an OCO group at most (F-OCO-01),
+        and a bracket's leg only once its entry has filled (F-OCO-02)."""
+        filled = Counter(fill.order for fill in self.expected.fills)
+        again = sorted(order for order, fills in filled.items() if fills > 1)
+        if again:
+            raise ValueError(
+                f"Expected each order of {self.id} to fill once at most, got {again} again."
+            )
+        for group in oco_groups(self.orders):
+            if len(group & filled.keys()) > 1:
+                raise ValueError(
+                    f"Expected one fill at most in each OCO group of {self.id} (F-OCO-01), got "
+                    f"orders {sorted(group & filled.keys())}."
+                )
+        times = {fill.order: fill.ts for fill in self.expected.fills}
+        for order in self.orders:
+            for leg in set(order.ids()[1:]) & times.keys():
+                if order.id not in times or times[leg] < times[order.id]:
+                    raise ValueError(
+                        f"Expected bracket leg {leg} of {self.id} to fill after its entry, order "
+                        f"{order.id}, fills (F-OCO-02)."
+                    )
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """YAML's safe loader, refusing a key given twice in one mapping, of which YAML would keep
+    the last without a word."""
+
+
+def _mapping_of_unique_keys(loader: yaml.SafeLoader, node: yaml.MappingNode) -> dict[Any, Any]:
+    keys = [loader.construct_object(key, deep=True) for key, _ in node.value]
+    repeated = sorted({str(key) for key in keys if keys.count(key) > 1})
+    if repeated:
+        raise yaml.constructor.ConstructorError(
+            None,
+            None,
+            f"Expected each key once in a mapping, got {repeated} again",
+            node.start_mark,
+        )
+    return loader.construct_mapping(node, deep=True)
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _mapping_of_unique_keys
+)
+
 
 def load_scenario(path: Path) -> Scenario:
     """The scenario in one YAML file, which is named by its id: `S-fill-012.yaml`."""
+    text = path.read_text(encoding="utf-8")
     try:
-        scenario = Scenario.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+        scenario = Scenario.model_validate(yaml.load(text, Loader=_UniqueKeyLoader))
     except (ValidationError, yaml.YAMLError) as error:
         raise ValueError(f"Expected {path.name} to hold a fill scenario, got: {error}") from error
     if path.name != f"{scenario.id}.yaml":
