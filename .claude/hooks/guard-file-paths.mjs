@@ -7,18 +7,24 @@
  * (licensed data lives under FEFAT_DATA_DIR, never in the repository: D-21,
  * docs/masterplan/05-build-process.md section 5). Asks before goldens and
  * snapshots change (they change only with the builder's approval: the
- * engine-golden skill). Everything else gets no decision, so the permission
- * rules apply as usual. Paths are compared with forward slashes and, on
- * Windows, without regard to case.
+ * engine-golden skill), and before a written fill scenario or the fill
+ * specification changes (the specification first, then the scenarios, with
+ * the builder: step 2.1), while new scenarios stay free to add. Everything
+ * else gets no decision, so the permission rules apply as usual. Paths are
+ * compared with forward slashes and, on Windows, without regard to case.
  *
  * Its cases are in scripts/test_hooks.py.
  */
+import { existsSync } from "node:fs";
 import { readHookInput } from "./lib/hook-input.mjs";
 import { askBeforeToolCall, denyToolCall, leaveToolCallToPermissionRules } from "./lib/hook-reply.mjs";
 import { describeFilePath, projectDirectory, usesWindowsAlias } from "./lib/project-paths.mjs";
 
 const SYNTHETIC_FIXTURES = "fixtures/synthetic/";
 const GOLDENS = "fixtures/goldens/";
+const SCENARIOS = "fixtures/scenarios/";
+const FILL_SPECIFICATION = "docs/spec/fill-semantics.md";
+const SCENARIO_SUFFIXES = [".yaml", ".yml"];
 const MARKET_DATA_SUFFIXES = [
   ".dbn.zst", ".csv.gz", ".duckdb.wal", ".dbn", ".zst", ".parquet", ".arrow", ".arrows", ".feather",
   ".ipc", ".zip", ".h5", ".hdf5", ".duckdb", ".sqlite", ".sqlite3", ".db", ".csv", ".tsv", ".jsonl",
@@ -84,6 +90,12 @@ const RULES = [
     reason: (file) =>
       `${file.inProject} is a golden or snapshot file. Goldens change only with the builder's approval, a fill-model version bump where fills change, and a changelog entry (the engine-golden skill).`,
   },
+  {
+    applies: isWrittenFillSpecification,
+    decision: "ask",
+    reason: (file) =>
+      `${file.inProject} is a written fill scenario or the fill specification. They change only with the builder: the specification first, then the scenarios, and never an expected value to match code (the engine-golden skill).`,
+  },
 ];
 
 function newText(toolInput) {
@@ -108,6 +120,16 @@ function isGoldenFile(file) {
   const inGoldens = file.inProjectFolded.startsWith(GOLDENS) && !file.inProjectFolded.endsWith(".md");
   const isSnapshot = SNAPSHOT_SUFFIXES.some((suffix) => file.nameFolded.endsWith(suffix));
   return inGoldens || isSnapshot || file.inProjectFolded.split("/").includes("__snapshots__");
+}
+
+// An existing scenario or the specification: a new scenario file stays free to add.
+function isWrittenFillSpecification(file) {
+  if (file.inProjectFolded === null) {
+    return false;
+  }
+  const isScenario =
+    file.inProjectFolded.startsWith(SCENARIOS) && SCENARIO_SUFFIXES.some((suffix) => file.nameFolded.endsWith(suffix));
+  return (isScenario || file.inProjectFolded === FILL_SPECIFICATION) && existsSync(file.absolute);
 }
 
 function filePathOf(toolInput) {

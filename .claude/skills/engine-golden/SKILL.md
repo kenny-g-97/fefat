@@ -10,11 +10,11 @@ paths:
 
 # engine-golden — scenarios, goldens, and their changelog
 
-The engine's truth is what the builder can read: the fill specification (`docs/spec/fill-semantics.md`, written in step 2.1), the scenario tables, and the Python reference engine (D-07, D-10). Goldens pin what a run produces, and they change only on purpose (D-11, `docs/masterplan/02-engine-and-data.md` §8). The hooks ask the builder before any golden or snapshot file is written and before any regeneration command runs.
+The engine's truth is what the builder can read: the fill specification (`docs/spec/fill-semantics.md`, written in step 2.1), the scenario tables, and the Python reference engine (D-07, D-10). Goldens pin what a run produces, and they change only on purpose (D-11, `docs/masterplan/02-engine-and-data.md` §8). The hooks ask the builder before any golden or snapshot file is written, before an existing scenario or the fill specification is edited (new scenarios stay free to add), and before any regeneration command runs.
 
 ## Scenarios first
 
-1. A behaviour change starts as scenario rows in `fixtures/scenarios/` (step 2.1 fixes the format; until then, one YAML file per scenario named `S-<area>-NNN`). Each row can be computed by hand: the tape (ticks or bars), the orders, the expected fills with prices, the rule identifiers of the specification (`F-MKT-01`, …), and the fidelity.
+1. A behaviour change starts as scenarios in `fixtures/scenarios/`: one YAML file per scenario named `S-<area>-NNN`, in the format of that folder's `README.md` (step 2.1). Each row can be computed by hand: the tape (ticks or bars), the orders, the expected fills with prices, the rule identifiers of the specification (`F-MKT-01`, …), and the fidelity.
 2. Run the scenarios against both engines: the new rows fail before the code change and pass after it. A scenario's expected value is never edited to match the code; if the specification is wrong, change the specification first, with the builder.
 
 ## Goldens
