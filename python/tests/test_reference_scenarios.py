@@ -21,7 +21,7 @@ from fefat.reference.scenarios import (
     load_scenarios,
     specified_rules,
 )
-from fefat.reference.units import instant_nanoseconds, price_units
+from fefat.reference.units import instant_nanoseconds, instant_text, price_units
 
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ROOT / "fixtures" / "scenarios"
@@ -149,6 +149,8 @@ def test_an_instant_is_read_from_its_quoted_utc_time_into_nanoseconds() -> None:
     assert instant_nanoseconds("2026-03-06T14:30:00Z") == half_past_two
     assert instant_nanoseconds("2026-03-06T14:30:00.100Z") == half_past_two + 100_000_000
     assert instant_nanoseconds("2026-03-06T14:30:00.000000001Z") == half_past_two + 1
+    assert instant_text(half_past_two + 100_000_000) == "2026-03-06T14:30:00.1Z"
+    assert instant_text(-(10**18)) == "1938-04-24T22:13:20Z"
 
 
 @pytest.mark.parametrize(

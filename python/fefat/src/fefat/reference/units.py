@@ -8,7 +8,7 @@ fraction and `14:30:00` as the number 52200, so only quoted text is accepted.
 """
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 
@@ -19,6 +19,9 @@ PRICE_DECIMALS = 9
 MONEY_DECIMALS = 6
 """Money counts micro-units of its currency."""
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+"""The Unix epoch; adding to it works for every instant, where Windows' fromtimestamp refuses
+those well before 1970."""
 _DECIMAL_TEXT = re.compile(r"(-?)([0-9]+)(?:\.([0-9]+))?")
 _INSTANT_TEXT = re.compile(
     r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.([0-9]{1,9}))?Z"
@@ -75,7 +78,7 @@ def price_text(units: int) -> str:
 def instant_text(nanoseconds: int) -> str:
     """An instant in nanoseconds as the UTC time it is written as, such as 2026-03-06T14:30:00.1Z."""
     seconds, fraction = divmod(nanoseconds, 1_000_000_000)
-    clock = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    clock = (_EPOCH + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
     return f"{clock}.{fraction:09d}".rstrip("0").rstrip(".") + "Z"
 
 
