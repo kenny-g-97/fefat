@@ -1,0 +1,23 @@
+id: S-fill-035
+title: A bracket stop placed at the market fills as a market order on the next trade, not on its entry's own trade
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1, bracket: {stop: {id: 2, price: "5000.00"}, target: {id: 3, price: "5010.00"}}}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-06T14:30:00.600Z", price: "5000.50", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:00.600Z", price: "5000.25", rule: F-STP-05}
+rules: [F-MKT-02, F-OCO-01, F-OCO-02, F-SLP-01, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# the buy market order fills at the first trade plus a tick: 5000.00 + 0.25 = 5000.25 (F-MKT-02);
+# its bracket is placed then and works from the next trade on (F-OCO-02); its sell stop at 5000.00
+# is at the last trade, 5000.00, so it is already through and fills at once as a market order
+# (F-STP-05), on the next trade: fill = 5000.50 - 1 × 0.25 = 5000.25; the target is cancelled
+# (F-OCO-01);
+# had the bracket worked on its entry's own trade, the stop would have filled there, at
+# lower of (5000.00 - 0.25, 5000.00) = 4999.75, at 14:30:00.200.

@@ -1,22 +1,21 @@
 id: S-fill-026
-title: A minute without trades fills nothing, and a stop fills on the next stored bar
+title: A market order active during a minute without trades fills on the next stored bar
 fidelity: 1m
 instrument: ES
-position: {side: long, quantity: 1, price: "5000.00"}
 orders:
-  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1}
+  - {id: 1, placed_at: "2026-03-06T14:31:00.000Z", side: buy, kind: market, quantity: 1}
 tape:
   - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "4997.00", high: "4997.50", low: "4996.00", close: "4996.25", volume: 80}
   - {ts_open: "2026-03-06T14:32:00Z", ts_close: "2026-03-06T14:33:00Z", open: "4994.50", high: "4995.25", low: "4993.75", close: "4994.00", volume: 95}
 expected:
   fills:
-    - {order: 1, ts: "2026-03-06T14:33:00Z", price: "4994.50", rule: F-STP-04}
-rules: [F-BAR-06, F-BAR-07, F-SLP-01, F-STP-01, F-STP-04]
+    - {order: 1, ts: "2026-03-06T14:33:00Z", price: "4994.75", rule: F-MKT-03}
+rules: [F-ACT-02, F-BAR-06, F-BAR-07, F-MKT-03, F-SLP-01]
 
-# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A long of 1 has its stop at
-# 4995.00:
-# nothing traded from 14:31 to 14:32, so that minute has no bar, and the grid row load adds for it
-# is never replayed (F-BAR-07);
-# the next stored bar, from 14:32 to 14:33, opens at 4994.50, below the stop (F-STP-01);
-# fill = lower of (4995.00 - 1 × 0.25, 4994.50) = lower of (4994.75, 4994.50) = 4994.50 (F-STP-04),
-# at that bar's close, 14:33:00 (F-BAR-06).
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# decided at the close of the bar from 14:30 to 14:31, the order is active at 14:31:00.100;
+# nothing traded from 14:31 to 14:32, so that minute has no stored bar, and the zero_volume row
+# that load adds for it, priced at the close before it, is never replayed (F-BAR-07);
+# the first stored bar closing after the activation runs from 14:32 to 14:33 (F-ACT-02);
+# fill = its open + 1 tick = 4994.50 + 0.25 = 4994.75 (F-MKT-03), at its close, 14:33:00 (F-BAR-06);
+# replaying the empty minute would have filled at 4996.25 + 0.25 = 4996.50 at 14:32:00 instead.

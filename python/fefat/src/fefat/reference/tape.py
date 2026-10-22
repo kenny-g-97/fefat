@@ -39,9 +39,11 @@ Fidelity = Annotated[TickFidelity | Timeframe, BeforeValidator(_fidelity)]
 
 
 class TradeRecord(FrozenModel):
-    """A trade print of a `trades` tape, received at `ts`."""
+    """A trade print of a `trades` tape, received at `ts`; `ts_event`, the exchange's time
+    of the trade, may be given to show that the engine never reads it (F-CLK-01)."""
 
     ts: Instant
+    ts_event: Instant | None = None
     price: Price
     size: Count
 

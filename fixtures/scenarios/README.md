@@ -2,7 +2,7 @@
 
 Each YAML file here is one scenario: a short tape of trades, TBBO records, or bars, the orders placed on it, and the fills that the [fill specification](../../docs/spec/fill-semantics.md) gives, with the arithmetic in a comment so you can check every number with a calculator. Together they are the specification in examples. The Python reference engine (step 2.2) and the Rust engine (from step 2.6) must produce exactly these fills, and a test is never fixed by editing an expected value: if an expected value looks wrong to you, say which rule you believe applies, and the specification changes first, then the scenario.
 
-`fefat.reference.scenarios` reads them (`load_scenario`, `load_scenarios`). `python/tests/test_reference_scenarios.py` checks that every scenario validates, cites only rules the specification defines, and shows its arithmetic, and that together they cite every rule.
+`fefat.reference.scenarios` reads them (`load_scenario`, `load_scenarios`). `python/tests/test_reference_scenarios.py` checks that every scenario validates, cites only rules the specification defines, and shows its arithmetic, and that together they cite every rule. The scenario runner of step 2.2 checks each fill's price, time, rule, flags, and fee, and that its fidelity tag is the scenario's fidelity (F-TAG-01).
 
 ## A scenario
 
@@ -39,9 +39,9 @@ rules: [F-SLP-01, F-STP-01, F-STP-03]
 | `fidelity` | The data the tape holds: `tbbo`, `trades`, or a bar timeframe, `1s`, `1m`, or an import's coarser `5m` or `1d`. |
 | `instrument` | A root of the instrument table (`ES`, `MES`, `BTCUSDT-PERP`, and so on), whose tick size, point value, lot step, and session calendar apply; or `{tick_size, point_value, lot_step}` for a product the table lacks, which trades around the clock. |
 | `settings` | Optional run settings: `latency_ms` (100), `slippage_ticks: {market, stop}` (none on `tbbo`, one on every other fidelity), and `limit_fill` (`through`, or `touch`). Left out, the specification's defaults apply. |
-| `fees` | Optional: `{kind: futures, per_contract_side}` or `{kind: crypto, maker_bps, taker_bps}`, as in `fefat.market.fees`. With fees, every expected fill states its `fee`. |
+| `fees` | Optional: `{kind: futures, per_contract_side}` or `{kind: crypto, maker_bps, taker_bps}`, as in `fefat.market.fees`: the fee of the schedule in force, which a run takes from its dated fee table (F-FEE-01). With fees, every expected fill states its `fee`. |
 | `position` | Optional position held when the tape starts: `{side: long or short, quantity, price}`. |
-| `tape` | The records, in the order the engine reads them. Trades: `{ts, price, size}`. TBBO: `{ts, price, size, bid, ask, bid_size, ask_size}`, the quote just before the trade. Bars: `{ts_open, ts_close, open, high, low, close, volume}`, stored bars only, so a minute without trades has none. |
+| `tape` | The records, in the order the engine reads them. Trades: `{ts, price, size}`, with `ts` the receive time and an optional `ts_event`, the exchange's time, which the engine never reads. TBBO: the same with `bid, ask, bid_size, ask_size`, the quote just before the trade. Bars: `{ts_open, ts_close, open, high, low, close, volume}`, stored bars only, so a minute without trades has none. Sizes and volumes count the dataset's size unit. |
 | `funding` | Optional funding rates of a perpetual: `{ts, rate}`, where `"0.0001"` is 0.01 %. |
 | `orders` | `{id, placed_at, side: buy or sell, kind: market, stop, or limit, price, quantity}`, with `price` for stops and limits only, and optionally `oco: <group>` and `bracket: {stop: {id, price}, target: {id, price}}`. `placed_at` is the decision instant: the order becomes active the latency later. |
 | `expected` | `fills: [{order, ts, price, rule, flags, fee}]`, where `rule` is the rule that priced the fill and `flags` may list `ambiguous` or `size_exceeded`; `fills: []` expects none. Optionally `marks: [{ts, price}]`, the mark once every event at `ts` is done, and `funding: [{ts, amount}]`, an amount being the change to the trader's cash. |
@@ -57,7 +57,7 @@ rules: [F-SLP-01, F-STP-01, F-STP-03]
 
 ## The arithmetic
 
-Each file ends with a comment that works out every expected value from the tape and the rules, citing each rule where it applies, so a reader can recompute the fills by hand. Times are UTC, and Chicago times are given where sessions matter.
+Each file ends with a comment that works out every expected value from the tape and the rules, citing each rule where it applies, so a reader can recompute the fills by hand. Where another reading of the rules would give another fill, the comment says which and why. Times are UTC, and Chicago times are given where sessions matter.
 
 ## Changing a scenario
 
@@ -80,7 +80,7 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 | [S-fill-011](S-fill-011.yaml) | 1m | A buy stop on 1-minute bars fills at the open of a bar that opens past it |
 | [S-fill-012](S-fill-012.yaml) | trades | A sell stop gapped through on trades fills at the first trade past it |
 | [S-fill-013](S-fill-013.yaml) | 5m | A sell stop on an import's 5-minute bars fills a tick below its price, tagged 5m |
-| [S-fill-014](S-fill-014.yaml) | tbbo | A buy stop placed below the market is accepted, triggers on the first record, and fills no lower than its price |
+| [S-fill-014](S-fill-014.yaml) | tbbo | A buy stop placed below the market is accepted and fills at once, as a market order would |
 | [S-fill-015](S-fill-015.yaml) | tbbo | A buy limit on TBBO fills at its price when a trade prints below it |
 | [S-fill-016](S-fill-016.yaml) | tbbo | A buy limit on TBBO fills at its price when the ask comes down to it |
 | [S-fill-017](S-fill-017.yaml) | trades | A buy limit on trades that the market touches without trading through does not fill |
@@ -92,8 +92,17 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 | [S-fill-023](S-fill-023.yaml) | 1s | A short's stop and target inside one 1-second bar resolve to the stop, flagged ambiguous |
 | [S-fill-024](S-fill-024.yaml) | 1m | A buy stop entry and its bracket stop both fill in one 1-minute bar, flagged ambiguous |
 | [S-fill-025](S-fill-025.yaml) | trades | Of an OCO pair of entry stops on trades, the first to trigger fills and cancels the other |
-| [S-fill-026](S-fill-026.yaml) | 1m | A minute without trades fills nothing, and a stop fills on the next stored bar |
+| [S-fill-026](S-fill-026.yaml) | 1m | A market order active during a minute without trades fills on the next stored bar |
 | [S-fill-027](S-fill-027.yaml) | trades | A market order active in the break fills on the next session's first trade, not on a print in the break |
 | [S-fill-028](S-fill-028.yaml) | trades | A futures round trip pays the fee per contract per side on its entry and its exit |
 | [S-fill-029](S-fill-029.yaml) | trades | A crypto short pays maker on its resting limit entry, receives funding, and pays taker on its market exit |
 | [S-fill-030](S-fill-030.yaml) | 1m | An open position is marked at each bar's close, not at its fill price |
+| [S-fill-031](S-fill-031.yaml) | 1s | With a 1-second latency on 1-second bars, an order active at a bar's close sees the next bar |
+| [S-fill-032](S-fill-032.yaml) | 1m | A long opened on the bar that closes at a funding time pays that funding |
+| [S-fill-033](S-fill-033.yaml) | 1m | Of an OCO pair of entry stops both inside one bar, the lower order id fills, flagged ambiguous |
+| [S-fill-034](S-fill-034.yaml) | 1m | A bar that opens through a long's target fills the target at its open, though it reaches the stop later |
+| [S-fill-035](S-fill-035.yaml) | trades | A bracket stop placed at the market fills as a market order on the next trade, not on its entry's own trade |
+| [S-fill-036](S-fill-036.yaml) | tbbo | When one TBBO record would fill both a long's triggered stop and its target, the stop fills |
+| [S-fill-037](S-fill-037.yaml) | trades | A trade the exchange stamped before an order's activation but received after it counts for that order |
+| [S-fill-038](S-fill-038.yaml) | trades | A buy limit above a crypto market fills at its own price on the first trade, as a taker |
+| [S-fill-039](S-fill-039.yaml) | trades | A buy limit larger than the trade that goes through it fills whole, flagged size_exceeded |

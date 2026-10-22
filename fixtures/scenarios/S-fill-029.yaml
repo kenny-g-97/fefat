@@ -9,12 +9,12 @@ orders:
   - {id: 1, placed_at: "2026-03-07T07:00:00.000Z", side: sell, kind: limit, price: "65000.0", quantity: "0.013"}
   - {id: 2, placed_at: "2026-03-07T09:00:00.000Z", side: buy, kind: market, quantity: "0.013"}
 tape:
-  - {ts: "2026-03-07T07:00:00.500Z", price: "64990.0", size: 4}
-  - {ts: "2026-03-07T07:12:30.000Z", price: "65000.0", size: 2}
-  - {ts: "2026-03-07T07:13:05.250Z", price: "65000.4", size: 3}
-  - {ts: "2026-03-07T07:59:59.800Z", price: "65123.7", size: 1}
-  - {ts: "2026-03-07T08:00:00.000Z", price: "65130.0", size: 2}
-  - {ts: "2026-03-07T09:00:00.150Z", price: "65200.0", size: 5}
+  - {ts: "2026-03-07T07:00:00.500Z", price: "64990.0", size: 40}
+  - {ts: "2026-03-07T07:12:30.000Z", price: "65000.0", size: 25}
+  - {ts: "2026-03-07T07:13:05.250Z", price: "65000.4", size: 30}
+  - {ts: "2026-03-07T07:59:59.800Z", price: "65123.7", size: 12}
+  - {ts: "2026-03-07T08:00:00.000Z", price: "65130.0", size: 20}
+  - {ts: "2026-03-07T09:00:00.150Z", price: "65200.0", size: 50}
 expected:
   fills:
     - {order: 1, ts: "2026-03-07T07:13:05.250Z", price: "65000.0", rule: F-LMT-03, fee: "0.169"}
@@ -23,17 +23,17 @@ expected:
     - {ts: "2026-03-07T08:00:00.000Z", amount: "0.084660"}
 rules: [F-CLK-02, F-FEE-02, F-FEE-03, F-FND-01, F-LMT-01, F-LMT-03, F-LMT-04, F-MKT-02, F-MRK-01, F-SLP-01]
 
-# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC on a lot step of 0.001;
-# maker 2 bps, taker 5 bps; one tick of slippage on trades: F-SLP-01):
+# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC on a lot step of 0.001,
+# sizes in lots of 0.001 BTC; maker 2 bps, taker 5 bps; one tick of slippage on trades: F-SLP-01):
 # the sell limit for 0.013 BTC at 65000.0 first sees 64990.0 and rests; 65000.0 only touches it;
 # 65000.4 prints above it (F-LMT-01): fill = the limit = 65000.0 (F-LMT-03), a maker, since it
 # filled after the first price it saw (F-LMT-04);
 # maker fee = 65000.0 × 0.013 × 1 × 0.0002 = 845.0 × 0.0002 = 0.169 (F-FEE-02);
 # funding at 08:00:00.000 comes before the trade of that instant (F-CLK-02), at the mark of the last
-# trade before it, 65123.7 (F-MRK-01): value = 65123.7 × 0.013 × 1 = 846.6081, and
-# 846.6081 × 0.0001 = 0.08466081, received by the short since the rate is positive (F-FND-01),
-# rounded down as a credit to 0.084660 (F-FEE-03);
+# trade before it, 65123.7 (F-MRK-01): -0.013 × 65123.7 × 1 × 0.0001 = -0.08466081, negative, so
+# the short receives it (F-FND-01), and the cash change rounds toward minus infinity to 0.084660
+# (F-FEE-03);
 # the buy market order, active at 09:00:00.100, fills at the first trade plus a tick:
 # 65200.0 + 0.1 = 65200.1 (F-MKT-02);
 # taker fee = 65200.1 × 0.013 × 1 × 0.0005 = 847.6013 × 0.0005 = 0.42380065, rounded up as a charge
-# to 0.423801 (F-FEE-03).
+# to 0.423801 (F-FEE-03); 13 lots stay within the 30 and 50 of the trades that filled them (F-QTY-01).

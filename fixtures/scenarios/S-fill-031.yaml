@@ -1,0 +1,22 @@
+id: S-fill-031
+title: With a 1-second latency on 1-second bars, an order active at a bar's close sees the next bar
+fidelity: 1s
+instrument: ES
+settings: {latency_ms: 1000}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:30:01Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 9}
+  - {ts_open: "2026-03-06T14:30:01Z", ts_close: "2026-03-06T14:30:02Z", open: "5000.50", high: "5001.00", low: "5000.25", close: "5000.75", volume: 7}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:02Z", price: "5000.75", rule: F-MKT-03}
+rules: [F-ACT-01, F-ACT-02, F-CLK-02, F-MKT-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01; a latency of 1 s, as in the
+# stress rerun):
+# active at 14:30:00.000 + 1000 ms = 14:30:01.000 (F-ACT-01), the instant the first bar closes;
+# the bars closing at an instant come before its activations (F-CLK-02), so a bar closing at the
+# activation instant is never seen (F-ACT-02): its prices traded before the order existed;
+# the first bar closing after 14:30:01.000 runs from 14:30:01 to 14:30:02;
+# fill = its open + 1 tick = 5000.50 + 0.25 = 5000.75 (F-MKT-03), at its close, 14:30:02.
