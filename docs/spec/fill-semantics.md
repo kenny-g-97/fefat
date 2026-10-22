@@ -43,7 +43,7 @@ Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02
 
 **F-ACT-01** (design, D-51) An order decided at a bar close becomes active at that close plus the run's latency, 100 ms by default. On trades and TBBO it triggers and fills only on records received after the decision that placed it and at or after its activation: a record at the activation instant counts, since activations come before the records of their instant (F-CLK-02). On bars, F-ACT-02 decides which bars it sees.
 
-**F-ACT-02** (proposed) On bars, an order sees the first bar whose `ts_close` is after its activation, from that bar's open on, and every later bar. A bar cannot show what traded before the activation inside it, so it counts whole. A bar that closes at or before the activation, at the activation instant included, is never seen, so an order without latency never sees the bar it was decided on.
+**F-ACT-02** (proposed) On bars, an order decided at a bar close sees the first bar whose `ts_close` is after its activation, from that bar's open on, and every later bar. A bar cannot show what traded before the activation inside it, so it counts whole. A bar that closes at or before the activation, at the activation instant included, is never seen, so an order without latency never sees the bar it was decided on. A bracket placed at its entry's fill inside a bar works on the rest of that bar's path instead (F-OCO-02).
 
 ## 5. Market orders (F-MKT)
 
@@ -63,7 +63,7 @@ Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02
 
 **F-STP-04** (design, D-51) On bars, a triggered buy stop fills at S plus the stop slippage ticks (one by default) when the path reaches S inside the bar, and at the higher of that price and the bar's open when the bar opens at or above S (a gap at the open).
 
-**F-STP-05** (proposed) A stop is accepted at any price. A buy stop at or below the last price the engine saw before its activation (the last trade, or on bars the last close), which CME would refuse, fills at once as a market order: at the reference price of F-MKT-01 to F-MKT-03 plus the stop slippage ticks, so it never fills better than a market order placed beside it. A bracket's stop placed at or through the market is such a stop. With no price seen yet, a stop waits as usual, and a stop placed on the right side and passed later by a gap fills by F-STP-02 to F-STP-04.
+**F-STP-05** (proposed) A stop is accepted at any price. A buy stop at or below the market when it becomes active, which CME would refuse, fills at once as a market order would, taking the larger of the stop and the market slippage ticks, so it never fills better than a market order placed beside it. For an order decided at a bar close, the market is the last tradeable trade or bar close before its activation, its mark (F-MRK-01); for a bracket's stop, it is the price at its entry's fill. On trades and TBBO such a stop fills on the first record it sees, by F-MKT-01 or F-MKT-02; on bars, a stop decided at a close fills by F-MKT-03, and a bracket's stop at its entry's point of the path, that price moved by the ticks. A stop on the right side of the market when it becomes active fills by F-STP-02 to F-STP-04, gap or not; with no price seen yet, a stop is on the right side.
 
 ## 7. Limit orders (F-LMT)
 
@@ -111,13 +111,13 @@ A gap is the price jumping past an order's level without trading at it. It needs
 
 ## 11. Brackets and OCO groups (F-OCO)
 
-**F-OCO-01** (design, proposed tie) When an order of an OCO group fills, the others are cancelled at once: the record or pseudo-tick that filled it cannot fill them. When one record would fill both a stop and a limit of one group, the stop fills.
+**F-OCO-01** (design, proposed tie) When an order of an OCO group fills, the others are cancelled at once: the record or pseudo-tick that filled it cannot fill them. When one trade or TBBO record would fill both a stop and a limit of one group, the stop fills; on bars, the path decides (F-BAR-01, F-BAR-02).
 
 **F-OCO-02** (proposed) A bracket's stop and target are placed when their entry fills, as one OCO group for the whole position, and work from the next record after the entry's fill; on bars, from the entry's point on the path (F-BAR-04). They take no latency, as brackets held at the broker or the exchange do, so a latency rerun does not delay them.
 
 ## 12. Slippage (F-SLP)
 
-**F-SLP-01** (design, D-51) Slippage is a whole number of ticks per order class, market and stop-market, set for each run and recorded in it: by default one tick on trades and on bars of every timeframe, and none on TBBO, which fills at the quote. Limits never slip (F-LMT-03). The +1 tick rerun every report includes (`02` §7) adds one tick to both classes on every fidelity. The ticks are added to a reference price that lies inside the prices traded, even where they carry the fill beyond them (a buy stop at a bar's high fills a tick above it); a fill is never clamped to the traded range.
+**F-SLP-01** (design, D-51) Slippage is a whole number of ticks per order class, market and stop-market, set for each run and recorded in it: by default one tick on trades and on bars of every timeframe, and none on TBBO, which fills at the quote. Limits never slip (F-LMT-03). The +1 tick rerun every report includes (`02` §7) adds one tick to both classes on every fidelity. The ticks may carry a fill beyond every price traded in its interval (a buy stop at a bar's high fills a tick above it), as a quote or a limit's own price may, and a fill is never clamped into that range. What holds for every fill is that it lies on the costly side of the prices traded in its interval: a buy never fills below the lowest of them, a sell never above the highest.
 
 ## 13. Quantities (F-QTY)
 
@@ -131,13 +131,13 @@ A gap is the price jumping past an order's level without trading at it. It needs
 
 **F-FEE-03** (proposed) Every amount the engine books, a fill's value, a fee, or a funding payment, is worked out exactly, wider than 64 bits where the product needs it, and rounded to the micro-unit toward minus infinity of the trader's cash: what the trader pays rounds up, what the trader receives rounds down. An amount that does not fit the ledger's money type is an error, never wrapped.
 
-**F-FND-01** (design, proposed mark) At each funding time of a perpetual, an open position pays its signed quantity (positive long, negative short) × the mark (F-MRK-01) × point value × the funding rate: a positive amount is paid and a negative one received, so with a positive rate a long pays and a short receives, as on Binance. Funding is a timer event: a bar closing at the funding time comes before it, and a trade received at that instant after it (F-CLK-02). A funding time inside a bar, on hourly or daily bars, sees the position as it stood before the bar, whose fills happen at its close.
+**F-FND-01** (design, proposed mark) At each funding time of a perpetual, an open position pays its signed quantity (positive long, negative short) × the mark (F-MRK-01) × point value × the funding rate: a positive amount is paid and a negative one received, so with a positive rate a long pays and a short receives, as on Binance. Funding is a timer event: a bar closing at the funding time comes before it, and a trade received at that instant after it (F-CLK-02). A funding time inside a bar, on daily bars for instance, sees the position as it stood before the bar, whose fills happen at its close.
 
 ## 15. Marking open positions (F-MRK)
 
-**F-MRK-01** (step 2.1's prompt, proposed detail) An open position is marked at the last trade the engine has seen at the day's fidelity: on TBBO and trades days the last trade's price, on bar days the last pseudo-tick, so at a bar's close the bar's close. A fill does not move the mark, so a position shows its entry's slippage at once, and records that are not tradeable set none (F-SES-02). Equity is cash plus the open position's value at its mark, signed quantity × mark × point value, a fill's value having moved cash the other way (F-FEE-03).
+**F-MRK-01** (step 2.1's prompt, proposed detail) An open position is marked at the last trade the engine has seen at the day's fidelity: on TBBO and trades days the last trade's price, on bar days the last pseudo-tick, so at a bar's close the bar's close. A fill does not move the mark, so a position shows its entry's slippage at once, and records that are not tradeable set none (F-SES-02). Equity is cash plus the open position's value at its mark, signed quantity × mark × point value, rounded like any amount (F-FEE-03), a fill's value having moved cash the other way.
 
-On bar days the order of a bar's extremes is assumed (F-BAR-02 to F-BAR-04), and for a rule that measures a fall from a peak, such as a prop firm's trailing drawdown, the adverse-first path is the kind one: a long's low before its high hides a drop from a high made in the same bar. Trade paths therefore keep that order open: step 2.13 records the bars in which the position reaches both a new favourable and a new adverse extreme, and the prop simulator takes the order worst for each rule there, as it does for imported excursions (`03-prop-simulator.md` §4.3).
+On bar days the order of a bar's extremes is assumed (F-BAR-02 to F-BAR-04), and for a rule that measures a fall from a peak, such as a prop firm's trailing drawdown, the adverse-first path can be the kind one. When a bar takes a long to a new high and its low lies below its close, the path records a fall from that high to the close, while the bar allows a fall from the high to its low. Trade paths therefore keep that order open: step 2.13 records the bars in which a position reaches a new favourable extreme while the bar's adverse extreme lies beyond its close (for a long, a low below the close), and the prop simulator takes the order worst for each rule there, as it does for imported excursions (`03-prop-simulator.md` §4.3).
 
 ## 16. What every fill records (F-TAG)
 
@@ -172,15 +172,15 @@ The defaults below are what every run uses unless its settings say otherwise, an
 | Between its pseudo-ticks a bar passes every price, so a stop inside it fills at its price plus the ticks. | F-BAR-01 | design | | |
 | Records received at one instant keep the vendor's order. | F-CLK-03 | proposed | | |
 | The bars that close at an instant come before its other events, and their fills keep the bar's trade date. | F-CLK-02, F-BAR-06 | proposed | | |
-| On bars, an order sees the first bar closing after its activation, whole from its open. | F-ACT-02 | proposed | | |
-| A stop already at or through its price when it becomes active fills at once as a market order. | F-STP-05 | proposed | Refuse it, as CME does. | |
+| On bars, an order decided at a close sees the first bar closing after its activation, whole from its open; a bracket works on the rest of its entry's bar. | F-ACT-02 | proposed | | |
+| A stop at or through the market when it becomes active fills at once as a market order, with the larger of the two classes' ticks; for a bracket's stop, the market is its entry's fill price. | F-STP-05 | proposed | Refuse it, as CME does. | |
 | A limit filled on the first price it sees is a taker, any later one a maker. | F-LMT-04 | proposed | | |
 | Flat, a bar's extreme favourable to the earliest placed working entry comes first, the lower order id breaking ties. | F-BAR-03 | proposed | The extreme nearer the open first. | |
 | After an entry inside a bar, the extremes not yet reached come adverse first. | F-BAR-04 | proposed | | |
 | A bar whose fills would differ with its extremes swapped flags every fill `ambiguous`, and the run counts them. | F-BAR-05 | design, proposed test | | |
 | Working orders stay through breaks and weekends; the engine cancels nothing at a close. | F-SES-01 | proposed | Day orders, cancelled at each session's close. | |
 | Records received in a break or a halt are not tradeable. | F-SES-02 | proposed | | |
-| When one record would fill a stop and a limit of one group, the stop fills. | F-OCO-01 | design, proposed tie | | |
+| When one trade or TBBO record would fill a stop and a limit of one group, the stop fills; on bars the path decides. | F-OCO-01 | design, proposed tie | | |
 | A bracket's legs work from the record after their entry's fill, without latency. | F-OCO-02 | proposed | | |
 | Orders fill whole; on trades and TBBO, a fill larger than its record's size is flagged. | F-QTY-01 | design, proposed flag | A volume or queue model (`BACKLOG.md`). | |
 | Every amount of money rounds to the micro-unit against the trader, and none wraps. | F-FEE-03 | proposed | Halves away from zero. | |

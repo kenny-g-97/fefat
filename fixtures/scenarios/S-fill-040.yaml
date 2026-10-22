@@ -1,0 +1,25 @@
+id: S-fill-040
+title: A bracket stop placed through the market at its entry's bar open fills there, as a market order would
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:31:00.000Z", side: buy, kind: market, quantity: 1, bracket: {stop: {id: 2, price: "4995.00"}, target: {id: 3, price: "5010.00"}}}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "4999.50", high: "5000.25", low: "4999.25", close: "5000.00", volume: 120}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "4990.00", high: "4992.00", low: "4988.50", close: "4991.00", volume: 600}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:32:00Z", price: "4990.25", rule: F-MKT-03}
+    - {order: 2, ts: "2026-03-06T14:32:00Z", price: "4989.75", rule: F-STP-05}
+rules: [F-ACT-02, F-MKT-03, F-OCO-01, F-OCO-02, F-SLP-01, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# decided at 14:31:00 and active at 14:31:00.100, the buy market order sees the bar from 14:31 to
+# 14:32 (F-ACT-02) and fills at its open plus a tick: 4990.00 + 0.25 = 4990.25 (F-MKT-03);
+# its bracket is placed at the entry's point of that bar's path, the open, and works from there on
+# (F-OCO-02); the market there is 4990.00, at or below the sell stop at 4995.00, so the stop is
+# through and fills at once as a market order (F-STP-05), at that point's price moved by a tick:
+# 4990.00 - 0.25 = 4989.75; the target is cancelled (F-OCO-01);
+# both fills happen at the bar's close, 14:32:00, and the order of its extremes changes neither,
+# so the bar is not ambiguous; read against the last close, 5000.00, the stop would have waited
+# and filled at 4995.00 - 0.25 = 4994.75, above the bar's high of 4992.00.
