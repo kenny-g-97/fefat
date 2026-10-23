@@ -10,9 +10,13 @@ fraction and `14:30:00` as the number 52200, so only quoted text is accepted.
 import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Annotated
+from fractions import Fraction
+from typing import Annotated, Self
 
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, model_validator
+
+from fefat.market.instruments import Instrument
+from fefat.market.schema import FrozenModel
 
 PRICE_DECIMALS = 9
 """Prices count 1e-9 units of the quote currency."""
@@ -82,6 +86,25 @@ def instant_text(nanoseconds: int) -> str:
     return f"{clock}.{fraction:09d}".rstrip("0").rstrip(".") + "Z"
 
 
+def money_text(units: int) -> str:
+    """An amount in micro-units as the decimal it is written as, such as -0.084514."""
+    return format(Decimal(units).scaleb(-MONEY_DECIMALS), "f")
+
+
+def exact_money(amount: Decimal) -> Fraction:
+    """An amount of money as an exact count of micro-units, before it is rounded (F-FEE-03)."""
+    return Fraction(amount) * 10**MONEY_DECIMALS
+
+
+def lots_of(quantity: Decimal, lot_step: Decimal) -> int:
+    """A quantity in the instrument's units as a count of its lots, the dataset's size unit:
+    0.013 BTC is 13 lots of 0.001 BTC."""
+    lots = quantity / lot_step
+    if lots != lots.to_integral_value():
+        raise ValueError(f"Expected a quantity in whole lots of {lot_step}, got {quantity}.")
+    return int(lots)
+
+
 def _quoted_decimal(text: object) -> Decimal:
     if not isinstance(text, str) or _DECIMAL_TEXT.fullmatch(text) is None:
         raise ValueError(f'Expected a decimal written in quotes, such as "0.25", got {text!r}.')
@@ -111,3 +134,52 @@ QuotedDecimal = Annotated[Decimal, BeforeValidator(_quoted_decimal)]
 PositiveDecimal = Annotated[QuotedDecimal, Field(gt=0)]
 Quantity = Annotated[Decimal, BeforeValidator(_quantity), Field(gt=0)]
 """A quantity in the instrument's units: contracts for futures, the base asset for crypto."""
+
+
+class InlineInstrument(FrozenModel):
+    """A product the instrument table lacks, given by its tick size, point value, and lot
+    step. It names no calendar, so it trades around the clock: its scenarios hold no breaks."""
+
+    tick_size: PositiveDecimal
+    point_value: PositiveDecimal
+    lot_step: PositiveDecimal
+
+    @model_validator(mode="after")
+    def _tick_in_price_units(self) -> Self:
+        if self.tick_size.scaleb(PRICE_DECIMALS) % 1 != 0:
+            raise ValueError(
+                "Expected a tick size in whole 1e-9 units, nine decimal places at most, "
+                f"got {self.tick_size}."
+            )
+        return self
+
+
+class InstrumentParameters(FrozenModel):
+    """An instrument's specification in the units both engines count in (D-51): its tick in
+    1e-9 units of price, the money one lot gains or loses per point in micro-units, and its lot
+    step, the dataset's size unit."""
+
+    tick: int = Field(gt=0)
+    money_per_point: int = Field(gt=0)
+    lot_step: Decimal = Field(gt=0)
+
+    def value(self, price: int, lots: int) -> Fraction:
+        """What `lots` are worth at `price`, exactly, in micro-units: negative for a short."""
+        return Fraction(price * lots * self.money_per_point, 10**PRICE_DECIMALS)
+
+
+def instrument_parameters(instrument: Instrument | InlineInstrument) -> InstrumentParameters:
+    """The instrument's decimal tick size and point value as the engines' integers, converted
+    once, here (D-51): ES's tick of 0.25 is 250_000_000 and its 50 USD a point 50_000_000
+    micro-units; a perpetual's 1 USD a point on lots of 0.001 BTC is 1_000 a lot."""
+    tick = instrument.tick_size.scaleb(PRICE_DECIMALS)
+    money = (instrument.point_value * instrument.lot_step).scaleb(MONEY_DECIMALS)
+    if tick % 1 != 0 or money % 1 != 0:
+        raise ValueError(
+            "Expected a tick in whole 1e-9 units and a point value in whole micro-units a lot, "
+            f"got a tick of {instrument.tick_size} and {instrument.point_value} a point on lots "
+            f"of {instrument.lot_step}."
+        )
+    return InstrumentParameters(
+        tick=int(tick), money_per_point=int(money), lot_step=instrument.lot_step
+    )

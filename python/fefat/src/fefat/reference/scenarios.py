@@ -14,7 +14,6 @@ engines count in (`fefat.reference.units`), so that their fills compare as integ
 import re
 from collections import Counter
 from collections.abc import Iterator
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self
 
@@ -30,63 +29,27 @@ from pydantic import (
 
 from fefat.market import instruments
 from fefat.market.fees import Fee, FuturesFee
-from fefat.market.fidelity import Fidelity, TickFidelity
+from fefat.market.fidelity import Fidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.schema import FrozenModel
+from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import OpenPosition, Order, OrderId, oco_groups
-from fefat.reference.tape import Tape, check_tape, parse_tape
+from fefat.reference.settings import RunSettings, default_slippage_ticks
+from fefat.reference.tape import FundingRate, Tape, check_tape, parse_tape
 from fefat.reference.units import (
     PRICE_DECIMALS,
+    InlineInstrument,
     Instant,
     Money,
-    PositiveDecimal,
     Price,
-    QuotedDecimal,
     instant_text,
     price_text,
 )
-
-DEFAULT_LATENCY_MS = 100
-"""How long after the decision that placed it an order becomes active (F-ACT-01, D-51)."""
 
 RuleId = Annotated[str, Field(pattern=r"^F-[A-Z]{3}-[0-9]{2}$")]
 """A rule of the fill specification, such as F-STP-03."""
 
 _RULE_DEFINITION = re.compile(r"^\*\*(F-[A-Z]{3}-[0-9]{2})\*\*", re.MULTILINE)
-
-
-class LimitFill(StrEnum):
-    """When a limit fills: once the market trades through its price (F-LMT-01, the default)
-    or once it touches it (F-LMT-02)."""
-
-    THROUGH = "through"
-    TOUCH = "touch"
-
-
-class FillFlag(StrEnum):
-    """What a fill is flagged with: a bar's fills that depend on the order of its extremes
-    (F-BAR-05), or a size above the size its record shows (F-QTY-01)."""
-
-    AMBIGUOUS = "ambiguous"
-    SIZE_EXCEEDED = "size_exceeded"
-
-
-class InlineInstrument(FrozenModel):
-    """A product the instrument table lacks, given by its tick size, point value, and lot
-    step. It names no calendar, so it trades around the clock: its scenarios hold no breaks."""
-
-    tick_size: PositiveDecimal
-    point_value: PositiveDecimal
-    lot_step: PositiveDecimal
-
-    @model_validator(mode="after")
-    def _tick_in_price_units(self) -> Self:
-        if self.tick_size.scaleb(PRICE_DECIMALS) % 1 != 0:
-            raise ValueError(
-                "Expected a tick size in whole 1e-9 units, nine decimal places at most, "
-                f"got {self.tick_size}."
-            )
-        return self
 
 
 def _instrument(value: object) -> object:
@@ -96,28 +59,6 @@ def _instrument(value: object) -> object:
 
 
 ScenarioInstrument = Annotated[Instrument | InlineInstrument, BeforeValidator(_instrument)]
-
-
-class FundingRate(FrozenModel):
-    """A perpetual's funding rate, paid at `ts` (F-FND-01): "0.0001" is 0.01 %."""
-
-    ts: Instant
-    rate: QuotedDecimal
-
-
-class SlippageTicks(FrozenModel):
-    """Ticks by which market and stop-market fills are worse than their reference (F-SLP-01)."""
-
-    market: int = Field(ge=0)
-    stop: int = Field(ge=0)
-
-
-class ScenarioSettings(FrozenModel):
-    """The run settings a scenario fills under (F-ACT-01, F-SLP-01, F-LMT-01, F-LMT-02)."""
-
-    latency_ms: int = Field(default=DEFAULT_LATENCY_MS, ge=0)
-    slippage_ticks: SlippageTicks
-    limit_fill: LimitFill = LimitFill.THROUGH
 
 
 class ExpectedFill(FrozenModel):
@@ -161,7 +102,7 @@ class Scenario(FrozenModel):
     title: str = Field(min_length=1)
     fidelity: Fidelity
     instrument: ScenarioInstrument
-    settings: ScenarioSettings
+    settings: RunSettings
     fees: Fee | None = None
     position: OpenPosition | None = None
     tape: Tape
@@ -180,8 +121,8 @@ class Scenario(FrozenModel):
         settings = raw.get("settings", {})
         if not isinstance(settings, dict) or "slippage_ticks" in settings:
             return raw
-        ticks = 0 if raw.get("fidelity") == TickFidelity.TBBO else 1
-        return {**raw, "settings": {**settings, "slippage_ticks": {"market": ticks, "stop": ticks}}}
+        ticks = default_slippage_ticks(raw.get("fidelity")).model_dump()
+        return {**raw, "settings": {**settings, "slippage_ticks": ticks}}
 
     @field_validator("tape", mode="before")
     @classmethod

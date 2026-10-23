@@ -1,14 +1,18 @@
-"""The tape of a fill scenario: trade prints, TBBO records, or stored bars, as its fidelity
-says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01)."""
+"""The tape the reference engine reads: trade prints, TBBO records, or stored bars, as its
+fidelity says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01),
+and a perpetual's funding rates. A scenario writes its tape (`fefat.reference.scenarios`);
+`tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2)."""
 
 import itertools
 from typing import Annotated, Self
 
+import polars as pl
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
-from fefat.reference.units import Instant, Price, instant_text, price_text
+from fefat.reference.orders import Side
+from fefat.reference.units import Instant, Price, QuotedDecimal, instant_text, price_text
 
 Count = Annotated[int, Field(gt=0)]
 """A size or a volume, in the dataset's size unit."""
@@ -52,6 +56,10 @@ class TbboRecord(TradeRecord):
 
     def prices(self) -> tuple[int, ...]:
         return (self.price, self.bid, self.ask)
+
+    def quote(self, side: Side) -> tuple[int, int]:
+        """The quote an order of `side` takes, the ask for a buy, and its size."""
+        return (self.ask, self.ask_size) if side is Side.BUY else (self.bid, self.bid_size)
 
 
 class BarRecord(FrozenModel):
@@ -139,3 +147,53 @@ def check_tape(fidelity: TickFidelity | Timeframe, tape: Tape) -> None:
                 f"Expected the tape in time order, got record {number} starting before record "
                 f"{number - 1} is received."
             )
+
+
+class FundingRate(FrozenModel):
+    """A perpetual's funding rate, paid at `ts` (F-FND-01): "0.0001" is 0.01 %."""
+
+    ts: Instant
+    rate: QuotedDecimal
+
+
+_RAW_PRICES = ("open", "high", "low", "close")
+
+
+def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
+    """The stored bars of a frame `load` returned (`SIGNAL_BAR_COLUMNS`), as the engine replays
+    them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at the
+    contract's raw prices, a spliced bar's open, high, low, and close less its `adj_offset`
+    (D-09), and in the order of their closes. A back-adjusted import, without raw prices
+    (D-49), and the bars of more than one contract are refused. The store checked each row
+    when it was written (ADR-0019), so the records are built without parsing it again."""
+    if frame.get_column("close_raw").null_count() > 0:
+        raise ValueError(
+            "Expected a series with raw prices, got a back-adjusted import, whose prices no "
+            "order traded at (D-49)."
+        )
+    contracts = sorted(frame.get_column("contract").unique().to_list())
+    if len(contracts) > 1:
+        raise ValueError(
+            f"Expected the bars of one contract, got {', '.join(contracts)}: positions and "
+            "working orders across a roll arrive in step 2.9, so choose a window inside one "
+            "contract."
+        )
+    stored = frame.filter(~pl.col("zero_volume")).sort("ts_close")
+    raw = stored.select(
+        "ts_open",
+        "ts_close",
+        *(pl.col(price) - pl.col("adj_offset") for price in _RAW_PRICES),
+        "volume",
+    )
+    return tuple(BarRecord.model_construct(**bar) for bar in raw.iter_rows(named=True))
+
+
+def tape_of_trades(frame: pl.DataFrame) -> tuple[TradeRecord, ...]:
+    """The trade prints of a frame of the store's trades, as the engine reads them: by
+    `ts_recv`, the engine's clock (F-CLK-01), and at one instant by the vendor's `sequence`
+    (F-CLK-03). The store checked each row when it was written (ADR-0019)."""
+    ordered = frame.sort("ts_recv", "sequence").select("ts_recv", "ts_event", "price", "size")
+    return tuple(
+        TradeRecord.model_construct(ts=ts, ts_event=ts_event, price=price, size=size)
+        for ts, ts_event, price, size in ordered.iter_rows()
+    )

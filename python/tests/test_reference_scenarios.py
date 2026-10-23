@@ -12,15 +12,8 @@ import yaml
 from pydantic import ValidationError
 
 from fefat.reference.orders import StopOrder
-from fefat.reference.scenarios import (
-    LimitFill,
-    Scenario,
-    ScenarioSettings,
-    SlippageTicks,
-    load_scenario,
-    load_scenarios,
-    specified_rules,
-)
+from fefat.reference.scenarios import Scenario, load_scenario, load_scenarios, specified_rules
+from fefat.reference.settings import LimitFill, RunSettings, SlippageTicks
 from fefat.reference.units import instant_nanoseconds, instant_text, price_units
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -171,7 +164,7 @@ def test_a_scenario_without_settings_takes_the_specifications_defaults() -> None
         rules=["F-MKT-01"],
     )
 
-    assert Scenario.model_validate(a_scenario()).settings == ScenarioSettings(
+    assert Scenario.model_validate(a_scenario()).settings == RunSettings(
         latency_ms=100,
         slippage_ticks=SlippageTicks(market=1, stop=1),
         limit_fill=LimitFill.THROUGH,
