@@ -2,7 +2,7 @@
 
 Each YAML file here is one scenario: a short tape of trades, TBBO records, or bars, the orders placed on it, and the fills that the [fill specification](../../docs/spec/fill-semantics.md) gives, with the arithmetic in a comment so you can check every number with a calculator. Together they are the specification in examples. The Python reference engine (step 2.2) and the Rust engine (from step 2.6) must produce exactly these fills, and a test is never fixed by editing an expected value: if an expected value looks wrong to you, say which rule you believe applies, and the specification changes first, then the scenario.
 
-`fefat.reference.scenarios` reads them (`load_scenario`, `load_scenarios`). `python/tests/test_reference_scenarios.py` checks that every scenario validates, cites only rules the specification defines, and shows its arithmetic, and that together they cite every rule. The scenario runner of step 2.2 checks each fill's price, time, rule, flags, and fee, and that its fidelity tag is the scenario's fidelity (F-TAG-01).
+`fefat.reference.scenarios` reads them (`load_scenario`, `load_scenarios`). `python/tests/test_reference_scenarios.py` checks that every scenario validates, cites only rules the specification defines, and shows its arithmetic, and that together they cite every rule. The scenario runner of step 2.2 checks each fill's price, time, rule, flags, and fee, and that its fidelity tag is the scenario's fidelity (F-TAG-01), as well as the marks and the funding payments; `python/tests/test_reference_engine_scenarios.py` runs it. From the repository folder, `uv run python -m fefat.reference.scenario_runner` prints how many scenarios pass and how they cover the rules, and `--log S-fill-012` prints one scenario as written beside the reference engine's event log, to follow a fill from its tape to the log.
 
 ## A scenario
 
@@ -110,3 +110,4 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 | [S-fill-039](S-fill-039.yaml) | trades | A buy limit larger than the trade that goes through it fills whole, flagged size_exceeded |
 | [S-fill-040](S-fill-040.yaml) | 1m | A bracket stop placed through the market at its entry's bar open fills there, as a market order would |
 | [S-fill-041](S-fill-041.yaml) | tbbo | On TBBO a bracket stop at its entry record's trade price is through the market and fills on the next record |
+| [S-fill-042](S-fill-042.yaml) | 1m | A stop that reverses a long inside a 1-minute bar turns the path adverse for the new short |

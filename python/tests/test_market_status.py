@@ -7,18 +7,19 @@ import polars as pl
 import pytest
 
 from fefat.market.catalog import Catalog, parse_catalog
+from fefat.market.fidelity import fidelity_in_words
 from fefat.market.layout import Dataset, Partition
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import write_quality_report
 from fefat.market.schema import parse_schema_name
-from fefat.market.status import STATUS_COLUMNS, fidelity_in_words, product_status
+from fefat.market.status import STATUS_COLUMNS, product_status
 from fefat.market.store import Store
 
 ROOT = Path(__file__).resolve().parents[2]
 SYNTHETIC = ROOT / "fixtures" / "synthetic"
 FIXTURES = Store(ROOT / "fixtures")
 MARCH_5, MARCH_7, MARCH_9 = (date(2026, 3, day) for day in (5, 7, 9))
-SCHEMAS = (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "tick"))
+SCHEMAS = (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "trades"))
 LISTED = ("root", "coverage", "provider", "schema", "fidelity", "first_trade_date")
 
 
@@ -156,7 +157,14 @@ def test_a_report_older_than_its_dataset_is_stale(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("fidelity", "words"),
-    [("tick", "tick"), ("1s", "1-second"), ("1m", "1-minute"), ("5m", "5-minute"), ("1d", "1-day")],
+    [
+        ("trades", "trades"),
+        ("tbbo", "tbbo"),
+        ("1s", "1-second"),
+        ("1m", "1-minute"),
+        ("5m", "5-minute"),
+        ("1d", "1-day"),
+    ],
 )
 def test_a_fidelity_reads_as_words(fidelity: str, words: str) -> None:
     assert fidelity_in_words(fidelity) == words

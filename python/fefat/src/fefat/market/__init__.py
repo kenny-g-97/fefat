@@ -19,8 +19,8 @@ from fefat.market.calendar_definition import (
 )
 from fefat.market.catalog import CATALOG
 from fefat.market.contracts import Contract, ContractResolver, IdentitySource, is_outright
-from fefat.market.coverage import Fidelity
 from fefat.market.fees import CryptoFee, FeeSchedule, FeeTable, FuturesFee
+from fefat.market.fidelity import Fidelity, TickFidelity, parse_fidelity
 from fefat.market.instruments import Currency, Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import (
     Dataset,
@@ -79,6 +79,7 @@ __all__ = [
     "SizeUnit",
     "Snapshot",
     "Store",
+    "TickFidelity",
     "Weekday",
     "YearMonth",
     "assess_quality",
@@ -86,6 +87,7 @@ __all__ = [
     "dataset_status",
     "is_outright",
     "load",
+    "parse_fidelity",
     "parse_schema_name",
     "polars_schema",
     "product_status",

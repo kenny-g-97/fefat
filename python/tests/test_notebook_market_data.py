@@ -1,12 +1,10 @@
 """The market-data notebook (step 1.11) runs top to bottom, as Run All does, on a store of
 synthetic data, and skips with a message the cells whose data the store lacks."""
 
-import json
 import os
 import shutil
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 import polars as pl
 import pytest
@@ -23,21 +21,13 @@ from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe, TimeUnit
 from fefat.market.store import Store
 from fefat_app.cli import main
+from notebook_runs import run_notebook, store_with
 
 ROOT = Path(__file__).resolve().parents[2]
 NOTEBOOK = ROOT / "notebooks" / "01-market-data.ipynb"
 SYNTHETIC = ROOT / "fixtures" / "synthetic"
 NINJATRADER_SAMPLE = SYNTHETIC / "exports" / "ninjatrader" / "ES 03-26.Last.txt"
 NO_WHOLE_SESSION = "Skipped: your store holds no whole session of ES's trades from synthetic"
-
-
-def store_with(*schemas: str) -> None:
-    """The data folder holding the fixtures' datasets of `schemas` from the provider
-    `synthetic`: ES's contracts ESH2026 and ESM2026, which roll at the open of 2026-03-09, and
-    BTCUSDT-PERP."""
-    data_dir = resolve_paths(os.environ).data_dir
-    for schema in schemas:
-        shutil.copytree(SYNTHETIC / schema, data_dir / "synthetic" / schema)
 
 
 def store_minute_bars_before(day: date) -> None:
@@ -82,17 +72,6 @@ def import_hourly_bars(folder: Path) -> None:
     import_file(request, store, paths.cache_dir, imported_on=IMPORTED_ON, instruments=instruments)
 
 
-def run_notebook() -> dict[str, Any]:
-    """Run the notebook's code cells in order in one namespace, as Run All does, and return the
-    namespace."""
-    cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
-    namespace: dict[str, Any] = {}
-    for number, cell in enumerate(cells):
-        if cell["cell_type"] == "code":
-            exec(compile("".join(cell["source"]), f"cell {number}", "exec"), namespace)
-    return namespace
-
-
 def test_the_notebook_runs_on_your_bars_and_on_an_import_through_a_preset(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -100,7 +79,7 @@ def test_the_notebook_runs_on_your_bars_and_on_an_import_through_a_preset(
     main(["data", "import", "file", str(NINJATRADER_SAMPLE), "--profile", "ninjatrader"])
     capsys.readouterr()
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     printed = capsys.readouterr().out
     # Without MES, the notebook takes the 1-minute bars with the most contracts: the fixtures'
@@ -126,7 +105,7 @@ def test_the_notebook_rebuilds_bars_from_trades_and_skips_the_import_it_lacks(
 ) -> None:
     store_with("ohlcv-1m", "trades")
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     printed = capsys.readouterr().out
     assert namespace["ticks"].status is ComparisonStatus.COMPARED
@@ -144,7 +123,7 @@ def test_the_notebook_rebuilds_bars_from_trades_that_end_before_the_minute_bars(
     store_with("ohlcv-1m")
     store_trades_without("2026-03-09")
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     assert namespace["ticks"].status is ComparisonStatus.COMPARED
     assert NO_WHOLE_SESSION not in capsys.readouterr().out
@@ -174,7 +153,7 @@ def test_the_notebook_rebuilds_bars_from_trades_that_run_past_the_minute_bars(
     )
     pl.concat([trades, print_after_the_close]).write_parquet(part)
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     assert namespace["ticks"].status is ComparisonStatus.COMPARED
     assert namespace["DAY"] == namespace["TICK_DAY"] == date(2026, 3, 6)
@@ -188,7 +167,7 @@ def test_the_notebook_never_rebuilds_the_first_session_of_a_trades_file(
     store_with("ohlcv-1m")
     store_trades_without("2026-03-05", "2026-03-09")
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     assert namespace["TICK_DAY"] is None
     assert NO_WHOLE_SESSION in capsys.readouterr().out
@@ -201,7 +180,7 @@ def test_the_notebook_skips_trades_that_share_no_session_with_the_minute_bars(
     store_minute_bars_before(date(2026, 3, 9))
     store_trades_without("2026-03-05", "2026-03-06")
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     assert namespace["TICK_DAY"] is None
     assert NO_WHOLE_SESSION in capsys.readouterr().out
@@ -213,7 +192,7 @@ def test_the_notebook_loads_an_import_coarser_than_five_minutes_at_its_own_timef
     store_with("ohlcv-1m")
     import_hourly_bars(tmp_path)
 
-    namespace = run_notebook()
+    namespace = run_notebook(NOTEBOOK)
 
     assert any("holds 1-hour bars" in str(warning.message) for warning in recwarn)
     imported = namespace["IMPORTED"]
@@ -225,4 +204,4 @@ def test_the_notebook_loads_an_import_coarser_than_five_minutes_at_its_own_timef
 
 def test_the_notebook_says_what_to_do_on_a_store_without_minute_bars() -> None:
     with pytest.raises(ValueError, match=r"Expected 1-minute bars .* import your files first"):
-        run_notebook()
+        run_notebook(NOTEBOOK)

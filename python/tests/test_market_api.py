@@ -135,7 +135,7 @@ def test_bars_built_from_trades_match_the_one_minute_bars_but_the_last_held_back
     # The fixtures' trades end 50 ms before the close of 2026-03-09, and whether a later trade
     # came is not in the data, so the bucket that closes at the close is held back (D-43);
     # the last 1-second bar closes at the close, so the bars built from them are complete.
-    from_trades = load("ES", "1m", "2026-03-06", "2026-03-09", fidelity="tick").collect()
+    from_trades = load("ES", "1m", "2026-03-06", "2026-03-09", fidelity="trades").collect()
     from_bars = load("ES", "1m", "2026-03-06", "2026-03-09", fidelity="1m").collect()
     from_seconds = load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="1s").collect()
 
@@ -153,7 +153,7 @@ def test_a_timeframe_finer_than_the_data_is_refused() -> None:
         load("ES", "1s", "2026-03-06", "2026-03-06", fidelity="1m")
 
 
-def test_without_finer_data_auto_loads_the_one_minute_bars_and_tick_is_refused(
+def test_without_finer_data_a_load_takes_the_one_minute_bars_and_trades_are_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     data_folder_with(monkeypatch, tmp_path, "ohlcv-1m")
@@ -162,7 +162,7 @@ def test_without_finer_data_auto_loads_the_one_minute_bars_and_tick_is_refused(
 
     assert bars.height == 1380
     with pytest.raises(ValueError, match="Expected trades of ES in the store, got none"):
-        load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="tick")
+        load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="trades")
 
 
 def test_a_window_whose_front_opens_without_trades_fills_from_the_session_before(
@@ -280,10 +280,10 @@ def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_qualit
     assert listed.rows() == [
         (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None, *imported),
         (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None, *imported),
-        (*btc, "trades", "tick", 1, march_7, march_7, "unchecked", None, *imported),
+        (*btc, "trades", "trades", 1, march_7, march_7, "unchecked", None, *imported),
         (*es, "ohlcv-1m", "1m", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
         (*es, "ohlcv-1s", "1s", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
-        (*es, "trades", "tick", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
+        (*es, "trades", "trades", 2, MARCH_5, MARCH_9, "unchecked", None, *imported),
     ]
 
 
@@ -323,7 +323,7 @@ def test_bars_of_sessions_no_one_minute_bars_decide_the_front_of_are_refused(
             store.write_partition(file.partition, rows.filter(pl.col("trade_date") <= MARCH_6))
 
     with pytest.raises(ValueError, match="through 2026-03-09, got fronts through 2026-03-06"):
-        load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="tick")
+        load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="trades")
 
 
 def test_a_root_load_without_bars_in_its_window_is_refused(fixtures_as_data: None) -> None:

@@ -1,0 +1,29 @@
+id: S-fill-042
+title: A stop that reverses a long inside a 1-minute bar turns the path adverse for the new short
+fidelity: 1m
+instrument: ES
+position: {side: long, quantity: 1, price: "5000.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 2}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, oco: cover}
+  - {id: 3, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4994.75", quantity: 1, oco: cover}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5006.00", low: "4994.00", close: "5000.00", volume: 500}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "4994.75", rule: F-STP-04}
+    - {order: 2, ts: "2026-03-06T14:31:00Z", price: "5005.25", rule: F-STP-04}
+rules: [F-BAR-02, F-BAR-04, F-BAR-05, F-OCO-01, F-SLP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A long of 1; order 1 sells 2
+# at a stop of 4995.00, which reverses it, and orders 2 and 3, one OCO group, cover the short that
+# makes. The bar opens at 5000.00, between every order's price;
+# holding the long, the path goes to the low first (F-BAR-02) and passes 4995.00:
+# fill of order 1 = 4995.00 - 1 × 0.25 = 4994.75 (F-STP-04), and the long of 1 becomes a short of 1;
+# the reversal opens a position inside the bar, so the path turns to the new position's adverse
+# extreme, the high, before the low it had not reached (F-BAR-04);
+# on the way up from 4995.00 the path passes 5005.00:
+# fill of order 2 = 5005.00 + 1 × 0.25 = 5005.25 (F-STP-04), and order 3, the limit at 4994.75 that
+# the low would have reached, is cancelled (F-OCO-01);
+# with the high first instead, order 2 fills at 5005.25 while long and order 1 at 4994.75 on the way
+# down: the same fills, so the bar is not ambiguous (F-BAR-05).

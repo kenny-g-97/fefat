@@ -1,41 +1,21 @@
-"""The tape of a fill scenario: trade prints, TBBO records, or stored bars, as its fidelity
-says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01)."""
+"""The tape the reference engine reads: trade prints, TBBO records, or stored bars, as its
+fidelity says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01),
+and a perpetual's funding rates. A scenario writes its tape (`fefat.reference.scenarios`);
+`tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2)."""
 
 import itertools
-from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError, model_validator
+import polars as pl
+from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
+from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
-from fefat.reference.units import Instant, Price, instant_text, price_text
+from fefat.reference.orders import Side
+from fefat.reference.units import Instant, Price, QuotedDecimal, instant_text, price_text
 
 Count = Annotated[int, Field(gt=0)]
 """A size or a volume, in the dataset's size unit."""
-
-
-class TickFidelity(StrEnum):
-    """Tick data a scenario fills on: trades with the quote just before each, or trades."""
-
-    TBBO = "tbbo"
-    TRADES = "trades"
-
-
-def _fidelity(value: object) -> object:
-    """A fidelity's text as its value: `tbbo` and `trades` stay, a bar timeframe is parsed."""
-    if not isinstance(value, str) or value in frozenset(TickFidelity):
-        return value
-    try:
-        return Timeframe.parse(value)
-    except ValueError:
-        raise ValueError(
-            "Expected a fidelity: tbbo, trades, or a bar timeframe such as 1s, 1m, 5m, or 1d, "
-            f"got {value!r}."
-        ) from None
-
-
-Fidelity = Annotated[TickFidelity | Timeframe, BeforeValidator(_fidelity)]
-"""The data a scenario fills on: `tbbo`, `trades`, or bars of a timeframe, `1s` to `1d`."""
 
 
 class TradeRecord(FrozenModel):
@@ -77,6 +57,10 @@ class TbboRecord(TradeRecord):
     def prices(self) -> tuple[int, ...]:
         return (self.price, self.bid, self.ask)
 
+    def quote(self, side: Side) -> tuple[int, int]:
+        """The quote an order of `side` takes, the ask for a buy, and its size."""
+        return (self.ask, self.ask_size) if side is Side.BUY else (self.bid, self.bid_size)
+
 
 class BarRecord(FrozenModel):
     """A stored bar of the trades received in `[ts_open, ts_close)`, available at `ts_close`."""
@@ -116,6 +100,8 @@ class BarRecord(FrozenModel):
 
 Tape = tuple[TradeRecord, ...] | tuple[TbboRecord, ...] | tuple[BarRecord, ...]
 """The records of one fidelity, in the order the engine reads them."""
+Record = TradeRecord | TbboRecord | BarRecord
+"""A record of a tape: a trade print, a TBBO record, or a stored bar."""
 
 _TRADES = TypeAdapter(tuple[TradeRecord, ...])
 _TBBO_RECORDS = TypeAdapter(tuple[TbboRecord, ...])
@@ -163,3 +149,69 @@ def check_tape(fidelity: TickFidelity | Timeframe, tape: Tape) -> None:
                 f"Expected the tape in time order, got record {number} starting before record "
                 f"{number - 1} is received."
             )
+
+
+class FundingRate(FrozenModel):
+    """A perpetual's funding rate, paid at `ts` (F-FND-01): "0.0001" is 0.01 %."""
+
+    ts: Instant
+    rate: QuotedDecimal
+
+
+_RAW_PRICES = ("open", "high", "low", "close")
+
+
+def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
+    """The stored bars of a frame `load` returned (`SIGNAL_BAR_COLUMNS`), as the engine replays
+    them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at the
+    contract's raw prices, a spliced bar's open, high, low, and close less its `adj_offset`
+    (D-09), and in the order of their closes. A back-adjusted import, without raw prices
+    (D-49), the bars of more than one contract, and a window without trades are refused.
+    The store checked each row when it was written (ADR-0019), so the records are built
+    without parsing it again."""
+    contracts = sorted(frame.get_column("contract").unique().to_list())
+    if frame.get_column("close_raw").null_count() > 0:
+        raise ValueError(
+            f"Expected a series with raw prices, got a back-adjusted import of {', '.join(contracts)}, "
+            "whose prices no order traded at (D-49)."
+        )
+    if len(contracts) > 1:
+        raise ValueError(
+            f"Expected the bars of one contract, got {', '.join(contracts)}: positions and "
+            "working orders across a roll arrive in step 2.9, so choose a window inside one "
+            "contract."
+        )
+    stored = frame.filter(~pl.col("zero_volume")).sort("ts_close")
+    if stored.is_empty():
+        raise ValueError(
+            f"Expected stored bars with trades, got none in {frame.height} rows (F-BAR-07): "
+            "choose a window with trades."
+        )
+    raw = stored.select(
+        "ts_open",
+        "ts_close",
+        *(pl.col(price) - pl.col("adj_offset") for price in _RAW_PRICES),
+        "volume",
+    )
+    return tuple(BarRecord.model_construct(**bar) for bar in raw.iter_rows(named=True))
+
+
+def tape_of_trades(frame: pl.DataFrame) -> tuple[TradeRecord, ...]:
+    """The trade prints of a frame of the store's trades, as the engine reads them: by
+    `ts_recv`, the engine's clock (F-CLK-01), and at one instant by the vendor's `sequence`
+    (F-CLK-03). A frame without trades, or with those of more than one contract, is refused.
+    The store checked each row when it was written (ADR-0019)."""
+    if frame.is_empty():
+        raise ValueError("Expected trades, got none: choose a window with trades.")
+    instruments = sorted(frame.get_column("instrument_id").unique().to_list())
+    if len(instruments) > 1:
+        raise ValueError(
+            f"Expected the trades of one contract, got instruments {instruments}: a tape is one "
+            "contract's, so choose its trades first."
+        )
+    ordered = frame.sort("ts_recv", "sequence", maintain_order=True)
+    ordered = ordered.select("ts_recv", "ts_event", "price", "size")
+    return tuple(
+        TradeRecord.model_construct(ts=ts, ts_event=ts_event, price=price, size=size)
+        for ts, ts_event, price, size in ordered.iter_rows()
+    )
