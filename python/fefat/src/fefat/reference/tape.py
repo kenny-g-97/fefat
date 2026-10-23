@@ -2,40 +2,16 @@
 says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01)."""
 
 import itertools
-from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError, model_validator
+from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
+from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
 from fefat.reference.units import Instant, Price, instant_text, price_text
 
 Count = Annotated[int, Field(gt=0)]
 """A size or a volume, in the dataset's size unit."""
-
-
-class TickFidelity(StrEnum):
-    """Tick data a scenario fills on: trades with the quote just before each, or trades."""
-
-    TBBO = "tbbo"
-    TRADES = "trades"
-
-
-def _fidelity(value: object) -> object:
-    """A fidelity's text as its value: `tbbo` and `trades` stay, a bar timeframe is parsed."""
-    if not isinstance(value, str) or value in frozenset(TickFidelity):
-        return value
-    try:
-        return Timeframe.parse(value)
-    except ValueError:
-        raise ValueError(
-            "Expected a fidelity: tbbo, trades, or a bar timeframe such as 1s, 1m, 5m, or 1d, "
-            f"got {value!r}."
-        ) from None
-
-
-Fidelity = Annotated[TickFidelity | Timeframe, BeforeValidator(_fidelity)]
-"""The data a scenario fills on: `tbbo`, `trades`, or bars of a timeframe, `1s` to `1d`."""
 
 
 class TradeRecord(FrozenModel):

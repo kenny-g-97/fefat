@@ -5,14 +5,14 @@ contract in one call, and `catalog` lists what the store holds.
 
     bars = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31").collect()
     march = ff.market.load("MESH2024", "1m", "2024-03-01", "2024-03-15").collect()
-    ticks = ff.market.load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="tick")
+    ticks = ff.market.load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="trades")
     from_databento = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31", provider="databento")
     ff.market.catalog()
 
 Both read the store in `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`), and the session tables
 cached in `FEFAT_HOME`.
 
-`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity="auto", provider=None,
+`load(root_or_symbol, timeframe, start, end, continuous=None, fidelity=None, provider=None,
 origin=None)`
 returns the bars of `timeframe` (`1s`, `5m`, `1h`, `1d`, ...) of the trade dates from `start`
 to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the columns of
@@ -47,9 +47,10 @@ there has the same first rows and roll flag as in a longer window. `continuous=F
 alone, and a continuous load of them is refused. A contract that stopped trading keeps its
 rows to `end`, as zero-volume bars, since the grid adds no row because of a later one.
 
-`fidelity` names the data the bars are built from: `tick` (trades), bars of a timeframe such
-as `1s`, `1m`, or an import's `5m`, or `auto`, the finest the store holds; a timeframe finer
-than it is refused, and bars coarser than a minute as the finest data are warned of on every
+`fidelity` names the data the bars are built from (`fefat.market.fidelity`, as text or as the
+type): `trades`, or bars of a timeframe such as `1s`, `1m`, or an import's `5m`; without it,
+the finest the store holds; `tbbo` is refused, since bars are not built from TBBO yet; a
+timeframe finer than the data is refused, and bars coarser than a minute as the finest data are warned of on every
 load, since backtests on them fill at that fidelity. `provider` names the provider whose
 datasets the bars come from, such as `databento`, where several hold the root; without it the
 catalog's recommended source among them is taken, and a root the catalog does not list that
@@ -77,13 +78,13 @@ from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
 from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import (
-    AUTO,
     dataset_warnings,
     provider_datasets,
     roll_dataset,
     series_of,
     source_dataset,
 )
+from fefat.market.fidelity import TickFidelity, parse_fidelity
 from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import Dataset, DatasetOrigin, PartitionRequest, SeriesKind
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
@@ -109,7 +110,7 @@ def load(
     start: str | date,
     end: str | date,
     continuous: bool | None = None,
-    fidelity: str = AUTO,
+    fidelity: str | TickFidelity | Timeframe | None = None,
     provider: str | None = None,
     origin: str | None = None,
 ) -> pl.LazyFrame:
@@ -129,7 +130,8 @@ def load(
     datasets = provider_datasets(store, root, provider, _origin(origin))
     series = series_of(store, datasets)
     splices = _splices(instrument, contract, continuous, series)
-    source = source_dataset(datasets, fidelity, bar_timeframe, root)
+    wanted = None if fidelity is None else parse_fidelity(fidelity)
+    source = source_dataset(datasets, wanted, bar_timeframe, root)
     _warn_of(source, series)
     if not splices:
         gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract)

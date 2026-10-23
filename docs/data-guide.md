@@ -70,8 +70,8 @@ ff.market.load("MES", "1d", "2026-09-01", "2026-09-22", continuous=False).collec
 ff.market.load("MNQ", "5m", "2026-09-11", "2026-09-18", continuous=False, provider="ninjatrader").collect()
 ```
 
-- The timeframe is a count and a unit, `s`, `m`, `h`, or `d`: `1s`, `5m`, `1h`, `1d`. It cannot be finer than the data. `fidelity="auto"`, the default, builds the bars from the finest data the store holds (trades, then 1-second, then 1-minute bars), and `fidelity="1m"` names the data to build them from.
-- A load reads one dataset: beside years of 1-minute bars, a trades file of a few months makes `fidelity="auto"` read those months alone, so name `fidelity="1m"` for the years, as the notebook does.
+- The timeframe is a count and a unit, `s`, `m`, `h`, or `d`: `1s`, `5m`, `1h`, `1d`. It cannot be finer than the data. Without `fidelity`, a load builds the bars from the finest data the store holds (trades, then 1-second, then 1-minute bars), and `fidelity="1m"` or `fidelity="trades"` names the data to build them from, spelled as the fill scenarios spell it.
+- A load reads one dataset: beside years of 1-minute bars, a trades file of a few months makes a load without `fidelity` read those months alone, so name `fidelity="1m"` for the years, as the notebook does.
 - Start and end are trade dates, written as dates or as text such as `2026-09-23`.
 - The bars lie on a dense grid: a row for every bucket of every session, outside halts, so a bucket without trades is a row flagged `zero_volume`. A daily bar is the whole session, from its open to its close.
 - The buckets of a session the data has not finished are held back until later data completes it.
@@ -190,7 +190,7 @@ MES databento ohlcv-1m: 2019-05-06 to 2026-09-23, complete at 1-minute fidelity,
 
 - the product, the provider, and the schema, then the first and last trade dates the dataset holds;
 - its coverage: `complete` when it starts by the first trade date of the product's history in the catalog, `partial` when it starts later (the line gives the history's start), `missing` when the store holds none of the product (the line names its first recommended source), and `not in the catalog` for a product the catalog does not list;
-- its fidelity: tick, or the timeframe of its bars;
+- its fidelity: `trades`, `tbbo`, or the timeframe of its bars;
 - the last day a file that fed it was imported;
 - its quality: `clean` when the report found nothing, `flagged` when it found something (read the report), `unchecked` before a first report (run `fefat data quality`), and `stale` when a clean report checked fewer trade dates than the data now holds (run it again).
 

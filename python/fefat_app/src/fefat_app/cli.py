@@ -48,6 +48,7 @@ from fefat.market.api import catalog
 from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
+from fefat.market.fidelity import fidelity_in_words
 from fefat.market.importers.databento import import_databento
 from fefat.market.importers.file_import import (
     FileImportReport,
@@ -67,7 +68,7 @@ from fefat.market.quality import assess_quality
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.sources import SOURCE_GUIDE, Source
-from fefat.market.status import CoverageStatus, fidelity_in_words, product_status
+from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
 
 EXIT_OK = 0

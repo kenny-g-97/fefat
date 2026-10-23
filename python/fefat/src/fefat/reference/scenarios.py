@@ -30,10 +30,11 @@ from pydantic import (
 
 from fefat.market import instruments
 from fefat.market.fees import Fee, FuturesFee
+from fefat.market.fidelity import Fidelity, TickFidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.schema import FrozenModel
 from fefat.reference.orders import OpenPosition, Order, OrderId, oco_groups
-from fefat.reference.tape import Fidelity, Tape, TickFidelity, check_tape, parse_tape
+from fefat.reference.tape import Tape, check_tape, parse_tape
 from fefat.reference.units import (
     PRICE_DECIMALS,
     Instant,

@@ -21,11 +21,12 @@ from pathlib import Path
 import polars as pl
 
 from fefat.market.catalog import CATALOG, Catalog
-from fefat.market.coverage import DatasetCoverage, Fidelity, dataset_coverage, session_datasets
+from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
+from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import Dataset, DatasetMetadata
 from fefat.market.quality_report import quality_standing, quality_verdict
 from fefat.market.raw_manifest import RawManifest
-from fefat.market.schema import BarSchemaName, Timeframe
+from fefat.market.schema import BarSchemaName, SchemaKind
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
@@ -45,8 +46,8 @@ DATASET_COLUMNS = pl.Schema(
         "last_import": pl.Date,
     }
 )
-"""A dataset's row: its provider, root, and schema; its fidelity, `tick` for trades and TBBO,
-else the timeframe of its bars; how many contracts it holds; its first and last trade date; the
+"""A dataset's row: its provider, root, and schema; its fidelity (`fefat.market.fidelity`),
+`trades`, `tbbo`, or the timeframe of its bars; how many contracts it holds; its first and last trade date; the
 quality verdict of its root's report from its provider, with the last trade date the report
 checked, none while unchecked; its origin and the licence scope of its source; and the last day
 a file of its provider that fed its root was imported, none without a record of one."""
@@ -119,12 +120,13 @@ def product_status(
     )
 
 
-def fidelity_in_words(fidelity: str) -> str:
-    """A fidelity as prose writes it before a noun: `tick`, or the timeframe of its bars, such
-    as `1-minute`."""
-    if fidelity == Fidelity.TICK:
-        return fidelity
-    return Timeframe.parse(fidelity).in_words()
+def _fidelity_text(dataset: Dataset) -> str:
+    """The fidelity of a dataset of trades, TBBO, or bars, as its text."""
+    if isinstance(dataset.schema_name, BarSchemaName):
+        return str(dataset.schema_name.timeframe)
+    if dataset.schema_name.kind is SchemaKind.TBBO:
+        return str(TickFidelity.TBBO)
+    return str(TickFidelity.TRADES)
 
 
 def _dataset_row(
@@ -138,14 +140,11 @@ def _dataset_row(
         quality_standing(reports_folder, dataset.provider, dataset.root),
         coverage.last_trade_date,
     )
-    fidelity = str(Fidelity.TICK)
-    if isinstance(dataset.schema_name, BarSchemaName):
-        fidelity = str(dataset.schema_name.timeframe)
     return (
         dataset.provider,
         dataset.root,
         str(dataset.schema_name),
-        fidelity,
+        _fidelity_text(dataset),
         len(coverage.contracts),
         coverage.first_trade_date,
         coverage.last_trade_date,

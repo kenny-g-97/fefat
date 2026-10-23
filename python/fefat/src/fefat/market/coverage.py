@@ -1,6 +1,6 @@
 """What a dataset of trades, TBBO, or bars holds: its contracts, its first and last trade date,
 and the instant by which every record was received, read from its partitions at either end
-(step 1.8), and the fidelities of the data a load builds bars from. The quality report
+(step 1.8). The quality report
 (`fefat.market.quality`), the load API (`fefat.market.api`), and the status of datasets and
 products (`fefat.market.status`) start from it.
 
@@ -9,7 +9,6 @@ products (`fefat.market.status`) start from it.
 """
 
 from datetime import date
-from enum import StrEnum
 
 import polars as pl
 
@@ -19,16 +18,6 @@ from fefat.market.store import Store
 
 SESSION_KINDS = frozenset({SchemaKind.TRADES, SchemaKind.TBBO, SchemaKind.OHLCV})
 """The schemas whose records fall in sessions: trades, TBBO, and bars."""
-
-
-class Fidelity(StrEnum):
-    """The fidelities of the data FEFAT fills at, finest first: trades, 1-second bars, and
-    1-minute bars; `load` also takes the coarser bars an import holds
-    (`fefat.market.dataset_choice`)."""
-
-    TICK = "tick"
-    SECOND = "1s"
-    MINUTE = "1m"
 
 
 class DatasetCoverage(FrozenModel):

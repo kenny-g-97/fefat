@@ -171,7 +171,7 @@ def test_the_data_catalog_prints_every_dataset_with_its_range_fidelity_and_quali
     assert capsys.readouterr().out.splitlines() == [
         f"{dataset.format(schema, fidelity)}, quality unchecked"
         for dataset in (btc, es)
-        for schema, fidelity in (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "tick"))
+        for schema, fidelity in (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "trades"))
     ]
 
 
@@ -401,7 +401,7 @@ def test_the_status_lists_the_fixtures_as_unlisted_with_their_quality_verdicts(
             for schema, fidelity in (
                 ("ohlcv-1m", "1-minute"),
                 ("ohlcv-1s", "1-second"),
-                ("trades", "tick"),
+                ("trades", "trades"),
             )
         ]
 
