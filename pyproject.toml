@@ -19,6 +19,7 @@ dev = [
     "hypothesis>=6.168.5",
     "import-linter",
     "ipykernel>=7.4.0",
+    "jsonschema>=4.26.0",
     "maturin>=1.15.0",
     "nbstripout",
     "pyarrow==26.0.0",
