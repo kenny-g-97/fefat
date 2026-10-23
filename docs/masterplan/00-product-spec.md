@@ -93,7 +93,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | Session | One trade date's trading, from its open to its close, as UTC instants; a CME Globex session opens at 17:00 Chicago on the evening before its trade date and closes at 16:00 Chicago on it. |
 | Trade date | The date a session's trading counts for, in bars, daily P&L, and prop rules: it comes from the session an instant falls in, never from the instant's calendar date; a halt day's trading belongs to the next trade date, while an early-close day keeps its own. |
 | Session calendar | A product group's trade dates and their sessions, built from local hours in a time zone and the holidays that change them: full closes, halts, and early closes. |
-| Fidelity | The finest data used to fill an order on a given day: `tick`, `1s`, `1m`, or a coarser bar timeframe for imported data. |
+| Fidelity | The finest data used to fill an order on a given day: `tbbo` (trades with the quote before each), `trades`, `1s`, `1m`, or a coarser bar timeframe for imported data (`docs/spec/fill-semantics.md`). |
 | Feature | A versioned function from data to aligned time series. |
 | Signal frame | The table of boolean/number columns a signal strategy produces for every bar (`long_entry`, `stop_price`, …). |
 | Execution template | The declarative part of a signal strategy: order types, stops, targets, trailing, time rules, filters, sizing. |
@@ -112,7 +112,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | Prop strategy | Account-level decisions over time for prop accounts: accounts, sizing, payouts, allocation. |
 | Backtest file | An existing backtest with its full trade log — a saved FEFAT run, or a trade log imported from another platform: the input of a prop simulation. |
 | Trade path | The compact record of how price moved while a trade was open (its favourable and adverse extremes, with a mark every minute and at every fill), stored by every FEFAT run so prop rules can be checked later without re-running. |
-| Path fidelity | How precisely a backtest file describes what happened inside its trades, recorded per trade: `tick`, `1s`, `1m`, or a coarser bar timeframe from FEFAT runs; `enriched`, `excursions`, or `close-only` for imported trade logs. |
+| Path fidelity | How precisely a backtest file describes what happened inside its trades, recorded per trade: `tbbo`, `trades`, `1s`, `1m`, or a coarser bar timeframe from FEFAT runs; `enriched`, `excursions`, or `close-only` for imported trade logs. |
 | Proposal | A change suggested by the agent, pending your accept or reject. |
 | Workspace | A folder holding your features, strategies, runs, and uploads. One workspace in the first release. |
 | Step | One unit of the masterplan: one Claude Code session, one pull request. |

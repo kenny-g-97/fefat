@@ -1,0 +1,27 @@
+id: S-fill-032
+title: A long opened on the bar that closes at a funding time pays that funding
+fidelity: 1m
+instrument: BTCUSDT-PERP
+funding:
+  - {ts: "2026-03-07T08:00:00.000Z", rate: "0.0001"}
+orders:
+  - {id: 1, placed_at: "2026-03-07T07:59:00.000Z", side: buy, kind: market, quantity: "0.013"}
+tape:
+  - {ts_open: "2026-03-07T07:58:00Z", ts_close: "2026-03-07T07:59:00Z", open: "65000.0", high: "65010.0", low: "64990.0", close: "65000.0", volume: 450}
+  - {ts_open: "2026-03-07T07:59:00Z", ts_close: "2026-03-07T08:00:00Z", open: "65000.0", high: "65020.0", low: "64995.0", close: "65010.3", volume: 520}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-07T08:00:00Z", price: "65000.1", rule: F-MKT-03}
+  funding:
+    - {ts: "2026-03-07T08:00:00.000Z", amount: "-0.084514"}
+rules: [F-BAR-06, F-CLK-02, F-FEE-03, F-FND-01, F-MKT-03, F-MRK-01, F-SLP-01]
+
+# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC; one tick of slippage on
+# bars: F-SLP-01):
+# decided at 07:59:00 and active at 07:59:00.100, the order sees the bar from 07:59 to 08:00 and
+# fills at its open plus a tick: 65000.0 + 0.1 = 65000.1 (F-MKT-03), at its close, 08:00:00 (F-BAR-06);
+# that bar closes at the funding time, and the bars closing at an instant come before its timer
+# events (F-CLK-02), so the long is open when funding is paid, as the bar's trades came before 08:00;
+# the mark is that bar's close, 65010.3 (F-MRK-01): 0.013 × 65010.3 × 1 × 0.0001 = 0.08451339,
+# positive, so the long pays it (F-FND-01);
+# the cash change, -0.08451339, rounds toward minus infinity to -0.084514 (F-FEE-03).

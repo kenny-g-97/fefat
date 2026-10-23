@@ -1,0 +1,22 @@
+id: S-fill-038
+title: A buy limit above a crypto market fills at its own price on the first trade, as a taker
+fidelity: trades
+instrument: BTCUSDT-PERP
+fees: {kind: crypto, maker_bps: "2", taker_bps: "5"}
+orders:
+  - {id: 1, placed_at: "2026-03-07T09:00:00.000Z", side: buy, kind: limit, price: "65200.5", quantity: "0.010"}
+tape:
+  - {ts: "2026-03-07T09:00:00.150Z", price: "65200.0", size: 30}
+  - {ts: "2026-03-07T09:00:00.400Z", price: "65200.2", size: 12}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-07T09:00:00.150Z", price: "65200.5", rule: F-LMT-03, fee: "0.326003"}
+rules: [F-FEE-02, F-FEE-03, F-LMT-01, F-LMT-03, F-LMT-04]
+
+# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC; maker 2 bps, taker 5 bps):
+# active at 09:00:00.100; the first trade it sees, 65200.0, is below the limit (F-LMT-01);
+# fill = the limit = 65200.5 (F-LMT-03), not 65200.0, and four ticks worse than a market order's
+# 65200.0 + 0.1 = 65200.1;
+# it filled on the first price it saw, so it took liquidity: a taker (F-LMT-04);
+# taker fee = 65200.5 × 0.010 × 1 × 0.0005 = 652.005 × 0.0005 = 0.3260025, rounded up as a charge
+# to 0.326003 (F-FEE-02, F-FEE-03).

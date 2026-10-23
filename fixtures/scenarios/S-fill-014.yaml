@@ -1,0 +1,24 @@
+id: S-fill-014
+title: A buy stop placed below the market is accepted and fills at once, as a market order would
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5000.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:29:59.950Z", price: "5001.00", size: 2, bid: "5000.75", ask: "5001.00", bid_size: 9, ask_size: 7}
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5001.00", size: 1, bid: "5000.75", ask: "5001.00", bid_size: 8, ask_size: 5}
+  - {ts: "2026-03-06T14:30:00.350Z", price: "4999.75", size: 4, bid: "4999.50", ask: "4999.75", bid_size: 6, ask_size: 3}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5001.00", rule: F-STP-05}
+rules: [F-MKT-01, F-SLP-01, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01):
+# the last trade before the stop becomes active, at 14:29:59.950, prints 5001.00, at or above the
+# buy stop at 5000.00: CME would refuse such a stop, and the engine fills it at once as a market
+# order (F-STP-05);
+# a buy market order takes the ask of the first record at or after 14:30:00.100 (F-MKT-01), the
+# record at 14:30:00.200 with the ask at 5001.00;
+# fill = 5001.00 + 0 × 0.25 = 5001.00 (F-STP-05), at 14:30:00.200;
+# triggered by that record and filled at the next one's ask, capped at the stop (F-STP-02), it
+# would have filled at higher of (5000.00, 4999.75) = 5000.00, four ticks better than a market order.

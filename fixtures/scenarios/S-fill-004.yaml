@@ -1,0 +1,19 @@
+id: S-fill-004
+title: A buy market order on 1-second bars fills at the open of the first bar closing after its activation
+fidelity: 1s
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:29:59Z", ts_close: "2026-03-06T14:30:00Z", open: "4999.50", high: "4999.75", low: "4999.50", close: "4999.75", volume: 4}
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:30:01Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 9}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:01Z", price: "5000.25", rule: F-MKT-03}
+rules: [F-ACT-02, F-BAR-06, F-MKT-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# active at 14:30:00.000 + 100 ms = 14:30:00.100;
+# the bar from 14:29:59 to 14:30:00 closed before that, so the order never sees it; the first bar
+# closing after the activation is the one from 14:30:00 to 14:30:01 (F-ACT-02);
+# fill = its open + 1 tick = 5000.00 + 0.25 = 5000.25 (F-MKT-03), at its close, 14:30:01 (F-BAR-06).

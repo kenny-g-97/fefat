@@ -1,0 +1,21 @@
+id: S-fill-019
+title: A sell limit on 1-second bars fills at its price once a bar's high goes above it
+fidelity: 1s
+instrument: ES
+position: {side: long, quantity: 1, price: "5000.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5005.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:30:01Z", open: "5004.25", high: "5005.00", low: "5004.25", close: "5004.75", volume: 7}
+  - {ts_open: "2026-03-06T14:30:01Z", ts_close: "2026-03-06T14:30:02Z", open: "5004.75", high: "5005.75", low: "5004.50", close: "5005.50", volume: 12}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:02Z", price: "5005.00", rule: F-LMT-03}
+rules: [F-BAR-01, F-BAR-06, F-LMT-01, F-LMT-03]
+
+# Arithmetic (ES, tick 0.25). A long of 1 has its target at 5005.00:
+# the bar from 14:30:00 to 14:30:01 reaches 5005.00 exactly: a touch, not through (F-LMT-01);
+# the bar from 14:30:01 to 14:30:02 reaches 5005.75, so its path goes above the limit (F-BAR-01,
+# F-LMT-01);
+# fill = the limit = 5005.00 (F-LMT-03), not the high of 5005.75, at the bar's close, 14:30:02
+# (F-BAR-06).

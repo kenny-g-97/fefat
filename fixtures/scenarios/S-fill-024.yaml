@@ -1,0 +1,27 @@
+id: S-fill-024
+title: A buy stop entry and its bracket stop both fill in one 1-minute bar, flagged ambiguous
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, bracket: {stop: {id: 2, price: "5001.00"}, target: {id: 3, price: "5012.00"}}}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5003.00", high: "5004.50", low: "5002.25", close: "5004.00", volume: 190}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5004.00", high: "5013.00", low: "5000.50", close: "5008.25", volume: 720}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:32:00Z", price: "5005.25", rule: F-STP-04, flags: [ambiguous]}
+    - {order: 2, ts: "2026-03-06T14:32:00Z", price: "5000.75", rule: F-STP-04, flags: [ambiguous]}
+rules: [F-BAR-03, F-BAR-04, F-BAR-05, F-OCO-01, F-OCO-02, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). The buy stop at 5005.00
+# carries a bracket: stop 5001.00 (order 2) and target 5012.00 (order 3):
+# the bar from 14:30 to 14:31 reaches 5004.50 at most: no entry;
+# the bar from 14:31 to 14:32 has open 5004.00, high 5013.00, low 5000.50, and close 5008.25; flat,
+# with a buy entry working, its path goes to the high first (F-BAR-03) and passes 5005.00 (F-STP-01):
+# entry fill = 5005.00 + 1 × 0.25 = 5005.25 (F-STP-04);
+# the bracket is placed at the entry and works from there on (F-OCO-02); the high is not reached
+# yet, so the adverse extreme of the long comes first (F-BAR-04): from 5005.00 down to 5000.50,
+# passing the bracket stop at 5001.00: stop fill = 5001.00 - 1 × 0.25 = 5000.75 (F-STP-04);
+# the target is cancelled (F-OCO-01), and the path goes on to 5013.00 and 5008.25 with nothing working;
+# with the low first the bar would give the entry at 5005.25 and the target at 5012.00, so both fills
+# are flagged ambiguous (F-BAR-05); both happen at the bar's close, 14:32:00.

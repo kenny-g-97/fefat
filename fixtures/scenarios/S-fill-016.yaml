@@ -1,0 +1,20 @@
+id: S-fill-016
+title: A buy limit on TBBO fills at its price when the ask comes down to it
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.250Z", price: "4995.75", size: 1, bid: "4995.50", ask: "4995.75", bid_size: 6, ask_size: 3}
+  - {ts: "2026-03-06T14:30:00.700Z", price: "4995.25", size: 2, bid: "4995.00", ask: "4995.25", bid_size: 9, ask_size: 4}
+  - {ts: "2026-03-06T14:30:01.100Z", price: "4995.00", size: 1, bid: "4994.75", ask: "4995.00", bid_size: 7, ask_size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:01.100Z", price: "4995.00", rule: F-LMT-03}
+rules: [F-LMT-01, F-LMT-03]
+
+# Arithmetic (ES, tick 0.25):
+# the first two records trade at 4995.75 and 4995.25, above the limit, with the ask above it too;
+# at 14:30:01.100 a buyer pays 4995.00, the ask just before that trade: the trade only touches the
+# limit, but the ask is at it, so a seller offered at the limit and the order fills (F-LMT-01);
+# fill = the limit = 4995.00 (F-LMT-03).

@@ -1,0 +1,19 @@
+id: S-fill-020
+title: A buy limit on 1-minute bars fills at its price when a bar opens below it, not at the open
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "4997.00", high: "4997.75", low: "4995.25", close: "4995.50", volume: 180}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "4993.50", high: "4996.00", low: "4993.00", close: "4995.75", volume: 260}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:32:00Z", price: "4995.00", rule: F-LMT-03}
+rules: [F-BAR-01, F-BAR-06, F-LMT-01, F-LMT-03]
+
+# Arithmetic (ES, tick 0.25):
+# the bar from 14:30 to 14:31 goes down to 4995.25, above the limit;
+# the bar from 14:31 to 14:32 opens at 4993.50, a jump past the limit (F-BAR-01): the market traded
+# through it (F-LMT-01);
+# fill = the limit = 4995.00 (F-LMT-03), not the better open of 4993.50, at 14:32:00 (F-BAR-06).

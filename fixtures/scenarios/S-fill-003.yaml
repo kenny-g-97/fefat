@@ -1,0 +1,20 @@
+id: S-fill-003
+title: A buy market order on trades fills at the first trade at or after its activation plus a tick
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.050Z", price: "4999.75", size: 1}
+  - {ts: "2026-03-06T14:30:00.100Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "5000.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.100Z", price: "5000.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-CLK-02, F-MKT-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# active at 14:30:00.000 + 100 ms = 14:30:00.100 (F-ACT-01);
+# the trade at 14:30:00.050 comes before it; the trade at 14:30:00.100 comes at the activation
+# instant and counts, since activations come before market events at one instant (F-CLK-02);
+# fill = 5000.00 + 1 × 0.25 = 5000.25 (F-MKT-02).

@@ -1,0 +1,20 @@
+id: S-fill-011
+title: A buy stop on 1-minute bars fills at the open of a bar that opens past it
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5004.00", high: "5004.75", low: "5003.50", close: "5004.50", volume: 140}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5006.00", high: "5007.25", low: "5005.50", close: "5006.75", volume: 230}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:32:00Z", price: "5006.00", rule: F-STP-04}
+rules: [F-BAR-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# the bar from 14:30 to 14:31 reaches 5004.75 at most, below the stop;
+# the bar from 14:31 to 14:32 opens at 5006.00, already past the stop: only the open can jump
+# (F-BAR-01), and the stop triggers at the open (F-STP-01);
+# fill = higher of (5005.00 + 1 × 0.25, 5006.00) = higher of (5005.25, 5006.00) = 5006.00 (F-STP-04):
+# the tick of slippage lies inside the gap.

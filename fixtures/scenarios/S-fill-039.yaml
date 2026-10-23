@@ -1,0 +1,19 @@
+id: S-fill-039
+title: A buy limit larger than the trade that goes through it fills whole, flagged size_exceeded
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 5}
+tape:
+  - {ts: "2026-03-06T14:30:00.400Z", price: "4995.25", size: 3}
+  - {ts: "2026-03-06T14:30:00.900Z", price: "4994.75", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.900Z", price: "4995.00", rule: F-LMT-03, flags: [size_exceeded]}
+rules: [F-LMT-01, F-LMT-03, F-QTY-01]
+
+# Arithmetic (ES, tick 0.25):
+# the trade at 4994.75 at 14:30:00.900 is below the limit (F-LMT-01): fill = the limit = 4995.00
+# (F-LMT-03), all 5 contracts at once;
+# 5 contracts > the 2 of the trade that filled the order, so the fill is flagged size_exceeded
+# (F-QTY-01).

@@ -1,0 +1,18 @@
+id: S-fill-017
+title: A buy limit on trades that the market touches without trading through does not fill
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.400Z", price: "4995.50", size: 3}
+  - {ts: "2026-03-06T14:30:00.900Z", price: "4995.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.300Z", price: "4995.00", size: 5}
+  - {ts: "2026-03-06T14:30:01.800Z", price: "4995.25", size: 1}
+expected:
+  fills: []
+rules: [F-LMT-01]
+
+# Arithmetic (ES, tick 0.25; a limit fills on a trade through its price: F-LMT-01, D-51):
+# after the activation the trades print 4995.50, 4995.00, 4995.00, and 4995.25;
+# the lowest = 4995.00 = the limit: touched twice, never traded below, so the order does not fill.

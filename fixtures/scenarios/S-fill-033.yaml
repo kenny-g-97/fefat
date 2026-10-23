@@ -1,0 +1,23 @@
+id: S-fill-033
+title: Of an OCO pair of entry stops both inside one bar, the lower order id fills, flagged ambiguous
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, oco: breakout}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1, oco: breakout}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5006.00", low: "4994.00", close: "5001.00", volume: 400}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5005.25", rule: F-STP-04, flags: [ambiguous]}
+rules: [F-BAR-03, F-BAR-05, F-OCO-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A buy stop at 5005.00
+# (order 1) and a sell stop at 4995.00 (order 2), placed at one instant, form one OCO group:
+# the bar from 14:30 to 14:31 reaches both, high 5006.00 and low 4994.00, each 6.00 from the open;
+# flat after the open, the first extreme is the favourable one for the earliest placed entry, the
+# lower order id at one instant (F-BAR-03): order 1, so the high comes first;
+# on the way up the path passes 5005.00 (F-STP-01): fill = 5005.00 + 1 × 0.25 = 5005.25 (F-STP-04),
+# and order 2 is cancelled (F-OCO-01);
+# with the low first, order 2 would have filled at 4995.00 - 0.25 = 4994.75 instead, so the fill
+# is flagged ambiguous (F-BAR-05).

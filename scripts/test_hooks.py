@@ -340,6 +340,38 @@ def file_guard_cases() -> list[Case]:
             write(ROOT / "fixtures" / "goldens" / "CHANGELOG.md"),
             Expect.ALLOW,
         ),
+        case(
+            "edit an existing fill scenario asks",
+            edit(ROOT / "fixtures" / "scenarios" / "S-fill-012.yaml"),
+            Expect.ASK,
+            "the specification first",
+        ),
+        case(
+            "write over an existing fill scenario asks",
+            write(ROOT / "fixtures" / "scenarios" / "S-fill-001.yaml"),
+            Expect.ASK,
+        ),
+        case(
+            "write a new fill scenario is allowed",
+            write(ROOT / "fixtures" / "scenarios" / "S-fill-999.yaml"),
+            Expect.ALLOW,
+        ),
+        case(
+            "write the fill scenarios' README is allowed",
+            write(ROOT / "fixtures" / "scenarios" / "README.md"),
+            Expect.ALLOW,
+        ),
+        case(
+            "edit the fill specification asks",
+            edit(ROOT / "docs" / "spec" / "fill-semantics.md"),
+            Expect.ASK,
+            "engine-golden",
+        ),
+        case(
+            "write a new specification beside the fill specification is allowed",
+            write(ROOT / "docs" / "spec" / "cost-model.md"),
+            Expect.ALLOW,
+        ),
         case("write docs/notes.md is allowed", write(ROOT / "docs" / "notes.md"), Expect.ALLOW),
         case(
             "write notes.md outside the project is allowed",
@@ -392,6 +424,11 @@ def file_guard_cases() -> list[Case]:
             case(
                 "write a golden under a lower-cased project path asks",
                 write(f"{lowered}\\fixtures\\goldens\\run.json"),
+                Expect.ASK,
+            ),
+            case(
+                "edit an existing fill scenario under a lower-cased project path asks",
+                edit(f"{lowered}\\fixtures\\scenarios\\S-fill-012.yaml"),
                 Expect.ASK,
             ),
             case(

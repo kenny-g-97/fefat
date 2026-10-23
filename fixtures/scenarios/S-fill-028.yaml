@@ -1,0 +1,25 @@
+id: S-fill-028
+title: A futures round trip pays the fee per contract per side on its entry and its exit
+fidelity: trades
+instrument: ES
+fees: {kind: futures, per_contract_side: "2.50"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 2, bracket: {stop: {id: 2, price: "4990.00"}, target: {id: 3, price: "5010.00"}}}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5006.50", size: 1}
+  - {ts: "2026-03-06T14:30:07.400Z", price: "5010.25", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, fee: "5.00"}
+    - {order: 3, ts: "2026-03-06T14:30:07.400Z", price: "5010.00", rule: F-LMT-03, fee: "5.00"}
+rules: [F-FEE-01, F-LMT-01, F-LMT-03, F-MKT-02, F-OCO-01, F-OCO-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; a fee of 2.50 per contract
+# per side):
+# the buy market order for 2 contracts fills at the first trade plus a tick:
+# 5000.00 + 0.25 = 5000.25 (F-MKT-02);
+# its bracket is placed then and works from the next trade on (F-OCO-02): stop 4990.00, target 5010.00;
+# the trade at 5010.25 goes through the target (F-LMT-01): fill = the limit = 5010.00 (F-LMT-03),
+# and the stop is cancelled (F-OCO-01);
+# fee of each fill = 2 contracts × 2.50 = 5.00 (F-FEE-01), so the round trip pays 10.00.

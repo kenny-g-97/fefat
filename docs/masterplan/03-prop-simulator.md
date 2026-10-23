@@ -102,7 +102,7 @@ Fidelity is recorded per trade, because a FEFAT run can mix days with ticks and 
 
 | Fidelity | Source | Treatment |
 | --- | --- | --- |
-| `tick`, `1s`, `1m`, or a coarser bar timeframe | FEFAT runs (the finest data used for each trade) | exact within the data's resolution |
+| `tbbo`, `trades`, `1s`, `1m`, or a coarser bar timeframe | FEFAT runs (the finest data used for each trade, named as `docs/spec/fill-semantics.md` names it) | exact within the data's resolution; on bars the order of a bar's extremes is not known, and trade paths flag the bars where it could change a rule's answer (`docs/spec/fill-semantics.md` §15) |
 | `enriched:<resolution>` | imported trades re-marked to market on market data in your store (no strategy logic runs; each trade's own entries and exits are kept) | as exact as the stored data |
 | `excursions` | imported trades with MAE and MFE | conservative: loss rules assume the order of extremes that is worst for the account (for trailing drawdowns, the favourable extreme first); profit targets and other favourable-side rules count only closed trades |
 | `close-only` | imported trades with entries and exits only | with each trade's initial stop, or a worst-case adverse excursion set in the import profile, every trade is assumed to reach it before closing (a pessimistic bound); with neither, intraday rules cannot be checked, and a pass is reported as "pass, intraday unchecked" (an optimistic bound, left out of plan rankings by default) |

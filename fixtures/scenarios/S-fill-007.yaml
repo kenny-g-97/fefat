@@ -1,0 +1,23 @@
+id: S-fill-007
+title: A buy market order on daily bars fills at the next session's open plus a tick, at that session's close
+fidelity: 1d
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-05T22:00:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts_open: "2026-03-04T23:00:00Z", ts_close: "2026-03-05T22:00:00Z", open: "4990.00", high: "5012.50", low: "4981.25", close: "5004.75", volume: 1250000}
+  - {ts_open: "2026-03-05T23:00:00Z", ts_close: "2026-03-06T22:00:00Z", open: "5005.50", high: "5021.00", low: "4996.25", close: "5018.50", volume: 1310000}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T22:00:00Z", price: "5005.75", rule: F-MKT-03}
+rules: [F-ACT-01, F-ACT-02, F-BAR-06, F-BAR-07, F-CLK-01, F-MKT-03, F-SLP-01, F-TAG-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). Daily bars are sessions:
+# the session of 2026-03-06 runs from 17:00 Chicago on 03-05 (23:00 UTC) to 16:00 Chicago on 03-06
+# (22:00 UTC).
+# Decided at the close of 2026-03-05, 22:00:00 UTC, the order is active at 22:00:00.100 (F-ACT-01);
+# the bar of 2026-03-05 is available at its close, 22:00:00 (F-CLK-01), before the activation, so
+# the first bar closing after it is that of 2026-03-06 (F-ACT-02), replayed like 1-minute bars
+# (F-BAR-07);
+# fill = its open + 1 tick = 5005.50 + 0.25 = 5005.75 (F-MKT-03), at its close, 2026-03-06 22:00 UTC
+# (F-BAR-06), tagged 1d (F-TAG-01).

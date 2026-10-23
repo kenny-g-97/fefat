@@ -1,0 +1,20 @@
+id: S-fill-006
+title: A buy market order on an import's 5-minute bars fills at the next bar's open plus a tick, tagged 5m
+fidelity: 5m
+instrument: {tick_size: "0.10", point_value: "10", lot_step: "1"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:25:00Z", ts_close: "2026-03-06T14:30:00Z", open: "251.30", high: "251.80", low: "251.00", close: "251.60", volume: 340}
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:35:00Z", open: "251.70", high: "252.40", low: "251.50", close: "252.10", volume: 410}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:35:00Z", price: "251.80", rule: F-MKT-03}
+rules: [F-ACT-02, F-BAR-07, F-MKT-03, F-SLP-01, F-TAG-01]
+
+# Arithmetic (an imported product the instrument table lacks: tick 0.10, point value 10, lot step 1;
+# one tick of slippage on bars: F-SLP-01):
+# decided at the close of the bar from 14:25 to 14:30 and active at 14:30:00.100; the first bar
+# closing after that runs from 14:30 to 14:35 (F-ACT-02); 5-minute bars are the import's finest
+# data and replay like 1-minute bars (F-BAR-07);
+# fill = its open + 1 tick = 251.70 + 0.10 = 251.80 (F-MKT-03), at 14:35:00, tagged 5m (F-TAG-01).

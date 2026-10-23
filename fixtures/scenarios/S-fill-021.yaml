@@ -1,0 +1,22 @@
+id: S-fill-021
+title: A sell limit on daily bars stays working over a weekend and fills at its price, tagged 1d
+fidelity: 1d
+instrument: MES
+orders:
+  - {id: 1, placed_at: "2026-03-05T22:00:00.000Z", side: sell, kind: limit, price: "5030.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-04T23:00:00Z", ts_close: "2026-03-05T22:00:00Z", open: "5002.00", high: "5024.75", low: "4995.50", close: "5021.25", volume: 1540000}
+  - {ts_open: "2026-03-05T23:00:00Z", ts_close: "2026-03-06T22:00:00Z", open: "5020.50", high: "5029.75", low: "5008.00", close: "5015.25", volume: 1480000}
+  - {ts_open: "2026-03-08T22:00:00Z", ts_close: "2026-03-09T21:00:00Z", open: "5016.00", high: "5034.50", low: "5011.25", close: "5031.75", volume: 1620000}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-09T21:00:00Z", price: "5030.00", rule: F-LMT-03}
+rules: [F-BAR-07, F-LMT-01, F-LMT-03, F-SES-01, F-TAG-01]
+
+# Arithmetic (MES, tick 0.25). Daily bars are sessions, replayed like 1-minute bars (F-BAR-07).
+# Decided at the close of 2026-03-05, 22:00 UTC:
+# the session of 2026-03-06 reaches 5029.75 at most, below the limit: no fill (F-LMT-01);
+# the order stays working over the weekend (F-SES-01); after the clock change of 2026-03-08, the
+# session of 2026-03-09 runs from 22:00 UTC on 03-08 to 21:00 UTC on 03-09 (17:00 to 16:00 Chicago);
+# its high, 5034.50, is above the limit (F-LMT-01);
+# fill = the limit = 5030.00 (F-LMT-03), at 2026-03-09 21:00 UTC, tagged 1d (F-TAG-01).

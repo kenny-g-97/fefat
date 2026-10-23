@@ -1,0 +1,20 @@
+id: S-fill-037
+title: A trade the exchange stamped before an order's activation but received after it counts for that order
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.130Z", ts_event: "2026-03-06T14:30:00.080Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:00.300Z", ts_event: "2026-03-06T14:30:00.290Z", price: "5000.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.130Z", price: "5000.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-CLK-01, F-MKT-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# active at 14:30:00.000 + 100 ms = 14:30:00.100 (F-ACT-01);
+# the first trade was stamped by the exchange at 14:30:00.080, before the activation, but received
+# at 14:30:00.130, after it; the engine's clock is the receive time (F-CLK-01), so it counts;
+# fill = 5000.00 + 1 × 0.25 = 5000.25 (F-MKT-02);
+# on the exchange's clock it would have been skipped, and the fill = 5000.50 + 0.25 = 5000.75.

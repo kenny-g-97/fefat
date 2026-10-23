@@ -1,0 +1,20 @@
+id: S-fill-015
+title: A buy limit on TBBO fills at its price when a trade prints below it
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.300Z", price: "4995.25", size: 2, bid: "4995.00", ask: "4995.25", bid_size: 8, ask_size: 5}
+  - {ts: "2026-03-06T14:30:00.800Z", price: "4995.00", size: 3, bid: "4995.00", ask: "4995.25", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:01.200Z", price: "4994.75", size: 2, bid: "4994.75", ask: "4995.25", bid_size: 5, ask_size: 6}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:01.200Z", price: "4995.00", rule: F-LMT-03}
+rules: [F-ACT-01, F-LMT-01, F-LMT-03]
+
+# Arithmetic (ES, tick 0.25), active at 14:30:00.000 + 100 ms = 14:30:00.100 (F-ACT-01):
+# the trade at 4995.25 is above the limit, and the trade at 4995.00 only touches it, while the ask,
+# 4995.25, stays above it: no fill on either (F-LMT-01);
+# the trade at 4994.75, at 14:30:01.200, is below the limit: the market traded through it (F-LMT-01);
+# fill = the limit = 4995.00 (F-LMT-03), not the trade's 4994.75.

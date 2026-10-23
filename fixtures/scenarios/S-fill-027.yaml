@@ -1,0 +1,22 @@
+id: S-fill-027
+title: A market order active in the break fills on the next session's first trade, not on a print in the break
+fidelity: trades
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-05T22:00:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts: "2026-03-05T21:59:58.500Z", price: "5008.75", size: 2}
+  - {ts: "2026-03-05T22:00:00.400Z", price: "5011.00", size: 1}
+  - {ts: "2026-03-05T23:00:00.050Z", price: "5009.50", size: 6}
+  - {ts: "2026-03-05T23:00:01.250Z", price: "5010.25", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T23:00:00.050Z", price: "5009.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-MKT-02, F-SES-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01). The session of 2026-03-05
+# closes at 16:00 Chicago, 22:00 UTC, and that of 2026-03-06 opens at 17:00 Chicago, 23:00 UTC:
+# decided at the close, 22:00:00.000, the order is active at 22:00:00.100, in the break (F-ACT-01);
+# the print received at 22:00:00.400 falls in the break and is not tradeable (F-SES-02);
+# the next session's first trade prints 5009.50 at 23:00:00.050;
+# fill = 5009.50 + 1 × 0.25 = 5009.75 (F-MKT-02).
