@@ -6,7 +6,8 @@
  * Denies what CLAUDE.md and docs/masterplan/05-build-process.md section 8
  * forbid: skipping the commit gate (--no-verify, git commit -n), changing or
  * overriding core.hooksPath, writing .git/config directly or through
- * git config --edit, force pushes, and pushes to main. Asks before golden regeneration, merges and other changes
+ * git config --edit, force pushes, and pushes to main. Asks before golden regeneration, writes of a fill
+ * scenario or the fill specification, merges and other changes
  * on GitHub, edits of .githooks/, commits on main, pushes whose branch it
  * cannot tell, commands it cannot read, and anything that mentions Databento
  * (downloads cost money). Everything else gets no decision, so the permission
@@ -65,6 +66,8 @@ const REASONS = {
     "This writes to Claude Code's own guardrails (.claude/settings.json, .claude/hooks/, or a design skill under .claude/skills/); confirm the change.",
   goldens:
     "This regenerates or overwrites goldens or snapshots, which change only with the builder's approval and a changelog entry (the engine-golden skill).",
+  fillSpecification:
+    "This writes a fill scenario or the fill specification, which change only with the builder: the specification first, then the scenarios, and never an expected value to match code (the engine-golden skill); add a new scenario with the Write tool.",
   github:
     "Merging pull requests and changing the repository on GitHub are the builder's routine (docs/masterplan/05-build-process.md section 8); confirm first.",
   databento:
@@ -232,9 +235,12 @@ function commandFindings(command) {
   if (written.some(usesWindowsAlias)) {
     findings.push(ask(REASONS.windowsAlias));
   }
-  const touchesGoldens = written.some(isGoldenPath) || mentionsGoldensOutsideReading(command.words);
+  const touchesGoldens = written.some(isGoldenPath) || mentionsOutsideReading(command.words, isGoldenFolder);
   if (touchesGoldens || regeneratesGoldens(command.words) || GOLDEN_ENVIRONMENT.test(command.text)) {
     findings.push(ask(REASONS.goldens));
+  }
+  if (written.some(namesFillSpecification) || mentionsOutsideReading(command.words, namesFillSpecification)) {
+    findings.push(ask(REASONS.fillSpecification));
   }
   if (changesGitHub(command.words)) {
     findings.push(ask(REASONS.github));
@@ -276,13 +282,25 @@ function writtenPaths(command) {
     .map((target) => path.posix.normalize(withForwardSlashes(target).toLowerCase().replace(/^of=/, "")));
 }
 
-/** A program other than a reader that names a path under fixtures/goldens/, such as a generator's output folder. */
-function mentionsGoldensOutsideReading(words) {
+/** A program other than a reader that names a path `names` accepts, such as a generator's output folder. */
+function mentionsOutsideReading(words, names) {
   const index = programIndex(words);
   if (index >= words.length || readsOnly(programName(words[index]), words.slice(index + 1))) {
     return false;
   }
-  return words.slice(index + 1).some((word) => withForwardSlashes(word).toLowerCase().includes("fixtures/goldens"));
+  return words.slice(index + 1).some((word) => names(withForwardSlashes(word).toLowerCase()));
+}
+
+function isGoldenFolder(text) {
+  return text.includes("fixtures/goldens");
+}
+
+/** A fill scenario, their folder, or the fill specification (step 2.1); the scenarios' README stays free. */
+function namesFillSpecification(text) {
+  if (text.includes("docs/spec/fill-semantics.md")) {
+    return true;
+  }
+  return text.includes("fixtures/scenarios") && !text.includes("fixtures/scenarios/readme.md");
 }
 
 function readsOnly(program, args) {

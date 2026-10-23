@@ -757,6 +757,74 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
         ),
         case("reading a golden is allowed", "cat fixtures/goldens/es/run.json", Expect.ALLOW),
         case(
+            "sed -i on a fill scenario asks",
+            "sed -i 's/4990.25/4990.50/' fixtures/scenarios/S-fill-012.yaml",
+            Expect.ASK,
+            reason="specification first",
+        ),
+        case(
+            "appending to the fill specification asks",
+            "echo x >> docs/spec/fill-semantics.md",
+            Expect.ASK,
+            reason="specification first",
+        ),
+        case(
+            "copying over a fill scenario asks",
+            "cp new.yaml fixtures/scenarios/S-fill-012.yaml",
+            Expect.ASK,
+        ),
+        case(
+            "copying into the fill scenarios' folder asks",
+            "cp S-fill-012.yaml fixtures/scenarios/",
+            Expect.ASK,
+        ),
+        case(
+            "Set-Content on a fill scenario asks in PowerShell",
+            "Set-Content fixtures\\scenarios\\S-fill-012.yaml x",
+            Expect.ASK,
+            tool="PowerShell",
+        ),
+        case(
+            "a script handed a fill scenario's path asks",
+            "uv run python edit.py fixtures/scenarios/S-fill-012.yaml",
+            Expect.ASK,
+        ),
+        case(
+            "find -delete in the fill scenarios' folder asks",
+            "find fixtures/scenarios -name '*.yaml' -delete",
+            Expect.ASK,
+        ),
+        case(
+            "git rm of a fill scenario asks",
+            "git rm fixtures/scenarios/S-fill-012.yaml",
+            Expect.ASK,
+        ),
+        case(
+            "reading a fill scenario is allowed",
+            "cat fixtures/scenarios/S-fill-012.yaml",
+            Expect.ALLOW,
+        ),
+        case(
+            "searching the fill scenarios and the specification is allowed",
+            "rg -n F-STP-03 fixtures/scenarios docs/spec/fill-semantics.md",
+            Expect.ALLOW,
+        ),
+        case(
+            "writing the fill scenarios' README is allowed",
+            "echo x >> fixtures/scenarios/README.md",
+            Expect.ALLOW,
+        ),
+        case(
+            "running the fill scenario runner is allowed",
+            "uv run python -m fefat.reference.scenario_runner --log S-fill-012",
+            Expect.ALLOW,
+        ),
+        case(
+            "staging a new fill scenario is allowed",
+            "git add fixtures/scenarios/S-fill-042.yaml",
+            Expect.ALLOW,
+        ),
+        case(
             "cargo insta test --unreferenced=delete asks",
             "cargo insta test --unreferenced=delete",
             Expect.ASK,
