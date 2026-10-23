@@ -69,6 +69,11 @@ test:
 test-engine:
     cargo test --workspace
 
+# Write the StrategySpec JSON schema from the Rust types into the SDK, where a cargo test checks it is current
+[working-directory("engine")]
+gen-schema:
+    cargo run -p fefat-cli -- schema ../python/fefat/src/fefat/strategy/strategy_spec.schema.json
+
 # Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
 strip-notebooks:
     uv run python scripts/strip_notebooks.py

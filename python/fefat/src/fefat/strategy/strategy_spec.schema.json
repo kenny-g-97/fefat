@@ -1,0 +1,902 @@
+{
+  "$defs": {
+    "Breakeven": {
+      "additionalProperties": false,
+      "description": "When the stop moves to the entry's fill price, `offset_ticks` beyond it in the position's\nfavour.",
+      "properties": {
+        "offset_ticks": {
+          "default": 0,
+          "description": "The ticks beyond the fill price in the position's favour; below zero, short of it.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "trigger": {
+          "$ref": "#/$defs/ProfitTrigger",
+          "description": "What moves the stop."
+        }
+      },
+      "required": [
+        "trigger"
+      ],
+      "type": "object"
+    },
+    "Cooldown": {
+      "description": "How long no entry is placed after a losing trade.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The next `bars` signal bars.",
+          "properties": {
+            "bars": {
+              "description": "The signal bars without entries.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "bars",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "bars"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The next `minutes` minutes.",
+          "properties": {
+            "kind": {
+              "const": "minutes",
+              "type": "string"
+            },
+            "minutes": {
+              "description": "The minutes without entries.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "minutes"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EntryOrder": {
+      "description": "The order an entry signal places: a market order, or a limit or a stop-market order at the\nsignal frame's `entry_price` or a number of ticks from the signal bar's close. With a limit or\na stop entry, a bar with both entry signals places a buy and a sell as one OCO group, the long\nand short pair; with a market entry, such a bar is refused.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A market order (F-MKT).",
+          "properties": {
+            "kind": {
+              "const": "market",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A limit order at the signal frame's `entry_price` (F-LMT).",
+          "properties": {
+            "kind": {
+              "const": "limit_at_column",
+              "type": "string"
+            },
+            "time_to_live_bars": {
+              "description": "The signal bars the order works before it is cancelled; without it, until it fills.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A limit order `ticks` from the signal bar's close, below it for a buy and above it for a\nsell (F-LMT).",
+          "properties": {
+            "kind": {
+              "const": "limit_offset",
+              "type": "string"
+            },
+            "ticks": {
+              "description": "The distance from the close, in ticks.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "time_to_live_bars": {
+              "description": "The signal bars the order works before it is cancelled; without it, until it fills.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ticks"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A stop-market order at the signal frame's `entry_price` (F-STP).",
+          "properties": {
+            "kind": {
+              "const": "stop_at_column",
+              "type": "string"
+            },
+            "time_to_live_bars": {
+              "description": "The signal bars the order works before it is cancelled; without it, until it fills.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A stop-market order `ticks` from the signal bar's close, above it for a buy and below it\nfor a sell (F-STP).",
+          "properties": {
+            "kind": {
+              "const": "stop_offset",
+              "type": "string"
+            },
+            "ticks": {
+              "description": "The distance from the close, in ticks.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "time_to_live_bars": {
+              "description": "The signal bars the order works before it is cancelled; without it, until it fills.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ticks"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "EntryWindow": {
+      "additionalProperties": false,
+      "description": "A stretch of local time in which entries may be placed.",
+      "properties": {
+        "end": {
+          "description": "The local time, `HH:MM`, at which the window closes; before `start`, it runs past\nmidnight.",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "type": "string"
+        },
+        "start": {
+          "description": "The local time, `HH:MM`, at which the window opens.",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "type": "string"
+        },
+        "weekdays": {
+          "description": "The days on which the window holds; without them, every day.",
+          "items": {
+            "$ref": "#/$defs/Weekday"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "Execution": {
+      "additionalProperties": false,
+      "description": "The execution template: how the strategy enters on its signals, protects and closes a\nposition, filters its entries, and sizes them.",
+      "properties": {
+        "breakeven": {
+          "$ref": "#/$defs/Breakeven",
+          "description": "When the stop moves to the entry's fill price."
+        },
+        "entry": {
+          "$ref": "#/$defs/EntryOrder",
+          "description": "The order an entry signal places."
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits",
+          "default": {
+            "fresh_signal": false
+          },
+          "description": "A blackout column, daily limits, a cooldown, and fresh signals, which filter entries."
+        },
+        "on_opposite_signal": {
+          "$ref": "#/$defs/OppositeSignal",
+          "default": "ignore",
+          "description": "What an entry signal against the open position does."
+        },
+        "signal_exit": {
+          "default": true,
+          "description": "Whether the signal frame's `long_exit` and `short_exit` close the position.",
+          "type": "boolean"
+        },
+        "sizing": {
+          "$ref": "#/$defs/Sizing",
+          "description": "How many units an entry trades."
+        },
+        "stop": {
+          "$ref": "#/$defs/StopRule",
+          "description": "The stop placed against the position when an entry fills."
+        },
+        "targets": {
+          "default": [],
+          "description": "The targets placed when an entry fills, three at most, each closing a fraction of the\nposition still open; with the stop, they form one OCO group.",
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "time": {
+          "$ref": "#/$defs/TimeRules",
+          "description": "Entry windows and time exits, in local time."
+        },
+        "trailing": {
+          "$ref": "#/$defs/Trailing",
+          "description": "How the stop follows the price."
+        }
+      },
+      "required": [
+        "entry",
+        "sizing"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "description": "Filters on entries: a blackout column, daily limits, a cooldown after a loss, and fresh\nsignals.",
+      "properties": {
+        "blackout": {
+          "description": "A boolean feature column of the signal frame: no entry on a bar where it is true.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "cooldown_after_loss": {
+          "$ref": "#/$defs/Cooldown",
+          "description": "How long no entry is placed after a losing trade."
+        },
+        "daily_loss_stop": {
+          "description": "The loss, in the account's currency, after which no entry is placed that trade date.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "fresh_signal": {
+          "default": false,
+          "description": "Whether an entry needs a signal that was false on the bar before, so that a signal still\ntrue after an exit does not enter again.",
+          "type": "boolean"
+        },
+        "max_losses_per_day": {
+          "description": "The losing trades after which no entry is placed that trade date.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_trades_per_day": {
+          "description": "The entries allowed each trade date.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "profit_lock": {
+          "description": "The profit, in the account's currency, after which no entry is placed that trade date.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "OppositeSignal": {
+      "description": "What an entry signal against the open position does.",
+      "oneOf": [
+        {
+          "const": "ignore",
+          "description": "Nothing: the position stays open.",
+          "type": "string"
+        },
+        {
+          "const": "close",
+          "description": "The position is closed.",
+          "type": "string"
+        },
+        {
+          "const": "reverse",
+          "description": "The position is closed and an entry is placed the other way.",
+          "type": "string"
+        }
+      ]
+    },
+    "ProfitTrigger": {
+      "description": "A point a trade reaches in its favour.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The price `ticks` from the entry's fill in the position's favour.",
+          "properties": {
+            "kind": {
+              "const": "ticks",
+              "type": "string"
+            },
+            "ticks": {
+              "description": "The distance from the fill, in ticks.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ticks"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A profit of `multiple` times the trade's initial risk.",
+          "properties": {
+            "kind": {
+              "const": "r_multiple",
+              "type": "string"
+            },
+            "multiple": {
+              "description": "The multiple of the initial risk.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "multiple"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The fill of a target, counted from 1.",
+          "properties": {
+            "kind": {
+              "const": "after_target",
+              "type": "string"
+            },
+            "target": {
+              "description": "The target, counted from 1.",
+              "format": "uint8",
+              "maximum": 3,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Sizing": {
+      "description": "How many units an entry trades: contracts for futures, the base asset for crypto, in whole lot\nsteps of the instrument. The signal frame's `size_mult` multiplies the size where it is given.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The same units on every entry.",
+          "properties": {
+            "kind": {
+              "const": "fixed",
+              "type": "string"
+            },
+            "units": {
+              "description": "The units of each entry.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "units"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The units whose value at the entry is `amount` in the account's currency.",
+          "properties": {
+            "amount": {
+              "description": "The value of each entry, in the account's currency.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "notional",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "amount"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The units whose loss at the stop is `amount` in the account's currency.",
+          "properties": {
+            "amount": {
+              "description": "The loss at the stop, in the account's currency.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "risk_amount",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "amount"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The units whose loss at the stop is `percent` % of equity: the run's capital and its\nclosed profit and loss.",
+          "properties": {
+            "kind": {
+              "const": "risk_percent",
+              "type": "string"
+            },
+            "percent": {
+              "description": "The loss at the stop, as a percentage of equity: `1` is 1 %.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "percent"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "StopRule": {
+      "description": "The stop placed against the position when an entry fills, a stop-market order (F-STP).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`ticks` from the entry's fill price.",
+          "properties": {
+            "kind": {
+              "const": "ticks",
+              "type": "string"
+            },
+            "ticks": {
+              "description": "The distance from the fill, in ticks.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ticks"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`percent` % of the entry's fill price from it.",
+          "properties": {
+            "kind": {
+              "const": "percent",
+              "type": "string"
+            },
+            "percent": {
+              "description": "The distance from the fill, as a percentage of its price: `0.5` is 0.5 %.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "percent"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`multiple` times a feature of the entry's signal bar, such as its ATR, from the fill.",
+          "properties": {
+            "feature": {
+              "description": "The feature's column in the signal frame, such as `atr`.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "atr",
+              "type": "string"
+            },
+            "multiple": {
+              "description": "The multiple of the feature.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "multiple",
+            "feature"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The signal frame's `stop_price` on the entry's signal bar, a raw price.",
+          "properties": {
+            "kind": {
+              "const": "column",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Target": {
+      "additionalProperties": false,
+      "description": "A target placed when an entry fills, a limit order (F-LMT) that closes `fraction` of the\nposition still open.",
+      "properties": {
+        "fraction": {
+          "default": 1.0,
+          "description": "The fraction of the position still open that the target closes: 1 closes the rest.",
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "maximum": 1,
+          "type": "number"
+        },
+        "price": {
+          "$ref": "#/$defs/TargetPrice",
+          "description": "Where the target is."
+        }
+      },
+      "required": [
+        "price"
+      ],
+      "type": "object"
+    },
+    "TargetPrice": {
+      "description": "Where a target is.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`ticks` from the entry's fill price, in the position's favour.",
+          "properties": {
+            "kind": {
+              "const": "ticks",
+              "type": "string"
+            },
+            "ticks": {
+              "description": "The distance from the fill, in ticks.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ticks"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`multiple` times a feature of the entry's signal bar, such as its ATR, from the fill.",
+          "properties": {
+            "feature": {
+              "description": "The feature's column in the signal frame, such as `atr`.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "atr",
+              "type": "string"
+            },
+            "multiple": {
+              "description": "The multiple of the feature.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "multiple",
+            "feature"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`multiple` times the trade's initial risk, the distance from the fill to its first stop.",
+          "properties": {
+            "kind": {
+              "const": "r_multiple",
+              "type": "string"
+            },
+            "multiple": {
+              "description": "The multiple of the initial risk.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "multiple"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The signal frame's `target_price` on the entry's signal bar, a raw price.",
+          "properties": {
+            "kind": {
+              "const": "column",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TimeRules": {
+      "additionalProperties": false,
+      "description": "Entry windows and time exits, in local time of `tz`.",
+      "properties": {
+        "flat_by": {
+          "description": "The local time, `HH:MM`, from which each trade date the position is closed and no entry\nis placed: at the first signal close at or after that time on the trade date's own day,\nwhich must fall inside its session, outside its halts, and on the signal bars' grid.",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "type": "string"
+        },
+        "max_bars": {
+          "description": "The signal bars a position may stay open.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_minutes": {
+          "description": "The minutes a position may stay open.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "no_overnight": {
+          "default": false,
+          "description": "Whether the position is closed before each session's close.",
+          "type": "boolean"
+        },
+        "no_weekend": {
+          "default": false,
+          "description": "Whether the position is closed before the last session of each week closes.",
+          "type": "boolean"
+        },
+        "tz": {
+          "description": "The IANA time zone of the local times, such as `America/Chicago`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "windows": {
+          "default": [],
+          "description": "The local times in which entries may be placed; without any, at any time.",
+          "items": {
+            "$ref": "#/$defs/EntryWindow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tz"
+      ],
+      "type": "object"
+    },
+    "TrailBy": {
+      "description": "How far behind the price a trailing stop follows.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`ticks` behind the best price since the activation.",
+          "properties": {
+            "kind": {
+              "const": "ticks",
+              "type": "string"
+            },
+            "ticks": {
+              "description": "The distance behind the best price, in ticks.",
+              "format": "uint32",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ticks"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`multiple` times a feature of the signal bars, such as their ATR, behind the best price.",
+          "properties": {
+            "feature": {
+              "description": "The feature's column in the signal frame, such as `atr`.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "const": "atr",
+              "type": "string"
+            },
+            "multiple": {
+              "description": "The multiple of the feature.",
+              "exclusiveMinimum": 0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "multiple",
+            "feature"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "At the signal frame's `trail_ref` of each signal bar, a raw price.",
+          "properties": {
+            "kind": {
+              "const": "column",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TrailUpdate": {
+      "description": "When a trailing stop moves.",
+      "oneOf": [
+        {
+          "const": "intrabar",
+          "description": "As the price moves inside a bar.",
+          "type": "string"
+        },
+        {
+          "const": "bar_close",
+          "description": "At each signal bar's close.",
+          "type": "string"
+        }
+      ]
+    },
+    "Trailing": {
+      "additionalProperties": false,
+      "description": "A stop that follows the price once the trade reaches its activation.",
+      "properties": {
+        "activation": {
+          "$ref": "#/$defs/ProfitTrigger",
+          "description": "The point from which the stop follows; without it, from the entry's fill."
+        },
+        "by": {
+          "$ref": "#/$defs/TrailBy",
+          "description": "How far behind the price the stop follows."
+        },
+        "step_ticks": {
+          "description": "The ticks the stop moves at a time; without it, every tick.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "update": {
+          "$ref": "#/$defs/TrailUpdate",
+          "default": "intrabar",
+          "description": "When the stop moves."
+        }
+      },
+      "required": [
+        "by"
+      ],
+      "type": "object"
+    },
+    "Weekday": {
+      "description": "A day of the week.",
+      "enum": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A signal strategy's specification: the instrument it trades, the timeframe of the signal bars\nwhose closes decide, and its execution template.",
+  "properties": {
+    "execution": {
+      "$ref": "#/$defs/Execution",
+      "description": "What the strategy does with its signals."
+    },
+    "instrument": {
+      "description": "The root the strategy trades, as the instrument table names it, such as `ES`.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "spec_version": {
+      "description": "The version of the document's layout: 1.",
+      "format": "uint32",
+      "maximum": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "timeframe": {
+      "description": "The timeframe of the signal bars, such as `5m`: a count, then `s`, `m`, `h`, or `d`.",
+      "pattern": "^[1-9][0-9]*[smhd]$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "spec_version",
+    "instrument",
+    "timeframe",
+    "execution"
+  ],
+  "title": "StrategySpec",
+  "type": "object"
+}
