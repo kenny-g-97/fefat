@@ -31,7 +31,7 @@ to `end`, dates or text such as `2024-01-31`, as a Polars LazyFrame with the col
   back-adjusted series an import holds, whose prices no order traded at (D-49);
 - `adj_offset`: what was added to the raw prices, so that `close = close_raw + adj_offset`,
   null where `close_raw` is;
-- `roll_flag`: true on the first bar of each new front contract, on the trade date it rolled;
+- `roll_flag`: true on the first bar of each new front contract at or after its roll's open;
 - `zero_volume`: true on a bucket without trades, priced at the close before it.
 
 The bars lie on the session grid: a row for every bucket of every session but those inside a
@@ -139,7 +139,7 @@ def load(
         return _some(bars, contract or root, first, last).lazy()
     calendar = _roll_calendar(store, datasets, instrument, sessions)
     gridded = _gridded(store, source, bar_timeframe, sessions, first, last, contract, calendar)
-    bars = _signal_bars(_spliced(gridded, calendar), first, last, ("ts_open",))
+    bars = _signal_bars(calendar.continuous_bars(gridded), first, last, ("ts_open",))
     return _some(bars, root, first, last).lazy()
 
 
@@ -330,20 +330,6 @@ def _require_fronts_for(bars: pl.DataFrame, calendar: RollCalendar) -> None:
     raise ValueError(
         f"Expected 1-minute bars of {calendar.root} that decide the front contracts through "
         f"{beyond.max()}, got fronts through {through}."
-    )
-
-
-def _spliced(gridded: pl.DataFrame, calendar: RollCalendar) -> pl.DataFrame:
-    """The front's grid rows of each session, adjusted (`RollCalendar.continuous_bars`), with
-    `roll_flag` on the first bar of each new front on the trade date it rolled, whatever bars
-    the window holds before it."""
-    rolled_to = calendar.rolls().select("trade_date", "contract", rolled=pl.lit(True))
-    first_bar = pl.col("ts_open") == pl.col("ts_open").min().over("trade_date", "contract")
-    return (
-        calendar.continuous_bars(gridded)
-        .join(rolled_to, on=["trade_date", "contract"], how="left")
-        .with_columns(roll_flag=pl.col("rolled").fill_null(False) & first_bar)
-        .drop("rolled")
     )
 
 
