@@ -16,7 +16,6 @@ and instants nanoseconds since the Unix epoch, UTC (`fefat.reference.units`):
 
 import math
 from collections.abc import Sequence
-from copy import deepcopy
 from decimal import Decimal
 from fractions import Fraction
 
@@ -322,7 +321,7 @@ class ReferenceEngine:
         if decisions and on_bar is None:
             raise ValueError("Expected an on_bar strategy for the decisions, got none.")
         self.book, self.log = Book(position=position), EventLog()
-        self.cash, self.in_break = 0, False
+        self.in_break = False
         self.fills: list[Fill] = []
         self.funding: list[FundingPayment] = []
         self.marks: list[Mark] = []
@@ -333,7 +332,7 @@ class ReferenceEngine:
             if last_of_instant and self.book.position != 0 and self.book.mark is not None:
                 self.marks.append(Mark(ts=event.ts, price=self.book.mark))
         fills, funding, marks = tuple(self.fills), tuple(self.funding), tuple(self.marks)
-        return RunResult(fills, funding, marks, self.log, self.cash, self.book.position)
+        return RunResult(fills, funding, marks, self.log, self.book.position)
 
     def _events(
         self, tape: Sequence[Record], decisions: Sequence[Decision], rates: Sequence[FundingRate]
@@ -448,7 +447,7 @@ class ReferenceEngine:
         for order in self.book.live(WAITING):
             if f_act_02(order, bar):
                 self.log.active(at.ts, order.id, "bar", "F-ACT-02")
-        trial = deepcopy(self.book)
+        trial = self.book.copied()
         executions = BarReplay(self, self.book, at).run(bar, swapped=False)
         swapped = BarReplay(self, trial, at).run(bar, swapped=True) if executions else executions
         flags = (FillFlag.AMBIGUOUS,) if f_bar_05(executions, swapped) else ()
@@ -478,7 +477,6 @@ class ReferenceEngine:
         fee = -f_fee_03(-self._fee(value, execution), booked)
         fill = f_tag_01(execution, ts, self.fidelity, self.tick)
         fill = fill.model_copy(update={"flags": (*flags, *fill.flags), "fee": fee, "cash": cash})
-        self.cash += cash - fee
         self.fills.append(fill)
         self.log.filled(fill, execution.cancelled, execution.bracket)
 
@@ -498,7 +496,6 @@ class ReferenceEngine:
             raise ValueError(f"Expected a mark at the funding {instant_text(rate.ts)}, got none.")
         owed = f_fnd_01(self.book.position, mark, self.instrument, rate.rate)
         change = f_fee_03(owed, f"the funding at {instant_text(rate.ts)}")
-        self.cash += change
         self.funding.append(FundingPayment(ts=rate.ts, amount=change))
         self.log.funded(rate.ts, change, mark)
 

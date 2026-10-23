@@ -149,6 +149,18 @@ def test_a_bar_that_opens_in_the_break_is_not_replayed(tmp_path: Path) -> None:
     assert not hours.is_open(tape[2].ts_open)
 
 
+def test_the_market_is_closed_inside_a_sessions_halt(tmp_path: Path) -> None:
+    # Labor Day 2026: MES halts from 12:00 to 17:00 Chicago, 17:00 to 22:00 UTC, inside the
+    # session of 2026-09-08, and nothing trades or fills there (F-SES-02).
+    sessions = sessions_of(instruments.get("MES").session_calendar(), tmp_path)
+    halts = instant_nanoseconds("2026-09-07T17:00:00Z")
+    reopens = instant_nanoseconds("2026-09-07T22:00:00Z")
+    hours = CalendarHours.around(sessions, halts, reopens)
+
+    edges = (halts - 1, halts, reopens - 1, reopens)
+    assert [hours.is_open(instant) for instant in edges] == [True, False, False, True]
+
+
 def test_a_decision_without_a_strategy_is_refused() -> None:
     engine = ReferenceEngine(RunSettings.for_fidelity(ONE_MINUTE), MES, ONE_MINUTE, AlwaysOpen())
     tape = (bar("14:30:00", "14:31:00", "5000.00", "5000.50", "4999.75", "5000.25"),)

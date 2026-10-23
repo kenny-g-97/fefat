@@ -4,7 +4,7 @@ instants, with OCO groups and brackets, and the position held when the tape star
 reference engine holds while it runs, in its `Book` (step 2.2)."""
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Annotated, Literal, Self
 
@@ -285,6 +285,13 @@ class Book:
         """`order` filled or cancelled: it leaves the book."""
         order.state = state
         self.orders.remove(order)
+
+    def copied(self) -> "Book":
+        """A copy to replay a bar on (F-BAR-05), its orders copied and its brackets, which are
+        frozen, shared, so that the replay leaves this book as it was."""
+        return Book(
+            [replace(order) for order in self.orders], self.position, self.mark, self.next_id
+        )
 
     def new_id(self) -> int:
         self.next_id += 1

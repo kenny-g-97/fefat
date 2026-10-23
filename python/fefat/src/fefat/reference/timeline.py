@@ -77,14 +77,12 @@ class Execution:
 
 @dataclass(frozen=True, slots=True)
 class RunResult:
-    """A run's fills, its funding payments, the marks of its open position once every event
-    of an instant is done (F-MRK-01), its event log, the cash its fills, fees, and funding
-    moved from zero, in micro-units (a position held at the start brings none), and the
-    position it ends with, in lots."""
+    """A run's fills, each with its cash and fee, its funding payments, the marks of its open
+    position once every event of an instant is done (F-MRK-01), its event log, and the position
+    it ends with, in lots."""
 
     fills: tuple[Fill, ...]
     funding: tuple[FundingPayment, ...]
     marks: tuple[Mark, ...]
     log: EventLog
-    cash: int
     position: int
