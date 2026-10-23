@@ -800,6 +800,12 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             Expect.ASK,
         ),
         case(
+            "git checkout -- of a fill scenario asks",
+            "git checkout -- fixtures/scenarios/S-fill-012.yaml",
+            Expect.ASK,
+            reason="specification first",
+        ),
+        case(
             "reading a fill scenario is allowed",
             "cat fixtures/scenarios/S-fill-012.yaml",
             Expect.ALLOW,
