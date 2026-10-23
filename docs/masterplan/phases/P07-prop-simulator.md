@@ -339,7 +339,7 @@ Rule sets and prop strategies are managed in the app with versions, status, and 
 ```text
 Masterplan step 7.9 — Rule-set and prop-strategy pages.
 
-Implement the prop endpoints from docs/masterplan/01-architecture.md §7 for rule sets and versions and for prop strategies (`/prop/strategies`) and versions, and build the Prop section: a rule-set library (presets with status badge, as-of date, firm, plan, sources; custom rule sets created from a preset as a starting point) with a schema-driven editor for custom sets (grouped by stage, with help text) and version history; a prop-strategy library with the schema-driven form for the four dimensions and the three presets from 7.6. Phone: forms stack; sources open in the browser.
+Implement the prop endpoints from docs/masterplan/01-architecture.md §7 for rule sets and versions and for prop strategies (`/prop/strategies`) and versions, and build the Prop section: a rule-set library (presets with status badge, as-of date, firm, plan, sources; custom rule sets created from a preset as a starting point) with a schema-driven editor for custom sets (grouped by stage, with help text) and version history; a prop-strategy library with the schema-driven form for the four dimensions and the three presets from 7.6.
 
 Playwright: open a preset, duplicate it as custom, change the daily loss, save version 1; create a prop strategy from a preset.
 
@@ -354,7 +354,7 @@ Not in this step: backtest files and simulations (7.10).
 
 #### Your checks
 
-- On your phone, open the Topstep preset and read its sources and status; duplicate it and change the daily loss limit.
+- Open the Topstep preset and read its sources and status; duplicate it and change the daily loss limit.
 
 #### If it fails
 
@@ -377,7 +377,7 @@ Run simulations from the app the way you described: choose an existing backtest 
 ```text
 Masterplan step 7.10 — Backtest files, simulation launch, results pages.
 
-Implement `GET /v1/prop/backtest-files` (your saved runs, each ready for prop simulation, and your imported trade logs, with their mix of path fidelities, instruments, range, and trade count), `POST /v1/prop/backtest-files/preview` and `POST /v1/prop/backtest-files` (import a trade log with a profile, as a `trade_import` job; files arrive through the upload endpoint from 5.12), `POST /v1/prop/simulations` (a `prop_sim` job: a backtest file, rule sets, a prop strategy, bankroll, horizon, paths, seed, stress options; register the kind with the notify hook from 5.11), and `GET /v1/prop/simulations/{id}` with artifacts served through endpoints (timelines, cash curve percentiles, distributions, failure reasons, ranking). Build the backtest-files list (with an import dialog for trade logs), the launch dialog (pick a backtest file — a run without trade paths shows why it cannot be used — rule sets, a prop strategy, and options; feasibility flags shown before launch), and the results page: account timelines (ECharts, one lane per account showing evaluation, funded, payouts, failure), cash curve with percentile bands, outcome distributions, failure-reason bars, the ranking table across rule sets, and the path-fidelity badge with the replay notes. Add "Simulate prop accounts" on every run page, which opens the launch dialog with that run selected. Phone: charts full width; the ranking table scrolls in its box.
+Implement `GET /v1/prop/backtest-files` (your saved runs, each ready for prop simulation, and your imported trade logs, with their mix of path fidelities, instruments, range, and trade count), `POST /v1/prop/backtest-files/preview` and `POST /v1/prop/backtest-files` (import a trade log with a profile, as a `trade_import` job; files arrive through the upload endpoint from 5.12), `POST /v1/prop/simulations` (a `prop_sim` job: a backtest file, rule sets, a prop strategy, bankroll, horizon, paths, seed, stress options), and `GET /v1/prop/simulations/{id}` with artifacts served through endpoints (timelines, cash curve percentiles, distributions, failure reasons, ranking). Build the backtest-files list (with an import dialog for trade logs), the launch dialog (pick a backtest file — a run without trade paths shows why it cannot be used — rule sets, a prop strategy, and options; feasibility flags shown before launch), and the results page: account timelines (ECharts, one lane per account showing evaluation, funded, payouts, failure), cash curve with percentile bands, outcome distributions, failure-reason bars, the ranking table across rule sets, and the path-fidelity badge with the replay notes. Add "Simulate prop accounts" on every run page, which opens the launch dialog with that run selected.
 
 Playwright: launch a small simulation on the seeded run from its run page; import a synthetic trade log and simulate it; read the ranking table.
 
@@ -388,15 +388,14 @@ Not in this step: new simulation features.
 
 1. Playwright passes on both projects with screenshots.
 2. Page numbers equal the SDK's `monte_carlo` output for the same backtest file, inputs, and seed (contract test).
-3. A simulation started from the phone sends a notification on completion (the `prop_sim` kind registered with the notify hook from 5.11).
 
 #### Your checks
 
-- Open one of your runs on your phone, tap "Simulate prop accounts", choose the three presets and a prop strategy, run 1,000 paths, and read the ranking and the timelines.
+- Open one of your runs, click "Simulate prop accounts", choose the three presets and a prop strategy, run 1,000 paths, and read the ranking and the timelines.
 
 #### If it fails
 
-- Timelines that overlap incorrectly on the phone need per-lane rendering, not a stacked bar.
+- Timelines that overlap incorrectly need per-lane rendering, not a stacked bar.
 
 ### 7.11 More presets, end to end
 
@@ -428,7 +427,7 @@ Not in this step: anything else.
 
 #### Your checks
 
-- Follow `docs/demo-prop.md` on your phone; then open the Apex preset and confirm it is flagged for automation.
+- Follow `docs/demo-prop.md`; then open the Apex preset and confirm it is flagged for automation.
 
 #### If it fails
 

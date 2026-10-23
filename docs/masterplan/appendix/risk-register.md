@@ -16,8 +16,8 @@ Reviewed at every phase exit. "Owner" is the phase where the mitigation is built
 | R10 | Prompt injection through uploads | Agent acts on hostile instructions | No web tools; proposals for every write; untrusted-data labelling; injection tests | P8, P10 |
 | R11 | Windows-specific breakage in Claude Code (hooks, paths, shells) | Lost sessions, blocked tools | Node-script hooks; PowerShell/Bash rule twins; hook smoke tests; CI on Linux as a second opinion | P0 |
 | R12 | Packaging Python + Rust + web into installers | Product phase stalls | Desktop-ready backend from day one; packaging decision record; clean-machine tests | P14 |
-| R13 | Local server exposed on Tailscale with weak auth | Unauthorised access to the PC | Localhost by default; Argon2 passwords; CSRF; rate limits; security review | P4, P13 |
-| R14 | Phone usability (charts, editor, forms) | Phone pillar fails | Phone size as an acceptance check in every UI step; agent-first editing; `ui-verifier` | P5–P12 |
+| R13 | Local server reached from another device with weak auth | Unauthorised access to the PC | Localhost only until the phone item (D-53); Argon2 passwords; CSRF; rate limits; security review | P4, P13 |
+| R14 | Phone usability (charts, editor, forms) | Phone pillar fails | Deferred with the phone item (D-53); when it returns, phone size becomes an acceptance check in every UI step, with agent-first editing and the `ui-verifier` | phone item |
 | R15 | Cost blowups (Claude Code during the build; the in-app agent) | Budget overrun | Model hints; caps per turn/day/month; usage ledger; no multi-agent workflows by default | all |
 | R16 | Data loss (SQLite file, artifacts) | Lost work | `fefat backup`, scheduled local backup, restore drill | P13 |
 | R17 | Dependency churn (Polars, pyo3, Vite majors) | Build breaks | Lockfiles and toolchain pins; one upgrade step per phase exit | P0 |

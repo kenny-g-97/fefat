@@ -12,7 +12,6 @@ Already present on 2026-10-05: git 2.55, GitHub CLI 2.97 (signed in), Node 24 + 
 | `just` | the task runner | `winget install Casey.Just` or `cargo install just` |
 | Python 3.12 | SDK and server | already installed by uv; `.python-version` pins it |
 | Playwright browsers (P4) | UI tests | `pnpm exec playwright install chromium` |
-| Tailscale (P4) | phone access | `winget install tailscale.tailscale`; sign in with a personal account on the PC and the phone; enable MagicDNS and HTTPS certificates in the Tailscale admin console (step 4.6 walks you through it) |
 | Claude Code CLI (optional) | running `claude` from a terminal, not only VS Code | `winget install Anthropic.ClaudeCode` or the installer from the docs |
 
 `just doctor` (written in step 0.1) checks every tool and version and prints what is missing.
@@ -24,7 +23,6 @@ Already present on 2026-10-05: git 2.55, GitHub CLI 2.97 (signed in), Node 24 + 
 | GitHub (have) | P0 | free (private repos) | `gh auth` |
 | Anthropic Console API key | P8 (the in-app agent); earlier for notebook experiments | pay as you go | OS credential store via the settings page |
 | Databento (have data; account for more) | P1 (files only; a key once a connector exists, D-38) | see §3 | nowhere in Phase 1: downloads happen on Databento's website and the files are imported; later, the OS credential store |
-| Tailscale | P4 | free personal plan | the Tailscale app |
 | Apple Developer membership; a cloud code-signing service for Windows (Azure Trusted Signing or similar — certificates on hardware tokens cannot be used from CI) | P14 only | $99/yr; roughly $10–30 a month | CI secrets |
 | Static host for the signed catalog index (GitHub Releases, or object storage) | P14 only | about $0 a month; a few dollars on object storage | CI secrets and the publishing workflow |
 | Written vendor confirmations that the app may use a customer's own account on the customer's machine | P14 only | $0 | recorded in `docs/data-sources.md` |
@@ -49,7 +47,6 @@ Details and sources: `appendix/research-market-data.md` and `appendix/research-d
 | Item | Personal phase | Notes |
 | --- | --- | --- |
 | Hosting, database, storage | $0 | everything is on your PC |
-| Tailscale | $0 | personal plan |
 | Electricity | a few dollars a month under heavy sweeps | 9950X at full load is about 200 W |
 | In-app agent | pay as you go; set a monthly cap in Settings | Opus 5.5: $4 / $20 per million tokens in / out; Sonnet 5.5: $2 / $10; cache reads are much cheaper |
 | Claude Code during the build | your plan | each step carries a model hint; heavy multi-agent workflows are off by default |
@@ -62,4 +59,4 @@ Details and sources: `appendix/research-market-data.md` and `appendix/research-d
 - **Market data for customers (D-37):** FEFAT delivers none, so it needs no distribution licence. Each customer connects their own sources under the vendor's terms for personal use and pays the vendor directly (the §3 figures, for Databento and the crypto archives). The research found that delivering the CME products would have cost at least about $127k a year at 2026 fee levels (a vendor plan that allows external distribution plus CME's historical distribution licences for three exchanges), and that hosted backtests on FEFAT-licensed data still count as redistribution of derived information (`BACKLOG.md`, declined 2026-10-12).
 - **Vendor confirmations (Phase 14 kickoff):** ask each vendor in the source guide to confirm in writing that the app may use a customer's own account on the customer's machine. Databento's licensing guide discourages bring-your-own-data for hosted products, and FEFAT is not hosted. A source without a confirmation stays in the guide as "check the terms yourself".
 - **Signed catalog updates (step 14.7):** a static host for the catalog index (specifications, calendars, roll rules, presets, the source guide; never data), about $0 a month on GitHub Releases, or a few dollars on object storage.
-- Optional cloud sync for phone access while the PC is off: tens of dollars a month (backlog).
+- Optional cloud sync for phone access while the PC is off: tens of dollars a month (backlog, after the phone item of D-53).

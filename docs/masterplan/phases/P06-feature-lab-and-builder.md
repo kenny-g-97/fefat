@@ -2,7 +2,7 @@
 
 **Goal.** The hybrid workflow you chose: features written in a code editor with an instant chart and statistics preview, leak results shown in the app, analytics pages, a combination builder, and a no-code strategy builder that generates the Python definition and runs a backtest.
 
-**You get.** Write a feature on your phone or PC, preview it in a second, save a version, combine it, build a strategy from two features in a form, look at the generated code, run it.
+**You get.** Write a feature, preview it in a second, save a version, combine it, build a strategy from two features in a form, look at the generated code, run it.
 
 **Depends on.** Phase 5.
 
@@ -33,7 +33,7 @@ Your features are visible in the app: a library with versions, validation status
 ```text
 Masterplan step 6.1 — Feature library pages.
 
-Using the `/v1/features` endpoints from 5.2 (extend as needed: usage by strategy versions, validation status, analytics summary), build the Lab section: a feature list (name, latest version, validation badge, used-by count, last preview), a feature page with the code of the selected version (CodeMirror, read-only here), the parameter schema, the version history with diffs (reuse the diff view from 5.10), and the usage list. Phone: list and detail stack; code scrolls inside its box.
+Using the `/v1/features` endpoints from 5.2 (extend as needed: usage by strategy versions, validation status, analytics summary), build the Lab section: a feature list (name, latest version, validation badge, used-by count, last preview), a feature page with the code of the selected version (CodeMirror, read-only here), the parameter schema, the version history with diffs (reuse the diff view from 5.10), and the usage list.
 
 Playwright: open the library, open a seeded feature, switch versions, see the diff.
 
@@ -48,7 +48,7 @@ Not in this step: editing, preview.
 
 #### Your checks
 
-- Open the library on your phone and read a feature's code and history.
+- Open the library and read a feature's code and history.
 
 #### If it fails
 
@@ -60,7 +60,7 @@ Depends on: 6.1 · Plan mode: required · Reviews: step-reviewer, ui-verifier, c
 
 #### Purpose
 
-The heart of the lab: edit a feature's code and see it computed within a second, with lint and errors inline, on desktop and on the phone.
+The heart of the lab: edit a feature's code and see it computed within a second, with lint and errors inline.
 
 #### Prerequisites
 
@@ -71,7 +71,7 @@ The heart of the lab: edit a feature's code and see it computed within a second,
 ```text
 Masterplan step 6.2 — Editor and preview run.
 
-Make the feature page editable with the `CodeEditor` component from 5.5 (CodeMirror 6, Python mode, the symbol bar above the phone keyboard) and a "Preview" button that posts the draft code and parameters to `POST /v1/features/preview` (instrument, timeframe, range from a picker; defaults from settings), which runs through the warm executor from 4.5 and returns the computed series (downsampled for the window), summary statistics (count, NaN share, min, max, mean, std, last values), and lint results with line numbers; syntax errors return the line and are underlined in the editor. "Save as new version" posts to `/v1/features/{id}/versions` with a changelog; a draft is kept in local storage until saved. Previews must not create versions.
+Make the feature page editable with the `CodeEditor` component from 5.5 (CodeMirror 6, Python mode) and a "Preview" button that posts the draft code and parameters to `POST /v1/features/preview` (instrument, timeframe, range from a picker; defaults from settings), which runs through the warm executor from 4.5 and returns the computed series (downsampled for the window), summary statistics (count, NaN share, min, max, mean, std, last values), and lint results with line numbers; syntax errors return the line and are underlined in the editor. "Save as new version" posts to `/v1/features/{id}/versions` with a changelog; a draft is kept in local storage until saved. Previews must not create versions.
 
 Playwright: edit a seeded feature, preview, see statistics, introduce a syntax error, see it underlined, fix it, save version 2.
 
@@ -86,7 +86,7 @@ Not in this step: the chart pane (6.3), the leak check in the UI (6.4).
 
 #### Your checks
 
-- On your phone, change a parameter default in a feature, tap Preview, read the statistics; then save version 2.
+- Change a parameter default in a feature, click Preview, read the statistics; then save version 2.
 
 #### If it fails
 
@@ -109,9 +109,9 @@ The preview is visual: the feature under the price chart, aligned, with its dist
 ```text
 Masterplan step 6.3 — Preview chart and statistics panel.
 
-Extend the preview: show the price chart (`PriceChart` from 5.4) with the feature outputs as indicator panes (one pane per output, or overlaid on price when the feature declares `overlay=True`), aligned to bar closes; a statistics panel with the summary from 6.2, a histogram, and a quick "forward return by quintile" table for a configurable horizon computed server-side with the analytics module (clearly labelled as a quick look, with the trials counter). Phone: the chart and panes are full width; the statistics are a sheet.
+Extend the preview: show the price chart (`PriceChart` from 5.4) with the feature outputs as indicator panes (one pane per output, or overlaid on price when the feature declares `overlay=True`), aligned to bar closes; a statistics panel with the summary from 6.2, a histogram, and a quick "forward return by quintile" table for a configurable horizon computed server-side with the analytics module (clearly labelled as a quick look, with the trials counter).
 
-Playwright: preview a seeded feature, assert a pane renders with the right number of points; desktop and phone.
+Playwright: preview a seeded feature, assert a pane renders with the right number of points.
 
 Not in this step: the full analytics page (6.5).
 ```
@@ -124,7 +124,7 @@ Not in this step: the full analytics page (6.5).
 
 #### Your checks
 
-- Preview `rsi_stretch` on your phone: the pane follows the price chart as you scroll, and the quintile table shows whether extremes behave differently.
+- Preview `rsi_stretch`: the pane follows the price chart as you scroll, and the quintile table shows whether extremes behave differently.
 
 #### If it fails
 
@@ -162,7 +162,7 @@ Not in this step: anything else.
 
 #### Your checks
 
-- Save a deliberately leaky feature from your phone and read the explanation: it should tell you the first bar whose value changed when the future was removed.
+- Save a deliberately leaky feature and read the explanation: it should tell you the first bar whose value changed when the future was removed.
 
 #### If it fails
 
@@ -223,7 +223,7 @@ Combine features without code, with the generated code always visible.
 ```text
 Masterplan step 6.6 — Combination builder.
 
-Build a "Combine" dialog in the Lab: pick one or two library features (with versions and parameters), choose a combinator from `fefat.features.combine` (arithmetic, comparison, cross, rolling window, normalisation, resample from a higher timeframe, spread across instruments), set its parameters with the schema-driven form, see the generated code and a live preview (6.3), name it, and save it as a new feature (version 1) whose JSON description is stored for later editing. Editing a combination reopens the dialog from the stored description. Phone: a stepper (pick, combine, preview, save).
+Build a "Combine" dialog in the Lab: pick one or two library features (with versions and parameters), choose a combinator from `fefat.features.combine` (arithmetic, comparison, cross, rolling window, normalisation, resample from a higher timeframe, spread across instruments), set its parameters with the schema-driven form, see the generated code and a live preview (6.3), name it, and save it as a new feature (version 1) whose JSON description is stored for later editing. Editing a combination reopens the dialog from the stored description.
 
 Playwright: build `rsi(14) - rolling_mean(rsi(14), 10)`, preview, save; reopen and change the window.
 
@@ -238,7 +238,7 @@ Not in this step: the strategy builder.
 
 #### Your checks
 
-- On your phone, build the z-score of ATR over 50 bars from existing features, preview it, save it.
+- Build the z-score of ATR over 50 bars from existing features, preview it, save it.
 
 #### If it fails
 
@@ -261,7 +261,7 @@ Entry and exit conditions over features, assembled in a form, producing the sign
 ```text
 Masterplan step 6.7 — Rule builder.
 
-Build the first half of the strategy builder on the strategy page: a rule editor where each rule is a tree of conditions over library features and constants (greater than, less than, between, crosses above/below, is true, within N bars of), combined with and/or groups, for long entry, short entry, long exit, short exit; features are picked from the library with their parameters; a live "signals preview" shows the count of entry signals over the preview range and marks them on the price chart. The builder state is the `builder_spec` JSON (schema defined here, versioned); `POST /v1/strategies/build` turns the spec into the Python `SignalStrategy` definition through the SDK and returns the code, which is shown read-only beside the form. Phone: rules as stacked cards; the code in a sheet.
+Build the first half of the strategy builder on the strategy page: a rule editor where each rule is a tree of conditions over library features and constants (greater than, less than, between, crosses above/below, is true, within N bars of), combined with and/or groups, for long entry, short entry, long exit, short exit; features are picked from the library with their parameters; a live "signals preview" shows the count of entry signals over the preview range and marks them on the price chart. The builder state is the `builder_spec` JSON (schema defined here, versioned); `POST /v1/strategies/build` turns the spec into the Python `SignalStrategy` definition through the SDK and returns the code, which is shown read-only beside the form.
 
 Playwright: build a two-feature long-entry rule, see signal markers, view code.
 
@@ -276,7 +276,7 @@ Not in this step: the execution template form (6.8).
 
 #### Your checks
 
-- Build "RSI below 30 and price above session VWAP" on your phone and see the entry markers on the chart.
+- Build "RSI below 30 and price above session VWAP" and see the entry markers on the chart.
 
 #### If it fails
 
@@ -314,7 +314,7 @@ Not in this step: running (already exists), the agent.
 
 #### Your checks
 
-- Finish a strategy in the builder on your phone, read the generated code, run it.
+- Finish a strategy in the builder, read the generated code, run it.
 
 #### If it fails
 
@@ -345,12 +345,12 @@ Not in this step: new features.
 #### Done means
 
 1. The flow passes on both projects in CI.
-2. The ui-verifier report shows no remaining phone issues.
+2. The ui-verifier report shows no remaining issues.
 3. `docs/demo-lab.md` exists with the video attached to the PR.
 
 #### Your checks
 
-- Follow `docs/demo-lab.md` on your phone.
+- Follow `docs/demo-lab.md`.
 
 #### If it fails
 

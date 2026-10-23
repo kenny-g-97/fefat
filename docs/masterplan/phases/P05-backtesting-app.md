@@ -1,8 +1,8 @@
 # Phase 5 — Backtesting in the app
 
-**Goal.** The web MVP: the data catalog with sources, sync, and an import wizard for your own data, strategies with immutable versions, backtests as jobs, results you can read on desktop and phone, a trade review chart with markers and indicator panes, run comparison, version diffs, and a notification when a run finishes.
+**Goal.** The web MVP: the data catalog with sources, sync, and an import wizard for your own data, strategies with immutable versions, backtests as jobs, results you can read, a trade review chart with markers and indicator panes, run comparison, and version diffs.
 
-**You get.** Connect a data source, keep your products current, and import your own files from the app, create a strategy from a template, run it, inspect every trade on the chart, compare runs, and get a push notification on your phone.
+**You get.** Connect a data source, keep your products current, and import your own files from the app, create a strategy from a template, run it, inspect every trade on the chart, compare runs.
 
 **Depends on.** Phase 4.
 
@@ -157,9 +157,9 @@ You can see your data: what you have, how good it is, and the bars on a chart th
 ```text
 Masterplan step 5.4 — Data catalog page and chart viewer.
 
-Build the Data section of the web app: a catalog page in three parts — **Catalog products** (each with coverage by month as a small heat strip, quality status, last update, its source, and an Update action backed by `POST /v1/catalog/sync` that runs the sync from 1.9 as a `source_sync` job; paid downloads show the cost preview and need an explicit confirmation before anything is pulled; progress in the jobs drawer), **Sources** (the source guide from 1.9 with each source's terms and connection state, and a Connect action backed by `POST /v1/sources` that stores a key through the credential store and never shows it again), and **Your data** (imported datasets with the same columns; the import wizard arrives in 5.12) — plus instruments with tick size and point value, and a chart viewer: Lightweight Charts 5 candlesticks with a volume pane, instrument and timeframe pickers, a continuous/raw toggle, bars loaded by the visible range through `/v1/market/bars` with paging and caching, a crosshair readout, and session shading from the calendar. Wrap Lightweight Charts in a reusable `PriceChart` component with a stable API (series, panes, markers, primitives) that 5.9 and Phase 6 reuse. Phone: the chart is full width, pinch and drag work, pickers collapse into a sheet.
+Build the Data section of the web app: a catalog page in three parts — **Catalog products** (each with coverage by month as a small heat strip, quality status, last update, its source, and an Update action backed by `POST /v1/catalog/sync` that runs the sync from 1.9 as a `source_sync` job; paid downloads show the cost preview and need an explicit confirmation before anything is pulled; progress in the jobs drawer), **Sources** (the source guide from 1.9 with each source's terms and connection state, and a Connect action backed by `POST /v1/sources` that stores a key through the credential store and never shows it again), and **Your data** (imported datasets with the same columns; the import wizard arrives in 5.12) — plus instruments with tick size and point value, and a chart viewer: Lightweight Charts 5 candlesticks with a volume pane, instrument and timeframe pickers, a continuous/raw toggle, bars loaded by the visible range through `/v1/market/bars` with paging and caching, a crosshair readout, and session shading from the calendar. Wrap Lightweight Charts in a reusable `PriceChart` component with a stable API (series, panes, markers, primitives) that 5.9 and Phase 6 reuse.
 
-Playwright: open the catalog, connect a synthetic source, update a synthetic catalog product and see its coverage change, open the chart for the seeded synthetic instrument, scroll back, assert bars are fetched and rendered; desktop and phone.
+Playwright: open the catalog, connect a synthetic source, update a synthetic catalog product and see its coverage change, open the chart for the seeded synthetic instrument, scroll back, assert bars are fetched and rendered.
 
 Not in this step: indicators on the chart, trade markers.
 ```
@@ -173,7 +173,7 @@ Not in this step: indicators on the chart, trade markers.
 
 #### Your checks
 
-- Open the chart for ES 5-minute, scroll back a few weeks on your phone with one thumb; it should stay responsive and never trap the page scroll.
+- Open the chart for ES 5-minute, scroll back a few weeks; it should stay responsive and never trap the page scroll.
 
 #### If it fails
 
@@ -200,7 +200,7 @@ Strategies are visible and editable in the app: code in an editor, saved as immu
 ```text
 Masterplan step 5.5 — Strategy page.
 
-Build the Strategies section: a list (name, kind, latest version, last run); a strategy page with the code of the selected version in a reusable `CodeEditor` component (CodeMirror 6, Python syntax, editable, with a symbol bar above the phone keyboard), "Validate" (`POST /v1/strategies/validate`: import and signal-frame check in the executor, errors underlined by line) and "Save as new version" with a changelog (drafts kept in local storage until saved), a version history list with changelogs, a parameter form rendered from the version's JSON schema (a small schema-driven form renderer with number, boolean, enum, and string fields, validation messages, and defaults), and "Create from template" which copies a template into a new strategy with version 1. Phone: the editor scrolls inside its box and uses the visual viewport height; the form stacks.
+Build the Strategies section: a list (name, kind, latest version, last run); a strategy page with the code of the selected version in a reusable `CodeEditor` component (CodeMirror 6, Python syntax, editable), "Validate" (`POST /v1/strategies/validate`: import and signal-frame check in the executor, errors underlined by line) and "Save as new version" with a changelog (drafts kept in local storage until saved), a version history list with changelogs, a parameter form rendered from the version's JSON schema (a small schema-driven form renderer with number, boolean, enum, and string fields, validation messages, and defaults), and "Create from template" which copies a template into a new strategy with version 1.
 
 Playwright: create a strategy from a template, see version 1, change the stop in the code, validate, save version 2, see both in the history; introduce a syntax error and see it underlined.
 
@@ -209,14 +209,14 @@ Not in this step: the builder (Phase 6), running (5.6), feature editing (6.2).
 
 #### Done means
 
-1. Playwright passes on desktop and phone with screenshots, including the save and syntax-error paths.
+1. Playwright passes with screenshots, including the save and syntax-error paths.
 2. The schema-driven form renders every parameter type used by the templates and shows validation errors.
 3. The form renderer and `CodeEditor` are reusable components used again in Phases 6, 7, and 9.
 4. Validation runs only in the executor (test).
 
 #### Your checks
 
-- Create a strategy from a template on your phone; change one number in the code; validate; save version 2; the history shows two versions.
+- Create a strategy from a template; change one number in the code; validate; save version 2; the history shows two versions.
 
 #### If it fails
 
@@ -254,7 +254,7 @@ Not in this step: results views.
 
 #### Your checks
 
-- Launch a real run on your phone, lock the phone for a minute, unlock: the run page shows the progress or the result.
+- Launch a real run, close the tab for a minute, reopen it: the run page shows the progress or the result.
 
 #### If it fails
 
@@ -281,7 +281,7 @@ A finished run is readable at a glance: KPI cards, equity curve, drawdown, and d
 ```text
 Masterplan step 5.7 — Results: metrics, equity, distributions.
 
-Implement `GET /v1/runs/{id}/equity?max_points` (min/max-bucketed downsampling of bar equity plus daily equity and drawdown), `GET /v1/runs/{id}/stats` (the metrics model plus breakdowns), and `GET /v1/runs/{id}/distribution` (histograms of trade P&L, R multiples, MAE/MFE, holding time, computed server-side). Build the run page: KPI cards (net P&L, profit factor, expectancy in R, win rate, max drawdown, Sharpe, trades, fidelity split), the equity and drawdown chart (ECharts, lazy-loaded), breakdown tables (by exit reason, hour, weekday, year, fidelity era), the fidelity-check deltas if present, and the distributions. Numbers come from the API; the client computes nothing. Phone: KPI cards in a 2-column grid, charts full width, tables scroll inside their boxes.
+Implement `GET /v1/runs/{id}/equity?max_points` (min/max-bucketed downsampling of bar equity plus daily equity and drawdown), `GET /v1/runs/{id}/stats` (the metrics model plus breakdowns), and `GET /v1/runs/{id}/distribution` (histograms of trade P&L, R multiples, MAE/MFE, holding time, computed server-side). Build the run page: KPI cards (net P&L, profit factor, expectancy in R, win rate, max drawdown, Sharpe, trades, fidelity split), the equity and drawdown chart (ECharts, lazy-loaded), breakdown tables (by exit reason, hour, weekday, year, fidelity era), the fidelity-check deltas if present, and the distributions. Numbers come from the API; the client computes nothing.
 
 Contract test: every number on the page equals the SDK's `Run.metrics` for the same run (a Playwright test reads the DOM and compares with the API, and a pytest compares API with SDK).
 
@@ -296,7 +296,7 @@ Not in this step: trades table, chart with trades.
 
 #### Your checks
 
-- Open a real run on desktop and on the phone: the KPI cards show the same numbers as `run.metrics` in a notebook for the same run id.
+- Open a real run: the KPI cards show the same numbers as `run.metrics` in a notebook for the same run id.
 
 #### If it fails
 
@@ -319,7 +319,7 @@ Every trade is inspectable in a table with filters and sorting, ready to be link
 ```text
 Masterplan step 5.8 — Trade table.
 
-Implement `GET /v1/runs/{id}/trades` with keyset pagination (a cursor that continues from the last row seen, so paging stays fast on large tables), sorting (time, P&L, R, holding time, MAE, MFE), and filters (side, exit reason, date range, P&L sign, fidelity, ambiguous flag), reading the trades Parquet through DuckDB; and `POST /v1/runs/{id}/query` (a read-only DuckDB SELECT over the run's artifacts, row and byte caps, used later by the agent). Build the trades tab on the run page with TanStack Table and virtualisation: columns for entry and exit time and price, side, size, net P&L, R, MAE/MFE, exit reason, contract, fidelity, ambiguous; sticky header; column chooser; CSV export of the current filter; and a small "SQL" tab with a query box and a results grid for power users. Selecting a row emits a `selectedTrade` event that 5.9 consumes. Phone: a card list with the key columns and a filter sheet.
+Implement `GET /v1/runs/{id}/trades` with keyset pagination (a cursor that continues from the last row seen, so paging stays fast on large tables), sorting (time, P&L, R, holding time, MAE, MFE), and filters (side, exit reason, date range, P&L sign, fidelity, ambiguous flag), reading the trades Parquet through DuckDB; and `POST /v1/runs/{id}/query` (a read-only DuckDB SELECT over the run's artifacts, row and byte caps, used later by the agent). Build the trades tab on the run page with TanStack Table and virtualisation: columns for entry and exit time and price, side, size, net P&L, R, MAE/MFE, exit reason, contract, fidelity, ambiguous; sticky header; column chooser; CSV export of the current filter; and a small "SQL" tab with a query box and a results grid for power users. Selecting a row emits a `selectedTrade` event that 5.9 consumes.
 
 Tests: pagination and filters in pytest; the query endpoint rejects writes and unbounded queries; Playwright selects a trade and asserts the event.
 
@@ -346,7 +346,7 @@ Depends on: 5.8, 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifi
 
 #### Purpose
 
-Inspect any trade in context, on desktop and phone: a trader uses it to judge whether entries and exits happened where the strategy intended, so marker placement must be exact.
+Inspect any trade in context: a trader uses it to judge whether entries and exits happened where the strategy intended, so marker placement must be exact.
 
 #### Prerequisites
 
@@ -364,13 +364,13 @@ Not in this step: drawing tools, multiple timeframes on one chart.
 
 #### Done means
 
-1. A Playwright spec passes for desktop and phone: open the demo run, select trade 3, the entry marker tooltip equals the table row's entry time and price, no console errors.
+1. A Playwright spec passes: open the demo run, select trade 3, the entry marker tooltip equals the table row's entry time and price, no console errors.
 2. Contract test: every marker's time and price equals the fills ledger for the window (pytest over the chart endpoint); the explain endpoint's fills equal the ledger.
-3. Desktop and phone screenshots and a 20-second recording are in the PR, confirmed by `ui-verifier`.
+3. Screenshots and a 20-second recording are in the PR, confirmed by `ui-verifier`.
 
 #### Your checks
 
-- Watch the recording. Run `just dev` and click three trades: the arrow sits on the candle whose time is in the table. Open it on your phone and scroll past the chart with one thumb.
+- Watch the recording. Run `just dev` and click three trades: the arrow sits on the candle whose time is in the table.
 
 #### If it fails
 
@@ -395,7 +395,7 @@ Runs can be compared side by side, versions diffed, and any run reproduced to pr
 ```text
 Masterplan step 5.10 — Run comparison, version diff, reproduce-run check.
 
-Implement `POST /v1/runs/compare` (two to four run ids: metrics side by side with deltas, overlaid equity curves normalised to the reference capital, trade-count and exit-reason breakdown deltas) and a comparison page reachable from the run list (multi-select) with the overlay chart (ECharts) and a metrics table; a version diff view on the strategy page using `@codemirror/merge` (side-by-side on desktop, unified on phone) with the structured builder-spec diff when present; and a "Reproduce" action on a run that re-runs it with the pinned versions and snapshot and reports whether the trades table hash matches (a `reproduce` job).
+Implement `POST /v1/runs/compare` (two to four run ids: metrics side by side with deltas, overlaid equity curves normalised to the reference capital, trade-count and exit-reason breakdown deltas) and a comparison page reachable from the run list (multi-select) with the overlay chart (ECharts) and a metrics table; a version diff view on the strategy page using `@codemirror/merge` (side-by-side, unified in a narrow window) with the structured builder-spec diff when present; and a "Reproduce" action on a run that re-runs it with the pinned versions and snapshot and reports whether the trades table hash matches (a `reproduce` job).
 
 Tests: compare endpoint math; reproduce on a synthetic run matches; Playwright for the compare page and the diff view on both projects.
 
@@ -453,13 +453,17 @@ Not in this step: notification preferences per kind (Phase 12).
 
 - No notification on iOS: the app must be opened from the home screen icon (standalone) and permission requested from a tap; Safari tabs do not receive push.
 
+#### Amendment
+
+2026-10-23 (D-53): skipped. Web push existed for the phone; a finished run shows in the jobs drawer (4.4) and on the run page. Notifications and the `notify` hook are the backlog's phone item, so 7.10 registers no job kind with it.
+
 ### 5.12 Import wizard for your own market data
 
 Depends on: 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: yes · Model hint: default
 
 #### Purpose
 
-Traders bring in their own market data from the app, on the PC or the phone: choose a file, map it, preview it, and import it with the same checks as the command line.
+Traders bring in their own market data from the app: choose a file, map it, preview it, and import it with the same checks as the command line.
 
 #### Prerequisites
 
@@ -470,9 +474,9 @@ Traders bring in their own market data from the app, on the PC or the phone: cho
 ```text
 Masterplan step 5.12 — Import wizard for your own market data.
 
-Read docs/masterplan/02-engine-and-data.md §1.8 and the importer and profiles from step 1.10. Implement `POST /v1/uploads` (multipart; size and type limits from config; stored under workspaces/default/uploads/<id>/ with a SHA-256; CSV, TSV, Parquet, and zip or gzip archives of them — Phase 7 reuses it for trade logs and Phase 10 extends it to other file types), `GET/POST /v1/import-profiles`, `POST /v1/imports/preview` (sample rows as they would be stored, the problems detected, and the calendar check's verdict, computed in the executor), and `POST /v1/imports` (an `import` job). Build the wizard in the Data section: choose a file (upload from the PC or the phone, or for large files a path under the import roots allowed in config), pick a preset or a saved profile or start a new one, map columns with a live preview table, set the time zone and bar stamping, pick or define the instrument (tick size, point value, currency, calendar), review the problems and the calendar check, and import with progress in the jobs drawer; the profile is saved for next time. Imported datasets appear under "Your data" in the catalog with their quality report, and charts and backtests can use them.
+Read docs/masterplan/02-engine-and-data.md §1.8 and the importer and profiles from step 1.10. Implement `POST /v1/uploads` (multipart; size and type limits from config; stored under workspaces/default/uploads/<id>/ with a SHA-256; CSV, TSV, Parquet, and zip or gzip archives of them — Phase 7 reuses it for trade logs and Phase 10 extends it to other file types), `GET/POST /v1/import-profiles`, `POST /v1/imports/preview` (sample rows as they would be stored, the problems detected, and the calendar check's verdict, computed in the executor), and `POST /v1/imports` (an `import` job). Build the wizard in the Data section: choose a file (upload, or for large files a path under the import roots allowed in config), pick a preset or a saved profile or start a new one, map columns with a live preview table, set the time zone and bar stamping, pick or define the instrument (tick size, point value, currency, calendar), review the problems and the calendar check, and import with progress in the jobs drawer; the profile is saved for next time. Imported datasets appear under "Your data" in the catalog with their quality report, and charts and backtests can use them.
 
-Playwright: import a synthetic CSV in a NinjaTrader-style layout with a new instrument, fix a deliberately wrong time zone after the preview flags it, finish, and open the dataset's chart; desktop and phone.
+Playwright: import a synthetic CSV in a NinjaTrader-style layout with a new instrument, fix a deliberately wrong time zone after the preview flags it, finish, and open the dataset's chart.
 
 Not in this step: trade logs for the prop simulator (Phase 7), alternative non-price data (Phase 10).
 ```
@@ -485,51 +489,53 @@ Not in this step: trade logs for the prop simulator (Phase 7), alternative non-p
 
 #### Your checks
 
-- On your PC, import a real export from your own charting platform with the wizard; then open the imported product's chart on your phone.
+- On your PC, import a real export from your own charting platform with the wizard; then open the imported product's chart.
 
 #### If it fails
 
 - A preview that looks right with a calendar check that fails usually means the time zone or bar stamping is set wrong in the profile; the wizard should say which.
 
-### 5.13 Phone pass, end-to-end suite, demo
+### 5.13 End-to-end suite and demo
 
-Depends on: 5.10, 5.11, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.10, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
 
 #### Purpose
 
-The MVP is coherent on the phone, the whole flow is covered by one end-to-end suite, and you can demo it.
+The MVP is coherent, the whole flow is covered by one end-to-end suite, and you can demo it.
 
 #### Prerequisites
 
-- Steps 5.10, 5.11, and 5.12 merged.
+- Steps 5.10 and 5.12 merged.
 
 #### Prompt
 
 ```text
-Masterplan step 5.13 — Phone pass, end-to-end suite, demo.
+Masterplan step 5.13 — End-to-end suite and demo.
 
-Walk every page of the app at 390×844 and at 1280×800 with the ui-verifier and fix layout, touch-target, and contrast issues found. Write one Playwright end-to-end flow: log in, connect a synthetic source and update a synthetic catalog product, import a synthetic CSV through the wizard, create a strategy from a template, run it on synthetic data, wait for completion, open results, select a trade, see it on the chart, create version 2 with a parameter change, run, compare. Record a 60-second demo video with Playwright and write docs/demo-mvp.md with the click path for me. Update docs/engine-guide.md with an "In the app" section.
+Walk every page of the app at 1280×800 with the ui-verifier and fix the layout and contrast issues found. Write one Playwright end-to-end flow: log in, connect a synthetic source and update a synthetic catalog product, import a synthetic CSV through the wizard, create a strategy from a template, run it on synthetic data, wait for completion, open results, select a trade, see it on the chart, create version 2 with a parameter change, run, compare. Record a 60-second demo video with Playwright and write docs/demo-mvp.md with the click path for me. Update docs/engine-guide.md with an "In the app" section.
 
 Not in this step: new features.
 ```
 
 #### Done means
 
-1. The end-to-end flow passes on both projects in CI.
-2. The ui-verifier reports no remaining phone issues (its report is attached).
+1. The end-to-end flow passes in CI.
+2. The ui-verifier reports no remaining issues (its report is attached).
 3. `docs/demo-mvp.md` exists and the video is attached to the PR.
 
 #### Your checks
 
-- Follow `docs/demo-mvp.md` on your phone from start to finish.
+- Follow `docs/demo-mvp.md` from start to finish.
 
 #### If it fails
 
-- Anything that needs pinch-zoom on the phone is a layout bug; report the page and the element.
+- Anything that scrolls sideways at 1280×800 is a layout bug; report the page and the element.
 
 #### Amendment
 
 2026-10-12 (D-37): the end-to-end flow connects a synthetic source and updates a catalog product instead of a platform product.
+
+2026-10-23 (D-53): no phone pass and no dependency on 5.11; the walk is at desktop size only.
 
 ## Phase exit
 

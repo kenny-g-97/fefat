@@ -88,7 +88,7 @@ Not in this step: optimizers, heatmaps.
 
 #### Your checks
 
-- Launch a 200-trial study from your phone with a 5-minute cap; watch the estimate, then the progress; open the best trial's run.
+- Launch a 200-trial study with a 5-minute cap; watch the estimate, then the progress; open the best trial's run.
 
 #### If it fails
 
@@ -305,7 +305,7 @@ Not in this step: new features, new metrics.
 #### Done means
 
 1. The flow passes on both projects in CI.
-2. The ui-verifier report shows no remaining phone issues.
+2. The ui-verifier report shows no remaining issues.
 3. `docs/demo-research.md` exists with the video attached.
 
 #### Your checks
