@@ -52,6 +52,9 @@ def test_the_notebook_backtests_the_front_on_bars_and_the_fixtures_on_ticks(
         ]
         same_day = listed.select(pl.col("entry").dt.date() == pl.col("exit").dt.date())
         assert same_day.to_series().all()
+        assert f"shape: ({len(trades)}, 7)" in printed
+    shown = [line for line in printed.splitlines() if "entry_price" in line]
+    assert len(shown) == 2, "expected both trade lists displayed, with their column names"
 
 
 def test_the_notebook_says_what_to_do_on_a_store_without_minute_bars() -> None:
