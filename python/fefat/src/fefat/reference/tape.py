@@ -166,8 +166,9 @@ def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
     them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at the
     contract's raw prices, a spliced bar's open, high, low, and close less its `adj_offset`
     (D-09), and in the order of their closes. A back-adjusted import, without raw prices
-    (D-49), and the bars of more than one contract are refused. The store checked each row
-    when it was written (ADR-0019), so the records are built without parsing it again."""
+    (D-49), the bars of more than one contract, and a window without trades are refused.
+    The store checked each row when it was written (ADR-0019), so the records are built
+    without parsing it again."""
     contracts = sorted(frame.get_column("contract").unique().to_list())
     if frame.get_column("close_raw").null_count() > 0:
         raise ValueError(
@@ -181,6 +182,11 @@ def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
             "contract."
         )
     stored = frame.filter(~pl.col("zero_volume")).sort("ts_close")
+    if stored.is_empty():
+        raise ValueError(
+            f"Expected stored bars with trades, got none in {frame.height} rows (F-BAR-07): "
+            "choose a window with trades."
+        )
     raw = stored.select(
         "ts_open",
         "ts_close",
@@ -193,7 +199,10 @@ def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
 def tape_of_trades(frame: pl.DataFrame) -> tuple[TradeRecord, ...]:
     """The trade prints of a frame of the store's trades, as the engine reads them: by
     `ts_recv`, the engine's clock (F-CLK-01), and at one instant by the vendor's `sequence`
-    (F-CLK-03). The store checked each row when it was written (ADR-0019)."""
+    (F-CLK-03). A frame without trades, or with those of more than one contract, is refused.
+    The store checked each row when it was written (ADR-0019)."""
+    if frame.is_empty():
+        raise ValueError("Expected trades, got none: choose a window with trades.")
     instruments = sorted(frame.get_column("instrument_id").unique().to_list())
     if len(instruments) > 1:
         raise ValueError(

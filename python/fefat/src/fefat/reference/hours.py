@@ -5,18 +5,13 @@ scenario's inline instrument, which trades around the clock."""
 
 from bisect import bisect_right
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import timedelta
 from typing import Protocol
 
 from fefat.market.calendar import Session, SessionTable
+from fefat.reference.units import utc_date
 
 _AROUND = timedelta(days=7)
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def _utc_date(instant: int) -> date:
-    """The UTC date of an instant in nanoseconds since the Unix epoch."""
-    return (_EPOCH + timedelta(microseconds=instant // 1_000)).date()
 
 
 class TradingHours(Protocol):
@@ -43,7 +38,7 @@ class CalendarHours:
     def around(cls, table: SessionTable, first: int, last: int) -> "CalendarHours":
         """The sessions of `table` from a week before the instant `first` to a week after the
         instant `last`."""
-        rows = table.between(_utc_date(first) - _AROUND, _utc_date(last) + _AROUND)
+        rows = table.between(utc_date(first) - _AROUND, utc_date(last) + _AROUND)
         return cls([Session.model_validate(row) for row in rows.iter_rows(named=True)])
 
     def is_open(self, instant: int) -> bool:

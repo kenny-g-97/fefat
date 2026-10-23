@@ -326,8 +326,12 @@ class ReferenceEngine:
         self.fills: list[Fill] = []
         self.funding: list[FundingPayment] = []
         self.marks: list[Mark] = []
-        for index, event in enumerate(self._events(tape, decisions, funding_rates)):
+        events = self._events(tape, decisions, funding_rates)
+        for index, event in enumerate(events):
             self._on_event(Moment(event.ts, index), event, on_bar)
+            last_of_instant = index + 1 == len(events) or events[index + 1].ts != event.ts
+            if last_of_instant and self.book.position != 0 and self.book.mark is not None:
+                self.marks.append(Mark(ts=event.ts, price=self.book.mark))
         fills, funding, marks = tuple(self.fills), tuple(self.funding), tuple(self.marks)
         return RunResult(fills, funding, marks, self.log, self.cash, self.book.position)
 
@@ -359,8 +363,6 @@ class ReferenceEngine:
             self._on_bar(at, subject)
         elif isinstance(subject, TradeRecord):
             self._on_record(at, subject)
-        if self.book.position != 0 and self.book.mark is not None:
-            self.marks.append(Mark(ts=at.ts, price=self.book.mark))
 
     def _tradeable(self, instant: int) -> bool:
         tradeable = f_ses_02(self.hours, instant)

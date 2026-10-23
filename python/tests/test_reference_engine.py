@@ -329,6 +329,36 @@ def test_each_run_of_an_engine_starts_from_an_empty_book() -> None:
     assert len(second.log.entries) == len(first.log.entries)
 
 
+def test_a_position_is_marked_once_an_instant_at_its_last_trade() -> None:
+    # F-MRK-01's mark "once every event at ts is done": two prints at one instant leave one mark.
+    trades = TickFidelity.TRADES
+    tape = tuple(
+        TradeRecord.model_construct(ts=ts, ts_event=None, price=price_units(price), size=1)
+        for ts, price in ((100, "5000.00"), (100, "5000.25"), (200, "5000.50"))
+    )
+    engine = ReferenceEngine(RunSettings.for_fidelity(trades), MES, trades, AlwaysOpen())
+
+    marks = engine.run(tape, position=1).marks
+
+    assert [(mark.ts, mark.price) for mark in marks] == [
+        (100, price_units("5000.25")),
+        (200, price_units("5000.50")),
+    ]
+
+
+def test_an_empty_tape_is_refused() -> None:
+    every_bucket_empty = signal_bars(zero_volume=[True, True])
+    no_trades = pl.DataFrame(
+        schema={"ts_recv": pl.Int64, "ts_event": pl.Int64, "instrument_id": pl.UInt32}
+        | {"price": pl.Int64, "size": pl.UInt32, "sequence": pl.UInt32}
+    )
+
+    with pytest.raises(ValueError, match="Expected stored bars with trades, got none in 2 rows"):
+        tape_of_bars(every_bucket_empty)
+    with pytest.raises(ValueError, match="Expected trades, got none"):
+        tape_of_trades(no_trades)
+
+
 def test_the_instrument_tables_decimals_become_the_engines_integers() -> None:
     es = instrument_parameters(instruments.get("ES"))
     perpetual = instrument_parameters(instruments.get("BTCUSDT-PERP"))

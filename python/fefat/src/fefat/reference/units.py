@@ -8,7 +8,7 @@ fraction and `14:30:00` as the number 52200, so only quoted text is accepted.
 """
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from fractions import Fraction
 from typing import Annotated, Self
@@ -84,6 +84,11 @@ def instant_text(nanoseconds: int) -> str:
     seconds, fraction = divmod(nanoseconds, 1_000_000_000)
     clock = (_EPOCH + timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%S")
     return f"{clock}.{fraction:09d}".rstrip("0").rstrip(".") + "Z"
+
+
+def utc_date(nanoseconds: int) -> date:
+    """The UTC date of an instant in nanoseconds."""
+    return (_EPOCH + timedelta(microseconds=nanoseconds // 1_000)).date()
 
 
 def money_text(units: int) -> str:
