@@ -110,3 +110,4 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 | [S-fill-039](S-fill-039.yaml) | trades | A buy limit larger than the trade that goes through it fills whole, flagged size_exceeded |
 | [S-fill-040](S-fill-040.yaml) | 1m | A bracket stop placed through the market at its entry's bar open fills there, as a market order would |
 | [S-fill-041](S-fill-041.yaml) | tbbo | On TBBO a bracket stop at its entry record's trade price is through the market and fills on the next record |
+| [S-fill-042](S-fill-042.yaml) | 1m | A stop that reverses a long inside a 1-minute bar turns the path adverse for the new short |

@@ -32,6 +32,25 @@ def test_the_reference_engine_fills_each_scenario_as_it_expects(
     assert report.outcome(scenario_id).differences == ()
 
 
+@pytest.mark.parametrize(
+    ("scenario_id", "order", "ticks"),
+    [
+        ("S-fill-012", 1, 19),  # a gap: 4995.00 - 4990.25 = 4.75, 19 ticks past the stop
+        ("S-fill-009", 1, 1),  # a stop traded at its price: the one tick of F-SLP-01
+        ("S-fill-001", 1, 0),  # TBBO: at the quote, no ticks
+        ("S-fill-015", 1, 0),  # a limit at its price
+        ("S-fill-011", 1, 4),  # a bar opening past the stop: 5006.00 - 5005.00 = 1.00
+        ("S-fill-040", 2, 1),  # a bracket stop through the market: its entry's point, minus a tick
+    ],
+)
+def test_each_fill_records_its_slippage_against_its_reference(
+    report: ScenarioReport, scenario_id: str, order: int, ticks: int
+) -> None:
+    fills = [fill for fill in report.outcome(scenario_id).result.fills if fill.order == order]
+
+    assert [fill.slippage_ticks for fill in fills] == [ticks]
+
+
 def test_the_runner_runs_every_scenario_and_prints_the_rule_coverage(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

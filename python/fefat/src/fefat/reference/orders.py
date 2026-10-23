@@ -233,6 +233,24 @@ class WorkingOrder:
         at = "" if self.price is None else f" at {price_text(self.price)}"
         return f"{self.side} {self.kind}{at} x {self.lots}"
 
+    def bracket_leg(self, kind: OrderKind, leg: tuple[int, int], ts: int, index: int) -> Self:
+        """The stop or the target, of `leg`'s id and price, that this entry's fill at `ts`, the
+        `index`th event of the run, places: an exit of its lots in the group of its bracket,
+        active at once (F-OCO-02)."""
+        leg_id, price = leg
+        return type(self)(
+            id=leg_id,
+            side=self.side.opposite(),
+            kind=kind,
+            price=price,
+            lots=self.lots,
+            role=OrderRole.STOP if kind is OrderKind.STOP else OrderRole.TARGET,
+            placed_at=ts,
+            activation=ts,
+            seen_after=index,
+            oco=f"bracket of {self.id}",
+        )
+
 
 @dataclass(slots=True)
 class Book:
@@ -249,7 +267,11 @@ class Book:
         """The live orders in one of `states`, all of them without, of `kind` where it is
         named, by id: the lower id first at one instant."""
         wanted = states or LIVE_STATES
-        found = [o for o in self.orders if o.state in wanted and (kind is None or o.kind is kind)]
+        found = [
+            order
+            for order in self.orders
+            if order.state in wanted and (kind is None or order.kind is kind)
+        ]
         return sorted(found, key=lambda order: order.id)
 
     def each(self, state: OrderState, kind: OrderKind | None = None) -> Iterator[WorkingOrder]:

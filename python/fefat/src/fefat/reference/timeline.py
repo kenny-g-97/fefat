@@ -4,15 +4,13 @@ returns."""
 
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
+from typing import NamedTuple
 
 from fefat.reference.event_log import EventLog
 from fefat.reference.ledger import Fill, FundingPayment, Liquidity, Mark
 from fefat.reference.orders import WorkingOrder
 from fefat.reference.strategy import Decision
-from fefat.reference.tape import BarRecord, FundingRate, TbboRecord, TradeRecord
-
-Record = TradeRecord | TbboRecord | BarRecord
-"""A record of a tape: a trade print, a TBBO record, or a stored bar."""
+from fefat.reference.tape import FundingRate, Record
 
 
 class Phase(IntEnum):
@@ -35,9 +33,11 @@ class Extreme(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Event:
+    """What happens at `ts`, in `phase`: a record arriving, a funding time, or a decision."""
+
     ts: int
     phase: Phase
-    item: Record | FundingRate | Decision
+    subject: Record | FundingRate | Decision
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +47,16 @@ class Moment:
 
     ts: int
     index: int
+
+
+class Priced(NamedTuple):
+    """How a fill is priced: its price, the rule that priced it, its reference before ticks
+    (F-TAG-01), and the size its record shows (F-QTY-01), none on bars."""
+
+    price: int
+    rule: str
+    reference: int
+    shown_size: int | None
 
 
 @dataclass(frozen=True, slots=True)

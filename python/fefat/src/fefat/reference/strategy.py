@@ -78,8 +78,18 @@ class DecisionContext:
         return bool(self._book.live())
 
     def market(self, side: Side, lots: int, bracket: TicksBracket | None = None) -> int:
-        """Places a market order for `lots`, with a bracket placed when it fills (F-OCO-02),
-        and returns its id."""
+        """Enters with a market order for `lots`, with a bracket placed when it fills
+        (F-OCO-02), and returns its id. A strategy holds one position at a time, so it enters
+        flat and with nothing working; `flatten` closes the position."""
+        if lots < 1:
+            raise ValueError(f"Expected a whole number of lots above zero, got {lots}.")
+        working = len(self._book.live())
+        if self._book.position != 0 or working:
+            raise ValueError(
+                "Expected an entry while flat with no working orders (one position per strategy), "
+                f"got {self._book.position} lots and {working} working orders at "
+                f"{instant_text(self.now)}; close the position with flatten()."
+            )
         order_id = self._book.new_id()
         self._place(order_id, side, OrderKind.MARKET, None, lots, bracket=bracket)
         return order_id
@@ -115,8 +125,19 @@ class DecisionContext:
         bracket: Bracket | TicksBracket | None = None,
     ) -> None:
         activation = self.now + self._latency
-        timing = (self.now, activation, self._timeline_position)
-        order = WorkingOrder(order_id, side, kind, price, lots, role, *timing, oco, bracket)
+        order = WorkingOrder(
+            id=order_id,
+            side=side,
+            kind=kind,
+            price=price,
+            lots=lots,
+            role=role,
+            placed_at=self.now,
+            activation=activation,
+            seen_after=self._timeline_position,
+            oco=oco,
+            bracket=bracket,
+        )
         self._book.orders.append(order)
         placed = f"order {order_id}: {order.described()}, active from {instant_text(activation)}"
         self._log.note(self.now, EventKind.PLACED, placed, order_id, "F-ACT-01")

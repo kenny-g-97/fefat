@@ -100,6 +100,8 @@ class BarRecord(FrozenModel):
 
 Tape = tuple[TradeRecord, ...] | tuple[TbboRecord, ...] | tuple[BarRecord, ...]
 """The records of one fidelity, in the order the engine reads them."""
+Record = TradeRecord | TbboRecord | BarRecord
+"""A record of a tape: a trade print, a TBBO record, or a stored bar."""
 
 _TRADES = TypeAdapter(tuple[TradeRecord, ...])
 _TBBO_RECORDS = TypeAdapter(tuple[TbboRecord, ...])
@@ -166,12 +168,12 @@ def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
     (D-09), and in the order of their closes. A back-adjusted import, without raw prices
     (D-49), and the bars of more than one contract are refused. The store checked each row
     when it was written (ADR-0019), so the records are built without parsing it again."""
+    contracts = sorted(frame.get_column("contract").unique().to_list())
     if frame.get_column("close_raw").null_count() > 0:
         raise ValueError(
-            "Expected a series with raw prices, got a back-adjusted import, whose prices no "
-            "order traded at (D-49)."
+            f"Expected a series with raw prices, got a back-adjusted import of {', '.join(contracts)}, "
+            "whose prices no order traded at (D-49)."
         )
-    contracts = sorted(frame.get_column("contract").unique().to_list())
     if len(contracts) > 1:
         raise ValueError(
             f"Expected the bars of one contract, got {', '.join(contracts)}: positions and "
@@ -192,7 +194,14 @@ def tape_of_trades(frame: pl.DataFrame) -> tuple[TradeRecord, ...]:
     """The trade prints of a frame of the store's trades, as the engine reads them: by
     `ts_recv`, the engine's clock (F-CLK-01), and at one instant by the vendor's `sequence`
     (F-CLK-03). The store checked each row when it was written (ADR-0019)."""
-    ordered = frame.sort("ts_recv", "sequence").select("ts_recv", "ts_event", "price", "size")
+    instruments = sorted(frame.get_column("instrument_id").unique().to_list())
+    if len(instruments) > 1:
+        raise ValueError(
+            f"Expected the trades of one contract, got instruments {instruments}: a tape is one "
+            "contract's, so choose its trades first."
+        )
+    ordered = frame.sort("ts_recv", "sequence", maintain_order=True)
+    ordered = ordered.select("ts_recv", "ts_event", "price", "size")
     return tuple(
         TradeRecord.model_construct(ts=ts, ts_event=ts_event, price=price, size=size)
         for ts, ts_event, price, size in ordered.iter_rows()

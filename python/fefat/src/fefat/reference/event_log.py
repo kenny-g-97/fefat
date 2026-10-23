@@ -61,6 +61,15 @@ class EventLog:
             text = f"order {leg.id}: {leg.described()}, the bracket of order {fill.order}"
             self.note(fill.ts, EventKind.PLACED, text, leg.id, "F-OCO-02")
 
+    def active(self, ts: int, order: int, sees: str, rule: str) -> None:
+        """An order that sees its first record or bar (F-ACT-01, F-ACT-02)."""
+        self.note(ts, EventKind.ACTIVE, f"order {order} sees its first {sees}", order, rule)
+
+    def ambiguous(self, ts: int) -> None:
+        """A bar whose extremes, swapped, would fill otherwise (F-BAR-05)."""
+        otherwise = "with its extremes swapped the bar fills otherwise"
+        self.note(ts, EventKind.AMBIGUOUS, otherwise, rule="F-BAR-05")
+
     def triggered(self, ts: int, order: WorkingOrder, price: int) -> None:
         """A stop the trade at `price` reached (F-STP-01)."""
         reached = (

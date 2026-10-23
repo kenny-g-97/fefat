@@ -20,6 +20,8 @@ from fefat.reference.event_log import EventKind
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.ledger import Trade, trades_of
 from fefat.reference.orders import OrderRole, PositionSide, Side, TicksBracket
+from fefat.reference.scenario_runner import run_scenario
+from fefat.reference.scenarios import Scenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.strategy import Decision, DecisionContext
 from fefat.reference.tape import BarRecord, TradeRecord, tape_of_bars, tape_of_trades
@@ -221,6 +223,7 @@ def test_a_tape_of_trades_reads_the_receive_clock_in_the_vendors_order() -> None
         {
             "ts_recv": [300, 200, 200],
             "ts_event": [290, 190, 195],
+            "instrument_id": [1001, 1001, 1001],
             "price": [3, 2, 1],
             "size": [1, 2, 3],
             "sequence": [9, 8, 7],
@@ -234,6 +237,96 @@ def test_a_tape_of_trades_reads_the_receive_clock_in_the_vendors_order() -> None
         TradeRecord.model_construct(ts=200, ts_event=190, price=2, size=2),
         TradeRecord.model_construct(ts=300, ts_event=290, price=3, size=1),
     )
+
+
+def test_a_tape_of_trades_refuses_the_trades_of_two_contracts() -> None:
+    trades = pl.DataFrame(
+        {
+            "ts_recv": [100, 200],
+            "ts_event": [90, 190],
+            "instrument_id": [1001, 1003],
+            "price": [1, 2],
+            "size": [1, 1],
+            "sequence": [1, 2],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Expected the trades of one contract, got instruments"):
+        tape_of_trades(trades)
+
+
+def test_an_oco_sibling_cancelled_at_a_bars_open_never_fills() -> None:
+    # Both stops are through the market, the last close at 5000.00, when they see their first bar,
+    # so both would fill at its open as market orders (F-STP-05): the lower id fills at
+    # 5000.50 + 0.25, and the other, cancelled at once (F-OCO-01), must not fill after all.
+    placed, oco = "2026-03-06T14:31:00.000Z", "fade"
+    scenario = Scenario.model_validate(
+        {
+            "id": "S-fill-900",
+            "title": "Of two stops of one OCO group both through the market at a bar's open, one fills",
+            "fidelity": "1m",
+            "instrument": "ES",
+            "orders": [
+                {"id": 1, "placed_at": placed, "side": "buy", "kind": "stop", "price": "4995.00"}
+                | {"quantity": 1, "oco": oco},
+                {"id": 2, "placed_at": placed, "side": "sell", "kind": "stop", "price": "5005.00"}
+                | {"quantity": 1, "oco": oco},
+            ],
+            "tape": [
+                {"ts_open": "2026-03-06T14:30:00Z", "ts_close": "2026-03-06T14:31:00Z"}
+                | {"open": "4999.50", "high": "5000.25", "low": "4999.25", "close": "5000.00"}
+                | {"volume": 120},
+                {"ts_open": "2026-03-06T14:31:00Z", "ts_close": "2026-03-06T14:32:00Z"}
+                | {"open": "5000.50", "high": "5001.00", "low": "4999.75", "close": "5000.75"}
+                | {"volume": 150},
+            ],
+            "expected": {
+                "fills": [
+                    {"order": 1, "ts": "2026-03-06T14:32:00Z", "price": "5000.75"}
+                    | {"rule": "F-STP-05"}
+                ]
+            },
+            "rules": ["F-OCO-01", "F-STP-05"],
+        }
+    )
+
+    assert run_scenario(scenario, AlwaysOpen()).differences == ()
+
+
+def test_a_strategy_enters_only_flat_and_with_nothing_working() -> None:
+    def buys_twice(bar_row: Any, context: DecisionContext) -> None:
+        context.market(Side.BUY, 1)
+        context.market(Side.BUY, 1)
+
+    def buys_nothing(bar_row: Any, context: DecisionContext) -> None:
+        context.market(Side.BUY, 0)
+
+    tape = (bar("14:31:00", "14:32:00", "5000.00", "5000.50", "4999.75", "5000.25"),)
+    settings = RunSettings.for_fidelity(ONE_MINUTE)
+
+    with pytest.raises(ValueError, match="Expected an entry while flat with no working orders"):
+        ReferenceEngine(settings, MES, ONE_MINUTE, AlwaysOpen()).run(
+            tape, [decision_at("14:31:00")], buys_twice
+        )
+    with pytest.raises(ValueError, match="Expected a whole number of lots above zero, got 0"):
+        ReferenceEngine(settings, MES, ONE_MINUTE, AlwaysOpen()).run(
+            tape, [decision_at("14:31:00")], buys_nothing
+        )
+
+
+def test_each_run_of_an_engine_starts_from_an_empty_book() -> None:
+    tape = (
+        bar("14:30:00", "14:31:00", "5000.00", "5000.50", "4999.75", "5000.25"),
+        bar("14:31:00", "14:32:00", "5000.50", "5001.00", "5000.25", "5000.75"),
+    )
+    engine = ReferenceEngine(RunSettings.for_fidelity(ONE_MINUTE), MES, ONE_MINUTE, AlwaysOpen())
+
+    first = engine.run(tape, [decision_at("14:31:00")], buy_with_a_bracket_then_flatten)
+    second = engine.run(tape, [decision_at("14:31:00")], buy_with_a_bracket_then_flatten)
+
+    assert second.fills == first.fills
+    assert second.log is not first.log
+    assert len(second.log.entries) == len(first.log.entries)
 
 
 def test_the_instrument_tables_decimals_become_the_engines_integers() -> None:
