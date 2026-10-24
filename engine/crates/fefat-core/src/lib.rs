@@ -2,7 +2,10 @@
 
 pub mod drawdown;
 pub mod fidelity;
+pub mod fills;
 pub mod instants;
 pub mod instrument;
+pub mod ledger;
+pub mod orders;
 pub mod strategy_spec;
 pub mod units;
