@@ -108,6 +108,7 @@ def test_the_flat_by_time_is_one_instant_per_trade_date_across_the_clock_change(
     [
         (date(2026, 3, 6), "16:30", "inside the session of 2026-03-06"),
         (date(2021, 6, 24), "15:20", "outside the halts of the session of 2021-06-24"),
+        (date(2021, 6, 24), "15:15", "at or inside the halt from 2021-06-24T20:15:00Z"),
         (date(2026, 3, 6), "15:03", "on a close of the 5m signal bars of 2026-03-06"),
     ],
 )
@@ -196,6 +197,15 @@ def test_an_exit_still_working_is_not_placed_again_at_the_next_decision() -> Non
     assert cancelled == [2, 3]
 
 
+def test_size_mult_multiplies_the_fixed_size_of_an_entry() -> None:
+    frame = signals({"ts_close": "14:31:00", "long_entry": True, "size_mult": 2.0})
+    tape = (bar("14:31:00", "14:32:00", "5000.50", "5001.00", "5000.25", "5000.75"),)
+
+    result = run_template(spec_of(), frame, tape)
+
+    assert [(fill.order, fill.lots) for fill in result.fills] == [(1, 2)]
+
+
 def test_a_size_mult_that_makes_part_of_a_lot_is_refused() -> None:
     frame = signals({"ts_close": "14:31:00", "long_entry": True, "size_mult": 1.5})
     tape = (bar("14:31:00", "14:32:00", "5000.50", "5001.00", "5000.25", "5000.75"),)
@@ -279,13 +289,11 @@ def test_signal_rows_give_a_frame_of_raw_prices_with_only_the_columns_they_set()
     assert frame.get_column("adj_offset").to_list() == [0, 0]
 
 
-def test_a_flat_by_time_at_the_sessions_close_is_taken(es_sessions: SessionTable) -> None:
-    # The session of 2026-03-06 closes at 16:00 Chicago, 22:00 UTC, where its last bar closes.
-    instants = flat_by_instants(
-        [date(2026, 3, 6)], "16:00", "America/Chicago", es_sessions, FIVE_MINUTES
-    )
-
-    assert instants == {date(2026, 3, 6): instant_nanoseconds("2026-03-06T22:00:00Z")}
+def test_a_flat_by_time_at_the_sessions_close_is_refused(es_sessions: SessionTable) -> None:
+    # The session of Friday 2026-03-06 closes at 16:00 Chicago, 22:00 UTC: an exit decided at that
+    # close becomes active in the break and would fill only when the market reopens on Sunday.
+    with pytest.raises(ValueError, match="before its close at 2026-03-06T22:00:00Z"):
+        flat_by_instants([date(2026, 3, 6)], "16:00", "America/Chicago", es_sessions, FIVE_MINUTES)
 
 
 def test_a_flat_by_time_at_the_sessions_open_is_refused(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ a frame that breaks the contract (types, nulls, NaN, alignment)."""
 
 from datetime import date
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import polars as pl
@@ -172,6 +173,13 @@ def test_a_nan_in_a_feature_is_refused() -> None:
         nan.signals(signal_bars("5000.00"))
 
 
+def test_a_strategys_features_cannot_be_changed_once_it_is_built() -> None:
+    built = strategy()
+
+    assert isinstance(built.features, MappingProxyType)
+    assert list(built.features) == ["mean"]
+
+
 def test_a_feature_named_like_a_column_of_the_frame_is_refused() -> None:
     with pytest.raises(ValidationError, match="Expected feature names apart from"):
         strategy(features={"long_entry": pl.col("close") > 0})
@@ -238,7 +246,15 @@ def test_a_frame_of_the_contract_passes_with_its_feature_columns() -> None:
         (a_signal_frame(wake=[None, True]), "Expected no null in the signal frame's wake"),
         (
             a_signal_frame(long_entry=[True, False], size_mult=[None, 2.0]),
-            "Expected size_mult on every bar with an entry signal, got none on 1 bar",
+            "on every bar with an entry signal, got null on 1 bar",
+        ),
+        (
+            a_signal_frame(long_entry=[True, False], size_mult=[float("inf"), 2.0]),
+            "Expected size_mult, a finite number above zero, on every bar with an entry signal, got inf",
+        ),
+        (
+            a_signal_frame(short_entry=[False, True], size_mult=[2.0, 0.0]),
+            "on every bar with an entry signal, got 0.0 on 1 bar",
         ),
         (
             a_signal_frame(size_mult=[1.0, float("nan")]),

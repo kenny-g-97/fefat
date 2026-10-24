@@ -197,7 +197,7 @@ class EntryWindow(FrozenModel):
 
     start: LocalTime
     end: LocalTime
-    weekdays: Annotated[Sequence[Weekday], AfterValidator(tuple)] | None = None
+    weekdays: Annotated[Sequence[Weekday], Field(min_length=1), AfterValidator(tuple)] | None = None
 
 
 def _windows_of_pairs(windows: object) -> object:

@@ -17,8 +17,12 @@ expression, such as `pl.col("close").ewm_mean(span=20)`, in the same slot:
     strategy.signals(ff.market.load("ES", "5m", "2026-03-05", "2026-03-09"))  # its signal frame
 """
 
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Annotated
+
 import polars as pl
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import AfterValidator, ConfigDict, Field, field_validator
 
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted, utc_text
@@ -45,6 +49,11 @@ _BAR_COLUMNS_READ = pl.Schema(
 )
 
 
+def _read_only(features: Mapping[str, pl.Expr]) -> Mapping[str, pl.Expr]:
+    """The features as a mapping no one can change after the strategy is built."""
+    return MappingProxyType(dict(features))
+
+
 class SignalStrategy(FrozenModel):
     """A signal strategy on `instrument`, deciding at the closes of its `timeframe` bars: its
     `features` (each evaluated in turn over the bars and the features before it), its signals,
@@ -56,7 +65,9 @@ class SignalStrategy(FrozenModel):
 
     instrument: InstrumentRoot
     timeframe: TimeframeText
-    features: dict[str, pl.Expr] = Field(default_factory=dict)
+    features: Annotated[Mapping[str, pl.Expr], AfterValidator(_read_only)] = Field(
+        default_factory=lambda: MappingProxyType({})
+    )
     long_entry: pl.Expr
     short_entry: pl.Expr
     long_exit: pl.Expr = Field(default_factory=lambda: pl.lit(False))
@@ -71,7 +82,7 @@ class SignalStrategy(FrozenModel):
 
     @field_validator("features")
     @classmethod
-    def _features_named_apart(cls, features: dict[str, pl.Expr]) -> dict[str, pl.Expr]:
+    def _features_named_apart(cls, features: Mapping[str, pl.Expr]) -> Mapping[str, pl.Expr]:
         frame_columns = {*SIGNAL_BAR_COLUMNS, *REQUIRED_SIGNAL_COLUMNS, *OPTIONAL_SIGNAL_COLUMNS}
         taken = sorted(set(features) & frame_columns)
         if taken:

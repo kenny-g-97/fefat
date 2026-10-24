@@ -348,6 +348,7 @@ def changed(path: tuple[str, ...], value: object) -> dict[str, Any]:
         (("execution", "comment"), "a field no reader knows"),
         (("spec_version",), 2),
         (("timeframe",), "5 minutes"),
+        (("execution", "time", "windows"), [{"start": "08:30", "end": "14:30", "weekdays": []}]),
     ],
 )
 def test_a_document_the_schema_refuses_the_models_refuse(

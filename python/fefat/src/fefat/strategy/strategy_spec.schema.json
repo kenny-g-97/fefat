@@ -199,6 +199,7 @@
           "items": {
             "$ref": "#/$defs/Weekday"
           },
+          "minItems": 1,
           "type": "array"
         }
       },

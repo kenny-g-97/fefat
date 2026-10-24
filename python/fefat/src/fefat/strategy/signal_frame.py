@@ -35,8 +35,8 @@ OPTIONAL_SIGNAL_COLUMNS = pl.Schema(
     }
 )
 """The columns a signal frame holds where its strategy gives them: the prices its execution
-template may read, `size_mult`, a factor of the size of each entry, given on every bar with an
-entry signal, and `wake`, false on a bar on which no entry is placed, so that an engine may pass
+template may read, `size_mult`, a factor of the size of each entry, a finite number above zero
+on every bar with an entry signal, and `wake`, false on a bar on which no entry is placed, so that an engine may pass
 it over while flat; exits and time rules still act there."""
 
 PRICE_COLUMNS = ("entry_price", "stop_price", "target_price", "trail_ref")
@@ -105,16 +105,20 @@ def _require_no_nan(frame: pl.DataFrame) -> None:
 
 
 def _require_sizes_of_entries(frame: pl.DataFrame) -> None:
-    """Refuse a bar with an entry signal but no `size_mult`, where the frame has the column."""
+    """Refuse a bar with an entry signal whose `size_mult`, where the frame has the column, is not
+    a finite number above zero."""
     if "size_mult" not in frame:
         return
-    entries = pl.col("long_entry") | pl.col("short_entry")
-    unsized = frame.filter(entries & pl.col("size_mult").is_null())
-    if not unsized.is_empty():
-        raise ValueError(
-            "Expected size_mult on every bar with an entry signal, got none on "
-            f"{counted(unsized.height, 'bar')}{_first_close(unsized)}."
-        )
+    size, entries = pl.col("size_mult"), pl.col("long_entry") | pl.col("short_entry")
+    unsized = frame.filter(entries & (size.is_null() | ~size.is_finite() | (size <= 0)))
+    if unsized.is_empty():
+        return
+    first = unsized.item(0, "size_mult")
+    raise ValueError(
+        "Expected size_mult, a finite number above zero, on every bar with an entry signal, got "
+        f"{'null' if first is None else first} on {counted(unsized.height, 'bar')}"
+        f"{_first_close(unsized)}."
+    )
 
 
 def _require_increasing_closes(frame: pl.DataFrame) -> None:

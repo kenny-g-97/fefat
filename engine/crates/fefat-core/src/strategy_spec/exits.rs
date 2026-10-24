@@ -213,7 +213,7 @@ pub struct EntryWindow {
     pub end: String,
     /// The days on which the window holds; without them, every day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "Vec<Weekday>")]
+    #[schemars(with = "Vec<Weekday>", length(min = 1))]
     pub weekdays: Option<Vec<Weekday>>,
 }
 
