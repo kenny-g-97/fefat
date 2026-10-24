@@ -5,10 +5,13 @@ hand-written strategy of step 2.2 does on the same bars."""
 
 import re
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import polars as pl
 import pytest
+import yaml
+from pydantic import ValidationError
 
 from fefat.market import instruments
 from fefat.market.calendar import SessionTable, sessions_of
@@ -17,6 +20,7 @@ from fefat.reference.engine import ReferenceEngine
 from fefat.reference.event_log import EventKind
 from fefat.reference.hours import AlwaysOpen
 from fefat.reference.orders import OrderRole
+from fefat.reference.scenarios import TemplateScenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.signal_rows import SignalRow, signal_frame
 from fefat.reference.strategy import decisions_of
@@ -44,6 +48,7 @@ from fefat.strategy import (
 )
 from test_reference_engine import ONE_MINUTE, bar, decision_at, run_on_bars
 
+SCENARIOS = Path(__file__).resolve().parents[2] / "fixtures" / "scenarios"
 ES = instruments.get("ES")
 MES = instrument_parameters(instruments.get("MES"))
 FIVE_MINUTES = Timeframe.parse("5m")
@@ -256,3 +261,30 @@ def test_signal_rows_give_a_frame_of_raw_prices_with_only_the_columns_they_set()
     ]
     assert frame.get_column("stop_price").to_list() == [price_units("4997.25"), None]
     assert frame.get_column("adj_offset").to_list() == [0, 0]
+
+
+def test_a_flat_by_time_at_the_sessions_close_is_taken(es_sessions: SessionTable) -> None:
+    # The session of 2026-03-06 closes at 16:00 Chicago, 22:00 UTC, where its last bar closes.
+    instants = flat_by_instants(
+        [date(2026, 3, 6)], "16:00", "America/Chicago", es_sessions, FIVE_MINUTES
+    )
+
+    assert instants == {date(2026, 3, 6): instant_nanoseconds("2026-03-06T22:00:00Z")}
+
+
+def test_a_flat_by_time_at_the_sessions_open_is_refused(tmp_path: Path) -> None:
+    # A crypto trade date is its UTC day, so 00:00 UTC is the open of its session, where no bar
+    # closes.
+    day = instruments.get("BTCUSDT-PERP").session_calendar()
+    sessions = sessions_of(day, tmp_path)
+
+    with pytest.raises(ValueError, match="inside the session of 2026-03-07"):
+        flat_by_instants([date(2026, 3, 7)], "00:00", "UTC", sessions, FIVE_MINUTES)
+
+
+def test_a_template_scenario_whose_size_is_off_the_lot_step_is_refused_when_it_loads() -> None:
+    written = yaml.safe_load((SCENARIOS / "S-template-001.yaml").read_text(encoding="utf-8"))
+    written["strategy"]["execution"]["sizing"]["units"] = 0.5
+
+    with pytest.raises(ValidationError, match=re.escape("on the lot step of 1, got 0.5")):
+        TemplateScenario.model_validate(written)

@@ -17,6 +17,8 @@ Count = Annotated[int, Field(ge=1, le=_LARGEST_COUNT)]
 """A count of ticks, signal bars, or minutes, above zero, as the schema's 32-bit counts."""
 TickDistance = Annotated[int, Field(ge=0, le=_LARGEST_COUNT)]
 """A distance from a signal bar's close, in ticks."""
+TickOffset = Annotated[int, Field(ge=-(2**63), le=2**63 - 1)]
+"""A signed number of ticks, as the schema's 64-bit integers."""
 Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 """A number above zero: a multiple, a percentage, units, or an amount of money."""
 FeatureName = Annotated[str, Field(min_length=1)]
@@ -132,7 +134,7 @@ class BreakevenRule(FrozenModel):
     favour (below zero, short of it)."""
 
     trigger: ProfitTrigger
-    offset_ticks: int = 0
+    offset_ticks: TickOffset = 0
 
 
 class TicksTrail(FrozenModel):

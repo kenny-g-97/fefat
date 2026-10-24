@@ -214,7 +214,8 @@ def a_signal_frame(**columns: list[Any]) -> pl.DataFrame:
 
 
 def test_a_frame_of_the_contract_passes_with_its_feature_columns() -> None:
-    frame = a_signal_frame(atr=[1.5, 2.0], stop_price=[price_units("5000.00"), None])
+    prices = [price_units("5000.00"), None]
+    frame = a_signal_frame(atr=[1.5, 2.0], stop_price=prices, size_mult=[None, 2.0])
 
     assert validated_signal_frame(frame) is frame
 
@@ -235,6 +236,10 @@ def test_a_frame_of_the_contract_passes_with_its_feature_columns() -> None:
             "Expected no null in the signal frame's long_entry",
         ),
         (a_signal_frame(wake=[None, True]), "Expected no null in the signal frame's wake"),
+        (
+            a_signal_frame(long_entry=[True, False], size_mult=[None, 2.0]),
+            "Expected size_mult on every bar with an entry signal, got none on 1 bar",
+        ),
         (
             a_signal_frame(size_mult=[1.0, float("nan")]),
             "Expected no NaN in the signal frame's size_mult",

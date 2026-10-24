@@ -35,8 +35,9 @@ OPTIONAL_SIGNAL_COLUMNS = pl.Schema(
     }
 )
 """The columns a signal frame holds where its strategy gives them: the prices its execution
-template may read, a factor of each entry's size, and `wake`, false on a bar on which no entry is
-placed, so that an engine may pass it over while flat; exits and time rules still act there."""
+template may read, `size_mult`, a factor of the size of each entry, given on every bar with an
+entry signal, and `wake`, false on a bar on which no entry is placed, so that an engine may pass
+it over while flat; exits and time rules still act there."""
 
 PRICE_COLUMNS = ("entry_price", "stop_price", "target_price", "trail_ref")
 """The signal frame's price columns, raw prices of each row's contract in 1e-9 units."""
@@ -51,6 +52,7 @@ def validated_signal_frame(frame: pl.DataFrame) -> pl.DataFrame:
     require_column_types(frame, {**REQUIRED_SIGNAL_COLUMNS, **present}, "the signal frame's")
     _require_no_nulls(frame, [*REQUIRED_SIGNAL_COLUMNS, *(["wake"] if "wake" in frame else [])])
     _require_no_nan(frame)
+    _require_sizes_of_entries(frame)
     _require_increasing_closes(frame)
     return frame
 
@@ -100,6 +102,19 @@ def _require_no_nan(frame: pl.DataFrame) -> None:
                 "than any number, so a signal read from it is wrong; make it null with "
                 "`fill_nan(None)`."
             )
+
+
+def _require_sizes_of_entries(frame: pl.DataFrame) -> None:
+    """Refuse a bar with an entry signal but no `size_mult`, where the frame has the column."""
+    if "size_mult" not in frame:
+        return
+    entries = pl.col("long_entry") | pl.col("short_entry")
+    unsized = frame.filter(entries & pl.col("size_mult").is_null())
+    if not unsized.is_empty():
+        raise ValueError(
+            "Expected size_mult on every bar with an entry signal, got none on "
+            f"{counted(unsized.height, 'bar')}{_first_close(unsized)}."
+        )
 
 
 def _require_increasing_closes(frame: pl.DataFrame) -> None:

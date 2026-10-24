@@ -368,6 +368,11 @@ def test_the_helpers_build_the_rule_of_their_one_choice() -> None:
     assert ff.RiskPerTrade(percent=1) == RiskPercentSize(percent=1)
 
 
+def test_a_breakeven_offset_beyond_the_schemas_64_bit_integers_is_refused() -> None:
+    with pytest.raises(ValidationError, match="less than or equal to 9223372036854775807"):
+        ff.Breakeven(ticks=4, offset_ticks=2**70)
+
+
 def test_entry_windows_may_be_given_as_pairs_of_local_times() -> None:
     rules = TimeRules.model_validate({"tz": "UTC", "windows": [("08:30", "14:30")]})
 

@@ -13,7 +13,6 @@ step 2.8 and is refused until then.
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
-from fractions import Fraction
 from typing import Any
 
 import polars as pl
@@ -98,7 +97,7 @@ def _target_refusals(target: ProfitTarget, stop: StopRule | None) -> list[str]:
         return refusals
     if not isinstance(stop, TicksStop):
         return [*refusals, "an R multiple without a stop in ticks"]
-    if (_exact(price.multiple) * stop.ticks).denominator != 1:
+    if not _is_whole(_exact(price.multiple) * stop.ticks):
         off = f"an R multiple of {price.multiple:g} times {stop.ticks} ticks, off the tick"
         return [*refusals, off]
     return refusals
@@ -117,9 +116,13 @@ def _time_refusals(time: TimeRules | None) -> list[str]:
     return [rule for rule, is_used in used.items() if is_used]
 
 
-def _exact(number: float) -> Fraction:
-    """A number of a specification as the decimal it reads as: 1.3 is 13/10."""
-    return Fraction(repr(number))
+def _exact(number: float) -> Decimal:
+    """A number of a specification as the decimal it reads as, `1.3` for 1.3."""
+    return Decimal(repr(number))
+
+
+def _is_whole(number: Decimal) -> bool:
+    return number == number.to_integral_value()
 
 
 class TemplateStrategy:
@@ -149,7 +152,7 @@ class TemplateStrategy:
         require_one_entry_per_bar(signals)
         self._execution = execution
         self._tick = instrument.tick
-        self._lots = lots_of(Decimal(repr(sizing.units)), instrument.lot_step)
+        self._lots = lots_of(_exact(sizing.units), instrument.lot_step)
         self._target_ticks = _target_ticks(execution)
         self._require_price_columns(signals)
         self._flat_by = _flat_by_instants(spec, signals, sessions)
@@ -185,8 +188,8 @@ class TemplateStrategy:
         if "size_mult" not in bar:
             return self._lots
         multiple = bar["size_mult"]
-        lots = None if multiple is None else _exact(multiple) * self._lots
-        if lots is None or lots.denominator != 1 or lots < 1:
+        lots = _exact(multiple) * self._lots
+        if not _is_whole(lots) or lots < 1:
             raise ValueError(
                 f"Expected size_mult to make whole lots, at least one, got {multiple} times "
                 f"{self._lots} lots on the bar closing at {utc_text(bar['ts_close'])}."

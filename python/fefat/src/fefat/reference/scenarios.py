@@ -51,7 +51,7 @@ from fefat.reference.units import (
     instant_text,
     price_text,
 )
-from fefat.strategy.spec import StrategySpec
+from fefat.strategy.spec import FixedSize, StrategySpec
 
 RuleId = Annotated[str, Field(pattern=r"^F-[A-Z]{3}-[0-9]{2}$")]
 """A rule of the fill specification, such as F-STP-03."""
@@ -308,6 +308,10 @@ class TemplateScenario(ScenarioBase):
     def _own_prices(self) -> Iterator[int]:
         for row in self.signals:
             yield from row.prices()
+
+    def _own_quantities(self) -> list[Decimal]:
+        sizing = self.strategy.execution.sizing
+        return [Decimal(repr(sizing.units))] if isinstance(sizing, FixedSize) else []
 
     def _check_its_own(self) -> None:
         if not isinstance(self.instrument, Instrument):
