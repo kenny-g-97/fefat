@@ -83,6 +83,11 @@ jobs:
       - name: Run the data guard over each commit since main
         run: uv run --no-project python scripts/guard_data.py --commits origin/main..HEAD
 
+      # A skipped test, or one expected to fail, passes in silence (D-51); the
+      # tests a pull request deletes stay the step-reviewer's check.
+      - name: Refuse skip markers added since main
+        run: uv run --no-project python scripts/guard_skip_markers.py origin/main...HEAD
+
       - run: just test
 
       # A release build, like `just build-engine`, so it reuses the compiled

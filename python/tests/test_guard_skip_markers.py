@@ -1,0 +1,106 @@
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+import guard_skip_markers
+from git_repository import GitRepository
+
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "guard_skip_markers.py"
+
+
+def diff_adding(path: str, *lines: str, start: int = 1) -> str:
+    """A diff that adds `lines` to `path` from line `start` on, as `git diff --unified=0` writes
+    it."""
+    header = f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+    hunk = f"@@ -0,0 +{start},{len(lines)} @@\n"
+    return header + hunk + "".join(f"+{line}\n" for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("line", "marker"),
+    [
+        ("@pytest.mark.skip(reason='slow')", "pytest.mark.skip"),
+        ("@pytest.mark.skipif(sys.platform == 'win32', reason='slow')", "pytest.mark.skip"),
+        ("@mark.skipif(True, reason='slow')", "skipif"),
+        ("@pytest.mark.xfail(strict=True)", "xfail"),
+        ("    pytest.skip('not yet')", "pytest.skip("),
+        ("#[ignore]", "#[ignore]"),
+        ('#[ignore = "slow"]', "#[ignore]"),
+        ("it.skip('renders the chart', () => {})", "it.skip"),
+        ("test.skip('loads the runs', async () => {})", "test.skip"),
+    ],
+)
+def test_each_marker_on_an_added_line_of_code_is_found(line: str, marker: str) -> None:
+    found = guard_skip_markers.added_skip_markers(diff_adding("python/tests/test_runs.py", line))
+
+    assert [finding.marker for finding in found] == [marker]
+
+
+def test_a_finding_names_the_file_and_the_line_in_the_new_file() -> None:
+    diff = diff_adding("engine/crates/fefat-core/src/lib.rs", "fn sum() {}", "#[ignore]", start=40)
+
+    found = guard_skip_markers.added_skip_markers(diff)
+
+    assert [finding.describe() for finding in found] == [
+        "engine/crates/fefat-core/src/lib.rs:41: adds #[ignore]"
+    ]
+
+
+def test_removed_lines_documents_and_words_that_only_contain_a_marker_are_no_findings() -> None:
+    removed = (
+        "diff --git a/python/tests/test_runs.py b/python/tests/test_runs.py\n"
+        "--- a/python/tests/test_runs.py\n"
+        "+++ b/python/tests/test_runs.py\n"
+        "@@ -3 +2,0 @@\n"
+        "-@pytest.mark.skip\n"
+    )
+    document = diff_adding("docs/engine-guide.md", "Never add `pytest.mark.skip` to a test.")
+    inside_words = diff_adding("python/tests/test_runs.py", "audit.skip_rows = xfail_strict")
+
+    found = guard_skip_markers.added_skip_markers(removed + document + inside_words)
+
+    assert found == []
+
+
+def test_an_added_line_that_starts_with_plus_signs_is_read_as_a_line() -> None:
+    diff = diff_adding("web/src/app.test.ts", "++counter;", "++ b/x; it.skip('x', () => {})")
+
+    found = guard_skip_markers.added_skip_markers(diff)
+
+    assert [finding.describe() for finding in found] == ["web/src/app.test.ts:2: adds it.skip"]
+
+
+def test_the_guard_and_its_test_may_name_the_markers() -> None:
+    guard = diff_adding("scripts/guard_skip_markers.py", '("xfail", re.compile("xfail")),')
+
+    assert guard_skip_markers.added_skip_markers(guard) == []
+
+
+def run_guard(folder: Path, revisions: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), revisions],
+        cwd=folder,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_a_commit_that_adds_a_skip_marker_fails_the_guard(tmp_path: Path) -> None:
+    repository = GitRepository.initialized(tmp_path)
+    repository.stage("test_sums.py", b"def test_sum():\n    assert 1 + 1 == 2\n")
+    assert repository.commit("Add a test").returncode == 0
+    skipped = b"import pytest\n\n@pytest.mark.skip\ndef test_sum():\n    assert 1 + 1 == 2\n"
+    repository.stage("test_sums.py", skipped)
+    assert repository.commit("Skip the test").returncode == 0
+
+    refused = run_guard(tmp_path, "HEAD~1...HEAD")
+    unchanged = run_guard(tmp_path, "HEAD...HEAD")
+    unreadable = run_guard(tmp_path, "no-such-branch...HEAD")
+
+    assert refused.returncode == 1
+    assert "test_sums.py:3: adds pytest.mark.skip" in refused.stdout
+    assert unchanged.returncode == 0
+    assert unreadable.returncode == 2
