@@ -7,15 +7,19 @@ CI runs it beside the data guard, over the lines a pull request adds:
     uv run --no-project python scripts/guard_skip_markers.py origin/main...HEAD
 
 It reads `git diff --unified=0` of the range and reports every added line of a code file (Python,
-Rust, TypeScript, or JavaScript) that holds `pytest.mark.skip`, `skipif`, `xfail`, `pytest.skip(`,
-`#[ignore]`, `it.skip`, or `test.skip`, except in this guard and its test, which name the markers.
-Tests a pull request deletes stay the step-reviewer's check. Exits 0 when no added line holds a
-marker, 1 with each one listed as `path:line: adds <marker>`, and 2 when git cannot be read.
-Standard library only.
+Rust, TypeScript, or JavaScript) that skips a test, expects it to fail, or runs others alone:
+pytest's `mark.skip`, `skipif`, `xfail`, `pytest.skip(`, and `pytest.importorskip(`; unittest's
+`skip`, `skipIf`, `skipUnless`, and `expectedFailure`; Rust's `#[ignore]` and a `#[cfg_attr(...)]`
+that ignores; and vitest's `it`, `test`, and `describe` with `.skip`, `.skipIf`, `.only`, or
+`.todo`, and `xit(`, `xtest(`, and `xdescribe(`. This guard and its test, which name the markers,
+are left out. Tests a pull request deletes stay the step-reviewer's check. Exits 0 when no added
+line holds a marker, 1 with each one listed as `path:line: adds <marker>`, and 2 when git cannot
+be read. Standard library only.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import sys
@@ -27,14 +31,21 @@ CODE_SUFFIXES = frozenset({".py", ".rs", ".ts", ".tsx", ".js", ".jsx", ".mjs", "
 NAMES_THE_MARKERS = frozenset(
     {"scripts/guard_skip_markers.py", "python/tests/test_guard_skip_markers.py"}
 )
-MARKERS = (
-    ("pytest.mark.skip", re.compile(r"\bpytest\.mark\.skip")),
-    ("skipif", re.compile(r"\bskipif\b")),
-    ("xfail", re.compile(r"\bxfail\b")),
-    ("pytest.skip(", re.compile(r"\bpytest\.skip\(")),
-    ("#[ignore]", re.compile(r"#\[ignore\b")),
-    ("it.skip", re.compile(r"\bit\.skip\b")),
-    ("test.skip", re.compile(r"\btest\.skip\b")),
+SKIP_MARKER = re.compile(
+    "|".join(
+        (
+            r"\b(?:pytest\.)?mark\.(?:skip(?:if)?|xfail)\b",
+            r"\bpytest\.(?:skip|xfail|importorskip)\(",
+            r"\bunittest\.(?:skip(?:If|Unless)?|expectedFailure)\b",
+            r"\bskip(?:if|If|Unless)\b",
+            r"\bxfail\b",
+            r"\bexpectedFailure\b",
+            r"#\[ignore\b[^\]]*\]?",
+            r"#\[cfg_attr\([^\]]*\bignore\b[^\]]*\]?",
+            r"\b(?:it|test|describe)\.(?:skip(?:If)?|only|todo)\b",
+            r"\bx(?:it|test|describe)\(",
+        )
+    )
 )
 HUNK = re.compile(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 REMEDY = (
@@ -49,7 +60,7 @@ class GitError(Exception):
 
 @dataclass(frozen=True)
 class Finding:
-    """An added line that skips a test or expects it to fail."""
+    """An added line that skips a test or expects it to fail, with the marker's text."""
 
     path: str
     line: int
@@ -57,6 +68,16 @@ class Finding:
 
     def describe(self) -> str:
         return f"{self.path}:{self.line}: adds {self.marker}"
+
+
+def new_path(header: str) -> str | None:
+    """The new file's path in a `+++` header, none for a deleted file. Git ends a name that holds
+    a space with a TAB, and quotes, C-style, a name that holds a quote, a backslash, or a control
+    character."""
+    name = header.removeprefix("+++ ").rstrip("\t")
+    if name.startswith('"') and name.endswith('"'):
+        name = str(ast.literal_eval(name))
+    return name.removeprefix("b/") if name.startswith("b/") else None
 
 
 def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
@@ -73,7 +94,7 @@ def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
             number += 1
             remaining -= 1
         elif raw.startswith("+++ "):
-            path = raw.removeprefix("+++ b/") if raw.startswith("+++ b/") else None
+            path = new_path(raw)
         elif hunk := HUNK.match(raw):
             number, remaining = int(hunk[1]), int(hunk[2] or "1")
 
@@ -84,14 +105,15 @@ def added_skip_markers(diff: str) -> list[Finding]:
     for path, number, text in added_lines(diff):
         if PurePosixPath(path).suffix not in CODE_SUFFIXES or path in NAMES_THE_MARKERS:
             continue
-        marker = next((name for name, pattern in MARKERS if pattern.search(text)), None)
+        marker = SKIP_MARKER.search(text)
         if marker is not None:
-            found.append(Finding(path, number, marker))
+            found.append(Finding(path, number, marker.group(0)))
     return found
 
 
 def diff_of(revisions: str) -> str:
-    """The lines `revisions` adds and changes, without context, file names unquoted."""
+    """The lines `revisions` adds and changes, without context, file names unquoted where git
+    allows it."""
     command = ["git", "-c", "core.quotePath=false", "diff", "--unified=0", "--no-color"]
     command += ["--no-ext-diff", "--diff-filter=AMR", "--end-of-options", revisions, "--"]
     completed = subprocess.run(

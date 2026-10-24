@@ -22,14 +22,25 @@ def diff_adding(path: str, *lines: str, start: int = 1) -> str:
     ("line", "marker"),
     [
         ("@pytest.mark.skip(reason='slow')", "pytest.mark.skip"),
-        ("@pytest.mark.skipif(sys.platform == 'win32', reason='slow')", "pytest.mark.skip"),
-        ("@mark.skipif(True, reason='slow')", "skipif"),
-        ("@pytest.mark.xfail(strict=True)", "xfail"),
+        ("@pytest.mark.skipif(sys.platform == 'win32', reason='slow')", "pytest.mark.skipif"),
+        ("@mark.skipif(True, reason='slow')", "mark.skipif"),
+        ("@pytest.mark.xfail(strict=True)", "pytest.mark.xfail"),
+        ("@skipif(True, reason='slow')", "skipif"),
         ("    pytest.skip('not yet')", "pytest.skip("),
+        ("numpy = pytest.importorskip('numpy')", "pytest.importorskip("),
+        ("@unittest.skip('slow')", "unittest.skip"),
+        ("@unittest.skipIf(True, 'slow')", "unittest.skipIf"),
+        ("@unittest.expectedFailure", "unittest.expectedFailure"),
         ("#[ignore]", "#[ignore]"),
-        ('#[ignore = "slow"]', "#[ignore]"),
+        ('#[ignore = "slow"]', '#[ignore = "slow"]'),
+        ("#[cfg_attr(windows, ignore)]", "#[cfg_attr(windows, ignore)]"),
         ("it.skip('renders the chart', () => {})", "it.skip"),
         ("test.skip('loads the runs', async () => {})", "test.skip"),
+        ("describe.skip('the runs page', () => {})", "describe.skip"),
+        ("test.skipIf(isWindows)('loads the runs', () => {})", "test.skipIf"),
+        ("it.only('renders the chart', () => {})", "it.only"),
+        ("test.todo('compares two runs')", "test.todo"),
+        ("xit('renders the chart', () => {})", "xit("),
     ],
 )
 def test_each_marker_on_an_added_line_of_code_is_found(line: str, marker: str) -> None:
@@ -57,7 +68,9 @@ def test_removed_lines_documents_and_words_that_only_contain_a_marker_are_no_fin
         "-@pytest.mark.skip\n"
     )
     document = diff_adding("docs/engine-guide.md", "Never add `pytest.mark.skip` to a test.")
-    inside_words = diff_adding("python/tests/test_runs.py", "audit.skip_rows = xfail_strict")
+    inside_words = diff_adding(
+        "python/tests/test_runs.py", "audit.skip_rows = xfail_strict", "sys.exit(0)"
+    )
 
     found = guard_skip_markers.added_skip_markers(removed + document + inside_words)
 
@@ -70,6 +83,18 @@ def test_an_added_line_that_starts_with_plus_signs_is_read_as_a_line() -> None:
     found = guard_skip_markers.added_skip_markers(diff)
 
     assert [finding.describe() for finding in found] == ["web/src/app.test.ts:2: adds it.skip"]
+
+
+def test_a_name_with_a_space_or_a_quote_is_read_from_its_header() -> None:
+    spaced = "+++ b/python/tests/test sums.py\t\n@@ -0,0 +1 @@\n+@pytest.mark.skip\n"
+    quoted = '+++ "b/python/tests/test\\"sums.py"\n@@ -0,0 +1 @@\n+@pytest.mark.skip\n'
+
+    found = guard_skip_markers.added_skip_markers(spaced + quoted)
+
+    assert [finding.path for finding in found] == [
+        "python/tests/test sums.py",
+        'python/tests/test"sums.py',
+    ]
 
 
 def test_the_guard_and_its_test_may_name_the_markers() -> None:
@@ -94,7 +119,8 @@ def test_a_commit_that_adds_a_skip_marker_fails_the_guard(tmp_path: Path) -> Non
     assert repository.commit("Add a test").returncode == 0
     skipped = b"import pytest\n\n@pytest.mark.skip\ndef test_sum():\n    assert 1 + 1 == 2\n"
     repository.stage("test_sums.py", skipped)
-    assert repository.commit("Skip the test").returncode == 0
+    repository.stage("test more sums.py", skipped)
+    assert repository.commit("Skip the tests").returncode == 0
 
     refused = run_guard(tmp_path, "HEAD~1...HEAD")
     unchanged = run_guard(tmp_path, "HEAD...HEAD")
@@ -102,5 +128,6 @@ def test_a_commit_that_adds_a_skip_marker_fails_the_guard(tmp_path: Path) -> Non
 
     assert refused.returncode == 1
     assert "test_sums.py:3: adds pytest.mark.skip" in refused.stdout
+    assert "test more sums.py:3: adds pytest.mark.skip" in refused.stdout
     assert unchanged.returncode == 0
     assert unreadable.returncode == 2
