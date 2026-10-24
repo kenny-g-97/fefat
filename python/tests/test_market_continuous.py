@@ -390,6 +390,20 @@ def test_a_window_of_bars_after_a_roll_flags_no_roll(table: SessionTable) -> Non
     assert calendar.continuous_bars(window).filter(pl.col("roll_flag")).is_empty()
 
 
+def test_a_window_of_bars_from_a_rolls_open_flags_its_first_bar(table: SessionTable) -> None:
+    # The bars given start at the open of 03-09, where the front passes to ESM2026: their first
+    # ESM2026 bar is the new front's first, though no bar of the old front comes before it
+    # (step 2.3's amendment, D-53).
+    bars = fixture_bars("ohlcv-1m")
+    calendar = volume_rolls(bars, table, ES, the_end(table))
+    roll_open = table.session(MARCH_9).open
+    window = bars.filter(pl.col("ts_open") >= roll_open)
+
+    flagged = calendar.continuous_bars(window).filter(pl.col("roll_flag"))
+
+    assert flagged.select("contract", "ts_open").rows() == [("ESM2026", roll_open)]
+
+
 def test_a_contract_listed_past_the_session_table_does_not_stop_the_calendar(
     table: SessionTable,
 ) -> None:

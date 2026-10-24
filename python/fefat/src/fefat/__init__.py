@@ -5,17 +5,52 @@ from enum import StrEnum
 
 import fefat_engine
 
-from fefat import market, stats
+from fefat import market, stats, strategy
 from fefat.market import fees, instruments
+from fefat.strategy import (
+    Breakeven,
+    EntryWindow,
+    Execution,
+    Fixed,
+    Limit,
+    Limits,
+    Market,
+    Notional,
+    RiskPerTrade,
+    SignalStrategy,
+    Stop,
+    StopEntry,
+    StrategySpec,
+    Target,
+    TimeRules,
+    Trailing,
+)
 
 __all__ = [
+    "Breakeven",
     "BuildProfile",
     "EngineBuild",
+    "EntryWindow",
+    "Execution",
+    "Fixed",
+    "Limit",
+    "Limits",
+    "Market",
+    "Notional",
+    "RiskPerTrade",
+    "SignalStrategy",
+    "Stop",
+    "StopEntry",
+    "StrategySpec",
+    "Target",
+    "TimeRules",
+    "Trailing",
     "engine_info",
     "fees",
     "instruments",
     "market",
     "stats",
+    "strategy",
 ]
 
 __version__ = "0.0.1"

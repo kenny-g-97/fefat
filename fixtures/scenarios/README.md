@@ -65,6 +65,17 @@ Each file ends with a comment that works out every expected value from the tape 
 
 A new scenario takes the next free id, its file, and a row below. An edit of an existing scenario, or of the specification, asks you first: the file guard (`.claude/hooks/guard-file-paths.mjs`) asks before either changes, as it does for goldens.
 
+## Template scenarios
+
+A template scenario (step 2.3) runs an execution template instead of orders. In place of `orders` it gives `strategy`, a `StrategySpec` document (its schema is `python/fefat/src/fefat/strategy/strategy_spec.schema.json`, D-53), and `signals`, the rows of its signal frame, which the reference engine runs through its template (`fefat.reference.template`). The template runs the specification's basic subset for now: a market entry, a stop in ticks or at `stop_price` and one target in ticks, as an R multiple of a stop in ticks, or at `target_price`, signal exits, flat-by, and a fixed size times `size_mult`. Step 2.8 brings the rest.
+
+| Field | What it holds |
+| --- | --- |
+| `strategy` | The specification, leaving out what it does not use: `{spec_version: 1, instrument, timeframe, execution: {entry: {kind: market}, stop, targets, time, sizing}}`. Its `instrument` is the scenario's, and `timeframe` that of the signal bars. |
+| `signals` | One row per signal close, in time order: `{ts_close, trade_date, contract}`, then `long_entry`, `short_entry`, `long_exit`, and `short_exit` where they are true, and where a row needs them `stop_price` and `target_price` (raw prices in quotes, as in a tape), `size_mult`, and `wake` (false on a bar on which no entry is placed). A scenario's prices are its contract's raw prices, so the frame's `adj_offset` is 0. |
+
+The orders a template places take the ids the engine gives them, from 1 in the order they are placed: an entry is order 1, its bracket's stop and target orders 2 and 3 when it fills, and the order that closes the position at a signal exit or the flat-by time the next one, order 4.
+
 ## The scenarios
 
 | Id | Fidelity | What it shows |
@@ -111,3 +122,7 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 | [S-fill-040](S-fill-040.yaml) | 1m | A bracket stop placed through the market at its entry's bar open fills there, as a market order would |
 | [S-fill-041](S-fill-041.yaml) | tbbo | On TBBO a bracket stop at its entry record's trade price is through the market and fills on the next record |
 | [S-fill-042](S-fill-042.yaml) | 1m | A stop that reverses a long inside a 1-minute bar turns the path adverse for the new short |
+| [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
+| [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
+| [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |
+| [S-template-004](S-template-004.yaml) | 1m | A template places nothing on a bar whose wake is false and closes its long on long_exit |
