@@ -5,7 +5,7 @@
     Execution(entry=Market(), stop=Stop(ticks=12), targets=[Target(ticks=24)], sizing=Fixed(1))
 """
 
-from fefat.strategy.spec import (
+from fefat.strategy.exits import (
     AfterTargetTrigger,
     AtrStop,
     AtrTarget,
@@ -14,20 +14,11 @@ from fefat.strategy.spec import (
     ColumnStop,
     ColumnTarget,
     ColumnTrail,
-    FixedSize,
-    LimitEntryAtColumn,
-    LimitEntryOffset,
-    MarketEntry,
-    NotionalSize,
     PercentStop,
     ProfitTarget,
     ProfitTrigger,
-    RiskAmountSize,
-    RiskPercentSize,
     RMultipleTarget,
     RMultipleTrigger,
-    StopEntryAtColumn,
-    StopEntryOffset,
     StopRule,
     TargetPrice,
     TicksStop,
@@ -37,6 +28,17 @@ from fefat.strategy.spec import (
     TrailBy,
     TrailingStop,
     TrailUpdate,
+)
+from fefat.strategy.spec import (
+    FixedSize,
+    LimitEntryAtColumn,
+    LimitEntryOffset,
+    MarketEntry,
+    NotionalSize,
+    RiskAmountSize,
+    RiskPercentSize,
+    StopEntryAtColumn,
+    StopEntryOffset,
 )
 
 
