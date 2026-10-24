@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+use crate::units::Overflow;
+
 /// Nanoseconds in a second.
 pub const NANOSECONDS_PER_SECOND: i64 = 1_000_000_000;
 /// Seconds in a UTC day.
@@ -15,6 +17,18 @@ pub const SECONDS_PER_DAY: i64 = 86_400;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Ts(pub i64);
+
+impl Ts {
+    /// The instant `nanoseconds` later, or earlier when they are negative, or [`Overflow`] when it
+    /// leaves 64 bits: an order decided at a close becomes active the latency later (F-ACT-01).
+    pub fn checked_add_nanoseconds(self, nanoseconds: i64) -> Result<Self, Overflow> {
+        self.0.checked_add(nanoseconds).map(Self).ok_or(Overflow {
+            operation: "an instant moved by nanoseconds",
+            left: self.0.into(),
+            right: nanoseconds.into(),
+        })
+    }
+}
 
 /// A trade date, the date of a session (`02` §1.3): days since 1970-01-01, shown as `2026-03-05`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -82,6 +96,17 @@ mod tests {
         );
         assert_eq!(Ts(0).to_string(), "1970-01-01T00:00:00Z");
         assert_eq!(Ts(-1).to_string(), "1969-12-31T23:59:59.999999999Z");
+    }
+
+    #[test]
+    fn an_instant_moved_beyond_64_bits_is_an_error_not_a_wrap() {
+        let latency = 100_000_000;
+        assert_eq!(
+            Ts(1_000).checked_add_nanoseconds(latency),
+            Ok(Ts(100_001_000))
+        );
+        assert_eq!(Ts(0).checked_add_nanoseconds(-1), Ok(Ts(-1)));
+        assert!(Ts(i64::MAX).checked_add_nanoseconds(1).is_err());
     }
 
     #[test]

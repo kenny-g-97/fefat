@@ -26,10 +26,12 @@ pub struct InMemoryMarketData {
 
 impl InMemoryMarketData {
     /// The reader of `contract`'s tape, `days` in ascending order. It refuses a tape that the
-    /// engine could not read as the specification says: no days, dates out of order, a day
-    /// without records, ticks out of `ts_recv` order, sizes below one lot, a bid at or above its
-    /// ask, a bar that does not open before it closes, whose low and high miss its open or close,
-    /// or that overlaps the bar before, and a finer record that no coarser bar holds whole.
+    /// engine could not read as the specification says, as `fefat.reference.tape` does: no days,
+    /// dates out of order, a day without records, ticks out of `ts_recv` order, sizes or quotes
+    /// below one lot, a bid at or above its ask, a bar that does not open before it closes, that
+    /// lasts longer than its timeframe, whose low and high miss its open or close, or that
+    /// overlaps the bar before, and a finer record that no coarser bar holds whole where the
+    /// levels nest (ticks in any bars, finer bars in bars of a whole multiple of their length).
     pub fn new(contract: Contract, days: Vec<TapeDay>) -> Result<Self, TapeError> {
         let (Some(first), Some(last)) = (days.first(), days.last()) else {
             return Err(TapeError::Empty);
@@ -223,16 +225,13 @@ struct TbboTable {
 
 impl TbboTable {
     fn of(rows: &[TbboRow]) -> Self {
-        let trades: Vec<TradeRow> = rows
-            .iter()
-            .map(|row| TradeRow {
-                ts_recv: row.ts_recv,
-                price: row.price,
-                size: row.size,
-            })
-            .collect();
+        let trades = TradeTable {
+            ts_recv: rows.iter().map(|row| row.ts_recv).collect(),
+            price: rows.iter().map(|row| row.price).collect(),
+            size: rows.iter().map(|row| row.size).collect(),
+        };
         Self {
-            trades: TradeTable::of(&trades),
+            trades,
             bid: rows.iter().map(|row| row.bid).collect(),
             ask: rows.iter().map(|row| row.ask).collect(),
             bid_size: rows.iter().map(|row| row.bid_size).collect(),

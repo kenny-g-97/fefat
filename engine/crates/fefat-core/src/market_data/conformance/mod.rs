@@ -93,8 +93,10 @@ pub fn check_sample_tape(reader: &impl MarketDataReader) -> Result<(), Mismatch>
 }
 
 /// Checks that every offsets table `reader` serves takes each bar to the finer records of its
-/// time: on each trade date, from each timeframe's bars to each finer level, the finer records
-/// are in time order, entry `i` counts those before bar `i` opens, and the last counts them all.
+/// time: on each trade date, from each timeframe's bars to each finer level, the bars are in time
+/// order without overlaps, the finer records are in time order, entry `i` counts those before bar
+/// `i` opens and the last counts them all, and, where the levels nest, every record of bar `i`'s
+/// range lies inside bar `i`.
 pub fn check_offsets(reader: &impl MarketDataReader) -> Result<(), Mismatch> {
     for &trade_date in reader.trade_dates() {
         let levels = served(reader.levels(trade_date), "the levels of a trade date")?;
@@ -117,9 +119,10 @@ fn check_descent(
     finer: Fidelity,
 ) -> Result<(), Mismatch> {
     let what = format!("the offsets from {timeframe} bars to {finer} on {trade_date}");
-    let opens = served(reader.bars(trade_date, timeframe), &what)?.ts_open;
-    let times = record_times(reader, trade_date, finer, &what)?;
-    if !times.is_sorted() {
+    let bars = served(reader.bars(trade_date, timeframe), &what)?;
+    check_bar_order(&bars, &format!("the {timeframe} bars of {trade_date}"))?;
+    let records = record_spans(reader, trade_date, finer, &what)?;
+    if !records.iter().map(|(first, _)| first).is_sorted() {
         let what = format!("the {finer} records of {trade_date}");
         return Err(mismatch(
             &what,
@@ -127,27 +130,87 @@ fn check_descent(
             "records out of order",
         ));
     }
-    let mut expected: Vec<u64> = opens
+    let mut starts: Vec<usize> = bars
+        .ts_open
         .iter()
-        .map(|open| times.partition_point(|time| time < open) as u64)
+        .map(|open| records.partition_point(|(first, _)| first < open))
         .collect();
-    expected.push(times.len() as u64);
+    starts.push(records.len());
+    let expected: Vec<u64> = starts.iter().map(|start| *start as u64).collect();
     let offsets = served(reader.offsets(trade_date, timeframe, finer), &what)?;
     let offsets: Vec<u64> = offsets.iter().map(|offset| u64::from(*offset)).collect();
-    expect(&what, expected.as_slice(), offsets.as_slice())
+    expect(&what, expected.as_slice(), offsets.as_slice())?;
+    if !finer.nests_in(timeframe) {
+        return Ok(());
+    }
+    let what = format!("the {finer} records of {trade_date} in the {timeframe} bars");
+    check_held(&what, &records, &starts, bars.ts_close)
 }
 
-/// The instant each record of `level` is placed by: a tick's `ts_recv`, a bar's `ts_open`.
-fn record_times<'reader>(
-    reader: &'reader impl MarketDataReader,
+/// Refuses bars out of time order: each opens before it closes and at or after the close before.
+fn check_bar_order(bars: &BarColumns<'_>, what: &str) -> Result<(), Mismatch> {
+    let each_opens_first = bars
+        .ts_open
+        .iter()
+        .zip(bars.ts_close)
+        .all(|(open, close)| open < close);
+    let mut closes_and_next_opens = bars.ts_close.iter().zip(bars.ts_open.iter().skip(1));
+    if each_opens_first && closes_and_next_opens.all(|(close, next)| close <= next) {
+        return Ok(());
+    }
+    let expected =
+        "bars in time order, each opening before it closes and at or after the last close";
+    Err(mismatch(what, expected, "bars out of order or overlapping"))
+}
+
+/// Refuses a record outside the bar whose range holds it: before the first bar opens, or lasting
+/// to or past its bar's close.
+fn check_held(
+    what: &str,
+    records: &[(Ts, Ts)],
+    starts: &[usize],
+    closes: &[Ts],
+) -> Result<(), Mismatch> {
+    let expected = "each record inside the bar whose range holds it";
+    if let (Some(&before_the_first_bar), Some((first, _))) = (starts.first(), records.first())
+        && before_the_first_bar > 0
+    {
+        let actual = format!("record 1 at {first}, before the first bar");
+        return Err(mismatch(what, expected, actual));
+    }
+    let ranges = starts.iter().zip(starts.iter().skip(1)).zip(closes);
+    for ((start, end), close) in ranges {
+        let mut held = records.iter().enumerate().skip(*start).take(end - start);
+        if let Some((index, (first, _))) = held.find(|(_, (_, last))| last >= close) {
+            let actual = format!(
+                "record {} at {first}, in the bar closing {close}",
+                index + 1
+            );
+            return Err(mismatch(what, expected, actual));
+        }
+    }
+    Ok(())
+}
+
+/// Each record of `level` as the first and the last instant it covers: a tick its `ts_recv`, a
+/// bar every instant from its open to just before its close.
+fn record_spans(
+    reader: &impl MarketDataReader,
     trade_date: TradeDate,
     level: Fidelity,
     what: &str,
-) -> Result<&'reader [Ts], Mismatch> {
+) -> Result<Vec<(Ts, Ts)>, Mismatch> {
+    let ticks = |ts_recv: &[Ts]| ts_recv.iter().map(|ts| (*ts, *ts)).collect();
     match level {
-        Fidelity::Tbbo => Ok(served(reader.tbbo(trade_date), what)?.ts_recv),
-        Fidelity::Trades => Ok(served(reader.trades(trade_date), what)?.ts_recv),
-        Fidelity::Bars(timeframe) => Ok(served(reader.bars(trade_date, timeframe), what)?.ts_open),
+        Fidelity::Tbbo => Ok(ticks(served(reader.tbbo(trade_date), what)?.ts_recv)),
+        Fidelity::Trades => Ok(ticks(served(reader.trades(trade_date), what)?.ts_recv)),
+        Fidelity::Bars(timeframe) => {
+            let bars = served(reader.bars(trade_date, timeframe), what)?;
+            let spans = bars.ts_open.iter().zip(bars.ts_close);
+            Ok(spans
+                .map(|(open, close)| (*open, Ts(close.0.saturating_sub(1))))
+                .collect())
+        }
     }
 }
 
@@ -161,7 +224,7 @@ fn check_records(reader: &impl MarketDataReader, day: &TapeDay) -> Result<(), Mi
         let what = format!("the trades of {date}");
         check_trades(&what, &day.trades, served(reader.trades(date), &what)?)?;
     }
-    for (timeframe, bars) in &day.bars {
+    for (timeframe, bars) in day.bars.iter().filter(|(_, bars)| !bars.is_empty()) {
         let what = format!("the {timeframe} bars of {date}");
         check_bars(&what, bars, served(reader.bars(date, *timeframe), &what)?)?;
     }

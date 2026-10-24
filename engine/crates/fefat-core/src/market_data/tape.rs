@@ -92,7 +92,7 @@ pub enum TapeError {
         trade_date: TradeDate,
     },
     /// A record that breaks a rule of its level.
-    #[error("Expected {expected}, got {level} record {record} on {trade_date}")]
+    #[error("Expected {expected}, got {actual} in {level} record {record} on {trade_date}")]
     InvalidRecord {
         /// Its trade date.
         trade_date: TradeDate,
@@ -102,6 +102,8 @@ pub enum TapeError {
         record: usize,
         /// The rule it breaks.
         expected: &'static str,
+        /// What it holds instead.
+        actual: String,
     },
     /// A finer record that no coarser bar of its day holds whole.
     #[error(
@@ -140,44 +142,52 @@ pub(super) fn check_ticks(
     level: Fidelity,
     ticks: impl Iterator<Item = (Ts, Qty)>,
 ) -> Result<(), TapeError> {
-    let mut previous = None;
+    let mut previous: Option<Ts> = None;
     for (index, (ts_recv, size)) in ticks.enumerate() {
         if size.0 <= 0 {
+            let actual = format!("{size} lots");
             return Err(invalid(
                 trade_date,
                 level,
                 index,
                 "a size of one lot or more",
+                actual,
             ));
         }
-        if previous.is_some_and(|earlier| ts_recv < earlier) {
-            return Err(invalid(
-                trade_date,
-                level,
-                index,
-                "records in the order of their ts_recv",
-            ));
+        if let Some(earlier) = previous.filter(|earlier| ts_recv < *earlier) {
+            let actual = format!("ts_recv {ts_recv} after {earlier}");
+            let expected = "records in the order of their ts_recv";
+            return Err(invalid(trade_date, level, index, expected, actual));
         }
         previous = Some(ts_recv);
     }
     Ok(())
 }
 
-/// Refuses a TBBO record whose bid is not below its ask.
+/// Refuses a TBBO record whose bid is not below its ask, or whose bid or ask holds no lots, as
+/// `fefat.reference.tape.TbboRecord` does.
 pub(super) fn check_quotes(trade_date: TradeDate, records: &[TbboRow]) -> Result<(), TapeError> {
-    match records.iter().position(|record| record.bid >= record.ask) {
-        Some(index) => Err(invalid(
-            trade_date,
-            Fidelity::Tbbo,
-            index,
-            "a bid below the ask",
-        )),
-        None => Ok(()),
+    for (index, record) in records.iter().enumerate() {
+        if record.bid >= record.ask {
+            let actual = format!("bid {} and ask {}", record.bid, record.ask);
+            let expected = "a bid below the ask";
+            return Err(invalid(trade_date, Fidelity::Tbbo, index, expected, actual));
+        }
+        if record.bid_size.0 <= 0 || record.ask_size.0 <= 0 {
+            let actual = format!(
+                "bid size {} and ask size {}",
+                record.bid_size, record.ask_size
+            );
+            let expected = "a bid and an ask of one lot or more";
+            return Err(invalid(trade_date, Fidelity::Tbbo, index, expected, actual));
+        }
     }
+    Ok(())
 }
 
-/// Refuses a bar that does not open before it closes, whose low and high miss its open or its
-/// close, that traded no lots, or that overlaps the bar before it.
+/// Refuses a bar that does not open before it closes, that lasts longer than its timeframe (a
+/// daily bar may), whose low and high miss its open or its close, that traded no lots, or that
+/// overlaps the bar before it.
 pub(super) fn check_bars(
     trade_date: TradeDate,
     timeframe: Timeframe,
@@ -185,45 +195,61 @@ pub(super) fn check_bars(
 ) -> Result<(), TapeError> {
     let mut previous_close = None;
     for (index, bar) in bars.iter().enumerate() {
-        if let Some(expected) = bar_problem(bar, previous_close) {
-            return Err(invalid(
-                trade_date,
-                Fidelity::Bars(timeframe),
-                index,
-                expected,
-            ));
+        if let Some((expected, actual)) = bar_problem(timeframe, bar, previous_close) {
+            let level = Fidelity::Bars(timeframe);
+            return Err(invalid(trade_date, level, index, expected, actual));
         }
         previous_close = Some(bar.ts_close);
     }
     Ok(())
 }
 
-fn bar_problem(bar: &BarRow, previous_close: Option<Ts>) -> Option<&'static str> {
+fn bar_problem(
+    timeframe: Timeframe,
+    bar: &BarRow,
+    previous_close: Option<Ts>,
+) -> Option<(&'static str, String)> {
+    let span = || format!("a bar from {} to {}", bar.ts_open, bar.ts_close);
     if bar.ts_open >= bar.ts_close {
-        return Some("a bar that opens before it closes");
+        return Some(("a bar that opens before it closes", span()));
+    }
+    let length = bar.ts_close.0.checked_sub(bar.ts_open.0);
+    if !length.is_some_and(|length| timeframe.fits(length)) {
+        return Some(("a bar no longer than its timeframe", span()));
     }
     if bar.low > bar.open.min(bar.close) || bar.high < bar.open.max(bar.close) {
-        return Some("a bar whose low and high hold its open and close");
+        let (open, high, low, close) = (bar.open, bar.high, bar.low, bar.close);
+        let prices = format!("open {open}, high {high}, low {low}, close {close}");
+        return Some(("a bar whose low and high hold its open and close", prices));
     }
     if bar.volume.0 <= 0 {
-        return Some("a bar of one lot or more (F-BAR-07)");
+        return Some((
+            "a bar of one lot or more (F-BAR-07)",
+            format!("{} lots", bar.volume),
+        ));
     }
-    if previous_close.is_some_and(|close| bar.ts_open < close) {
-        return Some("bars that do not overlap, each opening at or after the close before it");
+    if let Some(close) = previous_close.filter(|close| bar.ts_open < *close) {
+        let expected = "bars that do not overlap, each opening at or after the close before it";
+        return Some((
+            expected,
+            format!("a bar opening {} before the close {close}", bar.ts_open),
+        ));
     }
     None
 }
 
-const fn invalid(
+fn invalid(
     trade_date: TradeDate,
     level: Fidelity,
     index: usize,
     expected: &'static str,
+    actual: String,
 ) -> TapeError {
     TapeError::InvalidRecord {
         trade_date,
         level,
         record: index + 1,
         expected,
+        actual,
     }
 }

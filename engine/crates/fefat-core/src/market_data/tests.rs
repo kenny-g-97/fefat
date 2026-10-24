@@ -7,6 +7,7 @@ use super::conformance::{
     FIRST_DAY, SAMPLE_CONTRACT, SECOND_DAY, check_offsets, check_sample_tape, sample_tape,
 };
 use super::*;
+use crate::fidelity::TimeUnit;
 use crate::instants::NANOSECONDS_PER_SECOND;
 
 fn sample_reader(days: Vec<TapeDay>) -> Result<InMemoryMarketData, TapeError> {
@@ -89,7 +90,8 @@ fn trades_out_of_time_order_are_refused() {
     tape[0].trades.swap(0, 1);
     assert_eq!(
         sample_reader(tape).unwrap_err().to_string(),
-        "Expected records in the order of their ts_recv, got trades record 2 on 2026-03-05"
+        "Expected records in the order of their ts_recv, got ts_recv 2026-03-05T14:30:00.1Z after \
+         2026-03-05T14:30:00.6Z in trades record 2 on 2026-03-05"
     );
 }
 
@@ -126,7 +128,8 @@ fn a_bar_whose_low_and_high_miss_its_close_is_refused() {
     let refused = sample_reader(tape).unwrap_err();
     assert_eq!(
         refused.to_string(),
-        "Expected a bar whose low and high hold its open and close, got 5m record 1 on 2026-03-06"
+        "Expected a bar whose low and high hold its open and close, got open 5010, high 5012.5, \
+         low 5008.25, close 5012.500000001 in 5m record 1 on 2026-03-06"
     );
 }
 
@@ -135,11 +138,12 @@ fn overlapping_bars_are_refused() {
     let mut tape = sample_tape();
     let bars = tape[1].bars.get_mut(&Timeframe::FIVE_MINUTES).unwrap();
     bars[1].ts_open = Ts(bars[0].ts_close.0 - 1);
+    bars[1].ts_close = Ts(bars[1].ts_close.0 - 1);
     let refused = sample_reader(tape).unwrap_err();
-    assert!(matches!(
-        refused,
-        TapeError::InvalidRecord { record: 2, .. }
-    ));
+    let expected = "bars that do not overlap, each opening at or after the close before it";
+    assert!(
+        matches!(refused, TapeError::InvalidRecord { record: 2, expected: rule, .. } if rule == expected)
+    );
 }
 
 #[test]
@@ -158,10 +162,15 @@ fn a_trade_after_every_bar_is_refused() {
 }
 
 #[test]
-fn a_second_bar_that_outlasts_its_minute_is_refused() {
+fn a_second_bar_across_its_minute_close_is_refused() {
     let mut tape = sample_tape();
+    let minute_close = tape[0].bars[&Timeframe::ONE_MINUTE][1].ts_close;
+    let half_a_second = NANOSECONDS_PER_SECOND / 2;
     let seconds = tape[0].bars.get_mut(&Timeframe::ONE_SECOND).unwrap();
-    seconds[4].ts_close = Ts(seconds[4].ts_close.0 + 30 * NANOSECONDS_PER_SECOND);
+    seconds[4].ts_open = Ts(minute_close.0 - half_a_second);
+    seconds[4].ts_close = Ts(minute_close.0 + half_a_second);
+    tape[0].trades[5].ts_recv = Ts(minute_close.0 - half_a_second / 2);
+    tape[0].tbbo[5].ts_recv = tape[0].trades[5].ts_recv;
     assert_eq!(
         sample_reader(tape).unwrap_err(),
         TapeError::RecordOutsideBars {
@@ -171,6 +180,136 @@ fn a_second_bar_that_outlasts_its_minute_is_refused() {
             record: 5,
         }
     );
+}
+
+#[test]
+fn a_quote_of_no_lots_is_refused() {
+    let mut tape = sample_tape();
+    tape[0].tbbo[0].ask_size = Qty(0);
+    assert!(sample_reader(tape).is_err());
+}
+
+#[test]
+fn a_bar_longer_than_its_timeframe_is_refused() {
+    let mut tape = sample_tape();
+    let bars = tape[1].bars.get_mut(&Timeframe::FIVE_MINUTES).unwrap();
+    bars[1].ts_close = Ts(bars[1].ts_close.0 + 600 * NANOSECONDS_PER_SECOND);
+    assert!(sample_reader(tape).is_err());
+}
+
+#[test]
+fn bars_of_timeframes_that_do_not_nest_are_served_side_by_side() {
+    let mut tape = sample_tape();
+    let two_minutes = Timeframe::new(2, TimeUnit::Minute).unwrap();
+    let first_open = tape[1].bars[&Timeframe::FIVE_MINUTES][0].ts_open;
+    let two_minute_bars = (0..5)
+        .map(|bar| {
+            let ts_open = Ts(first_open.0 + bar * 120 * NANOSECONDS_PER_SECOND);
+            let price = Price(5_010 * crate::units::PRICE_UNITS);
+            let (open, high, low, close) = (price, price, price, price);
+            let ts_close = Ts(ts_open.0 + 120 * NANOSECONDS_PER_SECOND);
+            BarRow {
+                ts_open,
+                ts_close,
+                open,
+                high,
+                low,
+                close,
+                volume: Qty(10),
+            }
+        })
+        .collect();
+    tape[1].bars.insert(two_minutes, two_minute_bars);
+    let reader = sample_reader(tape).unwrap();
+    let descent = reader.offsets(
+        SECOND_DAY,
+        Timeframe::FIVE_MINUTES,
+        Fidelity::Bars(two_minutes),
+    );
+    assert_eq!(descent.unwrap(), [0, 3, 5]);
+    assert_eq!(check_offsets(&reader), Ok(()));
+}
+
+#[test]
+fn the_offsets_check_refuses_a_trade_received_after_its_bar_closed() {
+    let reader = sample_reader(sample_tape()).unwrap();
+    let trades = reader.trades(FIRST_DAY).unwrap();
+    let mut ts_recv = trades.ts_recv.to_vec();
+    let (mut price, mut size) = (trades.price.to_vec(), trades.size.to_vec());
+    ts_recv.push(Ts(ts_recv[0].0 + 15 * 60 * NANOSECONDS_PER_SECOND));
+    price.push(price[0]);
+    size.push(Qty(1));
+    let outside = TradeAfterTheBars {
+        reader,
+        ts_recv,
+        price,
+        size,
+    };
+    let refused = check_offsets(&outside).unwrap_err();
+    assert_eq!(
+        refused.what,
+        "the trades records of 2026-03-05 in the 1s bars"
+    );
+}
+
+/// The in-memory reader of the sample tape with a seventh trade, received at 14:45:00.1 after
+/// every bar has closed, served with the offsets a cache that kept it would give: inside the
+/// last bar's range.
+struct TradeAfterTheBars {
+    reader: InMemoryMarketData,
+    ts_recv: Vec<Ts>,
+    price: Vec<Price>,
+    size: Vec<Qty>,
+}
+
+impl MarketDataReader for TradeAfterTheBars {
+    fn contract(&self) -> &Contract {
+        self.reader.contract()
+    }
+
+    fn trade_dates(&self) -> &[TradeDate] {
+        self.reader.trade_dates()
+    }
+
+    fn levels(&self, trade_date: TradeDate) -> Result<&[Fidelity], MarketDataError> {
+        self.reader.levels(trade_date)
+    }
+
+    fn bars(
+        &self,
+        trade_date: TradeDate,
+        timeframe: Timeframe,
+    ) -> Result<BarColumns<'_>, MarketDataError> {
+        self.reader.bars(trade_date, timeframe)
+    }
+
+    fn trades(&self, trade_date: TradeDate) -> Result<TradeColumns<'_>, MarketDataError> {
+        if trade_date != FIRST_DAY {
+            return self.reader.trades(trade_date);
+        }
+        Ok(TradeColumns {
+            ts_recv: &self.ts_recv,
+            price: &self.price,
+            size: &self.size,
+        })
+    }
+
+    fn tbbo(&self, trade_date: TradeDate) -> Result<TbboColumns<'_>, MarketDataError> {
+        self.reader.tbbo(trade_date)
+    }
+
+    fn offsets(
+        &self,
+        trade_date: TradeDate,
+        timeframe: Timeframe,
+        finer: Fidelity,
+    ) -> Result<&[u32], MarketDataError> {
+        match (trade_date == FIRST_DAY, timeframe, finer) {
+            (true, Timeframe::ONE_MINUTE, Fidelity::Trades) => Ok(&[0, 4, 7]),
+            (true, Timeframe::ONE_SECOND, Fidelity::Trades) => Ok(&[0, 2, 3, 4, 5, 7]),
+            _ => self.reader.offsets(trade_date, timeframe, finer),
+        }
+    }
 }
 
 /// The in-memory reader with every offsets table served one bar late, each bar descending to

@@ -98,8 +98,52 @@ fn a_fill_larger_than_the_position_reverses_it_through_flat() {
     ledger
         .book(&fill(Side::Sell, 3, points(5_000), Money(0)))
         .unwrap();
-    assert_eq!(ledger.position(), Position::Short(Qty(2)));
+    assert_eq!(ledger.position(), Position::Short(HeldLots(Qty(2))));
     assert_eq!(ledger.position().signed_lots(), Qty(-2));
+}
+
+#[test]
+fn a_short_beyond_64_bits_of_lots_is_refused() {
+    let short = Position::Flat.after(Side::Sell, Qty(i64::MAX)).unwrap();
+    assert_eq!(short.signed_lots(), Qty(-i64::MAX));
+    assert!(matches!(
+        short.after(Side::Sell, Qty(1)),
+        Err(LedgerError::Overflow(_))
+    ));
+}
+
+#[test]
+fn a_maker_rebate_is_received_as_a_negative_fee() {
+    let btc = instrument(PRODUCTS[3]);
+    let mut ledger = Ledger::new(btc, STARTING_CASH);
+    let one_basis_point = Money(-78_000);
+    ledger
+        .book(&fill(Side::Buy, 13, points(60_000), one_basis_point))
+        .unwrap();
+    assert_eq!(
+        ledger.cash(),
+        Money(STARTING_CASH.0 - 780 * MONEY_UNITS + 78_000)
+    );
+}
+
+#[test]
+fn the_debug_check_allows_the_widest_rounding_of_a_correct_booking() {
+    let fraction_of_a_micro_unit = instrument((1, 1, 1));
+    let mut lowest = Ledger::new(fraction_of_a_micro_unit, Money(0));
+    lowest.mark_at(Price(999_999_999));
+    lowest
+        .book(&fill(Side::Buy, 1, Price(1), Money(0)))
+        .unwrap();
+    assert_eq!(lowest.equity(), Ok(Money(-1)));
+    let mut highest = Ledger::new(fraction_of_a_micro_unit, Money(0));
+    highest
+        .book(&fill(Side::Buy, 1, Price(0), Money(0)))
+        .unwrap();
+    highest.mark_at(Price(999_999_999));
+    highest
+        .book(&fill(Side::Sell, 1, Price(0), Money(0)))
+        .unwrap();
+    assert_eq!(highest.equity(), Ok(Money(0)));
 }
 
 #[test]
@@ -141,7 +185,7 @@ fn an_open_position_has_no_equity_before_its_first_mark() {
         .book(&fill(Side::Buy, 1, points(5_000), Money(0)))
         .unwrap();
     let unmarked = LedgerError::UnmarkedPosition {
-        position: Position::Long(Qty(1)),
+        position: Position::Long(HeldLots(Qty(1))),
     };
     assert_eq!(ledger.equity(), Err(unmarked));
 }
@@ -290,8 +334,8 @@ proptest! {
             bought += step.side.sign() * step.lots;
             let held = match ledger.position() {
                 Position::Flat => 0,
-                Position::Long(lots) | Position::Short(lots) => {
-                    prop_assert!(lots.0 > 0, "{:?} holds no lots", ledger.position());
+                Position::Long(held) | Position::Short(held) => {
+                    prop_assert!(held.lots().0 > 0, "{:?} holds no lots", ledger.position());
                     ledger.position().signed_lots().0
                 }
             };

@@ -100,7 +100,10 @@ pub trait MarketDataReader {
     /// Where each bar of `timeframe` starts among the rows of the `finer` level on `trade_date`:
     /// entry `i` counts the finer rows before bar `i` opens (a tick by its `ts_recv`, a bar by its
     /// `ts_open`), and one more entry, the finer rows' count, closes the last bar's range, so that
-    /// bar `i` descends to rows `offsets[i]..offsets[i + 1]` (step 2.7).
+    /// bar `i` descends to rows `offsets[i]..offsets[i + 1]` (step 2.7). Where the levels nest
+    /// (ticks in any bars, finer bars in bars of a whole multiple of their length), every row of
+    /// bar `i`'s range lies inside bar `i`, so a descent never meets a record that no stored bar
+    /// holds.
     fn offsets(
         &self,
         trade_date: TradeDate,

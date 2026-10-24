@@ -66,6 +66,9 @@ pub(super) fn offsets_between_levels(
                 timeframe: *timeframe,
                 finer: *finer,
             };
+            if finer.nests_in(*timeframe) {
+                descent.check_held_whole(coarser, finer_spans)?;
+            }
             offsets.insert((*timeframe, *finer), descent.offsets(coarser, finer_spans)?);
         }
     }
@@ -80,10 +83,9 @@ struct Descent {
 }
 
 impl Descent {
-    /// For each bar, the count of finer records before it opens, then their whole count; a finer
-    /// record that no bar holds whole is refused.
-    fn offsets(&self, bars: &[BarRow], spans: &[Span]) -> Result<Vec<u32>, TapeError> {
-        let mut offsets = Vec::with_capacity(bars.len() + 1);
+    /// Refuses a finer record that no bar holds whole: one before the first bar, between two
+    /// bars, after the last, or one that lasts past its bar's close.
+    fn check_held_whole(&self, bars: &[BarRow], spans: &[Span]) -> Result<(), TapeError> {
         let mut held_until = 0;
         for bar in bars {
             let start = spans.partition_point(|span| span.first < bar.ts_open);
@@ -97,12 +99,22 @@ impl Descent {
             if let Some(sticking_out) = held.position(|span| span.last >= bar.ts_close) {
                 return Err(self.outside(start + sticking_out));
             }
-            offsets.push(self.count(start)?);
             held_until = spans.partition_point(|span| span.first < bar.ts_close);
         }
         if held_until < spans.len() {
             return Err(self.outside(held_until));
         }
+        Ok(())
+    }
+
+    /// For each bar, the count of finer records before it opens, then their whole count.
+    fn offsets(&self, bars: &[BarRow], spans: &[Span]) -> Result<Vec<u32>, TapeError> {
+        let starts = bars
+            .iter()
+            .map(|bar| spans.partition_point(|span| span.first < bar.ts_open));
+        let mut offsets: Vec<u32> = starts
+            .map(|start| self.count(start))
+            .collect::<Result<_, _>>()?;
         offsets.push(self.count(spans.len())?);
         Ok(offsets)
     }

@@ -4,8 +4,7 @@
 //! to what a run produces changes its key (D-11). The versions are bumped by hand and never taken
 //! from the crate's version (Phase 2's conventions, the `engine-golden` skill).
 
-use std::fmt;
-
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::strategy_spec::StrategySpec;
@@ -38,26 +37,35 @@ impl RunKey {
     }
 }
 
-impl fmt::Display for RunKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-/// A specification serde could not write as JSON.
+/// Why a run key could not be worked out.
 #[derive(Debug, Error)]
-#[error("Expected a strategy specification that serde writes as JSON, got: {0}")]
-pub struct RunKeyError(#[from] serde_json::Error);
+pub enum RunKeyError {
+    /// Serde could not write the specification as JSON.
+    #[error("Expected a strategy specification that serde writes as JSON, got: {0}")]
+    Json(#[from] serde_json::Error),
+    /// A number JSON cannot hold, NaN or an infinity, which serde writes as null, so that two
+    /// specifications would share one key.
+    #[error(
+        "Expected finite numbers in the strategy specification, got NaN or an infinity at {path}"
+    )]
+    NonFiniteNumber {
+        /// Where in the specification, such as `spec.execution.sizing.units`.
+        path: String,
+    },
+}
 
 /// The key of a run of `spec` on the signal frame hashed `signal_frame_hash`, reading the data
 /// partitions hashed `partition_hashes`, in any order, by this build's [`VERSIONS`]. The spec is
 /// hashed as the JSON serde writes for it, so that the layout of a document someone typed never
-/// changes the key.
+/// changes the key; a spec with NaN or an infinity, which that JSON cannot hold, is refused.
 pub fn run_key(
     spec: &StrategySpec,
     signal_frame_hash: &str,
     partition_hashes: &[String],
 ) -> Result<RunKey, RunKeyError> {
+    if let Some(path) = null_at(&serde_json::to_value(spec)?, "spec") {
+        return Err(RunKeyError::NonFiniteNumber { path });
+    }
     let spec_json = serde_json::to_vec(spec)?;
     Ok(key_of(
         &spec_json,
@@ -65,6 +73,22 @@ pub fn run_key(
         partition_hashes,
         VERSIONS,
     ))
+}
+
+/// The path of the first null in `value`, which only a number JSON cannot hold puts there: a
+/// specification leaves an unused rule out rather than writing null (D-53).
+fn null_at(value: &Value, path: &str) -> Option<String> {
+    match value {
+        Value::Null => Some(path.to_owned()),
+        Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| null_at(item, &format!("{path}[{index}]"))),
+        Value::Object(fields) => fields
+            .iter()
+            .find_map(|(name, field)| null_at(field, &format!("{path}.{name}"))),
+        Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
+    }
 }
 
 /// BLAKE3 over a domain tag and the parts, each framed by its length so that no two inputs give
@@ -195,6 +219,24 @@ mod tests {
         assert_eq!(
             run_key(&typed, FRAME, &partitions()).unwrap(),
             run_key(&spec("5m"), FRAME, &partitions()).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_spec_with_a_number_json_cannot_write_is_refused() {
+        let sized = |units: f64| {
+            let mut spec = spec("5m");
+            spec.execution.sizing = crate::strategy_spec::Sizing::Fixed { units };
+            spec
+        };
+        assert!(run_key(&sized(f64::NAN), FRAME, &partitions()).is_err());
+        assert!(run_key(&sized(f64::INFINITY), FRAME, &partitions()).is_err());
+        assert_eq!(
+            run_key(&sized(f64::NEG_INFINITY), FRAME, &partitions())
+                .unwrap_err()
+                .to_string(),
+            "Expected finite numbers in the strategy specification, got NaN or an infinity at \
+             spec.execution.sizing.units"
         );
     }
 }

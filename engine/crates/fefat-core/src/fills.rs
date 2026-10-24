@@ -96,6 +96,7 @@ pub struct Fill {
     pub slippage_ticks: i64,
     /// Its flags.
     pub flags: FillFlags,
-    /// The fee the trader pays for it, zero or more, already rounded up (F-FEE-03).
+    /// The fee the trader pays for it, already rounded against the trader (F-FEE-03): negative
+    /// for a maker rebate, which a crypto fee table may give (F-FEE-02).
     pub fee: Money,
 }

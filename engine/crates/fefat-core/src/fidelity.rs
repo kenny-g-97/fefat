@@ -85,6 +85,21 @@ impl Timeframe {
     const fn nominal_seconds(self) -> u64 {
         self.count as u64 * self.unit.seconds()
     }
+
+    /// Whether each bar of this timeframe holds whole bars of `finer`, as it does when its length
+    /// is a whole multiple of `finer`'s, both being bucketed from the session's open (`02` §1.4).
+    pub(crate) const fn holds_whole(self, finer: Self) -> bool {
+        self.nominal_seconds()
+            .is_multiple_of(finer.nominal_seconds())
+    }
+
+    /// Whether a stored bar lasting `nanoseconds` fits this timeframe: no longer than it, or any
+    /// length for a daily bar, whose session a holiday can stretch past a day, as
+    /// `fefat.reference.tape.check_tape` reads it.
+    pub(crate) const fn fits(self, nanoseconds: i64) -> bool {
+        let longest = self.nominal_seconds() as i128 * 1_000_000_000;
+        matches!(self.unit, TimeUnit::Day) || nanoseconds as i128 <= longest
+    }
 }
 
 impl Ord for Timeframe {
@@ -119,6 +134,18 @@ pub enum Fidelity {
     Trades,
     /// Stored bars of a timeframe.
     Bars(Timeframe),
+}
+
+impl Fidelity {
+    /// Whether every record of this level belongs inside one of `timeframe`'s bars: a tick
+    /// always, a bar when `timeframe`'s length is a whole multiple of its own. Bars that do not
+    /// nest, such as 1-minute and 90-second bars, can be served side by side.
+    pub(crate) const fn nests_in(self, timeframe: Timeframe) -> bool {
+        match self {
+            Self::Bars(finer) => timeframe.holds_whole(finer),
+            Self::Tbbo | Self::Trades => true,
+        }
+    }
 }
 
 impl fmt::Display for Fidelity {

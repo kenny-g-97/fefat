@@ -17,15 +17,27 @@ use crate::units::{Money, Overflow, Price, Qty};
 #[cfg(test)]
 mod tests;
 
-/// A position: flat, or long or short a number of lots above zero.
+/// A position: flat, or long or short the lots it holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
     /// No lots held.
     Flat,
     /// Lots bought and not yet sold.
-    Long(Qty),
+    Long(HeldLots),
     /// Lots sold and not yet bought back.
-    Short(Qty),
+    Short(HeldLots),
+}
+
+/// The lots a long or a short holds, one or more: only [`Position::after`] makes them, so that no
+/// position is open with no lots or with fewer than none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeldLots(Qty);
+
+impl HeldLots {
+    /// The lots, one or more.
+    pub const fn lots(self) -> Qty {
+        self.0
+    }
 }
 
 impl Position {
@@ -33,8 +45,8 @@ impl Position {
     pub const fn signed_lots(self) -> Qty {
         match self {
             Self::Flat => Qty(0),
-            Self::Long(lots) => lots,
-            Self::Short(lots) => Qty(-lots.0),
+            Self::Long(held) => held.0,
+            Self::Short(held) => Qty(-held.0.0),
         }
     }
 
@@ -46,9 +58,9 @@ impl Position {
         }
         let held = self.signed_lots().checked_add(Qty(side.sign() * lots.0))?;
         match held.0.cmp(&0) {
-            Ordering::Greater => Ok(Self::Long(held)),
+            Ordering::Greater => Ok(Self::Long(HeldLots(held))),
             Ordering::Equal => Ok(Self::Flat),
-            Ordering::Less => Ok(Self::Short(Qty(0).checked_sub(held)?)),
+            Ordering::Less => Ok(Self::Short(HeldLots(Qty(0).checked_sub(held)?))),
         }
     }
 }
@@ -57,8 +69,8 @@ impl fmt::Display for Position {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Flat => formatter.write_str("flat"),
-            Self::Long(lots) => write!(formatter, "long {lots} lots"),
-            Self::Short(lots) => write!(formatter, "short {lots} lots"),
+            Self::Long(held) => write!(formatter, "long {} lots", held.0),
+            Self::Short(held) => write!(formatter, "short {} lots", held.0),
         }
     }
 }
@@ -160,21 +172,39 @@ impl Ledger {
         Ok(self.cash.checked_add(self.position_value()?)?)
     }
 
-    /// Debug builds hold every booking to the accounting identity: a fill moves equity by its fee
-    /// and by the mark's distance from its price over the lots it adds, exactly but for the three
-    /// amounts each rounded once, the cash the fill moved and the position's value before and
-    /// after, so the move lies within two micro-units below and one above the exact one.
+    /// Debug builds hold every booking to the accounting identity (F-MRK-01, F-FEE-03). The cash
+    /// moves by the fill's exact value, the other way, and by its fee, within the micro-unit that
+    /// rounding the value takes from the trader. Once the position is marked, equity moves by the
+    /// fee and by the mark's distance from the fill's price over the lots the fill adds, exactly
+    /// but for three amounts each rounded once (the cash the fill moved and the position's value
+    /// before and after), so within two micro-units below and one above.
     #[cfg(debug_assertions)]
     fn check_booking(&self, before: &Self, fill: &Fill) {
+        let units = i128::from(crate::units::PRICE_UNITS);
+        let added = i128::from(fill.side.sign()) * i128::from(fill.lots.0);
+        let per_point = i128::from(self.instrument.money_per_point().0);
+        let fee = i128::from(fill.fee.0) * units;
+        let cash_moved = (i128::from(self.cash.0) - i128::from(before.cash.0)) * units;
+        let exact_cash = (-added)
+            .checked_mul(i128::from(fill.price.0))
+            .and_then(|value| value.checked_mul(per_point))
+            .and_then(|value| value.checked_sub(fee));
+        if let Some(rounding) = exact_cash.and_then(|exact| cash_moved.checked_sub(exact)) {
+            debug_assert!(
+                -units < rounding && rounding <= 0,
+                "Expected booking {fill:?} to move the cash from {} by the fill's value and fee, \
+                 got {}",
+                before.cash,
+                self.cash
+            );
+        }
         let (Some(mark), Ok(start), Ok(end)) = (self.mark, before.equity(), self.equity()) else {
             return;
         };
-        let units = i128::from(crate::units::PRICE_UNITS);
-        let added = i128::from(fill.side.sign()) * i128::from(fill.lots.0);
         let exact = (i128::from(mark.0) - i128::from(fill.price.0))
             .checked_mul(added)
-            .and_then(|gap| gap.checked_mul(i128::from(self.instrument.money_per_point().0)))
-            .and_then(|gap| gap.checked_sub(i128::from(fill.fee.0) * units));
+            .and_then(|gap| gap.checked_mul(per_point))
+            .and_then(|gap| gap.checked_sub(fee));
         let booked = (i128::from(end.0) - i128::from(start.0)) * units;
         if let Some(rounding) = exact.and_then(|exact| booked.checked_sub(exact)) {
             debug_assert!(

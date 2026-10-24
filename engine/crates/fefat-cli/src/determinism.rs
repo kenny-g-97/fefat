@@ -57,14 +57,15 @@ pub fn digest(seed: u64) -> Result<String, DeterminismError> {
     let mut generator = SplitMix64::new(seed);
     let contract = Contract(SEEDED_CONTRACT.to_owned());
     let reader = InMemoryMarketData::new(contract, seeded_tape(&mut generator))?;
-    let data = market_data_hash(&reader)?;
-    let ledger = ledger_run_hash(&reader, &mut generator)?;
+    let records_digest = market_data_hash(&reader)?;
+    let ledger_run_digest = ledger_run_hash(&reader, &mut generator)?;
     let spec: StrategySpec = serde_json::from_str(EXAMPLE_SPEC)?;
-    let key = run_key(&spec, &ledger.to_hex(), &[data.to_hex().to_string()])?;
+    let partitions = [records_digest.to_hex().to_string()];
+    let key = run_key(&spec, &ledger_run_digest.to_hex(), &partitions)?;
     let mut hasher = blake3::Hasher::new();
     hasher.update(DOMAIN);
-    hasher.update(data.as_bytes());
-    hasher.update(ledger.as_bytes());
+    hasher.update(records_digest.as_bytes());
+    hasher.update(ledger_run_digest.as_bytes());
     hasher.update(key.as_str().as_bytes());
     Ok(hasher.finalize().to_hex().to_string())
 }
