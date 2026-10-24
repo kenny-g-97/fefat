@@ -1,0 +1,7 @@
+# The workspace denies unwrap, expect, panic, and unchecked indexing (Cargo.toml,
+# .claude/rules/engine.md); tests may use them, so that a failing test stops at once
+# and a hand-written tape reads as its rows.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
