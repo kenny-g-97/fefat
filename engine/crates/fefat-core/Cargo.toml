@@ -10,6 +10,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 # Without fork, timeout, and bit-set, which no test uses: 11 fewer crates to compile.

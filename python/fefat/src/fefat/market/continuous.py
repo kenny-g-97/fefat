@@ -29,8 +29,8 @@ traded in before `d`, and `adj_offset` falls by it: adjusted prices are raw pric
 same adjusted. `RollCalendar.rolls` lists the rolls, at whose opens the engine transfers a
 position held across them (step 2.9), and `continuous_bars` keeps the front's bars of each
 session with adjusted prices, `close_raw`, `adj_offset`, and `roll_flag` on each new front's
-first bar. No row or bar depends on later data: those by any instant are the same when the data
-stops there (D-12).
+first bar at or after its roll's open. No row or bar depends on later data: those by any instant
+are the same when the data stops there (D-12).
 
     mes = instruments.get("MES")
     sessions = sessions_of(mes.session_calendar(), paths.cache_dir)
@@ -178,20 +178,37 @@ class RollCalendar:
     def continuous_bars(self, bars: pl.DataFrame) -> pl.DataFrame:
         """The bars of each session's front among `bars`, which have the columns of
         `CONTRACT_BAR_COLUMNS`, sorted by `ts_open`, with the columns of `CONTINUOUS_COLUMNS`;
-        `roll_flag` marks a bar whose contract is not that of the bar before it, a new front's
-        first, which the first bar given never is. Bars of other contracts, and of sessions
-        without a row, are left out."""
+        `roll_flag` marks the first bar of each new front at or after its roll's open, for the
+        rolls from the first bar given on, so that bars starting at a roll's open flag their
+        first (D-53). Bars of other contracts, and of sessions without a row, are left out."""
         source = f"the bars of {self._root} to splice"
         require_columns(CONTRACT_BAR_COLUMNS, bars.schema, source)
         require_bars_apart(bars, source)
         fronts = self._rows.select("trade_date", "contract", "adj_offset")
         spliced = bars.join(fronts, on=["trade_date", "contract"]).sort("ts_open")
-        new_front = pl.col("contract") != pl.col("contract").shift(1)
         adjusted = [pl.col(column) + pl.col("adj_offset") for column in _ADJUSTED_COLUMNS]
+        rolled_to = self._first_bars_after_rolls(spliced, bars)
         return (
-            spliced.with_columns(close_raw=pl.col("close"), roll_flag=new_front.fill_null(False))
+            spliced.with_columns(close_raw=pl.col("close"))
             .with_columns(adjusted)
+            .join(rolled_to, on=["contract", "ts_open"], how="left", maintain_order="left")
+            .with_columns(roll_flag=pl.col("roll_flag").fill_null(False))
             .select(CONTINUOUS_COLUMNS.names())
+        )
+
+    def _first_bars_after_rolls(self, spliced: pl.DataFrame, given: pl.DataFrame) -> pl.DataFrame:
+        """The `contract` and `ts_open` of each new front's first bar among `spliced` at or after
+        its roll's open, for the rolls opening at or after the first of the bars `given`, with
+        `roll_flag` true."""
+        first_open = pl.lit(given.get_column("ts_open").min(), dtype=pl.Int64)
+        rolls = self.rolls().filter(pl.col("session_open") >= first_open)
+        return (
+            spliced.select("contract", "ts_open")
+            .join(rolls.select("contract", "session_open"), on="contract")
+            .filter(pl.col("ts_open") >= pl.col("session_open"))
+            .group_by("contract")
+            .agg(pl.col("ts_open").min())
+            .with_columns(roll_flag=pl.lit(True))
         )
 
 

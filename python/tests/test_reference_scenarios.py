@@ -116,6 +116,7 @@ def test_the_readme_lists_every_scenario_with_its_fidelity_and_title() -> None:
 
 def test_a_stop_gapped_through_fills_at_the_first_trade_past_it() -> None:
     scenario = load_scenario(SCENARIOS / "S-fill-012.yaml")
+    assert isinstance(scenario, Scenario)
     (stop,) = scenario.orders
     (fill,) = scenario.expected.fills
 

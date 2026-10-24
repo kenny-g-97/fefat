@@ -1,11 +1,14 @@
 """Fill scenarios: the hand-computable cases that specify how the engines fill orders (D-10).
 
 A scenario is one YAML file in `fixtures/scenarios/`, named by its id (`S-fill-012.yaml`): a
-tape (`fefat.reference.tape`), an instrument, the orders placed at given instants
-(`fefat.reference.orders`), and the fills, marks, and funding payments the rules of
-`docs/spec/fill-semantics.md` give, with the identifiers of the rules it exercises;
-`fixtures/scenarios/README.md` documents the format. Its values are held in the units both
-engines count in (`fefat.reference.units`), so that their fills compare as integers:
+tape (`fefat.reference.tape`), an instrument, and the fills, marks, and funding payments the
+rules of `docs/spec/fill-semantics.md` give, with the identifiers of the rules it exercises. An
+order scenario (`Scenario`) places orders at given instants (`fefat.reference.orders`); a template
+scenario (`TemplateScenario`, step 2.3) gives a `StrategySpec` and the rows of its signal frame
+(`fefat.reference.signal_rows`), which the reference engine runs through its template
+(`fefat.reference.template`). `fixtures/scenarios/README.md` documents the format. Its values
+are held in the units both engines count in (`fefat.reference.units`), so that their fills
+compare as integers:
 
     load_scenario(Path("fixtures/scenarios/S-fill-012.yaml")).expected.fills[0].price
     # 4_990_250_000_000, written "4990.25"
@@ -14,9 +17,11 @@ engines count in (`fefat.reference.units`), so that their fills compare as integ
 import re
 from collections import Counter
 from collections.abc import Iterator
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Self
 
+import polars as pl
 import yaml
 from pydantic import (
     BeforeValidator,
@@ -35,6 +40,7 @@ from fefat.market.schema import FrozenModel
 from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import OpenPosition, Order, OrderId, oco_groups
 from fefat.reference.settings import RunSettings, default_slippage_ticks
+from fefat.reference.signal_rows import SignalRow, signal_frame
 from fefat.reference.tape import FundingRate, Tape, check_tape, parse_tape
 from fefat.reference.units import (
     PRICE_DECIMALS,
@@ -45,6 +51,7 @@ from fefat.reference.units import (
     instant_text,
     price_text,
 )
+from fefat.strategy.spec import FixedSize, StrategySpec
 
 RuleId = Annotated[str, Field(pattern=r"^F-[A-Z]{3}-[0-9]{2}$")]
 """A rule of the fill specification, such as F-STP-03."""
@@ -95,8 +102,10 @@ class Expected(FrozenModel):
     funding: tuple[ExpectedFunding, ...] = ()
 
 
-class Scenario(FrozenModel):
-    """One fill scenario, as `fixtures/scenarios/README.md` describes it."""
+class ScenarioBase(FrozenModel):
+    """What every scenario holds, as `fixtures/scenarios/README.md` describes it: its tape, the
+    instrument, settings, and costs it runs with, the position held when the tape starts, and
+    what the rules give; each kind adds what decides its orders."""
 
     id: Annotated[str, Field(pattern=r"^S-[a-z]+-[0-9]{3}$")]
     title: str = Field(min_length=1)
@@ -107,7 +116,6 @@ class Scenario(FrozenModel):
     position: OpenPosition | None = None
     tape: Tape
     funding: tuple[FundingRate, ...] = ()
-    orders: tuple[Order, ...] = Field(min_length=1)
     expected: Expected
     rules: tuple[RuleId, ...] = Field(min_length=1)
 
@@ -139,17 +147,26 @@ class Scenario(FrozenModel):
         check_tape(self.fidelity, self.tape)
         self._check_prices_on_the_tick()
         self._check_quantities_on_the_lot_step()
-        self._check_orders()
         self._check_costs_fit_the_instrument()
         self._check_expected()
-        self._check_fills_are_possible()
+        self._check_its_own()
         return self
+
+    def _own_prices(self) -> Iterator[int]:
+        """The prices that what decides this kind of scenario's orders names."""
+        yield from ()
+
+    def _own_quantities(self) -> list[Decimal]:
+        """The quantities that this kind of scenario's orders name."""
+        return []
+
+    def _check_its_own(self) -> None:
+        """The checks of this kind of scenario."""
 
     def _prices(self) -> Iterator[int]:
         for record in self.tape:
             yield from record.prices()
-        for order in self.orders:
-            yield from order.prices()
+        yield from self._own_prices()
         if self.position is not None:
             yield self.position.price
         yield from (fill.price for fill in self.expected.fills)
@@ -165,7 +182,7 @@ class Scenario(FrozenModel):
             )
 
     def _check_quantities_on_the_lot_step(self) -> None:
-        quantities = [order.quantity for order in self.orders]
+        quantities = self._own_quantities()
         if self.position is not None:
             quantities.append(self.position.quantity)
         lot_step = self.instrument.lot_step
@@ -174,18 +191,6 @@ class Scenario(FrozenModel):
             raise ValueError(
                 f"Expected every quantity of {self.id} on the lot step of {lot_step}, "
                 f"got {', '.join(off)}."
-            )
-
-    def _check_orders(self) -> None:
-        ids = Counter(order_id for order in self.orders for order_id in order.ids())
-        repeated = sorted(order_id for order_id, uses in ids.items() if uses > 1)
-        if repeated:
-            raise ValueError(f"Expected each order id of {self.id} once, got {repeated} again.")
-        groups = Counter(order.oco for order in self.orders if order.oco is not None)
-        alone = sorted(group for group, size in groups.items() if size < 2)
-        if alone:
-            raise ValueError(
-                f"Expected two orders or more in each OCO group of {self.id}, got one in {alone}."
             )
 
     def _check_costs_fit_the_instrument(self) -> None:
@@ -205,13 +210,9 @@ class Scenario(FrozenModel):
             )
 
     def _check_expected(self) -> None:
-        ids = sorted(order_id for order in self.orders for order_id in order.ids())
+        """Each fill priced by a rule the scenario cites, with a fee exactly when it has fees,
+        each order filled once at most (F-QTY-01), and each payment at a funding time."""
         for fill in self.expected.fills:
-            if fill.order not in ids:
-                raise ValueError(
-                    f"Expected each fill of {self.id} to fill one of its orders {ids}, "
-                    f"got order {fill.order}."
-                )
             if fill.rule not in self.rules:
                 raise ValueError(
                     f"Expected each fill's rule among those {self.id} cites, got {fill.rule}."
@@ -221,6 +222,12 @@ class Scenario(FrozenModel):
                     f"Expected a fee on each fill of {self.id} exactly when it has fees, got "
                     f"order {fill.order}'s fill {'without' if fill.fee is None else 'with'} one."
                 )
+        filled = Counter(fill.order for fill in self.expected.fills)
+        again = sorted(order for order, fills in filled.items() if fills > 1)
+        if again:
+            raise ValueError(
+                f"Expected each order of {self.id} to fill once at most, got {again} again."
+            )
         times = sorted({rate.ts for rate in self.funding})
         unpaid = [payment.ts for payment in self.expected.funding if payment.ts not in times]
         if unpaid:
@@ -230,20 +237,55 @@ class Scenario(FrozenModel):
                 f"{[instant_text(time) for time in unpaid]}."
             )
 
-    def _check_fills_are_possible(self) -> None:
-        """Orders fill whole and once (F-QTY-01), one order of an OCO group at most (F-OCO-01),
-        and a bracket's leg only once its entry has filled (F-OCO-02)."""
-        filled = Counter(fill.order for fill in self.expected.fills)
-        again = sorted(order for order, fills in filled.items() if fills > 1)
-        if again:
+
+class Scenario(ScenarioBase):
+    """An order scenario: the orders placed at given decision instants, with their OCO groups
+    and brackets, and the fills the rules give them."""
+
+    orders: tuple[Order, ...] = Field(min_length=1)
+
+    def _own_prices(self) -> Iterator[int]:
+        for order in self.orders:
+            yield from order.prices()
+
+    def _own_quantities(self) -> list[Decimal]:
+        return [order.quantity for order in self.orders]
+
+    def _check_its_own(self) -> None:
+        self._check_orders()
+        self._check_fills_are_of_its_orders()
+        self._check_fills_are_possible()
+
+    def _check_orders(self) -> None:
+        ids = Counter(order_id for order in self.orders for order_id in order.ids())
+        repeated = sorted(order_id for order_id, uses in ids.items() if uses > 1)
+        if repeated:
+            raise ValueError(f"Expected each order id of {self.id} once, got {repeated} again.")
+        groups = Counter(order.oco for order in self.orders if order.oco is not None)
+        alone = sorted(group for group, size in groups.items() if size < 2)
+        if alone:
             raise ValueError(
-                f"Expected each order of {self.id} to fill once at most, got {again} again."
+                f"Expected two orders or more in each OCO group of {self.id}, got one in {alone}."
             )
+
+    def _check_fills_are_of_its_orders(self) -> None:
+        ids = sorted(order_id for order in self.orders for order_id in order.ids())
+        for fill in self.expected.fills:
+            if fill.order not in ids:
+                raise ValueError(
+                    f"Expected each fill of {self.id} to fill one of its orders {ids}, "
+                    f"got order {fill.order}."
+                )
+
+    def _check_fills_are_possible(self) -> None:
+        """One order of an OCO group fills at most (F-OCO-01), and a bracket's leg only once its
+        entry has filled (F-OCO-02)."""
+        filled = {fill.order for fill in self.expected.fills}
         for group in oco_groups(self.orders):
-            if len(group & filled.keys()) > 1:
+            if len(group & filled) > 1:
                 raise ValueError(
                     f"Expected one fill at most in each OCO group of {self.id} (F-OCO-01), got "
-                    f"orders {sorted(group & filled.keys())}."
+                    f"orders {sorted(group & filled)}."
                 )
         times = {fill.order: fill.ts for fill in self.expected.fills}
         for order in self.orders:
@@ -253,6 +295,40 @@ class Scenario(FrozenModel):
                         f"Expected bracket leg {leg} of {self.id} to fill after its entry, order "
                         f"{order.id}, fills (F-OCO-02)."
                     )
+
+
+class TemplateScenario(ScenarioBase):
+    """A template scenario (step 2.3): a `StrategySpec` and the rows of its signal frame, which
+    the reference engine runs through its template (`fefat.reference.template`); the orders the
+    template places take the ids the engine gives them, from 1 in the order they are placed."""
+
+    strategy: StrategySpec
+    signals: tuple[SignalRow, ...] = Field(min_length=1)
+
+    def _own_prices(self) -> Iterator[int]:
+        for row in self.signals:
+            yield from row.prices()
+
+    def _own_quantities(self) -> list[Decimal]:
+        sizing = self.strategy.execution.sizing
+        return [Decimal(repr(sizing.units))] if isinstance(sizing, FixedSize) else []
+
+    def _check_its_own(self) -> None:
+        if not isinstance(self.instrument, Instrument):
+            return
+        if self.strategy.instrument != self.instrument.root:
+            raise ValueError(
+                f"Expected the strategy of {self.id} to trade its instrument "
+                f"{self.instrument.root}, got {self.strategy.instrument}."
+            )
+
+    def signal_frame(self) -> pl.DataFrame:
+        """The signal frame of its rows, at raw prices (`fefat.reference.signal_rows`)."""
+        return signal_frame(self.signals)
+
+
+AnyScenario = Scenario | TemplateScenario
+"""A scenario of either kind."""
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -278,11 +354,14 @@ _UniqueKeyLoader.add_constructor(
 )
 
 
-def load_scenario(path: Path) -> Scenario:
-    """The scenario in one YAML file, which is named by its id: `S-fill-012.yaml`."""
+def load_scenario(path: Path) -> AnyScenario:
+    """The scenario in one YAML file, which is named by its id: `S-fill-012.yaml`. A scenario
+    that gives a `strategy` is a template scenario, any other an order scenario."""
     text = path.read_text(encoding="utf-8")
     try:
-        scenario = Scenario.model_validate(yaml.load(text, Loader=_UniqueKeyLoader))
+        written = yaml.load(text, Loader=_UniqueKeyLoader)
+        kind = TemplateScenario if isinstance(written, dict) and "strategy" in written else Scenario
+        scenario = kind.model_validate(written)
     except (ValidationError, yaml.YAMLError) as error:
         raise ValueError(f"Expected {path.name} to hold a fill scenario, got: {error}") from error
     if path.name != f"{scenario.id}.yaml":
@@ -290,7 +369,7 @@ def load_scenario(path: Path) -> Scenario:
     return scenario
 
 
-def load_scenarios(folder: Path) -> tuple[Scenario, ...]:
+def load_scenarios(folder: Path) -> tuple[AnyScenario, ...]:
     """Every scenario in `folder`, in the order of their ids."""
     return tuple(load_scenario(path) for path in sorted(folder.glob("*.yaml")))
 

@@ -1,0 +1,41 @@
+id: S-template-001
+title: A template's long entry fills at the next bar's open and its bracket's target closes the trade
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 24}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:40:00Z", trade_date: "2026-03-06", contract: ESH2026}
+tape:
+  - {ts_open: "2026-03-06T14:35:00Z", ts_close: "2026-03-06T14:36:00Z", open: "5000.00", high: "5001.50", low: "4999.50", close: "5001.00", volume: 120}
+  - {ts_open: "2026-03-06T14:36:00Z", ts_close: "2026-03-06T14:37:00Z", open: "5003.00", high: "5007.00", low: "5002.50", close: "5006.75", volume: 300}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:36:00Z", price: "5000.25", rule: F-MKT-03}
+    - {order: 3, ts: "2026-03-06T14:37:00Z", price: "5006.25", rule: F-LMT-03}
+rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-LMT-01, F-LMT-03, F-MKT-03, F-OCO-01, F-OCO-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# at the 14:30 close the signal frame signals nothing, so the template places nothing;
+# at the 14:35 close long_entry is true, flat and with nothing working: the template buys
+# 1 unit = 1 lot at the market, order 1, active at 14:35:00.100;
+# it sees the bar from 14:35 to 14:36, the first closing after its activation (F-ACT-02), and
+# fills at its open plus a tick: 5000.00 + 0.25 = 5000.25 (F-MKT-03), at the bar's close, 14:36;
+# its bracket is placed at that point of the path (F-OCO-02): the stop, order 2, 12 ticks under
+# the fill, 5000.25 - 12 × 0.25 = 4997.25, and the target, order 3, 24 ticks over it,
+# 5000.25 + 24 × 0.25 = 5006.25;
+# the rest of the entry's bar comes adverse first (F-BAR-04): its low 4999.50 is over the stop and
+# its high 5001.50 under the target, so nothing else fills there;
+# the bar from 14:36 to 14:37 replays for the long as 5003.00, 5002.50, 5007.00, 5006.75 (F-BAR-02):
+# its low stays over the stop and its high goes through the target: fill = the target, 5006.25
+# (F-LMT-01, F-LMT-03), at 14:37, and the stop is cancelled (F-OCO-01);
+# at the 14:40 close nothing is signalled: the trade made 5006.25 - 5000.25 = 6.00 points.

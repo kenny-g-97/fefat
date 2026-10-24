@@ -29,6 +29,7 @@ just check    # the data guard, ruff, pyright, import-linter, cargo fmt and clip
 just test     # the engine build, then pytest, the hook smoke tests, cargo test, vitest
 just build-engine  # compile the engine into .venv, where `import fefat` finds it
 just strip-notebooks  # clear notebook outputs; then git add the notebooks again
+just gen-schema  # write the StrategySpec JSON schema from the Rust types; a cargo test fails when it is stale
 just dev      # local server and web dev server (from Phase 4)
 ```
 

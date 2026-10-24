@@ -1,8 +1,8 @@
 """The strategy protocol of the reference engine (step 2.2): a callable `on_bar(bar, context)`
 that the engine calls at each decision, a bar close (F-ACT-01), with the bar's row and a
 `DecisionContext` through which it places orders, such as a market order with a bracket, and
-closes its position. The signal strategies of step 2.3 give the engine a specification
-instead.
+closes its position. A signal strategy's specification runs through the same protocol
+(`fefat.reference.template`, step 2.3).
 
     def on_bar(bar, context):
         if bar["cross_up"] and context.position == 0 and not context.has_working_orders():
@@ -19,14 +19,13 @@ import polars as pl
 from fefat.reference.event_log import EventKind, EventLog
 from fefat.reference.orders import (
     Book,
-    Bracket,
+    BracketRule,
     Order,
     OrderKind,
     OrderRole,
     OrderState,
     PricedOrder,
     Side,
-    TicksBracket,
     WorkingOrder,
 )
 from fefat.reference.units import instant_text, lots_of
@@ -77,7 +76,11 @@ class DecisionContext:
     def has_working_orders(self) -> bool:
         return bool(self._book.live())
 
-    def market(self, side: Side, lots: int, bracket: TicksBracket | None = None) -> int:
+    def is_exiting(self) -> bool:
+        """Whether the market order that `flatten` placed to close the position still works."""
+        return any(order.role is OrderRole.EXIT for order in self._book.live())
+
+    def market(self, side: Side, lots: int, bracket: BracketRule | None = None) -> int:
         """Enters with a market order for `lots`, with a bracket placed when it fills
         (F-OCO-02), and returns its id. A strategy holds one position at a time, so it enters
         flat and with nothing working; `flatten` closes the position."""
@@ -122,7 +125,7 @@ class DecisionContext:
         *,
         role: OrderRole = OrderRole.ENTRY,
         oco: str | None = None,
-        bracket: Bracket | TicksBracket | None = None,
+        bracket: BracketRule | None = None,
     ) -> None:
         activation = self.now + self._latency
         order = WorkingOrder(
