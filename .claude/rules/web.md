@@ -13,7 +13,7 @@ From `docs/masterplan/08-code-design.md` §1.5, §3.1, §3.4, and §5, and `docs
 - **Strict TypeScript.** No `any`, no `as` assertions, no `@ts-ignore` or `@ts-expect-error` without a one-line reason and the reviewer's approval.
 - **Shapes.** Discriminated unions for view state; `readonly` props; components under about 150 lines; hooks named after what they load or do.
 - **Layout by product area.** `src/app/` (shell, router, providers), `src/areas/<area>/`, `src/ui/`, `src/charts/`, `src/api/`. An area imports only `ui/`, `api/`, `charts/`, and `app/`, never another area.
-- **Phone first.** Every page works at 390 px wide without horizontal scroll; keyboard focus is visible; reduced motion is respected; contrast passes.
+- **Desktop first.** Every page works at 1280 px wide without horizontal scroll (phone layouts are deferred, D-54); keyboard focus is visible; reduced motion is respected; contrast passes.
 - **Testability.** Stable `data-testid`s on everything a test or the `ui-verifier` touches.
 - **No remote assets.** No remote images or fonts at runtime (the CSP allows `img-src 'self' data: blob:` only).
 - **Copy.** Plain verbs, sentence case, the same name for an action from button to toast, errors that say what happened and what to do.

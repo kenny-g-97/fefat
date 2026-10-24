@@ -94,7 +94,7 @@ Depends on: 14.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier �
 
 #### Purpose
 
-A desktop window that feels native: tray icon, auto-start option, native menus, deep links, and the Tailscale URL for the phone.
+A desktop window that feels native: tray icon, auto-start option, native menus, and deep links.
 
 #### Prerequisites
 
@@ -105,7 +105,7 @@ A desktop window that feels native: tray icon, auto-start option, native menus, 
 ```text
 Masterplan step 14.3 — Tauri shell: window, tray, auto-start.
 
-Build the shell: a main window hosting the web UI, a tray icon with status (running, jobs active), start-at-login option, native menu with the essentials, deep links `fefat://run/<id>` from notifications, a "phone access" dialog showing the Tailscale URL and QR code, and settings for the data folder. Keep the web UI unchanged; detect the shell to hide browser-only hints.
+Build the shell: a main window hosting the web UI, a tray icon with status (running, jobs active), start-at-login option, native menu with the essentials, deep links `fefat://run/<id>`, and settings for the data folder. Keep the web UI unchanged; detect the shell to hide browser-only hints.
 
 Tests: the Tauri test harness opens the window; deep links route; tray state reflects jobs.
 
@@ -302,7 +302,7 @@ A new user gets from install to a first backtest without reading documentation.
 ```text
 Masterplan step 14.8 — First-run experience.
 
-Build the first-run wizard: choose the data folder; set a password; optionally enter an Anthropic key (tested); get data — pick the products the user trades from the catalog, connect a source from the guide (its terms shown and accepted; a key stored in the credential store) and sync them, with the cost preview before any paid download, and/or import their own files with the import wizard; phone pairing (Tailscale explanation, QR code); a sample strategy and a one-click first backtest on the synced or imported data. Everything skippable and reachable again from settings.
+Build the first-run wizard: choose the data folder; set a password; optionally enter an Anthropic key (tested); get data — pick the products the user trades from the catalog, connect a source from the guide (its terms shown and accepted; a key stored in the credential store) and sync them, with the cost preview before any paid download, and/or import their own files with the import wizard; a sample strategy and a one-click first backtest on the synced or imported data. Everything skippable and reachable again from settings.
 
 Not in this step: marketing or licensing terms.
 ```

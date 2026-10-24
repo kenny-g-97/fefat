@@ -222,9 +222,9 @@ Datasets, uploads, recipes, and vintages are visible and manageable in the app.
 ```text
 Masterplan step 10.6 — Pages.
 
-Read docs/masterplan/01-architecture.md §7 (Uploads) and the dataset model in docs/data-guide.md. Add to the Data section: uploads (drag-and-drop and from-URL, progress, inspection view with schema and sample rows), datasets (vintages, recipe versions with diffs, row counts, the availability-rule summary in plain words, a virtualised preview table), and a dataset detail page with a timeline of `event_time` versus `available_at` (ECharts) that makes the lag visible, plus the list of features that use the dataset. Phone: upload from the photo/file picker works; tables are cards with a details sheet.
+Read docs/masterplan/01-architecture.md §7 (Uploads) and the dataset model in docs/data-guide.md. Add to the Data section: uploads (drag-and-drop and from-URL, progress, inspection view with schema and sample rows), datasets (vintages, recipe versions with diffs, row counts, the availability-rule summary in plain words, a virtualised preview table), and a dataset detail page with a timeline of `event_time` versus `available_at` (ECharts) that makes the lag visible, plus the list of features that use the dataset.
 
-Playwright: upload the synthetic calendar, run the built-in recipe, see the vintage and the lag timeline; desktop and phone.
+Playwright: upload the synthetic calendar, run the built-in recipe, see the vintage and the lag timeline.
 
 Not in this step: new ingestion features, scheduled refresh.
 ```
@@ -236,11 +236,11 @@ Not in this step: new ingestion features, scheduled refresh.
 
 #### Your checks
 
-- Open your dataset's page on the phone and look at the lag timeline.
+- Open your dataset's page and look at the lag timeline.
 
 #### If it fails
 
-- Large preview tables on the phone must be virtualised; never render all rows.
+- Large preview tables must be virtualised; never render all rows.
 
 ### 10.7 Hostile-file tests
 

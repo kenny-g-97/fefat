@@ -30,7 +30,7 @@ A short bootstrap `CLAUDE.md` exists since the repository preparation (2026-10-0
 | `step` | `/step N.M`, or the builder's plain words ("plan the next step") | reads the step from its phase file, checks prerequisites in `PROGRESS.md`, creates or reuses the branch, loads the skills for the paths the step touches (`08-code-design.md`), runs plan mode if required, works, runs checks and reviewers, opens the PR, updates `PROGRESS.md` |
 | `phase-kickoff` | `/phase-kickoff N` | the reconciliation procedure in `05-build-process.md` §6 |
 | `phase-exit` | `/phase-exit N` | the exit procedure in `05-build-process.md` §6 |
-| `verify` | model-invoked | tiered checks by changed area (Rust, Python, web, docs), with the UI recipe (Playwright at desktop and phone sizes, screenshots) in a supporting file |
+| `verify` | model-invoked | tiered checks by changed area (Rust, Python, web, docs), with the UI recipe (Playwright at desktop size, screenshots) in a supporting file |
 | `engine-golden` | `paths: engine/**` | how to add scenarios, regenerate goldens with approval, and write the changelog entry |
 | `prop-preset-refresh` | manual (P7) | re-read each firm's published rules from the sources in the preset, propose a new preset version with URL and date; never edit an existing version |
 | `designing-architecture` | model-invoked; installed 2026-10-09 | the architecture workflow behind `08-code-design.md` §1, for any new module, package, crate, or seam |
@@ -47,7 +47,7 @@ The three design skills were copied verbatim from the builder's `newskills/` fol
 | `step-reviewer` | P0 (step 0.4) | compares the diff with "Done means" and "Not in this step"; checks each acceptance item has a test that fails without the change; flags weakened or skipped tests |
 | `engine-accuracy-reviewer` | P0 (step 0.4) | tries to refute fills, costs, accounting, rounding, and determinism; every finding carries a reproducing scenario |
 | `leakage-auditor` | P0 (step 0.4) | as-of joins, bar labelling, cache keys, walk-forward splits; runs the truncation test |
-| `ui-verifier` | P4 (step 4.3, `model: sonnet`) | drives the app at desktop and phone sizes and returns pass or fail per criterion with screenshots |
+| `ui-verifier` | P4 (step 4.3, `model: sonnet`) | drives the app at desktop size and returns pass or fail per criterion with screenshots |
 | `design-reviewer` | P0 (2026-10-10, D-34) | reviews every step that changes `web/` (from step 4.3) and the main pages at the exits of phases with UI through the `apple-design` skill; `web/DESIGN.md` wins where they differ |
 
 ## 5. Hooks (`.claude/settings.json`, scripts in `.claude/hooks/*.mjs`)
@@ -76,7 +76,7 @@ The real commit gate is the git `pre-commit` hook in `.githooks/` (set with `git
 | --- | --- | --- |
 | GitHub via `gh` | keep (already signed in) | none |
 | Language-server plugins | keep; Claude sees type errors after each edit; installed at project scope on 2026-10-09 (step 0.4) | `/plugins` in the VS Code extension, or its bundled CLI: `claude plugin install rust-analyzer-lsp@anthropic-plugin-directory --scope project`, likewise `pyright-lsp` and `typescript-lsp`; each clone installs them once. Servers on PATH: `rustup component add rust-analyzer`, `pyright-langserver` from the uv environment, `npm install -g typescript-language-server typescript@6` (TypeScript 7 ships no `tsserver`) |
-| Playwright | keep from P4: test runner in CI plus the agent-facing CLI for phone emulation and recordings | `pnpm add -D @playwright/test`; `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` |
+| Playwright | keep from P4: test runner in CI plus the agent-facing CLI for recordings | `pnpm add -D @playwright/test`; `npm install -g @playwright/cli@latest` then `playwright-cli install --skills` |
 | `security-guidance` plugin | keep from P4 | `/plugin install security-guidance@claude-plugins-official` |
 | Library-docs server (Context7) | add only if stale-API mistakes appear | `npx ctx7 setup --claude` |
 | `frontend-design` plugin (`anthropic-plugin-directory`) | keep; installed 2026-10-09 at user scope; every step that touches `web/` loads its skill (D-28) | the plugin directory in the VS Code extension, or `/plugin install frontend-design@anthropic-plugin-directory` |

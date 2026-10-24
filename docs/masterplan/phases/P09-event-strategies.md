@@ -169,7 +169,7 @@ Depends on: 9.4, 6.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifi
 
 #### Purpose
 
-Event strategies are written in the app: an editor with validation, lint, and versioning, on desktop and phone.
+Event strategies are written in the app: an editor with validation, lint, and versioning.
 
 #### Prerequisites
 
@@ -180,7 +180,7 @@ Event strategies are written in the app: an editor with validation, lint, and ve
 ```text
 Masterplan step 9.5 — Code editor page for event strategies.
 
-Extend the strategy page's editor from 5.5 to `kind: event` strategies: validation now imports the class, instantiates it, and runs one bar on synthetic data in the executor (`POST /v1/strategies/validate` gains the event path), lint covers the callback API (future indexing, state mutation in `on_fill`), a template picker offers two event-strategy templates (a scale-in and a fill-reactive example), and the run dialog is unchanged. Phone: editing works but is secondary; the agent path is primary.
+Extend the strategy page's editor from 5.5 to `kind: event` strategies: validation now imports the class, instantiates it, and runs one bar on synthetic data in the executor (`POST /v1/strategies/validate` gains the event path), lint covers the callback API (future indexing, state mutation in `on_fill`), a template picker offers two event-strategy templates (a scale-in and a fill-reactive example), and the run dialog is unchanged.
 
 Playwright: open an event template, introduce an error, validate, see the line, fix, save version 2, run.
 
@@ -195,7 +195,7 @@ Not in this step: agent support (9.6).
 
 #### Your checks
 
-- Edit an event template on desktop, validate, save, run; then open it on the phone and read it.
+- Edit an event template on desktop, validate, save, run.
 
 #### If it fails
 

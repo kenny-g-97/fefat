@@ -6,7 +6,7 @@ Written 2026-10-06 from your idea (`../../raw_app_idea.txt`), four rounds of dec
 
 ## What FEFAT becomes
 
-A local-first research platform for futures and crypto traders that runs on your own PC, is used from the browser and from your phone (over Tailscale), and is packaged as a desktop app at the end. Four pillars: a feature lab and strategy workspace with a Claude agent; a backtester with its own Rust engine and strict strategy versioning; a prop-firm simulator that tests any saved backtest (or a trade log from another platform) against prop rules and your prop strategy without re-running it; and full use from the phone. FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and import presets, and the sync that keeps a product current; imports cover anything else (D-37). Details in `00-product-spec.md`.
+A local-first research platform for futures and crypto traders that runs on your own PC, is used from the browser, and is packaged as a desktop app at the end. Four pillars: a feature lab and strategy workspace with a Claude agent; a backtester with its own Rust engine and strict strategy versioning; a prop-firm simulator that tests any saved backtest (or a trade log from another platform) against prop rules and your prop strategy without re-running it; and, once the rest works, full use from the phone (deferred, D-54). FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and import presets, and the sync that keeps a product current; imports cover anything else (D-37). Details in `00-product-spec.md`.
 
 ## How to use this plan
 
@@ -48,15 +48,15 @@ The session protocol, reviews, verification approach, and test-data policy are i
 | P1 Market data | The product catalog, the source guide, and imports of your Databento files and your own exports, in one clean store; calendars, bars, rolls (connectors and sync deferred, D-38) | 11 | |
 | P2 Engine | The backtest engine, proven against the readable reference; trade paths in every run | 15 | first notebook backtest at 2.2 (step 21); trustworthy at 2.15 (step 34) |
 | P3 Features | Feature library, leak detector, indicators, analytics, from notebooks | 8 | |
-| P4 Local app and phone access | Local server, login, web shell, jobs, executor, the app on your phone | 6 | app on the phone at 4.6 (step 48) |
-| P5 Backtesting in the app | Data catalog and import wizard, strategy versions, runs, results, trade review chart, notifications | 13 | web MVP at 5.13 (step 61) |
+| P4 Local app | Local server, login, web shell, jobs, executor; phone access deferred (D-54) | 6 | the demo job in the browser at 4.4 (step 46) |
+| P5 Backtesting in the app | Data catalog and import wizard, strategy versions, runs, results, trade review chart | 13 | web MVP at 5.13 (step 61) |
 | P6 Feature lab and builder | Editor with live preview; no-code strategy builder | 9 | |
 | P7 Prop simulator | Rule presets, replay of saved backtests and imported trade logs, prop strategies, Monte Carlo, pages | 11 | step 81 |
 | P8 In-app agent | Chat, tools, skills, proposals, evals, safety tests | 11 | step 92 |
 | P9 Event strategies | Python `on_bar` strategies and their editor | 6 | |
 | P10 Alternative data | Uploads, recipes, publication-time joins, agent ingestion | 7 | |
 | P11 Research tools | Sweeps, optimization, safeguards, walk-forward, robustness | 8 | |
-| P12 Phone polish | Install, notifications, touch, speed, offline | 5 | |
+| P12 Phone polish | Deferred (D-54): install, notifications, touch, speed, offline | 5 | |
 | P13 Hardening | Security review, robustness, diagnostics, backups, runbook | 7 | step 125 |
 | P14 Desktop packaging | Tauri shell, installers, auto-update, data sources in the packaged app, signed catalog updates, first run (product phase) | 9 | step 134 |
 

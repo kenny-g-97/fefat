@@ -44,7 +44,7 @@ No shell, no file access, no web browsing in the first release. "Import from URL
 ## 5. Proposals: consent as a first-class object
 
 1. The agent calls `propose_change`. The server stores a proposal (`pending`) with the full content, a diff against the base version, and the validation results (lint, leak check, syntax), returns "awaiting your review", and the turn ends with a short message.
-2. You open the proposal (desktop: side-by-side diff; phone: unified diff with a sticky Accept/Reject bar), optionally with a comment.
+2. You open the proposal (side-by-side diff, unified in a narrow window), optionally with a comment.
 3. `POST /proposals/{id}/decision`: on **accept**, one transaction creates the immutable new version (only if the base is still the latest; otherwise the proposal is marked `stale` and the agent is told to rebase) and records the decision; on **reject**, the comment is stored.
 4. A new turn is queued automatically carrying the outcome ("Proposal 12 accepted → strategy v5 created" or "rejected: too tight a stop"), so the agent continues (for example by starting the backtest you asked for).
 
@@ -65,7 +65,7 @@ Cost-bearing actions (long studies, large imports) use the same object with `con
 
 ## 8. Phone
 
-The chat is a full-screen sheet carrying the current page's context. Proposals are reviewable and decidable on the phone. Long turns continue server-side; the phone can lock and come back.
+Deferred (D-54): the chat as a full-screen sheet carrying the page's context, and proposals decided on the phone, return with the backlog's phone item. Long turns continue server-side already, so a closed tab can come back.
 
 ## 9. The `AgentRuntime` seam
 

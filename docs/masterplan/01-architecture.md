@@ -7,8 +7,8 @@ This document is the map of the system. `02-engine-and-data.md`, `03-prop-simula
 ```text
  ┌───────────────────────────── your PC (Windows now; macOS later) ─────────────────────────────┐
  │                                                                                              │
- │  browser / phone (PWA over Tailscale)                                                        │
- │        │  HTTPS, JSON + SSE                                                                  │
+ │  browser on this PC                                                                          │
+ │        │  HTTP, JSON + SSE                                                                   │
  │        ▼                                                                                     │
  │  fefat_app  ── FastAPI server, one process (`fefat up`)                                      │
  │     ├── http        FastAPI routers and schemas: the typed layer over the SDK                │
@@ -17,8 +17,7 @@ This document is the map of the system. `02-engine-and-data.md`, `03-prop-simula
  │     ├── database    SQLite (app state: versions, runs, sessions, jobs)                       │
  │     ├── jobs        local process pool, events table → resumable streams                     │
  │     ├── executor    subprocess that runs user code (features, strategies, transforms)        │
- │     ├── agent       Claude Messages API tool loop, proposals, skills                         │
- │     └── push        web push (VAPID) for job completion                                      │
+ │     └── agent       Claude Messages API tool loop, proposals, skills                         │
  │        │                                                                                     │
  │        ▼                                                                                     │
  │  fefat  ── Python SDK (also used directly from notebooks)                                    │
@@ -53,10 +52,9 @@ Three principles hold everything together:
 | SDK and app | Python 3.12 (uv-managed), Polars, PyArrow, DuckDB, Pydantic 2 | Packages `fefat` (SDK) and `fefat_app` (server) in a uv workspace |
 | App state | SQLite (WAL), SQLAlchemy 2, Alembic (batch mode) | One file: `fefat.sqlite` |
 | Server | FastAPI + Uvicorn | `fefat up` starts it; OpenAPI exported to `web/openapi.json` |
-| Web | Vite 8, React 19, TypeScript, Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod, `openapi-typescript` + `openapi-fetch`, `vite-plugin-pwa` | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, made with the `frontend-design` skill (`08-code-design.md` §5) |
+| Web | Vite 8, React 19, TypeScript, Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod, `openapi-typescript` + `openapi-fetch` | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, made with the `frontend-design` skill (`08-code-design.md` §5) |
 | Charts | TradingView Lightweight Charts 5 (price, markers, indicator panes), ECharts 6 (analytics) | Keep `attributionLogo` on (Apache-2.0 attribution) |
-| Editor | CodeMirror 6 with `@codemirror/merge` (unified on phones, side-by-side on desktop) | Monaco does not support phones |
-| Phone access | Tailscale (personal plan) with its HTTPS certificate; service worker; web push via `pywebpush` | iOS needs 16.4+, home-screen install, and a tap to request permission |
+| Editor | CodeMirror 6 with `@codemirror/merge` | Lighter than Monaco, and it works on phones for the backlog's phone item |
 | Agent | `anthropic` Python SDK; tool loop; `claude-opus-5-5` default | See `04-agent.md` |
 | Jobs | `concurrent.futures` process pool inside the server; subprocess runner for user code | See §6 |
 | Tests | `pytest` + `hypothesis`; `cargo nextest` + `proptest` + `insta`; `vitest` + Playwright | See `05-build-process.md` |
@@ -88,7 +86,7 @@ fefat/
     fefat/                      the SDK package (uv workspace member, src layout)
       src/fefat/                market/ features/ indicators/ analytics/ strategy/ backtest/ prop/ research/ reference/ config.py
     fefat_app/                  the server package (uv workspace member, src layout)
-      src/fefat_app/            http/ services/ ports.py container.py database/ jobs/ executor.py agent/ push/ credentials.py cli.py
+      src/fefat_app/            http/ services/ ports.py container.py database/ jobs/ executor.py agent/ credentials.py cli.py
     tests/                      pytest for both packages (unit, contract, differential)
   web/                          Vite React app (pnpm)
     DESIGN.md                   the design system: tokens, type, layout, principles (written in step 4.3)
@@ -115,7 +113,7 @@ Dependencies point inward: `web → fefat_app.http → fefat_app.services → fe
 
 ```text
 FEFAT_HOME/
-  config.toml                 port, bind address, Tailscale exposure, data dir, model defaults
+  config.toml                 port, bind address, data dir, model defaults
   fefat.sqlite                app state
   logs/
   data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports) + instruments/ (products your imports added, step 1.10)
@@ -147,7 +145,6 @@ All ids are UUIDv7 strings. Every row carries `created_at`; versioned rows are n
 | Agent | `agent_sessions(id, context_json, model, status)`, `agent_turns(id, session_id, status, usage_json, cost_usd)`, `agent_messages(id, session_id, turn_id, role, content_json)`, `agent_transcript(id, session_id, seq, block_json)` (append-only API transcript), `agent_tool_calls(id, turn_id, name, input_json, output_json, duration_ms)`, `proposals(id, session_id, kind, target_id, base_version_id, content, diff, validation_json, status, decided_at, comment, result_version_id)`, `usage_ledger(id, turn_id, model, input_tokens, output_tokens, cache_read_tokens, cost_usd)` |
 | Uploads | `uploads(id, filename, size, sha256, status, path)`, `ingestion_recipes(id, upload_id, code, version_no)` |
 | Jobs | `jobs(id, kind, payload_json, status, progress, attempt, max_attempts, worker_pid, lease_expires_at, cancel_requested_at, result_json, error, started_at, finished_at)`, `events(id INTEGER PRIMARY KEY, stream_id, type, data_json, created_at)` |
-| Push | `push_subscriptions(id, endpoint, keys_json)` |
 
 The schema is created by Alembic migrations from Phase 4. Earlier phases keep SDK state in files (manifests, run folders) and need no database.
 
@@ -163,7 +160,7 @@ The schema is created by Alembic migrations from Phase 4. Earlier phases keep SD
 
 ## 7. API outline
 
-Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Idempotency-Key` on creating POSTs (safe retries from phones).
+Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Idempotency-Key` on creating POSTs (safe retries).
 
 | Area | Endpoints |
 | --- | --- |
@@ -177,20 +174,19 @@ Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Id
 | Uploads | `POST /uploads` (multipart), `GET /uploads/{id}/inspect`, `POST /uploads/{id}/recipes`, `POST /uploads/from-url` |
 | Agent | `GET/POST /agent/sessions`, `POST /agent/sessions/{id}/turns`, `POST /agent/turns/{id}/stop`, `GET /agent/sessions/{id}/messages`, `GET /proposals`, `POST /proposals/{id}/decision` |
 | Jobs | `GET /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`, `GET /streams/{stream_id}` (SSE) |
-| Push | `POST /push/subscriptions`, `DELETE /push/subscriptions/{id}` |
 | Health | `GET /healthz`, `GET /version` |
 
 The web app's TypeScript types are generated from `web/openapi.json` by `openapi-typescript`; CI regenerates and fails on a diff.
 
 ## 8. Local server security
 
-- Binds to `127.0.0.1` by default. Exposure on the Tailscale interface is opt-in in `config.toml`; the server never binds to `0.0.0.0`.
+- Binds to `127.0.0.1` only; the server never binds to another address. Exposure to the phone is deferred (D-54).
 - Login by password (set on first run) creates a session cookie (`HttpOnly`, `Secure` when served over HTTPS, `SameSite=Strict`). A CSRF token guards state-changing requests. A bearer token is accepted for notebooks and scripts.
 - Rate limit on login; passwords hashed with Argon2.
 - Content Security Policy: `default-src 'self'; img-src 'self' data: blob:` (no remote images in chat).
 - File access is confined to `FEFAT_HOME` and `FEFAT_DATA_DIR`; the API never takes raw filesystem paths from clients except for imports of large files, which are validated against the import roots allowed in `config.toml`.
 - Catalog updates from FEFAT's static host (Phase 14) are verified against a signed manifest and file hashes before they are installed; that host never serves market data.
-- Secrets (Anthropic API key, data vendor keys such as Databento's, VAPID private key) live in the OS credential store via `keyring`, never in `config.toml`.
+- Secrets (Anthropic API key, data vendor keys such as Databento's) live in the OS credential store via `keyring`, never in `config.toml`.
 
 ## 9. Environments
 
@@ -198,7 +194,7 @@ The web app's TypeScript types are generated from `web/openapi.json` by `openapi
 | --- | --- | --- |
 | `dev` | `just dev`: server with auto-reload + Vite dev server with proxy | Synthetic fixtures by default; real data under `FEFAT_DATA_DIR` when you choose |
 | `test` | `just test`: Rust, Python, and web unit/integration tests; `just e2e`: Playwright against a seeded server | Synthetic only |
-| `local` | `fefat up`: production build of the UI served by the server; Tailscale exposure optional | Your real data |
+| `local` | `fefat up`: production build of the UI served by the server | Your real data |
 | `release` (P14) | CI builds wheels and installers, signed | — |
 
 CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for every pull request, builds the `fefat_engine` wheel on both, and asserts identical golden-run hashes on both systems.

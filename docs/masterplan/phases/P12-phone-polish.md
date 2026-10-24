@@ -1,10 +1,12 @@
 # Phase 12 — Phone polish
 
+**Deferred (D-54).** Every step of this phase is skipped until FEFAT is fully functional; the steps stay as written for the backlog's phone item, which also brings back steps 4.6 and 5.11 and a phone-size pass over every page.
+
 **Goal.** The phone experience is finished: installation and update behaviour are audited, notifications cover every job kind with preferences, touch interactions on charts and forms are right, the app is fast on a phone, and it behaves well offline and on reconnect.
 
 **You get.** An app on your phone that feels like an app.
 
-**Depends on.** Phase 11 in the written order (all pages exist). It can run earlier if the phone matters more to you than research tools; amend 12.1's `Depends on` line at the kickoff, and the audits then cover the pages that exist.
+**Depends on.** Phase 11 (all pages exist). Deferred by D-54: it runs after Phase 14 as the phone item, or earlier at a kickoff if the phone matters more to you.
 
 **Open decisions for the kickoff.** Your phone and OS version; which notifications you want by default.
 
@@ -52,6 +54,10 @@ Not in this step: notifications beyond deep links.
 
 - iOS caches manifests aggressively; a changed icon may need a reinstall; document it in the phone checklist.
 
+#### Amendment
+
+2026-10-23 (D-54): skipped with Phase 12; see the backlog's phone item.
+
 ### 12.2 Notifications for every job kind, with preferences
 
 Depends on: 12.1 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
@@ -88,6 +94,10 @@ Not in this step: email or other channels, per-strategy preferences.
 
 - Deep links must use the tailnet origin stored at subscription time, not `localhost`.
 
+#### Amendment
+
+2026-10-23 (D-54): skipped with Phase 12; see the backlog's phone item.
+
 ### 12.3 Touch audit of charts and forms
 
 Depends on: 12.1 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
@@ -122,6 +132,10 @@ Not in this step: performance.
 #### If it fails
 
 - Any chart that captures vertical scroll must be fixed to only capture horizontal pan unless a mode is toggled.
+
+#### Amendment
+
+2026-10-23 (D-54): skipped with Phase 12; see the backlog's phone item.
 
 ### 12.4 Speed on the phone
 
@@ -159,6 +173,10 @@ Not in this step: offline behaviour, server-side performance (13.5).
 
 - The largest wins are usually lazy-loading the chart libraries; measure first.
 
+#### Amendment
+
+2026-10-23 (D-54): skipped with Phase 12; see the backlog's phone item.
+
 ### 12.5 Offline and reconnect behaviour
 
 Depends on: 12.4 · Plan mode: skip · Reviews: step-reviewer · Security: no · Model hint: default
@@ -194,6 +212,10 @@ Not in this step: cloud sync (backlog).
 #### If it fails
 
 - Never queue writes offline for later replay in this release; show the state and keep the draft. Queued writes are a sync feature.
+
+#### Amendment
+
+2026-10-23 (D-54): skipped with Phase 12; see the backlog's phone item.
 
 ## Phase exit
 

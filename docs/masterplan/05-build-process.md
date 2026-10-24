@@ -40,7 +40,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 | `step-reviewer` | every step | the diff versus "Done means" and "Not in this step"; each acceptance item has a test that fails without the change; no weakened tests |
 | `engine-accuracy-reviewer` | engine, data, prop steps | tries to refute fills, costs, accounting, rounding, determinism; every finding carries a reproducing scenario |
 | `leakage-auditor` | feature, data, research steps | as-of joins, bar labelling, cache keys, walk-forward splits; runs the truncation test |
-| `ui-verifier` | UI steps | drives the app at desktop and phone sizes with Playwright; returns pass/fail per criterion with screenshots |
+| `ui-verifier` | UI steps | drives the app at desktop size with Playwright; returns pass/fail per criterion with screenshots |
 | `design-reviewer` (the `apple-design` skill) | UI steps (every step that changes `web/`, from step 4.3); exits of phases with UI | the diff and the screenshots against Apple's interface principles: feedback on press, interruptible spring motion, spatial consistency, materials and depth, tracking and leading by size, reduced motion, transparency, and contrast, and the eight design principles; `web/DESIGN.md` and the brief's own words win where they differ (D-34) |
 | `/code-review` | every step (level `medium`; `high` at phase exits) | correctness bugs |
 | `/ponytail-review` (the `ponytail` plugin) | every step; phase exits, over the phase diff | code that need not exist: speculative options, abstractions with one use, near-copies, a new dependency for a few lines, a helper the repository already has; also logic, safety, load, missing tests, and speed, each finding with a concrete case in plain English (D-32) |
@@ -50,7 +50,7 @@ Meta line: Depends on · Plan mode: required|optional|skip · Reviews: … · Se
 ## 4. Verification you can do without reading code
 
 - **Numeric.** Scenario tables (5–20 row cases with hand-computable fills and P&L); property tests (accounting identity, no fill outside traded prices, determinism hash, truncation never changes past feature values); the readable Python reference engine; the NautilusTrader comparison with a written list of known differences; goldens from synthetic data, exact for fills and money and within a stated tolerance for statistics, run on Windows and Linux.
-- **Visual.** Each UI step attaches desktop and phone screenshots and a short recording, and gives you a click path. Contract tests assert that UI numbers equal SDK numbers for the same run.
+- **Visual.** Each UI step attaches desktop screenshots and a short recording, and gives you a click path. Contract tests assert that UI numbers equal SDK numbers for the same run.
 - **Automated.** Unit and integration tests per area; Playwright end-to-end in CI on seeded data; `just e2e` locally.
 - **Notebooks.** `notebooks/checks/<phase>.<step>.ipynb` with a two-digit step number (for example `2.06.ipynb`) where a step says so: the last cell prints a verdict you can read.
 

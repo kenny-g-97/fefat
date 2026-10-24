@@ -4,7 +4,7 @@
 
 **You get.** Confidence, backups, and a written list of what remains before selling it.
 
-**Depends on.** Phase 12.
+**Depends on.** Phase 11 (Phase 12 is deferred, D-54).
 
 **Open decisions for the kickoff.** Where backups go (a second drive, a NAS, a cloud bucket you own); how long to keep them.
 
@@ -18,11 +18,11 @@
 
 ### 13.1 Security review of the local server
 
-Depends on: 12.5 · Plan mode: optional · Reviews: step-reviewer, code-review · Security: yes · Model hint: hard
+Depends on: 11.8 · Plan mode: optional · Reviews: step-reviewer, code-review · Security: yes · Model hint: hard
 
 #### Purpose
 
-The server exposed on Tailscale is reviewed as if it were exposed to the internet.
+The local server is reviewed as if it were exposed to the internet.
 
 #### Prerequisites
 
@@ -33,7 +33,7 @@ The server exposed on Tailscale is reviewed as if it were exposed to the interne
 ```text
 Masterplan step 13.1 — Security review of the local server.
 
-Run /security-review over the whole repository and a manual review of: authentication and session handling, CSRF, rate limiting, CSP and headers, file-path handling (imports, uploads, artifacts), the executor's environment scrubbing, secrets handling, the Tailscale exposure path, dependency vulnerabilities (`pip-audit` over `uv export`, `cargo audit`, `pnpm audit`, all in CI). Fix blocking findings; log the rest with a justification in docs/security/review-2026.md. Add the audit tools to CI with an allowlist file for accepted advisories.
+Run /security-review over the whole repository and a manual review of: authentication and session handling, CSRF, rate limiting, CSP and headers, file-path handling (imports, uploads, artifacts), the executor's environment scrubbing, secrets handling, dependency vulnerabilities (`pip-audit` over `uv export`, `cargo audit`, `pnpm audit`, all in CI). Fix blocking findings; log the rest with a justification in docs/security/review-2026.md. Add the audit tools to CI with an allowlist file for accepted advisories.
 
 Not in this step: new features.
 ```
@@ -113,7 +113,7 @@ Not in this step: metrics dashboards, remote log shipping.
 
 1. Every request and job carries an id visible in logs and pages.
 2. The bundle contains no secrets (test greps for the test secret).
-3. The diagnostics page renders on desktop and phone.
+3. The diagnostics page renders.
 
 #### Your checks
 
@@ -176,7 +176,7 @@ The whole system is measured on real sizes, and the slow spots are fixed or reco
 ```text
 Masterplan step 13.5 — Performance pass.
 
-Measure on your real data: API latency for the key endpoints (bars, trades, equity, chart), feature preview, a 5-year backtest end to end through the app, a 1,000-trial sweep, the prop Monte Carlo, DuckDB queries over large artifacts, and the Tailscale path from the phone. Compare with the design targets; profile and fix the worst offenders where the fix is contained; record the rest in the backlog with numbers. Update docs/validation/benchmarks.md.
+Measure on your real data: API latency for the key endpoints (bars, trades, equity, chart), feature preview, a 5-year backtest end to end through the app, a 1,000-trial sweep, the prop Monte Carlo, and DuckDB queries over large artifacts. Compare with the design targets; profile and fix the worst offenders where the fix is contained; record the rest in the backlog with numbers. Update docs/validation/benchmarks.md.
 
 Not in this step: architectural changes.
 ```
@@ -188,7 +188,7 @@ Not in this step: architectural changes.
 
 #### Your checks
 
-- Time a full 5-year backtest from the app on your phone: seconds for the engine, plus the time to compute features the first time.
+- Time a full 5-year backtest from the app: seconds for the engine, plus the time to compute features the first time.
 
 #### If it fails
 
@@ -246,7 +246,7 @@ How to run FEFAT day to day is written down, and what remains before selling it 
 ```text
 Masterplan step 13.7 — Runbook and product-readiness checklist.
 
-Write docs/runbook.md: start and stop, update to a new version, add data, backups and restore, Tailscale and phone setup, diagnostics, common problems and fixes. Write docs/product-readiness.md: everything deferred by DECISIONS.md and BACKLOG.md that a commercial release needs (licence keys, telemetry opt-in, terms and privacy, support channel, installers and signing — Phase 14 — macOS support, documentation for customers, data-vendor terms confirmation in writing, pricing), each with an estimate and a dependency. Groom the backlog with the Phase 13 findings.
+Write docs/runbook.md: start and stop, update to a new version, add data, backups and restore, diagnostics, common problems and fixes. Write docs/product-readiness.md: everything deferred by DECISIONS.md and BACKLOG.md that a commercial release needs (licence keys, telemetry opt-in, terms and privacy, support channel, installers and signing — Phase 14 — macOS support, documentation for customers, data-vendor terms confirmation in writing, pricing), each with an estimate and a dependency. Groom the backlog with the Phase 13 findings.
 
 Not in this step: anything else.
 ```
@@ -267,5 +267,5 @@ Not in this step: anything else.
 ## Phase exit
 
 ```text
-/phase-exit 13 — Run the exit procedure for Phase 13: clean-clone suite including soak and audit jobs; /security-review; /code-review high; demo = the runbook's daily workflow performed on the phone and the PC; retro; backlog groomed; tag phase-13.
+/phase-exit 13 — Run the exit procedure for Phase 13: clean-clone suite including soak and audit jobs; /security-review; /code-review high; demo = the runbook's daily workflow performed on the PC; retro; backlog groomed; tag phase-13.
 ```

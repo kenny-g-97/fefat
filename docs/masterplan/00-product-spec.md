@@ -1,6 +1,6 @@
 # 00 — Product specification
 
-FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for discretionary and algorithmic futures and crypto traders. It runs on the trader's own PC, is used from the browser and from the phone, and is later packaged as a desktop app. Its four pillars come straight from `raw_app_idea.txt`.
+FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for discretionary and algorithmic futures and crypto traders. It runs on the trader's own PC, is used from the browser, and is later packaged as a desktop app. Its four pillars come straight from `raw_app_idea.txt`.
 
 ## 1. Who it is for
 
@@ -42,8 +42,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 ### 2.4 Phone
 
-- The same web app, installed to the phone's home screen, reaches your PC over Tailscale. Everything works: features, strategies, backtests, prop simulations, the agent, notifications when a job finishes.
-- The phone is **agent-first**: typing code is possible but never required.
+- Deferred until FEFAT is fully functional (D-54): FEFAT is used from the browser on the PC. The phone returns as the backlog's phone item: the same web app installed to the phone's home screen, reaching your PC privately, with notifications when a job finishes, and **agent-first**, so typing code is possible but never required.
 
 ### 2.5 Market data, under all four pillars
 
@@ -62,9 +61,9 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 | In | Later (phase) | Not planned |
 | --- | --- | --- |
-| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as catalog products, filled from the sources you connect | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12), hardening (P13), desktop packaging (P14) | Live or paper trading, broker connections |
+| CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as catalog products, filled from the sources you connect | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12, deferred by D-54), hardening (P13), desktop packaging (P14) | Live or paper trading, broker connections |
 | Signal strategies, backtests, feature lab, strategy builder, prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute or market data for other users |
-| One user, one PC, phone over Tailscale | Machine-learning models on features (backlog) | Order-book (L2) strategies, tick-reactive scalping |
+| One user, one PC, used from the browser on it | Machine-learning models on features (backlog) | Order-book (L2) strategies, tick-reactive scalping |
 | Connectors for Databento and the crypto archives, import presets for common exports, and a guide to well-known sources | More catalog products, connectors, presets, and prop firms | Social features, strategy marketplace |
 
 ## 5. Non-goals and constraints
@@ -73,7 +72,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 - A prop simulation never re-runs a strategy; it reads an existing backtest file.
 - FEFAT never executes the agent's edits without an explicit decision by the user.
 - FEFAT never silently changes a saved result: versions and runs are immutable; a changed fill rule is a new engine version.
-- No cloud dependency for core use. The only network calls in normal use are to Anthropic's API (agent, optional), the data sources the trader connected (downloads and updates), FEFAT's static host for signed catalog updates (Phase 14, never data), and the push-notification services.
+- No cloud dependency for core use. The only network calls in normal use are to Anthropic's API (agent, optional), the data sources the trader connected (downloads and updates), and FEFAT's static host for signed catalog updates (Phase 14, never data).
 
 ## 6. Key journeys (first release)
 
@@ -82,7 +81,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 3. **Build a strategy.** Pick two features, set conditions, choose stop and targets and session window in the builder, look at the generated code, run a backtest on 2021–2025 with tick fills, inspect trades on the chart.
 4. **Iterate with the agent.** Ask why March lost money; the agent queries the trades, suggests a filter, proposes the edit; you accept; version 2 is created and backtested; compare versions.
 5. **Choose a prop plan.** Pick a saved backtest of the strategy (or import a trade log from another platform), the Topstep, My Funded Futures, and Tradeify presets, and a prop strategy of two staggered evaluations with conservative sizing when funded; read the pass probability, expected payouts, cost, and the plan ranking — in seconds, without re-running the backtest.
-6. **From the phone.** Start a backtest from the train, get a notification when it finishes, review the equity curve and the agent's summary, approve a proposal.
+6. **From the phone.** Deferred until FEFAT is fully functional (D-54): start a backtest from the train, get a notification when it finishes, review the equity curve and the agent's summary, approve a proposal.
 
 ## 7. Glossary
 
@@ -121,5 +120,4 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 | Deflated Sharpe | A Sharpe ratio corrected for the number of things you tried; more trials, more deflation. |
 | Keyset pagination | Paging a long table by "continue after the last row seen" instead of page numbers; stays fast on large tables. |
 | Downsampling | Reducing a long series to fewer points for a chart while keeping its highs and lows. |
-| VAPID | The key pair that identifies your server to the browsers' push-notification services. |
 | Job Object (Windows) | The operating-system mechanism FEFAT uses to cap a subprocess's memory and kill it on timeout. |

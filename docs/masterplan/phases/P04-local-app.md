@@ -1,17 +1,17 @@
-# Phase 4 — Local app and phone access
+# Phase 4 — Local app
 
-**Goal.** The application skeleton on your PC: a SQLite-backed local server with login, a React web shell that works on a phone, a job runner with resumable progress streams, a subprocess executor for user code, and the whole thing installed on your phone over Tailscale.
+**Goal.** The application skeleton on your PC: a SQLite-backed local server with login, a React web shell, a job runner with resumable progress streams, and a subprocess executor for user code. Phone access is deferred until FEFAT is fully functional (D-54).
 
-**You get.** `fefat up`, log in from your browser and your phone, run a demo job and watch its progress survive a reload.
+**You get.** `fefat up`, log in from your browser, run a demo job and watch its progress survive a reload.
 
 **Depends on.** Phase 3 (the SDK exists; the app wraps it).
 
-**Open decisions for the kickoff.** Your primary phone (iPhone or Android — it changes the install and notification steps); the app's display name and icon placeholder; the default port (8765 suggested); whether you already have a Tailscale account; the design brief for `web/DESIGN.md` (D-28): who uses it, the job it does (a research terminal: dense numbers, charts, long desk sessions, one-thumb use on the phone), what you like and dislike in the trading tools you use today, light or dark by default, and any reference to follow exactly.
+**Open decisions for the kickoff.** The app's display name and icon placeholder; the default port (8765 suggested); the design brief for `web/DESIGN.md` (D-28): who uses it, the job it does (a research terminal: dense numbers, charts, long desk sessions), what you like and dislike in the trading tools you use today, light or dark by default, and any reference to follow exactly.
 
 ## Kickoff
 
 ```text
-/phase-kickoff 4 — Read docs/masterplan/phases/P04-local-app.md and docs/masterplan/01-architecture.md §4–§9. Ask me the open decisions. Verify current versions of Vite, React, Tailwind, shadcn/ui, TanStack Router and Query, vite-plugin-pwa, openapi-typescript, FastAPI, SQLAlchemy, Alembic, and uvicorn, and pin them in the kickoff PR along with any step amendments. Load the `frontend-design` skill and read docs/masterplan/08-code-design.md §5; collect the design brief and record it in the kickoff PR for step 4.3.
+/phase-kickoff 4 — Read docs/masterplan/phases/P04-local-app.md and docs/masterplan/01-architecture.md §4–§9. Ask me the open decisions. Verify current versions of Vite, React, Tailwind, shadcn/ui, TanStack Router and Query, openapi-typescript, FastAPI, SQLAlchemy, Alembic, and uvicorn, and pin them in the kickoff PR along with any step amendments. Load the `frontend-design` skill and read docs/masterplan/08-code-design.md §5; collect the design brief and record it in the kickoff PR for step 4.3.
 ```
 
 ## Steps
@@ -33,9 +33,9 @@ App state has a home: a SQLite database with migrations, a workspace folder layo
 ```text
 Masterplan step 4.1 — App-state database, workspace folders, settings.
 
-Read docs/masterplan/01-architecture.md §4 and §5. In `python/fefat_app/src/fefat_app/database/` set up SQLAlchemy 2 models and Alembic (batch mode for SQLite) for the tables in §5 that this phase needs: settings, workspaces, datasets and dataset_snapshots, instruments, catalog_products, data_sources, import_profiles, features and feature_versions, strategies and strategy_versions, strategy_version_features, runs, jobs, events, push_subscriptions. Versioned tables are insert-only (enforced by a trigger or by the repository layer with a test). UUIDv7 ids. WAL mode. A `fefat db upgrade` command. Migrate the file-based feature versions from Phase 3 and the import profiles saved in Phase 1 into the database on first run (`fefat db import-workspace`), keeping the files as a backup.
+Read docs/masterplan/01-architecture.md §4 and §5. In `python/fefat_app/src/fefat_app/database/` set up SQLAlchemy 2 models and Alembic (batch mode for SQLite) for the tables in §5 that this phase needs: settings, workspaces, datasets and dataset_snapshots, instruments, catalog_products, data_sources, import_profiles, features and feature_versions, strategies and strategy_versions, strategy_version_features, runs, jobs, events. Versioned tables are insert-only (enforced by a trigger or by the repository layer with a test). UUIDv7 ids. WAL mode. A `fefat db upgrade` command. Migrate the file-based feature versions from Phase 3 and the import profiles saved in Phase 1 into the database on first run (`fefat db import-workspace`), keeping the files as a backup.
 
-Extend `fefat.config` from 0.5 (one module for `FEFAT_HOME` and `FEFAT_DATA_DIR` resolution with platformdirs defaults) with `config.toml` and validated settings (port, bind address, Tailscale exposure flag, process-pool size, model defaults), and reuse `fefat_app.credentials` from 1.6 (keyring over the Windows credential store, with the `fefat secrets` CLI) for every API key.
+Extend `fefat.config` from 0.5 (one module for `FEFAT_HOME` and `FEFAT_DATA_DIR` resolution with platformdirs defaults) with `config.toml` and validated settings (port, bind address, process-pool size, model defaults), and reuse `fefat_app.credentials` from 1.6 (keyring over the Windows credential store, with the `fefat secrets` CLI) for every API key.
 
 Tests: migrations up and down from empty; insert-only enforcement; config round-trip; secrets stored outside the repo (a test that greps the repo and FEFAT_HOME for a known test secret and finds it only in the credential store).
 
@@ -77,11 +77,11 @@ Depends on: 4.1 · Plan mode: required · Reviews: step-reviewer, code-review ·
 ```text
 Masterplan step 4.2 — Local server, login, typed client generation.
 
-Read docs/masterplan/01-architecture.md §7–§8. Implement the FastAPI app in `python/fefat_app/src/fefat_app/http/`: `fefat up` (uvicorn on the configured port, localhost by default; `--expose tailscale` binds additionally to the Tailscale interface address only), password set on first run (Argon2, stored in settings), `POST /v1/auth/login` issuing an HttpOnly session cookie (Secure when HTTPS, SameSite=Strict), CSRF token for state-changing requests, a bearer token for notebooks (`fefat token create`), rate limiting on login, `GET /v1/me`, `GET/PUT /v1/settings` (secrets write-only), `GET /v1/healthz`, `GET /v1/version`, problem+json errors, request ids in logs. Serve the built web app from `web/dist` when present. CSP as in §8.
+Read docs/masterplan/01-architecture.md §7–§8. Implement the FastAPI app in `python/fefat_app/src/fefat_app/http/`: `fefat up` (uvicorn on the configured port, on localhost only), password set on first run (Argon2, stored in settings), `POST /v1/auth/login` issuing an HttpOnly session cookie (Secure when HTTPS, SameSite=Strict), CSRF token for state-changing requests, a bearer token for notebooks (`fefat token create`), rate limiting on login, `GET /v1/me`, `GET/PUT /v1/settings` (secrets write-only), `GET /v1/healthz`, `GET /v1/version`, problem+json errors, request ids in logs. Serve the built web app from `web/dist` when present. CSP as in §8.
 
 Export the OpenAPI schema with `just gen-api` to `web/openapi.json` and generate `web/src/api/schema.d.ts` with openapi-typescript; a CI check fails on drift. Add `just up` (runs `fefat up`) and enable FastAPI's interactive `/docs` page after login, so you can try endpoints from the browser without `curl`.
 
-Tests: login flow, CSRF rejection, bearer token for the API, `--expose` refusing 0.0.0.0, security headers present.
+Tests: login flow, CSRF rejection, bearer token for the API, a bind address other than localhost refused, security headers present.
 
 Not in this step: the web UI, jobs.
 ```
@@ -89,7 +89,7 @@ Not in this step: the web UI, jobs.
 #### Done means
 
 1. `fefat up` starts; `/v1/healthz` answers; `/docs` works only after login (or is disabled outside dev).
-2. Login, CSRF, bearer, and bind-address tests pass; `--expose tailscale` without Tailscale installed fails with a clear message.
+2. Login, CSRF, bearer, and bind-address tests pass.
 3. `just gen-api` produces the schema and the TypeScript types; CI drift check is wired.
 
 #### Your checks
@@ -100,13 +100,13 @@ Not in this step: the web UI, jobs.
 
 - Cookies not set in the browser: `Secure` must be off on plain http://localhost; the server decides by scheme.
 
-### 4.3 Web shell, login, phone navigation, UI test harness
+### 4.3 Web shell, login, navigation, UI test harness
 
 Depends on: 4.2 · Plan mode: required · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
 
 #### Purpose
 
-The web app exists: login, navigation that works on a phone, the data layer wired to the typed client, and a Playwright harness every later UI step uses.
+The web app exists: login, navigation, the data layer wired to the typed client, and a Playwright harness every later UI step uses.
 
 #### Prerequisites
 
@@ -115,25 +115,25 @@ The web app exists: login, navigation that works on a phone, the data layer wire
 #### Prompt
 
 ```text
-Masterplan step 4.3 — Web shell, login, phone navigation, UI test harness.
+Masterplan step 4.3 — Web shell, login, navigation, UI test harness.
 
-Read docs/masterplan/01-architecture.md §2 (web stack) and §3 (the `web/src` layout), the phone layout notes in docs/masterplan/00-product-spec.md §2.4, docs/masterplan/08-code-design.md §5, and the design brief from the Phase 4 kickoff; load the `frontend-design` skill. Write `web/DESIGN.md` first — the palette as four to six named hex values, the typefaces and type scale, the layout concept and alignment, the principles that make FEFAT's screens its own — review it against the generic defaults the skill lists, record what you changed and why, and only then build: the tokens become the Tailwind theme and CSS variables, and shadcn/ui components are themed from them. In `web/` set up Vite + React + TypeScript with Tailwind and shadcn/ui, TanStack Router (file-based routes) and TanStack Query, laid out as `src/app`, `src/areas/<area>`, `src/ui`, `src/charts`, `src/api` with an import-boundary lint (chosen at the kickoff: `eslint-plugin-boundaries`, or oxlint's `no-restricted-imports` patterns) keeping areas from importing each other, an `openapi-fetch` client over the generated types, a login page, a protected app layout with a sidebar on desktop and bottom tabs on phones (Lab, Strategies, Runs, Prop, Agent — placeholders for now), a settings page (change password, API tokens, model defaults, data folder shown read-only), dark and light themes, and an error boundary. Every page must work at 390×844 without horizontal scroll.
+Read docs/masterplan/01-architecture.md §2 (web stack) and §3 (the `web/src` layout), docs/masterplan/08-code-design.md §5, and the design brief from the Phase 4 kickoff; load the `frontend-design` skill. Write `web/DESIGN.md` first — the palette as four to six named hex values, the typefaces and type scale, the layout concept and alignment, the principles that make FEFAT's screens its own — review it against the generic defaults the skill lists, record what you changed and why, and only then build: the tokens become the Tailwind theme and CSS variables, and shadcn/ui components are themed from them. In `web/` set up Vite + React + TypeScript with Tailwind and shadcn/ui, TanStack Router (file-based routes) and TanStack Query, laid out as `src/app`, `src/areas/<area>`, `src/ui`, `src/charts`, `src/api` with an import-boundary lint (chosen at the kickoff: `eslint-plugin-boundaries`, or oxlint's `no-restricted-imports` patterns) keeping areas from importing each other, an `openapi-fetch` client over the generated types, a login page, a protected app layout with a sidebar (Lab, Strategies, Runs, Prop, Agent — placeholders for now), a settings page (change password, API tokens, model defaults, data folder shown read-only), dark and light themes, and an error boundary.
 
-Add the Playwright harness: a seeded test server (`just e2e` starts `fefat up` on a temp FEFAT_HOME with synthetic data), projects for desktop and phone viewports, a login fixture, screenshot helpers; and the `ui-verifier` subagent under `.claude/agents/` (model: sonnet) that runs the harness and reports per criterion with screenshots. Configure `just dev` to run the server and the Vite dev server with a proxy.
+Add the Playwright harness: a seeded test server (`just e2e` starts `fefat up` on a temp FEFAT_HOME with synthetic data), a desktop viewport project (1280×800), a login fixture, screenshot helpers; and the `ui-verifier` subagent under `.claude/agents/` (model: sonnet) that runs the harness and reports per criterion with screenshots. Configure `just dev` to run the server and the Vite dev server with a proxy.
 
 Not in this step: any domain page.
 ```
 
 #### Done means
 
-1. `just dev` opens the app; login works; the layout switches to bottom tabs at phone width.
-2. Playwright specs pass for login and navigation on both projects; screenshots for desktop and phone are attached to the PR.
+1. `just dev` opens the app and login works.
+2. Playwright specs pass for login and navigation; screenshots are attached to the PR.
 3. `just build-web` produces `web/dist`, and `fefat up` serves it.
 4. `web/DESIGN.md` exists with tokens, type, layout, principles, and the review notes; the screenshots show the themed components, not shadcn's defaults.
 
 #### Your checks
 
-- Run `just dev`, log in, narrow the window to phone width: bottom tabs appear and nothing scrolls sideways. Toggle dark mode.
+- Run `just dev`, log in, open each placeholder page. Toggle dark mode.
 
 #### If it fails
 
@@ -143,13 +143,15 @@ Not in this step: any domain page.
 
 2026-10-09: the step now starts from the design brief and writes `web/DESIGN.md` with the `frontend-design` skill (D-28), and lays out `web/src` by product area with import boundaries (D-27).
 
+2026-10-23 (D-54): no phone layout, bottom tabs, or phone viewport project; the harness and every later UI step verify at desktop size, and the phone pass is the backlog's phone item.
+
 ### 4.4 Jobs: local process pool, resumable progress streams, cancel
 
 Depends on: 4.2, 4.3 · Plan mode: required · Reviews: step-reviewer, code-review · Security: no · Model hint: hard
 
 #### Purpose
 
-Long work runs in the background on your cores, reports progress that survives reloads and dropped phone connections, and can be cancelled.
+Long work runs in the background on your cores, reports progress that survives reloads and dropped connections, and can be cancelled.
 
 #### Prerequisites
 
@@ -166,14 +168,14 @@ In the web app add a jobs drawer (list, progress bars, cancel) using a fetch-bas
 
 Tests: state transitions; a killed worker's job is requeued up to max attempts; cancel stops a demo job; the SSE reader resumes without duplicates after a simulated disconnect.
 
-Not in this step: real job kinds (backtests come in 5.3), push notifications.
+Not in this step: real job kinds (backtests come in 5.3).
 ```
 
 #### Done means
 
 1. Job tests pass, including requeue after a killed worker and cancellation.
 2. The SSE resume test passes with no duplicate or missing events.
-3. The jobs drawer shows a running demo job with live progress on desktop and phone (screenshots).
+3. The jobs drawer shows a running demo job with live progress (screenshot).
 
 #### Your checks
 
@@ -262,8 +264,12 @@ Not in this step: push notifications (5.11), offline behaviour beyond the app sh
 - Certificate errors on iOS: the tailnet HTTPS certificate must be served with the full chain; `tailscale serve` handles this, a hand-rolled uvicorn SSL config may not.
 - The install prompt never appears on iOS: there is none; use Share → Add to Home Screen, which the hint explains.
 
+#### Amendment
+
+2026-10-23 (D-54): skipped. Phone access is deferred until FEFAT is fully functional; the Tailscale exposure, the HTTPS certificate, the installable app, and the phone checklist are the backlog's phone item, to be run as written then.
+
 ## Phase exit
 
 ```text
-/phase-exit 4 — Run the exit procedure for Phase 4: clean-clone suite including Playwright; /security-review over the server, auth, executor, and Tailscale exposure; demo script = docs/phone-checklist.md; retro; backlog groomed; tag phase-4.
+/phase-exit 4 — Run the exit procedure for Phase 4: clean-clone suite including Playwright; /security-review over the server, auth, and executor; demo = log in, start the demo job, reload, watch it continue, cancel it; retro; backlog groomed; tag phase-4.
 ```

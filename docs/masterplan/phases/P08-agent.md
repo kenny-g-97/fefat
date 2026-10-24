@@ -2,7 +2,7 @@
 
 **Goal.** Claude inside FEFAT: a tool loop on the Messages API with an append-only transcript, sessions you can resume from any device, read tools over your data and runs, execution tools that run previews and backtests, write tools that only ever create proposals you accept or reject, skills that carry the know-how, cost caps, an evaluation suite, and tests that prove consent cannot be bypassed.
 
-**You get.** "Why did March lose money?" answered with evidence; "add a volatility filter" turned into a proposal, a new version, and a backtest you compare — from the phone too.
+**You get.** "Why did March lose money?" answered with evidence; "add a volatility filter" turned into a proposal, a new version, and a backtest you compare.
 
 **Depends on.** Phase 7 (so the agent can drive prop simulations) and Phase 6.
 
@@ -136,7 +136,7 @@ Depends on: 8.3 · Plan mode: optional · Reviews: step-reviewer, ui-verifier ·
 
 #### Purpose
 
-The chat lives in the app, streams tokens, shows tool activity, carries page context, and survives reloads and phone locks.
+The chat lives in the app, streams tokens, shows tool activity, carries page context, and survives reloads.
 
 #### Prerequisites
 
@@ -147,9 +147,9 @@ The chat lives in the app, streams tokens, shows tool activity, carries page con
 ```text
 Masterplan step 8.4 — Chat with resumable streaming.
 
-Build the Agent section and a context-aware chat panel: on desktop a side panel on strategy, run, and feature pages and a full page under Agent; on phones a full-screen sheet opened from a button. The chat lists sessions, shows messages with markdown (no remote images; CSP enforced), tool chips (name, duration, expandable compact output), streaming text via the turn's event stream with reconnect (`Last-Event-ID`), a Stop button, and a context header ("about run X" with a link). New sessions carry the page context into the first message. A turn continues server-side when the client disconnects; reopening the session attaches to the running turn.
+Build the Agent section and a context-aware chat panel: on desktop a side panel on strategy, run, and feature pages and a full page under Agent. The chat lists sessions, shows messages with markdown (no remote images; CSP enforced), tool chips (name, duration, expandable compact output), streaming text via the turn's event stream with reconnect (`Last-Event-ID`), a Stop button, and a context header ("about run X" with a link). New sessions carry the page context into the first message. A turn continues server-side when the client disconnects; reopening the session attaches to the running turn.
 
-Playwright: send a message on the seeded run, see streaming text and a tool chip, reload mid-turn, see the turn finish; desktop and phone.
+Playwright: send a message on the seeded run, see streaming text and a tool chip, reload mid-turn, see the turn finish.
 
 Not in this step: proposals.
 ```
@@ -162,7 +162,7 @@ Not in this step: proposals.
 
 #### Your checks
 
-- On your phone, ask "why did March lose money?" about a real run; lock the phone for a minute; unlock: the answer is complete.
+- Ask "why did March lose money?" about a real run; close the tab for a minute; reopen it: the answer is complete.
 
 #### If it fails
 
@@ -223,9 +223,9 @@ The agent can suggest changes, and you review and decide them on any device.
 ```text
 Masterplan step 8.6 — Write tools and proposal review UI.
 
-Add the write tools `propose_change`, `propose_new`, and `add_note` to the registry (consent: proposal): they create proposals with validation and return "awaiting your review"; the turn then ends with a short message. Build the proposal review UI: a proposals inbox (pending, decided), and a review page with the diff (`@codemirror/merge`: side-by-side on desktop, unified with per-chunk accept on phones is optional — whole-proposal accept/reject is required), validation results, the agent's explanation, a comment box, and a sticky Accept/Reject bar; proposal cards appear inline in the chat. After a decision, the chat shows the agent's follow-up.
+Add the write tools `propose_change`, `propose_new`, and `add_note` to the registry (consent: proposal): they create proposals with validation and return "awaiting your review"; the turn then ends with a short message. Build the proposal review UI: a proposals inbox (pending, decided), and a review page with the diff (`@codemirror/merge`: side-by-side, unified in a narrow window; per-chunk accept is optional — whole-proposal accept/reject is required), validation results, the agent's explanation, a comment box, and a sticky Accept/Reject bar; proposal cards appear inline in the chat. After a decision, the chat shows the agent's follow-up.
 
-Playwright: ask the seeded agent (replayed fixture) to add a stop-loss change; see the proposal; accept on the phone project; see version 2 and the follow-up message.
+Playwright: ask the seeded agent (replayed fixture) to add a stop-loss change; see the proposal; accept; see version 2 and the follow-up message.
 
 Not in this step: execution tools.
 ```
@@ -238,11 +238,11 @@ Not in this step: execution tools.
 
 #### Your checks
 
-- Ask the agent, from your phone, to tighten the stop on a strategy; review the diff; accept; open the new version.
+- Ask the agent to tighten the stop on a strategy; review the diff; accept; open the new version.
 
 #### If it fails
 
-- If the diff is unreadable on the phone, use the unified merge view; side-by-side is desktop only.
+- If the diff is unreadable in a narrow window, use the unified merge view.
 
 ### 8.7 Execution tools with cost confirmation
 
@@ -272,7 +272,7 @@ Not in this step: skills.
 
 1. Sandbox and confirmation tests pass.
 2. "Run a backtest of version 2 on 2024 and compare with version 1" produces two run ids and a comparison in one or two turns (replayed fixture).
-3. The confirmation card works on the phone (screenshot).
+3. The confirmation card works (screenshot).
 
 #### Your checks
 
@@ -398,7 +398,7 @@ Depends on: 8.10 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Se
 
 #### Purpose
 
-The agent loop you asked for, demonstrated on the phone: analyse, propose, accept, backtest, compare.
+The agent loop you asked for, demonstrated in the browser: analyse, propose, accept, backtest, compare.
 
 #### Prerequisites
 
@@ -409,7 +409,7 @@ The agent loop you asked for, demonstrated on the phone: analyse, propose, accep
 ```text
 Masterplan step 8.11 — End to end.
 
-Write one Playwright flow (replayed agent fixtures, real executor and engine on synthetic data): open a run, ask why a month lost money, get an answer with a tool chip, ask for a filter, receive a proposal, accept it on the phone project, see version 2, confirm the backtest, see the comparison. Run the ui-verifier over the chat and proposals pages at both sizes. Record a demo video; write docs/demo-agent.md. Update docs/engine-guide.md with an "Agent" section explaining proposals, caps, and skills.
+Write one Playwright flow (replayed agent fixtures, real executor and engine on synthetic data): open a run, ask why a month lost money, get an answer with a tool chip, ask for a filter, receive a proposal, accept it, see version 2, confirm the backtest, see the comparison. Run the ui-verifier over the chat and proposals pages. Record a demo video; write docs/demo-agent.md. Update docs/engine-guide.md with an "Agent" section explaining proposals, caps, and skills.
 
 Not in this step: new features.
 ```
@@ -417,12 +417,12 @@ Not in this step: new features.
 #### Done means
 
 1. The flow passes on both projects in CI.
-2. The ui-verifier report shows no remaining phone issues.
+2. The ui-verifier report shows no remaining issues.
 3. `docs/demo-agent.md` exists with the video attached.
 
 #### Your checks
 
-- Follow `docs/demo-agent.md` on your phone with your real strategy.
+- Follow `docs/demo-agent.md` with your real strategy.
 
 #### If it fails
 
