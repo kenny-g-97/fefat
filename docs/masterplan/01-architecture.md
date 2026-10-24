@@ -180,7 +180,7 @@ The web app's TypeScript types are generated from `web/openapi.json` by `openapi
 
 ## 8. Local server security
 
-- Binds to `127.0.0.1` only; the server never binds to another address. Exposure to the phone is deferred (D-53).
+- Binds to `127.0.0.1` only; the server never binds to another address. Exposure to the phone is deferred (D-54).
 - Login by password (set on first run) creates a session cookie (`HttpOnly`, `Secure` when served over HTTPS, `SameSite=Strict`). A CSRF token guards state-changing requests. A bearer token is accepted for notebooks and scripts.
 - Rate limit on login; passwords hashed with Argon2.
 - Content Security Policy: `default-src 'self'; img-src 'self' data: blob:` (no remote images in chat).

@@ -1,6 +1,6 @@
 # FEFAT — working agreements
 
-FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for futures and crypto traders: a feature lab, a Rust backtesting engine with strict versioning, a prop-firm simulator, and an in-app Claude agent; phone access is deferred until the rest works (D-53). It is built step by step from the masterplan: start at [docs/masterplan/README.md](docs/masterplan/README.md). How a step runs is in [05-build-process.md](docs/masterplan/05-build-process.md); how code is shaped is in [08-code-design.md](docs/masterplan/08-code-design.md).
+FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for futures and crypto traders: a feature lab, a Rust backtesting engine with strict versioning, a prop-firm simulator, and an in-app Claude agent; phone access is deferred until the rest works (D-54). It is built step by step from the masterplan: start at [docs/masterplan/README.md](docs/masterplan/README.md). How a step runs is in [05-build-process.md](docs/masterplan/05-build-process.md); how code is shaped is in [08-code-design.md](docs/masterplan/08-code-design.md).
 
 This file holds what every session needs. Language conventions live in `.claude/rules/` (loaded by path), procedures in `.claude/skills/`, architecture in the docs, and the hard limits in the hooks under `.claude/hooks/`, registered in `.claude/settings.json`.
 

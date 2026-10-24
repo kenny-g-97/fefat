@@ -455,7 +455,7 @@ Not in this step: notification preferences per kind (Phase 12).
 
 #### Amendment
 
-2026-10-23 (D-53): skipped. Web push existed for the phone; a finished run shows in the jobs drawer (4.4) and on the run page. Notifications and the `notify` hook are the backlog's phone item, so 7.10 registers no job kind with it.
+2026-10-23 (D-54): skipped. Web push existed for the phone; a finished run shows in the jobs drawer (4.4) and on the run page. Notifications and the `notify` hook are the backlog's phone item, so 7.10 registers no job kind with it.
 
 ### 5.12 Import wizard for your own market data
 
@@ -535,7 +535,7 @@ Not in this step: new features.
 
 2026-10-12 (D-37): the end-to-end flow connects a synthetic source and updates a catalog product instead of a platform product.
 
-2026-10-23 (D-53): no phone pass and no dependency on 5.11; the walk is at desktop size only.
+2026-10-23 (D-54): no phone pass and no dependency on 5.11; the walk is at desktop size only.
 
 ## Phase exit
 

@@ -4,7 +4,7 @@
 
 **You get.** Confidence, backups, and a written list of what remains before selling it.
 
-**Depends on.** Phase 11 (Phase 12 is deferred, D-53).
+**Depends on.** Phase 11 (Phase 12 is deferred, D-54).
 
 **Open decisions for the kickoff.** Where backups go (a second drive, a NAS, a cloud bucket you own); how long to keep them.
 

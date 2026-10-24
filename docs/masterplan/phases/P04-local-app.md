@@ -1,6 +1,6 @@
 # Phase 4 — Local app
 
-**Goal.** The application skeleton on your PC: a SQLite-backed local server with login, a React web shell, a job runner with resumable progress streams, and a subprocess executor for user code. Phone access is deferred until FEFAT is fully functional (D-53).
+**Goal.** The application skeleton on your PC: a SQLite-backed local server with login, a React web shell, a job runner with resumable progress streams, and a subprocess executor for user code. Phone access is deferred until FEFAT is fully functional (D-54).
 
 **You get.** `fefat up`, log in from your browser, run a demo job and watch its progress survive a reload.
 
@@ -143,7 +143,7 @@ Not in this step: any domain page.
 
 2026-10-09: the step now starts from the design brief and writes `web/DESIGN.md` with the `frontend-design` skill (D-28), and lays out `web/src` by product area with import boundaries (D-27).
 
-2026-10-23 (D-53): no phone layout, bottom tabs, or phone viewport project; the harness and every later UI step verify at desktop size, and the phone pass is the backlog's phone item.
+2026-10-23 (D-54): no phone layout, bottom tabs, or phone viewport project; the harness and every later UI step verify at desktop size, and the phone pass is the backlog's phone item.
 
 ### 4.4 Jobs: local process pool, resumable progress streams, cancel
 
@@ -266,7 +266,7 @@ Not in this step: push notifications (5.11), offline behaviour beyond the app sh
 
 #### Amendment
 
-2026-10-23 (D-53): skipped. Phone access is deferred until FEFAT is fully functional; the Tailscale exposure, the HTTPS certificate, the installable app, and the phone checklist are the backlog's phone item, to be run as written then.
+2026-10-23 (D-54): skipped. Phone access is deferred until FEFAT is fully functional; the Tailscale exposure, the HTTPS certificate, the installable app, and the phone checklist are the backlog's phone item, to be run as written then.
 
 ## Phase exit
 

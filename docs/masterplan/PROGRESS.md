@@ -20,7 +20,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-10-19 — Before step 1.10 imports your platforms' exports, the commit guard refuses CSV and other plain-text tables, spreadsheets, archives, and compressors by name, more data formats by their first bytes, and text exports that begin with a table of numbers, and it checks every commit: a new `pre-push` hook checks each commit a push sends, and CI each commit of a pull request (D-48, the `config/data-guard-text-and-push` pull request). No step changed.
 - 2026-10-21 — The Phase 1 exit (D-50, pull request #23) fixed what the phase-wide reviews found (a re-import with other arguments refused, the Thanksgiving Friday close of energy and metals, a daily import's warning, a close-stamped bar at an early close, a spliced load gridding the fronts only, an empty load refused, the push guard's URL and tree cases), took the upgrade step (Rust 1.99.1, the lockfiles, `rust-cache` v2.9.3), and wrote the retro into `CLAUDE.md`, the `step` skill, and 05 §2: a step's closing message names the next step, a prerequisite pull request is merged before a step continues, and a store change is explained in plain words. No step changed.
 - 2026-10-21 — Phase 2 kickoff (D-51, pull request #24): your fill defaults (a limit fills on a trade through its price, one tick of slippage that each run can change, 100 ms latency), a reference capital of 50,000 USD, the NautilusTrader comparison on MES in August 2026, and no fill exports for now; every Phase 2 step reconciled with the data on this PC (1-minute bars for the four micros, so the real-data checks fill at bar fidelity on MES, while tick fills run on the fixtures and on generated tapes), with the backlog items aimed at the kickoff written into steps 2.1 to 2.7 and 2.9 to 2.11 (an Amendment under each step); scenarios are YAML and goldens JSON. No step ID changed.
-- 2026-10-23 — Phone access leaves the plan until FEFAT is fully functional (D-53, superseding D-17): FEFAT is used from the browser on the PC, with no Tailscale exposure, installable app, web push, or phone-size check in the UI steps. Phase 4 becomes the local app alone (4.3 and 4.4 reworded), steps 4.6 and 5.11 and all of Phase 12 are skipped, 5.13 loses its phone pass, Phase 13 follows Phase 11, and the phone plan is one backlog item that runs after Phase 14 or earlier at a kickoff. No step ID changed.
+- 2026-10-23 — Phone access leaves the plan until FEFAT is fully functional (D-54, superseding D-17): FEFAT is used from the browser on the PC, with no Tailscale exposure, installable app, web push, or phone-size check in the UI steps. Phase 4 becomes the local app alone (4.3 and 4.4 reworded), steps 4.6 and 5.11 and all of Phase 12 are skipped, 5.13 loses its phone pass, Phase 13 follows Phase 11, and the phone plan is one backlog item that runs after Phase 14 or earlier at a kickoff. No step ID changed.
 
 ## Steps
 
@@ -73,7 +73,7 @@ Phase kickoffs and exits are tracked in the second table.
 | 4.3 | Web shell, login, navigation, UI test harness | P4 | todo | | | |
 | 4.4 | Jobs: local process pool, resumable progress streams, cancel | P4 | todo | | | |
 | 4.5 | Executor: subprocess isolation and limits for user code | P4 | todo | | | |
-| 4.6 | Phone access over Tailscale, installable app, smoke test from the phone | P4 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
+| 4.6 | Phone access over Tailscale, installable app, smoke test from the phone | P4 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
 | 5.1 | Schema and data catalog from the data folder | P5 | todo | | | |
 | 5.2 | Strategy versions API | P5 | todo | | | |
 | 5.3 | Backtest job | P5 | todo | | | |
@@ -84,7 +84,7 @@ Phase kickoffs and exits are tracked in the second table.
 | 5.8 | Trade table | P5 | todo | | | |
 | 5.9 | Trade review chart | P5 | todo | | | |
 | 5.10 | Run comparison, version diff, reproduce-run check | P5 | todo | | | |
-| 5.11 | Notifications on completion | P5 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
+| 5.11 | Notifications on completion | P5 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
 | 5.12 | Import wizard for your own market data | P5 | todo | | | |
 | 5.13 | End-to-end suite and demo | P5 | todo | | | |
 | 6.1 | Feature library pages | P6 | todo | | | |
@@ -139,11 +139,11 @@ Phase kickoffs and exits are tracked in the second table.
 | 11.6 | Monte Carlo robustness | P11 | todo | | | |
 | 11.7 | Agent tools for studies | P11 | todo | | | |
 | 11.8 | End to end | P11 | todo | | | |
-| 12.1 | Install and update audit | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
-| 12.2 | Notifications for every job kind, with preferences | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
-| 12.3 | Touch audit of charts and forms | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
-| 12.4 | Speed on the phone | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
-| 12.5 | Offline and reconnect behaviour | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-53) |
+| 12.1 | Install and update audit | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
+| 12.2 | Notifications for every job kind, with preferences | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
+| 12.3 | Touch audit of charts and forms | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
+| 12.4 | Speed on the phone | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
+| 12.5 | Offline and reconnect behaviour | P12 | skipped | | 2026-10-23 | Deferred with the phone item (D-54) |
 | 13.1 | Security review of the local server | P13 | todo | | | |
 | 13.2 | Robustness and resource limits | P13 | todo | | | |
 | 13.3 | Diagnostics and logs | P13 | todo | | | |
@@ -177,7 +177,7 @@ Phase kickoffs and exits are tracked in the second table.
 | P9 | | | | | |
 | P10 | | | | | |
 | P11 | | | | | |
-| P12 | (deferred, D-53) | 2026-10-23 | (deferred, D-53) | 2026-10-23 | |
+| P12 | (deferred, D-54) | 2026-10-23 | (deferred, D-54) | 2026-10-23 | |
 | P13 | | | | | |
 | P14 | | | | | |
 
@@ -190,7 +190,7 @@ Phase kickoffs and exits are tracked in the second table.
 | Every run ready for prop simulation (trade paths) | 2.13 | |
 | Trustworthy tick-level backtests from a notebook | 2.15 | |
 | Feature system complete in notebooks | 3.8 | |
-| App on the phone over Tailscale | 4.6 | deferred (D-53) |
+| App on the phone over Tailscale | 4.6 | deferred (D-54) |
 | Web MVP | 5.13 | |
 | Feature lab and builder | 6.9 | |
 | Prop simulator on saved backtests and imported trade logs | 7.11 | |
@@ -198,7 +198,7 @@ Phase kickoffs and exits are tracked in the second table.
 | Event strategies | 9.6 | |
 | Alternative data | 10.7 | |
 | Research tools | 11.8 | |
-| Phone polish | 12.5 | deferred (D-53) |
+| Phone polish | 12.5 | deferred (D-54) |
 | Hardening | 13.7 | |
 | Signed catalog updates from a static host | 14.7 | |
 | Desktop installers tested on clean machines | 14.9 | |

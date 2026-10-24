@@ -65,7 +65,7 @@ Cost-bearing actions (long studies, large imports) use the same object with `con
 
 ## 8. Phone
 
-Deferred (D-53): the chat as a full-screen sheet carrying the page's context, and proposals decided on the phone, return with the backlog's phone item. Long turns continue server-side already, so a closed tab can come back.
+Deferred (D-54): the chat as a full-screen sheet carrying the page's context, and proposals decided on the phone, return with the backlog's phone item. Long turns continue server-side already, so a closed tab can come back.
 
 ## 9. The `AgentRuntime` seam
 
