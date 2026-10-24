@@ -74,6 +74,11 @@ test-engine:
 gen-schema:
     cargo run -p fefat-cli -- schema ../python/fefat/src/fefat/strategy/strategy_spec.schema.json
 
+# Rewrite the goldens under fixtures/goldens/ from the engine's output: only with the builder's approval, after the version bump, and with a changelog entry (the engine-golden skill)
+[working-directory("engine")]
+regenerate-goldens:
+    cargo run -p fefat-cli -- determinism 20260308 --write ../fixtures/goldens/determinism/MANIFEST.json
+
 # Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
 strip-notebooks:
     uv run python scripts/strip_notebooks.py
