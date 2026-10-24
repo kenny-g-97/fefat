@@ -1,0 +1,44 @@
+id: S-template-003
+title: A template closes its position at its flat-by time and enters nothing after it that trade date
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 24}}]
+    time: {tz: America/Chicago, flat_by: "15:05"}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T20:50:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T21:00:00Z", trade_date: "2026-03-06", contract: ESH2026}
+  - {ts_close: "2026-03-06T21:05:00Z", trade_date: "2026-03-06", contract: ESH2026}
+  - {ts_close: "2026-03-06T21:10:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T20:50:00Z", ts_close: "2026-03-06T20:51:00Z", open: "5000.00", high: "5001.00", low: "4999.50", close: "5000.50", volume: 80}
+  - {ts_open: "2026-03-06T21:05:00Z", ts_close: "2026-03-06T21:06:00Z", open: "5002.00", high: "5002.50", low: "5001.50", close: "5002.25", volume: 60}
+  - {ts_open: "2026-03-06T21:10:00Z", ts_close: "2026-03-06T21:11:00Z", open: "5003.00", high: "5003.50", low: "5002.75", close: "5003.25", volume: 40}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T20:51:00Z", price: "5000.25", rule: F-MKT-03}
+    - {order: 4, ts: "2026-03-06T21:06:00Z", price: "5001.75", rule: F-MKT-03}
+rules: [F-ACT-02, F-MKT-03, F-OCO-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01; 2026-03-06 is a Friday on
+# Chicago's winter time, UTC-6):
+# the flat-by time 15:05 in Chicago on trade date 2026-03-06 is 21:05 UTC, inside the session from
+# 23:00 UTC on 03-05 to 22:00 UTC, and 22 h 05 min = 265 five-minute bars after its open, so on
+# the signal bars' grid;
+# at the 20:50 close (14:50 in Chicago) long_entry is true: order 1 buys 1 lot at the market and
+# fills at the open of the bar from 20:50 to 20:51 plus a tick, 5000.00 + 0.25 = 5000.25 (F-ACT-02,
+# F-MKT-03); its bracket, orders 2 and 3, is placed at 4997.25 and 5006.25 (F-OCO-02), and the
+# rest of that bar, 4999.50 to 5001.00, reaches neither;
+# at the 21:00 close nothing is signalled and the long stays open;
+# at the 21:05 close the flat-by time is reached: the template cancels orders 2 and 3 and sells the
+# lot at the market, order 4, active at 21:05:00.100; it fills at the open of the bar from 21:05
+# to 21:06 less a tick, 5002.00 - 0.25 = 5001.75 (F-MKT-03), at 21:06;
+# at the 21:10 close long_entry is true again, but the flat-by time has passed on this trade date,
+# so nothing is placed: the bar from 21:10 to 21:11 would have filled a buy at 5003.00 + 0.25 = 5003.25.

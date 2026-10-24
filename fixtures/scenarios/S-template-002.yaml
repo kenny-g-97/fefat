@@ -1,0 +1,38 @@
+id: S-template-002
+title: A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: column}
+    targets: [{price: {kind: column}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, short_entry: true, stop_price: "5003.00", target_price: "4990.00", size_mult: 2}
+tape:
+  - {ts: "2026-03-06T14:35:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-06T14:35:01.000Z", price: "5001.50", size: 1}
+  - {ts: "2026-03-06T14:35:02.000Z", price: "5003.00", size: 4}
+  - {ts: "2026-03-06T14:35:02.500Z", price: "5003.50", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:35:00.200Z", price: "4999.75", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:35:02.000Z", price: "5003.25", rule: F-STP-03}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-QTY-01, F-SLP-01, F-STP-01, F-STP-03, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# at the 14:35 close short_entry is true: the template sells 1 unit × size_mult 2 = 2 lots at the
+# market, order 1, active at 14:35:00.100 (F-ACT-01);
+# it fills on the first trade at or after its activation, 5000.00 at 14:35:00.200, less a tick:
+# 5000.00 - 0.25 = 4999.75 (F-MKT-02); 2 lots on a trade of 3 is not flagged (F-QTY-01);
+# its bracket is placed then from the row's columns (F-OCO-02): a buy stop, order 2, at its
+# stop_price 5003.00, and a buy limit, order 3, at its target_price 4990.00; the stop is above the
+# entry's trade, 5000.00, so it is not through the market (F-STP-05); both work from the next trade;
+# the trade at 14:35:01.000, 5001.50, reaches neither;
+# the trade at 14:35:02.000, 5003.00, is at the stop and triggers it (F-STP-01):
+# fill = higher of (5003.00 + 0.25, 5003.00) = 5003.25 (F-STP-03), 2 lots on a trade of 4;
+# the target is cancelled (F-OCO-01): the short lost 2 × (5003.25 - 4999.75) = 7.00 points.

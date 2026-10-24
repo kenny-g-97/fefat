@@ -6,7 +6,7 @@ reference engine holds while it runs, in its `Book` (step 2.2)."""
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Protocol, Self
 
 from pydantic import Field, model_validator
 
@@ -200,6 +200,54 @@ class TicksBracket(FrozenModel):
         )
 
 
+class BracketRule(Protocol):
+    """How a bracket, a frozen value, sets its stop and its target when its entry on `side` fills
+    at `price` (F-OCO-02): `Bracket`, `TicksBracket`, or `TemplateBracket`."""
+
+    def legs(self, side: Side, price: int, tick: int, new_id: Callable[[], int]) -> BracketLegs:
+        """The ids and prices of the stop and the target, ids from `new_id` where the bracket
+        names none."""
+        ...
+
+
+class TicksAway(FrozenModel):
+    """A bracket leg `ticks` from its entry's fill price: against the position for a stop, in its
+    favour for a target."""
+
+    ticks: int = Field(gt=0)
+
+    def level(self, fill: int, step: int) -> int:
+        """The leg's price: `ticks` steps of `step` from the `fill`."""
+        return fill + self.ticks * step
+
+
+class AtPrice(FrozenModel):
+    """A bracket leg at `price`, a raw price in 1e-9 units, wherever its entry fills."""
+
+    price: int
+
+    def level(self, fill: int, step: int) -> int:
+        """The leg's own price."""
+        return self.price
+
+
+class TemplateBracket(FrozenModel):
+    """The bracket of an execution template's basic subset (step 2.3): its stop and its target,
+    each in ticks from the entry's fill or at a price of the signal frame."""
+
+    stop: TicksAway | AtPrice
+    target: TicksAway | AtPrice
+
+    def legs(self, side: Side, price: int, tick: int, new_id: Callable[[], int]) -> BracketLegs:
+        """New ids, and the stop and the target from the entry's fill `price`: in ticks, a buy's
+        stop below it and its target above."""
+        away = side.sign() * tick
+        return (new_id(), self.stop.level(price, -away)), (
+            new_id(),
+            self.target.level(price, away),
+        )
+
+
 @dataclass(slots=True)
 class WorkingOrder:
     """An order the engine holds from its placement to its fill or cancellation. `price` is a
@@ -218,7 +266,7 @@ class WorkingOrder:
     activation: int
     seen_after: int
     oco: str | None = None
-    bracket: Bracket | TicksBracket | None = None
+    bracket: BracketRule | None = None
     state: OrderState = OrderState.WAITING
     rested: bool = False
 

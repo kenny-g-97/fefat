@@ -1,6 +1,8 @@
 """The scenario runner (step 2.2): every fill scenario of `fixtures/scenarios/` through the
-reference engine, its fills, marks, and funding compared exactly with those it expects, and
-how the scenarios cover the rules of `docs/spec/fill-semantics.md`. From the repository folder:
+reference engine, an order scenario's orders placed at their decisions and a template
+scenario's strategy run from its signal rows (step 2.3), its fills, marks, and funding compared
+exactly with those it expects, and how the scenarios cover the rules of
+`docs/spec/fill-semantics.md`. From the repository folder:
 
     uv run python -m fefat.reference.scenario_runner
     uv run python -m fefat.reference.scenario_runner --log S-fill-012
@@ -25,11 +27,19 @@ from fefat.market.calendar_definition import Calendar
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.orders import PositionSide
-from fefat.reference.scenarios import Scenario, load_scenarios, specified_rules
-from fefat.reference.strategy import Decision, DecisionContext
+from fefat.reference.scenarios import (
+    AnyScenario,
+    Scenario,
+    TemplateScenario,
+    load_scenarios,
+    specified_rules,
+)
+from fefat.reference.strategy import Decision, DecisionContext, OnBar, decisions_of
+from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import (
     InlineInstrument,
+    InstrumentParameters,
     instant_text,
     instrument_parameters,
     lots_of,
@@ -46,7 +56,7 @@ class ScenarioOutcome:
     """A scenario's run, and how its fills, marks, and funding differ from those it expects:
     nothing when it passes."""
 
-    scenario: Scenario
+    scenario: AnyScenario
     result: RunResult
     differences: tuple[str, ...]
 
@@ -65,30 +75,47 @@ class ScenarioReport:
         return sum(1 for outcome in self.outcomes if not outcome.differences)
 
 
-def run_scenario(scenario: Scenario, hours: TradingHours) -> ScenarioOutcome:
-    """`scenario` through the reference engine, with its orders placed at their decisions."""
-    engine = ReferenceEngine(
-        scenario.settings,
-        instrument_parameters(scenario.instrument),
-        scenario.fidelity,
-        hours,
-        scenario.fees,
-    )
-    instants = sorted({order.placed_at for order in scenario.orders})
-    decisions = [Decision(ts=instant, bar={"ts_close": instant}) for instant in instants]
-
-    def place_its_orders(bar: object, context: DecisionContext) -> None:
-        for order in scenario.orders:
-            if order.placed_at == context.now:
-                context.place(order)
-
-    result = engine.run(
-        scenario.tape, decisions, place_its_orders, scenario.funding, held_lots(scenario)
-    )
+def run_scenario(
+    scenario: AnyScenario, hours: TradingHours, sessions: SessionTable | None = None
+) -> ScenarioOutcome:
+    """`scenario` through the reference engine, open during `hours`: an order scenario's orders
+    placed at their decisions, or a template scenario's strategy run from its signal rows on
+    `sessions`, its instrument's session table."""
+    parameters = instrument_parameters(scenario.instrument)
+    engine = ReferenceEngine(scenario.settings, parameters, scenario.fidelity, hours, scenario.fees)
+    if isinstance(scenario, TemplateScenario):
+        decisions, on_bar = _template_decisions(scenario, parameters, sessions)
+    else:
+        decisions, on_bar = _order_decisions(scenario)
+    result = engine.run(scenario.tape, decisions, on_bar, scenario.funding, held_lots(scenario))
     return ScenarioOutcome(scenario, result, differences(scenario, result))
 
 
-def held_lots(scenario: Scenario) -> int:
+def _order_decisions(scenario: Scenario) -> tuple[list[Decision], OnBar]:
+    """A decision at each instant the scenario places orders, placing them there."""
+    orders = scenario.orders
+    instants = sorted({order.placed_at for order in orders})
+
+    def place_its_orders(bar: object, context: DecisionContext) -> None:
+        for order in orders:
+            if order.placed_at == context.now:
+                context.place(order)
+
+    return [
+        Decision(ts=instant, bar={"ts_close": instant}) for instant in instants
+    ], place_its_orders
+
+
+def _template_decisions(
+    scenario: TemplateScenario, parameters: InstrumentParameters, sessions: SessionTable | None
+) -> tuple[list[Decision], OnBar]:
+    """A decision at each of the scenario's signal rows, taken by its strategy's template."""
+    frame = scenario.signal_frame()
+    template = TemplateStrategy(scenario.strategy, frame, parameters, sessions)
+    return list(decisions_of(frame)), template.on_bar
+
+
+def held_lots(scenario: AnyScenario) -> int:
     """The position a scenario holds when its tape starts, in lots, positive long."""
     if scenario.position is None:
         return 0
@@ -96,20 +123,31 @@ def held_lots(scenario: Scenario) -> int:
     return lots if scenario.position.side is PositionSide.LONG else -lots
 
 
-def run_scenarios(scenarios: Sequence[Scenario], cache_folder: Path) -> ScenarioReport:
+def run_scenarios(scenarios: Sequence[AnyScenario], cache_folder: Path) -> ScenarioReport:
     """Every scenario through the reference engine, each calendar's sessions built once."""
     tables: dict[str, SessionTable] = {}
 
-    def hours_of(scenario: Scenario) -> TradingHours:
+    def sessions_of_its_calendar(scenario: AnyScenario) -> SessionTable | None:
         if isinstance(scenario.instrument, InlineInstrument):
-            return AlwaysOpen()
+            return None
         calendar: Calendar = scenario.instrument.session_calendar()
         if calendar.name not in tables:
             tables[calendar.name] = sessions_of(calendar, cache_folder)
-        first, last = scenario.tape[0].starts_at(), scenario.tape[-1].available_at()
-        return CalendarHours.around(tables[calendar.name], first, last)
+        return tables[calendar.name]
 
-    return ScenarioReport(tuple(run_scenario(s, hours_of(s)) for s in scenarios))
+    outcomes = []
+    for scenario in scenarios:
+        sessions = sessions_of_its_calendar(scenario)
+        outcomes.append(run_scenario(scenario, _hours(scenario, sessions), sessions))
+    return ScenarioReport(tuple(outcomes))
+
+
+def _hours(scenario: AnyScenario, sessions: SessionTable | None) -> TradingHours:
+    """When the market is open around the scenario's tape: always, without a session table."""
+    if sessions is None:
+        return AlwaysOpen()
+    first, last = scenario.tape[0].starts_at(), scenario.tape[-1].available_at()
+    return CalendarHours.around(sessions, first, last)
 
 
 class FillSummary(NamedTuple):
@@ -130,7 +168,7 @@ class FillSummary(NamedTuple):
         return f"order {self.order} at {at} ({self.rule}{flags}{fee})"
 
 
-def differences(scenario: Scenario, result: RunResult) -> tuple[str, ...]:
+def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
     """How the run differs from what the scenario expects: each fill's order, time, price,
     rule, flags, and fee where the scenario has fees, its fidelity tag (F-TAG-01), the marks,
     and the funding payments."""
