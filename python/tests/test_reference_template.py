@@ -156,7 +156,10 @@ def test_a_spec_beyond_the_basic_subset_is_refused_until_step_2_8(
         TemplateStrategy(spec_of(**rules), frame, MES, None)
 
 
-def test_the_template_fills_as_the_hand_written_strategy_on_the_same_bars() -> None:
+@pytest.mark.parametrize(
+    "target", [Target(ticks=24), Target(r=2)], ids=["24 ticks", "twice the stop's 12 ticks"]
+)
+def test_the_template_fills_as_the_hand_written_strategy_on_the_same_bars(target: Any) -> None:
     tape = (
         bar("14:30:00", "14:31:00", "5000.00", "5000.50", "4999.75", "5000.25"),
         bar("14:31:00", "14:32:00", "5000.50", "5001.00", "5000.25", "5000.75"),
@@ -165,7 +168,7 @@ def test_the_template_fills_as_the_hand_written_strategy_on_the_same_bars() -> N
     by_hand = run_on_bars(tape, [decision_at("14:31:00")])
 
     entry_signal = signals({"ts_close": "14:31:00", "long_entry": True})
-    by_template = run_template(spec_of(), entry_signal, tape)
+    by_template = run_template(spec_of(targets=[target]), entry_signal, tape)
 
     assert by_template.fills == by_hand.fills
 
@@ -229,6 +232,19 @@ def test_a_stop_at_the_column_needs_its_price_on_the_tick(
 
     with pytest.raises(ValueError, match=re.escape(refusal)):
         run_template(spec_of(stop=Stop(column=True)), signals(*rows), tape)
+
+
+def test_a_stop_and_a_target_at_the_columns_on_the_wrong_sides_are_refused() -> None:
+    # A short's stop belongs above its target: here the columns are swapped.
+    row = {"ts_close": "14:31:00", "short_entry": True}
+    swapped = signals(row | {"stop_price": "4990.00", "target_price": "5003.00"})
+    columns = spec_of(stop=Stop(column=True), targets=[Target(column=True)])
+    tape = (bar("14:31:00", "14:32:00", "5000.50", "5001.00", "5000.25", "5000.75"),)
+
+    with pytest.raises(
+        ValueError, match="Expected the stop_price above the target_price of a sell"
+    ):
+        run_template(columns, swapped, tape)
 
 
 def test_a_flat_by_time_needs_a_session_calendar() -> None:

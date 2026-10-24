@@ -16,6 +16,7 @@ from pydantic_core import to_jsonable_python
 
 import fefat as ff
 from fefat.strategy import (
+    SPEC_SCHEMA_PATH,
     AfterTargetTrigger,
     AtrStop,
     BarsCooldown,
@@ -258,7 +259,7 @@ def test_the_schema_is_draft_2020_12_named_for_the_spec_and_never_offers_null() 
     jsonschema.Draft202012Validator.check_schema(SCHEMA)
     assert SCHEMA["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert SCHEMA["title"] == "StrategySpec"
-    assert "null" not in str(SCHEMA)
+    assert '"null"' not in SPEC_SCHEMA_PATH.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", ["StrategySpec", *STRUCTS])
