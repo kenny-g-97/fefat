@@ -11,7 +11,19 @@ publish = false
 [workspace.lints.rust]
 unsafe_code = "deny"
 
+# The engine's lints (.claude/rules/engine.md); clippy.toml allows the first four in tests.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+undocumented_unsafe_blocks = "deny"
+
 [workspace.dependencies]
+blake3 = "1.8.7"
+# Without fork, timeout, and bit-set, which no test uses: 11 fewer crates to compile.
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 schemars = "1.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+thiserror = "2.0.21"

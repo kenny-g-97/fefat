@@ -10,10 +10,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+blake3.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-# Without fork, timeout, and bit-set, which no test uses: 11 fewer crates to compile.
-proptest = { version = "1.11.0", default-features = false, features = ["std"] }
+proptest.workspace = true

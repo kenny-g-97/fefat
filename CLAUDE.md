@@ -30,6 +30,7 @@ just test     # the engine build, then pytest, the hook smoke tests, cargo test,
 just build-engine  # compile the engine into .venv, where `import fefat` finds it
 just strip-notebooks  # clear notebook outputs; then git add the notebooks again
 just gen-schema  # write the StrategySpec JSON schema from the Rust types; a cargo test fails when it is stale
+just regenerate-goldens  # rewrite fixtures/goldens/ from the engine; only with the builder's approval (the engine-golden skill)
 just dev      # local server and web dev server (from Phase 4)
 ```
 
