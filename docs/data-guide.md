@@ -10,7 +10,7 @@ FEFAT keeps two folders, both outside the repository:
 
 | Folder | Default on Windows | Holds |
 | --- | --- | --- |
-| `FEFAT_HOME` | `%LOCALAPPDATA%\FEFAT` | your saved import profiles (`profiles\`) and caches FEFAT can rebuild (`cache\`, such as the session tables) |
+| `FEFAT_HOME` | `%LOCALAPPDATA%\FEFAT` | your saved import profiles (`profiles\`) and caches FEFAT can rebuild (`cache\`: the session tables and the engine's cache) |
 | `FEFAT_DATA_DIR` | `%LOCALAPPDATA%\FEFAT\data` | the market data, the original files, the quality reports, and the products your imports added |
 
 On macOS `FEFAT_HOME` is `~/Library/Application Support/FEFAT`. To keep the data on a bigger drive, move the data folder there and set `FEFAT_DATA_DIR` to its absolute path, for example with `setx FEFAT_DATA_DIR "D:\FEFAT\data"` in a terminal, then restart VS Code so that the notebooks see it. The folder's files refer to each other by relative paths, so it moves whole. Prefer an NTFS drive: on exFAT or a network drive, a power cut during a write can leave a file half replaced.
@@ -20,6 +20,7 @@ Inside the data folder:
 ```text
 databento\ohlcv-1m\root=MES\dataset.json                     what the dataset's files share
 databento\ohlcv-1m\root=MES\contract=MESZ2026\month=2026-09\part.parquet
+databento\ohlcv-1m\root=MES\contract=MESZ2026\month=2026-09\part.digest.json  the file's size, time, and SHA-256
 ninjatrader\ohlcv-1m\root=MNQ\...                            a dataset you imported through a preset
 raw\MANIFEST.json                                            each original file, with its size and SHA-256
 raw\databento\<batch job>\                                   a Databento download, unchanged
@@ -31,9 +32,10 @@ instruments\<root>.json                                      a product FEFAT did
 - The first folder is the **provider**, the importer or preset the data came through: `databento`, `ninjatrader`, `tradingview`, and so on. Data of one product from two providers makes two datasets, and both are kept.
 - Then comes the **schema**, `trades` or bars such as `ohlcv-1m`, then the product (`root=`) and the contract (`contract=`).
 - Ticks and 1-second bars are kept in a file per trade date (`date=`), 1-minute bars in a file per month (`month=`), and coarser bars in one file per contract.
+- `part.digest.json` beside a file holds its size, modification time, and SHA-256, written when the file is written or first cached, so that FEFAT can name the file by its hash without reading it again while it is unchanged.
 - `dataset.json` holds what a dataset's files share: the unit of its volumes (one contract), its origin (`import`), the licence scope of its source, and its series (dated contracts, or one continuous series).
 
-Leave the folder to FEFAT: the imports and the quality reports do all the writing, each file is checked against its schema whenever it is read, and the originals under `raw\` never change. None of it enters git: the commit guard refuses market data outside `fixtures/synthetic/` (D-21).
+Leave the folder to FEFAT: the imports, the quality reports, and the cache builds do all the writing, each file is checked against its schema whenever it is read, and the originals under `raw\` never change. None of it enters git: the commit guard refuses market data outside `fixtures/synthetic/` (D-21).
 
 `fefat data status` shows what the store holds now, and `docs/data-inventory.md` records the files bought for this PC, where they came from, and what each import did.
 
@@ -206,3 +208,33 @@ MES databento ohlcv-1m: 2019-05-06 to 2026-09-23, complete at 1-minute fidelity,
 **Checking bars against finer data.** `fefat data verify-bars <root> <trade date>` rebuilds the trade date's bars from the finer data the store holds and compares them with the stored ones, provider by provider. Each line gives the bars compared and `no differences`, or lists each difference; `pending` where stored bars wait for finer data to rebuild them from, as the comparisons with ticks do until a trades file is imported; or `no ... stored to compare with`. One comparison always runs on the finest data present: resampled to 5-minute and then daily bars, it must give the daily bars made from it at once. The command exits with 0 when a comparison ran and found no differences.
 
 **In a notebook,** `ff.market.catalog()` and `ff.market.product_status(ff.market.Store(paths.data_dir), paths.reports_dir)`, with `paths = resolve_paths(os.environ)` from `fefat.config`, return the same tables as Polars frames, and `notebooks/01-market-data.ipynb` runs each check of this guide on your data.
+
+## The engine's cache
+
+The engine does not read the store's Parquet files. Before a backtest reads a product, its data is copied into the engine's cache: uncompressed files that the engine maps into memory, so that every run, and every thread of a sweep, reads the same pages without decoding anything (`02-engine-and-data.md` §1.6).
+
+```text
+fefat cache build --root MES --year 2025                          cache MES's trade dates of 2025
+fefat cache build --root MNQ --year 2025 --provider ninjatrader   name the provider where several hold the product
+fefat cache status                                                each cached contract-month with its levels and size
+fefat cache status --root MES                                     MES's months alone
+```
+
+The cache lives in `<FEFAT_HOME>\cache\engine\<provider>\<root>\<contract>\<month>\`: a file per level of data, named as the fidelity names it (`trades`, `tbbo`, `1s`, `1m`, or an import's `5m` or `1d`), a file per step down from one level's bars to a finer level, and `index.json`, which lists each trade date with its levels and the store's files the month was built from, by their SHA-256. A build without `--provider` reads the provider that `load` reads. It writes only the months whose files changed since they were cached, so running it again after an import is quick. A month being built is written as `<month>.partial` and takes its name once it is complete. The cache can be deleted at any time, and the next build writes it again; close a notebook that reads a month before rebuilding it, since Windows cannot replace a file another program has mapped.
+
+A status line reads:
+
+```text
+databento MES MESZ2025 2025-10: 1m 23 days, 1.8 MB
+```
+
+- the provider, the product, the contract, and the month;
+- each level with the number of trade dates that hold it, coarsest first: your 1-minute bars give `1m` alone, and trades or 1-second bars, once imported, add `trades` and `1s` on the days they cover;
+- the size of the month's files.
+
+Two rules keep the levels of a day consistent, and the build prints a line each time one applies:
+
+- **A level that misses part of a day is left out of it.** Within each bar of a coarser level, a finer level's records must add up to the bar's volume, as when a trades file starts, ends, or skips inside a session. A day that fails keeps its other levels and fills on the finest one left, as a line such as this one says: `2025-10-17: left out trades, since its records in the 1m bar opening at 2025-10-17T13:31:00Z add up to 0 lots, not the bar's 412`.
+- **Records after a day's last bar are cut.** The last bucket of your data keeps its ticks while its bar waits for data that completes it, so the build cuts the ticks and finer bars that no bar of a coarser level holds, such as `2026-03-09: cut 12 records of trades after the last bar that holds them`.
+
+**Digests beside your files.** The first build reads each file it caches once to hash it and writes `part.digest.json` beside it. Later builds, and the backtests of later steps, take the hash from there while the file keeps its size and time, so they need not read years of data just to name it; reading the data checks its hash anyway. Leave these files where they are: deleting one only costs a reread.
