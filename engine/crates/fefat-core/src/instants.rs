@@ -3,6 +3,9 @@
 //! is days since 1970-01-01, as Arrow's `date32` and the store's `trade_date` hold it.
 
 use std::fmt;
+use std::str::FromStr;
+
+use thiserror::Error;
 
 use crate::units::Overflow;
 
@@ -34,6 +37,53 @@ impl Ts {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct TradeDate(pub i32);
+
+impl TradeDate {
+    /// The date's proleptic Gregorian year, month, and day.
+    pub fn year_month_day(self) -> (i64, i64, i64) {
+        civil_from_days(i64::from(self.0))
+    }
+}
+
+/// Text that spells no trade date.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("Expected a trade date written YYYY-MM-DD, such as 2026-03-05, got {text:?}")]
+pub struct UnreadableTradeDate {
+    /// The text given.
+    pub text: String,
+}
+
+impl FromStr for TradeDate {
+    type Err = UnreadableTradeDate;
+
+    /// A date as it displays, `2026-03-05`: four, two, and two digits of a day that exists.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let unreadable = || UnreadableTradeDate {
+            text: text.to_owned(),
+        };
+        let digits = |part: &str, width: usize| {
+            let all_digits = part.len() == width && part.bytes().all(|byte| byte.is_ascii_digit());
+            all_digits.then(|| part.parse::<i64>().ok()).flatten()
+        };
+        let mut parts = text.split('-');
+        let (Some(year), Some(month), Some(day), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            return Err(unreadable());
+        };
+        let (Some(year), Some(month), Some(day)) =
+            (digits(year, 4), digits(month, 2), digits(day, 2))
+        else {
+            return Err(unreadable());
+        };
+        let days = i32::try_from(days_from_civil(year, month, day)).map_err(|_| unreadable())?;
+        let date = Self(days);
+        if date.year_month_day() != (year, month, day) {
+            return Err(unreadable());
+        }
+        Ok(date)
+    }
+}
 
 impl fmt::Display for Ts {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -84,6 +134,17 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
     (year_of_era + era * 400 + i64::from(month <= 2), month, day)
 }
 
+/// The days since 1970-01-01 of a proleptic Gregorian date, by Howard Hinnant's
+/// `days_from_civil`, the inverse of [`civil_from_days`] on the dates that exist.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +176,43 @@ mod tests {
         assert_eq!(TradeDate(20_517).to_string(), "2026-03-05");
         assert_eq!(TradeDate(11_016).to_string(), "2000-02-29");
         assert_eq!(TradeDate(-1).to_string(), "1969-12-31");
+    }
+
+    #[test]
+    fn every_trade_date_from_1900_to_2100_parses_as_it_displays() {
+        for days in -25_567..=47_846 {
+            let date = TradeDate(days);
+            assert_eq!(date.to_string().parse(), Ok(date), "day {days}");
+        }
+        assert_eq!(TradeDate(20_517).year_month_day(), (2026, 3, 5));
+    }
+
+    #[test]
+    fn text_that_spells_no_day_that_exists_is_refused() {
+        let refused = [
+            "2026-02-29",
+            "2026-02-30",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-03-00",
+            "2026-3-05",
+            "26-03-05",
+            "20260305",
+            "2026-03-05T00",
+            "2026-03-05-01",
+            "+026-03-05",
+            "",
+        ];
+        for text in refused {
+            assert_eq!(
+                text.parse::<TradeDate>(),
+                Err(UnreadableTradeDate {
+                    text: text.to_owned()
+                }),
+                "{text:?}"
+            );
+        }
+        assert_eq!("2024-02-29".parse(), Ok(TradeDate(19_782)));
     }
 
     fn days_in_month(year: i64, month: i64) -> i64 {

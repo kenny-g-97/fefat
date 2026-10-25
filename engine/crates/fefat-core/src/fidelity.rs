@@ -4,8 +4,12 @@
 
 use std::cmp::Ordering;
 use std::fmt;
+use std::str::FromStr;
 
 use thiserror::Error;
+
+const TIMEFRAME_TEXT: &str = "a bar timeframe such as 1s, 5m, 1h, or 1d";
+const FIDELITY_TEXT: &str = "a fidelity: tbbo, trades, or a bar timeframe such as 1s, 1m, or 5m";
 
 /// The unit of a bar timeframe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -124,6 +128,44 @@ impl fmt::Display for Timeframe {
     }
 }
 
+/// Text that spells no fidelity or timeframe.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("Expected {expected}, got {text:?}")]
+pub struct UnreadableFidelity {
+    /// What the text should spell.
+    pub expected: &'static str,
+    /// The text given.
+    pub text: String,
+}
+
+impl FromStr for Timeframe {
+    type Err = UnreadableFidelity;
+
+    /// A timeframe written `<count><s|m|h|d>`, the count without leading zeros, as
+    /// `fefat.market.schema.Timeframe.parse` reads it.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let unreadable = || UnreadableFidelity {
+            expected: TIMEFRAME_TEXT,
+            text: text.to_owned(),
+        };
+        let (count, letter) = text
+            .split_at_checked(text.len().saturating_sub(1))
+            .ok_or_else(unreadable)?;
+        let unit = match letter {
+            "s" => TimeUnit::Second,
+            "m" => TimeUnit::Minute,
+            "h" => TimeUnit::Hour,
+            "d" => TimeUnit::Day,
+            _ => return Err(unreadable()),
+        };
+        if count.starts_with('0') || !count.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(unreadable());
+        }
+        let count = count.parse().map_err(|_| unreadable())?;
+        Self::new(count, unit).map_err(|_| unreadable())
+    }
+}
+
 /// The data an order fills on, for a trade date, ordered finest first: TBBO records, trade
 /// prints, then bars from the shortest timeframe up (`02` §1.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -142,7 +184,7 @@ impl Fidelity {
     /// not nest, such as 1-minute and 90-second bars, can be served side by side, and a daily bar
     /// spans its session alone, so the prints of the break after its close, which keep its trade
     /// date, and their bars lie outside it (D-43).
-    pub(crate) const fn nests_in(self, timeframe: Timeframe) -> bool {
+    pub const fn nests_in(self, timeframe: Timeframe) -> bool {
         if matches!(timeframe.unit, TimeUnit::Day) {
             return false;
         }
@@ -159,6 +201,26 @@ impl fmt::Display for Fidelity {
             Self::Tbbo => formatter.write_str("tbbo"),
             Self::Trades => formatter.write_str("trades"),
             Self::Bars(timeframe) => write!(formatter, "{timeframe}"),
+        }
+    }
+}
+
+impl FromStr for Fidelity {
+    type Err = UnreadableFidelity;
+
+    /// A fidelity as it displays, and as `fefat.market.fidelity.parse_fidelity` reads it:
+    /// `tbbo`, `trades`, or a bar timeframe.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "tbbo" => Ok(Self::Tbbo),
+            "trades" => Ok(Self::Trades),
+            _ => text
+                .parse()
+                .map(Self::Bars)
+                .map_err(|_| UnreadableFidelity {
+                    expected: FIDELITY_TEXT,
+                    text: text.to_owned(),
+                }),
         }
     }
 }
@@ -216,6 +278,46 @@ mod tests {
             Timeframe::ONE_MINUTE.nominal_seconds()
         );
         assert_ne!(sixty_seconds.cmp(&Timeframe::ONE_MINUTE), Ordering::Equal);
+    }
+
+    #[test]
+    fn fidelities_parse_as_they_display() {
+        let levels = [
+            Fidelity::Tbbo,
+            Fidelity::Trades,
+            Fidelity::Bars(Timeframe::ONE_SECOND),
+            Fidelity::Bars(Timeframe::new(90, TimeUnit::Second).unwrap()),
+            Fidelity::Bars(Timeframe::ONE_MINUTE),
+            Fidelity::Bars(Timeframe::new(60, TimeUnit::Second).unwrap()),
+            Fidelity::Bars(Timeframe::new(4, TimeUnit::Hour).unwrap()),
+            Fidelity::Bars(Timeframe::new(1, TimeUnit::Day).unwrap()),
+        ];
+        for level in levels {
+            assert_eq!(level.to_string().parse(), Ok(level), "{level}");
+        }
+    }
+
+    #[test]
+    fn text_that_spells_no_fidelity_is_refused() {
+        for text in [
+            "tick", "", "m", "5", "0m", "05m", "+5m", "5M", "1 m", "1mm", "5é",
+        ] {
+            let refused = text.parse::<Fidelity>();
+            assert_eq!(
+                refused,
+                Err(UnreadableFidelity {
+                    expected: FIDELITY_TEXT,
+                    text: text.to_owned()
+                }),
+                "{text:?}"
+            );
+        }
+        assert_eq!(
+            "tick".parse::<Fidelity>().unwrap_err().to_string(),
+            "Expected a fidelity: tbbo, trades, or a bar timeframe such as 1s, 1m, or 5m, got \
+             \"tick\""
+        );
+        assert!("99999999999s".parse::<Timeframe>().is_err());
     }
 
     #[test]
