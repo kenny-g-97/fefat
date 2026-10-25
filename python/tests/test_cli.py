@@ -52,7 +52,7 @@ def test_a_databento_import_records_today_as_the_import_date_of_its_files() -> N
     main(["data", "import", "databento", str(BATCH)])
 
     after = datetime.now(UTC).date()
-    files = Store(resolve_paths(os.environ).data_dir).raw_manifest().files
+    files = Store(resolve_paths(os.environ).data_dir).raw.manifest().files
     assert len(files) == 4
     assert all(before <= file.imported_on <= after for file in files)
 
@@ -325,8 +325,8 @@ def imported_on_october_13(store: Store, folder: Path, *roots: str) -> None:
     source = folder / "bars.dbn"
     source.write_bytes(b"bars")
     path = PurePosixPath("databento", "job", "bars.dbn")
-    store.write_raw_file(path, source, hashlib.sha256(b"bars").hexdigest())
-    store.record_raw_file(
+    store.raw.write(path, source, hashlib.sha256(b"bars").hexdigest())
+    store.raw.record(
         path,
         provider="databento",
         vendor_version="DBN 3",

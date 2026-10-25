@@ -201,7 +201,7 @@ def import_file(
     raw_path = PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
     checked_raw_path(raw_path.as_posix())
     arguments = _import_arguments(request)
-    recorded = store.raw_manifest().file_at(raw_path.as_posix())
+    recorded = store.raw.manifest().file_at(raw_path.as_posix())
     if recorded is not None:
         if recorded.vendor_version != arguments:
             raise ValueError(
@@ -217,8 +217,8 @@ def import_file(
     buffers.add(_partitions(reading.dataset, mapped))
     buffers.write_all()
     saved = mapped.new_instrument and save_instrument(store.folder, mapped.instrument)
-    store.write_raw_file(raw_path, request.path, sha256)
-    store.record_raw_file(
+    store.raw.write(raw_path, request.path, sha256)
+    store.raw.record(
         raw_path,
         provider=request.profile.provider,
         vendor_version=arguments,

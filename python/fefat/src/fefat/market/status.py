@@ -84,7 +84,7 @@ def dataset_status(store: Store, reports_folder: Path) -> pl.DataFrame:
     """Every dataset of trades, TBBO, or bars the store holds, with the columns of
     `DATASET_COLUMNS`, sorted by provider, root, and schema; the quality reports are read from
     `reports_folder`."""
-    manifest = store.raw_manifest()
+    manifest = store.raw.manifest()
     rows = [
         _dataset_row(dataset, coverage, store.dataset_metadata(dataset), reports_folder, manifest)
         for dataset in session_datasets(store)

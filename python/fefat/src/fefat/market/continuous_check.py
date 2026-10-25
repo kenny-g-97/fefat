@@ -11,7 +11,7 @@ date D. A difference whose vendor contract is our front of the session before, o
 roll a session later, or earlier, than ours; the vendor ranks by UTC days and may roll back,
 where the calendar ranks by sessions and never does.
 
-    mapping = parse_databento_mapping(store.raw_file(path), "MES.v.0")
+    mapping = parse_databento_mapping(store.raw.read(path), "MES.v.0")
     print(compare_fronts(calendar, mapping, bars, "MES.v.0").summary())
 """
 

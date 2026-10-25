@@ -57,8 +57,8 @@ def recorded(store: Store, folder: Path, name: str, day: date, roots: tuple[str,
     source = folder / name
     source.write_bytes(name.encode())
     path = PurePosixPath("synthetic", "job", name)
-    store.write_raw_file(path, source, hashlib.sha256(name.encode()).hexdigest())
-    store.record_raw_file(
+    store.raw.write(path, source, hashlib.sha256(name.encode()).hexdigest())
+    store.raw.record(
         path,
         provider="synthetic",
         vendor_version="synthetic",

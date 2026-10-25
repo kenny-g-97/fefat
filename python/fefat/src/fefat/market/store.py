@@ -1,5 +1,6 @@
 """The canonical market-data store on disk (ADR-0019): partitions read with Polars and written
-atomically, snapshots that pin what a request read, and the raw manifest of vendor files.
+atomically, snapshots that pin what a request read, and, as `Store.raw`, the vendors' original
+files and their manifest (`fefat.market.raw_files`).
 
 `Store` takes its folder: `fefat.config.resolve_paths(os.environ).data_dir` in the app and in
 notebooks, a temporary folder in tests, and the repository's `fixtures` folder for the
@@ -17,9 +18,7 @@ What the files hold is `fefat.market.schema`; where they live is `fefat.market.l
 
 import hashlib
 import io
-import shutil
 from collections.abc import Callable, Iterable, Iterator
-from datetime import date
 from pathlib import Path, PurePosixPath
 
 import polars as pl
@@ -28,7 +27,6 @@ from pydantic import Field
 from fefat.market.layout import (
     DATASET_METADATA_FILE_NAME,
     PARTITION_FILE_NAME,
-    RAW_FOLDER_NAME,
     RESERVED_FOLDERS,
     Dataset,
     DatasetMetadata,
@@ -36,13 +34,7 @@ from fefat.market.layout import (
     PartitionRequest,
     YearMonth,
 )
-from fefat.market.raw_manifest import (
-    RAW_MANIFEST_FILE_NAME,
-    BatchJob,
-    RawFile,
-    RawManifest,
-    checked_raw_path,
-)
+from fefat.market.raw_files import RawFiles
 from fefat.market.schema import (
     FrozenModel,
     SchemaKind,
@@ -85,6 +77,11 @@ class Store:
         """The store's folder, `FEFAT_DATA_DIR` in the app, where the instruments an import
         saved lie beside the data (`fefat.market.saved_instruments`)."""
         return self._folder
+
+    @property
+    def raw(self) -> RawFiles:
+        """The vendors' original files under `raw`, and their manifest."""
+        return RawFiles(self._folder)
 
     def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
         """Every partition in the store, or only `dataset`'s, with the size of its file, sorted
@@ -212,101 +209,6 @@ class Store:
         content = self._pinned_bytes(snapshot.metadata)
         return parsed_json(DatasetMetadata, content, snapshot.metadata.path)
 
-    def raw_manifest(self) -> RawManifest:
-        """The raw manifest; empty until the first raw file is recorded."""
-        path = self._raw_manifest_path()
-        if not path.is_file():
-            return RawManifest()
-        return parsed_json(RawManifest, path.read_bytes(), str(path))
-
-    def write_raw_file(self, path: PurePosixPath, source: Path, sha256: str) -> None:
-        """Copy a vendor's file to `raw/<path>` in one step, once the copy's SHA-256 is the
-        one stated, replacing a copy an interrupted import left behind. A path the raw manifest
-        records is refused, since raw files never change; record the copy with
-        `record_raw_file` once it is imported."""
-        relative = checked_raw_path(path.as_posix())
-        if self.raw_manifest().file_at(relative) is not None:
-            raise ValueError(
-                f"Expected a raw file the manifest {self._raw_manifest_path()} does not record, "
-                f"got {relative}, which it records: raw files never change."
-            )
-        write_atomically(self._folder / RAW_FOLDER_NAME / relative, _verified_copy(source, sha256))
-
-    def raw_file(self, path: PurePosixPath) -> bytes:
-        """The bytes of a raw file the manifest records, refused when they no longer match its
-        recorded SHA-256."""
-        relative = checked_raw_path(path.as_posix())
-        recorded = self.raw_manifest().file_at(relative)
-        if recorded is None:
-            raise FileNotFoundError(
-                f"Expected {relative} in the raw manifest {self._raw_manifest_path()}, got no "
-                "such entry."
-            )
-        content = self._vendor_file(relative).read_bytes()
-        actual = hashlib.sha256(content).hexdigest()
-        if actual != recorded.sha256:
-            raise ValueError(
-                f"Expected the raw file {relative} with its recorded SHA-256 {recorded.sha256}, "
-                f"got {actual}: raw files never change."
-            )
-        return content
-
-    def record_raw_file(
-        self,
-        path: PurePosixPath,
-        provider: str,
-        vendor_version: str,
-        downloaded_on: date,
-        batch_job: BatchJob | None,
-        imported_on: date,
-        roots: tuple[str, ...],
-    ) -> RawFile:
-        """Record a vendor's file under `raw` in the raw manifest, with its size and SHA-256,
-        the day it was imported, and the roots its records fed.
-
-        Recording the same file again changes nothing. Raw files are immutable, so a recorded
-        file whose bytes or details changed is refused: a vendor's re-normalised history
-        arrives as a new file."""
-        relative = checked_raw_path(path.as_posix())
-        digest = hashed(self._vendor_file(relative))
-        raw_file = RawFile(
-            path=relative,
-            size_bytes=digest.size_bytes,
-            sha256=digest.sha256,
-            provider=provider,
-            vendor_version=vendor_version,
-            downloaded_on=downloaded_on,
-            batch_job=batch_job,
-            imported_on=imported_on,
-            roots=roots,
-        )
-        manifest = self.raw_manifest()
-        recorded = manifest.file_at(relative)
-        if recorded is None:
-            write_atomically(self._raw_manifest_path(), json_writer(manifest.with_file(raw_file)))
-            return raw_file
-        if recorded != raw_file:
-            raise ValueError(
-                f"Expected the raw file {relative} as {self._raw_manifest_path()} records it, "
-                f"since raw files are immutable: recorded {recorded.model_dump_json()}, got "
-                f"{raw_file.model_dump_json()}."
-            )
-        return recorded
-
-    def _vendor_file(self, relative: str) -> Path:
-        """The vendor's file under `raw`, refused when it is missing or when it is the manifest
-        under another name, such as a hard link or a short 8.3 name."""
-        file = self._folder / RAW_FOLDER_NAME / relative
-        if not file.is_file():
-            raise FileNotFoundError(f"Expected the raw file {file}, got no such file.")
-        manifest = self._raw_manifest_path()
-        if manifest.is_file() and file.samefile(manifest):
-            raise ValueError(
-                f"Expected a vendor's file inside the raw folder, got {relative!r}, another name "
-                "of the raw manifest."
-            )
-        return file
-
     def _providers(self) -> Iterator[Path]:
         """The providers' folders: every folder of the store but `raw` and `reports`."""
         if not self._folder.is_dir():
@@ -371,9 +273,6 @@ class Store:
         require_columns(expected, frame.schema, digest.path)
         return frame
 
-    def _raw_manifest_path(self) -> Path:
-        return self._folder / RAW_FOLDER_NAME / RAW_MANIFEST_FILE_NAME
-
 
 def _sorted_by_path(files: Iterable[PartitionFile]) -> tuple[PartitionFile, ...]:
     return tuple(sorted(files, key=lambda file: file.partition.relative_path().as_posix()))
@@ -411,15 +310,3 @@ def _require_trade_dates_of_the_key(partition: Partition, frame: pl.DataFrame) -
             f"Expected every bar of {partition.relative_path()} with a trade date of its key "
             f"{partition.key}, got the trade dates {strays.unique().sort().to_list()[:5]}."
         )
-
-
-def _verified_copy(source: Path, sha256: str) -> Callable[[Path], object]:
-    def copy(temporary: Path) -> None:
-        shutil.copyfile(source, temporary)
-        copied = hashed(temporary).sha256
-        if copied != sha256:
-            raise ValueError(
-                f"Expected the copy of {source} to have the SHA-256 {sha256}, got {copied}."
-            )
-
-    return copy

@@ -89,7 +89,7 @@ def store_with_a_raw_file(folder: Path) -> Store:
 def record(
     store: Store, vendor_version: str = "DBN 3", imported_on: date = date(2026, 10, 13)
 ) -> RawFile:
-    return store.record_raw_file(
+    return store.raw.record(
         RAW_PATH,
         provider="vendor",
         vendor_version=vendor_version,
@@ -430,7 +430,7 @@ def test_recording_a_raw_file_keeps_its_size_hash_and_vendor_details(tmp_path: P
         imported_on=date(2026, 10, 13),
         roots=("ES", "MES"),
     )
-    assert store.raw_manifest() == RawManifest(files=(recorded,))
+    assert store.raw.manifest() == RawManifest(files=(recorded,))
     assert b"\r\n" not in manifest
     assert manifest.endswith(b"}\n")
 
@@ -452,7 +452,7 @@ def test_a_raw_file_whose_bytes_changed_is_refused_with_both_hashes(tmp_path: Pa
 
     with pytest.raises(ValueError, match=f"{first.sha256}.*{changed}"):
         record(store)
-    assert store.raw_manifest() == RawManifest(files=(first,))
+    assert store.raw.manifest() == RawManifest(files=(first,))
 
 
 def test_a_raw_file_recorded_again_with_other_details_is_refused(tmp_path: Path) -> None:
@@ -463,7 +463,7 @@ def test_a_raw_file_recorded_again_with_other_details_is_refused(tmp_path: Path)
         record(store, vendor_version="DBN 2")
     with pytest.raises(ValueError, match="Expected the raw file"):
         record(store, imported_on=date(2026, 10, 16))
-    assert store.raw_manifest() == RawManifest(files=(first,))
+    assert store.raw.manifest() == RawManifest(files=(first,))
 
 
 def test_the_last_import_of_a_root_is_its_newest_file_from_the_provider() -> None:
@@ -518,7 +518,7 @@ def test_a_raw_path_that_leaves_the_raw_folder_or_names_the_manifest_is_refused(
     tmp_path: Path, path: str
 ) -> None:
     with pytest.raises(ValueError, match="Expected a vendor's file inside the raw folder"):
-        Store(tmp_path).record_raw_file(
+        Store(tmp_path).raw.record(
             PurePosixPath(path),
             provider="vendor",
             vendor_version="DBN 3",
@@ -535,7 +535,7 @@ def test_another_name_of_the_raw_manifest_is_refused(tmp_path: Path) -> None:
     os.link(tmp_path / "raw" / "MANIFEST.json", tmp_path / "raw" / "vendor" / "alias.json")
 
     with pytest.raises(ValueError, match="another name of the raw manifest"):
-        store.record_raw_file(
+        store.raw.record(
             PurePosixPath("vendor/alias.json"),
             provider="vendor",
             vendor_version="DBN 3",
@@ -551,7 +551,7 @@ def test_a_broken_raw_manifest_is_refused_with_its_path(tmp_path: Path) -> None:
     (tmp_path / "raw" / "MANIFEST.json").write_text('{"files": [{"path": "x"}]}', "utf-8")
 
     with pytest.raises(ValueError, match=r"Expected .*MANIFEST\.json to hold a RawManifest"):
-        store.raw_manifest()
+        store.raw.manifest()
 
 
 def test_a_published_hash_is_bare_lowercase_hex() -> None:
@@ -567,10 +567,10 @@ def test_a_vendor_file_is_copied_into_raw_once_its_copy_has_the_stated_hash(
     source.write_bytes(RAW_BYTES)
     store = Store(tmp_path / "store")
 
-    store.write_raw_file(RAW_PATH, source, JOB.published_sha256)
+    store.raw.write(RAW_PATH, source, JOB.published_sha256)
 
     assert (tmp_path / "store" / "raw" / RAW_PATH).read_bytes() == RAW_BYTES
-    assert store.raw_manifest() == RawManifest()
+    assert store.raw.manifest() == RawManifest()
 
 
 def test_a_copy_without_the_stated_hash_is_refused_and_left_out(tmp_path: Path) -> None:
@@ -579,7 +579,7 @@ def test_a_copy_without_the_stated_hash_is_refused_and_left_out(tmp_path: Path) 
     store = Store(tmp_path / "store")
 
     with pytest.raises(ValueError, match=f"SHA-256 {JOB.published_sha256}, got"):
-        store.write_raw_file(RAW_PATH, source, JOB.published_sha256)
+        store.raw.write(RAW_PATH, source, JOB.published_sha256)
 
     assert not (tmp_path / "store" / "raw" / RAW_PATH).exists()
 
@@ -591,16 +591,16 @@ def test_a_raw_file_the_manifest_records_is_never_written_again(tmp_path: Path) 
     source.write_bytes(RAW_BYTES)
 
     with pytest.raises(ValueError, match="which it records: raw files never change"):
-        store.write_raw_file(RAW_PATH, source, JOB.published_sha256)
+        store.raw.write(RAW_PATH, source, JOB.published_sha256)
 
 
 def test_a_recorded_raw_file_reads_back_and_a_changed_one_is_refused(tmp_path: Path) -> None:
     store = store_with_a_raw_file(tmp_path)
     recorded = record(store)
 
-    assert store.raw_file(RAW_PATH) == RAW_BYTES
+    assert store.raw.read(RAW_PATH) == RAW_BYTES
     (tmp_path / "raw" / RAW_PATH).write_bytes(b"changed")
     with pytest.raises(ValueError, match=f"recorded SHA-256 {recorded.sha256}"):
-        store.raw_file(RAW_PATH)
+        store.raw.read(RAW_PATH)
     with pytest.raises(FileNotFoundError, match="got no such entry"):
-        store.raw_file(PurePosixPath("vendor/job-1/other.dbn"))
+        store.raw.read(PurePosixPath("vendor/job-1/other.dbn"))

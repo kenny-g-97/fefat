@@ -80,7 +80,7 @@ def test_an_import_keeps_the_original_under_raw_user_with_a_manifest_entry(
     path, _ = SAMPLES["ninjatrader"]
     store = imported(tmp_path, sample_request("ninjatrader"))
 
-    (recorded,) = store.raw_manifest().files
+    (recorded,) = store.raw.manifest().files
 
     assert recorded.path.startswith("user/") and recorded.path.endswith("/ES 03-26.Last.txt")
     assert (recorded.provider, recorded.roots, recorded.imported_on) == (
@@ -89,7 +89,7 @@ def test_an_import_keeps_the_original_under_raw_user_with_a_manifest_entry(
         IMPORTED_ON,
     )
     assert recorded.vendor_version == "import profile ninjatrader"
-    assert store.raw_file(PurePosixPath(recorded.path)) == path.read_bytes()
+    assert store.raw.read(PurePosixPath(recorded.path)) == path.read_bytes()
 
 
 def test_a_sample_read_in_the_wrong_time_zone_is_flagged_with_the_offset_the_check_detected(
