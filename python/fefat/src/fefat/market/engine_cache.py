@@ -131,7 +131,9 @@ def _counted(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
-def _megabytes(size_bytes: int) -> str:
+def _size(size_bytes: int) -> str:
+    if size_bytes < 1_000_000:
+        return f"{size_bytes / 1_000:.0f} kB"
     return f"{size_bytes / 1_000_000:.1f} MB"
 
 
@@ -158,7 +160,7 @@ class CachedMonthBuild(FrozenModel):
 
     def summary(self) -> str:
         index = self.index
-        size = _megabytes(index.size_bytes())
+        size = _size(index.size_bytes())
         return f"{index.contract} {index.month}: {self.outcome}, {index.levels_summary()}, {size}"
 
 
@@ -178,7 +180,7 @@ class EngineCacheBuild(FrozenModel):
         built = sum(month.outcome is MonthOutcome.BUILT for month in self.months)
         up_to_date = len(self.months) - built
         trade_dates = sum(len(month.index.trade_dates) for month in self.months)
-        size = _megabytes(sum(month.index.size_bytes() for month in self.months))
+        size = _size(sum(month.index.size_bytes() for month in self.months))
         lines = [
             f"{heading}: {_counted(built, 'contract-month')} built, {up_to_date} up to date, "
             f"{_counted(trade_dates, 'trade date')}, {size}."
@@ -374,7 +376,7 @@ class CachedMonth(FrozenModel):
     def summary(self) -> str:
         """`<provider> <root> <contract> <month>: <level> <days>, ..., <size>`."""
         index = self.index
-        size = _megabytes(index.size_bytes())
+        size = _size(index.size_bytes())
         place = f"{self.provider} {self.root} {index.contract} {index.month}"
         return f"{place}: {index.levels_summary()}, {size}"
 
