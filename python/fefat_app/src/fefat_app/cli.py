@@ -9,6 +9,8 @@
     fefat data import file <path> --profile <name> [--contract] [--root] [--time-zone]
         [--preview]
     fefat data profiles [<name>]
+    fefat cache build --root <root> --year <year> [--provider <provider>]
+    fefat cache status [--root <root>]
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -27,6 +29,12 @@ for later imports
 would be stored and the problems found, and writes nothing; else it imports the file and
 writes its product's quality report. `profiles` lists the presets and your saved profiles,
 or prints one as YAML to copy into a profile of your own.
+
+`cache build` builds the engine's cache of a product's trade dates in a year from the store, in
+`FEFAT_HOME/cache/engine/`: each contract-month whose partitions changed since it was cached,
+or that has none, from the provider that `load` reads or the one `--provider` names, and prints
+what it built (`fefat.market.engine_cache`). `cache status` lists each cached contract-month
+with the levels of its trade dates and its size.
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
@@ -48,6 +56,7 @@ from fefat.market.api import catalog
 from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
+from fefat.market.engine_cache import build_engine_cache, engine_cache_status
 from fefat.market.fidelity import fidelity_in_words
 from fefat.market.importers.databento import import_databento
 from fefat.market.importers.file_import import (
@@ -138,7 +147,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profiles.add_argument("name", nargs="?", help="a preset or saved profile to print as YAML")
     profiles.set_defaults(run=print_the_profiles)
+    cache = commands.add_parser("cache", help="the engine's cache of the market data in your store")
+    _add_the_cache_commands(cache)
     return parser
+
+
+def _add_the_cache_commands(cache: argparse.ArgumentParser) -> None:
+    cache_commands = cache.add_subparsers(dest="cache_command", required=True)
+    build = cache_commands.add_parser(
+        "build", help="cache a product's trade dates of a year for the engine"
+    )
+    build.add_argument("--root", required=True, help="the product, such as MES")
+    build.add_argument("--year", required=True, type=int, help="the year, such as 2025")
+    build.add_argument(
+        "--provider", help="the provider whose data to cache, where several hold the product"
+    )
+    build.set_defaults(run=build_the_engine_cache)
+    status = cache_commands.add_parser(
+        "status", help="list each cached contract-month with its levels and size"
+    )
+    status.add_argument("--root", help="the product, such as MES; every product when left out")
+    status.set_defaults(run=print_the_engine_cache_status)
 
 
 def _add_the_file_import_arguments(exports: argparse.ArgumentParser) -> None:
@@ -346,3 +375,26 @@ def _status_line(row: dict[str, Any]) -> str:
     dataset = f"{row['root']} {row['provider']} {row['schema']}"
     dates = f"{row['first_trade_date']} to {row['last_trade_date']}"
     return f"{dataset}: {dates}, {held}, {imported}, {_quality(row)}"
+
+
+def build_the_engine_cache(arguments: argparse.Namespace) -> int:
+    paths = resolve_paths(os.environ)
+    root: str = arguments.root
+    year: int = arguments.year
+    provider: str | None = arguments.provider
+    build = build_engine_cache(Store(paths.data_dir), paths.cache_dir, root, year, provider)
+    print(build.summary())
+    return EXIT_OK
+
+
+def print_the_engine_cache_status(arguments: argparse.Namespace) -> int:
+    paths = resolve_paths(os.environ)
+    root: str | None = arguments.root
+    lines = [month.summary() for month in engine_cache_status(paths.cache_dir, root)]
+    if not lines:
+        lines = [
+            f"No engine cache in {paths.cache_dir}; build one with "
+            "fefat cache build --root <root> --year <year>."
+        ]
+    print("\n".join(lines))
+    return EXIT_OK

@@ -537,3 +537,72 @@ def test_a_refused_file_import_saves_no_profile_and_its_fixed_profile_imports(
     assert (previewed, refused, saved_when_refused, fixed) == (1, 1, False, 0)
     assert (home / "profiles" / "my-ninjatrader.yaml").is_file()
     assert "off-the-tick" in capsys.readouterr().err
+
+
+def test_cache_build_then_status_shows_the_levels_of_each_contract_month(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixtures_in_the_data_folder()
+
+    built = main(["cache", "build", "--root", "ES", "--year", "2026"])
+    build_printed = capsys.readouterr().out
+    status = main(["cache", "status"])
+    status_lines = capsys.readouterr().out.splitlines()
+
+    assert (built, status) == (0, 0)
+    assert build_printed.startswith(
+        "ES (synthetic) 2026: 2 contract-months built, 0 up to date, 6 trade dates, "
+    )
+    assert [line.rsplit(", ", 1)[0] for line in status_lines] == [
+        "synthetic ES ESH2026 2026-03: 1m 3 days, 1s 3 days, trades 3 days",
+        "synthetic ES ESM2026 2026-03: 1m 3 days, 1s 3 days, trades 3 days",
+    ]
+    assert all(line.endswith(" MB") for line in status_lines)
+
+
+def test_cache_status_of_one_root_lists_its_months_alone(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixtures_in_the_data_folder()
+    main(["cache", "build", "--root", "ES", "--year", "2026"])
+    main(["cache", "build", "--root", "BTCUSDT-PERP", "--year", "2026"])
+    capsys.readouterr()
+
+    main(["cache", "status", "--root", "BTCUSDT-PERP"])
+
+    (line,) = capsys.readouterr().out.splitlines()
+    assert line.startswith("synthetic BTCUSDT-PERP BTCUSDT-PERP 2026-03: 1m 1 day, 1s 1 day, ")
+
+
+def test_cache_status_without_a_cache_says_how_to_build_one(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["cache", "status"])
+
+    cache = resolve_paths(os.environ).cache_dir
+    assert code == 0
+    assert capsys.readouterr().out == (
+        f"No engine cache in {cache}; build one with fefat cache build --root <root> "
+        "--year <year>.\n"
+    )
+
+
+def test_cache_build_needs_a_root_and_a_year(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["cache", "build", "--root", "ES"])
+
+    assert exited.value.code == 2
+    assert "the following arguments are required: --year" in capsys.readouterr().err
+
+
+def test_cache_build_of_a_product_the_store_lacks_is_refused(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixtures_in_the_data_folder()
+
+    code = main(["cache", "build", "--root", "MES", "--year", "2025"])
+
+    assert code == 1
+    assert (
+        capsys.readouterr().err == "fefat: Expected one provider of MES in the store, got none.\n"
+    )
