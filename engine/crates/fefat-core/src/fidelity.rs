@@ -137,10 +137,15 @@ pub enum Fidelity {
 }
 
 impl Fidelity {
-    /// Whether every record of this level belongs inside one of `timeframe`'s bars: a tick
-    /// always, a bar when `timeframe`'s length is a whole multiple of its own. Bars that do not
-    /// nest, such as 1-minute and 90-second bars, can be served side by side.
+    /// Whether every record of this level belongs inside one of `timeframe`'s intraday bars: a
+    /// tick always, a bar when `timeframe`'s length is a whole multiple of its own. Bars that do
+    /// not nest, such as 1-minute and 90-second bars, can be served side by side, and a daily bar
+    /// spans its session alone, so the prints of the break after its close, which keep its trade
+    /// date, and their bars lie outside it (D-43).
     pub(crate) const fn nests_in(self, timeframe: Timeframe) -> bool {
+        if matches!(timeframe.unit, TimeUnit::Day) {
+            return false;
+        }
         match self {
             Self::Bars(finer) => timeframe.holds_whole(finer),
             Self::Tbbo | Self::Trades => true,

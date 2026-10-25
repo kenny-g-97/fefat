@@ -252,6 +252,46 @@ fn the_offsets_check_refuses_a_trade_received_after_its_bar_closed() {
     );
 }
 
+#[test]
+fn a_print_in_the_break_after_the_close_is_served_beside_the_daily_bar() {
+    let second = NANOSECONDS_PER_SECOND;
+    let close = Ts((i64::from(SECOND_DAY.0) * 86_400 + 22 * 3_600) * second);
+    let open = Ts(close.0 - 23 * 3_600 * second);
+    let price = Price(5_000 * crate::units::PRICE_UNITS);
+    let bar = |ts_open, ts_close| BarRow {
+        ts_open,
+        ts_close,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: Qty(1),
+    };
+    let trade = |ts_recv| TradeRow {
+        ts_recv,
+        price,
+        size: Qty(1),
+    };
+    let after_the_close = Ts(close.0 + 400_000_000);
+    let minute_bars = vec![
+        bar(Ts(close.0 - 60 * second), close),
+        bar(close, Ts(close.0 + 60 * second)),
+    ];
+    let day = TapeDay {
+        trade_date: SECOND_DAY,
+        tbbo: Vec::new(),
+        trades: vec![trade(Ts(close.0 - 30 * second)), trade(after_the_close)],
+        bars: BTreeMap::from([
+            (Timeframe::ONE_MINUTE, minute_bars),
+            (
+                Timeframe::new(1, TimeUnit::Day).unwrap(),
+                vec![bar(open, close)],
+            ),
+        ]),
+    };
+    assert_eq!(check_offsets(&sample_reader(vec![day]).unwrap()), Ok(()));
+}
+
 /// The in-memory reader of the sample tape with a seventh trade, received at 14:45:00.1 after
 /// every bar has closed, served with the offsets a cache that kept it would give: inside the
 /// last bar's range.
