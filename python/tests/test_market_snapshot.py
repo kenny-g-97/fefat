@@ -22,6 +22,7 @@ from fefat.market.layout import (
 from fefat.market.schema import parse_schema_name
 from fefat.market.snapshot import FileDigest, Snapshot
 from fefat.market.store import Store
+from fefat.market.store_files import DIGEST_SUFFIX, FileDigestRecord
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures"
@@ -316,3 +317,131 @@ def test_a_read_cut_at_any_date_holds_exactly_the_rows_available_before_the_next
         assert in_the_break.height == int((root, session) == SESSION_WITH_A_PRINT_IN_THE_BREAK)
         if not trades and cut in ends:
             assert_frame_equal(read(cut, last), every_row.filter(pl.col("trade_date") >= cut))
+
+
+def digest_beside(path: Path) -> Path:
+    return path.with_suffix(DIGEST_SUFFIX)
+
+
+def write_digest(path: Path, sha256: str, size_change: int = 0, time_change: int = 0) -> None:
+    status = path.stat()
+    planted = FileDigestRecord(
+        size_bytes=status.st_size + size_change,
+        modified_ns=status.st_mtime_ns + time_change,
+        sha256=sha256,
+    )
+    digest_beside(path).write_text(planted.model_dump_json(), encoding="utf-8")
+
+
+def pinned_sha256(snapshot: Snapshot, partition: Partition) -> str:
+    path = partition.relative_path().as_posix()
+    return next(digest.sha256 for digest in snapshot.partitions if digest.path == path)
+
+
+def test_a_written_partition_keeps_its_digest_beside_it(tmp_path: Path) -> None:
+    store_with_the_es_trades(tmp_path)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    status = path.stat()
+
+    recorded = FileDigestRecord.model_validate_json(digest_beside(path).read_bytes())
+
+    assert recorded == FileDigestRecord(
+        size_bytes=status.st_size,
+        modified_ns=status.st_mtime_ns,
+        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+
+def test_a_snapshot_pins_a_current_digest_without_reading_its_file_and_a_read_checks_it(
+    tmp_path: Path,
+) -> None:
+    # The planted digest describes the file by size and time but holds a hash no file has, so
+    # only a snapshot that took it without reading the file pins that hash.
+    store = store_with_the_es_trades(tmp_path)
+    write_digest(tmp_path / TRADES_OF_MARCH_5.relative_path(), UNKNOWN_SHA256)
+
+    snapshot = store.snapshot(ES_TRADES)
+
+    assert pinned_sha256(snapshot, TRADES_OF_MARCH_5) == UNKNOWN_SHA256
+    with pytest.raises(ValueError, match="the file changed after the snapshot"):
+        store.read(snapshot)
+
+
+@pytest.mark.parametrize(("size_change", "time_change"), [(1, 0), (0, 1)])
+def test_a_digest_whose_size_or_time_differ_from_its_file_is_passed_over(
+    tmp_path: Path, size_change: int, time_change: int
+) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    write_digest(path, UNKNOWN_SHA256, size_change, time_change)
+
+    snapshot = store.snapshot(ES_TRADES)
+
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert pinned_sha256(snapshot, TRADES_OF_MARCH_5) == actual
+
+
+def test_a_snapshot_writes_no_digest(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    for partition in (TRADES_OF_MARCH_5, TRADES_OF_MARCH_6):
+        digest_beside(tmp_path / partition.relative_path()).unlink()
+    files = sorted(tmp_path.rglob("*"))
+
+    store.snapshot(ES_TRADES)
+
+    assert sorted(tmp_path.rglob("*")) == files
+
+
+def test_recording_digests_writes_those_missing_and_pins_what_a_snapshot_pins(
+    tmp_path: Path,
+) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    paths = [
+        tmp_path / partition.relative_path() for partition in (TRADES_OF_MARCH_5, TRADES_OF_MARCH_6)
+    ]
+    for path in paths:
+        digest_beside(path).unlink()
+    pinned = store.snapshot(ES_TRADES)
+
+    recorded = store.record_digests(ES_TRADES)
+
+    assert recorded == pinned
+    for path in paths:
+        written = FileDigestRecord.model_validate_json(digest_beside(path).read_bytes())
+        assert written.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_a_digest_that_does_not_parse_is_refused_with_its_path(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    digest_beside(tmp_path / TRADES_OF_MARCH_5.relative_path()).write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"Expected .*part\.digest\.json to hold a FileDigest"):
+        store.snapshot(ES_TRADES)
+
+
+def test_one_pinned_partition_reads_alone_cut_to_the_dates_of_its_snapshot() -> None:
+    minute_bars = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES"
+    )
+    request = PartitionRequest(dataset=minute_bars, start=date(2026, 3, 6), end=date(2026, 3, 6))
+    snapshot = FIXTURE_STORE.snapshot(request)
+    first = snapshot.partitions[0]
+
+    read = FIXTURE_STORE.read_pinned_partition(snapshot, first)
+
+    partition = Partition.from_relative_path(PurePosixPath(first.path))
+    whole = FIXTURE_STORE.scan_partition(partition).collect()
+    assert read.height > 0
+    assert_frame_equal(read, whole.filter(pl.col("trade_date") == date(2026, 3, 6)))
+
+
+def test_a_partition_its_snapshot_does_not_pin_is_refused(tmp_path: Path) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    one_day = PartitionRequest(
+        dataset=ES_TRADES.dataset, start=date(2026, 3, 5), end=date(2026, 3, 5)
+    )
+    snapshot = store.snapshot(one_day)
+    other = store.snapshot(ES_TRADES).partitions[-1]
+
+    with pytest.raises(ValueError, match="Expected a partition the snapshot"):
+        store.read_pinned_partition(snapshot, other)

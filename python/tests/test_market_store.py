@@ -22,6 +22,7 @@ from fefat.market.layout import (
 from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import SchemaKind, parse_schema_name
 from fefat.market.store import Store
+from fefat.market.store_files import DIGEST_SUFFIX, FileDigestRecord
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures"
@@ -337,8 +338,12 @@ def test_a_failed_write_keeps_the_old_partition_and_leaves_no_temporary_file(
     with pytest.raises(OSError, match="the disk filled up"):
         store.write_partition(TRADES_OF_MARCH_5, trades.head(10))
 
+    digest = path.with_suffix(DIGEST_SUFFIX)
     assert path.read_bytes() == before
-    assert list(path.parent.iterdir()) == [path]
+    assert sorted(path.parent.iterdir()) == [digest, path]
+    assert FileDigestRecord.model_validate_json(digest.read_bytes()).sha256 == (
+        hashlib.sha256(before).hexdigest()
+    )
 
 
 def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
@@ -347,11 +352,12 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
     store = Store(tmp_path)
     store.write_dataset_metadata(ES_TRADES.dataset, ES_SIZE)
     target = tmp_path / TRADES_OF_MARCH_5.relative_path()
-    target_existed_at_each_flush: list[bool] = []
+    digest = target.with_suffix(DIGEST_SUFFIX)
+    targets_at_each_flush: list[tuple[bool, bool]] = []
     flush = os.fsync
 
     def recording_flush(descriptor: int) -> None:
-        target_existed_at_each_flush.append(target.exists())
+        targets_at_each_flush.append((target.exists(), digest.exists()))
         flush(descriptor)
 
     monkeypatch.setattr(os, "fsync", recording_flush)
@@ -359,8 +365,9 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
         TRADES_OF_MARCH_5, FIXTURE_STORE.scan_partition(TRADES_OF_MARCH_5).collect()
     )
 
-    assert target_existed_at_each_flush == [False]
+    assert targets_at_each_flush == [(False, False), (True, False)]
     assert target.exists()
+    assert digest.exists()
 
 
 def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:

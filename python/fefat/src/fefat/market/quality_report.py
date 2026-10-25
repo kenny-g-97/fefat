@@ -25,7 +25,7 @@ from pydantic import model_validator
 from fefat.market.calendar import counted, utc_text
 from fefat.market.importers.report import ConditionDay, VendorCondition
 from fefat.market.schema import FrozenModel, require_columns
-from fefat.market.store import write_atomically
+from fefat.market.store_files import write_atomically
 
 DAYS_FILE_NAME = "days.parquet"
 FINDINGS_FILE_NAME = "findings.parquet"

@@ -43,7 +43,7 @@ from fefat.market.instruments import Currency, InstrumentKind
 from fefat.market.last_trade_rules import LastTradeRule
 from fefat.market.layout import FolderName, ProviderName, SeriesKind, SizeUnit
 from fefat.market.schema import FrozenModel, Timeframe
-from fefat.market.store import write_atomically
+from fefat.market.store_files import write_atomically
 
 PRESETS_FOLDER = Path(__file__).with_name("presets")
 PROFILES_FOLDER_NAME = "profiles"

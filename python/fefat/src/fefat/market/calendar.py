@@ -28,7 +28,7 @@ from pydantic import model_validator
 
 from fefat.market.calendar_definition import Calendar, SessionHours
 from fefat.market.schema import FrozenModel, require_columns
-from fefat.market.store import write_atomically
+from fefat.market.store_files import write_atomically
 
 # shortcut: sessions from 2010, where the data on this PC starts; widen the span, and check
 # the holiday rules of the earlier years, before importing older data.
