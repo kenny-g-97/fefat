@@ -6,14 +6,76 @@ use pyo3::prelude::*;
 #[pymodule]
 mod fefat_engine {
     use std::collections::BTreeMap;
+    use std::fmt::Display;
+    use std::path::PathBuf;
 
     use arrow_array::cast::AsArray;
     use arrow_array::types::{ArrowPrimitiveType, Int64Type};
     use arrow_array::{Array, PrimitiveArray};
     use fefat_core::drawdown::{self, DrawdownOverflow};
+    use fefat_core::fidelity::Fidelity;
+    use fefat_core::instants::TradeDate;
+    use fefat_core::instrument::Contract;
+    use fefat_data::{Month, SourceFile};
     use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
     use pyo3::prelude::*;
+    use pyo3_arrow::PyTable;
     use pyo3_arrow::input::AnyArray;
+
+    /// Writes one contract-month of the engine cache (`fefat_data::CacheMonthWriter`): `contract`'s
+    /// `month` (`2026-03`) in `contract_folder`, built from the store partitions `sources`, each
+    /// its path and SHA-256, from `trade_dates`, an iterable of each trade date (`2026-03-05`), in
+    /// ascending order, with a frame per level named as the fidelity type spells it (`trades`,
+    /// `1m`), pulled one date at a time. A month refused part way is removed.
+    #[pyfunction]
+    fn write_cache_month(
+        contract_folder: PathBuf,
+        contract: String,
+        month: &str,
+        sources: Vec<(String, String)>,
+        trade_dates: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let month: Month = month.parse().map_err(value_error)?;
+        let sources = sources
+            .into_iter()
+            .map(|(path, sha256)| SourceFile { path, sha256 })
+            .collect();
+        let contract = Contract(contract);
+        let mut writer =
+            fefat_data::CacheMonthWriter::create(&contract_folder, contract, month, sources)
+                .map_err(value_error)?;
+        match write_trade_dates(&mut writer, trade_dates) {
+            Ok(()) => writer.finish().map(|_| ()).map_err(value_error),
+            Err(refusal) => {
+                writer.abandon().map_err(value_error)?;
+                Err(refusal)
+            }
+        }
+    }
+
+    fn write_trade_dates(
+        writer: &mut fefat_data::CacheMonthWriter,
+        trade_dates: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        for item in trade_dates.try_iter()? {
+            let (trade_date, levels): (String, Vec<(String, PyTable)>) = item?.extract()?;
+            let trade_date: TradeDate = trade_date.parse().map_err(value_error)?;
+            let levels = levels
+                .into_iter()
+                .map(|(level, frame)| {
+                    let level: Fidelity = level.parse().map_err(value_error)?;
+                    Ok((level, frame.into_inner().0))
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            let day = fefat_data::tape_day(trade_date, levels).map_err(value_error)?;
+            writer.write_trade_date(day).map_err(value_error)?;
+        }
+        Ok(())
+    }
+
+    fn value_error(error: impl Display) -> PyErr {
+        PyValueError::new_err(error.to_string())
+    }
 
     /// The largest fall of the cumulative sum of `values` below its highest point so far.
     #[pyfunction]

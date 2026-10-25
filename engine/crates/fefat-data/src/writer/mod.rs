@@ -110,6 +110,13 @@ impl CacheMonthWriter {
         Ok(written)
     }
 
+    /// Drops the month: closes its files and removes its `<month>.partial` folder.
+    pub fn abandon(self) -> Result<(), CacheError> {
+        let partial = self.partial.clone();
+        drop(self);
+        fs::remove_dir_all(&partial).map_err(io_error("remove", &partial))
+    }
+
     /// Closes the files, writes the index, checks every descent through the mapped reader
     /// (`check_offsets`), and gives the folder the month's name.
     pub fn finish(self) -> Result<CacheMonthIndex, CacheError> {

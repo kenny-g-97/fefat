@@ -77,6 +77,18 @@ fn a_month_already_cached_is_refused_and_left_as_it_was() {
 }
 
 #[test]
+fn an_abandoned_month_leaves_no_folder_behind() {
+    let folder = TemporaryFolder::new();
+    let mut writer = writer(&folder);
+    writer.write_trade_date(sample_tape().remove(0)).unwrap();
+
+    writer.abandon().unwrap();
+
+    let contract_folder = folder.path().join(SAMPLE_CONTRACT);
+    assert_eq!(fs::read_dir(contract_folder).unwrap().count(), 0);
+}
+
+#[test]
 fn a_month_without_trade_dates_is_refused() {
     let folder = TemporaryFolder::new();
 
