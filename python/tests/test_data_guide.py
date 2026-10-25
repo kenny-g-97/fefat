@@ -18,6 +18,7 @@ QUESTIONS = (
     "## Importing Databento files",
     "## Importing your own exports",
     "## Checking coverage and quality",
+    "## The engine's cache",
 )
 
 
@@ -35,7 +36,7 @@ def test_every_command_and_option_the_guide_names_is_one_the_cli_has(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     text = guide_text()
-    named = sorted(set(re.findall(r"fefat data [a-z-]+(?: databento| file)?", text)))
+    named = sorted(set(re.findall(r"fefat (?:data|cache) [a-z-]+(?: databento| file)?", text)))
     refused = []
     for command in named:
         with pytest.raises(SystemExit) as exit_info:
@@ -46,6 +47,7 @@ def test_every_command_and_option_the_guide_names_is_one_the_cli_has(
     options = sorted(set(re.findall(r"(?<![\w-])--[a-z][a-z-]*", text)))
 
     assert "fefat data import file" in named
+    assert "fefat cache build" in named
     assert refused == []
     assert "--preview" in options
     assert [option for option in options if option not in helps] == []
