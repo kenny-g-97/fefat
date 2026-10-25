@@ -83,8 +83,9 @@ impl CacheMonthWriter {
     pub fn write_trade_date(&mut self, day: TapeDay) -> Result<CachedTradeDate, CacheError> {
         let trade_date = day.trade_date;
         self.require_next(trade_date)?;
+        let day = rules::readable(&self.contract, day)?;
+        let (day, mut left_out) = rules::leave_out_incomplete_levels(day);
         let (day, cut) = rules::cut_after_the_last_bars(day);
-        let (day, mut left_out) = rules::leave_out_partial_levels(day);
         let reader = rules::served(&self.contract, day, &mut left_out)?;
         let levels = reader.levels(trade_date)?.to_vec();
         for &level in &levels {

@@ -1,12 +1,13 @@
-//! What the cache keeps of a trade date's records (D-56), so that a descent from a bar never
-//! meets a record that no stored bar holds and never finds nothing where the bars say there was
-//! trading:
+//! What the cache keeps of a trade date's records (D-56), so that a descent from a bar finds the
+//! bar's whole trading in the finer records and never meets a record that no stored bar holds:
 //!
-//! - records at or after the close of the last bar that holds them are cut: the bucket a dataset
-//!   ends in keeps its ticks while its bar is held back (D-43, D-45);
-//! - a level that covers part of the date is left out: its first record outside the first bar of
-//!   a coarser level it nests in, or its last before that level's last bar opens;
-//! - a level with a record outside every bar of a level it nests in is left out too.
+//! - a level is left out where its records within a bar of a coarser intraday level it nests in
+//!   do not add up to that bar's volume: it covers part of the date, from a file that starts,
+//!   ends, or skips inside a session (checked coarsest first, so a level left out bounds no
+//!   finer one);
+//! - records at or after the close of the last bar of a coarser level they nest in are cut: the
+//!   bucket a dataset ends in keeps its ticks while its bar is held back (D-43, D-45);
+//! - a level with a record outside every bar of a coarser level it nests in is left out too.
 
 use std::collections::BTreeMap;
 
@@ -22,14 +23,41 @@ pub(super) type Cut = BTreeMap<Fidelity, u64>;
 /// The levels left out, each with its reason.
 pub(super) type LeftOut = BTreeMap<Fidelity, String>;
 
+/// The day, once every record of it is one the engine can read, by the in-memory reader's checks
+/// of each record, which run before it holds the levels to each other: a record outside the bars
+/// of a coarser level is left to the rules below, and any other refuses the day.
+pub(super) fn readable(contract: &Contract, day: TapeDay) -> Result<TapeDay, CacheError> {
+    match InMemoryMarketData::new(contract.clone(), vec![day.clone()]) {
+        Ok(_) | Err(TapeError::RecordOutsideBars { .. }) => Ok(day),
+        Err(refusal) => Err(tape_error(&day, refusal)),
+    }
+}
+
+/// The day without each level whose records within some bar of a coarser intraday level it
+/// nests in do not add up to that bar's volume, coarsest first, and each one left out with its
+/// reason.
+pub(super) fn leave_out_incomplete_levels(mut day: TapeDay) -> (TapeDay, LeftOut) {
+    let mut left_out = LeftOut::new();
+    for level in levels_of(&day).into_iter().rev() {
+        if let Some(reason) = unmatched_volume(&day, level) {
+            remove_level(&mut day, level);
+            left_out.insert(level, reason);
+        }
+    }
+    (day, left_out)
+}
+
 /// The day without its records at or after the close of the last bar of any coarser intraday
 /// level they nest in, and the count cut from each level.
 pub(super) fn cut_after_the_last_bars(mut day: TapeDay) -> (TapeDay, Cut) {
     let ends: Vec<(Fidelity, Ts)> = levels_of(&day)
         .into_iter()
         .filter_map(|level| {
-            let closes = holding_bars(&day, level).map(|(_, _, last)| last.ts_close);
-            closes.min().map(|end| (level, end))
+            let closes = holding_levels(&day, level).filter_map(|(_, bars)| bars.last());
+            closes
+                .map(|last| last.ts_close)
+                .min()
+                .map(|end| (level, end))
         })
         .collect();
     let mut cut = Cut::new();
@@ -42,21 +70,8 @@ pub(super) fn cut_after_the_last_bars(mut day: TapeDay) -> (TapeDay, Cut) {
     (day, cut)
 }
 
-/// The day without the levels that cover part of it, coarsest first, so that a level left out
-/// bounds no finer level, and each one left out with its reason.
-pub(super) fn leave_out_partial_levels(mut day: TapeDay) -> (TapeDay, LeftOut) {
-    let mut left_out = LeftOut::new();
-    for level in levels_of(&day).into_iter().rev() {
-        if let Some(reason) = partial_cover(&day, level) {
-            remove_level(&mut day, level);
-            left_out.insert(level, reason);
-        }
-    }
-    (day, left_out)
-}
-
 /// The in-memory reader of the day, leaving out each level with a record outside every bar of a
-/// level it nests in; any other record the engine could not read refuses the day.
+/// coarser level it nests in; any other record the engine could not read refuses the day.
 pub(super) fn served(
     contract: &Contract,
     mut day: TapeDay,
@@ -92,20 +107,32 @@ const fn tape_error(day: &TapeDay, source: TapeError) -> CacheError {
     }
 }
 
-/// Why a level covers part of the day, or `None` while it covers each coarser level it nests in
-/// from that level's first bar to its last.
-fn partial_cover(day: &TapeDay, level: Fidelity) -> Option<String> {
-    let (first, last) = record_span(day, level)?;
-    for (timeframe, first_bar, last_bar) in holding_bars(day, level) {
-        if first < first_bar.ts_open || first >= first_bar.ts_close {
-            return Some(format!(
-                "its first record, at {first}, lies outside the first {timeframe} bar"
-            ));
-        }
-        if last < last_bar.ts_open {
-            return Some(format!(
-                "its last record, at {last}, comes before the last {timeframe} bar opens"
-            ));
+/// Why the level's records within some bar of a coarser intraday level it nests in do not add
+/// up to that bar's volume, or `None` while they do in every bar. Records out of time order are
+/// left to the in-memory reader, which refuses them.
+fn unmatched_volume(day: &TapeDay, level: Fidelity) -> Option<String> {
+    let records = lots_by_start(day, level);
+    if !records.is_sorted_by_key(|(start, _)| *start) {
+        return None;
+    }
+    for (timeframe, bars) in holding_levels(day, level) {
+        for bar in bars {
+            let first = records.partition_point(|(start, _)| *start < bar.ts_open);
+            let end = records.partition_point(|(start, _)| *start < bar.ts_close);
+            let held = end.saturating_sub(first);
+            let lots: i128 = records
+                .iter()
+                .skip(first)
+                .take(held)
+                .map(|(_, lots)| lots)
+                .sum();
+            if lots != i128::from(bar.volume.0) {
+                return Some(format!(
+                    "its records in the {timeframe} bar opening at {} add up to {lots} lots, \
+                     not the bar's {}",
+                    bar.ts_open, bar.volume
+                ));
+            }
         }
     }
     None
@@ -125,29 +152,36 @@ fn levels_of(day: &TapeDay) -> Vec<Fidelity> {
     ticks.into_iter().flatten().chain(bars).collect()
 }
 
-/// Each coarser intraday bar level of the day that `level` nests in, with its first and last
-/// bar.
-fn holding_bars(
-    day: &TapeDay,
-    level: Fidelity,
-) -> impl Iterator<Item = (Timeframe, &BarRow, &BarRow)> {
-    day.bars.iter().filter_map(move |(timeframe, rows)| {
-        let holds = Fidelity::Bars(*timeframe) > level && level.nests_in(*timeframe);
-        let (first, last) = (rows.first()?, rows.last()?);
-        holds.then_some((*timeframe, first, last))
-    })
+/// Each coarser intraday bar level of the day that `level` nests in, coarsest first.
+fn holding_levels(day: &TapeDay, level: Fidelity) -> impl Iterator<Item = (Timeframe, &[BarRow])> {
+    day.bars
+        .iter()
+        .rev()
+        .filter(move |(timeframe, _)| {
+            Fidelity::Bars(**timeframe) > level && level.nests_in(**timeframe)
+        })
+        .map(|(timeframe, bars)| (*timeframe, bars.as_slice()))
 }
 
-/// The instants the level's first and last records start at: a tick its `ts_recv`, a bar its
-/// `ts_open`.
-fn record_span(day: &TapeDay, level: Fidelity) -> Option<(Ts, Ts)> {
+/// Each record of the level as the instant it starts at, a tick's `ts_recv` or a bar's
+/// `ts_open`, and the lots it traded.
+fn lots_by_start(day: &TapeDay, level: Fidelity) -> Vec<(Ts, i128)> {
     match level {
-        Fidelity::Tbbo => Some((day.tbbo.first()?.ts_recv, day.tbbo.last()?.ts_recv)),
-        Fidelity::Trades => Some((day.trades.first()?.ts_recv, day.trades.last()?.ts_recv)),
-        Fidelity::Bars(timeframe) => {
-            let bars = day.bars.get(&timeframe)?;
-            Some((bars.first()?.ts_open, bars.last()?.ts_open))
-        }
+        Fidelity::Tbbo => day
+            .tbbo
+            .iter()
+            .map(|row| (row.ts_recv, i128::from(row.size.0)))
+            .collect(),
+        Fidelity::Trades => day
+            .trades
+            .iter()
+            .map(|row| (row.ts_recv, i128::from(row.size.0)))
+            .collect(),
+        Fidelity::Bars(timeframe) => day.bars.get(&timeframe).map_or_else(Vec::new, |bars| {
+            bars.iter()
+                .map(|bar| (bar.ts_open, i128::from(bar.volume.0)))
+                .collect()
+        }),
     }
 }
 
