@@ -181,13 +181,10 @@ const fn tape_error(day: &TapeDay, source: TapeError) -> CacheError {
 }
 
 /// Why the level's records within some bar of a coarser intraday level it nests in do not add
-/// up to that bar's volume, or `None` while they do in every bar. Records out of time order are
-/// left to the in-memory reader, which refuses them.
+/// up to that bar's volume, or `None` while they do in every bar; [`readable`] has held the
+/// records to time order.
 fn unmatched_volume(day: &TapeDay, level: Fidelity) -> Option<String> {
     let records = lots_by_start(day, level);
-    if !records.is_sorted_by_key(|(start, _)| *start) {
-        return None;
-    }
     for (timeframe, bars) in holding_levels(day, level) {
         for bar in bars {
             let first = records.partition_point(|(start, _)| *start < bar.ts_open);

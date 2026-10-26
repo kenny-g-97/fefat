@@ -143,10 +143,10 @@ def build_engine_cache(
     refused: list[str] = []
     for number in range(1, 13):
         month = YearMonth(year=year, month=number)
-        month_built, month_refused = _build_month(store, root_folder, levels, listed, month)
+        month_built, month_refused, held = _build_month(store, root_folder, levels, listed, month)
         built += month_built
         refused += month_refused
-        removed += _remove_months_left_behind(root_folder, month, month_built, month_refused)
+        removed += _remove_months_left_behind(root_folder, month, held)
     return EngineCacheBuild(
         provider=chosen,
         root=root,
@@ -176,9 +176,9 @@ def _build_month(
     levels: dict[Dataset, Level],
     listed: dict[Dataset, tuple[Partition, ...]],
     month: YearMonth,
-) -> tuple[list[CachedMonthBuild], list[str]]:
-    """The month's contract-months, built or up to date, and those refused, each with its
-    reason."""
+) -> tuple[list[CachedMonthBuild], list[str], set[str]]:
+    """The month's contract-months, built or up to date, those refused, each with its reason,
+    and the contracts the store holds partitions of in the month."""
     start = date(month.year, month.month, 1)
     end = date(month.year + month.month // 12, month.month % 12 + 1, 1) - timedelta(days=1)
     by_contract: defaultdict[str, list[_PinnedPartition]] = defaultdict(list)
@@ -201,22 +201,18 @@ def _build_month(
             continue
         if month_build is not None:
             built.append(month_build)
-    return built, refused
+    return built, refused, set(by_contract)
 
 
-def _remove_months_left_behind(
-    root_folder: Path, month: YearMonth, built: list[CachedMonthBuild], refused: list[str]
-) -> list[str]:
-    """Remove the cached `month` of each contract the build neither built nor refused, since the
-    store no longer holds a partition of it, and name each one removed."""
+def _remove_months_left_behind(root_folder: Path, month: YearMonth, held: set[str]) -> list[str]:
+    """Remove the cached `month` of each contract outside `held`, the contracts the store holds
+    partitions of in the month, and name each one removed."""
     if not root_folder.is_dir():
         return []
-    kept = {month_build.index.contract for month_build in built}
-    kept |= {refusal.split(" ", 1)[0] for refusal in refused}
     left_behind = [
         folder
         for folder in sorted(root_folder.iterdir())
-        if folder.name not in kept and (folder / str(month)).is_dir()
+        if folder.name not in held and (folder / str(month)).is_dir()
     ]
     for folder in left_behind:
         _remove_stale(folder / str(month))
