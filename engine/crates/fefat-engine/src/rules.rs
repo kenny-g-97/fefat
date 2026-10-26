@@ -122,7 +122,7 @@ pub(crate) const fn f_lmt_03(limit: Price) -> Price {
 /// F-LMT-04: a limit filled on the first price it sees is a taker, one filled later rested and is
 /// a maker; market and stop fills are takers.
 pub(crate) const fn f_lmt_04(order: &WorkingOrder) -> Liquidity {
-    match (order.order.kind, order.rested) {
+    match (order.order.kind, order.has_rested()) {
         (OrderKind::Limit { .. }, true) => Liquidity::Maker,
         _ => Liquidity::Taker,
     }

@@ -1,14 +1,16 @@
 """Cases for the differential test of step 2.6, drawn by Hypothesis (the step's amendment of
-2026-10-21): tapes of trades or TBBO records that walk a tick or two at a time with planted jumps
-as wide as a session's range, so that gaps cross stops and limits; records received at one
-instant; a break of the market inside some tapes; one to four market, stop, and limit orders
-placed at one to three decision instants, with OCO pairs and brackets; an opening position; and
-the run settings. Each case is an `EngineCase` that the reference engine and `fefat-cli run` both
+2026-10-21), a development tool of the repository: tapes of trades or TBBO records that walk a
+tick or two at a time with planted jumps as wide as a session's range, so that gaps cross stops
+and limits; records received at one instant; tapes across a UTC midnight; a break of the market
+inside some tapes; and the run settings. An order case places one to four market, stop, and
+limit orders at one to three decision instants, with OCO pairs, brackets, and an opening
+position; a template case runs the execution template's basic subset over one to five drawn
+signal rows. Each case is an `EngineCase` that the reference engine and `fefat-cli run` both
 run. Every value is drawn as a small number relative to the one before, so that ten cases fit
-one example and a failure shrinks to its smallest tape. Hypothesis is a development tool, imported
-when the strategy is built:
+one example and a failure shrinks to its smallest tape. Hypothesis is imported when a strategy
+is built:
 
-    @given(cases=st.lists(tick_cases(), min_size=10, max_size=10))
+    @given(cases=st.lists(drawn_cases(), min_size=10, max_size=10))
     def test_the_engines_agree(cases): ...
 """
 
@@ -30,11 +32,13 @@ from fefat.reference.orders import (
     Side,
     StopOrder,
 )
-from fefat.reference.rust_run import EngineCase
-from fefat.reference.scenarios import Expected, Scenario
+from fefat.reference.rust_batch import EngineCase
+from fefat.reference.scenarios import Expected, Scenario, TemplateScenario
 from fefat.reference.settings import LimitFill, RunSettings, SlippageTicks
+from fefat.reference.signal_rows import SignalRow
 from fefat.reference.tape import TbboRecord, TradeRecord
 from fefat.reference.units import InlineInstrument, utc_date
+from fefat.strategy.spec import StrategySpec
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -43,8 +47,9 @@ FIRST = 1_772_807_400 * 1_000_000_000
 """2026-03-06T14:30:00Z, the first record's instant before its drawn gap."""
 MILLISECOND = 1_000_000
 DAY = 86_400 * 1_000_000_000
-GAPS_MS = (100, 0, 1, 50, 250, 900, 5_000, 60_000)
-"""Milliseconds from one record to the next: 0 puts two at one instant (F-CLK-03)."""
+GAPS_MS = (100, 0, 1, 50, 250, 900, 5_000, 60_000, 36_000_000)
+"""Milliseconds from one record to the next: 0 puts two at one instant (F-CLK-03), and ten
+hours take a tape past a UTC midnight, onto a second trade date of the batch."""
 STEPS = (0, 1, -1, 2, -2, 1, -1, 0, 12, -12, 40, -40, 200, -200)
 """Ticks from one trade to the next: a walk with planted jumps up to a session's range."""
 OFFSETS_MS = (0, -100, 100, -1, 1, -1_000, 1_000)
@@ -80,8 +85,15 @@ INSTRUMENTS = (
 """An ES-like future and a BTC-like perpetual with lots of 0.001."""
 
 
+def drawn_cases() -> "SearchStrategy[EngineCase]":
+    """The strategy of one drawn case of either kind."""
+    from hypothesis import strategies as st
+
+    return st.one_of(tick_cases(), template_cases())
+
+
 def tick_cases() -> "SearchStrategy[EngineCase]":
-    """The strategy of one drawn case."""
+    """The strategy of one drawn order case."""
     from hypothesis import strategies as st
 
     @st.composite
@@ -106,6 +118,105 @@ def tick_cases() -> "SearchStrategy[EngineCase]":
         return EngineCase(scenario, _hours(draw, tape))
 
     return drawn_case()
+
+
+def template_cases() -> "SearchStrategy[EngineCase]":
+    """The strategy of one drawn template case: the execution template's basic subset
+    (`fefat.reference.template`) over drawn signal rows."""
+    from hypothesis import strategies as st
+
+    @st.composite
+    def drawn_template(draw: "DrawFn") -> EngineCase:
+        drawn = draw(st.sampled_from(INSTRUMENTS))
+        tbbo = draw(st.booleans())
+        tape = _tape(draw, drawn, tbbo)
+        spec, at_columns = _template_spec(draw, drawn)
+        scenario = TemplateScenario.model_construct(
+            id="a drawn template",
+            title="a drawn template",
+            fidelity=TickFidelity.TBBO if tbbo else TickFidelity.TRADES,
+            instrument=drawn.instrument,
+            settings=_settings(draw),
+            fees=None,
+            position=None,
+            tape=tape,
+            funding=(),
+            expected=Expected.model_construct(fills=(), marks=(), funding=()),
+            rules=("F-CLK-01",),
+            strategy=spec,
+            signals=_signal_rows(draw, drawn, tape, at_columns),
+        )
+        return EngineCase(scenario, _hours(draw, tape))
+
+    return drawn_template()
+
+
+def _template_spec(draw: "DrawFn", drawn: DrawnInstrument) -> tuple[StrategySpec, bool]:
+    """A spec of the basic subset: a market entry, a stop in ticks or at the `stop_price` column,
+    a target in ticks, as an R multiple of a stop in ticks, or at the `target_price` column, one
+    or two lots, and signal exits on or off; and whether a leg reads a column."""
+    from hypothesis import strategies as st
+
+    stop = draw(
+        st.sampled_from(({"kind": "ticks", "ticks": draw(st.integers(1, 12))}, {"kind": "column"}))
+    )
+    targets: list[dict[str, object]] = [
+        {"kind": "ticks", "ticks": draw(st.integers(1, 12))},
+        {"kind": "column"},
+    ]
+    if stop["kind"] == "ticks":
+        targets.append({"kind": "r_multiple", "multiple": draw(st.sampled_from((1.0, 2.0, 3.0)))})
+    target = draw(st.sampled_from(targets))
+    execution = {
+        "entry": {"kind": "market"},
+        "stop": stop,
+        "targets": [{"price": target}],
+        "sizing": {"kind": "fixed", "units": float(drawn.quantity(draw(st.integers(1, 2))))},
+        "signal_exit": draw(st.booleans()),
+    }
+    document = {"spec_version": 1, "instrument": "ES", "timeframe": "1m", "execution": execution}
+    at_columns = stop["kind"] == "column" or target["kind"] == "column"
+    return StrategySpec.model_validate(document), at_columns
+
+
+def _signal_rows(
+    draw: "DrawFn", drawn: DrawnInstrument, tape: tuple[TradeRecord, ...], at_columns: bool
+) -> tuple[SignalRow, ...]:
+    """One to five signal closes beside the tape's records, each with at most one entry signal,
+    its exit signals, and its wake; prices for the column legs, a stop on the losing side of its
+    target, on every row when a leg reads a column; and a size multiple on every row or none."""
+    from hypothesis import strategies as st
+
+    beside = st.tuples(st.integers(0, len(tape) - 1), st.sampled_from(OFFSETS_MS))
+    drawn_closes = draw(st.lists(beside, min_size=1, max_size=5))
+    closes = sorted({tape[record].ts + offset * MILLISECOND for record, offset in drawn_closes})
+    sized = draw(st.booleans())
+    rows = []
+    for ts_close in closes:
+        entry = draw(st.sampled_from(("long", "none", "short")))
+        away = (Side.SELL if entry == "short" else Side.BUY).sign() * drawn.tick
+        stop_price = target_price = None
+        if at_columns:
+            stop_price = drawn.opening - draw(st.integers(1, 12)) * away
+            target_price = drawn.opening + draw(st.integers(1, 12)) * away
+        rows.append(
+            SignalRow.model_construct(
+                ts_close=ts_close,
+                trade_date=utc_date(ts_close),
+                contract="DRAWN",
+                long_entry=entry == "long",
+                short_entry=entry == "short",
+                long_exit=draw(st.booleans()),
+                short_exit=draw(st.booleans()),
+                entry_price=None,
+                stop_price=stop_price,
+                target_price=target_price,
+                trail_ref=None,
+                size_mult=float(draw(st.integers(1, 2))) if sized else None,
+                wake=draw(st.sampled_from((True, True, False))),
+            )
+        )
+    return tuple(rows)
 
 
 def _tape(draw: "DrawFn", drawn: DrawnInstrument, tbbo: bool) -> tuple[TradeRecord, ...]:

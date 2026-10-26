@@ -17,6 +17,7 @@ use fefat_engine::hours::{Halt, Session, TradingHours};
 use fefat_engine::settings::{LimitFill, RunSettings, SlippageTicks};
 use fefat_engine::strategy::ScenarioOrder;
 use serde::Deserialize;
+use thiserror::Error;
 
 /// The cases of a batch, in the order their rows' `case` column counts them, from 0.
 #[derive(Debug, Deserialize)]
@@ -144,6 +145,16 @@ enum KindWord {
     Limit,
 }
 
+impl KindWord {
+    const fn word(self) -> &'static str {
+        match self {
+            Self::Market => "market",
+            Self::Stop => "stop",
+            Self::Limit => "limit",
+        }
+    }
+}
+
 /// An order of an order scenario, its `oco` group numbered and its bracket's legs named.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -231,9 +242,25 @@ impl CaseManifest {
     }
 }
 
+/// An order whose kind and price disagree: a stop or a limit without a price, or a market order
+/// with one.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error(
+    "Expected a price for a stop or a limit and none for a market order, got order {order} of \
+     kind {kind} with price {price:?}"
+)]
+pub struct MispricedOrder {
+    /// The order's id.
+    order: u64,
+    /// Its kind, as `run.json` writes it.
+    kind: &'static str,
+    /// The price it names, in 1e-9 units.
+    price: Option<i64>,
+}
+
 impl OrderManifest {
     /// The order the scenario places, refused when its kind and its price disagree.
-    pub(super) fn scenario_order(&self) -> Result<ScenarioOrder, String> {
+    pub(super) fn scenario_order(&self) -> Result<ScenarioOrder, MispricedOrder> {
         let kind = match (self.kind, self.price) {
             (KindWord::Market, None) => OrderKind::Market,
             (KindWord::Stop, Some(stop)) => OrderKind::StopMarket { stop: Price(stop) },
@@ -241,11 +268,11 @@ impl OrderManifest {
                 limit: Price(limit),
             },
             (kind, price) => {
-                return Err(format!(
-                    "Expected a price for a stop or a limit and none for a market order, got a \
-                     {kind:?} order {} with price {price:?}",
-                    self.id
-                ));
+                return Err(MispricedOrder {
+                    order: self.id,
+                    kind: kind.word(),
+                    price,
+                });
             }
         };
         let leg = |leg: LegManifest| BracketLeg {

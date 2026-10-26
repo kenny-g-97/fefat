@@ -6,6 +6,7 @@
 
 pub mod book;
 pub mod event_log;
+mod exact_decimal;
 pub mod hours;
 mod rules;
 pub mod settings;

@@ -1,14 +1,15 @@
 //! The tick loop on hand-written tapes transcribed from the scenarios they cite, through the
 //! in-memory reader; `python/tests/test_rust_engine_scenarios.py` runs every tick scenario.
 
+use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::PricingRule;
 use fefat_core::instants::TradeDate;
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
 use fefat_core::ledger::Position;
 use fefat_core::market_data::{InMemoryMarketData, TapeDay, TbboRow, TradeRow};
-use fefat_core::orders::{OcoGroupId, OrderId, OrderState};
+use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, OrderState, Side};
 use fefat_core::strategy_spec::StrategySpec;
-use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS};
+use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 
 use super::*;
 use crate::book::{Bracket, BracketLeg, LegPrice};
@@ -138,13 +139,13 @@ fn flat() -> Ledger {
 
 fn run(
     reader: &InMemoryMarketData,
-    fidelity: Fidelity,
+    level: TickFidelity,
     ledger: Ledger,
     strategy: &mut dyn Strategy,
 ) -> RunOutputs {
     let hours = TradingHours::always();
-    let settings = RunSettings::defaults_for(fidelity);
-    TickRun::new(reader, fidelity, &hours, settings, ledger, strategy)
+    let settings = RunSettings::defaults_for(level.fidelity());
+    TickRun::new(reader, level, &hours, settings, ledger, strategy)
         .unwrap()
         .run()
         .unwrap()
@@ -152,11 +153,11 @@ fn run(
 
 fn run_orders(
     reader: &InMemoryMarketData,
-    fidelity: Fidelity,
+    level: TickFidelity,
     ledger: Ledger,
     orders: Vec<ScenarioOrder>,
 ) -> RunOutputs {
-    run(reader, fidelity, ledger, &mut ScenarioOrders::new(orders))
+    run(reader, level, ledger, &mut ScenarioOrders::new(orders))
 }
 
 /// Each fill's order, milliseconds after 14:30, price in hundredths, and rule.
@@ -180,7 +181,7 @@ fn state_of(outputs: &RunOutputs, id: u64) -> OrderState {
         .orders
         .iter()
         .find(|order| order.order.id == OrderId(id));
-    found.unwrap().state
+    found.unwrap().state()
 }
 
 #[test]
@@ -193,7 +194,7 @@ fn a_sell_stop_gapped_through_on_trades_fills_at_the_first_trade_past_it() {
         (1_400, 499_075, 3),
     ]);
     let orders = vec![order(1, Side::Sell, stop(499_500))];
-    let outputs = run_orders(&reader, Fidelity::Trades, long_one(), orders);
+    let outputs = run_orders(&reader, TickFidelity::Trades, long_one(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 1_250, 499_025, PricingRule::StopOnTrades)]
@@ -211,7 +212,7 @@ fn the_first_stop_of_an_oco_pair_to_trigger_fills_and_cancels_the_other() {
         in_group(order(1, Side::Buy, stop(500_500)), 1),
         in_group(order(2, Side::Sell, stop(499_500)), 1),
     ];
-    let outputs = run_orders(&reader, Fidelity::Trades, flat(), orders);
+    let outputs = run_orders(&reader, TickFidelity::Trades, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 2_100, 500_525, PricingRule::StopOnTrades)]
@@ -225,7 +226,7 @@ fn a_bracket_stop_at_the_market_fills_on_the_next_trade_not_on_its_entrys_own() 
     let reader = trades(&[(200, 500_000, 3), (600, 500_050, 2)]);
     let entry = order(1, Side::Buy, OrderKind::Market);
     let orders = vec![bracketed(entry, (2, 500_000), (3, 501_000))];
-    let outputs = run_orders(&reader, Fidelity::Trades, flat(), orders);
+    let outputs = run_orders(&reader, TickFidelity::Trades, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [
@@ -247,7 +248,7 @@ fn when_one_tbbo_record_would_fill_a_triggered_stop_and_its_target_the_stop_fill
         in_group(order(1, Side::Sell, stop(499_500)), 1),
         in_group(order(2, Side::Sell, limit(500_500)), 1),
     ];
-    let outputs = run_orders(&reader, Fidelity::Tbbo, long_one(), orders);
+    let outputs = run_orders(&reader, TickFidelity::Tbbo, long_one(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 300, 499_500, PricingRule::StopAtNextQuote)]
@@ -263,7 +264,7 @@ fn on_tbbo_a_bracket_stop_at_its_entry_records_trade_is_through_the_market() {
     ]);
     let entry = order(1, Side::Buy, OrderKind::Market);
     let orders = vec![bracketed(entry, (2, 499_975), (3, 501_000))];
-    let outputs = run_orders(&reader, Fidelity::Tbbo, flat(), orders);
+    let outputs = run_orders(&reader, TickFidelity::Tbbo, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [
@@ -285,7 +286,7 @@ fn a_tbbo_record_that_triggers_a_stop_and_bids_at_the_target_fills_the_target() 
         in_group(order(1, Side::Sell, stop(499_500)), 1),
         in_group(order(2, Side::Sell, limit(500_500)), 1),
     ];
-    let outputs = run_orders(&reader, Fidelity::Tbbo, long_one(), orders);
+    let outputs = run_orders(&reader, TickFidelity::Tbbo, long_one(), orders);
     assert_eq!(
         fills(&outputs),
         [(2, 300, 500_500, PricingRule::LimitAtItsPrice)]
@@ -326,7 +327,7 @@ fn a_templates_short_takes_its_size_from_size_mult_and_its_bracket_from_the_colu
         (302_000, 500_300, 4),
         (302_500, 500_350, 2),
     ]);
-    let outputs = run(&reader, Fidelity::Trades, flat(), &mut template);
+    let outputs = run(&reader, TickFidelity::Trades, flat(), &mut template);
     assert_eq!(
         fills(&outputs),
         [
@@ -340,11 +341,11 @@ fn a_templates_short_takes_its_size_from_size_mult_and_its_bracket_from_the_colu
 
 #[test]
 fn a_bar_fidelity_is_refused_until_step_2_7() {
-    let reader = trades(&[(200, 500_000, 1)]);
-    let hours = TradingHours::always();
     let fidelity = Fidelity::Bars(fefat_core::fidelity::Timeframe::ONE_MINUTE);
-    let mut strategy = ScenarioOrders::new(Vec::new());
-    let settings = RunSettings::defaults_for(fidelity);
-    let refused = TickRun::new(&reader, fidelity, &hours, settings, flat(), &mut strategy);
-    assert_eq!(refused.err(), Some(RunError::BarFidelity { fidelity }));
+    let refused = TickFidelity::try_from(fidelity);
+    assert_eq!(refused, Err(RunError::BarFidelity { fidelity }));
+    assert_eq!(
+        TickFidelity::try_from(Fidelity::Tbbo),
+        Ok(TickFidelity::Tbbo)
+    );
 }

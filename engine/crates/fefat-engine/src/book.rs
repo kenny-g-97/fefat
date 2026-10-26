@@ -56,25 +56,75 @@ impl Bracket {
     }
 }
 
-/// An order the run holds.
+/// An order the run holds. Its state and whether it rested change only through the book's
+/// transitions: waiting to working at its first record, working to triggered (a stop on TBBO),
+/// resting while it works, and closed, filled or cancelled.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkingOrder {
     /// The order as placed.
     pub order: Order,
-    /// Where it stands.
-    pub state: OrderState,
-    /// Whether it saw a price without filling: a limit filled later rested (F-LMT-04).
-    pub rested: bool,
+    state: OrderState,
+    rested: bool,
     /// The point of the run's timeline after which it sees records: the decision that placed it,
     /// or the record that filled its entry (F-ACT-01, F-OCO-02).
     pub seen_after: usize,
-    /// The bracket its fill places, for an entry.
-    pub bracket: Option<Bracket>,
-    /// Its entry, for a bracket's leg: the legs of one entry form one OCO group.
-    pub bracket_of: Option<OrderId>,
+    /// What it has to do with a bracket.
+    pub link: BracketLink,
+}
+
+/// How a live order closes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Closing {
+    /// It filled whole.
+    Filled,
+    /// Its OCO group filled, or its strategy cancelled it.
+    Cancelled,
+}
+
+/// What an order has to do with a bracket (F-OCO-02): nothing, an entry whose fill places one, or
+/// one of its legs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BracketLink {
+    /// No bracket.
+    Unbracketed,
+    /// An entry whose fill places this bracket.
+    Entry(Bracket),
+    /// A leg of the bracket of this entry; the legs of one entry form one OCO group.
+    LegOf(OrderId),
+}
+
+impl BracketLink {
+    /// The entry whose bracket this order is a leg of.
+    pub const fn leg_of(self) -> Option<OrderId> {
+        match self {
+            Self::LegOf(entry) => Some(entry),
+            Self::Unbracketed | Self::Entry(_) => None,
+        }
+    }
 }
 
 impl WorkingOrder {
+    /// A new order, waiting for the first record it sees (F-ACT-01).
+    pub(crate) const fn placed(order: Order, seen_after: usize, link: BracketLink) -> Self {
+        Self {
+            order,
+            state: OrderState::Waiting,
+            rested: false,
+            seen_after,
+            link,
+        }
+    }
+
+    /// Where it stands.
+    pub const fn state(&self) -> OrderState {
+        self.state
+    }
+
+    /// Whether it saw a price without filling: a limit filled later rested (F-LMT-04).
+    pub const fn has_rested(&self) -> bool {
+        self.rested
+    }
+
     /// The stop's or the limit's price; a market order has none.
     pub const fn level(&self) -> Option<Price> {
         match self.order.kind {
@@ -86,7 +136,10 @@ impl WorkingOrder {
 
     fn shares_group_with(&self, other: &Self) -> bool {
         let named = self.order.oco.is_some() && self.order.oco == other.order.oco;
-        let bracket = self.bracket_of.is_some() && self.bracket_of == other.bracket_of;
+        let bracket = match (self.link, other.link) {
+            (BracketLink::LegOf(entry), BracketLink::LegOf(other_entry)) => entry == other_entry,
+            _ => false,
+        };
         named || bracket
     }
 }
@@ -143,17 +196,44 @@ impl Book {
             .find(|order| order.order.id == id && order.state == state)
     }
 
-    pub(crate) fn live_mut(&mut self, id: OrderId) -> Option<&mut WorkingOrder> {
-        self.live.iter_mut().find(|order| order.order.id == id)
+    /// Waiting to working: the order `id` sees its first record (F-ACT-01). None when no live
+    /// order `id` waits.
+    pub(crate) fn activate(&mut self, id: OrderId) -> Option<&WorkingOrder> {
+        let order = self.live_in_mut(id, OrderState::Waiting)?;
+        order.state = OrderState::Working;
+        Some(order)
+    }
+
+    /// Working to triggered: a stop on TBBO that a trade reached, filled at the next tradeable
+    /// record's quote (F-STP-02). None when no live order `id` works.
+    pub(crate) fn trigger(&mut self, id: OrderId) -> Option<()> {
+        self.live_in_mut(id, OrderState::Working)?.state = OrderState::Triggered;
+        Some(())
+    }
+
+    /// The working order `id` saw a price without filling: it rests (F-LMT-04). None when no live
+    /// order `id` works.
+    pub(crate) fn rest(&mut self, id: OrderId) -> Option<()> {
+        self.live_in_mut(id, OrderState::Working)?.rested = true;
+        Some(())
     }
 
     /// Closes the live order `id`, filled or cancelled, and returns it.
-    pub(crate) fn close(&mut self, id: OrderId, state: OrderState) -> Option<WorkingOrder> {
+    pub(crate) fn close(&mut self, id: OrderId, closing: Closing) -> Option<WorkingOrder> {
         let index = self.live.iter().position(|order| order.order.id == id)?;
         let mut order = self.live.remove(index);
-        order.state = state;
+        order.state = match closing {
+            Closing::Filled => OrderState::Filled,
+            Closing::Cancelled => OrderState::Cancelled,
+        };
         self.closed.push(order.clone());
         Some(order)
+    }
+
+    fn live_in_mut(&mut self, id: OrderId, state: OrderState) -> Option<&mut WorkingOrder> {
+        self.live
+            .iter_mut()
+            .find(|order| order.order.id == id && order.state == state)
     }
 
     /// The live orders of `order`'s OCO group, lowest id first (F-OCO-01).

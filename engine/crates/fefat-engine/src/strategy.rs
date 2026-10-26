@@ -7,11 +7,11 @@
 use fefat_core::instants::Ts;
 use fefat_core::ledger::Position;
 use fefat_core::orders::TimeInForce;
-use fefat_core::orders::{OcoGroupId, Order, OrderId, OrderKind, OrderRole, OrderState, Side};
+use fefat_core::orders::{OcoGroupId, Order, OrderId, OrderKind, OrderRole, Side};
 use fefat_core::units::{Overflow, Qty};
 use thiserror::Error;
 
-use crate::book::{Book, Bracket, WorkingOrder};
+use crate::book::{Book, Bracket, BracketLink, Closing, WorkingOrder};
 use crate::event_log::LogEntry;
 
 /// A strategy: the instants it decides at and what it decides there.
@@ -167,7 +167,7 @@ impl<'run> DecisionContext<'run> {
     /// it.
     pub fn flatten(&mut self) -> Result<(), DecisionError> {
         for id in self.book.live_ids() {
-            self.book.close(id, OrderState::Cancelled);
+            self.book.close(id, Closing::Cancelled);
             self.log.push(LogEntry::cancelled_by_strategy(self.now, id));
         }
         let (side, held) = match self.position {
@@ -207,14 +207,11 @@ impl<'run> DecisionContext<'run> {
             oco: entry.oco,
         };
         self.log.push(LogEntry::placed(&order));
-        self.book.place(WorkingOrder {
-            order,
-            state: OrderState::Waiting,
-            rested: false,
-            seen_after: self.timeline,
-            bracket: entry.bracket,
-            bracket_of: None,
-        });
+        let link = entry
+            .bracket
+            .map_or(BracketLink::Unbracketed, BracketLink::Entry);
+        self.book
+            .place(WorkingOrder::placed(order, self.timeline, link));
         Ok(())
     }
 }

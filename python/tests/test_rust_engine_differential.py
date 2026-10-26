@@ -11,14 +11,9 @@ import pytest
 from hypothesis import given, seed, settings
 from hypothesis import strategies as st
 
-from fefat.reference.generated_cases import tick_cases
-from fefat.reference.rust_run import (
-    EngineCase,
-    RustEngine,
-    compare_engines,
-    default_binary,
-    explained,
-)
+from fefat.reference.generated_cases import drawn_cases
+from fefat.reference.rust_batch import EngineCase
+from fefat.reference.rust_run import RustEngine, compare_engines, default_binary, explained
 
 DIFFERENTIAL_SEED = 20_261_026
 """The run's seed, recorded in the pull request."""
@@ -34,7 +29,7 @@ def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
 
     @seed(DIFFERENTIAL_SEED)
     @settings(max_examples=EXAMPLES, deadline=None, database=None, print_blob=True)
-    @given(cases=st.lists(tick_cases(), min_size=CASES_PER_EXAMPLE, max_size=CASES_PER_EXAMPLE))
+    @given(cases=st.lists(drawn_cases(), min_size=CASES_PER_EXAMPLE, max_size=CASES_PER_EXAMPLE))
     def the_engines_agree(cases: list[EngineCase]) -> None:
         comparisons = compare_engines(engine, cases)
         cases_run.append(len(comparisons))

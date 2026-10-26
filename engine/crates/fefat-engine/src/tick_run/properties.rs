@@ -5,7 +5,6 @@
 //! the traded range); and, after every record, equity equal to cash plus the position's value at
 //! the mark, with the cash and the position tracked apart from the ledger, from the fills alone.
 
-use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
 use fefat_core::ledger::Ledger;
@@ -14,7 +13,7 @@ use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, Side};
 use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 use proptest::prelude::*;
 
-use super::{Stepped, TickRun};
+use super::{Stepped, TickFidelity, TickRun};
 use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::hours::{Session, TradingHours};
 use crate::settings::{LimitFill, RunSettings, SlippageTicks};
@@ -278,12 +277,14 @@ fn value(price: i64, lots: i64) -> i64 {
     i64::try_from(exact.div_euclid(i128::from(PRICE_UNITS))).unwrap()
 }
 
+/// A record the run saw: when, whether the market traded, and the lowest price a buy could take
+/// on it, its trade or its ask, and the highest a sell could, its trade or its bid.
 struct SeenRecord {
     index: usize,
     ts: Ts,
     tradeable: bool,
-    low: Price,
-    high: Price,
+    lowest_for_a_buy: Price,
+    highest_for_a_sell: Price,
 }
 
 proptest! {
@@ -292,7 +293,7 @@ proptest! {
         case in drawn_case(),
     ) {
         let (trades, tbbo) = rows(&case);
-        let fidelity = if case.tbbo { Fidelity::Tbbo } else { Fidelity::Trades };
+        let level = if case.tbbo { TickFidelity::Tbbo } else { TickFidelity::Trades };
         let tape = TapeDay {
             trade_date: TradeDate(20_518),
             tbbo: if case.tbbo { tbbo } else { Vec::new() },
@@ -320,19 +321,18 @@ proptest! {
             }
         };
         let mut strategy = ScenarioOrders::new(orders(&case, &trades));
-        let mut run = TickRun::new(&reader, fidelity, &hours, settings, ledger, &mut strategy).unwrap();
+        let mut run = TickRun::new(&reader, level, &hours, settings, ledger, &mut strategy).unwrap();
         let (mut seen, mut mark, mut checked, mut index) = (Vec::new(), None, 0, 0);
         while let Some(stepped) = run.step().unwrap() {
             if let Stepped::Record(record) = stepped {
-                let quoted = record.quote.map_or([record.price; 2], |quote| [quote.bid, quote.ask]);
-                let prices = [record.price, quoted[0], quoted[1]];
+                let (bid, ask) = record.quote.map_or((record.price, record.price), |quote| (quote.bid, quote.ask));
                 let tradeable = hours.is_open(record.ts);
                 seen.push(SeenRecord {
                     index,
                     ts: record.ts,
                     tradeable,
-                    low: prices.into_iter().min().unwrap(),
-                    high: prices.into_iter().max().unwrap(),
+                    lowest_for_a_buy: record.price.min(ask),
+                    highest_for_a_sell: record.price.max(bid),
                 });
                 if tradeable {
                     mark = Some(record.price.0);
@@ -350,8 +350,8 @@ proptest! {
                     .filter(|record| record.index > order.seen_after)
                     .filter(|record| record.ts >= order.order.activation && record.tradeable)
                     .collect();
-                let low = saw.iter().map(|record| record.low).min().unwrap();
-                let high = saw.iter().map(|record| record.high).max().unwrap();
+                let low = saw.iter().map(|record| record.lowest_for_a_buy).min().unwrap();
+                let high = saw.iter().map(|record| record.highest_for_a_sell).max().unwrap();
                 match fill.side {
                     Side::Buy => prop_assert!(fill.price >= low, "{fill:?} below {low}"),
                     Side::Sell => prop_assert!(fill.price <= high, "{fill:?} above {high}"),

@@ -2,13 +2,14 @@
 //! engine in one process, so that the differential test drives thousands of tapes through few
 //! invocations. The input folder holds `run.json`, which lists the cases ([`manifest`]), and the
 //! Arrow IPC files of their records and signal rows, `trades.arrow`, `tbbo.arrow`, and
-//! `signals.arrow`, each row tagged with its case's place in that list ([`tables`]). A case reads
+//! `signals.arrow`, each row tagged with its case's place in that list ([`inputs`]). A case reads
 //! its records from those files, through the in-memory reader, or from an engine cache's
-//! contract folder (step 2.5). The output folder receives `fills.arrow`, `orders.arrow`, and
-//! `log.arrow`, tagged the same way.
+//! contract folder (step 2.5). The output folder receives `fills.arrow`, `orders.arrow`,
+//! `log.arrow`, and `ledger.arrow`, tagged the same way ([`outputs`]).
 
+mod inputs;
 mod manifest;
-mod tables;
+mod outputs;
 #[cfg(test)]
 mod tests;
 
@@ -16,7 +17,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arrow_schema::ArrowError;
-use fefat_core::fidelity::Fidelity;
 use fefat_core::instrument::{Contract, NonPositiveParameter};
 use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::market_data::{InMemoryMarketData, MarketDataReader, TapeError};
@@ -25,11 +25,11 @@ use fefat_engine::hours::TradingHours;
 use fefat_engine::settings::RunSettings;
 use fefat_engine::strategy::{ScenarioOrders, Strategy};
 use fefat_engine::template::{TemplateError, TemplateStrategy};
-use fefat_engine::tick_run::{RunError, RunOutputs, TickRun};
+use fefat_engine::tick_run::{RunError, RunOutputs, TickFidelity, TickRun};
 use thiserror::Error;
 
-use manifest::{CaseManifest, DecisionsManifest, MarketDataManifest, RunManifest};
-use tables::BatchTables;
+use inputs::BatchTables;
+use manifest::{CaseManifest, DecisionsManifest, MarketDataManifest, MispricedOrder, RunManifest};
 
 /// What stopped a batch.
 #[derive(Debug, Error)]
@@ -93,8 +93,8 @@ pub enum CaseError {
     #[error(transparent)]
     Ledger(#[from] LedgerError),
     /// An order of its scenario.
-    #[error("{0}")]
-    Order(String),
+    #[error(transparent)]
+    Order(#[from] MispricedOrder),
     /// Its specification or its signal rows.
     #[error(transparent)]
     Template(#[from] TemplateError),
@@ -145,7 +145,7 @@ pub fn run_batch(input: &Path, output: &Path) -> Result<BatchSummary, BatchError
         path: output.to_path_buf(),
         source,
     })?;
-    tables::write_outputs(output, &runs)?;
+    outputs::write_outputs(output, &runs)?;
     let fills = runs.iter().map(|(_, run)| run.fills.len()).sum();
     Ok(BatchSummary {
         cases: runs.len(),
@@ -158,29 +158,29 @@ fn run_case(
     index: i64,
     tables: &BatchTables,
 ) -> Result<RunOutputs, CaseError> {
+    let level = TickFidelity::try_from(case.fidelity)?;
     let instrument = case.instrument()?;
     let ledger = case.ledger(instrument)?;
     let (hours, settings) = (case.hours(), case.settings());
     let mut strategy: Box<dyn Strategy> = match &case.decisions {
         DecisionsManifest::Orders { orders } => {
             let placed = orders.iter().map(|order| order.scenario_order());
-            let placed = placed.collect::<Result<_, _>>().map_err(CaseError::Order)?;
-            Box::new(ScenarioOrders::new(placed))
+            Box::new(ScenarioOrders::new(placed.collect::<Result<_, _>>()?))
         }
         DecisionsManifest::Template { strategy } => {
-            let rows = tables.signal_rows(index).map_err(Box::new)?;
+            let rows = tables.signal_rows(index);
             Box::new(TemplateStrategy::new(strategy, rows, &instrument)?)
         }
     };
     let run = Run {
-        fidelity: case.fidelity,
+        level,
         hours: &hours,
         settings,
         ledger,
     };
     match &case.market_data {
         MarketDataManifest::Tape => {
-            let days = tables.tape_days(index, case.fidelity).map_err(Box::new)?;
+            let days = tables.tape_days(index, level).map_err(Box::new)?;
             let reader = InMemoryMarketData::new(Contract(case.contract.clone()), days)?;
             run.on(&reader, strategy.as_mut())
         }
@@ -194,7 +194,7 @@ fn run_case(
 
 /// A case's run but for its records and its strategy.
 struct Run<'case> {
-    fidelity: Fidelity,
+    level: TickFidelity,
     hours: &'case TradingHours,
     settings: RunSettings,
     ledger: Ledger,
@@ -206,14 +206,21 @@ impl Run<'_> {
         reader: &impl MarketDataReader,
         strategy: &mut dyn Strategy,
     ) -> Result<RunOutputs, CaseError> {
-        let run = TickRun::new(
-            reader,
-            self.fidelity,
-            self.hours,
-            self.settings,
-            self.ledger,
-            strategy,
-        )?;
+        let Self {
+            level,
+            hours,
+            settings,
+            ledger,
+        } = self;
+        let run = TickRun::new(reader, level, hours, settings, ledger, strategy)?;
         Ok(run.run()?)
+    }
+}
+
+/// An Arrow error as the batch's error about the file at `path`.
+fn arrow_error(path: &Path) -> impl Fn(ArrowError) -> BatchError + '_ {
+    move |source| BatchError::Arrow {
+        path: path.to_path_buf(),
+        source,
     }
 }
