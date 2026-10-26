@@ -164,13 +164,28 @@ impl MappedDay {
         let column = column.ok_or_else(|| CacheError::refused("one column", "none", what))?;
         let offsets = uint32_array(column, what)?.clone();
         let bars = self.record_count(Fidelity::Bars(timeframe));
+        if offsets.len() != bars + 1 {
+            let expected = format!("{} offsets, one per bar and one more", bars + 1);
+            return Err(CacheError::refused(
+                expected,
+                offsets.len().to_string(),
+                what,
+            ));
+        }
+        let values = offsets.values();
+        let pairs = values.iter().zip(values.iter().skip(1));
+        if let Some((entry, (earlier, later))) = pairs
+            .enumerate()
+            .find(|(_, (earlier, later))| later < earlier)
+        {
+            let actual = format!("entry {} at {later}, after {earlier}", entry + 2);
+            return Err(CacheError::refused("offsets in order", actual, what));
+        }
         let records = self.record_count(finer);
-        let last = offsets.values().last().map(|last| *last as usize);
-        let in_order = offsets.values().is_sorted();
-        if offsets.len() != bars + 1 || last != Some(records) || !in_order {
-            let expected = format!("{} offsets in order, ending in {records}", bars + 1);
-            let actual = format!("{} ending in {last:?}", offsets.len());
-            return Err(CacheError::refused(expected, actual, what));
+        let last = values.last().map_or(0, |last| *last as usize);
+        if last != records {
+            let expected = format!("a last offset of {records}, the records' count");
+            return Err(CacheError::refused(expected, last.to_string(), what));
         }
         Ok(offsets)
     }

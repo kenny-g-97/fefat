@@ -252,7 +252,7 @@ fn a_descent_whose_offsets_run_out_of_order_is_refused() {
 
     let message = refused.to_string();
     assert!(
-        message.starts_with("Expected 3 offsets in order, ending in 6, got 3 ending in Some(6)"),
+        message.starts_with("Expected offsets in order, got entry 2 at 4, after 5"),
         "{message}"
     );
 }
