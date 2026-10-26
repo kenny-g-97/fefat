@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from fefat.market.instruments import STATIC_TABLE, Instrument, InstrumentTable
 from fefat.market.layout import INSTRUMENTS_FOLDER_NAME
-from fefat.market.store import write_atomically
+from fefat.market.store_files import write_atomically
 
 
 def instrument_table(data_dir: Path) -> InstrumentTable:

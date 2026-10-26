@@ -272,8 +272,8 @@ def record_conditions(store: Store, folder: Path, job: str, *days: dict[str, str
     source.write_bytes(content)
     sha256 = hashlib.sha256(content).hexdigest()
     path = PurePosixPath("databento", job, "condition.json")
-    store.write_raw_file(path, source, sha256)
-    store.record_raw_file(
+    store.raw.write(path, source, sha256)
+    store.raw.record(
         path,
         provider="databento",
         vendor_version="revised 2026-03-09",

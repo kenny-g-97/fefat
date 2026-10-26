@@ -131,7 +131,7 @@ def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_pat
     assert_frame_equal(bars.drop("trade_count", "vwap"), synthetic.drop("trade_count", "vwap"))
     assert bars.get_column("trade_count").null_count() == bars.height
     assert bars.get_column("vwap").null_count() == bars.height
-    assert store.raw_manifest() == RawManifest(
+    assert store.raw.manifest() == RawManifest(
         files=tuple(
             RawFile(
                 path=f"databento/{JOB}/{name}",
@@ -200,7 +200,7 @@ def test_a_file_whose_sha256_differs_from_the_vendors_manifest_is_refused_with_b
 
     store = Store(tmp_path / "data")
     assert store.list_partitions() == ()
-    assert store.raw_manifest() == RawManifest()
+    assert store.raw.manifest() == RawManifest()
 
 
 def test_a_recorded_file_whose_bytes_changed_is_refused_with_both_hashes(tmp_path: Path) -> None:
@@ -273,10 +273,10 @@ def test_a_bar_outside_every_session_takes_the_session_before_it_and_is_counted(
         date(2026, 3, 9),
     ]
     assert report.files[0].outside_sessions == (DayRecords(trade_date=date(2026, 3, 6), records=1),)
-    assert store.raw_manifest().files[0].path == (
+    assert store.raw.manifest().files[0].path == (
         f"databento/{hashlib.sha256(content).hexdigest()}/es.ohlcv-1m.dbn"
     )
-    assert store.raw_manifest().files[0].batch_job is None
+    assert store.raw.manifest().files[0].batch_job is None
 
 
 def test_records_out_of_clock_order_are_counted_and_still_stored_in_order(tmp_path: Path) -> None:
@@ -335,7 +335,7 @@ def test_the_vendors_daily_bars_are_skipped_with_a_count(tmp_path: Path) -> None
     sha256 = hashlib.sha256(content).hexdigest()
     assert report.daily_bars_skipped == (f"databento/{sha256}/es.ohlcv-1d.dbn",)
     assert store.list_partitions() == ()
-    assert store.raw_manifest() == RawManifest()
+    assert store.raw.manifest() == RawManifest()
 
 
 def test_a_zstd_file_imports_the_same_partition_as_the_plain_one(tmp_path: Path) -> None:
@@ -448,7 +448,7 @@ def test_a_batch_without_revision_dates_imports_and_says_so(tmp_path: Path) -> N
 
     store, report = imported(tmp_path, batch)
 
-    data_file = store.raw_manifest().file_at(f"databento/{JOB}/{DATA_FILE}")
+    data_file = store.raw.manifest().file_at(f"databento/{JOB}/{DATA_FILE}")
     assert data_file is not None
     assert data_file.vendor_version == "DBN 3, no revision date"
     assert report.summary().splitlines()[1:3] == [
@@ -483,7 +483,7 @@ def test_a_single_files_download_date_is_the_utc_date_it_was_last_written(
 
     store, _ = imported(tmp_path, source)
 
-    assert store.raw_manifest().files[0].downloaded_on == date(2026, 3, 10)
+    assert store.raw.manifest().files[0].downloaded_on == date(2026, 3, 10)
 
 
 def test_a_bar_whose_instrument_id_the_symbology_does_not_cover_is_refused(tmp_path: Path) -> None:
@@ -516,7 +516,7 @@ def test_single_files_of_one_name_are_told_apart_by_their_content(tmp_path: Path
     assert [file.partition.dataset.root for file in store.list_partitions()] == ["ES", "MES"]
     assert mes.files[0].contracts[0].contract == "MESH2026"
     assert again.already_imported == (f"databento/{hashlib.sha256(es_content).hexdigest()}/{name}",)
-    assert {file.roots: file.imported_on for file in store.raw_manifest().files} == {
+    assert {file.roots: file.imported_on for file in store.raw.manifest().files} == {
         ("ES",): IMPORTED_ON,
         ("MES",): date(2026, 10, 17),
     }

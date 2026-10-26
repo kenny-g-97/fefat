@@ -3,7 +3,7 @@
 `raw/MANIFEST.json` lists each file with its path, size, and SHA-256, its provider, the
 vendor's version, the download date, for a vendor's batch download the job id and the SHA-256
 the vendor published, and the day it was imported with the roots its records fed (step 1.9),
-which `fefat data status` reads as each product's last import. `Store.record_raw_file` keeps
+which `fefat data status` reads as each product's last import. `Store.raw.record` keeps
 it. The import lives here rather than in `dataset.json`, which a snapshot pins, so that an
 import never changes a snapshot taken before it.
 """

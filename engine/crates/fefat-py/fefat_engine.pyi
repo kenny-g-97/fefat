@@ -1,5 +1,7 @@
 """The FEFAT engine, compiled from Rust: engine/crates/fefat-py/src/lib.rs."""
 
+from collections.abc import Iterable, Sequence
+from os import PathLike
 from typing import Protocol, TypedDict
 
 class _ArrowArray(Protocol):
@@ -22,3 +24,10 @@ def max_drawdown(values: list[int]) -> int: ...
 def max_drawdown_arrow(values: _Int64Arrow) -> int: ...
 def arrow_values_addresses(values: _Int64Arrow) -> list[int]: ...
 def build_details() -> _BuildDetails: ...
+def write_cache_month(
+    contract_folder: str | PathLike[str],
+    contract: str,
+    month: str,
+    sources: list[tuple[str, str]],
+    trade_dates: Iterable[tuple[str, Sequence[tuple[str, _ArrowStream]]]],
+) -> None: ...

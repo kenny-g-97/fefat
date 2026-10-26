@@ -190,8 +190,8 @@ class _DataFileImporter:
         report = write_records(
             frames, placement, self._store, original.raw_path.as_posix(), self._metadata
         )
-        self._store.write_raw_file(original.raw_path, original.source, original.sha256)
-        self._store.record_raw_file(
+        self._store.raw.write(original.raw_path, original.source, original.sha256)
+        self._store.raw.record(
             original.raw_path,
             provider=PROVIDER,
             vendor_version=f"DBN {metadata.version}{revision}",
@@ -230,7 +230,7 @@ def vendor_conditions(store: Store, job_id: str) -> pl.DataFrame:
     """The per-day conditions of a batch download the store keeps, from its `condition.json`:
     `date`, `condition` (available, degraded, pending, or missing), and the vendor's
     `last_modified_date`, sorted by date."""
-    content = store.raw_file(PurePosixPath(PROVIDER, job_id, _CONDITIONS))
+    content = store.raw.read(PurePosixPath(PROVIDER, job_id, _CONDITIONS))
     days = _CONDITION_DAYS.validate_json(content)
     return pl.DataFrame(
         {
@@ -257,8 +257,8 @@ def _import_batch(batch: _Batch, store: Store, importer: _DataFileImporter) -> D
         report = importer.imported(batch.data_file, f", {batch.revision()}", batch.downloaded_on)
     for sidecar in batch.sidecars:
         if sidecar in unrecorded:
-            store.write_raw_file(sidecar.raw_path, sidecar.source, sidecar.sha256)
-            store.record_raw_file(
+            store.raw.write(sidecar.raw_path, sidecar.source, sidecar.sha256)
+            store.raw.record(
                 sidecar.raw_path,
                 provider=PROVIDER,
                 vendor_version=batch.revision(),
@@ -383,7 +383,7 @@ def _require_published(original: _Original, folder: Path) -> None:
 
 def _refuse_changed_originals(store: Store, originals: tuple[_Original, ...]) -> None:
     """Refuse, before anything is written, files the raw manifest records with other bytes."""
-    manifest = store.raw_manifest()
+    manifest = store.raw.manifest()
     changed = [
         f"{original.raw_path} recorded with the SHA-256 {recorded.sha256}, got {original.sha256}"
         for original in originals
@@ -398,7 +398,7 @@ def _refuse_changed_originals(store: Store, originals: tuple[_Original, ...]) ->
 
 
 def _recorded(store: Store, original: _Original) -> bool:
-    return store.raw_manifest().file_at(original.raw_path.as_posix()) is not None
+    return store.raw.manifest().file_at(original.raw_path.as_posix()) is not None
 
 
 def _job_date(job_id: str) -> date:

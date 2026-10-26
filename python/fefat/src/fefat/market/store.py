@@ -1,5 +1,6 @@
 """The canonical market-data store on disk (ADR-0019): partitions read with Polars and written
-atomically, snapshots that pin what a request read, and the raw manifest of vendor files.
+atomically, snapshots that pin what a request read, and, as `Store.raw`, the vendors' original
+files and their manifest (`fefat.market.raw_files`).
 
 `Store` takes its folder: `fefat.config.resolve_paths(os.environ).data_dir` in the app and in
 notebooks, a temporary folder in tests, and the repository's `fixtures` folder for the
@@ -17,20 +18,15 @@ What the files hold is `fefat.market.schema`; where they live is `fefat.market.l
 
 import hashlib
 import io
-import os
-import shutil
-import tempfile
 from collections.abc import Callable, Iterable, Iterator
-from datetime import date
 from pathlib import Path, PurePosixPath
 
 import polars as pl
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import Field
 
 from fefat.market.layout import (
     DATASET_METADATA_FILE_NAME,
     PARTITION_FILE_NAME,
-    RAW_FOLDER_NAME,
     RESERVED_FOLDERS,
     Dataset,
     DatasetMetadata,
@@ -38,13 +34,7 @@ from fefat.market.layout import (
     PartitionRequest,
     YearMonth,
 )
-from fefat.market.raw_manifest import (
-    RAW_MANIFEST_FILE_NAME,
-    BatchJob,
-    RawFile,
-    RawManifest,
-    checked_raw_path,
-)
+from fefat.market.raw_files import RawFiles
 from fefat.market.schema import (
     FrozenModel,
     SchemaKind,
@@ -54,6 +44,16 @@ from fefat.market.schema import (
     require_columns,
 )
 from fefat.market.snapshot import FileDigest, Snapshot
+from fefat.market.store_files import (
+    FileDigestRecord,
+    current_digest,
+    hashed,
+    json_writer,
+    parsed_json,
+    record_digest,
+    recorded_or_new_digest,
+    write_atomically,
+)
 
 
 class PartitionFile(FrozenModel):
@@ -77,6 +77,11 @@ class Store:
         """The store's folder, `FEFAT_DATA_DIR` in the app, where the instruments an import
         saved lie beside the data (`fefat.market.saved_instruments`)."""
         return self._folder
+
+    @property
+    def raw(self) -> RawFiles:
+        """The vendors' original files under `raw`, and their manifest."""
+        return RawFiles(self._folder)
 
     def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
         """Every partition in the store, or only `dataset`'s, with the size of its file, sorted
@@ -145,7 +150,7 @@ class Store:
         self.dataset_metadata(partition.dataset)
         path = self._folder / partition.relative_path()
         write_atomically(path, lambda temporary: frame.write_parquet(temporary, compression="zstd"))
-        return PartitionFile(partition=partition, size_bytes=path.stat().st_size)
+        return PartitionFile(partition=partition, size_bytes=record_digest(path).size_bytes)
 
     def has_dataset_metadata(self, dataset: Dataset) -> bool:
         """Whether the store holds the dataset's `dataset.json`."""
@@ -159,20 +164,23 @@ class Store:
                 f"Expected the metadata of {dataset.relative_folder()} in {path}, got no such "
                 "file; write it with write_dataset_metadata before the dataset's partitions."
             )
-        return _parsed_json(DatasetMetadata, path.read_bytes(), str(path))
+        return parsed_json(DatasetMetadata, path.read_bytes(), str(path))
 
     def write_dataset_metadata(self, dataset: Dataset, metadata: DatasetMetadata) -> None:
         """Write the dataset's `dataset.json`, replacing any earlier one in one step."""
-        write_atomically(self._folder / dataset.metadata_path(), _json_writer(metadata))
+        write_atomically(self._folder / dataset.metadata_path(), json_writer(metadata))
 
     def snapshot(self, request: PartitionRequest) -> Snapshot:
-        """Pin the dataset's metadata and the partitions the request selects by their content;
-        metadata that does not parse is refused, so a run never pins a size unit it cannot read."""
-        self.dataset_metadata(request.dataset)
-        partitions = tuple(
-            self._digest(file.partition.relative_path()) for file in self._selected(request)
-        )
-        return Snapshot.of(request, self._digest(request.dataset.metadata_path()), partitions)
+        """Pin the dataset's metadata and the partitions the request selects by their content,
+        taking a partition's digest from beside its file while it describes the file
+        (`fefat.market.store_files`), hashing the file otherwise, and writing nothing; metadata
+        that does not parse is refused, so a run never pins a size unit it cannot read."""
+        return self._snapshot(request, current_digest)
+
+    def record_digests(self, request: PartitionRequest) -> Snapshot:
+        """`snapshot`, recording beside each partition the digest it had to compute, so that
+        later snapshots read none of these files."""
+        return self._snapshot(request, recorded_or_new_digest)
 
     def read(self, snapshot: Snapshot) -> pl.DataFrame:
         """The rows a snapshot pinned, cut to its request's dates like `scan`, parsed from
@@ -183,106 +191,23 @@ class Store:
         frames = [self._pinned_partition(digest, expected) for digest in snapshot.partitions]
         return pl.concat(frames).filter(_within_the_dates(snapshot.request))
 
+    def read_pinned_partition(self, snapshot: Snapshot, digest: FileDigest) -> pl.DataFrame:
+        """One partition the snapshot pinned, cut to its request's dates as `read` cuts them
+        and parsed from bytes whose SHA-256 matches the pin, so that a reader of many partitions,
+        such as the engine cache's builder, holds one at a time."""
+        if digest not in snapshot.partitions:
+            raise ValueError(
+                f"Expected a partition the snapshot {snapshot.sha256} pins, got {digest.path}."
+            )
+        expected = polars_schema(snapshot.request.dataset.schema_name)
+        partition = self._pinned_partition(digest, expected)
+        return partition.filter(_within_the_dates(snapshot.request))
+
     def pinned_metadata(self, snapshot: Snapshot) -> DatasetMetadata:
         """The dataset's metadata as the snapshot pinned it, such as the size unit a run's
         rows count in; refused if `dataset.json` changed after the snapshot."""
         content = self._pinned_bytes(snapshot.metadata)
-        return _parsed_json(DatasetMetadata, content, snapshot.metadata.path)
-
-    def raw_manifest(self) -> RawManifest:
-        """The raw manifest; empty until the first raw file is recorded."""
-        path = self._raw_manifest_path()
-        if not path.is_file():
-            return RawManifest()
-        return _parsed_json(RawManifest, path.read_bytes(), str(path))
-
-    def write_raw_file(self, path: PurePosixPath, source: Path, sha256: str) -> None:
-        """Copy a vendor's file to `raw/<path>` in one step, once the copy's SHA-256 is the
-        one stated, replacing a copy an interrupted import left behind. A path the raw manifest
-        records is refused, since raw files never change; record the copy with
-        `record_raw_file` once it is imported."""
-        relative = checked_raw_path(path.as_posix())
-        if self.raw_manifest().file_at(relative) is not None:
-            raise ValueError(
-                f"Expected a raw file the manifest {self._raw_manifest_path()} does not record, "
-                f"got {relative}, which it records: raw files never change."
-            )
-        write_atomically(self._folder / RAW_FOLDER_NAME / relative, _verified_copy(source, sha256))
-
-    def raw_file(self, path: PurePosixPath) -> bytes:
-        """The bytes of a raw file the manifest records, refused when they no longer match its
-        recorded SHA-256."""
-        relative = checked_raw_path(path.as_posix())
-        recorded = self.raw_manifest().file_at(relative)
-        if recorded is None:
-            raise FileNotFoundError(
-                f"Expected {relative} in the raw manifest {self._raw_manifest_path()}, got no "
-                "such entry."
-            )
-        content = self._vendor_file(relative).read_bytes()
-        actual = hashlib.sha256(content).hexdigest()
-        if actual != recorded.sha256:
-            raise ValueError(
-                f"Expected the raw file {relative} with its recorded SHA-256 {recorded.sha256}, "
-                f"got {actual}: raw files never change."
-            )
-        return content
-
-    def record_raw_file(
-        self,
-        path: PurePosixPath,
-        provider: str,
-        vendor_version: str,
-        downloaded_on: date,
-        batch_job: BatchJob | None,
-        imported_on: date,
-        roots: tuple[str, ...],
-    ) -> RawFile:
-        """Record a vendor's file under `raw` in the raw manifest, with its size and SHA-256,
-        the day it was imported, and the roots its records fed.
-
-        Recording the same file again changes nothing. Raw files are immutable, so a recorded
-        file whose bytes or details changed is refused: a vendor's re-normalised history
-        arrives as a new file."""
-        relative = checked_raw_path(path.as_posix())
-        size_bytes, sha256 = _size_and_sha256(self._vendor_file(relative))
-        raw_file = RawFile(
-            path=relative,
-            size_bytes=size_bytes,
-            sha256=sha256,
-            provider=provider,
-            vendor_version=vendor_version,
-            downloaded_on=downloaded_on,
-            batch_job=batch_job,
-            imported_on=imported_on,
-            roots=roots,
-        )
-        manifest = self.raw_manifest()
-        recorded = manifest.file_at(relative)
-        if recorded is None:
-            write_atomically(self._raw_manifest_path(), _json_writer(manifest.with_file(raw_file)))
-            return raw_file
-        if recorded != raw_file:
-            raise ValueError(
-                f"Expected the raw file {relative} as {self._raw_manifest_path()} records it, "
-                f"since raw files are immutable: recorded {recorded.model_dump_json()}, got "
-                f"{raw_file.model_dump_json()}."
-            )
-        return recorded
-
-    def _vendor_file(self, relative: str) -> Path:
-        """The vendor's file under `raw`, refused when it is missing or when it is the manifest
-        under another name, such as a hard link or a short 8.3 name."""
-        file = self._folder / RAW_FOLDER_NAME / relative
-        if not file.is_file():
-            raise FileNotFoundError(f"Expected the raw file {file}, got no such file.")
-        manifest = self._raw_manifest_path()
-        if manifest.is_file() and file.samefile(manifest):
-            raise ValueError(
-                f"Expected a vendor's file inside the raw folder, got {relative!r}, another name "
-                "of the raw manifest."
-            )
-        return file
+        return parsed_json(DatasetMetadata, content, snapshot.metadata.path)
 
     def _providers(self) -> Iterator[Path]:
         """The providers' folders: every folder of the store but `raw` and `reports`."""
@@ -313,12 +238,25 @@ class Store:
             )
         return selected
 
-    def _digest(self, relative: PurePosixPath) -> FileDigest:
+    def _snapshot(
+        self, request: PartitionRequest, digest_of: Callable[[Path], FileDigestRecord]
+    ) -> Snapshot:
+        self.dataset_metadata(request.dataset)
+        partitions = tuple(
+            self._pin(file.partition.relative_path(), digest_of) for file in self._selected(request)
+        )
+        return Snapshot.of(request, self._pin(request.dataset.metadata_path(), hashed), partitions)
+
+    def _pin(
+        self, relative: PurePosixPath, digest_of: Callable[[Path], FileDigestRecord]
+    ) -> FileDigest:
         path = self._folder / relative
         if not path.is_file():
             raise FileNotFoundError(f"Expected the file {path} to pin, got no such file.")
-        size_bytes, sha256 = _size_and_sha256(path)
-        return FileDigest(path=relative.as_posix(), size_bytes=size_bytes, sha256=sha256)
+        digest = digest_of(path)
+        return FileDigest(
+            path=relative.as_posix(), size_bytes=digest.size_bytes, sha256=digest.sha256
+        )
 
     def _pinned_bytes(self, digest: FileDigest) -> bytes:
         content = (self._folder / digest.path).read_bytes()
@@ -334,9 +272,6 @@ class Store:
         frame = pl.read_parquet(io.BytesIO(self._pinned_bytes(digest)))
         require_columns(expected, frame.schema, digest.path)
         return frame
-
-    def _raw_manifest_path(self) -> Path:
-        return self._folder / RAW_FOLDER_NAME / RAW_MANIFEST_FILE_NAME
 
 
 def _sorted_by_path(files: Iterable[PartitionFile]) -> tuple[PartitionFile, ...]:
@@ -375,53 +310,3 @@ def _require_trade_dates_of_the_key(partition: Partition, frame: pl.DataFrame) -
             f"Expected every bar of {partition.relative_path()} with a trade date of its key "
             f"{partition.key}, got the trade dates {strays.unique().sort().to_list()[:5]}."
         )
-
-
-def _parsed_json[Model: BaseModel](model: type[Model], content: bytes, source: str) -> Model:
-    try:
-        return model.model_validate_json(content)
-    except ValidationError as error:
-        raise ValueError(f"Expected {source} to hold a {model.__name__}, got: {error}") from error
-
-
-def _json_writer(model: BaseModel) -> Callable[[Path], object]:
-    content = model.model_dump_json(indent=2).encode() + b"\n"
-    return lambda temporary: temporary.write_bytes(content)
-
-
-def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
-    """Write through a temporary file beside the target, flush it to disk, then replace the
-    target in one step (atomic on one NTFS or POSIX volume): a reader, or a power cut, sees
-    the old file or the new one, never half of one."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f"{path.stem}.", suffix=".tmp"
-    )
-    os.close(descriptor)
-    temporary = Path(temporary_name)
-    try:
-        write(temporary)
-        with temporary.open("rb+") as written:
-            os.fsync(written.fileno())
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def _verified_copy(source: Path, sha256: str) -> Callable[[Path], object]:
-    def copy(temporary: Path) -> None:
-        shutil.copyfile(source, temporary)
-        copied = _size_and_sha256(temporary)[1]
-        if copied != sha256:
-            raise ValueError(
-                f"Expected the copy of {source} to have the SHA-256 {sha256}, got {copied}."
-            )
-
-    return copy
-
-
-def _size_and_sha256(path: Path) -> tuple[int, str]:
-    """The file's size and SHA-256, both from one open handle, so they describe one file."""
-    with path.open("rb") as file:
-        size_bytes = os.fstat(file.fileno()).st_size
-        return size_bytes, hashlib.file_digest(file, "sha256").hexdigest()

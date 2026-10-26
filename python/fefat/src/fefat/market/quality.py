@@ -194,7 +194,7 @@ def _vendor_days(store: Store, provider: str) -> pl.DataFrame:
     jobs = sorted(
         {
             file.batch_job.job_id
-            for file in store.raw_manifest().files
+            for file in store.raw.manifest().files
             if file.provider == provider and file.batch_job is not None
         }
     )
