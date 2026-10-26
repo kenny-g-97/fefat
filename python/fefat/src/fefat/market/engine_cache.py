@@ -25,13 +25,14 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
+from typing import Annotated
 
 import polars as pl
 from fefat_engine import write_cache_month
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from fefat.market.dataset_choice import provider_datasets
-from fefat.market.fidelity import TickFidelity, parse_fidelity
+from fefat.market.fidelity import Fidelity, TickFidelity
 from fefat.market.layout import Dataset, Partition, PartitionRequest, YearMonth
 from fefat.market.schema import BarSchemaName, FrozenModel, SchemaKind, Timeframe
 from fefat.market.snapshot import FileDigest, Sha256, Snapshot
@@ -61,6 +62,14 @@ _BAR_COLUMNS = {
 """The store's columns of each level, and their names in the cache, where each is int64."""
 
 
+def _month_of(value: object) -> object:
+    return YearMonth.parse(value) if isinstance(value, str) else value
+
+
+Month = Annotated[YearMonth, BeforeValidator(_month_of)]
+"""A month as the index writes it, `2026-03`."""
+
+
 class CachedSource(FrozenModel):
     """A store partition a month was built from: its path in the store and its SHA-256."""
 
@@ -73,9 +82,9 @@ class CachedTradeDate(FrozenModel):
     close of the last bar that holds them, and the levels left out, each with its reason."""
 
     trade_date: date
-    levels: tuple[str, ...]
-    cut: dict[str, int]
-    left_out: dict[str, str]
+    levels: tuple[Fidelity, ...]
+    cut: dict[Fidelity, int]
+    left_out: dict[Fidelity, str]
 
 
 class CachedFile(FrozenModel):
@@ -90,7 +99,7 @@ class CacheMonthIndex(FrozenModel):
 
     layout_version: int
     contract: str
-    month: str
+    month: Month
     sources: tuple[CachedSource, ...]
     trade_dates: tuple[CachedTradeDate, ...]
     files: dict[str, CachedFile]
@@ -120,11 +129,10 @@ class CacheMonthIndex(FrozenModel):
         return notes
 
 
-def _coarsest_first(level: str) -> tuple[int, int]:
-    parsed = parse_fidelity(level)
-    if isinstance(parsed, Timeframe):
-        return (0, -parsed.nominal_seconds())
-    return (1, 0 if parsed is TickFidelity.TRADES else 1)
+def _coarsest_first(level: TickFidelity | Timeframe) -> tuple[int, int]:
+    if isinstance(level, Timeframe):
+        return (0, -level.nominal_seconds())
+    return (1, 0 if level is TickFidelity.TRADES else 1)
 
 
 def _counted(count: int, noun: str) -> str:

@@ -6,7 +6,7 @@ contract-month with its levels (Done means 3)."""
 import json
 import re
 import shutil
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path, PurePosixPath
 
 import polars as pl
@@ -20,8 +20,8 @@ from fefat.market.engine_cache import (
     engine_cache_status,
     read_cache_month_index,
 )
-from fefat.market.layout import Dataset, Partition
-from fefat.market.schema import parse_schema_name
+from fefat.market.layout import Dataset, DatasetMetadata, Partition
+from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
 from fefat.market.store_files import DIGEST_SUFFIX
 
@@ -116,7 +116,9 @@ def test_the_index_lists_each_trade_date_with_its_levels_and_the_partitions_it_w
 
     assert index is not None
     assert [day.trade_date for day in index.trade_dates] == list(TRADE_DATES)
-    assert all(day.levels == ("trades", "1s", "1m") for day in index.trade_dates)
+    assert all(
+        [str(level) for level in day.levels] == ["trades", "1s", "1m"] for day in index.trade_dates
+    )
     assert all(not day.cut and not day.left_out for day in index.trade_dates)
     sources = {source.path: source.sha256 for source in index.sources}
     assert sources == {
@@ -249,3 +251,103 @@ def test_the_status_lists_each_cached_contract_month_with_its_levels(cache: Path
         assert re.fullmatch(pattern, line), line
     assert engine_cache_status(cache, root="MES") == ()
     assert engine_cache_status(cache.parent / "nothing") == ()
+
+
+def es_metadata() -> DatasetMetadata:
+    return FIXTURE_STORE.dataset_metadata(
+        Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
+    )
+
+
+def five_minute_bars(trade_dates: list[date]) -> pl.DataFrame:
+    """Two 5-minute bars of ESM2026 at 14:30 and 14:35 UTC of each trade date."""
+    rows: list[dict[str, object]] = []
+    for trade_date in trade_dates:
+        opening = datetime(trade_date.year, trade_date.month, trade_date.day, 14, 30, tzinfo=UTC)
+        for minutes in (0, 5):
+            ts_open = int((opening + timedelta(minutes=minutes)).timestamp()) * 1_000_000_000
+            rows.append(
+                {
+                    "ts_open": ts_open,
+                    "ts_close": ts_open + 300 * 1_000_000_000,
+                    "trade_date": trade_date,
+                    "instrument_id": 1003,
+                    "open": 5_000_000_000_000,
+                    "high": 5_000_250_000_000,
+                    "low": 4_999_750_000_000,
+                    "close": 5_000_000_000_000,
+                    "volume": 7,
+                    "trade_count": None,
+                    "vwap": None,
+                }
+            )
+    return pl.DataFrame(rows, schema=polars_schema(parse_schema_name("ohlcv-5m")))
+
+
+def test_an_imports_coarser_bars_cache_per_contract_month_from_their_one_file(
+    tmp_path: Path,
+) -> None:
+    store = store_copy(tmp_path)
+    dataset = Dataset(provider="fivemin", schema_name=parse_schema_name("ohlcv-5m"), root="ES")
+    store.write_dataset_metadata(dataset, es_metadata())
+    trade_dates = [date(2026, 3, 5), date(2026, 3, 6), date(2026, 4, 6)]
+    store.write_partition(
+        Partition(dataset=dataset, contract="ESM2026", key=None), five_minute_bars(trade_dates)
+    )
+
+    build = build_engine_cache(store, tmp_path / "cache", "ES", 2026, provider="fivemin")
+
+    months = {str(month.index.month): month.index for month in build.months}
+    assert sorted(months) == ["2026-03", "2026-04"]
+    march, april = months["2026-03"], months["2026-04"]
+    assert [day.trade_date for day in march.trade_dates] == trade_dates[:2]
+    assert [day.trade_date for day in april.trade_dates] == trade_dates[2:]
+    assert march.levels_summary() == "5m 2 days"
+    source = "fivemin/ohlcv-5m/root=ES/contract=ESM2026/part.parquet"
+    assert (
+        [file.path for file in march.sources] == [file.path for file in april.sources] == [source]
+    )
+    april_folder = tmp_path / "cache" / ENGINE_CACHE_FOLDER_NAME / "fivemin" / "ES" / "ESM2026"
+    april_bars = pl.read_ipc((april_folder / "2026-04" / "5m.arrow").read_bytes())
+    assert (
+        april_bars.get_column("ts_open").to_list()
+        == five_minute_bars(trade_dates[2:]).get_column("ts_open").to_list()
+    )
+
+
+def test_tbbo_records_cache_with_their_quotes_in_the_cache_s_columns(tmp_path: Path) -> None:
+    store = store_copy(tmp_path)
+    dataset = Dataset(provider="quotes", schema_name=parse_schema_name("tbbo"), root="ES")
+    store.write_dataset_metadata(dataset, es_metadata())
+    trades = FIXTURE_STORE.scan_partition(
+        Partition.from_relative_path(
+            PurePosixPath("synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part.parquet")
+        )
+    ).collect()
+    tick = 250_000_000
+    tbbo = trades.with_columns(
+        bid_px_00=pl.col("price") - tick,
+        ask_px_00=pl.col("price") + tick,
+        bid_sz_00=pl.lit(3, dtype=pl.UInt32),
+        ask_sz_00=pl.lit(4, dtype=pl.UInt32),
+    )
+    store.write_partition(
+        Partition(dataset=dataset, contract="ESH2026", key=date(2026, 3, 5)), tbbo
+    )
+
+    build = build_engine_cache(store, tmp_path / "cache", "ES", 2026, provider="quotes")
+
+    (month,) = build.months
+    assert month.index.levels_summary() == "tbbo 1 day"
+    folder = tmp_path / "cache" / ENGINE_CACHE_FOLDER_NAME / "quotes" / "ES" / "ESH2026"
+    cached = pl.read_ipc((folder / "2026-03" / "tbbo.arrow").read_bytes())
+    expected = tbbo.select(
+        pl.col("ts_recv"),
+        pl.col("price"),
+        pl.col("size").cast(pl.Int64),
+        bid=pl.col("bid_px_00"),
+        ask=pl.col("ask_px_00"),
+        bid_size=pl.col("bid_sz_00").cast(pl.Int64),
+        ask_size=pl.col("ask_sz_00").cast(pl.Int64),
+    )
+    assert_frame_equal(cached, expected)

@@ -232,9 +232,10 @@ databento MES MESZ2025 2025-10: 1m 23 days, 1.8 MB
 - each level with the number of trade dates that hold it, coarsest first: your 1-minute bars give `1m` alone, and trades or 1-second bars, once imported, add `trades` and `1s` on the days they cover;
 - the size of the month's files.
 
-Two rules keep the levels of a day consistent, and the build prints a line each time one applies:
+Three rules keep the levels of a day consistent, and the build prints a line each time one applies:
 
 - **A level that misses part of a day is left out of it.** Within each bar of a coarser level, a finer level's records must add up to the bar's volume, as when a trades file starts, ends, or skips inside a session. A day that fails keeps its other levels and fills on the finest one left, as a line such as this one says: `2025-10-17: left out trades, since its records in the 1m bar opening at 2025-10-17T13:31:00Z add up to 0 lots, not the bar's 412`.
-- **Records after a day's last bar are cut.** The last bucket of your data keeps its ticks while its bar waits for data that completes it, so the build cuts the ticks and finer bars that no bar of a coarser level holds, such as `2026-03-09: cut 12 records of trades after the last bar that holds them`.
+- **A level whose file stops short of the day is left out of it.** Where the trades start before the first 1-minute bar, or run on well past the last one, the 1-minute file covers part of the day, as a download cut at midnight UTC does, and the day keeps its trades whole rather than losing the hours after the minutes stop.
+- **Records just after a day's last bar are cut.** The last bucket of your data keeps its ticks while its bar waits for data that completes it, so the build cuts the ticks and finer bars that no bar of a coarser level holds, such as `2026-03-09: cut 12 records of trades after the last bar that holds them`.
 
 **Digests beside your files.** The first build reads each file it caches once to hash it and writes `part.digest.json` beside it. Later builds, and the backtests of later steps, take the hash from there while the file keeps its size and time, so they need not read years of data just to name it; reading the data checks its hash anyway. Leave these files where they are: deleting one only costs a reread.
