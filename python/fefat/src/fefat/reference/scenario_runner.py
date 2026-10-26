@@ -125,24 +125,33 @@ def held_lots(scenario: AnyScenario) -> int:
 
 def run_scenarios(scenarios: Sequence[AnyScenario], cache_folder: Path) -> ScenarioReport:
     """Every scenario through the reference engine, each calendar's sessions built once."""
-    tables: dict[str, SessionTable] = {}
-
-    def sessions_of_its_calendar(scenario: AnyScenario) -> SessionTable | None:
-        if isinstance(scenario.instrument, InlineInstrument):
-            return None
-        calendar: Calendar = scenario.instrument.session_calendar()
-        if calendar.name not in tables:
-            tables[calendar.name] = sessions_of(calendar, cache_folder)
-        return tables[calendar.name]
-
     outcomes = []
-    for scenario in scenarios:
-        sessions = sessions_of_its_calendar(scenario)
-        outcomes.append(run_scenario(scenario, _hours(scenario, sessions), sessions))
+    for scenario, sessions in zip(scenarios, session_tables(scenarios, cache_folder), strict=True):
+        outcomes.append(run_scenario(scenario, scenario_hours(scenario, sessions), sessions))
     return ScenarioReport(tuple(outcomes))
 
 
-def _hours(scenario: AnyScenario, sessions: SessionTable | None) -> TradingHours:
+def session_tables(
+    scenarios: Sequence[AnyScenario], cache_folder: Path
+) -> list[SessionTable | None]:
+    """Each scenario's session table, none for an inline instrument, which trades around the
+    clock; each calendar's table is built once, in `cache_folder`."""
+    tables: dict[str, SessionTable] = {}
+    found: list[SessionTable | None] = []
+    for scenario in scenarios:
+        if isinstance(scenario.instrument, InlineInstrument):
+            found.append(None)
+            continue
+        calendar: Calendar = scenario.instrument.session_calendar()
+        if calendar.name not in tables:
+            tables[calendar.name] = sessions_of(calendar, cache_folder)
+        found.append(tables[calendar.name])
+    return found
+
+
+def scenario_hours(
+    scenario: AnyScenario, sessions: SessionTable | None
+) -> AlwaysOpen | CalendarHours:
     """When the market is open around the scenario's tape: always, without a session table."""
     if sessions is None:
         return AlwaysOpen()
