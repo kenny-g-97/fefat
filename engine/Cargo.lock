@@ -329,8 +329,13 @@ checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 name = "fefat-cli"
 version = "0.0.1"
 dependencies = [
+ "arrow-array",
+ "arrow-ipc",
+ "arrow-schema",
  "blake3",
  "fefat-core",
+ "fefat-data",
+ "fefat-engine",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

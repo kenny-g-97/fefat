@@ -1,9 +1,10 @@
-//! Command-line driver: spec in, artifacts out; golden tests and benchmarks. Today it writes the
-//! JSON schema of the strategy specification, which `just gen-schema` keeps in the SDK, and
-//! prints the determinism digest, whose golden `just regenerate-goldens` writes into
-//! `fixtures/goldens/determinism/`.
+//! Command-line driver: spec in, artifacts out; golden tests and benchmarks. It writes the JSON
+//! schema of the strategy specification, which `just gen-schema` keeps in the SDK; prints the
+//! determinism digest, whose golden `just regenerate-goldens` writes into
+//! `fixtures/goldens/determinism/`; and runs a batch of cases through the tick engine (`run`).
 
 mod determinism;
+mod run;
 mod seeded_tape;
 
 use std::path::Path;
@@ -11,13 +12,14 @@ use std::process::ExitCode;
 
 use fefat_core::strategy_spec::schema_text;
 
-const USAGE: &str =
-    "usage: fefat-cli schema <path> | fefat-cli determinism <seed> [--write <manifest path>]";
+const USAGE: &str = "usage: fefat-cli schema <path> | fefat-cli determinism <seed> [--write \
+                     <manifest path>] | fefat-cli run <input folder> <output folder>";
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.as_slice() {
         [command, path] if command == "schema" => write_schema(path),
+        [command, input, output] if command == "run" => run_batch(input, output),
         [command, seed] if command == "determinism" => print_digest(seed, None),
         [command, seed, flag, path] if command == "determinism" && flag == "--write" => {
             print_digest(seed, Some(Path::new(path)))
@@ -25,6 +27,20 @@ fn main() -> ExitCode {
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// Runs the batch in the folder `input` and writes its outputs into the folder `output`.
+fn run_batch(input: &str, output: &str) -> ExitCode {
+    match run::run_batch(Path::new(input), Path::new(output)) {
+        Ok(summary) => {
+            println!("Ran {} cases: {} fills", summary.cases, summary.fills);
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
         }
     }
 }
