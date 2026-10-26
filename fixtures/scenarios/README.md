@@ -122,6 +122,7 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-040](S-fill-040.yaml) | 1m | A bracket stop placed through the market at its entry's bar open fills there, as a market order would |
 | [S-fill-041](S-fill-041.yaml) | tbbo | On TBBO a bracket stop at its entry record's trade price is through the market and fills on the next record |
 | [S-fill-042](S-fill-042.yaml) | 1m | A stop that reverses a long inside a 1-minute bar turns the path adverse for the new short |
+| [S-fill-043](S-fill-043.yaml) | tbbo | A TBBO record that triggers a long's stop and whose bid reaches its target fills the target |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |

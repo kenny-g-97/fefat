@@ -2,7 +2,7 @@
 
 This is the normative specification of how FEFAT's engines activate and fill orders. The Python reference engine (step 2.2) implements it rule by rule, and the Rust engine (steps 2.6 to 2.9) must match the reference exactly (D-07, D-10, [ADR-0005](../adr/0005-bar-close-decisions-finest-data-fills.md), [ADR-0008](../adr/0008-fill-spec-scenarios-reference-engine.md)). The scenarios in [`fixtures/scenarios/`](../../fixtures/scenarios/README.md) apply it to short tapes you can check with a calculator. When a scenario and this document disagree, this document changes first, with you, and then the scenario; an expected value is never edited to match code.
 
-Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02-engine-and-data.md) §3 and §4, your answers at the Phase 2 kickoff (D-51), and CME's stop rule, and revised after the step's engine-accuracy review. Rules marked _proposed_ fill gaps the design left open; they wait for your sign-off in §18.
+Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02-engine-and-data.md) §3 and §4, your answers at the Phase 2 kickoff (D-51), and CME's stop rule, and revised after the step's engine-accuracy review. Rules marked _proposed_ fill gaps the design left open; you signed them off in §18 on 2026-10-26, at step 2.6.
 
 ## 1. How to read it
 
@@ -111,7 +111,7 @@ A gap is the price jumping past an order's level without trading at it. It needs
 
 ## 11. Brackets and OCO groups (F-OCO)
 
-**F-OCO-01** (design, proposed tie) When an order of an OCO group fills, the others are cancelled at once: the record or pseudo-tick that filled it cannot fill them. When one trade or TBBO record would fill both a stop and a limit of one group, the stop fills; on bars, the path decides (F-BAR-01, F-BAR-02).
+**F-OCO-01** (design, proposed tie) When an order of an OCO group fills, the others are cancelled at once: the record or pseudo-tick that filled it cannot fill them. When one trade or TBBO record would fill both a stop and a limit of one group, the stop fills; on bars, the path decides (F-BAR-01, F-BAR-02). On TBBO, the record that triggers a stop does not fill it (F-STP-02), so a limit of its group that the same record fills, by its trade or its quote, fills and cancels the stop.
 
 **F-OCO-02** (proposed) A bracket's stop and target are placed when their entry fills, as one OCO group for the whole position, and work from the next record after the entry's fill; on bars, from the entry's point on the path (F-BAR-04). They take no latency, as brackets held at the broker or the exchange do, so a latency rerun does not delay them.
 
@@ -161,31 +161,31 @@ The defaults below are what every run uses unless its settings say otherwise, an
 
 | Default | Rules | Source | Alternatives | Signed off |
 | --- | --- | --- | --- | --- |
-| An order becomes active 100 ms after the bar close that decided it. On bar days a latency rerun moves a fill only when the latency passes a bar's close. | F-ACT-01 | D-51 | Any latency: none in the NautilusTrader profile, 1 s in the stress rerun. | |
-| Market and stop-market fills slip one tick on trades and bars and none on TBBO, which fills at the quote; ticks per order class are a run setting. | F-SLP-01, F-MKT-01, F-MKT-02, F-MKT-03 | D-51 | The design's rule by aggressor side on trades: no tick after a trade by a buyer, for a buy (`BACKLOG.md`). | |
-| A limit fills only when the market trades through its price. | F-LMT-01 | D-51 | Touch (F-LMT-02). | |
-| Bars coarser than a minute replay like 1-minute bars, and a bucket without trades fills nothing. | F-BAR-07 | D-51 | | |
-| A trade date before a fee table's first schedule takes that schedule, with a warning in the run. | F-FEE-01 | D-51 | Refuse the run. | |
-| A triggered stop fills at the worse of its price plus the ticks and the price that triggered it (on TBBO, the next record's quote), so a gap fills at the gap price with no ticks beyond it. | F-STP-02, F-STP-03, F-STP-04 | design, your choice of 2026-10-21 | The design table's gap price plus one tick; on trades, the next trade's price, as TBBO takes the next record's quote. | |
-| A limit fills at its price, never better, even above the market. | F-LMT-03 | design | | |
-| Holding a position, a bar's adverse extreme comes first, so a stop beats a target in one bar. | F-BAR-02 | design | | |
-| Between its pseudo-ticks a bar passes every price, so a stop inside it fills at its price plus the ticks. | F-BAR-01 | design | | |
-| Records received at one instant keep the vendor's order. | F-CLK-03 | proposed | | |
-| The bars that close at an instant come before its other events, and their fills keep the bar's trade date. | F-CLK-02, F-BAR-06 | proposed | | |
-| On bars, an order decided at a close sees the first bar closing after its activation, whole from its open; a bracket works on the rest of its entry's bar. | F-ACT-02 | proposed | | |
-| A stop at or through the market when it becomes active fills at once as a market order, with the larger of the two classes' ticks; for a bracket's stop, the market is the price at its entry's fill before slippage, the trade's price or the entry's point of a bar's path. | F-STP-05 | proposed | Refuse it, as CME does. | |
-| A limit filled on the first price it sees is a taker, any later one a maker. | F-LMT-04 | proposed | | |
-| Flat, a bar's extreme favourable to the earliest placed working entry comes first, the lower order id breaking ties. | F-BAR-03 | proposed | The extreme nearer the open first. | |
-| After an entry inside a bar, the extremes not yet reached come adverse first. | F-BAR-04 | proposed | | |
-| A bar whose fills would differ with its extremes swapped flags every fill `ambiguous`, and the run counts them. | F-BAR-05 | design, proposed test | | |
-| Working orders stay through breaks and weekends; the engine cancels nothing at a close. | F-SES-01 | proposed | Day orders, cancelled at each session's close. | |
-| Records received in a break or a halt are not tradeable. | F-SES-02 | proposed | | |
-| When one trade or TBBO record would fill a stop and a limit of one group, the stop fills; on bars the path decides. | F-OCO-01 | design, proposed tie | | |
-| A bracket's legs work from the record after their entry's fill, without latency. | F-OCO-02 | proposed | | |
-| Orders fill whole; on trades and TBBO, a fill larger than its record's size is flagged. | F-QTY-01 | design, proposed flag | A volume or queue model (`BACKLOG.md`). | |
-| Every amount of money rounds to the micro-unit against the trader, and none wraps. | F-FEE-03 | proposed | Halves away from zero. | |
-| Funding is paid on the signed quantity at the last trade, a long paying a positive rate. | F-FND-01 | design, proposed mark | The venue's own mark price, once imported. | |
-| Positions are marked at the last trade, on bar days at the pseudo-ticks; a fill does not move the mark. On bar days, trade paths flag the bars whose order could change a drawdown (§15). | F-MRK-01 | step 2.1's prompt, proposed detail | The bid for a long and the ask for a short on TBBO days (`BACKLOG.md`). | |
+| An order becomes active 100 ms after the bar close that decided it. On bar days a latency rerun moves a fill only when the latency passes a bar's close. | F-ACT-01 | D-51 | Any latency: none in the NautilusTrader profile, 1 s in the stress rerun. | 2026-10-26 |
+| Market and stop-market fills slip one tick on trades and bars and none on TBBO, which fills at the quote; ticks per order class are a run setting. | F-SLP-01, F-MKT-01, F-MKT-02, F-MKT-03 | D-51 | The design's rule by aggressor side on trades: no tick after a trade by a buyer, for a buy (`BACKLOG.md`). | 2026-10-26 |
+| A limit fills only when the market trades through its price. | F-LMT-01 | D-51 | Touch (F-LMT-02). | 2026-10-26 |
+| Bars coarser than a minute replay like 1-minute bars, and a bucket without trades fills nothing. | F-BAR-07 | D-51 | | 2026-10-26 |
+| A trade date before a fee table's first schedule takes that schedule, with a warning in the run. | F-FEE-01 | D-51 | Refuse the run. | 2026-10-26 |
+| A triggered stop fills at the worse of its price plus the ticks and the price that triggered it (on TBBO, the next record's quote), so a gap fills at the gap price with no ticks beyond it. | F-STP-02, F-STP-03, F-STP-04 | design, your choice of 2026-10-21 | The design table's gap price plus one tick; on trades, the next trade's price, as TBBO takes the next record's quote. | 2026-10-26 |
+| A limit fills at its price, never better, even above the market. | F-LMT-03 | design | | 2026-10-26 |
+| Holding a position, a bar's adverse extreme comes first, so a stop beats a target in one bar. | F-BAR-02 | design | | 2026-10-26 |
+| Between its pseudo-ticks a bar passes every price, so a stop inside it fills at its price plus the ticks. | F-BAR-01 | design | | 2026-10-26 |
+| Records received at one instant keep the vendor's order. | F-CLK-03 | proposed | | 2026-10-26 |
+| The bars that close at an instant come before its other events, and their fills keep the bar's trade date. | F-CLK-02, F-BAR-06 | proposed | | 2026-10-26 |
+| On bars, an order decided at a close sees the first bar closing after its activation, whole from its open; a bracket works on the rest of its entry's bar. | F-ACT-02 | proposed | | 2026-10-26 |
+| A stop at or through the market when it becomes active fills at once as a market order, with the larger of the two classes' ticks; for a bracket's stop, the market is the price at its entry's fill before slippage, the trade's price or the entry's point of a bar's path. | F-STP-05 | proposed | Refuse it, as CME does. | 2026-10-26 |
+| A limit filled on the first price it sees is a taker, any later one a maker. | F-LMT-04 | proposed | | 2026-10-26 |
+| Flat, a bar's extreme favourable to the earliest placed working entry comes first, the lower order id breaking ties. | F-BAR-03 | proposed | The extreme nearer the open first. | 2026-10-26 |
+| After an entry inside a bar, the extremes not yet reached come adverse first. | F-BAR-04 | proposed | | 2026-10-26 |
+| A bar whose fills would differ with its extremes swapped flags every fill `ambiguous`, and the run counts them. | F-BAR-05 | design, proposed test | | 2026-10-26 |
+| Working orders stay through breaks and weekends; the engine cancels nothing at a close. | F-SES-01 | proposed | Day orders, cancelled at each session's close. | 2026-10-26 |
+| Records received in a break or a halt are not tradeable. | F-SES-02 | proposed | | 2026-10-26 |
+| When one trade or TBBO record would fill a stop and a limit of one group, the stop fills; on bars the path decides. A TBBO record that triggers a stop cannot fill it, so a limit of its group that the record fills wins. | F-OCO-01 | design, proposed tie | | 2026-10-26 |
+| A bracket's legs work from the record after their entry's fill, without latency. | F-OCO-02 | proposed | | 2026-10-26 |
+| Orders fill whole; on trades and TBBO, a fill larger than its record's size is flagged. | F-QTY-01 | design, proposed flag | A volume or queue model (`BACKLOG.md`). | 2026-10-26 |
+| Every amount of money rounds to the micro-unit against the trader, and none wraps. | F-FEE-03 | proposed | Halves away from zero. | 2026-10-26 |
+| Funding is paid on the signed quantity at the last trade, a long paying a positive rate. | F-FND-01 | design, proposed mark | The venue's own mark price, once imported. | 2026-10-26 |
+| Positions are marked at the last trade, on bar days at the pseudo-ticks; a fill does not move the mark. On bar days, trade paths flag the bars whose order could change a drawdown (§15). | F-MRK-01 | step 2.1's prompt, proposed detail | The bid for a long and the ask for a short on TBBO days (`BACKLOG.md`). | 2026-10-26 |
 
 How the rules answer the red-flag checklist of the `backtest-expert` skill (`references/failed_tests.md` §4), for the items that concern fills:
 
