@@ -28,19 +28,24 @@ fn the_index_lists_each_trade_date_with_its_levels_and_the_files_of_the_month() 
 
     let index = write_month(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
 
-    let listed: Vec<(&str, Vec<&str>)> = index
+    let listed: Vec<(TradeDate, &[Fidelity])> = index
         .trade_dates
         .iter()
-        .map(|day| {
-            let levels = day.levels.iter().map(String::as_str).collect();
-            (day.trade_date.as_str(), levels)
-        })
+        .map(|day| (day.trade_date, day.levels.as_slice()))
         .collect();
+    let (seconds, minutes) = (Timeframe::ONE_SECOND, Timeframe::ONE_MINUTE);
+    let first_levels = [
+        Fidelity::Tbbo,
+        Fidelity::Trades,
+        Fidelity::Bars(seconds),
+        Fidelity::Bars(minutes),
+    ];
+    let second_levels = [Fidelity::Bars(Timeframe::FIVE_MINUTES)];
     assert_eq!(
         listed,
         [
-            ("2026-03-05", vec!["tbbo", "trades", "1s", "1m"]),
-            ("2026-03-06", vec!["5m"])
+            (FIRST_DAY, first_levels.as_slice()),
+            (SECOND_DAY, second_levels.as_slice())
         ]
     );
     let files: Vec<&str> = index.files.keys().map(String::as_str).collect();
@@ -62,7 +67,7 @@ fn the_index_lists_each_trade_date_with_its_levels_and_the_files_of_the_month() 
     assert_eq!(index.files["trades.arrow"].rows, 6);
     assert_eq!(index.files["1m-to-trades.arrow"].rows, 3);
     assert_eq!(
-        (index.contract.as_str(), index.month.as_str()),
+        (index.contract.as_str(), index.month.to_string().as_str()),
         (SAMPLE_CONTRACT, "2026-03")
     );
     assert!(
@@ -91,7 +96,7 @@ fn a_trade_date_without_ticks_lists_the_levels_it_holds_and_refuses_its_ticks() 
         Fidelity::Bars(Timeframe::ONE_MINUTE),
     ];
     assert_eq!(reader.levels(monday).unwrap(), seconds_and_minutes);
-    assert_eq!(index.trade_dates[2].levels, ["1s", "1m"]);
+    assert_eq!(index.trade_dates[2].levels, seconds_and_minutes);
     assert!(matches!(
         reader.trades(monday),
         Err(MarketDataError::LevelMissing {
@@ -150,4 +155,14 @@ fn a_contract_of_two_months_reads_as_one_in_date_order() {
         reader.levels(TradeDate(FIRST_DAY.0 + 1_000)),
         Err(MarketDataError::UnknownTradeDate { first, last, .. }) if first == FIRST_DAY && last == april_2
     ));
+}
+
+#[test]
+fn the_mapped_cache_can_be_shared_by_the_threads_of_a_sweep() {
+    fn shared<Reader: MarketDataReader + Send + Sync>(_: &Reader) {}
+    let folder = TemporaryFolder::new();
+
+    let reader = cached(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
+
+    shared(&reader);
 }

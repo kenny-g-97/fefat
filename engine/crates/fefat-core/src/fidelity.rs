@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 const TIMEFRAME_TEXT: &str = "a bar timeframe such as 1s, 5m, 1h, or 1d";
@@ -86,7 +87,7 @@ impl Timeframe {
     }
 
     /// The length in seconds, nominal for daily bars, whose sessions differ in length.
-    const fn nominal_seconds(self) -> u64 {
+    pub const fn nominal_seconds(self) -> u64 {
         self.count as u64 * self.unit.seconds()
     }
 
@@ -225,9 +226,42 @@ impl FromStr for Fidelity {
     }
 }
 
+/// A fidelity serializes as its text, `trades` or `1m`, as the engine cache's index holds it.
+impl Serialize for Fidelity {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Fidelity {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fidelity_serializes_as_its_text_and_refuses_other_text() {
+        let level = Fidelity::Bars(Timeframe::FIVE_MINUTES);
+
+        let written = serde_json::to_string(&[level, Fidelity::Tbbo]).unwrap();
+        let refused = serde_json::from_str::<Fidelity>("\"tick\"").unwrap_err();
+
+        assert_eq!(written, "[\"5m\",\"tbbo\"]");
+        assert_eq!(
+            serde_json::from_str::<Vec<Fidelity>>(&written).unwrap(),
+            [level, Fidelity::Tbbo]
+        );
+        assert!(
+            refused
+                .to_string()
+                .starts_with("Expected a fidelity: tbbo, trades")
+        );
+    }
 
     #[test]
     fn fidelities_read_as_the_scenarios_spell_them() {

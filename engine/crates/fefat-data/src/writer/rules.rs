@@ -5,14 +5,17 @@
 //!   do not add up to that bar's volume: it covers part of the date, from a file that starts,
 //!   ends, or skips inside a session (checked coarsest first, so a level left out bounds no
 //!   finer one);
-//! - records at or after the close of the last bar of a coarser level they nest in are cut: the
-//!   bucket a dataset ends in keeps its ticks while its bar is held back (D-43, D-45);
-//! - a level with a record outside every bar of a coarser level it nests in is left out too.
+//! - a coarser level is left out where a finer one runs on before its first bar or past the
+//!   bucket after its last: its own file covers part of the date;
+//! - records in that bucket after the last bar are cut: the bucket a dataset ends in keeps its
+//!   ticks while its bar is held back (D-43, D-45);
+//! - a level with a record outside every bar of a coarser level it nests in, inside that
+//!   level's span, is left out too.
 
 use std::collections::BTreeMap;
 
 use fefat_core::fidelity::{Fidelity, Timeframe};
-use fefat_core::instants::Ts;
+use fefat_core::instants::{NANOSECONDS_PER_SECOND, Ts};
 use fefat_core::instrument::Contract;
 use fefat_core::market_data::{BarRow, InMemoryMarketData, TapeDay, TapeError};
 
@@ -45,6 +48,64 @@ pub(super) fn leave_out_incomplete_levels(mut day: TapeDay) -> (TapeDay, LeftOut
         }
     }
     (day, left_out)
+}
+
+/// The day without each intraday bar level whose bars stop short of a finer level that nests in
+/// them, coarsest first: a finer record before its first bar opens, or after the bucket that
+/// follows its last bar, which a dataset ending there holds back (D-43, D-45), shows that its
+/// file covers part of the date while the finer one runs on.
+pub(super) fn leave_out_short_levels(mut day: TapeDay, left_out: &mut LeftOut) -> TapeDay {
+    let timeframes: Vec<Timeframe> = day.bars.keys().rev().copied().collect();
+    for timeframe in timeframes {
+        if let Some(reason) = short_of(&day, timeframe) {
+            let level = Fidelity::Bars(timeframe);
+            remove_level(&mut day, level);
+            left_out.insert(level, reason);
+        }
+    }
+    day
+}
+
+/// Why `timeframe`'s bars stop short of a finer level that nests in them, or `None` while every
+/// such level starts inside its first bar and ends by the bucket after its last.
+fn short_of(day: &TapeDay, timeframe: Timeframe) -> Option<String> {
+    let bars = day.bars.get(&timeframe)?;
+    let (first, last) = (bars.first()?, bars.last()?);
+    let length = i64::try_from(timeframe.nominal_seconds())
+        .ok()?
+        .checked_mul(NANOSECONDS_PER_SECOND)?;
+    let coarser = Fidelity::Bars(timeframe);
+    let finer_levels = levels_of(day)
+        .into_iter()
+        .filter(|level| *level < coarser && level.nests_in(timeframe));
+    for finer in finer_levels {
+        let starts: Vec<Ts> = lots_by_start(day, finer)
+            .into_iter()
+            .map(|(start, _)| start)
+            .collect();
+        if let Some(early) = starts.first().filter(|start| **start < first.ts_open) {
+            return Some(format!(
+                "the {finer} records start at {early}, before its first bar opens at {}",
+                first.ts_open
+            ));
+        }
+        let Some(after) = starts.iter().find(|start| **start >= last.ts_close) else {
+            continue;
+        };
+        let buckets = (after.0 - last.ts_close.0) / length + 1;
+        let held_back_until = last
+            .ts_close
+            .checked_add_nanoseconds(buckets.checked_mul(length)?)
+            .ok()?;
+        if let Some(end) = starts.last().filter(|end| **end >= held_back_until) {
+            return Some(format!(
+                "the {finer} records run on to {end}, past the bucket after its last bar, which \
+                 closes at {}",
+                last.ts_close
+            ));
+        }
+    }
+    None
 }
 
 /// The day without its records at or after the close of the last bar of any coarser intraday

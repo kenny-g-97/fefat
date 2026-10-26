@@ -2,6 +2,7 @@
 
 use std::fs;
 
+use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::instrument::Contract;
 use fefat_core::market_data::conformance::{SAMPLE_CONTRACT, sample_tape};
 
@@ -172,7 +173,8 @@ fn a_month_missing_a_file_or_a_batch_is_refused() {
             .to_string()
     };
 
-    index.trade_dates[1].levels = vec!["1s".into(), "5m".into()];
+    let seconds = Fidelity::Bars(Timeframe::ONE_SECOND);
+    index.trade_dates[1].levels = vec![seconds, Fidelity::Bars(Timeframe::FIVE_MINUTES)];
     index.write(&month_folder).unwrap();
     let without_a_batch = refusal();
     fs::remove_file(month_folder.join("trades.arrow")).unwrap();
@@ -199,4 +201,26 @@ fn a_month_folder_that_names_no_month_is_refused() {
         );
     }
     assert_eq!(march().to_string(), "2026-03");
+}
+
+#[test]
+fn a_month_refused_as_it_is_finished_leaves_no_partial_folder() {
+    let folder = TemporaryFolder::new();
+    let mut writer = writer(&folder);
+    writer.write_trade_date(sample_tape().remove(0)).unwrap();
+    let contract_folder = folder.path().join(SAMPLE_CONTRACT);
+    fs::create_dir(contract_folder.join("2026-03")).unwrap();
+    fs::write(contract_folder.join("2026-03").join("kept.txt"), "a note").unwrap();
+
+    let refused = writer.finish().unwrap_err();
+
+    assert!(
+        refused.to_string().starts_with("Expected to rename "),
+        "{refused}"
+    );
+    let names: Vec<_> = fs::read_dir(&contract_folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["2026-03"]);
 }

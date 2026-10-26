@@ -46,10 +46,10 @@ mod fefat_engine {
                 .map_err(value_error)?;
         match write_trade_dates(&mut writer, trade_dates) {
             Ok(()) => writer.finish().map(|_| ()).map_err(value_error),
-            Err(refusal) => {
-                writer.abandon().map_err(value_error)?;
-                Err(refusal)
-            }
+            Err(refusal) => match writer.abandon() {
+                Ok(()) => Err(refusal),
+                Err(removal) => Err(PyValueError::new_err(format!("{refusal}; {removal}"))),
+            },
         }
     }
 

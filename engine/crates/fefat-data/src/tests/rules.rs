@@ -62,7 +62,8 @@ fn records_at_and_after_the_close_of_the_last_minute_bar_are_cut_and_counted() {
     let index = write_month(folder.path(), SAMPLE_CONTRACT, vec![day]).unwrap();
     let reader = MappedContract::open(&folder.path().join(SAMPLE_CONTRACT)).unwrap();
 
-    let cut = BTreeMap::from([("1s".into(), 1), ("tbbo".into(), 2), ("trades".into(), 2)]);
+    let seconds = Fidelity::Bars(Timeframe::ONE_SECOND);
+    let cut = BTreeMap::from([(Fidelity::Tbbo, 2), (Fidelity::Trades, 2), (seconds, 1)]);
     assert_eq!(index.trade_dates[0].cut, cut);
     let sample: Vec<Ts> = first_day()
         .trades
@@ -83,7 +84,7 @@ fn minutes_and_trades(keep: impl Fn(&TradeRow) -> bool) -> TapeDay {
     day
 }
 
-fn written(day: TapeDay) -> (BTreeMap<String, String>, Vec<Fidelity>) {
+fn written(day: TapeDay) -> (BTreeMap<Fidelity, String>, Vec<Fidelity>) {
     let folder = TemporaryFolder::new();
     let index = write_month(folder.path(), SAMPLE_CONTRACT, vec![day]).unwrap();
     let reader = MappedContract::open(&folder.path().join(SAMPLE_CONTRACT)).unwrap();
@@ -114,8 +115,8 @@ fn minute_after_14_30(seconds: i64) -> BarRow {
     }
 }
 
-fn left_out_because(level: &str, reason: &str) -> BTreeMap<String, String> {
-    BTreeMap::from([(level.into(), reason.into())])
+fn left_out_because(level: Fidelity, reason: &str) -> BTreeMap<Fidelity, String> {
+    BTreeMap::from([(level, reason.into())])
 }
 
 #[test]
@@ -127,7 +128,7 @@ fn a_level_without_records_in_the_first_bar_of_a_coarser_level_is_left_out() {
 
     let reason = "its records in the 1m bar opening at 2026-03-05T14:30:00Z add up to 0 lots, \
                   not the bar's 10";
-    assert_eq!(left_out, left_out_because("trades", reason));
+    assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
     assert_eq!(levels, [Fidelity::Bars(Timeframe::ONE_MINUTE)]);
 }
 
@@ -140,7 +141,7 @@ fn a_level_without_records_in_the_last_bar_of_a_coarser_level_is_left_out() {
 
     let reason = "its records in the 1m bar opening at 2026-03-05T14:31:00Z add up to 0 lots, \
                   not the bar's 3";
-    assert_eq!(left_out, left_out_because("trades", reason));
+    assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
     assert_eq!(levels, [Fidelity::Bars(Timeframe::ONE_MINUTE)]);
 }
 
@@ -157,7 +158,7 @@ fn a_level_without_records_in_a_bar_inside_the_day_is_left_out() {
 
     let reason = "its records in the 1m bar opening at 2026-03-05T14:31:00Z add up to 0 lots, \
                   not the bar's 3";
-    assert_eq!(left_out, left_out_because("trades", reason));
+    assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
     assert_eq!(levels, [Fidelity::Bars(Timeframe::ONE_MINUTE)]);
 }
 
@@ -173,7 +174,10 @@ fn only_the_level_that_a_bar_finds_none_of_is_left_out() {
 
     let reason = "its records in the 1m bar opening at 2026-03-05T14:31:00Z add up to 0 lots, \
                   not the bar's 3";
-    assert_eq!(left_out, left_out_because("1s", reason));
+    assert_eq!(
+        left_out,
+        left_out_because(Fidelity::Bars(Timeframe::ONE_SECOND), reason)
+    );
     assert_eq!(
         levels,
         [Fidelity::Trades, Fidelity::Bars(Timeframe::ONE_MINUTE)]
@@ -190,7 +194,7 @@ fn a_level_missing_part_of_a_bar_is_left_out_and_the_levels_it_does_not_bound_ke
 
     let reason = "its records in the 1m bar opening at 2026-03-05T14:30:00Z add up to 8 lots, \
                   not the bar's 10";
-    assert_eq!(left_out, left_out_because("trades", reason));
+    assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
     let seconds_and_minutes = [Timeframe::ONE_SECOND, Timeframe::ONE_MINUTE].map(Fidelity::Bars);
     assert_eq!(
         levels,
@@ -209,7 +213,7 @@ fn a_level_with_a_record_between_two_bars_is_left_out_with_its_reason() {
     let (left_out, levels) = written(day);
 
     let reason = "its record 2 lies outside every 1m bar";
-    assert_eq!(left_out, left_out_because("trades", reason));
+    assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
     assert_eq!(levels, [Fidelity::Bars(Timeframe::ONE_MINUTE)]);
 }
 
@@ -226,5 +230,67 @@ fn a_record_the_engine_cannot_read_refuses_its_trade_date() {
         refused.to_string(),
         "Expected records the engine can read on 2026-03-05, got: Expected a size of one lot or \
          more, got 0 lots in trades record 2 on 2026-03-05"
+    );
+}
+
+#[test]
+fn a_coarser_level_that_ends_before_the_trading_of_the_date_is_left_out() {
+    // 1-minute bars of 14:30 and 14:31 while the trades run on to 14:34:10, past the bucket of
+    // 14:33 after the last bar: the minutes' file ends inside the session, as a download cut at
+    // midnight UTC would, and its trades are kept whole rather than cut to its end.
+    let mut day = minutes_and_trades(|_| true);
+    day.trades
+        .extend([trade_after_14_30(190), trade_after_14_30(250)]);
+
+    let (left_out, levels) = written(day);
+
+    let reason = "the trades records run on to 2026-03-05T14:34:10Z, past the bucket after its \
+                  last bar, which closes at 2026-03-05T14:32:00Z";
+    let minutes = Fidelity::Bars(Timeframe::ONE_MINUTE);
+    assert_eq!(left_out, left_out_because(minutes, reason));
+    assert_eq!(levels, [Fidelity::Trades]);
+}
+
+#[test]
+fn a_coarser_level_that_starts_after_the_trading_of_the_date_is_left_out() {
+    let mut day = minutes_and_trades(|_| true);
+    day.trades.insert(0, trade_after_14_30(-50));
+
+    let (left_out, levels) = written(day);
+
+    let reason = "the trades records start at 2026-03-05T14:29:10Z, before its first bar opens at \
+                  2026-03-05T14:30:00Z";
+    let minutes = Fidelity::Bars(Timeframe::ONE_MINUTE);
+    assert_eq!(left_out, left_out_because(minutes, reason));
+    assert_eq!(levels, [Fidelity::Trades]);
+}
+
+#[test]
+fn the_finer_levels_of_a_coarser_level_left_out_keep_each_other() {
+    // Trades and their 1-second bars run on to 14:34:10, past the 1-minute bars: the minutes
+    // are left out, and the seconds still hold the trades whole.
+    let mut day = first_day();
+    day.tbbo.clear();
+    let late = [trade_after_14_30(190), trade_after_14_30(250)];
+    day.trades.extend(late);
+    let second_of = |trade: TradeRow| BarRow {
+        ts_open: trade.ts_recv,
+        ts_close: Ts(trade.ts_recv.0 + SECOND),
+        open: trade.price,
+        high: trade.price,
+        low: trade.price,
+        close: trade.price,
+        volume: trade.size,
+    };
+    let seconds = day.bars.get_mut(&Timeframe::ONE_SECOND).unwrap();
+    seconds.extend(late.map(second_of));
+
+    let (left_out, levels) = written(day);
+
+    let minutes = Fidelity::Bars(Timeframe::ONE_MINUTE);
+    assert_eq!(left_out.keys().collect::<Vec<_>>(), [&minutes]);
+    assert_eq!(
+        levels,
+        [Fidelity::Trades, Fidelity::Bars(Timeframe::ONE_SECOND)]
     );
 }

@@ -5,6 +5,7 @@
 use std::fmt;
 use std::str::FromStr;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 use crate::units::Overflow;
@@ -82,6 +83,20 @@ impl FromStr for TradeDate {
             return Err(unreadable());
         }
         Ok(date)
+    }
+}
+
+/// A trade date serializes as its text, `2026-03-05`, as the engine cache's index holds it.
+impl Serialize for TradeDate {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for TradeDate {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -168,6 +183,18 @@ mod tests {
         );
         assert_eq!(Ts(0).checked_add_nanoseconds(-1), Ok(Ts(-1)));
         assert!(Ts(i64::MAX).checked_add_nanoseconds(1).is_err());
+    }
+
+    #[test]
+    fn a_trade_date_serializes_as_its_text_and_refuses_a_day_that_does_not_exist() {
+        let written = serde_json::to_string(&TradeDate(20_517)).unwrap();
+
+        assert_eq!(written, "\"2026-03-05\"");
+        assert_eq!(
+            serde_json::from_str::<TradeDate>(&written).unwrap(),
+            TradeDate(20_517)
+        );
+        assert!(serde_json::from_str::<TradeDate>("\"2026-02-30\"").is_err());
     }
 
     #[test]

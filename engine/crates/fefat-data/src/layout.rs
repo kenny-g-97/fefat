@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs;
-use std::io::ErrorKind;
+use std::fs::{self, File};
+use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -87,8 +87,9 @@ pub(crate) fn descents(levels: &[Fidelity]) -> Vec<(Timeframe, Fidelity)> {
 }
 
 /// A month of trade dates, written `2026-03`: the folder of a contract's cache that holds the
-/// trade dates of that month.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// trade dates of that month, and its text in the month's index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Month {
     year: i64,
     month: i64,
@@ -135,6 +136,20 @@ impl FromStr for Month {
     }
 }
 
+impl TryFrom<String> for Month {
+    type Error = CacheError;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        text.parse()
+    }
+}
+
+impl From<Month> for String {
+    fn from(month: Month) -> Self {
+        month.to_string()
+    }
+}
+
 /// A store partition a month was built from: its path in the store and its SHA-256, the hashes
 /// a snapshot pins (ADR-0019) and the cache's key.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -152,13 +167,13 @@ pub struct SourceFile {
 #[serde(deny_unknown_fields)]
 pub struct CachedTradeDate {
     /// The trade date, written `2026-03-05`.
-    pub trade_date: String,
-    /// The levels it serves, finest first, as the fidelity type spells them.
-    pub levels: Vec<String>,
+    pub trade_date: TradeDate,
+    /// The levels it serves, finest first, written as the fidelity type spells them.
+    pub levels: Vec<Fidelity>,
     /// The records cut, by level.
-    pub cut: BTreeMap<String, u64>,
+    pub cut: BTreeMap<Fidelity, u64>,
     /// The levels left out, each with its reason.
-    pub left_out: BTreeMap<String, String>,
+    pub left_out: BTreeMap<Fidelity, String>,
 }
 
 /// A file of a month: its rows and its size.
@@ -180,8 +195,8 @@ pub struct CacheMonthIndex {
     pub layout_version: u32,
     /// The contract, such as `ESH2026`.
     pub contract: String,
-    /// The month, such as `2026-03`.
-    pub month: String,
+    /// The month, written `2026-03`.
+    pub month: Month,
     /// The store partitions it was built from, sorted by path.
     pub sources: Vec<SourceFile>,
     /// Its trade dates, ascending.
@@ -204,7 +219,7 @@ impl CacheMonthIndex {
             .map_err(|source| CacheError::Index { path, source })
     }
 
-    /// Write the index into `month_folder`.
+    /// Write the index into `month_folder` and flush it to disk, as the month's other files are.
     pub(crate) fn write(&self, month_folder: &Path) -> Result<(), CacheError> {
         let path = month_folder.join(INDEX_FILE_NAME);
         let mut content = serde_json::to_vec_pretty(self).map_err(|source| CacheError::Index {
@@ -212,6 +227,8 @@ impl CacheMonthIndex {
             source,
         })?;
         content.push(b'\n');
-        fs::write(&path, content).map_err(io_error("write", &path))
+        let mut file = File::create(&path).map_err(io_error("create", &path))?;
+        file.write_all(&content).map_err(io_error("write", &path))?;
+        file.sync_all().map_err(io_error("flush", &path))
     }
 }

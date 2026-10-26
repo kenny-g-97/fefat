@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 use arrow_array::RecordBatch;
 use arrow_ipc::writer::FileWriter;
 use arrow_schema::SchemaRef;
-use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::TradeDate;
 use fefat_core::instrument::Contract;
 use fefat_core::market_data::conformance::check_offsets;
@@ -85,6 +84,7 @@ impl CacheMonthWriter {
         self.require_next(trade_date)?;
         let day = rules::readable(&self.contract, day)?;
         let (day, mut left_out) = rules::leave_out_incomplete_levels(day);
+        let day = rules::leave_out_short_levels(day, &mut left_out);
         let (day, cut) = rules::cut_after_the_last_bars(day);
         let reader = rules::served(&self.contract, day, &mut left_out)?;
         let levels = reader.levels(trade_date)?.to_vec();
@@ -101,10 +101,10 @@ impl CacheMonthWriter {
             )?;
         }
         let written = CachedTradeDate {
-            trade_date: trade_date.to_string(),
-            levels: levels.iter().map(ToString::to_string).collect(),
-            cut: by_name(cut),
-            left_out: by_name(left_out),
+            trade_date,
+            levels,
+            cut,
+            left_out,
         };
         self.trade_dates.push(written.clone());
         self.last = Some(trade_date);
@@ -119,8 +119,22 @@ impl CacheMonthWriter {
     }
 
     /// Closes the files, writes the index, checks every descent through the mapped reader
-    /// (`check_offsets`), and gives the folder the month's name.
+    /// (`check_offsets`), and gives the folder the month's name; a month refused on the way is
+    /// removed.
     pub fn finish(self) -> Result<CacheMonthIndex, CacheError> {
+        let partial = self.partial.clone();
+        self.finished()
+            .map_err(|refusal| match fs::remove_dir_all(&partial) {
+                Ok(()) => refusal,
+                Err(source) => CacheError::NotRemoved {
+                    refusal: Box::new(refusal),
+                    path: partial,
+                    source,
+                },
+            })
+    }
+
+    fn finished(self) -> Result<CacheMonthIndex, CacheError> {
         if self.trade_dates.is_empty() {
             let context = format!("the cache of {} for {}", self.contract.0, self.month);
             return Err(CacheError::refused("a trade date or more", "none", context));
@@ -133,7 +147,7 @@ impl CacheMonthWriter {
         let index = CacheMonthIndex {
             layout_version: LAYOUT_VERSION,
             contract: self.contract.0.clone(),
-            month: self.month.to_string(),
+            month: self.month,
             sources: self.sources,
             trade_dates: self.trade_dates,
             files,
@@ -178,13 +192,6 @@ impl CacheMonthWriter {
         };
         file.append(&path, batch)
     }
-}
-
-fn by_name<T>(by_level: BTreeMap<Fidelity, T>) -> BTreeMap<String, T> {
-    by_level
-        .into_iter()
-        .map(|(level, value)| (level.to_string(), value))
-        .collect()
 }
 
 /// Opens the month as the engine will and holds every descent to the conformance check.

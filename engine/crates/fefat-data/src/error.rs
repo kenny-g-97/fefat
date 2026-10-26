@@ -49,6 +49,17 @@ pub enum CacheError {
         #[source]
         source: TapeError,
     },
+    /// A month refused part way whose folder could not be removed after.
+    #[error("{refusal}; removing {path} failed too: {source}")]
+    NotRemoved {
+        /// Why the month was refused.
+        refusal: Box<CacheError>,
+        /// The folder left behind, which the next build removes.
+        path: PathBuf,
+        /// What the file system said.
+        #[source]
+        source: io::Error,
+    },
     /// A level a trade date's reader could not serve.
     #[error(transparent)]
     MarketData(#[from] MarketDataError),
