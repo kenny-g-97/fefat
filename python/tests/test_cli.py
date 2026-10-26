@@ -606,3 +606,22 @@ def test_cache_build_of_a_product_the_store_lacks_is_refused(
     assert (
         capsys.readouterr().err == "fefat: Expected one provider of MES in the store, got none.\n"
     )
+
+
+def test_cache_build_exits_with_1_and_names_a_month_it_refuses(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = Store(fixtures_in_the_data_folder())
+    partition = Partition.from_relative_path(
+        PurePosixPath("synthetic/trades/root=ES/contract=ESM2026/date=2026-03-05/part.parquet")
+    )
+    trades = store.scan_partition(partition).collect()
+    store.write_partition(partition, trades.with_columns(size=pl.lit(0, dtype=pl.UInt32)))
+
+    code = main(["cache", "build", "--root", "ES", "--year", "2026"])
+
+    printed = capsys.readouterr().out
+    assert code == 1
+    assert "\n  ESM2026 2026-03: refused, Expected records the engine can read on 2026-03-05" in (
+        printed
+    )

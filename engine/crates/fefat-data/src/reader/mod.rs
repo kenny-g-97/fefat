@@ -36,8 +36,9 @@ pub struct MappedContract {
 
 impl MappedContract {
     /// The cache in `contract_folder`, named after its contract: each month folder `YYYY-MM` in
-    /// it, with its index. A folder `<month>.partial` is a month being built and is passed over;
-    /// anything else is refused.
+    /// it, with its index. A folder `<month>.partial` is a month being built and a file, such as
+    /// one a file manager leaves, is no month: both are passed over, and any other folder is
+    /// refused.
     pub fn open(contract_folder: &Path) -> Result<Self, CacheError> {
         let context = contract_folder.display().to_string();
         let name = contract_folder.file_name().and_then(|name| name.to_str());
@@ -218,9 +219,10 @@ fn month_folders(contract_folder: &Path) -> Result<Vec<(Month, PathBuf)>, CacheE
     let mut months = Vec::new();
     for entry in entries {
         let entry = entry.map_err(io_error("list", contract_folder))?;
+        let kind = entry.file_type().map_err(io_error("list", &entry.path()))?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.ends_with(PARTIAL_SUFFIX) {
+        if !kind.is_dir() || name.ends_with(PARTIAL_SUFFIX) {
             continue;
         }
         months.push((name.parse::<Month>()?, entry.path()));

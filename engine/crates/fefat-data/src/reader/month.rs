@@ -150,7 +150,8 @@ impl MappedDay {
         Ok(day)
     }
 
-    /// The descent's offsets, one per bar and one more, the last counting the finer records.
+    /// The descent's offsets, one per bar and one more, in order, the last counting the finer
+    /// records.
     fn checked_offsets(
         &self,
         batch: &RecordBatch,
@@ -165,8 +166,9 @@ impl MappedDay {
         let bars = self.record_count(Fidelity::Bars(timeframe));
         let records = self.record_count(finer);
         let last = offsets.values().last().map(|last| *last as usize);
-        if offsets.len() != bars + 1 || last != Some(records) {
-            let expected = format!("{} offsets ending in {records}", bars + 1);
+        let in_order = offsets.values().is_sorted();
+        if offsets.len() != bars + 1 || last != Some(records) || !in_order {
+            let expected = format!("{} offsets in order, ending in {records}", bars + 1);
             let actual = format!("{} ending in {last:?}", offsets.len());
             return Err(CacheError::refused(expected, actual, what));
         }

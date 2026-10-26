@@ -56,7 +56,8 @@ from fefat.market.api import catalog
 from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
-from fefat.market.engine_cache import build_engine_cache, engine_cache_status
+from fefat.market.engine_cache import build_engine_cache
+from fefat.market.engine_cache_index import engine_cache_status
 from fefat.market.fidelity import fidelity_in_words
 from fefat.market.importers.databento import import_databento
 from fefat.market.importers.file_import import (
@@ -384,7 +385,7 @@ def build_the_engine_cache(arguments: argparse.Namespace) -> int:
     provider: str | None = arguments.provider
     build = build_engine_cache(Store(paths.data_dir), paths.cache_dir, root, year, provider)
     print(build.summary())
-    return EXIT_OK
+    return EXIT_REFUSED if build.refused else EXIT_OK
 
 
 def print_the_engine_cache_status(arguments: argparse.Namespace) -> int:

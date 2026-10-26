@@ -28,12 +28,24 @@ pub(super) type LeftOut = BTreeMap<Fidelity, String>;
 
 /// The day, once every record of it is one the engine can read, by the in-memory reader's checks
 /// of each record, which run before it holds the levels to each other: a record outside the bars
-/// of a coarser level is left to the rules below, and any other refuses the day.
-pub(super) fn readable(contract: &Contract, day: TapeDay) -> Result<TapeDay, CacheError> {
+/// of a coarser level is left to the rules below, and any other refuses the day. The reader
+/// built on the way is kept for a day that no rule changes.
+pub(super) fn readable(contract: &Contract, day: TapeDay) -> Result<Readable, CacheError> {
     match InMemoryMarketData::new(contract.clone(), vec![day.clone()]) {
-        Ok(_) | Err(TapeError::RecordOutsideBars { .. }) => Ok(day),
+        Ok(reader) => Ok(Readable {
+            day,
+            reader: Some(reader),
+        }),
+        Err(TapeError::RecordOutsideBars { .. }) => Ok(Readable { day, reader: None }),
         Err(refusal) => Err(tape_error(&day, refusal)),
     }
+}
+
+/// A day whose every record the engine can read, with the in-memory reader of it as it
+/// stands where its levels already hold each other.
+pub(super) struct Readable {
+    pub(super) day: TapeDay,
+    pub(super) reader: Option<InMemoryMarketData>,
 }
 
 /// The day without each level whose records within some bar of a coarser intraday level it
@@ -51,9 +63,9 @@ pub(super) fn leave_out_incomplete_levels(mut day: TapeDay) -> (TapeDay, LeftOut
 }
 
 /// The day without each intraday bar level whose bars stop short of a finer level that nests in
-/// them, coarsest first: a finer record before its first bar opens, or after the bucket that
-/// follows its last bar, which a dataset ending there holds back (D-43, D-45), shows that its
-/// file covers part of the date while the finer one runs on.
+/// them, coarsest first: a finer record before its first bar opens, or after the first bucket
+/// past its last bar that holds a finer record, the bucket a dataset ending there holds back
+/// (D-43, D-45), shows that its file covers part of the date while the finer one runs on.
 pub(super) fn leave_out_short_levels(mut day: TapeDay, left_out: &mut LeftOut) -> TapeDay {
     let timeframes: Vec<Timeframe> = day.bars.keys().rev().copied().collect();
     for timeframe in timeframes {

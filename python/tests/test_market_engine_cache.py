@@ -13,10 +13,9 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from fefat.market.engine_cache import (
+from fefat.market.engine_cache import MonthOutcome, build_engine_cache
+from fefat.market.engine_cache_index import (
     ENGINE_CACHE_FOLDER_NAME,
-    MonthOutcome,
-    build_engine_cache,
     engine_cache_status,
     read_cache_month_index,
 )
@@ -351,3 +350,50 @@ def test_tbbo_records_cache_with_their_quotes_in_the_cache_s_columns(tmp_path: P
         ask_size=pl.col("ask_sz_00").cast(pl.Int64),
     )
     assert_frame_equal(cached, expected)
+
+
+def es_trades_of(contract: str, trade_date: str) -> Partition:
+    path = f"synthetic/trades/root=ES/contract={contract}/date={trade_date}/part.parquet"
+    return Partition.from_relative_path(PurePosixPath(path))
+
+
+def test_an_index_this_layout_cannot_read_is_written_again(tmp_path: Path) -> None:
+    store = store_copy(tmp_path)
+    build_engine_cache(store, tmp_path / "cache", "ES", 2026)
+    (month_folder(tmp_path / "cache", "ESH2026") / "index.json").write_text("{}", encoding="utf-8")
+
+    again = build_engine_cache(store, tmp_path / "cache", "ES", 2026)
+
+    outcomes = {month.index.contract: month.outcome for month in again.months}
+    assert outcomes == {"ESH2026": MonthOutcome.BUILT, "ESM2026": MonthOutcome.UP_TO_DATE}
+
+
+def test_a_cached_month_the_store_no_longer_holds_is_removed(tmp_path: Path) -> None:
+    store = store_copy(tmp_path)
+    build_engine_cache(store, tmp_path / "cache", "ES", 2026)
+    for contract_folder in (tmp_path / "data" / "synthetic").glob("*/root=ES/contract=ESM2026"):
+        shutil.rmtree(contract_folder)
+
+    again = build_engine_cache(store, tmp_path / "cache", "ES", 2026)
+
+    assert again.removed == ("ESM2026 2026-03",)
+    assert not month_folder(tmp_path / "cache", "ESM2026").exists()
+    removed = "  ESM2026 2026-03: removed, since the store holds none of it"
+    assert removed in again.summary().splitlines()
+
+
+def test_a_month_the_engine_cannot_read_is_refused_and_the_others_built(tmp_path: Path) -> None:
+    store = store_copy(tmp_path)
+    partition = es_trades_of("ESM2026", "2026-03-05")
+    trades = store.scan_partition(partition).collect()
+    store.write_partition(partition, trades.with_columns(size=pl.lit(0, dtype=pl.UInt32)))
+
+    build = build_engine_cache(store, tmp_path / "cache", "ES", 2026)
+
+    assert [month.index.contract for month in build.months] == ["ESH2026"]
+    (refusal,) = build.refused
+    expected = "ESM2026 2026-03: refused, Expected records the engine can read on 2026-03-05"
+    assert refusal.startswith(expected), refusal
+    folder = month_folder(tmp_path / "cache", "ESM2026")
+    assert not folder.exists()
+    assert not folder.with_name("2026-03.partial").exists()

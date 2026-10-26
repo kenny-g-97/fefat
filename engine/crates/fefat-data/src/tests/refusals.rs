@@ -1,12 +1,17 @@
 //! What the writer and the reader refuse, each with what they expected, what they got, and where.
 
-use std::fs;
+use std::fs::{self, File};
+use std::sync::Arc;
+
+use arrow_array::{ArrayRef, RecordBatch, UInt32Array};
+use arrow_ipc::writer::FileWriter;
 
 use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::instrument::Contract;
 use fefat_core::market_data::conformance::{SAMPLE_CONTRACT, sample_tape};
 
 use super::{TemporaryFolder, moved, sources, write_month};
+use crate::layout::descent_schema;
 use crate::{CacheMonthIndex, CacheMonthWriter, INDEX_FILE_NAME, MappedContract, Month};
 
 fn march() -> Month {
@@ -102,14 +107,15 @@ fn a_month_without_trade_dates_is_refused() {
 }
 
 #[test]
-fn a_month_being_built_is_passed_over_and_anything_else_is_refused() {
+fn a_month_being_built_and_a_stray_file_are_passed_over_and_another_folder_is_refused() {
     let folder = TemporaryFolder::new();
     write_month(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
     let contract_folder = folder.path().join(SAMPLE_CONTRACT);
     fs::create_dir(contract_folder.join("2026-04.partial")).unwrap();
 
+    fs::write(contract_folder.join("desktop.ini"), "a file manager's note").unwrap();
     let opened = MappedContract::open(&contract_folder).unwrap();
-    fs::write(contract_folder.join("notes.txt"), "a note").unwrap();
+    fs::create_dir(contract_folder.join("notes")).unwrap();
     let refused = MappedContract::open(&contract_folder).unwrap_err();
 
     assert_eq!(
@@ -118,7 +124,7 @@ fn a_month_being_built_is_passed_over_and_anything_else_is_refused() {
     );
     assert_eq!(
         refused.to_string(),
-        "Expected a month written YYYY-MM, such as 2026-03, got \"notes.txt\" in the name of a \
+        "Expected a month written YYYY-MM, such as 2026-03, got \"notes\" in the name of a \
          cache month"
     );
 }
@@ -223,4 +229,30 @@ fn a_month_refused_as_it_is_finished_leaves_no_partial_folder() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(names, ["2026-03"]);
+}
+
+#[test]
+fn a_descent_whose_offsets_run_out_of_order_is_refused() {
+    let folder = TemporaryFolder::new();
+    write_month(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
+    let descent = folder
+        .path()
+        .join(SAMPLE_CONTRACT)
+        .join("2026-03")
+        .join("1m-to-trades.arrow");
+    let offsets: ArrayRef = Arc::new(UInt32Array::from(vec![5, 4, 6]));
+    let batch = RecordBatch::try_new(descent_schema(), vec![offsets]).unwrap();
+    let mut writer =
+        FileWriter::try_new(File::create(&descent).unwrap(), &descent_schema()).unwrap();
+    writer.write(&batch).unwrap();
+    writer.finish().unwrap();
+    drop(writer);
+
+    let refused = MappedContract::open(&folder.path().join(SAMPLE_CONTRACT)).unwrap_err();
+
+    let message = refused.to_string();
+    assert!(
+        message.starts_with("Expected 3 offsets in order, ending in 6, got 3 ending in Some(6)"),
+        "{message}"
+    );
 }
