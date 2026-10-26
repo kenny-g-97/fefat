@@ -3,6 +3,7 @@
 //! activation, and OCO group, as `fefat.reference.orders` holds them. The book that moves orders
 //! from one state to the next is the loop's (step 2.6).
 
+use std::fmt;
 use std::num::NonZeroU32;
 
 use crate::instants::Ts;
@@ -148,6 +149,50 @@ pub enum OrderState {
     Filled,
     /// Cancelled by an OCO fill, a time rule, or its strategy.
     Cancelled,
+}
+
+/// The words of `fefat.reference.orders`, which the event log and the run's artifacts write.
+impl fmt::Display for Side {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Buy => "buy",
+            Self::Sell => "sell",
+        })
+    }
+}
+
+/// The order's class, `market`, `stop`, or `limit`, as a scenario writes its `kind`.
+impl fmt::Display for OrderKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Market => "market",
+            Self::StopMarket { .. } => "stop",
+            Self::Limit { .. } => "limit",
+        })
+    }
+}
+
+impl fmt::Display for OrderRole {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Entry => "entry",
+            Self::Stop => "stop",
+            Self::Target => "target",
+            Self::Exit => "exit",
+        })
+    }
+}
+
+impl fmt::Display for OrderState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Waiting => "waiting",
+            Self::Working => "working",
+            Self::Triggered => "triggered",
+            Self::Filled => "filled",
+            Self::Cancelled => "cancelled",
+        })
+    }
 }
 
 #[cfg(test)]

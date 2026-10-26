@@ -176,6 +176,11 @@ impl Ledger {
         self.mark = Some(price);
     }
 
+    /// The instrument whose lots the ledger holds.
+    pub const fn instrument(&self) -> InstrumentParameters {
+        self.instrument
+    }
+
     /// The cash, in micro-units.
     pub const fn cash(&self) -> Money {
         self.cash

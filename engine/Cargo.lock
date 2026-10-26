@@ -368,6 +368,12 @@ dependencies = [
 [[package]]
 name = "fefat-engine"
 version = "0.0.1"
+dependencies = [
+ "fefat-core",
+ "proptest",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "fefat-metrics"
