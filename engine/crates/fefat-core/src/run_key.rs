@@ -174,19 +174,19 @@ mod tests {
                 &spec_json,
                 FRAME,
                 &partitions(),
-                [Version(2), fill_model, artifact_schema],
+                [Version(engine.0 + 1), fill_model, artifact_schema],
             ),
             key_of(
                 &spec_json,
                 FRAME,
                 &partitions(),
-                [engine, Version(2), artifact_schema],
+                [engine, Version(fill_model.0 + 1), artifact_schema],
             ),
             key_of(
                 &spec_json,
                 FRAME,
                 &partitions(),
-                [engine, fill_model, Version(2)],
+                [engine, fill_model, Version(artifact_schema.0 + 1)],
             ),
         ];
         for key in changed {
