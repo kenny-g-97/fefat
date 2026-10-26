@@ -38,12 +38,13 @@ def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
     def the_engines_agree(cases: list[EngineCase]) -> None:
         comparisons = compare_engines(engine, cases)
         cases_run.append(len(comparisons))
-        differing = [comparison for comparison in comparisons if comparison.differences()]
         found = [
             "\n".join([explained(comparison), *comparison.differences()])
-            for comparison in differing
+            for comparison in comparisons
+            if comparison.differences()
         ]
-        assert not differing, f"Seed {DIFFERENTIAL_SEED}:\n\n" + "\n\n".join(found)
+        if found:
+            raise AssertionError(f"Seed {DIFFERENTIAL_SEED}:\n\n" + "\n\n".join(found))
 
     started = time.perf_counter()
     the_engines_agree()
