@@ -41,7 +41,12 @@ impl SplitMix64 {
 
     /// A whole number from 0 to `count - 1`; `count` is a constant above zero.
     pub fn below(&mut self, count: u32) -> i64 {
-        i64::from((self.next_u64() >> 32) as u32 % count)
+        i64::from(self.below_u32(count))
+    }
+
+    /// [`Self::below`] as the `u32` it draws.
+    pub fn below_u32(&mut self, count: u32) -> u32 {
+        (self.next_u64() >> 32) as u32 % count
     }
 }
 
