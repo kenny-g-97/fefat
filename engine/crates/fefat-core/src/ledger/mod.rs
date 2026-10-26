@@ -119,15 +119,33 @@ impl Ledger {
         }
     }
 
+    /// A ledger of `instrument` holding `starting_cash` that opens in a position, `lots` bought
+    /// or sold at `price`, as a scenario's opening position (BACKLOG.md, step 2.6): its cash is
+    /// moved by the position's value at `price`, the other way, rounded once (F-FEE-03), so that
+    /// equity is `starting_cash` at a mark of `price`. It has no mark yet.
+    pub fn holding(
+        instrument: InstrumentParameters,
+        starting_cash: Money,
+        side: Side,
+        lots: Qty,
+        price: Price,
+    ) -> Result<Self, LedgerError> {
+        let flat = Self::new(instrument, starting_cash);
+        let (position, cash, _) = flat.after(side, lots, price, Money(0))?;
+        Ok(Self {
+            position,
+            cash,
+            ..flat
+        })
+    }
+
     /// Books `fill`: the position moves by its lots, the cash by its value, the other way, and by
     /// its fee, each rounded once (F-FEE-03), and the mark stays (F-MRK-01). Returns what the
     /// fill's value moved the cash by, the reference engine's `Fill.cash`. A fill the ledger
     /// refuses leaves it as it was.
     pub fn book(&mut self, fill: &Fill) -> Result<Money, LedgerError> {
-        let position = self.position.after(fill.side, fill.lots)?;
-        let sold = Qty(-fill.side.sign() * fill.lots.0);
-        let cash_moved = self.instrument.value(fill.price, sold)?;
-        let cash = self.cash.checked_add(cash_moved)?.checked_sub(fill.fee)?;
+        let (position, cash, cash_moved) =
+            self.after(fill.side, fill.lots, fill.price, fill.fee)?;
         #[cfg(debug_assertions)]
         let before = self.clone();
         self.position = position;
@@ -135,6 +153,22 @@ impl Ledger {
         #[cfg(debug_assertions)]
         self.check_booking(&before, fill);
         Ok(cash_moved)
+    }
+
+    /// The position, the cash, and the cash the value moved once `lots` are bought or sold at
+    /// `price` for `fee`, worked out before anything changes.
+    fn after(
+        &self,
+        side: Side,
+        lots: Qty,
+        price: Price,
+        fee: Money,
+    ) -> Result<(Position, Money, Money), LedgerError> {
+        let position = self.position.after(side, lots)?;
+        let sold = Qty(-side.sign() * lots.0);
+        let cash_moved = self.instrument.value(price, sold)?;
+        let cash = self.cash.checked_add(cash_moved)?.checked_sub(fee)?;
+        Ok((position, cash, cash_moved))
     }
 
     /// Marks the position at `price`, the last tradeable price seen (F-MRK-01).

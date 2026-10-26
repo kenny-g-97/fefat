@@ -6,7 +6,7 @@
 use std::num::NonZeroU32;
 
 use crate::instants::Ts;
-use crate::units::{Price, Qty};
+use crate::units::{Overflow, Price, Qty};
 
 /// An order's identity within a run; among orders placed at one instant, the lower id comes first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -41,6 +41,28 @@ impl Side {
         match self {
             Self::Buy => Self::Sell,
             Self::Sell => Self::Buy,
+        }
+    }
+
+    /// `price` moved `ticks` ticks of `tick` against the trader, up for a buy and down for a sell
+    /// (F-SLP-01), or [`Overflow`] when it leaves 64 bits.
+    pub fn moved(self, price: Price, ticks: u32, tick: Price) -> Result<Price, Overflow> {
+        let distance = tick.0.checked_mul(i64::from(ticks)).ok_or(Overflow {
+            operation: "a distance in ticks",
+            left: tick.0.into(),
+            right: ticks.into(),
+        })?;
+        match self {
+            Self::Buy => price.checked_add(Price(distance)),
+            Self::Sell => price.checked_sub(Price(distance)),
+        }
+    }
+
+    /// The costlier of two prices for this side: the higher for a buy, the lower for a sell.
+    pub fn worse(self, first: Price, second: Price) -> Price {
+        match self {
+            Self::Buy => first.max(second),
+            Self::Sell => first.min(second),
         }
     }
 }
@@ -126,4 +148,37 @@ pub enum OrderState {
     Filled,
     /// Cancelled by an OCO fill, a time rule, or its strategy.
     Cancelled,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TICK: Price = Price(250_000_000);
+
+    #[test]
+    fn a_buy_moves_up_and_a_sell_down_and_each_takes_its_costlier_price() {
+        let price = Price(4_995_000_000_000);
+        assert_eq!(
+            Side::Buy.moved(price, 1, TICK),
+            Ok(Price(4_995_250_000_000))
+        );
+        assert_eq!(
+            Side::Sell.moved(price, 2, TICK),
+            Ok(Price(4_994_500_000_000))
+        );
+        assert_eq!(Side::Sell.moved(price, 0, TICK), Ok(price));
+        assert_eq!(Side::Buy.worse(price, Price(1)), price);
+        assert_eq!(Side::Sell.worse(price, Price(1)), Price(1));
+    }
+
+    #[test]
+    fn a_move_beyond_64_bits_is_an_error_not_a_wrap() {
+        assert!(Side::Buy.moved(Price(i64::MAX), 1, TICK).is_err());
+        assert!(
+            Side::Sell
+                .moved(Price(0), u32::MAX, Price(i64::MAX))
+                .is_err()
+        );
+    }
 }
