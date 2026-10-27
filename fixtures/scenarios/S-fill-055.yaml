@@ -1,0 +1,23 @@
+id: S-fill-055
+title: A stop through the market when it becomes active fills at the next bar's open, though that bar opens back on its right side
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:31:00.000Z", side: buy, kind: stop, price: "4998.00", quantity: 1}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "4999.00", high: "5000.25", low: "4998.75", close: "5000.00", volume: 130}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "4996.00", high: "4999.00", low: "4995.00", close: "4998.50", volume: 340}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:32:00Z", price: "4996.25", rule: F-STP-05}
+rules: [F-ACT-02, F-MKT-03, F-MRK-01, F-SLP-01, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# the bar from 14:30 to 14:31 closes at 5000.00, the market when the decision at its close places a
+# buy stop at 4998.00 (F-MRK-01): the stop is below the market, through it, and fills at once as a
+# market order (F-STP-05);
+# active at 14:31:00.100, it sees the bar from 14:31 to 14:32 (F-ACT-02), which opens at 4996.00,
+# back below the stop: the stop was judged once, when it became active, so it still fills as a
+# market order at that open: fill = 4996.00 + 1 × 0.25 = 4996.25 (F-MKT-03, F-STP-05), at 14:32:00;
+# judged again at that open, it would have worked from there, and the path, going to the high first
+# for a flat buy entry, would have reached it: fill = 4998.00 + 0.25 = 4998.25, by F-STP-04.

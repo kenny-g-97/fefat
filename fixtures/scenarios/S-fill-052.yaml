@@ -1,0 +1,24 @@
+id: S-fill-052
+title: A bar that opens past a stop and a limit of one OCO group fills the stop, though the limit has the lower id
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5002.00", quantity: 1, oco: either}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5004.00", quantity: 1, oco: either}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5001.00", low: "4999.25", close: "5000.50", volume: 160}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5006.00", high: "5007.00", low: "5005.25", close: "5006.50", volume: 420}
+expected:
+  fills:
+    - {order: 2, ts: "2026-03-06T14:32:00Z", price: "5006.00", rule: F-STP-04}
+rules: [F-BAR-01, F-LMT-01, F-OCO-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A sell limit at 5002.00
+# (order 1) and a buy stop at 5004.00 (order 2), one OCO group, wait above the market:
+# the bar from 14:30 to 14:31 reaches 5001.00 at most, below both;
+# the bar from 14:31 to 14:32 opens at 5006.00, a jump past both prices (F-BAR-01): the open
+# trades through the limit (F-LMT-01) and reaches the stop (F-STP-01);
+# at the open's pseudo-tick the stops it reaches fill before the limits, so order 2 fills:
+# fill = higher of (5004.00 + 1 × 0.25, 5006.00) = 5006.00 (F-STP-04), and the limit is cancelled
+# (F-OCO-01);
+# by order id alone the limit would have filled first, selling at 5002.00.

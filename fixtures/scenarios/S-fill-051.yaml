@@ -1,0 +1,25 @@
+id: S-fill-051
+title: Of two stops of one OCO group through the market when they become active, the lower id fills at the next bar's open
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:31:00.000Z", side: buy, kind: stop, price: "4998.00", quantity: 1, oco: through}
+  - {id: 2, placed_at: "2026-03-06T14:31:00.000Z", side: sell, kind: stop, price: "5002.00", quantity: 1, oco: through}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "4999.75", high: "5000.50", low: "4999.50", close: "5000.00", volume: 150}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5000.25", high: "5001.00", low: "4999.75", close: "5000.50", volume: 200}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:32:00Z", price: "5000.50", rule: F-STP-05}
+rules: [F-ACT-02, F-CLK-02, F-MKT-03, F-MRK-01, F-OCO-01, F-SLP-01, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# the bar from 14:30 to 14:31 closes at 5000.00, which marks the market (F-MRK-01);
+# decided at 14:31:00, after that bar (F-CLK-02), the buy stop at 4998.00 is below the market and
+# the sell stop at 5002.00 above it: both are through the market and fill at once as market orders
+# when they become active (F-STP-05);
+# active at 14:31:00.100, both see the bar from 14:31 to 14:32 (F-ACT-02); at its open the orders
+# that see their first bar fill by order id, so order 1 fills first:
+# fill = the open plus the larger class's ticks = 5000.25 + 1 × 0.25 = 5000.50 (F-MKT-03, F-STP-05),
+# and order 2, of its group, is cancelled before its turn (F-OCO-01);
+# by the higher id, order 2 would have sold at 5000.25 - 0.25 = 5000.00 instead.

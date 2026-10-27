@@ -129,8 +129,16 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-047](S-fill-047.yaml) | tbbo | A TBBO stop triggered on one record fills on the next before a market order of its OCO group active there |
 | [S-fill-048](S-fill-048.yaml) | tbbo | A TBBO market buy whose record trades above its ask is flagged against the trade's size |
 | [S-fill-049](S-fill-049.yaml) | tbbo | A TBBO record that triggers a stop and bids at a limit of its OCO group fills the limit |
+| [S-fill-050](S-fill-050.yaml) | 1m | An exit that leaves a long flat inside a 1-minute bar keeps the order of the bar's extremes |
+| [S-fill-051](S-fill-051.yaml) | 1m | Of two stops of one OCO group through the market when they become active, the lower id fills at the next bar's open |
+| [S-fill-052](S-fill-052.yaml) | 1m | A bar that opens past a stop and a limit of one OCO group fills the stop, though the limit has the lower id |
+| [S-fill-053](S-fill-053.yaml) | 1m | Flat with a buy limit placed first, a 1-minute bar goes to its high first, as for a buy stop |
+| [S-fill-054](S-fill-054.yaml) | trades | With no latency, a trade at the decision's instant sets the mark a stop is judged against but is not seen by it |
+| [S-fill-055](S-fill-055.yaml) | 1m | A stop through the market when it becomes active fills at the next bar's open, though that bar opens back on its right side |
+| [S-fill-056](S-fill-056.yaml) | 1m | With a 1-minute bar's extremes swapped, its entry is still followed by the move against it, so the bar is not ambiguous |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |
 | [S-template-004](S-template-004.yaml) | 1m | A template places nothing on a bar whose wake is false and closes its long on long_exit |
 | [S-template-005](S-template-005.yaml) | tbbo | A template's signal exit waits while its TBBO stop, triggered before the close, fills on the next record |
+| [S-template-006](S-template-006.yaml) | trades | A trade received at a signal close fills the long's stop before the decision, which finds the position flat |

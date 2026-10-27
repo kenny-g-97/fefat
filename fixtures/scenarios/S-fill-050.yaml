@@ -1,0 +1,32 @@
+id: S-fill-050
+title: An exit that leaves a long flat inside a 1-minute bar keeps the order of the bar's extremes
+fidelity: 1m
+instrument: ES
+position: {side: long, quantity: 1, price: "5000.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4993.00", quantity: 1, oco: reentry}
+  - {id: 3, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, oco: reentry}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5006.00", low: "4992.00", close: "5000.00", volume: 800}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "4994.75", rule: F-STP-04, flags: [ambiguous]}
+    - {order: 2, ts: "2026-03-06T14:31:00Z", price: "4993.00", rule: F-LMT-03, flags: [ambiguous]}
+rules: [F-BAR-02, F-BAR-04, F-BAR-05, F-LMT-01, F-LMT-03, F-OCO-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A long of 1 has its stop at
+# 4995.00 (order 1); orders 2 and 3, one OCO group, enter long again on a dip to 4993.00 or a break
+# of 5005.00. The bar from 14:30 to 14:31 opens at 5000.00, between every order's price;
+# holding the long, the path goes to the low first (F-BAR-02) and passes 4995.00 (F-STP-01):
+# fill of order 1 = 4995.00 - 1 × 0.25 = 4994.75 (F-STP-04), which leaves the position flat;
+# an exit opens no position, so the path keeps its order (F-BAR-04) and goes on down towards the
+# low, 4992.00, through the limit at 4993.00 (F-LMT-01): fill of order 2 = 4993.00 (F-LMT-03), and
+# order 3 is cancelled (F-OCO-01);
+# the long that opens turns the path adverse first (F-BAR-04): down to 4992.00, then up to 5006.00
+# and back to the close, 5000.00, with nothing working;
+# had the exit turned the path to the extreme favourable to the earliest working entry, a buy, the
+# high would have come next, and order 3 would have filled at 5005.00 + 0.25 = 5005.25 instead of
+# order 2;
+# with the high first, order 3 fills at 5005.25, adding to the long, and order 1 at 4994.75 on the
+# way down: other fills, so both fills are flagged ambiguous (F-BAR-05).
