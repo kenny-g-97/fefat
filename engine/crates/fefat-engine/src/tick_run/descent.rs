@@ -10,6 +10,7 @@ use fefat_core::instants::Ts;
 use fefat_core::market_data::{BarColumns, BarRow, MarketDataReader};
 use fefat_core::orders::{OrderKind, OrderState, Side};
 
+use super::fills::is_limit;
 use super::records::{Unit, bar_row};
 use super::{RunError, Stepped, TickRun};
 use crate::book::WorkingOrder;
@@ -86,7 +87,6 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let units = block.end - self.next_record;
         self.next_record = block.end;
         self.in_break = false;
-        let is_limit = |kind: &OrderKind| matches!(kind, OrderKind::Limit { .. });
         for id in self.book.ids_in(OrderState::Working, is_limit) {
             self.book
                 .rest(id)

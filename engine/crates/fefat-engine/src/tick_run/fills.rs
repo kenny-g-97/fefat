@@ -133,11 +133,9 @@ impl<R: MarketDataReader> TickRun<'_, R> {
                 self.first_record(id, record, index)?;
             }
         }
-        let is_stop = |kind: &OrderKind| matches!(kind, OrderKind::StopMarket { .. });
         for id in self.book.ids_in(OrderState::Working, is_stop) {
             self.trigger(id, record, index)?;
         }
-        let is_limit = |kind: &OrderKind| matches!(kind, OrderKind::Limit { .. });
         for id in self.book.ids_in(OrderState::Working, is_limit) {
             self.limit_on_record(id, record, index)?;
         }
@@ -330,4 +328,14 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     fn tick(&self) -> Price {
         self.ledger.instrument().tick_size()
     }
+}
+
+/// Whether an order is a stop, which a price at or through its level triggers (F-STP-01).
+pub(super) fn is_stop(kind: &OrderKind) -> bool {
+    matches!(kind, OrderKind::StopMarket { .. })
+}
+
+/// Whether an order is a limit, which fills at its price or better (F-LMT-01).
+pub(super) fn is_limit(kind: &OrderKind) -> bool {
+    matches!(kind, OrderKind::Limit { .. })
 }

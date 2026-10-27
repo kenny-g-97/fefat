@@ -90,6 +90,20 @@ pub enum RunError {
         /// The levels the date holds, finest first.
         present: Vec<Fidelity>,
     },
+    /// A stop triggered on TBBO, which fills at the next record's quote (F-STP-02), when the
+    /// next trade date fills on a level without quotes: how it fills there is not yet specified.
+    #[error(
+        "Expected TBBO records on {trade_date} to fill stop {order}, triggered on TBBO \
+         (F-STP-02), got {fidelity}"
+    )]
+    TriggeredWithoutQuotes {
+        /// The stop.
+        order: u64,
+        /// The trade date.
+        trade_date: TradeDate,
+        /// The level the date fills on.
+        fidelity: Fidelity,
+    },
     /// A bar that traded nothing, which no stored bar is (F-BAR-07).
     #[error("Expected stored bars with trades (F-BAR-07), got none closing {ts_close}")]
     BarWithoutTrades {

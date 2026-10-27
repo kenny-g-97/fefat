@@ -471,6 +471,68 @@ fn records_that_go_back_in_time_across_trade_dates_are_refused() {
 }
 
 #[test]
+fn a_stop_triggered_on_tbbo_is_refused_on_a_date_without_quotes() {
+    // F-STP-02 fills a stop triggered on TBBO at the next record's quote, which trades lack.
+    let quoted = |milliseconds: i64, hundredths: i64| TbboRow {
+        ts_recv: at(milliseconds),
+        price: price(hundredths),
+        size: Qty(1),
+        bid: price(hundredths - 25),
+        ask: price(hundredths),
+        bid_size: Qty(1),
+        ask_size: Qty(1),
+    };
+    let next_day = TradeRow {
+        ts_recv: at(86_400_000),
+        price: price(499_000),
+        size: Qty(2),
+    };
+    let days = vec![
+        TapeDay {
+            trade_date: TRADE_DATE,
+            tbbo: vec![quoted(200, 500_000), quoted(400, 499_475)],
+            trades: Vec::new(),
+            bars: Default::default(),
+        },
+        TapeDay {
+            trade_date: TradeDate(TRADE_DATE.0 + 1),
+            tbbo: Vec::new(),
+            trades: vec![next_day],
+            bars: Default::default(),
+        },
+    ];
+    let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+    let mut strategy = ScenarioOrders::new(vec![order(1, Side::Sell, stop(499_500))]);
+    let hours = TradingHours::always();
+    let settings = RunSettings::defaults_for(Fidelity::Tbbo);
+    let (fidelity, replay) = (Fidelity::Tbbo, Replay::Full);
+    let run = TickRun::new(
+        &reader,
+        fidelity,
+        replay,
+        &hours,
+        settings,
+        long_one(),
+        &mut strategy,
+    )
+    .unwrap();
+
+    let refused = run.run().unwrap_err();
+
+    assert!(
+        matches!(
+            refused,
+            RunError::TriggeredWithoutQuotes {
+                order: 1,
+                fidelity: Fidelity::Trades,
+                ..
+            }
+        ),
+        "{refused}"
+    );
+}
+
+#[test]
 fn a_trade_date_without_a_level_at_or_coarser_than_the_runs_fidelity_is_refused() {
     let reader = trades(&[(200, 500_000, 1)]);
     let (hours, mut strategy) = (TradingHours::always(), ScenarioOrders::new(Vec::new()));

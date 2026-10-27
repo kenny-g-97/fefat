@@ -651,6 +651,9 @@ struct Coverage {
     cases_skipping: usize,
     skipped: usize,
     refused: usize,
+    /// Months that meet a date without quotes while a stop triggered on TBBO waits for one,
+    /// which both replays refuse alike, since F-STP-02 prices such a fill from a quote alone.
+    unquoted: usize,
     ambiguous: usize,
     fills: BTreeMap<String, usize>,
     profiles: BTreeMap<String, usize>,
@@ -682,9 +685,16 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
                 .entry(format!("{:?}", day.profile))
                 .or_default() += 1;
         }
-        let Ok(outputs) = &full.outputs else {
-            seen.refused += 1;
-            return Ok(());
+        let outputs = match &full.outputs {
+            Ok(outputs) => outputs,
+            Err(RunError::TriggeredWithoutQuotes { .. }) => {
+                seen.unquoted += 1;
+                return Ok(());
+            }
+            Err(_) => {
+                seen.refused += 1;
+                return Ok(());
+            }
         };
         prop_assert_eq!(
             skipping.outputs.as_ref().map(RunOutputs::ambiguous_fills),

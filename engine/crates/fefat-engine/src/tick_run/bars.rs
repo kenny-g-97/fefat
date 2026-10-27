@@ -2,8 +2,9 @@
 //! and `BarReplay`): the market's hours by the bar's open (F-SES-02); the orders that see their
 //! first bar (F-ACT-02); the bar replayed as four pseudo-ticks, its open, its extremes in the
 //! order F-BAR-02 to F-BAR-04 give, and its close (F-BAR-01); when that fills anything, the bar
-//! replayed again on a copy with its first extreme the other way round, its fills flagged
-//! ambiguous where the two differ (F-BAR-05); and every fill at the bar's close (F-BAR-06).
+//! replayed again on a copy with its first extreme the other way round, and every fill of the bar
+//! flagged ambiguous when the copy fills otherwise (F-BAR-05); and every fill at the bar's close
+//! (F-BAR-06).
 
 use fefat_core::fills::PricingRule;
 use fefat_core::ledger::{Ledger, Position};
@@ -11,7 +12,7 @@ use fefat_core::market_data::{BarRow, MarketDataReader};
 use fefat_core::orders::{OrderId, OrderKind, OrderState};
 use fefat_core::units::Price;
 
-use super::fills::{Execution, FillPoint, execute};
+use super::fills::{Execution, FillPoint, execute, is_limit, is_stop};
 use super::{RunError, TickRun};
 use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
@@ -317,12 +318,4 @@ const fn on_bars(price: Price, rule: PricingRule, reference: Price) -> Priced {
 /// A limit filled at its own price, never better (F-LMT-03).
 const fn at_its_price(limit: Price) -> Priced {
     on_bars(rules::f_lmt_03(limit), PricingRule::LimitAtItsPrice, limit)
-}
-
-fn is_stop(kind: &OrderKind) -> bool {
-    matches!(kind, OrderKind::StopMarket { .. })
-}
-
-fn is_limit(kind: &OrderKind) -> bool {
-    matches!(kind, OrderKind::Limit { .. })
 }
