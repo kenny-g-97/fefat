@@ -99,11 +99,6 @@ impl<'run> DecisionContext<'run> {
         }
     }
 
-    /// The decision's instant.
-    pub const fn now(&self) -> Ts {
-        self.now
-    }
-
     /// The position held.
     pub const fn position(&self) -> Position {
         self.position
@@ -165,8 +160,12 @@ impl<'run> DecisionContext<'run> {
     }
 
     /// Cancels every working order and, with a position open, places a market order that closes
-    /// it.
+    /// it; nothing while a market order is already on its way out of the position
+    /// ([`Self::is_exiting`]), so that no decision cancels a stop triggered on TBBO (F-STP-02).
     pub fn flatten(&mut self) -> Result<(), DecisionError> {
+        if self.is_exiting() {
+            return Ok(());
+        }
         for id in self.book.live_ids() {
             self.book.close(id, Closing::Cancelled);
             self.log.push(LogEntry::cancelled_by_strategy(self.now, id));
@@ -279,5 +278,44 @@ impl Strategy for ScenarioOrders {
             context.place(order)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fefat_core::instants::Ts;
+    use fefat_core::ledger::Position;
+    use fefat_core::orders::{OrderId, OrderKind, OrderState, Side};
+    use fefat_core::units::{Price, Qty};
+
+    use super::{DecisionContext, ScenarioOrder};
+    use crate::book::Book;
+
+    #[test]
+    fn flatten_leaves_a_stop_triggered_on_tbbo_to_fill_as_the_market_order_it_is() {
+        // F-STP-02, S-template-005: no decision cancels a triggered stop.
+        let (mut book, mut log) = (Book::default(), Vec::new());
+        let stop = ScenarioOrder {
+            placed_at: Ts(0),
+            id: OrderId(1),
+            side: Side::Sell,
+            lots: Qty(1),
+            kind: OrderKind::StopMarket {
+                stop: Price(4_999_000_000_000),
+            },
+            oco: None,
+            bracket: None,
+        };
+        let mut placing = DecisionContext::new(&mut book, &mut log, Position::Flat, Ts(0), 0, 0);
+        placing.place(&stop).unwrap();
+        book.activate(OrderId(1)).unwrap();
+        book.trigger(OrderId(1)).unwrap();
+
+        let mut later = DecisionContext::new(&mut book, &mut log, Position::Flat, Ts(1), 1, 0);
+        later.flatten().unwrap();
+
+        let still = book.live_in(OrderId(1), OrderState::Triggered);
+        assert_eq!(still.map(|order| order.order.id), Some(OrderId(1)));
+        assert_eq!(log.len(), 1, "{log:?}");
     }
 }

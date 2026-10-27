@@ -127,8 +127,9 @@ def _is_whole(number: Decimal) -> bool:
 
 class TemplateStrategy:
     """A `StrategySpec`'s basic subset as an `on_bar` strategy over its signal frame, whose rows
-    are the decisions (`decisions_of`). At each signal close, in this order: nothing while the
-    exit it placed still works; from the trade date's flat-by time, the position is closed and no
+    are the decisions (`decisions_of`). At each signal close, in this order: nothing while a
+    market order is on its way out of the position, the exit it placed or a stop triggered on
+    TBBO (F-STP-02); from the trade date's flat-by time, the position is closed and no
     entry placed; `long_exit` while long or `short_exit` while short closes the position, with
     signal exits on; with a position or working orders, nothing more, an opposite signal being
     ignored; on a bar whose `wake` is false, no entry; and otherwise an entry signal enters at

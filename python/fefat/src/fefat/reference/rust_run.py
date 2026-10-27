@@ -43,6 +43,10 @@ from fefat.reference.tape import BarRecord, Record, TbboRecord
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_text, instrument_parameters, price_text
 
+BATCH_TIMEOUT_SECONDS = 120
+"""How long a batch may run, where ten cases take a few milliseconds: a hang fails its example,
+which Hypothesis then shrinks and prints, instead of stalling the test run."""
+
 
 def engine_cases(scenarios: Sequence[AnyScenario], cache_folder: Path) -> list[EngineCase]:
     """Each scenario with the hours `run_scenarios` gives it, each calendar's sessions built once
@@ -80,7 +84,9 @@ class RustEngine:
             batch, outputs = Path(folder) / "input", Path(folder) / "output"
             write_batch(cases, batch)
             command = [str(self.binary), "run", str(batch), str(outputs)]
-            completed = subprocess.run(command, capture_output=True, text=True, check=False)
+            completed = subprocess.run(
+                command, capture_output=True, text=True, check=False, timeout=BATCH_TIMEOUT_SECONDS
+            )
             if completed.returncode != 0:
                 raise RuntimeError(
                     f"Expected fefat-cli run to pass, got exit code {completed.returncode}: "

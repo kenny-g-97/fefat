@@ -381,6 +381,29 @@ fn a_templates_short_takes_its_size_from_size_mult_and_its_bracket_from_the_colu
 }
 
 #[test]
+fn records_that_go_back_in_time_across_trade_dates_are_refused() {
+    let day = |trade_date: i32, milliseconds: i64| TapeDay {
+        trade_date: TradeDate(trade_date),
+        tbbo: Vec::new(),
+        trades: vec![TradeRow {
+            ts_recv: at(milliseconds),
+            price: price(500_000),
+            size: Qty(1),
+        }],
+        bars: Default::default(),
+    };
+    let days = vec![day(20_518, 500), day(20_519, 100)];
+    let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+    let (hours, mut strategy) = (TradingHours::always(), ScenarioOrders::new(Vec::new()));
+    let (level, settings) = (
+        TickFidelity::Trades,
+        RunSettings::defaults_for(Fidelity::Trades),
+    );
+    let run = TickRun::new(&reader, level, &hours, settings, flat(), &mut strategy).unwrap();
+    assert!(matches!(run.run(), Err(RunError::RecordsOutOfOrder { .. })));
+}
+
+#[test]
 fn a_bar_fidelity_is_refused_until_step_2_7() {
     let fidelity = Fidelity::Bars(fefat_core::fidelity::Timeframe::ONE_MINUTE);
     let refused = TickFidelity::try_from(fidelity);

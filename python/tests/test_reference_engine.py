@@ -24,7 +24,7 @@ from fefat.reference.scenario_runner import run_scenario
 from fefat.reference.scenarios import Scenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.strategy import Decision, DecisionContext
-from fefat.reference.tape import BarRecord, TradeRecord, tape_of_bars, tape_of_trades
+from fefat.reference.tape import BarRecord, TbboRecord, TradeRecord, tape_of_bars, tape_of_trades
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_nanoseconds, instrument_parameters, lots_of, price_units
 
@@ -124,6 +124,43 @@ def test_flatten_cancels_the_bracket_and_closes_at_the_next_bar() -> None:
     assert [entry.order for entry in cancelled] == [2, 3]
     (trade,) = trades_of(result.fills)
     assert (trade.exit_reason, trade.pnl) == (OrderRole.EXIT, 5_000_000)
+
+
+def tbbo_record(clock: str, price: str, bid: str, ask: str) -> TbboRecord:
+    """A TBBO record of 2026-03-06: two lots traded under five bid and five offered."""
+    return TbboRecord.model_validate(
+        {
+            "ts": f"2026-03-06T{clock}Z",
+            "price": price,
+            "size": 2,
+            "bid": bid,
+            "ask": ask,
+            "bid_size": 5,
+            "ask_size": 5,
+        }
+    )
+
+
+def test_flatten_leaves_a_stop_triggered_on_tbbo_to_fill_on_the_next_record() -> None:
+    # F-STP-02: from its trigger a TBBO stop is a market order already sent, which no decision
+    # cancels, so the flatten at 14:35 leaves the stop triggered at 14:34:59.950 to fill on the
+    # next record (S-template-005, by hand).
+    tape = (
+        tbbo_record("14:30:00.200", "5000.00", "4999.75", "5000.00"),
+        tbbo_record("14:34:59.950", "4997.00", "4996.75", "4997.00"),
+        tbbo_record("14:35:00.020", "4996.75", "4996.50", "4996.75"),
+        tbbo_record("14:35:00.300", "4995.00", "4994.75", "4995.00"),
+    )
+    tbbo = TickFidelity.TBBO
+    engine = ReferenceEngine(RunSettings.for_fidelity(tbbo), MES, tbbo, AlwaysOpen())
+    decisions = [decision_at("14:30:00"), decision_at("14:35:00")]
+
+    result = engine.run(tape, decisions, buy_with_a_bracket_then_flatten)
+
+    assert [(fill.role, fill.price, fill.rule) for fill in result.fills] == [
+        (OrderRole.ENTRY, price_units("5000.00"), "F-MKT-01"),
+        (OrderRole.STOP, price_units("4996.50"), "F-STP-02"),
+    ]
 
 
 def test_a_bar_that_opens_in_the_break_is_not_replayed(tmp_path: Path) -> None:

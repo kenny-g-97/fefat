@@ -37,7 +37,7 @@ pub(crate) const BAR_COLUMNS: [&str; 7] = [
 ];
 
 /// The columns of a level's file.
-pub(crate) const fn level_columns(level: Fidelity) -> &'static [&'static str] {
+pub const fn level_columns(level: Fidelity) -> &'static [&'static str] {
     match level {
         Fidelity::Tbbo => &TBBO_COLUMNS,
         Fidelity::Trades => &TRADE_COLUMNS,

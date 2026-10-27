@@ -104,7 +104,10 @@ class DecisionContext:
 
     def flatten(self) -> None:
         """Cancels every working order and, with a position open, places a market order that
-        closes it."""
+        closes it; nothing while a market order is already on its way out of the position
+        (`is_exiting`), so that no decision cancels a stop triggered on TBBO (F-STP-02)."""
+        if self.is_exiting():
+            return
         for order in self._book.live():
             self._book.close(order, OrderState.CANCELLED)
             cancelled = f"order {order.id}: cancelled by the strategy"

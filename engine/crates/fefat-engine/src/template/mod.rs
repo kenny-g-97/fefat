@@ -19,6 +19,9 @@ use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::exact_decimal::ExactDecimal;
 use crate::strategy::{DecisionContext, DecisionError, Strategy};
 
+#[cfg(test)]
+mod tests;
+
 const SUBSET: &str = "a market entry, a stop and one target, signal exits, and a fixed size";
 
 /// One row of a signal frame, at one signal close (D-53): its four signals, a null read as false;
@@ -79,7 +82,8 @@ enum LegRule {
 }
 
 /// A specification's basic subset as a strategy over its signal rows, each a decision. At each
-/// signal close, in this order: nothing while the exit it placed still works; `long_exit` while
+/// signal close, in this order: nothing while a market order is on its way out of the position,
+/// the exit it placed or a stop triggered on TBBO (F-STP-02); `long_exit` while
 /// long or `short_exit` while short closes the position, with signal exits on; with a position
 /// or working orders, nothing more, an opposite signal being ignored; on a bar whose `wake` is
 /// false, no entry; and otherwise an entry signal enters at the market, its bracket placed when
@@ -252,10 +256,6 @@ fn refuse_the_rest(execution: &Execution) -> Result<(), TemplateError> {
         (
             execution.on_opposite_signal != OppositeSignal::Ignore,
             "an opposite signal that is not ignored",
-        ),
-        (
-            !matches!(execution.sizing, Sizing::Fixed { .. }),
-            "a size other than fixed",
         ),
         (execution.targets.len() != 1, "other than one target"),
         (execution.breakeven.is_some(), "breakeven"),

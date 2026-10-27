@@ -340,6 +340,26 @@ fn a_case_without_records_is_refused_by_name() {
 }
 
 #[test]
+fn a_stop_without_a_price_is_refused() {
+    let folder = TemporaryFolder::new("unpriced");
+    let (input, output) = (folder.0.join("input"), folder.0.join("output"));
+    fs::create_dir_all(&input).unwrap();
+    let unpriced = json!({"kind": "orders", "orders": [
+        {"id": 1, "placed_at": at(0), "side": "sell", "kind": "stop", "lots": 1}
+    ]});
+    let manifest =
+        json!({"cases": [case("S-fill-012", "trades", json!({"kind": "tape"}), unpriced)]});
+    fs::write(input.join("run.json"), manifest.to_string()).unwrap();
+
+    let refused = run_batch(&input, &output).unwrap_err().to_string();
+
+    assert!(
+        refused.starts_with("Expected case S-fill-012 to run, got: Expected a price"),
+        "{refused}"
+    );
+}
+
+#[test]
 fn a_case_with_two_orders_under_one_id_is_refused() {
     let folder = TemporaryFolder::new("repeated");
     let (input, output) = (folder.0.join("input"), folder.0.join("output"));

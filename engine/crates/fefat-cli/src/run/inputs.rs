@@ -11,6 +11,7 @@ use arrow_array::cast::AsArray;
 use arrow_array::types::{Float64Type, Int64Type};
 use arrow_array::{Array, ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch};
 use arrow_ipc::reader::FileReader;
+use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::market_data::TapeDay;
 use fefat_core::units::Price;
@@ -18,11 +19,6 @@ use fefat_engine::template::SignalRow;
 use fefat_engine::tick_run::TickFidelity;
 
 use super::{BatchError, arrow_error};
-
-const TRADE_COLUMNS: [&str; 3] = ["ts_recv", "price", "size"];
-const TBBO_COLUMNS: [&str; 7] = [
-    "ts_recv", "price", "size", "bid", "ask", "bid_size", "ask_size",
-];
 
 /// One level's records of each case, by trade date, as slices of the file's batches in the
 /// columns the engine cache uses.
@@ -39,8 +35,14 @@ pub(super) struct BatchTables {
 impl BatchTables {
     pub(super) fn read(input: &Path) -> Result<Self, BatchError> {
         Ok(Self {
-            trades: records_by_case(&input.join("trades.arrow"), &TRADE_COLUMNS)?,
-            tbbo: records_by_case(&input.join("tbbo.arrow"), &TBBO_COLUMNS)?,
+            trades: records_by_case(
+                &input.join("trades.arrow"),
+                fefat_data::level_columns(Fidelity::Trades),
+            )?,
+            tbbo: records_by_case(
+                &input.join("tbbo.arrow"),
+                fefat_data::level_columns(Fidelity::Tbbo),
+            )?,
             signals: signal_rows_by_case(&input.join("signals.arrow"))?,
         })
     }
