@@ -21,7 +21,7 @@ use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
-use super::{Replay, RunError, RunOutputs, Stepped, TickRun};
+use super::{BookedFill, Replay, RunError, RunOutputs, Stepped, TickRun};
 use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::hours::{Halt, Session, TradingHours};
 use crate::settings::{LimitFill, RunSettings, SlippageTicks};
@@ -575,9 +575,11 @@ fn hours(month: &DrawnMonth, walks: &[Vec<TbboRow>]) -> TradingHours {
     ])
 }
 
-/// What one replay of a case gave: its outputs or its error, and the records it skipped.
+/// What one replay of a case gave: its outputs or its error, the fills and the ledger it had
+/// reached when refused, and the records it skipped.
 struct Replayed {
     outputs: Result<RunOutputs, RunError>,
+    refused_at: Option<(Vec<BookedFill>, Ledger)>,
     skipped: usize,
 }
 
@@ -633,6 +635,7 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
             Err(error) => {
                 return Replayed {
                     outputs: Err(error),
+                    refused_at: Some((run.fills().to_vec(), run.ledger().clone())),
                     skipped,
                 };
             }
@@ -640,6 +643,7 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
     }
     Replayed {
         outputs: run.run(),
+        refused_at: None,
         skipped,
     }
 }
@@ -651,7 +655,7 @@ struct Coverage {
     cases_skipping: usize,
     skipped: usize,
     refused: usize,
-    /// Months that meet a date without quotes while a stop triggered on TBBO waits for one,
+    /// Months whose stop, triggered on TBBO, meets a tradeable trade or bar before a quote,
     /// which both replays refuse alike, since F-STP-02 prices such a fill from a quote alone.
     unquoted: usize,
     ambiguous: usize,
@@ -675,6 +679,7 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
         let full = replayed(&month, Replay::Full);
         let skipping = replayed(&month, Replay::Skipping);
         prop_assert_eq!(&skipping.outputs, &full.outputs, "{:?}", month);
+        prop_assert_eq!(&skipping.refused_at, &full.refused_at, "{:?}", month);
         let mut seen = coverage.borrow_mut();
         seen.cases += 1;
         seen.skipped += skipping.skipped;
@@ -715,6 +720,7 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
     println!("seed {SEED}: {coverage:#?}");
     assert_eq!(coverage.cases, CASES as usize);
     assert_eq!(coverage.refused, 0, "{coverage:#?}");
+    assert!(coverage.unquoted <= CASES as usize / 100, "{coverage:#?}");
     assert!(coverage.cases_skipping >= 300, "{coverage:#?}");
     assert!(coverage.ambiguous > 0, "{coverage:#?}");
     let rules: Vec<&str> = coverage.fills.keys().map(String::as_str).collect();

@@ -30,6 +30,13 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         if !self.tradeable(bar.ts_open) {
             return Ok(());
         }
+        if let Some(stop) = self.book.ids_in(OrderState::Triggered, |_| true).first() {
+            return Err(RunError::TriggeredWithoutQuotes {
+                order: stop.0,
+                at: rules::f_bar_06(bar),
+                fidelity: self.fidelity,
+            });
+        }
         if !self.book.has_live() {
             self.ledger.mark_at(bar.close);
             return Ok(());

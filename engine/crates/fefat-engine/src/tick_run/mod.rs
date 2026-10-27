@@ -34,7 +34,7 @@ use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
-use fefat_core::orders::{OrderId, OrderState};
+use fefat_core::orders::OrderId;
 
 use descent::BarLevel;
 use records::{DayRecords, Unit};
@@ -177,25 +177,10 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
                 return Ok(None);
             };
             let day = self.day_of(trade_date)?;
-            self.check_quoted(trade_date, day.records.fidelity())?;
             self.fidelity = day.records.fidelity();
             self.day = Some(day);
             self.next_day += 1;
             self.next_record = 0;
-        }
-    }
-
-    /// Refuses a trade date that fills on a level without quotes while a stop triggered on TBBO
-    /// waits for the next record's quote (F-STP-02).
-    fn check_quoted(&self, trade_date: TradeDate, fidelity: Fidelity) -> Result<(), RunError> {
-        let triggered = self.book.ids_in(OrderState::Triggered, |_| true);
-        match triggered.first() {
-            Some(order) if fidelity != Fidelity::Tbbo => Err(RunError::TriggeredWithoutQuotes {
-                order: order.0,
-                trade_date,
-                fidelity,
-            }),
-            _ => Ok(()),
         }
     }
 

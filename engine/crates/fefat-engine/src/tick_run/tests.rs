@@ -16,6 +16,7 @@ use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 
 use super::*;
 use crate::book::{Bracket, BracketLeg, LegPrice};
+use crate::hours::Session;
 use crate::strategy::{ScenarioOrder, ScenarioOrders};
 use crate::template::{SignalRow, TemplateStrategy};
 
@@ -471,8 +472,9 @@ fn records_that_go_back_in_time_across_trade_dates_are_refused() {
 }
 
 #[test]
-fn a_stop_triggered_on_tbbo_is_refused_on_a_date_without_quotes() {
-    // F-STP-02 fills a stop triggered on TBBO at the next record's quote, which trades lack.
+fn a_stop_triggered_on_tbbo_is_refused_on_a_trade_or_a_bar_of_the_next_date() {
+    // F-STP-02 fills a stop triggered on TBBO at the next record's quote, which trades and bars
+    // lack.
     let quoted = |milliseconds: i64, hundredths: i64| TbboRow {
         ts_recv: at(milliseconds),
         price: price(hundredths),
@@ -482,8 +484,94 @@ fn a_stop_triggered_on_tbbo_is_refused_on_a_date_without_quotes() {
         bid_size: Qty(1),
         ask_size: Qty(1),
     };
-    let next_day = TradeRow {
+    let next_date = TradeDate(TRADE_DATE.0 + 1);
+    let trade = TradeRow {
         ts_recv: at(86_400_000),
+        price: price(499_000),
+        size: Qty(2),
+    };
+    let minute = BarRow {
+        ts_open: at(86_400_000),
+        ts_close: at(86_460_000),
+        open: price(499_000),
+        high: price(499_000),
+        low: price(499_000),
+        close: price(499_000),
+        volume: Qty(2),
+    };
+    let next_days = [
+        (
+            TapeDay {
+                trade_date: next_date,
+                tbbo: Vec::new(),
+                trades: vec![trade],
+                bars: Default::default(),
+            },
+            Fidelity::Trades,
+        ),
+        (
+            TapeDay {
+                trade_date: next_date,
+                tbbo: Vec::new(),
+                trades: Vec::new(),
+                bars: BTreeMap::from([(Timeframe::ONE_MINUTE, vec![minute])]),
+            },
+            Fidelity::Bars(Timeframe::ONE_MINUTE),
+        ),
+    ];
+    for (next_day, level) in next_days {
+        let triggering = TapeDay {
+            trade_date: TRADE_DATE,
+            tbbo: vec![quoted(200, 500_000), quoted(400, 499_475)],
+            trades: Vec::new(),
+            bars: Default::default(),
+        };
+        let days = vec![triggering, next_day];
+        let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+        let mut strategy = ScenarioOrders::new(vec![order(1, Side::Sell, stop(499_500))]);
+        let hours = TradingHours::always();
+        let settings = RunSettings::defaults_for(Fidelity::Tbbo);
+        let (fidelity, replay) = (Fidelity::Tbbo, Replay::Full);
+        let run = TickRun::new(
+            &reader,
+            fidelity,
+            replay,
+            &hours,
+            settings,
+            long_one(),
+            &mut strategy,
+        )
+        .unwrap();
+
+        let refused = run.run().unwrap_err();
+
+        assert!(
+            matches!(
+                refused,
+                RunError::TriggeredWithoutQuotes { order: 1, fidelity, .. } if fidelity == level
+            ),
+            "{refused}"
+        );
+    }
+}
+
+#[test]
+fn a_stop_triggered_on_tbbo_fills_at_the_next_tradeable_quote_past_a_closed_date_of_trades() {
+    // F-STP-02 with F-SES-02: the trades of 2026-03-07 fall in no session, so the next tradeable
+    // record is 2026-03-08's TBBO record: fill = lower of (4995.00 - 0, bid 4987.75) = 4987.75.
+    const DAY: i64 = 86_400_000;
+    const MIDNIGHT: i64 = -52_200_000;
+    let quoted = |milliseconds: i64, hundredths: i64| TbboRow {
+        ts_recv: at(milliseconds),
+        price: price(hundredths),
+        size: Qty(1),
+        bid: price(hundredths - 25),
+        ask: price(hundredths),
+        bid_size: Qty(1),
+        ask_size: Qty(1),
+    };
+    let closed = TradeRow {
+        ts_recv: at(DAY),
         price: price(499_000),
         size: Qty(2),
     };
@@ -497,13 +585,24 @@ fn a_stop_triggered_on_tbbo_is_refused_on_a_date_without_quotes() {
         TapeDay {
             trade_date: TradeDate(TRADE_DATE.0 + 1),
             tbbo: Vec::new(),
-            trades: vec![next_day],
+            trades: vec![closed],
+            bars: Default::default(),
+        },
+        TapeDay {
+            trade_date: TradeDate(TRADE_DATE.0 + 2),
+            tbbo: vec![quoted(2 * DAY, 498_800)],
+            trades: Vec::new(),
             bars: Default::default(),
         },
     ];
     let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+    let session = |day: i64| Session {
+        open: at(day * DAY + MIDNIGHT),
+        close: at(day * DAY + MIDNIGHT + 21 * 3_600_000),
+        halts: Vec::new(),
+    };
+    let hours = TradingHours::of_sessions(vec![session(0), session(2)]);
     let mut strategy = ScenarioOrders::new(vec![order(1, Side::Sell, stop(499_500))]);
-    let hours = TradingHours::always();
     let settings = RunSettings::defaults_for(Fidelity::Tbbo);
     let (fidelity, replay) = (Fidelity::Tbbo, Replay::Full);
     let run = TickRun::new(
@@ -517,18 +616,11 @@ fn a_stop_triggered_on_tbbo_is_refused_on_a_date_without_quotes() {
     )
     .unwrap();
 
-    let refused = run.run().unwrap_err();
+    let outputs = run.run().unwrap();
 
-    assert!(
-        matches!(
-            refused,
-            RunError::TriggeredWithoutQuotes {
-                order: 1,
-                fidelity: Fidelity::Trades,
-                ..
-            }
-        ),
-        "{refused}"
+    assert_eq!(
+        fills(&outputs),
+        [(1, 2 * DAY, 498_775, PricingRule::StopAtNextQuote)]
     );
 }
 

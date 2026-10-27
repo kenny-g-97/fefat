@@ -215,8 +215,15 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             return Ok(());
         };
         let side = order.order.side;
-        let (Some(stop), Some((quoted, shown_size))) = (order.level(), record.quoted(side)) else {
+        let Some(stop) = order.level() else {
             return Ok(());
+        };
+        let Some((quoted, shown_size)) = record.quoted(side) else {
+            return Err(RunError::TriggeredWithoutQuotes {
+                order: id.0,
+                at: record.ts,
+                fidelity: self.fidelity,
+            });
         };
         let ticks = self.settings.slippage.stop;
         let priced = Priced {
