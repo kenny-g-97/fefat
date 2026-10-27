@@ -1,15 +1,20 @@
-"""The batch `fefat-cli run` reads and writes (step 2.6), a development tool of the repository
-until the Python bindings of step 2.10: cases, each a scenario and the hours its market trades
-in, as `run.json` and the Arrow files of their records and signal rows; and the outputs read back
-as each case's fills, event log, and ledger at its end, in the reference engine's terms. The
-formats are those `engine/crates/fefat-cli/src/run/` reads and writes. A case's records carry the
-UTC day of their instant as their trade date, since nothing on ticks reads a fill's trade date
-yet."""
+"""The batch `fefat-cli run` reads and writes (steps 2.6 and 2.7), a development tool of the
+repository until the Python bindings of step 2.10: cases, each a scenario, the hours its market
+trades in, and how the Rust engine replays it, as `run.json` and the Arrow files of their records
+and signal rows; and the outputs read back as each case's fills, event log, and ledger at its end,
+in the reference engine's terms. The formats are those `engine/crates/fefat-cli/src/run/` reads
+and writes. A case's records carry the trade date of the session they fall in, or of the last
+one opened before them (`SessionTable.assign_trade_dates_or_previous`, as `load` dates them),
+and, for an instrument without a calendar, the UTC day they start on. A case that skips also
+carries the coarser bars its records make, in buckets of the UTC clock, so that the Rust engine
+descends from them (`02` §4)."""
 
 import io
+import itertools
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -17,6 +22,7 @@ import polars as pl
 
 from fefat.market.calendar import SessionTable
 from fefat.market.fidelity import TickFidelity
+from fefat.market.schema import Timeframe, TimeUnit
 from fefat.reference.event_log import LogEntry
 from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.ledger import Fill
@@ -24,6 +30,7 @@ from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.tape import BarRecord, Record, TbboRecord
+from fefat.reference.time_rules import flat_by_instants
 from fefat.reference.units import (
     PRICE_DECIMALS,
     InstrumentParameters,
@@ -37,16 +44,44 @@ NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
 _OPTIONAL_SIGNALS = ("stop_price", "target_price", "size_mult", "wake")
 _FLAGS = ("ambiguous", "size_exceeded")
+_SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
+_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
+_FIVE_MINUTES = Timeframe(count=5, unit=TimeUnit.MINUTE)
+
+
+class Replay(StrEnum):
+    """How the Rust engine replays a case: every record in turn, or skipping the blocks of
+    records that no order can act on, by the coarser bars above them (`02` §4)."""
+
+    FULL = "full"
+    SKIPPING = "skipping"
 
 
 @dataclass(frozen=True, slots=True)
 class EngineCase:
-    """A scenario as both engines run it: with the hours its market trades in and, for an
-    instrument of the table, its session table, which a template's flat-by reads."""
+    """A scenario as both engines run it: with the hours its market trades in, for an instrument
+    of the table its session table, which a template's flat-by and the records' trade dates read,
+    and how the Rust engine replays it."""
 
     scenario: AnyScenario
     hours: AlwaysOpen | CalendarHours
     sessions: SessionTable | None = None
+    replay: Replay = Replay.FULL
+
+    def coarser_levels(self) -> tuple[Timeframe, ...]:
+        """The bar levels a skipping case adds above its tape, from which the Rust engine
+        descends: seconds and minutes above ticks, minutes above seconds, and five minutes above
+        minutes; none for a full replay or coarser bars."""
+        if self.replay is Replay.FULL:
+            return ()
+        fidelity = self.scenario.fidelity
+        if isinstance(fidelity, TickFidelity):
+            return (_SECOND, _MINUTE)
+        if fidelity == _SECOND:
+            return (_MINUTE,)
+        if fidelity == _MINUTE:
+            return (_FIVE_MINUTES,)
+        return ()
 
 
 class FillView(NamedTuple):
@@ -123,29 +158,25 @@ class LogView(NamedTuple):
 
 @dataclass(frozen=True, slots=True)
 class RustOutcome:
-    """A case's outputs from `fefat-cli run`: its fills, its event log, and its ledger at its
-    end, the lots held, positive long, and the cash in micro-units."""
+    """A case's outputs from `fefat-cli run`: its fills, its event log, its ledger at its end,
+    the lots held, positive long, and the cash in micro-units, and the fills it flagged
+    ambiguous, which the run counts (F-BAR-05)."""
 
     fills: tuple[FillView, ...]
     log: tuple[LogView, ...]
     position: int
     cash: int
+    ambiguous_fills: int
 
 
 def write_batch(cases: Sequence[EngineCase], folder: Path) -> None:
-    """The batch of `cases` in `folder`: `run.json`, and the Arrow files of their records and
-    signal rows, each row tagged with its case's place in `run.json`."""
-    for case in cases:
-        if not isinstance(case.scenario.fidelity, TickFidelity):
-            raise ValueError(
-                f"Expected cases on ticks, tbbo or trades, got {case.scenario.id} on "
-                f"{case.scenario.fidelity}: bar fidelities arrive in step 2.7."
-            )
+    """The batch of `cases` in `folder`: `run.json`, and the Arrow files of their records, a file
+    per level, and of their signal rows, each row tagged with its case's place in `run.json`."""
     folder.mkdir(parents=True)
     manifest = {"cases": [_case_document(case) for case in cases]}
     (folder / "run.json").write_text(json.dumps(manifest), encoding="utf-8")
-    for fidelity, frame in _tapes(cases).items():
-        frame.write_ipc(folder / f"{fidelity}.arrow", compression="uncompressed")
+    for level, frame in _tapes(cases).items():
+        frame.write_ipc(folder / f"{level}.arrow", compression="uncompressed")
     signals = _signal_rows(cases)
     if signals is not None:
         signals.write_ipc(folder / "signals.arrow", compression="uncompressed")
@@ -169,6 +200,7 @@ def read_outcomes(folder: Path, cases: int) -> list[RustOutcome]:
                 ),
                 position=ledger["position"],
                 cash=ledger["cash"],
+                ambiguous_fills=ledger["ambiguous_fills"],
             )
         )
     return outcomes
@@ -178,9 +210,11 @@ def _case_document(case: EngineCase) -> dict[str, object]:
     scenario = case.scenario
     parameters = instrument_parameters(scenario.instrument)
     settings = scenario.settings
+    levels = [str(scenario.fidelity), *(str(level) for level in case.coarser_levels())]
     return {
         "id": scenario.id,
         "fidelity": str(scenario.fidelity),
+        "replay": str(case.replay),
         "contract": scenario.id,
         "instrument": {
             "tick_size": parameters.tick,
@@ -198,7 +232,7 @@ def _case_document(case: EngineCase) -> dict[str, object]:
         "hours": _hours_document(case.hours),
         "capital": CAPITAL,
         "position": _position_document(scenario),
-        "market_data": {"kind": "tape"},
+        "market_data": {"kind": "tape", "levels": levels},
         "decisions": _decisions_document(scenario, parameters),
     }
 
@@ -260,33 +294,75 @@ def _order_document(
 
 
 def _tapes(cases: Sequence[EngineCase]) -> dict[str, pl.DataFrame]:
-    """Each fidelity's records of every case, in the columns of the engine cache, with the case
-    and the trade date."""
+    """Each level's records of every case, its tape and the coarser bars a skipping case adds,
+    in the columns of the engine cache, with the case and the trade date."""
     columns: dict[str, dict[str, list[int]]] = {}
     for number, case in enumerate(cases):
-        fidelity = str(case.scenario.fidelity)
-        for record in case.scenario.tape:
-            table = columns.setdefault(fidelity, {})
-            for name, value in _record_values(number, record).items():
-                table.setdefault(name, []).append(value)
+        levels = [(case.scenario.fidelity, case.scenario.tape)]
+        tape: Sequence[Record] = case.scenario.tape
+        levels += [(level, coarser_bars(tape, level)) for level in case.coarser_levels()]
+        for level, records in levels:
+            table = columns.setdefault(str(level), {})
+            dates = _trade_dates(records, case.sessions)
+            for record, trade_date in zip(records, dates, strict=True):
+                for name, value in _record_values(number, trade_date, record).items():
+                    table.setdefault(name, []).append(value)
     return {
-        fidelity: pl.DataFrame(table, schema=dict.fromkeys(table, pl.Int64))
-        for fidelity, table in columns.items()
+        level: pl.DataFrame(table, schema=dict.fromkeys(table, pl.Int64))
+        for level, table in columns.items()
     }
 
 
-def _record_values(case: int, record: Record) -> dict[str, int]:
+def coarser_bars(records: Sequence[Record], timeframe: Timeframe) -> tuple[BarRecord, ...]:
+    """The bars of `timeframe` that `records`, ticks or finer bars, make: one for each bucket of
+    the UTC clock that holds a record, by the instant the record starts at, with the bucket's
+    first and last prices, its extremes, and its volume (`02` §1.4). Every built-in session opens
+    on a whole hour, so these buckets fall where a session's own do."""
+    length = timeframe.nominal_nanoseconds()
+    bars = []
+    for bucket, held in itertools.groupby(records, key=lambda record: record.starts_at() // length):
+        prices = [_ohlcv(record) for record in held]
+        bars.append(
+            BarRecord.model_construct(
+                ts_open=bucket * length,
+                ts_close=(bucket + 1) * length,
+                open=prices[0][0],
+                high=max(high for _, high, _, _, _ in prices),
+                low=min(low for _, _, low, _, _ in prices),
+                close=prices[-1][3],
+                volume=sum(volume for *_, volume in prices),
+            )
+        )
+    return tuple(bars)
+
+
+def _ohlcv(record: Record) -> tuple[int, int, int, int, int]:
+    """A record's open, high, low, close, and volume: a tick's price for the four."""
     if isinstance(record, BarRecord):
-        raise ValueError("Expected trades or TBBO records, got a bar: bars arrive in step 2.7.")
-    # shortcut: the UTC day stands in for the trade date, which nothing on ticks reads; use the
-    # session table's trade date when step 2.7 replays bars by trade date.
-    values = {
-        "case": case,
-        "trade_date": record.ts // NANOSECONDS_PER_DAY,
-        "ts_recv": record.ts,
-        "price": record.price,
-        "size": record.size,
-    }
+        return (record.open, record.high, record.low, record.close, record.volume)
+    return (record.price, record.price, record.price, record.price, record.size)
+
+
+def _trade_dates(records: Sequence[Record], sessions: SessionTable | None) -> list[int]:
+    """Each record's trade date in days since 1970-01-01: that of the session it falls in, or of
+    the last one opened before it, by the instant it starts at; the UTC day without a session
+    table."""
+    starts = [record.starts_at() for record in records]
+    if sessions is None:
+        return [start // NANOSECONDS_PER_DAY for start in starts]
+    frame = pl.DataFrame(
+        {"ts": starts, "order": range(len(starts))}, schema_overrides={"ts": pl.Int64}
+    )
+    dated = sessions.assign_trade_dates_or_previous(frame, "ts").sort("order")
+    return dated.get_column("trade_date").cast(pl.Int32).cast(pl.Int64).to_list()
+
+
+def _record_values(case: int, trade_date: int, record: Record) -> dict[str, int]:
+    common = {"case": case, "trade_date": trade_date}
+    if isinstance(record, BarRecord):
+        bar = record.model_dump(include={"ts_open", "ts_close", "open", "high", "low", "close"})
+        return {**common, **bar, "volume": record.volume}
+    values = {**common, "ts_recv": record.ts, "price": record.price, "size": record.size}
     if isinstance(record, TbboRecord):
         quote = {"bid": record.bid, "ask": record.ask, "bid_size": record.bid_size}
         values |= {**quote, "ask_size": record.ask_size}
@@ -294,16 +370,40 @@ def _record_values(case: int, record: Record) -> dict[str, int]:
 
 
 def _signal_rows(cases: Sequence[EngineCase]) -> pl.DataFrame | None:
-    """The signal rows of the template cases, each tagged with its case: the four signals and the
-    optional columns the template reads, absent ones null (D-53)."""
+    """The signal rows of the template cases, each tagged with its case: the four signals, the
+    optional columns the template reads, absent ones null (D-53), and with a flat-by time the
+    instant of each row's trade date's flat-by time."""
     frames = []
     for number, case in enumerate(cases):
-        if not isinstance(case.scenario, TemplateScenario):
+        scenario = case.scenario
+        if not isinstance(scenario, TemplateScenario):
             continue
-        frame = case.scenario.signal_frame()
+        frame = scenario.signal_frame()
         kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in frame.columns)]
-        frames.append(frame.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept))
+        rows = frame.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept)
+        frames.append(rows.with_columns(_flat_by(scenario, case.sessions, frame)))
     return pl.concat(frames, how="diagonal") if frames else None
+
+
+def _flat_by(
+    scenario: TemplateScenario, sessions: SessionTable | None, frame: pl.DataFrame
+) -> list[pl.Series]:
+    """The column `flat_by` of a template scenario whose specification has a flat-by time: each
+    row's instant of it, worked out from the session table as the reference's template works it
+    out (`fefat.reference.time_rules`); none without a flat-by time."""
+    spec = scenario.strategy
+    time = spec.execution.time
+    if time is None or time.flat_by is None:
+        return []
+    if sessions is None:
+        raise ValueError(
+            f"Expected a session calendar for the flat-by time {time.flat_by} of "
+            f"{scenario.id}, got an instrument without one."
+        )
+    trade_dates = frame.get_column("trade_date").to_list()
+    timeframe = Timeframe.parse(spec.timeframe)
+    instants = flat_by_instants(trade_dates, time.flat_by, time.tz, sessions, timeframe)
+    return [pl.Series("flat_by", [instants[day] for day in trade_dates], dtype=pl.Int64)]
 
 
 def _read(path: Path) -> pl.DataFrame:

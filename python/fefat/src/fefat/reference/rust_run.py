@@ -1,11 +1,12 @@
-"""The Rust engine through `fefat-cli run` (step 2.6), a development tool of the repository until
-the Python bindings of step 2.10: cases, each a scenario of `fixtures/scenarios/` or one
-Hypothesis draws (`fefat.reference.generated_cases`), run as one batch in one process
-(`fefat.reference.rust_batch`) and through the reference engine, and compared value for value
-(D-10, ADR-0008): each fill, the event log, and the position and cash each case ends with.
+"""The Rust engine through `fefat-cli run` (steps 2.6 and 2.7), a development tool of the
+repository until the Python bindings of step 2.10: cases, each a scenario of `fixtures/scenarios/`
+or one Hypothesis draws (`fefat.reference.generated_cases`), run as one batch in one process
+(`fefat.reference.rust_batch`), in full or skipping, and through the reference engine, and
+compared value for value (D-10, ADR-0008): each fill, the event log, the position and cash each
+case ends with, and its count of ambiguous fills.
 
     engine = RustEngine(default_binary())
-    cases = engine_cases(scenarios, cache_folder)
+    cases = engine_cases(scenarios, cache_folder, Replay.SKIPPING)
     for comparison in compare_engines(engine, cases):
         print(comparison.case.scenario.id, comparison.differences())
 """
@@ -22,12 +23,14 @@ from pathlib import Path
 
 from fefat.reference.event_log import EventKind
 from fefat.reference.hours import AlwaysOpen, CalendarHours
+from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.rust_batch import (
     CAPITAL,
     EngineCase,
     FillView,
     LogView,
+    Replay,
     RustOutcome,
     read_outcomes,
     write_batch,
@@ -48,12 +51,14 @@ BATCH_TIMEOUT_SECONDS = 120
 which Hypothesis then shrinks and prints, instead of stalling the test run."""
 
 
-def engine_cases(scenarios: Sequence[AnyScenario], cache_folder: Path) -> list[EngineCase]:
+def engine_cases(
+    scenarios: Sequence[AnyScenario], cache_folder: Path, replay: Replay = Replay.FULL
+) -> list[EngineCase]:
     """Each scenario with the hours `run_scenarios` gives it, each calendar's sessions built once
-    in `cache_folder`."""
+    in `cache_folder`, for the Rust engine to replay as `replay` says."""
     tables = session_tables(scenarios, cache_folder)
     return [
-        EngineCase(scenario, scenario_hours(scenario, sessions), sessions)
+        EngineCase(scenario, scenario_hours(scenario, sessions), sessions, replay)
         for scenario, sessions in zip(scenarios, tables, strict=True)
     ]
 
@@ -107,10 +112,10 @@ class CaseComparison:
         return tuple(FillView.of(fill) for fill in self.reference.fills)
 
     def differences(self) -> tuple[str, ...]:
-        """How the Rust engine's fills, event log, and ledger at its end differ from the
-        reference engine's: nothing when they agree. Fees and funding, which costs bring in
-        step 2.9, are left out, so the reference's cash is its capital moved by the opening
-        position's value and by its fills' values."""
+        """How the Rust engine's fills, event log, ledger at its end, and count of ambiguous
+        fills differ from the reference engine's: nothing when they agree. Fees and funding,
+        which costs bring in step 2.9, are left out, so the reference's cash is its capital moved
+        by the opening position's value and by its fills' values."""
         found = []
         if self.reference_fills() != self.rust.fills:
             reference, rust = _listed(self.reference_fills()), _listed(self.rust.fills)
@@ -129,6 +134,11 @@ class CaseComparison:
         if ledger != (self.rust.position, self.rust.cash):
             got = (self.rust.position, self.rust.cash)
             found.append(f"the reference ends with position and cash {ledger}, Rust with {got}")
+        flagged = sum(FillFlag.AMBIGUOUS in fill.flags for fill in self.reference.fills)
+        if flagged != self.rust.ambiguous_fills:
+            found.append(
+                f"the reference counts {flagged} ambiguous fills, Rust {self.rust.ambiguous_fills}"
+            )
         return tuple(found)
 
 
@@ -158,8 +168,9 @@ def explained(comparison: CaseComparison) -> str:
     settings = scenario.settings
     ticks = settings.slippage_ticks
     lines = [
-        f"{scenario.id}: {scenario.fidelity}, latency {settings.latency_ms} ms, slippage ticks "
-        f"{ticks.market} market and {ticks.stop} stop, limits filled {settings.limit_fill}"
+        f"{scenario.id}: {scenario.fidelity}, replayed {comparison.case.replay}, latency "
+        f"{settings.latency_ms} ms, slippage ticks {ticks.market} market and {ticks.stop} stop, "
+        f"limits filled {settings.limit_fill}"
     ]
     if scenario.position is not None:
         position = scenario.position

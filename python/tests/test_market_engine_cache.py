@@ -157,6 +157,18 @@ def test_a_second_build_finds_each_month_up_to_date_and_reads_no_partition(
     } == files
 
 
+def a_trade_a_tick_under_the_high_of_its_second(trades: pl.DataFrame) -> int:
+    """The row of the first trade of ESM2026 on 2026-03-06 that a tick higher keeps inside the
+    range of its 1-second bar, and so of its minute: a trade outside the range of the bar
+    holding it leaves its level out of the cache (step 2.7)."""
+    seconds = stored_on("1s", "ESM2026", date(2026, 3, 6)).select("ts_open", "high")
+    held = trades.with_row_index("row").join_asof(
+        seconds, left_on="ts_recv", right_on="ts_open", strategy="backward"
+    )
+    inside = held.filter(pl.col("price") + 250_000_000 <= pl.col("high"))
+    return int(inside.get_column("row").item(0))
+
+
 def test_a_rewritten_partition_rebuilds_its_contract_month_alone(tmp_path: Path) -> None:
     store = store_copy(tmp_path)
     build_engine_cache(store, tmp_path / "cache", "ES", 2026)
@@ -164,7 +176,8 @@ def test_a_rewritten_partition_rebuilds_its_contract_month_alone(tmp_path: Path)
         PurePosixPath("synthetic/trades/root=ES/contract=ESM2026/date=2026-03-06/part.parquet")
     )
     trades = store.scan_partition(partition).collect()
-    tick_higher = pl.when(pl.int_range(pl.len()) == 100).then(pl.col("price") + 250_000_000)
+    changed = pl.int_range(pl.len()) == a_trade_a_tick_under_the_high_of_its_second(trades)
+    tick_higher = pl.when(changed).then(pl.col("price") + 250_000_000)
     store.write_partition(partition, trades.with_columns(tick_higher.otherwise(pl.col("price"))))
 
     again = build_engine_cache(store, tmp_path / "cache", "ES", 2026)
