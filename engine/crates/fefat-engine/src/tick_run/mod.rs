@@ -1,14 +1,21 @@
-//! The event loop over the tick level of a [`MarketDataReader`] for one instrument (step 2.6), as
-//! `fefat.reference.engine.ReferenceEngine` runs trades and TBBO records. Events come in the
-//! order of F-CLK-02: at one instant the records received then, in the order the data holds them
-//! (F-CLK-03), and then the decision. A record received while the market is closed is not
-//! tradeable (F-SES-02), and the working orders stay (F-SES-01). On a tradeable record, the
-//! orders that see their first record activate (F-ACT-01), and a market order or a stop through
-//! the market fills on it (F-MKT-01, F-MKT-02, F-STP-05); stops triggered on the record before
-//! fill at its quote (F-STP-02); stops trigger (F-STP-01), on trades filling at once (F-STP-03);
-//! limits fill (F-LMT-01 to F-LMT-04); and the position is marked (F-MRK-01). Each fill cancels
-//! its OCO group (F-OCO-01), places its bracket (F-OCO-02), and is booked in the [`Ledger`].
+//! The event loop over one instrument's records (steps 2.6 and 2.7), as
+//! `fefat.reference.engine.ReferenceEngine` runs them. Each trade date is filled on the finest
+//! level it holds at or coarser than the run's fidelity: trades, TBBO records, or stored bars of a
+//! timeframe, 1-second, 1-minute, or an import's coarser bars. Events come in the order of
+//! F-CLK-02: at one instant the bars that close then and the records received then, in the order
+//! the data holds them (F-CLK-03), and then the decision. A record received, or a bar opening,
+//! while the market is closed is not tradeable (F-SES-02), and the working orders stay
+//! (F-SES-01). On a tradeable record, the orders that see their first record activate
+//! (F-ACT-01), and a market order or a stop through the market fills on it (F-MKT-01, F-MKT-02,
+//! F-STP-05); stops triggered on the record before fill at its quote (F-STP-02); stops trigger
+//! (F-STP-01), on trades filling at once (F-STP-03); limits fill (F-LMT-01 to F-LMT-04); and the
+//! position is marked (F-MRK-01). A bar is replayed as its pseudo-ticks (F-BAR-01 to F-BAR-07,
+//! F-ACT-02, F-MKT-03, F-STP-04). Each fill cancels its OCO group (F-OCO-01), places its bracket
+//! (F-OCO-02), and is booked in the [`Ledger`]. With [`Replay::Skipping`] the loop passes over
+//! blocks of records that no order can act on, by the bars above them (`02` §4).
 
+mod bars;
+mod descent;
 mod fills;
 mod outcomes;
 #[cfg(test)]
@@ -17,14 +24,17 @@ mod records;
 #[cfg(test)]
 mod tests;
 
+pub use descent::Replay;
 pub use outcomes::{BookedFill, RunError, RunOutputs, Stepped};
-pub use records::{Quote, TickFidelity, TickRecord};
+pub use records::{Quote, TickRecord, Unit};
 
+use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::ledger::Ledger;
-use fefat_core::market_data::{MarketDataError, MarketDataReader};
+use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::OrderId;
 
+use descent::BarLevel;
 use records::DayRecords;
 
 use crate::book::{Book, WorkingOrder};
@@ -33,10 +43,11 @@ use crate::hours::TradingHours;
 use crate::settings::RunSettings;
 use crate::strategy::{DecisionContext, Strategy};
 
-/// One run of a strategy over the tick level of one contract's trade dates.
+/// One run of a strategy over one contract's trade dates.
 pub struct TickRun<'run, R: MarketDataReader> {
     reader: &'run R,
-    level: TickFidelity,
+    cap: Fidelity,
+    replay: Replay,
     hours: &'run TradingHours,
     settings: RunSettings,
     strategy: &'run mut dyn Strategy,
@@ -48,18 +59,28 @@ pub struct TickRun<'run, R: MarketDataReader> {
     decisions: Vec<Ts>,
     next_decision: usize,
     next_day: usize,
-    day: Option<DayRecords<'run>>,
+    day: Option<Day<'run>>,
+    fidelity: Fidelity,
     next_record: usize,
     last_record: Option<Ts>,
     timeline: usize,
 }
 
+/// The trade date the run reads: its records of the level it fills on and, when it skips, the
+/// bar levels above them that nest them, coarsest first.
+struct Day<'run> {
+    records: DayRecords<'run>,
+    levels: Vec<BarLevel<'run>>,
+}
+
 impl<'run, R: MarketDataReader> TickRun<'run, R> {
-    /// A run of `strategy` over `reader`'s records of `level`, open during `hours`, under
-    /// `settings`, from `ledger`: the run's capital, and the position held when the tape starts.
+    /// A run of `strategy` over `reader`, filling each trade date on its finest level at or
+    /// coarser than `fidelity`, replayed as `replay` says, open during `hours`, under `settings`,
+    /// from `ledger`: the run's capital, and the position held when the tape starts.
     pub fn new(
         reader: &'run R,
-        level: TickFidelity,
+        fidelity: Fidelity,
+        replay: Replay,
         hours: &'run TradingHours,
         settings: RunSettings,
         ledger: Ledger,
@@ -74,7 +95,8 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         }
         Ok(Self {
             reader,
-            level,
+            cap: fidelity,
+            replay,
             hours,
             settings,
             strategy,
@@ -87,6 +109,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             next_decision: 0,
             next_day: 0,
             day: None,
+            fidelity,
             next_record: 0,
             last_record: None,
             timeline: 0,
@@ -104,19 +127,23 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         })
     }
 
-    /// Handles the next event, a record or a decision, and says which; none once both have run
-    /// out. At one instant the records come before the decision (F-CLK-02).
+    /// Handles the next event, a record, a bar, a block of records skipped whole, or a decision,
+    /// and says which; none once the records and the decisions have run out. At one instant the
+    /// records and the bars come before the decision (F-CLK-02).
     pub fn step(&mut self) -> Result<Option<Stepped>, RunError> {
-        let record = self.peek_record()?;
+        let unit = self.peek_unit()?;
         let decision = self.decisions.get(self.next_decision).copied();
         let index = self.timeline;
-        let stepped = match (record, decision) {
-            (Some(record), Some(now)) if now < record.ts => self.decide(now, index)?,
-            (Some(record), _) => self.receive(record, index)?,
+        let stepped = match (unit, decision) {
+            (Some(unit), Some(now)) if now < unit.ts() => self.decide(now, index)?,
+            (Some(unit), _) => match self.skippable() {
+                Some(block) => self.skip(unit, block)?,
+                None => self.receive(unit, index)?,
+            },
             (None, Some(now)) => self.decide(now, index)?,
             (None, None) => return Ok(None),
         };
-        self.timeline += 1;
+        self.timeline += stepped.events();
         Ok(Some(stepped))
     }
 
@@ -135,26 +162,62 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         self.book.order(id)
     }
 
-    fn peek_record(&mut self) -> Result<Option<TickRecord>, RunError> {
+    fn peek_unit(&mut self) -> Result<Option<Unit>, RunError> {
         loop {
-            let next = self.day.as_ref().and_then(|day| day.get(self.next_record));
+            let next = self
+                .day
+                .as_ref()
+                .and_then(|day| day.records.get(self.next_record));
             if next.is_some() {
                 return Ok(next);
             }
             let Some(&trade_date) = self.reader.trade_dates().get(self.next_day) else {
                 return Ok(None);
             };
-            self.day = Some(self.day_records(trade_date)?);
+            let day = self.day_of(trade_date)?;
+            self.fidelity = day.records.fidelity();
+            self.day = Some(day);
             self.next_day += 1;
             self.next_record = 0;
         }
     }
 
-    fn day_records(&self, trade_date: TradeDate) -> Result<DayRecords<'run>, MarketDataError> {
+    /// The trade date's records of its finest level at or coarser than the run's fidelity and,
+    /// when the run skips, the bar levels above them that nest them, coarsest first.
+    fn day_of(&self, trade_date: TradeDate) -> Result<Day<'run>, RunError> {
         let reader: &'run R = self.reader;
-        Ok(match self.level {
-            TickFidelity::Tbbo => DayRecords::Tbbo(reader.tbbo(trade_date)?),
-            TickFidelity::Trades => DayRecords::Trades(reader.trades(trade_date)?),
+        let levels = reader.levels(trade_date)?;
+        let Some(&finest) = levels.iter().find(|level| **level >= self.cap) else {
+            return Err(RunError::NoLevelAtOrCoarser {
+                trade_date,
+                fidelity: self.cap,
+                present: levels.to_vec(),
+            });
+        };
+        let records = match finest {
+            Fidelity::Tbbo => DayRecords::Tbbo(reader.tbbo(trade_date)?),
+            Fidelity::Trades => DayRecords::Trades(reader.trades(trade_date)?),
+            Fidelity::Bars(timeframe) => {
+                DayRecords::Bars(reader.bars(trade_date, timeframe)?, timeframe)
+            }
+        };
+        let mut above = Vec::new();
+        if self.replay == Replay::Skipping {
+            for &level in levels.iter().rev() {
+                let Fidelity::Bars(timeframe) = level else {
+                    continue;
+                };
+                if level > finest && finest.nests_in(timeframe) {
+                    above.push(BarLevel {
+                        bars: reader.bars(trade_date, timeframe)?,
+                        offsets: reader.offsets(trade_date, timeframe, finest)?,
+                    });
+                }
+            }
+        }
+        Ok(Day {
+            records,
+            levels: above,
         })
     }
 
@@ -168,16 +231,28 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         Ok(Stepped::Decision(now))
     }
 
-    fn receive(&mut self, record: TickRecord, index: usize) -> Result<Stepped, RunError> {
-        if let Some(previous) = self.last_record.filter(|previous| record.ts < *previous) {
-            return Err(RunError::RecordsOutOfOrder {
-                previous,
-                next: record.ts,
-            });
-        }
-        self.last_record = Some(record.ts);
+    fn receive(&mut self, unit: Unit, index: usize) -> Result<Stepped, RunError> {
+        self.check_order(unit.ts())?;
+        self.last_record = Some(unit.ts());
         self.next_record += 1;
-        self.on_record(&record, index)?;
-        Ok(Stepped::Record(record))
+        match unit {
+            Unit::Tick(record) => {
+                self.on_record(&record, index)?;
+                Ok(Stepped::Record(record))
+            }
+            Unit::Bar(bar) => {
+                self.on_bar(&bar, index)?;
+                Ok(Stepped::Bar(bar))
+            }
+        }
+    }
+
+    /// Refuses a record available before the one read last, across trade dates; the readers hold
+    /// each date's records in order.
+    fn check_order(&self, ts: Ts) -> Result<(), RunError> {
+        match self.last_record.filter(|previous| ts < *previous) {
+            Some(previous) => Err(RunError::RecordsOutOfOrder { previous, next: ts }),
+            None => Ok(()),
+        }
     }
 }

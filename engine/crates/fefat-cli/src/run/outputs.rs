@@ -155,7 +155,8 @@ fn log_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
     ])
 }
 
-/// Each case's ledger at its end: the lots it holds, positive long, and its cash in micro-units.
+/// Each case's ledger at its end, the lots it holds, positive long, and its cash in micro-units,
+/// and the fills it flagged ambiguous, which the run counts (F-BAR-05).
 fn ledger_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
     let int = |value: fn(&(i64, RunOutputs)) -> i64| -> ArrayRef {
         Arc::new(Int64Array::from_iter_values(runs.iter().map(value)))
@@ -167,6 +168,10 @@ fn ledger_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
             int(|(_, run)| run.ledger.position().signed_lots().0),
         ),
         ("cash", int(|(_, run)| run.ledger.cash().0)),
+        (
+            "ambiguous_fills",
+            int(|(_, run)| run.ambiguous_fills() as i64),
+        ),
     ])
 }
 

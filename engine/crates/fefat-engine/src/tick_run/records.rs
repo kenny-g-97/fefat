@@ -1,13 +1,11 @@
-//! The records the tick loop reads: a trade print, with its quote on TBBO, from one trade date's
-//! columns of the run's level, `tbbo` or `trades`.
+//! The units the loop reads, one trade date's records of the finest level it fills on: a trade
+//! print, with its quote on TBBO, or a stored bar.
 
-use fefat_core::fidelity::Fidelity;
+use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::instants::Ts;
-use fefat_core::market_data::{TbboColumns, TradeColumns};
+use fefat_core::market_data::{BarColumns, BarRow, TbboColumns, TradeColumns};
 use fefat_core::orders::Side;
 use fefat_core::units::{Price, Qty};
-
-use super::RunError;
 
 /// A TBBO record's quote: the best bid and ask just before its trade, with their sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,54 +56,52 @@ impl TickRecord {
     }
 }
 
-/// The tick level a run reads: TBBO records or trade prints; bars are step 2.7's.
+/// One unit of the finest level a trade date is filled on: a tick, or a stored bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TickFidelity {
-    /// Trades, each with the best bid and ask just before it.
-    Tbbo,
-    /// Trade prints alone.
-    Trades,
+pub enum Unit {
+    /// A trade print, with its quote on TBBO.
+    Tick(TickRecord),
+    /// A stored bar, replayed as its pseudo-ticks (F-BAR-01).
+    Bar(BarRow),
 }
 
-impl TickFidelity {
-    /// The fidelity its fills record (F-TAG-01).
-    pub const fn fidelity(self) -> Fidelity {
+impl Unit {
+    /// When it becomes available, the loop's clock (F-CLK-01): a tick's `ts_recv`, a bar's
+    /// `ts_close`.
+    pub const fn ts(&self) -> Ts {
         match self {
-            Self::Tbbo => Fidelity::Tbbo,
-            Self::Trades => Fidelity::Trades,
+            Self::Tick(record) => record.ts,
+            Self::Bar(bar) => bar.ts_close,
+        }
+    }
+
+    /// The last price it shows, which marks the position (F-MRK-01): a tick's trade, a bar's
+    /// close.
+    pub const fn last_price(&self) -> Price {
+        match self {
+            Self::Tick(record) => record.price,
+            Self::Bar(bar) => bar.close,
         }
     }
 }
 
-impl TryFrom<Fidelity> for TickFidelity {
-    type Error = RunError;
-
-    /// The tick level `fidelity` names, bars refused until step 2.7 replays them.
-    fn try_from(fidelity: Fidelity) -> Result<Self, RunError> {
-        match fidelity {
-            Fidelity::Tbbo => Ok(Self::Tbbo),
-            Fidelity::Trades => Ok(Self::Trades),
-            Fidelity::Bars(_) => Err(RunError::BarFidelity { fidelity }),
-        }
-    }
-}
-
-/// One trade date's records of the run's level, as the reader serves them.
+/// One trade date's records of the level the run fills on, as the reader serves them.
 pub(super) enum DayRecords<'run> {
     Trades(TradeColumns<'run>),
     Tbbo(TbboColumns<'run>),
+    Bars(BarColumns<'run>, Timeframe),
 }
 
-impl DayRecords<'_> {
-    pub(super) fn get(&self, index: usize) -> Option<TickRecord> {
+impl<'run> DayRecords<'run> {
+    pub(super) fn get(&self, index: usize) -> Option<Unit> {
         match self {
-            Self::Trades(trades) => Some(TickRecord {
+            Self::Trades(trades) => Some(Unit::Tick(TickRecord {
                 ts: *trades.ts_recv.get(index)?,
                 price: *trades.price.get(index)?,
                 size: *trades.size.get(index)?,
                 quote: None,
-            }),
-            Self::Tbbo(tbbo) => Some(TickRecord {
+            })),
+            Self::Tbbo(tbbo) => Some(Unit::Tick(TickRecord {
                 ts: *tbbo.ts_recv.get(index)?,
                 price: *tbbo.price.get(index)?,
                 size: *tbbo.size.get(index)?,
@@ -115,7 +111,46 @@ impl DayRecords<'_> {
                     bid_size: *tbbo.bid_size.get(index)?,
                     ask_size: *tbbo.ask_size.get(index)?,
                 }),
-            }),
+            })),
+            Self::Bars(bars, _) => bar_row(bars, index).map(Unit::Bar),
         }
     }
+
+    /// The fidelity of the records, which their fills record (F-TAG-01).
+    pub(super) const fn fidelity(&self) -> Fidelity {
+        match self {
+            Self::Trades(_) => Fidelity::Trades,
+            Self::Tbbo(_) => Fidelity::Tbbo,
+            Self::Bars(_, timeframe) => Fidelity::Bars(*timeframe),
+        }
+    }
+
+    /// When each record becomes available, in their order: a tick's `ts_recv`, a bar's
+    /// `ts_close` (F-CLK-01).
+    pub(super) const fn instants(&self) -> &'run [Ts] {
+        match self {
+            Self::Trades(trades) => trades.ts_recv,
+            Self::Tbbo(tbbo) => tbbo.ts_recv,
+            Self::Bars(bars, _) => bars.ts_close,
+        }
+    }
+
+    /// Whether the records are bars, which an order sees from the first closing after its
+    /// activation (F-ACT-02), rather than ticks, seen from the first at or after it (F-ACT-01).
+    pub(super) const fn are_bars(&self) -> bool {
+        matches!(self, Self::Bars(..))
+    }
+}
+
+/// Bar `index` of `bars`, or none past the last.
+pub(super) fn bar_row(bars: &BarColumns<'_>, index: usize) -> Option<BarRow> {
+    Some(BarRow {
+        ts_open: *bars.ts_open.get(index)?,
+        ts_close: *bars.ts_close.get(index)?,
+        open: *bars.open.get(index)?,
+        high: *bars.high.get(index)?,
+        low: *bars.low.get(index)?,
+        close: *bars.close.get(index)?,
+        volume: *bars.volume.get(index)?,
+    })
 }

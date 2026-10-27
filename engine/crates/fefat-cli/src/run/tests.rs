@@ -193,10 +193,12 @@ fn cache_of_the_gap(folder: &Path) -> PathBuf {
     contract_folder
 }
 
+/// A case of ES at `fidelity`, replayed in full, holding a long of one lot when `decisions` are
+/// orders; a case on its tape reads the file of its fidelity.
 fn case(
     id: &str,
     fidelity: &str,
-    market_data: serde_json::Value,
+    mut market_data: serde_json::Value,
     decisions: serde_json::Value,
 ) -> serde_json::Value {
     let long = json!({"side": "long", "lots": 1, "price": price(500_000)});
@@ -205,14 +207,19 @@ fn case(
     } else {
         serde_json::Value::Null
     };
+    if market_data["kind"] == "tape" {
+        market_data["levels"] = json!([fidelity]);
+    }
+    let ticks = u32::from(fidelity != "tbbo");
     json!({
         "id": id,
         "fidelity": fidelity,
+        "replay": "full",
         "contract": "ESH2026",
         "instrument": {"tick_size": 250_000_000, "money_per_point": 50_000_000, "lot_step": 1_000_000_000},
         "settings": {
             "latency_ms": 100,
-            "slippage_ticks": {"market": u32::from(fidelity == "trades"), "stop": u32::from(fidelity == "trades")},
+            "slippage_ticks": {"market": ticks, "stop": ticks},
             "limit_fill": "through"
         },
         "hours": {"kind": "always"},
@@ -246,6 +253,72 @@ fn run_manifest(cache: &Path) -> serde_json::Value {
         case("S-fill-036", "tbbo", json!({"kind": "tape"}), stop_and_target),
         case("S-template-002", "trades", json!({"kind": "tape"}), template),
     ]})
+}
+
+#[test]
+fn a_case_on_bars_reads_its_bar_file_and_counts_its_ambiguous_fills() {
+    // S-fill-022: a long's stop and target inside one 1-minute bar resolve to the stop.
+    let folder = TemporaryFolder::new("bars");
+    let (input, output) = (folder.0.join("input"), folder.0.join("output"));
+    fs::create_dir_all(&input).unwrap();
+    let bars: [(i64, [i64; 4], i64); 2] = [
+        (0, [500_025, 500_300, 499_850, 500_175], 210),
+        (60_000, [500_150, 501_125, 499_375, 500_600], 640),
+    ];
+    let column = |value: fn(&(i64, [i64; 4], i64)) -> i64| int64(bars.iter().map(value).collect());
+    write_table(
+        &input.join("1m.arrow"),
+        vec![
+            ("case", int64(vec![0; 2])),
+            ("trade_date", int64(vec![TRADE_DATE; 2])),
+            ("ts_open", column(|bar| at(bar.0))),
+            ("ts_close", column(|bar| at(bar.0 + 60_000))),
+            ("open", column(|bar| price(bar.1[0]))),
+            ("high", column(|bar| price(bar.1[1]))),
+            ("low", column(|bar| price(bar.1[2]))),
+            ("close", column(|bar| price(bar.1[3]))),
+            ("volume", column(|bar| bar.2)),
+        ],
+    );
+    let exits = json!({"kind": "orders", "orders": [
+        {"id": 1, "placed_at": at(0), "side": "sell", "kind": "stop", "price": price(499_500), "lots": 1, "oco": 1},
+        {"id": 2, "placed_at": at(0), "side": "sell", "kind": "limit", "price": price(501_000), "lots": 1, "oco": 1}
+    ]});
+    let mut skipping = case("S-fill-022", "1m", json!({"kind": "tape"}), exits);
+    skipping["replay"] = json!("skipping");
+    fs::write(
+        input.join("run.json"),
+        json!({"cases": [skipping]}).to_string(),
+    )
+    .unwrap();
+
+    let summary = run_batch(&input, &output).unwrap();
+
+    assert_eq!(
+        (summary.cases, summary.fills, summary.ambiguous_fills),
+        (1, 1, 1)
+    );
+    let fills = read_table(&output.join("fills.arrow"));
+    let text = |name: &str| {
+        fills
+            .column_by_name(name)
+            .unwrap()
+            .as_string::<i32>()
+            .value(0)
+            .to_owned()
+    };
+    let flagged = fills
+        .column_by_name("ambiguous")
+        .unwrap()
+        .as_boolean()
+        .value(0);
+    assert_eq!(
+        (text("rule"), text("fidelity"), flagged),
+        ("F-STP-04".to_owned(), "1m".to_owned(), true)
+    );
+    let ledger = read_table(&output.join("ledger.arrow"));
+    let counted = ledger.column_by_name("ambiguous_fills").unwrap();
+    assert_eq!(counted.as_primitive::<Int64Type>().value(0), 1);
 }
 
 #[test]

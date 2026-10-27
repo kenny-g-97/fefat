@@ -1,7 +1,7 @@
 //! Command-line driver: spec in, artifacts out; golden tests and benchmarks. It writes the JSON
 //! schema of the strategy specification, which `just gen-schema` keeps in the SDK; prints the
 //! determinism digest, whose golden `just regenerate-goldens` writes into
-//! `fixtures/goldens/determinism/`; and runs a batch of cases through the tick engine (`run`).
+//! `fixtures/goldens/determinism/`; and runs a batch of cases through the engine (`run`).
 
 mod determinism;
 mod run;
@@ -35,7 +35,10 @@ fn main() -> ExitCode {
 fn run_batch(input: &str, output: &str) -> ExitCode {
     match run::run_batch(Path::new(input), Path::new(output)) {
         Ok(summary) => {
-            println!("Ran {} cases: {} fills", summary.cases, summary.fills);
+            println!(
+                "Ran {} cases: {} fills, {} of them flagged ambiguous",
+                summary.cases, summary.fills, summary.ambiguous_fills
+            );
             ExitCode::SUCCESS
         }
         Err(error) => {

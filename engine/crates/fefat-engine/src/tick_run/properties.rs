@@ -13,7 +13,9 @@ use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, Side};
 use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 use proptest::prelude::*;
 
-use super::{Stepped, TickFidelity, TickRun};
+use fefat_core::fidelity::Fidelity;
+
+use super::{Replay, Stepped, TickRun};
 use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::hours::{Session, TradingHours};
 use crate::settings::{LimitFill, RunSettings, SlippageTicks};
@@ -291,7 +293,7 @@ proptest! {
         case in drawn_case(),
     ) {
         let (trades, tbbo) = rows(&case);
-        let level = if case.tbbo { TickFidelity::Tbbo } else { TickFidelity::Trades };
+        let level = if case.tbbo { Fidelity::Tbbo } else { Fidelity::Trades };
         let tape = TapeDay {
             trade_date: TradeDate(20_518),
             tbbo: if case.tbbo { tbbo } else { Vec::new() },
@@ -319,7 +321,9 @@ proptest! {
             }
         };
         let mut strategy = ScenarioOrders::new(orders(&case, &trades));
-        let mut run = TickRun::new(&reader, level, &hours, settings, ledger, &mut strategy).unwrap();
+        let mut run =
+            TickRun::new(&reader, level, Replay::Full, &hours, settings, ledger, &mut strategy)
+                .unwrap();
         let (mut last_record, mut mark, mut checked, mut index) = (None, None, 0, 0);
         while let Some(stepped) = run.step().unwrap() {
             if let Stepped::Record(record) = stepped {

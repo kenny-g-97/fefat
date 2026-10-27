@@ -164,6 +164,22 @@ impl Book {
         self.live.push(order);
     }
 
+    /// The live orders, in the order they were placed.
+    pub(crate) fn live(&self) -> impl Iterator<Item = &WorkingOrder> {
+        self.live.iter()
+    }
+
+    /// The live orders and the ids given, without the closed orders: the book a bar is replayed
+    /// on with its extremes the other way round (F-BAR-05), which the run then drops, as
+    /// `Book.copied` copies the reference's.
+    pub(crate) fn trial(&self) -> Self {
+        Self {
+            live: self.live.clone(),
+            closed: Vec::new(),
+            issued: self.issued,
+        }
+    }
+
     /// The ids of the live orders in `state` whose kind `wanted` keeps, lowest first: a snapshot
     /// that a loop over them checks again order by order, since a fill can cancel its group while
     /// the loop runs (`Book.each`).

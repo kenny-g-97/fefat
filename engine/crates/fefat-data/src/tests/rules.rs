@@ -11,7 +11,7 @@ use fefat_core::market_data::conformance::{
     FIRST_DAY, SAMPLE_CONTRACT, check_offsets, sample_tape,
 };
 use fefat_core::market_data::{BarRow, MarketDataReader, TapeDay, TbboRow, TradeRow};
-use fefat_core::units::Qty;
+use fefat_core::units::{Price, Qty};
 
 use super::{TemporaryFolder, write_month};
 use crate::{CacheError, MappedContract};
@@ -213,6 +213,20 @@ fn a_level_with_a_record_between_two_bars_is_left_out_with_its_reason() {
     let (left_out, levels) = written(day);
 
     let reason = "its record 2 lies outside every 1m bar";
+    assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
+    assert_eq!(levels, [Fidelity::Bars(Timeframe::ONE_MINUTE)]);
+}
+
+#[test]
+fn a_level_with_a_record_traded_outside_its_bars_range_is_left_out_with_its_reason() {
+    // A trade two ticks above the high of the 1-minute bar that holds it, whose range a descent
+    // trusts to bound its trading (`02` §4).
+    let mut day = minutes_and_trades(|_| true);
+    day.trades[1].price = Price(day.trades[1].price.0 + 500_000_000);
+
+    let (left_out, levels) = written(day);
+
+    let reason = "its record 2 trades outside the range of its 1m bar";
     assert_eq!(left_out, left_out_because(Fidelity::Trades, reason));
     assert_eq!(levels, [Fidelity::Bars(Timeframe::ONE_MINUTE)]);
 }

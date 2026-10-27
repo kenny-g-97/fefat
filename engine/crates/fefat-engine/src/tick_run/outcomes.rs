@@ -1,10 +1,10 @@
-//! What the tick loop produces, step by step and at its end, and what stops it.
+//! What the loop produces, step by step and at its end, and what stops it.
 
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::Fill;
-use fefat_core::instants::Ts;
+use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::ledger::{Ledger, LedgerError};
-use fefat_core::market_data::MarketDataError;
+use fefat_core::market_data::{BarRow, MarketDataError};
 use fefat_core::units::{Money, Overflow};
 use thiserror::Error;
 
@@ -16,10 +16,28 @@ use crate::strategy::DecisionError;
 /// What one step of the run handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stepped {
-    /// A record.
+    /// A tick.
     Record(TickRecord),
+    /// A stored bar, replayed as its pseudo-ticks.
+    Bar(BarRow),
+    /// A block of the finest records that no order could act on, passed over whole.
+    Skipped {
+        /// How many records it held.
+        units: usize,
+    },
     /// The decision at this instant.
     Decision(Ts),
+}
+
+impl Stepped {
+    /// The places of the run's timeline the step took: one for a record or a decision, and one
+    /// for each record of a skipped block, as a full replay counts them.
+    pub(super) const fn events(&self) -> usize {
+        match self {
+            Self::Skipped { units } => *units,
+            Self::Record(_) | Self::Bar(_) | Self::Decision(_) => 1,
+        }
+    }
 }
 
 /// A fill with what its value moved the cash by, the reference engine's `Fill.cash`.
@@ -33,7 +51,7 @@ pub struct BookedFill {
 
 /// What a run produces: every order in its last state, the fills, the event log, and the ledger
 /// it ends with.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOutputs {
     /// Every order, by id.
     pub orders: Vec<WorkingOrder>,
@@ -45,17 +63,38 @@ pub struct RunOutputs {
     pub ledger: Ledger,
 }
 
+impl RunOutputs {
+    /// The fills flagged ambiguous, which the run counts (F-BAR-05).
+    pub fn ambiguous_fills(&self) -> usize {
+        let flagged = self
+            .fills
+            .iter()
+            .filter(|booked| booked.fill.flags.ambiguous);
+        flagged.count()
+    }
+}
+
 /// What stopped a run.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RunError {
-    /// A fidelity of bars, which step 2.7 replays.
+    /// A trade date whose levels are all finer than the fidelity the run fills on.
     #[error(
-        "Expected a tick fidelity, tbbo or trades, got {fidelity}: bar fidelities arrive in \
-         step 2.7"
+        "Expected a level at or coarser than {fidelity} on {trade_date}, which holds {}",
+        listed(.present)
     )]
-    BarFidelity {
-        /// The fidelity asked for.
+    NoLevelAtOrCoarser {
+        /// The trade date.
+        trade_date: TradeDate,
+        /// The finest fidelity the run fills on.
         fidelity: Fidelity,
+        /// The levels the date holds, finest first.
+        present: Vec<Fidelity>,
+    },
+    /// A bar that traded nothing, which no stored bar is (F-BAR-07).
+    #[error("Expected stored bars with trades (F-BAR-07), got none closing {ts_close}")]
+    BarWithoutTrades {
+        /// The bar's close.
+        ts_close: Ts,
     },
     /// Decision instants out of order, or one twice.
     #[error(
@@ -93,4 +132,9 @@ pub enum RunError {
     /// The strategy's decision was refused.
     #[error(transparent)]
     Decision(#[from] DecisionError),
+}
+
+fn listed(levels: &[Fidelity]) -> String {
+    let names: Vec<String> = levels.iter().map(ToString::to_string).collect();
+    names.join(", ")
 }

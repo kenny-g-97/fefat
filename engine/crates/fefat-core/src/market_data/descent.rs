@@ -1,19 +1,23 @@
 //! The offsets that take each bar of a trade date down to the records of a finer level
 //! ([`super::MarketDataReader::offsets`]), worked out from a tape, which refuses a finer record
-//! that no coarser bar holds whole.
+//! that no coarser bar holds whole, or that trades outside the range of the bar holding it: a
+//! descent from a bar trusts its high and low to bound the trading it holds (`02` §4).
 
 use std::collections::BTreeMap;
 
 use super::tape::{BarRow, TapeDay, TapeError};
 use crate::fidelity::{Fidelity, Timeframe};
 use crate::instants::{TradeDate, Ts};
+use crate::units::Price;
 
-/// The first and the last instant a record covers: a tick its receive instant, a bar every
-/// instant from its open to just before its close.
+/// The first and the last instant a record covers, a tick its receive instant and a bar every
+/// instant from its open to just before its close, and the lowest and highest price it trades.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Span {
     first: Ts,
     last: Ts,
+    low: Price,
+    high: Price,
 }
 
 /// Each level the day holds, finest first, with the spans of its records; `bars` are the day's
@@ -22,27 +26,37 @@ pub(super) fn spans_by_level(
     day: &TapeDay,
     bars: &BTreeMap<Timeframe, &[BarRow]>,
 ) -> Vec<(Fidelity, Vec<Span>)> {
-    let tick = |ts_recv: Ts| Span {
+    let tick = |ts_recv: Ts, price: Price| Span {
         first: ts_recv,
         last: ts_recv,
+        low: price,
+        high: price,
     };
     let mut levels = Vec::new();
     if !day.tbbo.is_empty() {
         levels.push((
             Fidelity::Tbbo,
-            day.tbbo.iter().map(|row| tick(row.ts_recv)).collect(),
+            day.tbbo
+                .iter()
+                .map(|row| tick(row.ts_recv, row.price))
+                .collect(),
         ));
     }
     if !day.trades.is_empty() {
         levels.push((
             Fidelity::Trades,
-            day.trades.iter().map(|row| tick(row.ts_recv)).collect(),
+            day.trades
+                .iter()
+                .map(|row| tick(row.ts_recv, row.price))
+                .collect(),
         ));
     }
     for (timeframe, rows) in bars {
         let spans = rows.iter().map(|bar| Span {
             first: bar.ts_open,
             last: Ts(bar.ts_close.0 - 1),
+            low: bar.low,
+            high: bar.high,
         });
         levels.push((Fidelity::Bars(*timeframe), spans.collect()));
     }
@@ -68,6 +82,7 @@ pub(super) fn offsets_between_levels(
             };
             if finer.nests_in(*timeframe) {
                 descent.check_held_whole(coarser, finer_spans)?;
+                descent.check_within_range(coarser, finer_spans)?;
             }
             offsets.insert((*timeframe, *finer), descent.offsets(coarser, finer_spans)?);
         }
@@ -103,6 +118,28 @@ impl Descent {
         }
         if held_until < spans.len() {
             return Err(self.outside(held_until));
+        }
+        Ok(())
+    }
+
+    /// Refuses a finer record that trades below the low or above the high of the bar holding it,
+    /// which [`Self::check_held_whole`] has found for every record.
+    fn check_within_range(&self, bars: &[BarRow], spans: &[Span]) -> Result<(), TapeError> {
+        for bar in bars {
+            let start = spans.partition_point(|span| span.first < bar.ts_open);
+            let end = spans.partition_point(|span| span.first < bar.ts_close);
+            let held = spans.get(start..end).unwrap_or_default();
+            let outside = held
+                .iter()
+                .position(|span| span.low < bar.low || span.high > bar.high);
+            if let Some(outside) = outside {
+                return Err(TapeError::RecordOutsideRange {
+                    trade_date: self.trade_date,
+                    timeframe: self.timeframe,
+                    finer: self.finer,
+                    record: start + outside + 1,
+                });
+            }
         }
         Ok(())
     }

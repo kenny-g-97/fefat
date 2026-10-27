@@ -10,7 +10,7 @@
 //! - records in that bucket after the last bar are cut: the bucket a dataset ends in keeps its
 //!   ticks while its bar is held back (D-43, D-45);
 //! - a level with a record outside every bar of a coarser level it nests in, inside that
-//!   level's span, is left out too.
+//!   level's span, or traded outside the range of the bar holding it, is left out too.
 
 use std::collections::BTreeMap;
 
@@ -28,15 +28,18 @@ pub(super) type LeftOut = BTreeMap<Fidelity, String>;
 
 /// The day, once every record of it is one the engine can read, by the in-memory reader's checks
 /// of each record, which run before it holds the levels to each other: a record outside the bars
-/// of a coarser level is left to the rules below, and any other refuses the day. The reader
-/// built on the way is kept for a day that no rule changes.
+/// of a coarser level, or outside the range of the bar holding it, is left to the rules below,
+/// and any other refuses the day. The reader built on the way is kept for a day that no rule
+/// changes.
 pub(super) fn readable(contract: &Contract, day: TapeDay) -> Result<Readable, CacheError> {
     match InMemoryMarketData::new(contract.clone(), vec![day.clone()]) {
         Ok(reader) => Ok(Readable {
             day,
             reader: Some(reader),
         }),
-        Err(TapeError::RecordOutsideBars { .. }) => Ok(Readable { day, reader: None }),
+        Err(TapeError::RecordOutsideBars { .. } | TapeError::RecordOutsideRange { .. }) => {
+            Ok(Readable { day, reader: None })
+        }
         Err(refusal) => Err(tape_error(&day, refusal)),
     }
 }
@@ -144,7 +147,8 @@ pub(super) fn cut_after_the_last_bars(mut day: TapeDay) -> (TapeDay, Cut) {
 }
 
 /// The in-memory reader of the day, leaving out each level with a record outside every bar of a
-/// coarser level it nests in; any other record the engine could not read refuses the day.
+/// coarser level it nests in, or traded outside the range of the bar holding it; any other record
+/// the engine could not read refuses the day.
 pub(super) fn served(
     contract: &Contract,
     mut day: TapeDay,
@@ -155,20 +159,31 @@ pub(super) fn served(
             Ok(reader) => return Ok(reader),
             Err(refusal) => refusal,
         };
-        let TapeError::RecordOutsideBars {
-            timeframe,
-            finer,
-            record,
-            ..
-        } = refusal
-        else {
-            return Err(tape_error(&day, refusal));
+        let (finer, reason) = match refusal {
+            TapeError::RecordOutsideBars {
+                timeframe,
+                finer,
+                record,
+                ..
+            } => (
+                finer,
+                format!("its record {record} lies outside every {timeframe} bar"),
+            ),
+            TapeError::RecordOutsideRange {
+                timeframe,
+                finer,
+                record,
+                ..
+            } => (
+                finer,
+                format!("its record {record} trades outside the range of its {timeframe} bar"),
+            ),
+            _ => return Err(tape_error(&day, refusal)),
         };
         if left_out.contains_key(&finer) {
             return Err(tape_error(&day, refusal));
         }
         remove_level(&mut day, finer);
-        let reason = format!("its record {record} lies outside every {timeframe} bar");
         left_out.insert(finer, reason);
     }
 }
