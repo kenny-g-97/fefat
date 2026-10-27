@@ -5,11 +5,12 @@ expects and to the fills, event log, ledger, and count of ambiguous fills of the
 engine. Each test prints the scenario's tape, orders, and expected fills beside both engines'
 fills (`pytest -rA` shows them)."""
 
+import json
 from pathlib import Path
 
 import pytest
 
-from fefat.reference.rust_batch import Replay
+from fefat.reference.rust_batch import Replay, write_batch
 from fefat.reference.rust_run import (
     CaseComparison,
     RustEngine,
@@ -61,3 +62,20 @@ def test_the_scenarios_cover_ticks_and_bars_of_every_timeframe() -> None:
     fidelities = {str(scenario.fidelity) for scenario in SCENARIOS}
 
     assert fidelities == {"tbbo", "trades", "1s", "1m", "5m", "1d"}
+
+
+def test_a_skipping_batch_names_and_writes_the_coarser_bars_above_each_tape(
+    tmp_path: Path,
+) -> None:
+    by_id = {scenario.id: scenario for scenario in SCENARIOS}
+    picked = [by_id[scenario_id] for scenario_id in ("S-fill-003", "S-fill-004", "S-fill-005")]
+    cases = engine_cases(picked, tmp_path / "cache", Replay.SKIPPING)
+
+    write_batch(cases, tmp_path / "batch")
+
+    manifest = json.loads((tmp_path / "batch" / "run.json").read_text(encoding="utf-8"))
+    levels = [case["market_data"]["levels"] for case in manifest["cases"]]
+    assert [str(scenario.fidelity) for scenario in picked] == ["trades", "1s", "1m"]
+    assert levels == [["trades", "1s", "1m"], ["1s", "1m"], ["1m", "5m"]]
+    written = sorted(path.name for path in (tmp_path / "batch").glob("*.arrow"))
+    assert written == ["1m.arrow", "1s.arrow", "5m.arrow", "trades.arrow"]

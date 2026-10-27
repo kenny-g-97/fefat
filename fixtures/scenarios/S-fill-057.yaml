@@ -1,0 +1,36 @@
+id: S-fill-057
+title: An entry closed at the level of the 1-minute bar's path where it filled keeps the order of the bar's extremes
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+  - {id: 3, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, oco: breakout}
+  - {id: 4, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4990.00", quantity: 1, oco: breakout}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5006.00", low: "4989.00", close: "5000.00", volume: 900}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "4994.75", rule: F-STP-04, flags: [ambiguous]}
+    - {order: 2, ts: "2026-03-06T14:31:00Z", price: "4995.00", rule: F-LMT-03, flags: [ambiguous]}
+    - {order: 4, ts: "2026-03-06T14:31:00Z", price: "4989.75", rule: F-STP-04, flags: [ambiguous]}
+rules: [F-BAR-01, F-BAR-03, F-BAR-04, F-BAR-05, F-LMT-01, F-LMT-03, F-OCO-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). Flat, with four orders
+# placed at 14:30:00.000: a sell stop at 4995.00 (order 1), a buy limit at 4995.00 (order 2), and
+# a breakout pair of one OCO group, a buy stop at 5005.00 (order 3) and a sell stop at 4990.00
+# (order 4). The bar from 14:30 to 14:31 opens at 5000.00, between every order's price.
+# Flat, the earliest working entry, order 1, is a sell, so the low comes first (F-BAR-03):
+# 5000.00, then down to 4989.00 (F-BAR-01).
+# At 4995.00 the path reaches orders 1 and 2 at one point; the stop fills first, then the limit
+# (F-OCO-01's order at one point): fill of order 1 = 4995.00 - 1 × 0.25 = 4994.75 (F-STP-01,
+# F-STP-04), opening a short, then fill of order 2 = 4995.00 (F-LMT-01, F-LMT-03), closing it.
+# The point leaves the position flat, so the path keeps its order (F-BAR-04, judged on the
+# position after all the fills at a point) and goes on down: at 4990.00 order 4 fills at
+# 4990.00 - 0.25 = 4989.75 (F-STP-04), opening a short, and order 3 is cancelled (F-OCO-01); the
+# short turns the path adverse first (F-BAR-04): up to 5006.00, down to 4989.00, and back to the
+# close, 5000.00, with nothing working. The run ends short 1.
+# Had the short that order 1 opened turned the path at 4995.00, the high would have come next:
+# order 3 would have filled at 5005.00 + 0.25 = 5005.25 and cancelled order 4, ending long 1.
+# With the high first, order 3 fills at 5005.25 and cancels order 4, and on the way down orders 1
+# and 2 fill at 4994.75 and 4995.00: other fills, so every fill is flagged ambiguous (F-BAR-05).

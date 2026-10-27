@@ -136,9 +136,11 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-054](S-fill-054.yaml) | trades | With no latency, a trade at the decision's instant sets the mark a stop is judged against but is not seen by it |
 | [S-fill-055](S-fill-055.yaml) | 1m | A stop through the market when it becomes active fills at the next bar's open, though that bar opens back on its right side |
 | [S-fill-056](S-fill-056.yaml) | 1m | With a 1-minute bar's extremes swapped, its entry is still followed by the move against it, so the bar is not ambiguous |
+| [S-fill-057](S-fill-057.yaml) | 1m | An entry closed at the level of the 1-minute bar's path where it filled keeps the order of the bar's extremes |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |
 | [S-template-004](S-template-004.yaml) | 1m | A template places nothing on a bar whose wake is false and closes its long on long_exit |
 | [S-template-005](S-template-005.yaml) | tbbo | A template's signal exit waits while its TBBO stop, triggered before the close, fills on the next record |
 | [S-template-006](S-template-006.yaml) | trades | A trade received at a signal close fills the long's stop before the decision, which finds the position flat |
+| [S-template-007](S-template-007.yaml) | trades | A template's entry decided at a signal close fills on the next trade, though the records before the close need no replay |
