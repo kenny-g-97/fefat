@@ -1,0 +1,38 @@
+id: S-template-030
+title: A trailing stop that would rise at a 1-minute bar's high makes the bar's fill at the low ambiguous
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: ticks, ticks: 4}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 100}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5000.50", high: "5002.00", low: "4999.25", close: "5001.50", volume: 250}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03}
+    - {order: 2, ts: "2026-03-06T14:32:00Z", price: "4999.25", rule: F-STP-04, flags: [ambiguous]}
+rules: [F-ACT-02, F-BAR-01, F-BAR-02, F-BAR-04, F-BAR-05, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-04, F-TRL-01, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# order 1 buys 1 lot at the open of the bar from 14:30 to 14:31 plus a tick, 5000.00 + 0.25 =
+# 5000.25 (F-MKT-03); its stop 12 ticks below the fill, 4997.25, rises at once to the market at the
+# fill, the open, less 4 ticks: 4999.00 (F-PLN-04, F-TRL-01): order 2; the target, order 3, at
+# 5010.25;
+# the rest of the entry's bar comes adverse first (F-BAR-04): its low 4999.75 is no new best price;
+# its high 5000.50 is, and the stop rises to 4999.50 (F-TRL-04); its close 5000.25 stays above it;
+# the bar from 14:31 to 14:32 replays for the long as 5000.50, 4999.25, 5002.00, 5001.50 (F-BAR-02):
+# the fall to 4999.25 reaches the stop at 4999.50 (F-STP-01), which sells at 4999.50 - 0.25 =
+# 4999.25 (F-STP-04), and the target is cancelled (F-OCO-01);
+# with its extremes swapped (F-BAR-05) the high comes first: at 5002.00 the stop rises to 5001.00
+# (F-PLN-03), and the fall from there passes it (F-BAR-01): it sells at 5001.00 - 0.25 = 5000.75;
+# another price, so the bar's fill is flagged ambiguous.

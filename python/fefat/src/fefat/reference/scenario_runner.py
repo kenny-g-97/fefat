@@ -160,8 +160,8 @@ def scenario_hours(
 
 
 class FillSummary(NamedTuple):
-    """What the runner compares of a fill: its order, time, price, rule, and flags, and its fee
-    in a scenario with fees."""
+    """What the runner compares of a fill: its order, time, price, rule, and flags, its fee in a
+    scenario with fees, and its lots in a scenario that states its fills' quantities."""
 
     order: int
     ts: int
@@ -169,26 +169,44 @@ class FillSummary(NamedTuple):
     rule: str
     flags: tuple[str, ...]
     fee: int | None
+    lots: int | None
 
     def text(self) -> str:
         flags = "".join(f", {flag}" for flag in self.flags)
         fee = "" if self.fee is None else f", fee {money_text(self.fee)}"
-        at = f"{price_text(self.price)} at {instant_text(self.ts)}"
+        lots = "" if self.lots is None else f" x {self.lots}"
+        at = f"{price_text(self.price)}{lots} at {instant_text(self.ts)}"
         return f"order {self.order} at {at} ({self.rule}{flags}{fee})"
 
 
 def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
     """How the run differs from what the scenario expects: each fill's order, time, price,
-    rule, flags, and fee where the scenario has fees, its fidelity tag (F-TAG-01), the marks,
-    and the funding payments."""
+    rule, flags, fee where the scenario has fees, and lots where it states quantities, its
+    fidelity tag (F-TAG-01), the marks, and the funding payments."""
     with_fees = scenario.fees is not None
+    lot_step = scenario.instrument.lot_step
+    with_lots = any(f.quantity is not None for f in scenario.expected.fills)
     expected = [
-        FillSummary(f.order, f.ts, f.price, f.rule, tuple(sorted(f.flags)), f.fee)
+        FillSummary(
+            f.order,
+            f.ts,
+            f.price,
+            f.rule,
+            tuple(sorted(f.flags)),
+            f.fee,
+            None if f.quantity is None else lots_of(f.quantity, lot_step),
+        )
         for f in scenario.expected.fills
     ]
     got = [
         FillSummary(
-            f.order, f.ts, f.price, f.rule, tuple(sorted(f.flags)), f.fee if with_fees else None
+            f.order,
+            f.ts,
+            f.price,
+            f.rule,
+            tuple(sorted(f.flags)),
+            f.fee if with_fees else None,
+            f.lots if with_lots else None,
         )
         for f in result.fills
     ]

@@ -1,0 +1,41 @@
+id: S-template-026
+title: A trailing stop of one ATR takes the ATR of each decision's row, and tightens when it falls
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: atr, multiple: 1.0, feature: atr}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true, features: {atr: 1.0}}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, features: {atr: 0.5}}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:31:00.000Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-06T14:34:00.000Z", price: "5000.75", size: 1}
+  - {ts: "2026-03-06T14:36:00.000Z", price: "5000.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:36:00.000Z", price: "5000.25", rule: F-STP-03}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-RND-01, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-02, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02);
+# the trailing distance is 1.0 × the entry row's atr, 1.00 point, 4 ticks (F-TRL-02, F-RND-01): the
+# stop 12 ticks below the fill, 4997.25, rises at once to 5000.00 - 1.00 = 4999.00 (F-PLN-04,
+# F-TRL-01): order 2; the target, order 3, at 5010.25;
+# 14:31, 5001.00: a new best price; the stop rises to 5000.00;
+# 14:34, 5000.75: no new best price;
+# at the 14:35 decision the row's atr is 0.50: the distance becomes 0.50 point, 2 ticks
+# (F-TRL-02), and the stop rises to the best price less it, 5001.00 - 0.50 = 5000.50, a tick below
+# the mark 5000.75 (F-PLN-03);
+# 14:36, 5000.50: the trade is at the stop and triggers it (F-STP-01): it sells at the lower of
+# 5000.25 and 5000.50, 5000.25 (F-STP-03), and the target is cancelled (F-OCO-01); with the
+# distance of the entry row the stop would stand at 5000.00 and stay.

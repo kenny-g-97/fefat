@@ -44,7 +44,7 @@ rules: [F-SLP-01, F-STP-01, F-STP-03]
 | `tape` | The records, in the order the engine reads them. Trades: `{ts, price, size}`, with `ts` the receive time and an optional `ts_event`, the exchange's time, which the engine never reads. TBBO: the same with `bid, ask, bid_size, ask_size`, the quote just before the trade. Bars: `{ts_open, ts_close, open, high, low, close, volume}`, stored bars only, so a minute without trades has none. Sizes and volumes count the dataset's size unit. |
 | `funding` | Optional funding rates of a perpetual: `{ts, rate}`, where `"0.0001"` is 0.01 %. |
 | `orders` | `{id, placed_at, side: buy or sell, kind: market, stop, or limit, price, quantity}`, with `price` for stops and limits only, and optionally `oco: <group>` and `bracket: {stop: {id, price}, target: {id, price}}`. `placed_at` is the decision instant: the order becomes active the latency later. |
-| `expected` | `fills: [{order, ts, price, rule, flags, fee}]`, where `rule` is the rule that priced the fill and `flags` may list `ambiguous` or `size_exceeded`; `fills: []` expects none. Optionally `marks: [{ts, price}]`, the mark once every event at `ts` is done, and `funding: [{ts, amount}]`, an amount being the change to the trader's cash. |
+| `expected` | `fills: [{order, ts, price, rule, flags, fee, quantity}]`, where `rule` is the rule that priced the fill and `flags` may list `ambiguous` or `size_exceeded`; `fills: []` expects none. `quantity`, in the instrument's units as an order's, is stated on every fill or on none: a template's targets and sizes decide it. Optionally `marks: [{ts, price}]`, the mark once every event at `ts` is done, and `funding: [{ts, amount}]`, an amount being the change to the trader's cash. |
 | `rules` | Every rule the scenario exercises; each fill's `rule` is one of them. |
 
 ## Writing numbers
@@ -67,14 +67,14 @@ A new scenario takes the next free id, its file, and a row below. An edit of an 
 
 ## Template scenarios
 
-A template scenario (step 2.3) runs an execution template instead of orders. In place of `orders` it gives `strategy`, a `StrategySpec` document (its schema is `python/fefat/src/fefat/strategy/strategy_spec.schema.json`, D-53), and `signals`, the rows of its signal frame, which the reference engine runs through its template (`fefat.reference.template`). The template runs the specification's basic subset for now: a market entry, a stop in ticks or at `stop_price` and one target in ticks, as an R multiple of a stop in ticks, or at `target_price`, signal exits, flat-by, and a fixed size times `size_mult`. Step 2.8 brings the rest.
+A template scenario (step 2.3) runs an execution template instead of orders. In place of `orders` it gives `strategy`, a `StrategySpec` document (its schema is `python/fefat/src/fefat/strategy/strategy_spec.schema.json`, D-53), and `signals`, the rows of its signal frame, which the reference engine runs through its template (`fefat.reference.template`), by the rules of the specification's §20 to §28 (step 2.8). A template scenario starts flat.
 
 | Field | What it holds |
 | --- | --- |
-| `strategy` | The specification, leaving out what it does not use: `{spec_version: 1, instrument, timeframe, execution: {entry: {kind: market}, stop, targets, time, sizing}}`. Its `instrument` is the scenario's, and `timeframe` that of the signal bars. |
-| `signals` | One row per signal close, in time order: `{ts_close, trade_date, contract}`, then `long_entry`, `short_entry`, `long_exit`, and `short_exit` where they are true, and where a row needs them `stop_price` and `target_price` (raw prices in quotes, as in a tape), `size_mult`, and `wake` (false on a bar on which no entry is placed). A scenario's prices are its contract's raw prices, so the frame's `adj_offset` is 0. |
+| `strategy` | The specification, leaving out what it does not use: `{spec_version: 1, instrument, timeframe, execution: {entry, stop, targets, breakeven, trailing, time, limits, sizing}}`. Its `instrument` is the scenario's, and `timeframe` that of the signal bars. |
+| `signals` | One row per signal close, in time order: `{ts_close, trade_date, contract}`, then `long_entry`, `short_entry`, `long_exit`, and `short_exit` where they are true, and where a row needs them `entry_price`, `stop_price`, `target_price`, and `trail_ref` (raw prices in quotes, as in a tape), `size_mult`, `wake` (false on a bar on which no entry is placed), `features`, the strategy's numbers by name, such as `{atr: 1.3}`, and `flags`, its boolean columns by name, such as `{news: true}`. A scenario's prices are its contract's raw prices, so the frame's `adj_offset` is 0. |
 
-The orders a template places take the ids the engine gives them, from 1 in the order they are placed: an entry is order 1, its bracket's stop and target orders 2 and 3 when it fills, and the order that closes the position at a signal exit or the flat-by time the next one, order 4.
+The orders a template places take the ids the engine gives them, from 1 in the order they are placed: an entry is order 1; when it fills, its exit plan's stop takes the next id and each of its targets the one after, a target of no lots taking none (F-PLN-01); and the order that closes the position at the market, at a signal exit or a time rule, takes the next one. With one target, the stop and the target are orders 2 and 3, and an exit order 4.
 
 ## The scenarios
 
@@ -144,3 +144,27 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-005](S-template-005.yaml) | tbbo | A template's signal exit waits while its TBBO stop, triggered before the close, fills on the next record |
 | [S-template-006](S-template-006.yaml) | trades | A trade received at a signal close fills the long's stop before the decision, which finds the position flat |
 | [S-template-007](S-template-007.yaml) | trades | A template's entry decided at a signal close fills on the next trade, though the records before the close need no replay |
+| [S-template-008](S-template-008.yaml) | 1m | Two targets each close half of two lots, and the first one's fill reduces the stop to the lot left |
+| [S-template-009](S-template-009.yaml) | 1m | After the first of two targets fills, the reduced stop closes the one lot left |
+| [S-template-010](S-template-010.yaml) | 1m | Three targets share three lots one each, and a bar opening through two fills both by id |
+| [S-template-011](S-template-011.yaml) | 1m | A target whose fraction of one lot rounds down to none is not placed, and the next takes the lot |
+| [S-template-012](S-template-012.yaml) | 1m | A bar reaching the stop and a partial target sells all the lots at the stop, flagged ambiguous |
+| [S-template-013](S-template-013.yaml) | 1m | A target of 1.5 times a 7-tick stop lies 11 ticks above the fill, its 10.5 ticks rounded up |
+| [S-template-014](S-template-014.yaml) | 1m | From an ATR of 1.30, a stop of 1.5 ATR rounds down to 7 ticks and a target of 2 ATR up to 11 |
+| [S-template-015](S-template-015.yaml) | 1m | A stop of 0.07 % of a 5000.25 fill lies 14 ticks below it, its 14.0007 ticks rounded down |
+| [S-template-016](S-template-016.yaml) | 1m | A target of two R measures the initial risk from the fill to a stop at the stop_price column |
+| [S-template-017](S-template-017.yaml) | trades | Breakeven moves a long's stop to its fill price once a trade reaches 4 ticks of profit |
+| [S-template-018](S-template-018.yaml) | 1m | Breakeven after the first target moves the stop of the half left to the entry, where it exits |
+| [S-template-019](S-template-019.yaml) | trades | Breakeven firing under a trailing stop that is already higher leaves the stop at the trailing level |
+| [S-template-020](S-template-020.yaml) | trades | A breakeven offset of -2 ticks moves a long's stop to two ticks below its fill price |
+| [S-template-021](S-template-021.yaml) | trades | Breakeven at half the initial risk of 7 ticks waits for 4 ticks of profit, its 3.5 rounded up |
+| [S-template-022](S-template-022.yaml) | 1m | Breakeven fired at a 1-minute bar's high moves the stop, which the bar's fall to its close reaches |
+| [S-template-023](S-template-023.yaml) | trades | A trailing stop on trades follows each new best price 4 ticks behind and closes the long |
+| [S-template-024](S-template-024.yaml) | trades | A trailing stop with an activation 8 ticks out leaves the stop alone until a trade reaches it |
+| [S-template-025](S-template-025.yaml) | trades | A trailing stop in steps of 2 ticks moves only by whole steps, and stays when one does not fit |
+| [S-template-026](S-template-026.yaml) | trades | A trailing stop of one ATR takes the ATR of each decision's row, and tightens when it falls |
+| [S-template-027](S-template-027.yaml) | trades | A trailing stop by the column raises the stop to each decision's trail_ref, never lowering it |
+| [S-template-028](S-template-028.yaml) | trades | A trailing stop updated at bar closes waits for the decision, and stops a tick below the mark |
+| [S-template-029](S-template-029.yaml) | trades | A trailing stop activated by the first target's fill trails the half left and closes it |
+| [S-template-030](S-template-030.yaml) | 1m | A trailing stop that would rise at a 1-minute bar's high makes the bar's fill at the low ambiguous |
+| [S-template-031](S-template-031.yaml) | trades | A minute of trades above a trailing stop but past its best price is replayed, not skipped |

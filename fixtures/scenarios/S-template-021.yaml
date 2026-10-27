@@ -1,0 +1,41 @@
+id: S-template-021
+title: Breakeven at half the initial risk of 7 ticks waits for 4 ticks of profit, its 3.5 rounded up
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 7}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    breakeven: {trigger: {kind: r_multiple, multiple: 0.5}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5000.25", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5001.25", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "5000.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:04.000Z", price: "5000.00", rule: F-STP-03}
+rules: [F-ACT-01, F-BRK-01, F-BRK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-RND-01, F-RND-02, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its stop,
+# order 2, 7 ticks below, 5000.25 - 1.75 = 4998.50, so the initial risk is 7 ticks (F-RND-02); the
+# target, order 3, at 5010.25;
+# breakeven's trigger lies 0.5 × 7 = 3.5 ticks above the fill, rounded up to 4 (F-RND-01):
+# 5000.25 + 1.00 = 5001.25 (F-BRK-02);
+# the trade at 14:30:01, 5001.00, is 3 ticks above the fill and does not fire it;
+# the trade at 14:30:02, 5000.25, stays above the stop at 4998.50; a trigger rounded down to 3
+# ticks would have fired at 5001.00 and sold here at 5000.00;
+# the trade at 14:30:03, 5001.25, fires it: the stop moves to the fill price, 5000.25 (F-BRK-01,
+# F-PLN-03);
+# the trade at 14:30:04, 5000.25, triggers the stop (F-STP-01), which sells at the lower of 5000.00
+# and 5000.25, 5000.00 (F-STP-03), and the target is cancelled (F-OCO-01).

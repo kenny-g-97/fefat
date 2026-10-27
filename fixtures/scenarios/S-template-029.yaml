@@ -1,0 +1,44 @@
+id: S-template-029
+title: A trailing stop activated by the first target's fill trails the half left and closes it
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets:
+      - {price: {kind: ticks, ticks: 4}, fraction: 0.5}
+      - {price: {kind: ticks, ticks: 40}}
+    trailing: {by: {kind: ticks, ticks: 4}, activation: {kind: after_target, target: 1}}
+    sizing: {kind: fixed, units: 2}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5001.50", size: 2}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5002.25", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "5001.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, quantity: 2}
+    - {order: 3, ts: "2026-03-06T14:30:02.000Z", price: "5001.25", rule: F-LMT-03, quantity: 1}
+    - {order: 2, ts: "2026-03-06T14:30:04.000Z", price: "5001.00", rule: F-STP-03, quantity: 1}
+rules: [F-ACT-01, F-BRK-02, F-LMT-01, F-LMT-03, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 2 lots on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its plan
+# (F-PLN-01): the stop, order 2, at 4998.25 for 2 lots; target 1, order 3, at 5001.25 for 1 lot;
+# target 2, order 4, at 5010.25 for 1 lot; the trailing stop works from target 1's fill (F-TRL-01,
+# F-BRK-02);
+# 14:30:01, 5001.00: a new best price, but the trailing stop does not work yet; target 1 rests;
+# 14:30:02, 5001.50: the trade goes through target 1, which sells 1 lot at 5001.25 (F-LMT-01,
+# F-LMT-03); 1 lot stays, so the stop is reduced to it (F-PLN-02); the fill activates the trailing
+# stop, which acts at the next price marked, this record's trade (F-PLN-04): the stop rises to
+# 5001.50 - 1.00 = 5000.50 (F-PLN-03);
+# 14:30:03, 5002.25: to 5001.25;
+# 14:30:04, 5001.25: at the stop, which sells the last lot at the lower of 5001.00 and 5001.25,
+# 5001.00 (F-STP-03), and target 2 is cancelled (F-OCO-01).

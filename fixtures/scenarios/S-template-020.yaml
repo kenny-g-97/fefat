@@ -1,0 +1,36 @@
+id: S-template-020
+title: A breakeven offset of -2 ticks moves a long's stop to two ticks below its fill price
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    breakeven: {trigger: {kind: ticks, ticks: 6}, offset_ticks: -2}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5001.75", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5000.25", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "4999.75", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:03.000Z", price: "4999.50", rule: F-STP-03}
+rules: [F-ACT-01, F-BRK-01, F-BRK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its stop,
+# order 2, at 5000.25 - 2.00 = 4998.25, and its target, order 3, at 5010.25;
+# breakeven fires at 5000.25 + 6 × 0.25 = 5001.75 (F-BRK-02): the trade at 14:30:01 reaches it, and
+# the stop moves to the fill price less 2 ticks, 5000.25 - 0.50 = 4999.75, below the market
+# (F-BRK-01, F-PLN-03);
+# the trade at 14:30:02, 5000.25, stays above it;
+# the trade at 14:30:03, 4999.75, triggers it (F-STP-01): it sells at the lower of 4999.50 and
+# 4999.75, 4999.50 (F-STP-03), and the target is cancelled (F-OCO-01).

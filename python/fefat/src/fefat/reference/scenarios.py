@@ -48,6 +48,7 @@ from fefat.reference.units import (
     Instant,
     Money,
     Price,
+    Quantity,
     instant_text,
     price_text,
 )
@@ -70,7 +71,8 @@ ScenarioInstrument = Annotated[Instrument | InlineInstrument, BeforeValidator(_i
 
 class ExpectedFill(FrozenModel):
     """A fill the rules give: the order it fills, when, at what price, the rule that priced it
-    (F-TAG-01), its flags, and, in a scenario with fees, its fee."""
+    (F-TAG-01), its flags, in a scenario with fees its fee, and, where the scenario states them,
+    its quantity in the instrument's units, which a template's targets and sizes decide."""
 
     order: OrderId
     ts: Instant
@@ -78,6 +80,7 @@ class ExpectedFill(FrozenModel):
     rule: RuleId
     flags: tuple[FillFlag, ...] = ()
     fee: Money | None = None
+    quantity: Quantity | None = None
 
 
 class ExpectedMark(FrozenModel):
@@ -185,6 +188,7 @@ class ScenarioBase(FrozenModel):
         quantities = self._own_quantities()
         if self.position is not None:
             quantities.append(self.position.quantity)
+        quantities += [fill.quantity for fill in self.expected.fills if fill.quantity is not None]
         lot_step = self.instrument.lot_step
         off = [str(quantity) for quantity in quantities if quantity % lot_step != 0]
         if off:
@@ -222,6 +226,12 @@ class ScenarioBase(FrozenModel):
                     f"Expected a fee on each fill of {self.id} exactly when it has fees, got "
                     f"order {fill.order}'s fill {'without' if fill.fee is None else 'with'} one."
                 )
+        stated = [fill.quantity is not None for fill in self.expected.fills]
+        if any(stated) and not all(stated):
+            raise ValueError(
+                f"Expected a quantity on every fill of {self.id} or on none, got one on "
+                f"{sum(stated)} of {len(stated)}."
+            )
         filled = Counter(fill.order for fill in self.expected.fills)
         again = sorted(order for order, fills in filled.items() if fills > 1)
         if again:

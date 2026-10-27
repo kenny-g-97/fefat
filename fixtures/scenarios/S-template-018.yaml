@@ -1,0 +1,44 @@
+id: S-template-018
+title: Breakeven after the first target moves the stop of the half left to the entry, where it exits
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets:
+      - {price: {kind: ticks, ticks: 4}, fraction: 0.5}
+      - {price: {kind: ticks, ticks: 16}}
+    breakeven: {trigger: {kind: after_target, target: 1}}
+    sizing: {kind: fixed, units: 2}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 100}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5000.50", high: "5001.50", low: "5000.50", close: "5001.25", volume: 90}
+  - {ts_open: "2026-03-06T14:32:00Z", ts_close: "2026-03-06T14:33:00Z", open: "5000.75", high: "5001.00", low: "5000.00", close: "5000.50", volume: 110}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, quantity: 2}
+    - {order: 3, ts: "2026-03-06T14:32:00Z", price: "5001.25", rule: F-LMT-03, quantity: 1}
+    - {order: 2, ts: "2026-03-06T14:33:00Z", price: "5000.00", rule: F-STP-04, quantity: 1}
+rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-BRK-01, F-BRK-02, F-LMT-01, F-LMT-03, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# order 1 buys 2 lots at 5000.00 + 0.25 = 5000.25 (F-MKT-03), at 14:31; its plan (F-PLN-01): the
+# stop, order 2, at 5000.25 - 2.00 = 4998.25 for 2 lots; target 1, order 3, at 5001.25 for 1 lot;
+# target 2, order 4, at 5000.25 + 4.00 = 5004.25 for 1 lot; the rest of the entry's bar, 4999.75 to
+# 5000.50, reaches none;
+# the bar from 14:31 to 14:32 replays for the long as 5000.50, 5000.50, 5001.50, 5001.25 (F-BAR-02):
+# the rise to 5001.50 goes through target 1, which sells 1 lot at 5001.25 (F-LMT-03); 1 lot stays,
+# so the stop is reduced to 1 lot (F-PLN-02), and breakeven after target 1 fires (F-BRK-02); at the
+# next price marked, the bar's high 5001.50 (F-PLN-04), the stop moves to the fill price, 5000.25,
+# below 5001.50 - 0.25 (F-BRK-01, F-PLN-03); the fall to the close, 5001.25, stays above it;
+# the bar from 14:32 to 14:33 replays as 5000.75, 5000.00, 5001.00, 5000.50: the fall to 5000.00
+# reaches the stop at 5000.25 (F-STP-01), which sells the last lot at 5000.25 - 0.25 = 5000.00
+# (F-STP-04), and target 2 is cancelled (F-OCO-01); without breakeven the stop at 4998.25 would
+# still hold that lot. With its extremes swapped neither bar fills otherwise, so neither is
+# ambiguous.

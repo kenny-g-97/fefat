@@ -1,0 +1,42 @@
+id: S-template-024
+title: A trailing stop with an activation 8 ticks out leaves the stop alone until a trade reaches it
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: ticks, ticks: 4}, activation: {kind: ticks, ticks: 8}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5001.50", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5002.25", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "5002.75", size: 1}
+  - {ts: "2026-03-06T14:30:05.000Z", price: "5001.75", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:05.000Z", price: "5001.50", rule: F-STP-03}
+rules: [F-ACT-01, F-BRK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its stop,
+# order 2, at 4998.25, its target, order 3, at 5010.25; the trailing stop works from the first price
+# marked at or above 5000.25 + 8 × 0.25 = 5002.25 (F-TRL-01, F-BRK-02), and does not move the stop
+# before it;
+# 14:30:01, 5001.50: the best price, short of the activation;
+# 14:30:02, 5000.50: the stop at 4998.25 stays; a trailing stop working from the fill would have
+# stood at 5001.50 - 1.00 = 5000.50 and sold here;
+# 14:30:03, 5002.25: the activation is reached, and the stop rises to 5002.25 - 1.00 = 5001.25
+# (F-TRL-04, F-PLN-03);
+# 14:30:04, 5002.75: to 5001.75;
+# 14:30:05, 5001.75: the trade is at the stop and triggers it (F-STP-01): it sells at the lower of
+# 5001.50 and 5001.75, 5001.50 (F-STP-03), and the target is cancelled (F-OCO-01).
