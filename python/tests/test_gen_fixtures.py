@@ -1,4 +1,5 @@
 import hashlib
+import itertools
 import json
 import re
 from dataclasses import replace
@@ -9,6 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import gen_fixtures
+from fefat.market.schema import parse_schema_name, polars_schema
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures" / "synthetic"
@@ -174,6 +176,61 @@ def test_the_databento_batch_lists_each_files_size_and_sha256_as_the_vendor_does
         for path in folder.iterdir()
         if path.name != "manifest.json"
     }
+
+
+def test_the_fixtures_take_their_columns_from_the_sdk() -> None:
+    for schema, written in (
+        ("trades", gen_fixtures.TRADES_SCHEMA),
+        ("ohlcv-1m", gen_fixtures.BARS_SCHEMA),
+    ):
+        assert written.names == polars_schema(parse_schema_name(schema)).names()
+
+
+def test_a_date_range_writes_each_weekday_and_its_minutes_per_month(tmp_path: Path) -> None:
+    arguments = ["--dates", "2026-02-27..2026-03-03", "--contracts", "ESH2026"]
+
+    assert gen_fixtures.main(["--out", str(tmp_path), *arguments]) == 0
+
+    written = sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*.parquet"))
+    contract = "root=ES/contract=ESH2026"
+    weekdays = ["2026-02-27", "2026-03-02", "2026-03-03"]
+    by_date = [
+        f"{schema}/{contract}/date={day}/part.parquet"
+        for schema in ("ohlcv-1s", "trades")
+        for day in weekdays
+    ]
+    by_month = [
+        f"ohlcv-1m/{contract}/month={month}/part.parquet" for month in ("2026-02", "2026-03")
+    ]
+    assert written == sorted([*by_date, *by_month])
+    assert not (tmp_path / "databento-batch").exists()
+    assert not (tmp_path / "exports").exists()
+
+
+def test_planted_gaps_leave_quiet_minutes_and_jumps_in_each_session(tmp_path: Path) -> None:
+    def session(gaps: int) -> list[dict[str, int | str]]:
+        out = tmp_path / f"gaps-{gaps}"
+        arguments = ["--dates", "2026-03-10..2026-03-10", "--contracts", "ESH2026"]
+        assert gen_fixtures.main(["--out", str(out), *arguments, "--planted-gaps", str(gaps)]) == 0
+        return rows(
+            out / "trades" / "root=ES" / "contract=ESH2026" / "date=2026-03-10" / "part.parquet"
+        )
+
+    def longest_quiet(trades: list[dict[str, int | str]]) -> int:
+        received = [int(trade["ts_recv"]) for trade in trades]
+        return max(later - earlier for earlier, later in itertools.pairwise(received))
+
+    def largest_move(trades: list[dict[str, int | str]]) -> int:
+        prices = [int(trade["price"]) for trade in trades]
+        return max(abs(later - earlier) for earlier, later in itertools.pairwise(prices))
+
+    plain, gapped = session(0), session(3)
+
+    assert largest_move(plain) == ES_TICK
+    assert largest_move(gapped) >= 2 * ES_TICK
+    assert longest_quiet(gapped) > max(longest_quiet(plain), NANOSECONDS_PER_MINUTE)
+    assert len(gapped) < len(plain)
+    assert [int(trade["sequence"]) for trade in gapped] == list(range(1, len(gapped) + 1))
 
 
 def test_the_fixtures_stay_under_20_mb() -> None:
