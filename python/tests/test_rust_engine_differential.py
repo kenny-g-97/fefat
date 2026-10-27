@@ -1,10 +1,12 @@
-"""Step 2.6, Done means 3 on generated tapes: the Rust engine, by `fefat-cli run`, fills 10,000
-tapes that Hypothesis draws (`fefat.reference.generated_cases`) as the reference engine does,
-fills and event log alike. Each example runs ten cases as one batch in one process. The seed is
+"""Steps 2.6 and 2.7, Done means 3 and 1, on generated tapes: the Rust engine, by `fefat-cli run`,
+fills 10,000 tapes that Hypothesis draws (`fefat.reference.generated_cases`), of ticks or of bars,
+in full or skipping, as the reference engine does: fills, event log, ledger, and count of
+ambiguous fills alike. Each example runs ten cases as one batch in one process. The seed is
 fixed, so that every run draws the same tapes and a failure reproduces; Hypothesis shrinks a
 failure to its smallest tape, which the assertion prints as a scenario would write it, beside
-both engines' fills. The drawn cases must reach every rule that prices a fill on ticks, so that
-agreement never means that nothing filled."""
+both engines' fills. The drawn cases must reach every rule that prices a fill on ticks and on
+bars, flag ambiguous fills, and replay both ways, so that agreement never means that nothing
+filled."""
 
 import time
 from collections import Counter
@@ -14,7 +16,7 @@ from hypothesis import given, seed, settings
 from hypothesis import strategies as st
 
 from fefat.reference.generated_cases import drawn_cases
-from fefat.reference.rust_batch import EngineCase
+from fefat.reference.rust_batch import EngineCase, Replay
 from fefat.reference.rust_run import RustEngine, compare_engines, default_binary, explained
 
 DIFFERENTIAL_SEED = 20_261_026
@@ -23,6 +25,9 @@ EXAMPLES = 1_000
 CASES_PER_EXAMPLE = 10
 TICK_RULES = frozenset({"F-MKT-01", "F-MKT-02", "F-STP-02", "F-STP-03", "F-STP-05", "F-LMT-03"})
 """The rules that price fills on trades and TBBO (F-TAG-01)."""
+BAR_RULES = frozenset({"F-MKT-03", "F-STP-04", "F-STP-05", "F-LMT-03"})
+"""The rules that price fills on bars (F-TAG-01)."""
+TICK_FIDELITIES = frozenset({"tbbo", "trades"})
 
 
 def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
@@ -30,7 +35,9 @@ def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
 ) -> None:
     engine = RustEngine(default_binary())
     cases_run: list[int] = []
-    rules: Counter[str] = Counter()
+    rules: Counter[tuple[str, str]] = Counter()
+    replays: Counter[Replay] = Counter()
+    ambiguous: list[int] = []
 
     @seed(DIFFERENTIAL_SEED)
     @settings(max_examples=EXAMPLES, deadline=None, database=None, print_blob=True)
@@ -38,7 +45,14 @@ def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
     def the_engines_agree(cases: list[EngineCase]) -> None:
         comparisons = compare_engines(engine, cases)
         cases_run.append(len(comparisons))
-        rules.update(fill.rule for comparison in comparisons for fill in comparison.rust.fills)
+        for comparison in comparisons:
+            fills = comparison.rust.fills
+            rules.update(
+                (fill.rule, "ticks" if fill.fidelity in TICK_FIDELITIES else "bars")
+                for fill in fills
+            )
+            replays[comparison.case.replay] += 1
+            ambiguous.append(comparison.rust.ambiguous_fills)
         found = [
             "\n".join([explained(comparison), *comparison.differences()])
             for comparison in comparisons
@@ -56,8 +70,13 @@ def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
             f"\n{sum(cases_run)} generated tapes through both engines in {elapsed:.1f} s, "
             f"seed {DIFFERENTIAL_SEED}"
         )
-        print(
-            "fills by rule:", ", ".join(f"{rule} {count}" for rule, count in sorted(rules.items()))
-        )
+        listed = (f"{rule} on {data} {count}" for (rule, data), count in sorted(rules.items()))
+        print("fills by rule:", ", ".join(listed))
+        print(f"replays: {dict(replays)}; ambiguous fills: {sum(ambiguous)}")
     assert sum(cases_run) >= EXAMPLES * CASES_PER_EXAMPLE
-    assert rules.keys() >= TICK_RULES, f"Expected fills by every rule on ticks, got {rules}"
+    on_ticks = {rule for rule, data in rules if data == "ticks"}
+    on_bars = {rule for rule, data in rules if data == "bars"}
+    assert on_ticks >= TICK_RULES, f"Expected fills by every rule on ticks, got {rules}"
+    assert on_bars >= BAR_RULES, f"Expected fills by every rule on bars, got {rules}"
+    assert set(replays) == set(Replay)
+    assert sum(ambiguous) > 0
