@@ -45,6 +45,19 @@ pub struct TickRecord {
     pub quote: Option<Quote>,
 }
 
+impl TickRecord {
+    /// On TBBO, the quote an order of `side` takes and its size, read no better than the trade
+    /// (F-SLP-01): the later prints of a sweep carry the quote from before the sweep, so an ask
+    /// below the trade counts as that trade, its price and its size, as does a bid above it.
+    pub(super) fn quoted(&self, side: Side) -> Option<(Price, Qty)> {
+        let (quoted, size) = self.quote?.of(side);
+        if side.worse(quoted, self.price) == quoted {
+            return Some((quoted, size));
+        }
+        Some((self.price, self.size))
+    }
+}
+
 /// The tick level a run reads: TBBO records or trade prints; bars are step 2.7's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TickFidelity {

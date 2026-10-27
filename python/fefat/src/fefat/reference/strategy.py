@@ -77,8 +77,13 @@ class DecisionContext:
         return bool(self._book.live())
 
     def is_exiting(self) -> bool:
-        """Whether the market order that `flatten` placed to close the position still works."""
-        return any(order.role is OrderRole.EXIT for order in self._book.live())
+        """Whether a market order is on its way out of the position: the one `flatten` placed, or
+        a stop triggered on TBBO, a market order from its trigger that no decision cancels
+        (F-STP-02)."""
+        return any(
+            order.role is OrderRole.EXIT or order.state is OrderState.TRIGGERED
+            for order in self._book.live()
+        )
 
     def market(self, side: Side, lots: int, bracket: BracketRule | None = None) -> int:
         """Enters with a market order for `lots`, with a bracket placed when it fills

@@ -2,7 +2,7 @@
 
 This is the normative specification of how FEFAT's engines activate and fill orders. The Python reference engine (step 2.2) implements it rule by rule, and the Rust engine (steps 2.6 to 2.9) must match the reference exactly (D-07, D-10, [ADR-0005](../adr/0005-bar-close-decisions-finest-data-fills.md), [ADR-0008](../adr/0008-fill-spec-scenarios-reference-engine.md)). The scenarios in [`fixtures/scenarios/`](../../fixtures/scenarios/README.md) apply it to short tapes you can check with a calculator. When a scenario and this document disagree, this document changes first, with you, and then the scenario; an expected value is never edited to match code.
 
-Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02-engine-and-data.md) §3 and §4, your answers at the Phase 2 kickoff (D-51), and CME's stop rule, and revised after the step's engine-accuracy review. Rules marked _proposed_ fill gaps the design left open; you signed them off in §18 on 2026-10-26, at step 2.6.
+Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02-engine-and-data.md) §3 and §4, your answers at the Phase 2 kickoff (D-51), and CME's stop rule, and revised after the step's engine-accuracy review. Rules marked _proposed_ fill gaps the design left open; you signed them off in §18 on 2026-10-26, at step 2.6, and chose two readings of TBBO on 2026-10-27, after the step's engine-accuracy review.
 
 ## 1. How to read it
 
@@ -19,6 +19,7 @@ Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02
 | Order class | Market, stop-market (a stop), or limit. Stop-limit orders wait for event strategies (`02` §2.1). |
 | Fidelity | The data an order fills on, for a day: `tbbo` (trades, each with the best bid and ask just before it), `trades` (trade prints alone), or bars of a timeframe, `1s`, `1m`, or an import's coarser `5m` or `1d`. The engine uses the finest the day has (`02` §1.6). |
 | Record | One trade print, one TBBO record, or one stored bar. |
+| Quote | A TBBO record's best bid and ask from just before its trade, read no better than that trade (F-SLP-01). |
 | Tape | The records of a run or a scenario, in the order the engine reads them. |
 | Decision | A strategy's choice at a bar close, which places orders. |
 | Activation | The instant from which an order can fill (F-ACT-01). |
@@ -57,7 +58,7 @@ Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02
 
 **F-STP-01** (CME, design) A buy stop at S triggers on the first price at or above S that it sees after its activation: on trades and TBBO, a record's trade price; on bars, the bar's path reaching S, at its open or on the way to its high (F-BAR-01). CME triggers a stop when "the market trades at or through the stop trigger price" ([CME Globex order types](https://www.cmegroup.com/confluence/display/EPICSANDBOX/Order+Types+for+Futures+and+Options)).
 
-**F-STP-02** (design, D-51) On TBBO, a triggered buy stop fills at the ask of the next tradeable record after the trigger record (F-SES-02), and never below S plus the stop slippage ticks (none by default): at the higher of the two.
+**F-STP-02** (design, D-51, your choice of 2026-10-27) On TBBO, a triggered buy stop fills at the ask of the next tradeable record after the trigger record (F-SES-02), and never below S plus the stop slippage ticks (none by default): at the higher of the two. From its trigger the stop is a market order already sent: no decision cancels it, the execution template waits for it as for its own exit, and on that next record it fills before the orders that become active there, a market order of its OCO group among them (S-fill-047, S-template-005).
 
 **F-STP-03** (design, D-51, your choice of 2026-10-21) On trades, a triggered buy stop fills at the higher of S plus the stop slippage ticks (one by default) and the trigger trade's price. After a trade at S it fills one tick above S; when the market jumps past S, it fills at the first trade past it, the gap price, with no ticks added beyond it. A sell stop at 4995.00 whose next trade prints 4990.25 fills at the lower of 4994.75 and 4990.25: 4990.25.
 
@@ -117,7 +118,7 @@ A gap is the price jumping past an order's level without trading at it. It needs
 
 ## 12. Slippage (F-SLP)
 
-**F-SLP-01** (design, D-51) Slippage is a whole number of ticks per order class, market and stop-market, set for each run and recorded in it: by default one tick on trades and on bars of every timeframe, and none on TBBO, which fills at the quote. Limits never slip (F-LMT-03). The +1 tick rerun every report includes (`02` §7) adds one tick to both classes on every fidelity. The ticks may carry a fill beyond every price traded in its interval (a buy stop at a bar's high fills a tick above it), as a quote or a limit's own price may, and a fill is never clamped into that range. What holds for every fill is that it lies on the costly side of the prices traded in its interval: a buy never fills below the lowest of them, a sell never above the highest.
+**F-SLP-01** (design, D-51, your choice of 2026-10-27) Slippage is a whole number of ticks per order class, market and stop-market, set for each run and recorded in it: by default one tick on trades and on bars of every timeframe, and none on TBBO, which fills at the quote. Limits never slip (F-LMT-03). The +1 tick rerun every report includes (`02` §7) adds one tick to both classes on every fidelity. The ticks may carry a fill beyond every price traded in its interval (a buy stop at a bar's high fills a tick above it), as a quote or a limit's own price may, and a fill is never clamped into that range. What holds for every fill is that it lies on the costly side of the prices traded in its interval: a buy never fills below the lowest of them, a sell never above the highest. On TBBO a record's quote is read no better than its trade, so that no quote breaks this: the later prints of a sweep carry the quote from before the sweep, and an ask below its record's trade counts as that trade, its price and its size, as does a bid above it, wherever F-MKT-01, F-STP-02, F-LMT-01, and F-LMT-02 read the quote (S-fill-044 to S-fill-046).
 
 ## 13. Quantities (F-QTY)
 
@@ -163,10 +164,12 @@ The defaults below are what every run uses unless its settings say otherwise, an
 | --- | --- | --- | --- | --- |
 | An order becomes active 100 ms after the bar close that decided it. On bar days a latency rerun moves a fill only when the latency passes a bar's close. | F-ACT-01 | D-51 | Any latency: none in the NautilusTrader profile, 1 s in the stress rerun. | 2026-10-26 |
 | Market and stop-market fills slip one tick on trades and bars and none on TBBO, which fills at the quote; ticks per order class are a run setting. | F-SLP-01, F-MKT-01, F-MKT-02, F-MKT-03 | D-51 | The design's rule by aggressor side on trades: no tick after a trade by a buyer, for a buy (`BACKLOG.md`). | 2026-10-26 |
+| On TBBO a quote is read no better than its record's trade: an ask below the trade counts as the trade, as does a bid above it, since the later prints of a sweep carry the quote from before it. | F-SLP-01, F-MKT-01, F-STP-02, F-LMT-01 | your choice of 2026-10-27 | The quote as recorded, which fills a sweep's stop above every later print of the sweep. | 2026-10-27 |
 | A limit fills only when the market trades through its price. | F-LMT-01 | D-51 | Touch (F-LMT-02). | 2026-10-26 |
 | Bars coarser than a minute replay like 1-minute bars, and a bucket without trades fills nothing. | F-BAR-07 | D-51 | | 2026-10-26 |
 | A trade date before a fee table's first schedule takes that schedule, with a warning in the run. | F-FEE-01 | D-51 | Refuse the run. | 2026-10-26 |
 | A triggered stop fills at the worse of its price plus the ticks and the price that triggered it (on TBBO, the next record's quote), so a gap fills at the gap price with no ticks beyond it. | F-STP-02, F-STP-03, F-STP-04 | design, your choice of 2026-10-21 | The design table's gap price plus one tick; on trades, the next trade's price, as TBBO takes the next record's quote. | 2026-10-26 |
+| A stop triggered on TBBO is a market order from its trigger: no decision cancels it, and it fills before the orders that become active on its fill record. | F-STP-02 | your choice of 2026-10-27 | A working order until it fills, which a decision can cancel and a market order of its group can beat. | 2026-10-27 |
 | A limit fills at its price, never better, even above the market. | F-LMT-03 | design | | 2026-10-26 |
 | Holding a position, a bar's adverse extreme comes first, so a stop beats a target in one bar. | F-BAR-02 | design | | 2026-10-26 |
 | Between its pseudo-ticks a bar passes every price, so a stop inside it fills at its price plus the ticks. | F-BAR-01 | design | | 2026-10-26 |

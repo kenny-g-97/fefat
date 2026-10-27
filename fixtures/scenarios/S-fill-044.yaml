@@ -1,0 +1,32 @@
+id: S-fill-044
+title: In a TBBO sweep a long's stop fills at the next print, below the bid it carries from before the sweep
+fidelity: tbbo
+instrument: ES
+position: {side: long, quantity: 1, price: "5000.00"}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.50", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "4996.00", size: 2, bid: "4995.75", ask: "4996.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "4995.75", size: 6, bid: "4995.75", ask: "4996.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "4995.25", size: 5, bid: "4995.75", ask: "4996.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "4994.00", size: 5, bid: "4995.75", ask: "4996.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.400Z", price: "4993.75", size: 1, bid: "4993.50", ask: "4993.75", bid_size: 3, ask_size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.300Z", price: "4994.00", rule: F-STP-02}
+rules: [F-SLP-01, F-STP-01, F-STP-02]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks, and a quote is read
+# no better than its record's trade: F-SLP-01). A long of 1 has its stop at 4995.50, active at
+# 14:30:00.100:
+# the record at 14:30:00.200 trades 4996.00, above the stop;
+# at 14:30:00.300 a seller sweeps the bids: the first print takes the 6 lots bid at 4995.75, at the
+# bid, still above the stop; the next prints, at 4995.25 and 4994.00, carry the quote from before
+# the sweep, a bid of 4995.75 that the first print took;
+# the print at 4995.25 is at or below the stop and triggers it (F-STP-01); on TBBO a triggered stop
+# fills at the next tradeable record (F-STP-02), the print at 4994.00, whose bid of 4995.75 lies
+# above its trade, so the bid counts as that trade, 4994.00, and its 5 lots (F-SLP-01):
+# fill = lower of (4995.50 - 0 × 0.25, 4994.00) = 4994.00 (F-STP-02), 6 ticks below the stop;
+# read as recorded, the bid would fill it at the lower of (4995.50, 4995.75) = 4995.50, above every
+# later print of its sweep; on trades the same prints fill it at the trigger print, the lower of
+# (4995.50 - 0.25, 4995.25) = 4995.25 (F-STP-03).

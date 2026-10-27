@@ -54,7 +54,7 @@ def test_the_rust_engine_fills_each_tick_scenario_as_expected_and_as_the_referen
 def test_the_scenarios_on_ticks_are_those_of_trades_and_tbbo() -> None:
     on_ticks = sorted(scenario.id for scenario in ON_TICKS)
 
-    assert len(on_ticks) == 23, f"Expected the 23 scenarios on ticks of step 2.6, got {on_ticks}"
+    assert len(on_ticks) == 28, f"Expected the 28 scenarios on ticks of step 2.6, got {on_ticks}"
 
 
 def test_a_scenario_on_bars_waits_for_step_2_7(tmp_path: Path) -> None:

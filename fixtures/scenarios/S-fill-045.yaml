@@ -1,0 +1,20 @@
+id: S-fill-045
+title: A TBBO market buy whose record trades above its ask fills at the trade
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5001.00", size: 3, bid: "4999.75", ask: "5000.00", bid_size: 4, ask_size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5001.00", rule: F-MKT-01}
+rules: [F-MKT-01, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks, and a quote is read
+# no better than its record's trade: F-SLP-01). A market buy is active at 14:30:00.100 (F-ACT-01):
+# the record at 14:30:00.200, the first it sees, is a later print of a buyer's sweep: its trade at
+# 5001.00 lies above the ask of 5000.00 it carries from before the sweep, so the ask counts as that
+# trade, 5001.00, and its 3 lots (F-SLP-01):
+# fill = 5001.00 + 0 × 0.25 = 5001.00 (F-MKT-01), 1 lot of 3;
+# read as recorded, the ask would fill it at 5000.00, below the only trade it saw.

@@ -1,0 +1,25 @@
+id: S-fill-046
+title: A TBBO bid above its record's trade counts as the trade and does not fill a sell limit
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5005.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2, bid: "4999.75", ask: "5000.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "5004.75", size: 1, bid: "5005.25", ask: "5005.50", bid_size: 3, ask_size: 5}
+  - {ts: "2026-03-06T14:30:00.400Z", price: "5005.25", size: 2, bid: "5005.00", ask: "5005.25", bid_size: 4, ask_size: 6}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.400Z", price: "5005.00", rule: F-LMT-03}
+rules: [F-LMT-01, F-LMT-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; a quote is read no better than its record's trade: F-SLP-01). A sell
+# limit at 5005.00 is active at 14:30:00.100 (F-ACT-01):
+# the record at 14:30:00.200 trades 5000.00 under a bid of 4999.75: the limit rests (F-LMT-04);
+# the record at 14:30:00.300 is contrived as a later print of a seller's sweep: its trade at 5004.75
+# lies below the bid of 5005.25 it carries from before the sweep, so the bid counts as that trade,
+# 5004.75 (F-SLP-01), which neither trades above the limit nor bids at it (F-LMT-01);
+# the record at 14:30:00.400 trades 5005.25, above the limit, through it (F-LMT-01):
+# fill = 5005.00 (F-LMT-03);
+# read as recorded, the bid of 5005.25 would fill it a record earlier, at 5005.00, above the only
+# trade of that record.

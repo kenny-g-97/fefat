@@ -114,7 +114,8 @@ impl<'run> DecisionContext<'run> {
         self.book.has_live()
     }
 
-    /// Whether the market order that [`Self::flatten`] placed to close the position still works.
+    /// Whether a market order is on its way out of the position: the one [`Self::flatten`]
+    /// placed, or a stop triggered on TBBO, which no decision cancels (F-STP-02).
     pub fn is_exiting(&self) -> bool {
         self.book.is_exiting()
     }

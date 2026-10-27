@@ -122,8 +122,13 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-040](S-fill-040.yaml) | 1m | A bracket stop placed through the market at its entry's bar open fills there, as a market order would |
 | [S-fill-041](S-fill-041.yaml) | tbbo | On TBBO a bracket stop at its entry record's trade price is through the market and fills on the next record |
 | [S-fill-042](S-fill-042.yaml) | 1m | A stop that reverses a long inside a 1-minute bar turns the path adverse for the new short |
-| [S-fill-043](S-fill-043.yaml) | tbbo | A TBBO record that triggers a long's stop and whose bid reaches its target fills the target |
+| [S-fill-043](S-fill-043.yaml) | tbbo | A TBBO record that triggers a stop and trades through a limit of its OCO group fills the limit |
+| [S-fill-044](S-fill-044.yaml) | tbbo | In a TBBO sweep a long's stop fills at the next print, below the bid it carries from before the sweep |
+| [S-fill-045](S-fill-045.yaml) | tbbo | A TBBO market buy whose record trades above its ask fills at the trade |
+| [S-fill-046](S-fill-046.yaml) | tbbo | A TBBO bid above its record's trade counts as the trade and does not fill a sell limit |
+| [S-fill-047](S-fill-047.yaml) | tbbo | A TBBO stop triggered on one record fills on the next before a market order of its OCO group active there |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |
 | [S-template-004](S-template-004.yaml) | 1m | A template places nothing on a bar whose wake is false and closes its long on long_exit |
+| [S-template-005](S-template-005.yaml) | tbbo | A template's signal exit waits while its TBBO stop, triggered before the close, fills on the next record |

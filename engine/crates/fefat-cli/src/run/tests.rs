@@ -1,5 +1,5 @@
 //! A batch of four cases through `run_batch`: S-fill-012 from the batch's trades file and again
-//! from an engine cache of the same records, S-fill-043 from its TBBO file, and S-template-002
+//! from an engine cache of the same records, S-fill-036 from its TBBO file, and S-template-002
 //! from its signal rows, each case's fills, orders, and log tagged with its place in `run.json`.
 
 use std::env;
@@ -126,17 +126,16 @@ fn trades_file(input: &Path) {
 }
 
 fn tbbo_file(input: &Path) {
-    let records: [QuotedTrade; 3] = [
-        (200, 500_000, 2, 499_975, 500_000, 6, 4),
-        (300, 499_475, 1, 500_525, 500_550, 3, 5),
-        (400, 499_500, 2, 499_475, 499_500, 4, 6),
+    let records: [QuotedTrade; 2] = [
+        (200, 499_500, 2, 499_500, 499_525, 6, 4),
+        (300, 500_525, 1, 500_500, 500_525, 3, 5),
     ];
     let column = |value: fn(&QuotedTrade) -> i64| int64(records.iter().map(value).collect());
     write_table(
         &input.join("tbbo.arrow"),
         vec![
-            ("case", int64(vec![2; 3])),
-            ("trade_date", int64(vec![TRADE_DATE; 3])),
+            ("case", int64(vec![2; 2])),
+            ("trade_date", int64(vec![TRADE_DATE; 2])),
             ("ts_recv", column(|record| at(record.0))),
             ("price", column(|record| price(record.1))),
             ("size", column(|record| record.2)),
@@ -244,7 +243,7 @@ fn run_manifest(cache: &Path) -> serde_json::Value {
     json!({"cases": [
         case("S-fill-012", "trades", json!({"kind": "tape"}), sell_stop.clone()),
         case("S-fill-012 cached", "trades", json!({"kind": "cache", "folder": cache}), sell_stop),
-        case("S-fill-043", "tbbo", json!({"kind": "tape"}), stop_and_target),
+        case("S-fill-036", "tbbo", json!({"kind": "tape"}), stop_and_target),
         case("S-template-002", "trades", json!({"kind": "tape"}), template),
     ]})
 }
@@ -284,7 +283,7 @@ fn a_batch_runs_each_case_from_its_files_or_its_cache_and_tags_its_outputs() {
         [
             (0, 1, 499_025, "F-STP-03"),
             (1, 1, 499_025, "F-STP-03"),
-            (2, 2, 500_500, "F-LMT-03"),
+            (2, 1, 499_500, "F-STP-02"),
             (3, 1, 499_975, "F-MKT-02"),
             (3, 2, 500_325, "F-STP-03"),
         ]
@@ -311,7 +310,7 @@ fn a_batch_runs_each_case_from_its_files_or_its_cache_and_tags_its_outputs() {
         })
         .map(|row| (ids.value(row), states.value(row)))
         .collect();
-    assert_eq!(of_case_two, [(1, "cancelled"), (2, "filled")]);
+    assert_eq!(of_case_two, [(1, "filled"), (2, "cancelled")]);
     let log = read_table(&output.join("log.arrow"));
     let rule_of_logs = log
         .column_by_name("rule")

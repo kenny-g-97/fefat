@@ -1,8 +1,8 @@
 //! Done means 2 of step 2.6 as properties of the tick loop over random tapes: no fill before its
 //! order's activation, nor on a record received while the market is closed; every fill on the
-//! costly side of the prices of the records its order saw, a buy never below the lowest and a
-//! sell never above the highest, bids and asks counted on TBBO (F-SLP-01, the backlog's reading of
-//! the traded range); and, after every record, equity equal to cash plus the position's value at
+//! costly side of the trades its order saw, a buy never below the lowest and a sell never above the
+//! highest, which TBBO's quotes, read no better than their trades, cannot break (F-SLP-01); and,
+//! after every record, equity equal to cash plus the position's value at
 //! the mark, with the cash and the position tracked apart from the ledger, from the fills alone.
 
 use fefat_core::instants::{TradeDate, Ts};
@@ -277,14 +277,12 @@ fn value(price: i64, lots: i64) -> i64 {
     i64::try_from(exact.div_euclid(i128::from(PRICE_UNITS))).unwrap()
 }
 
-/// A record the run saw: when, whether the market traded, and the lowest price a buy could take
-/// on it, its trade or its ask, and the highest a sell could, its trade or its bid.
+/// A record the run saw: when, whether the market traded, and its trade's price.
 struct SeenRecord {
     index: usize,
     ts: Ts,
     tradeable: bool,
-    lowest_for_a_buy: Price,
-    highest_for_a_sell: Price,
+    price: Price,
 }
 
 proptest! {
@@ -325,15 +323,8 @@ proptest! {
         let (mut seen, mut mark, mut checked, mut index) = (Vec::new(), None, 0, 0);
         while let Some(stepped) = run.step().unwrap() {
             if let Stepped::Record(record) = stepped {
-                let (bid, ask) = record.quote.map_or((record.price, record.price), |quote| (quote.bid, quote.ask));
                 let tradeable = hours.is_open(record.ts);
-                seen.push(SeenRecord {
-                    index,
-                    ts: record.ts,
-                    tradeable,
-                    lowest_for_a_buy: record.price.min(ask),
-                    highest_for_a_sell: record.price.max(bid),
-                });
+                seen.push(SeenRecord { index, ts: record.ts, tradeable, price: record.price });
                 if tradeable {
                     mark = Some(record.price.0);
                 }
@@ -350,8 +341,8 @@ proptest! {
                     .filter(|record| record.index > order.seen_after)
                     .filter(|record| record.ts >= order.order.activation && record.tradeable)
                     .collect();
-                let low = saw.iter().map(|record| record.lowest_for_a_buy).min().unwrap();
-                let high = saw.iter().map(|record| record.highest_for_a_sell).max().unwrap();
+                let low = saw.iter().map(|record| record.price).min().unwrap();
+                let high = saw.iter().map(|record| record.price).max().unwrap();
                 match fill.side {
                     Side::Buy => prop_assert!(fill.price >= low, "{fill:?} below {low}"),
                     Side::Sell => prop_assert!(fill.price <= high, "{fill:?} above {high}"),

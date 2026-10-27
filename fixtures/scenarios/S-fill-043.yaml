@@ -1,28 +1,28 @@
 id: S-fill-043
-title: A TBBO record that triggers a long's stop and whose bid reaches its target fills the target
+title: A TBBO record that triggers a stop and trades through a limit of its OCO group fills the limit
 fidelity: tbbo
 instrument: ES
-position: {side: long, quantity: 1, price: "5000.00"}
 orders:
-  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: stop, price: "4995.00", quantity: 1, oco: exit}
-  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5005.00", quantity: 1, oco: exit}
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5005.00", quantity: 1, oco: either}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5004.00", quantity: 1, oco: either}
 tape:
-  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2, bid: "4999.75", ask: "5000.00", bid_size: 6, ask_size: 4}
-  - {ts: "2026-03-06T14:30:00.300Z", price: "4994.75", size: 1, bid: "5005.25", ask: "5005.50", bid_size: 3, ask_size: 5}
-  - {ts: "2026-03-06T14:30:00.400Z", price: "4995.00", size: 2, bid: "4994.75", ask: "4995.00", bid_size: 4, ask_size: 6}
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5003.00", size: 2, bid: "5002.75", ask: "5003.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "5005.00", size: 1, bid: "5004.75", ask: "5005.00", bid_size: 3, ask_size: 5}
+  - {ts: "2026-03-06T14:30:00.400Z", price: "5005.25", size: 2, bid: "5005.00", ask: "5005.25", bid_size: 4, ask_size: 6}
 expected:
   fills:
-    - {order: 2, ts: "2026-03-06T14:30:00.300Z", price: "5005.00", rule: F-LMT-03}
+    - {order: 2, ts: "2026-03-06T14:30:00.300Z", price: "5004.00", rule: F-LMT-03}
 rules: [F-LMT-01, F-LMT-03, F-OCO-01, F-SLP-01, F-STP-01, F-STP-02]
 
-# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01). A long of
-# 1 has its stop at 4995.00 and its target at 5005.00, one OCO group, both active at 14:30:00.100:
-# the record at 14:30:00.200 trades 5000.00 under a bid of 4999.75: neither order fills, and the
-# target rests;
-# the record at 14:30:00.300 is contrived to sweep the group's whole range: its trade at 4994.75 is
-# at or below the stop and triggers it (F-STP-01), but a stop on TBBO fills only at the next record's
-# quote (F-STP-02), so this record cannot fill it; its bid, 5005.25, the quote just before the trade,
-# is at or above the target, a buyer bidding at the limit (F-LMT-01, a sell's mirror), so the target
-# fills at its own price: fill = 5005.00 (F-LMT-03); the stop is cancelled (F-OCO-01);
-# had the stop won, it would have filled at the next record's bid:
-# lower of (4995.00 - 0 × 0.25, 4994.75) = 4994.75 (F-STP-02), 10.25 points below the target.
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01). Flat, one
+# OCO group holds a buy stop at 5005.00 and a sell limit at 5004.00, a breakout long or a short at
+# 5004.00, whichever comes first, both active at 14:30:00.100 (F-ACT-01):
+# the record at 14:30:00.200 trades 5003.00 under a bid of 5002.75: neither order fills, and the
+# limit rests;
+# the record at 14:30:00.300 jumps to 5005.00: its trade is at the stop and triggers it (F-STP-01),
+# but a stop on TBBO fills only at the next record's quote (F-STP-02), so this record cannot fill
+# it; the same trade lies above the limit, through it (F-LMT-01), so the limit fills at its own
+# price: fill = 5004.00 (F-LMT-03); the stop is cancelled (F-OCO-01);
+# had the stop won, as it does on trades, where the record that triggers a stop fills it
+# (F-OCO-01), it would have filled at the next record's ask:
+# higher of (5005.00 + 0 × 0.25, 5005.25) = 5005.25 (F-STP-02).

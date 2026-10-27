@@ -10,14 +10,15 @@ use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState, TimeInForce};
 use fefat_core::units::Price;
 
-use super::{BookedFill, Quote, RunError, TickRecord, TickRun};
+use super::{BookedFill, RunError, TickRecord, TickRun};
 use crate::book::{BracketLink, Closing, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::rules::{self, Priced};
 
 impl<R: MarketDataReader> TickRun<'_, R> {
-    /// A record: the orders that see their first record, the stops the record before triggered,
-    /// the stops this one triggers, then the limits, so that a stop beats a limit of its group
+    /// A record: the stops the record before triggered, market orders since, which fill before
+    /// the orders that become active on it (F-STP-02); the orders that see their first record;
+    /// the stops this one triggers; then the limits, so that a stop beats a limit of its group
     /// (F-OCO-01); then the mark (F-MRK-01). Each loop takes the ids in its state at its start
     /// and passes over an order an earlier fill closed.
     pub(super) fn on_record(&mut self, record: &TickRecord, index: usize) -> Result<(), RunError> {
@@ -33,15 +34,13 @@ impl<R: MarketDataReader> TickRun<'_, R> {
 
     /// The live orders' turn on a tradeable record, in the order of `on_record`.
     fn work_orders(&mut self, record: &TickRecord, index: usize) -> Result<(), RunError> {
+        for id in self.book.ids_in(OrderState::Triggered, |_| true) {
+            self.fill_triggered(id, record, index)?;
+        }
         for id in self.book.ids_in(OrderState::Waiting, |_| true) {
             let waiting = self.book.live_in(id, OrderState::Waiting);
             if waiting.is_some_and(|order| rules::f_act_01(order, record.ts, index)) {
                 self.first_record(id, record, index)?;
-            }
-        }
-        if let Some(quote) = record.quote {
-            for id in self.book.ids_in(OrderState::Triggered, |_| true) {
-                self.fill_triggered(id, record, quote, index)?;
             }
         }
         let is_stop = |kind: &OrderKind| matches!(kind, OrderKind::StopMarket { .. });
@@ -94,16 +93,13 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             return Ok(());
         }
         let (ticks, tick) = (rules::f_slp_01(&self.settings, &kind, through), self.tick());
-        let priced = match record.quote {
-            Some(quote) => {
-                let (reference, shown_size) = quote.of(side);
-                Priced {
-                    price: rules::f_mkt_01(side, reference, ticks, tick)?,
-                    rule: PricingRule::MarketAtQuote,
-                    reference,
-                    shown_size,
-                }
-            }
+        let priced = match record.quoted(side) {
+            Some((reference, shown_size)) => Priced {
+                price: rules::f_mkt_01(side, reference, ticks, tick)?,
+                rule: PricingRule::MarketAtQuote,
+                reference,
+                shown_size,
+            },
             None => Priced {
                 price: rules::f_mkt_02(side, record.price, ticks, tick)?,
                 rule: PricingRule::MarketAtTrade,
@@ -125,16 +121,15 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         &mut self,
         id: OrderId,
         record: &TickRecord,
-        quote: Quote,
         index: usize,
     ) -> Result<(), RunError> {
         let Some(order) = self.book.live_in(id, OrderState::Triggered) else {
             return Ok(());
         };
-        let (side, Some(stop)) = (order.order.side, order.level()) else {
+        let side = order.order.side;
+        let (Some(stop), Some((quoted, shown_size))) = (order.level(), record.quoted(side)) else {
             return Ok(());
         };
-        let (quoted, shown_size) = quote.of(side);
         let ticks = self.settings.slippage.stop;
         let priced = Priced {
             price: rules::f_stp_02(side, stop, quoted, ticks, self.tick())?,
@@ -190,9 +185,8 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             return Ok(());
         };
         let traded = rules::limit_past(&self.settings, side, limit, record.price);
-        let (filled, shown_size) = match record.quote {
-            Some(quote) if !traded => {
-                let (quoted, quoted_size) = quote.of(side);
+        let (filled, shown_size) = match record.quoted(side) {
+            Some((quoted, quoted_size)) if !traded => {
                 (rules::f_lmt_02(side, limit, quoted), quoted_size)
             }
             Some(_) | None => (traded, record.size),

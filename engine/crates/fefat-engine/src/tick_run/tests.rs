@@ -275,23 +275,64 @@ fn on_tbbo_a_bracket_stop_at_its_entry_records_trade_is_through_the_market() {
 }
 
 #[test]
-fn a_tbbo_record_that_triggers_a_stop_and_bids_at_the_target_fills_the_target() {
+fn a_tbbo_record_that_triggers_a_stop_and_trades_through_a_limit_of_its_group_fills_the_limit() {
     // S-fill-043
     let reader = tbbo(&[
-        (200, 500_000, 2, 499_975, 500_000, 6, 4),
-        (300, 499_475, 1, 500_525, 500_550, 3, 5),
-        (400, 499_500, 2, 499_475, 499_500, 4, 6),
+        (200, 500_300, 2, 500_275, 500_300, 6, 4),
+        (300, 500_500, 1, 500_475, 500_500, 3, 5),
+        (400, 500_525, 2, 500_500, 500_525, 4, 6),
     ]);
     let orders = vec![
-        in_group(order(1, Side::Sell, stop(499_500)), 1),
-        in_group(order(2, Side::Sell, limit(500_500)), 1),
+        in_group(order(1, Side::Buy, stop(500_500)), 1),
+        in_group(order(2, Side::Sell, limit(500_400)), 1),
     ];
+    let outputs = run_orders(&reader, TickFidelity::Tbbo, flat(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [(2, 300, 500_400, PricingRule::LimitAtItsPrice)]
+    );
+    assert_eq!(state_of(&outputs, 1), OrderState::Cancelled);
+}
+
+#[test]
+fn in_a_tbbo_sweep_a_stop_fills_at_the_print_below_the_bid_it_carries() {
+    // S-fill-044
+    let reader = tbbo(&[
+        (200, 499_600, 2, 499_575, 499_600, 6, 4),
+        (300, 499_575, 6, 499_575, 499_600, 6, 4),
+        (300, 499_525, 5, 499_575, 499_600, 6, 4),
+        (300, 499_400, 5, 499_575, 499_600, 6, 4),
+        (400, 499_375, 1, 499_350, 499_375, 3, 2),
+    ]);
+    let orders = vec![order(1, Side::Sell, stop(499_550))];
     let outputs = run_orders(&reader, TickFidelity::Tbbo, long_one(), orders);
     assert_eq!(
         fills(&outputs),
-        [(2, 300, 500_500, PricingRule::LimitAtItsPrice)]
+        [(1, 300, 499_400, PricingRule::StopAtNextQuote)]
     );
-    assert_eq!(state_of(&outputs, 1), OrderState::Cancelled);
+    assert_eq!(outputs.fills[0].fill.slippage_ticks, 6);
+}
+
+#[test]
+fn a_tbbo_stop_triggered_on_one_record_fills_before_a_market_order_of_its_group() {
+    // S-fill-047
+    let reader = tbbo(&[
+        (150, 500_100, 2, 500_075, 500_100, 5, 5),
+        (300, 500_125, 2, 500_100, 500_125, 5, 5),
+    ]);
+    let market = ScenarioOrder {
+        placed_at: at(200),
+        lots: Qty(2),
+        ..in_group(order(2, Side::Buy, OrderKind::Market), 1)
+    };
+    let orders = vec![in_group(order(1, Side::Buy, stop(500_100)), 1), market];
+    let outputs = run_orders(&reader, TickFidelity::Tbbo, flat(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [(1, 300, 500_125, PricingRule::StopAtNextQuote)]
+    );
+    assert_eq!(state_of(&outputs, 2), OrderState::Cancelled);
+    assert_eq!(outputs.ledger.position().signed_lots(), Qty(1));
 }
 
 #[test]

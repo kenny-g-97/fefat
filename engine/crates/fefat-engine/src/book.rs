@@ -253,11 +253,13 @@ impl Book {
         !self.live.is_empty()
     }
 
-    /// Whether a market order that closes the position still works.
+    /// Whether a market order is on its way out of the position: the exit that flatten placed,
+    /// or a stop triggered on TBBO, a market order from its trigger that no decision cancels
+    /// (F-STP-02).
     pub(crate) fn is_exiting(&self) -> bool {
-        self.live
-            .iter()
-            .any(|order| order.order.role == OrderRole::Exit)
+        self.live.iter().any(|order| {
+            order.order.role == OrderRole::Exit || order.state == OrderState::Triggered
+        })
     }
 
     /// The order `id`, live or closed.

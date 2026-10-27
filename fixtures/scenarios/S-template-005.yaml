@@ -1,0 +1,42 @@
+id: S-template-005
+title: A template's signal exit waits while its TBBO stop, triggered before the close, fills on the next record
+fidelity: tbbo
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 4}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, long_exit: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2, bid: "4999.75", ask: "5000.00", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T14:34:59.950Z", price: "4999.00", size: 2, bid: "4998.75", ask: "4999.00", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T14:35:00.020Z", price: "4998.75", size: 2, bid: "4998.50", ask: "4998.75", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T14:35:00.300Z", price: "4997.00", size: 2, bid: "4996.75", ask: "4997.00", bid_size: 5, ask_size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.00", rule: F-MKT-01}
+    - {order: 2, ts: "2026-03-06T14:35:00.020Z", price: "4998.50", rule: F-STP-02}
+rules: [F-ACT-01, F-MKT-01, F-OCO-01, F-OCO-02, F-STP-01, F-STP-02, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01):
+# at the 14:30 close long_entry is true: the template buys 1 lot at the market, order 1, active at
+# 14:30:00.100 (F-ACT-01); the record at 14:30:00.200 fills it at the ask, 5000.00 (F-MKT-01);
+# its bracket is placed then (F-OCO-02): a sell stop, order 2, 4 ticks below the fill,
+# 5000.00 - 4 × 0.25 = 4999.00, below the entry's trade and so not through the market (F-STP-05),
+# and a sell limit, order 3, 8 ticks above it, 5000.00 + 8 × 0.25 = 5002.00;
+# the record at 14:34:59.950 trades 4999.00, at the stop, and triggers it (F-STP-01); on TBBO it
+# fills at the next tradeable record (F-STP-02), a market order already sent from its trigger;
+# at the 14:35 close long_exit is true, but the stop is on its way out of the position, so the
+# template, exiting, cancels and places nothing;
+# the record at 14:35:00.020 fills the stop at the lower of (4999.00 - 0 × 0.25, 4998.50) = 4998.50
+# (F-STP-02), and the target is cancelled (F-OCO-01): the long lost 1.50 points;
+# had the exit cancelled the triggered stop, its market order, active at 14:35:00.100, would have
+# sold at the bid of the record at 14:35:00.300, 4996.75 (F-MKT-01), 7 ticks lower.
