@@ -226,6 +226,20 @@ impl FromStr for Fidelity {
     }
 }
 
+/// A timeframe serializes as its text, `5m`, as a strategy specification writes it.
+impl Serialize for Timeframe {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Timeframe {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 /// A fidelity serializes as its text, `trades` or `1m`, as the engine cache's index holds it.
 impl Serialize for Fidelity {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

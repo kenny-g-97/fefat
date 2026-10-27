@@ -12,16 +12,20 @@ mod bounds;
 mod exits;
 #[cfg(test)]
 mod tests;
+mod values;
 
 pub use bounds::OutOfBounds;
 pub use exits::{
     Breakeven, Cooldown, EntryWindow, Limits, ProfitTrigger, StopRule, Target, TargetPrice,
     TimeRules, TrailBy, TrailUpdate, Trailing, Weekday,
 };
+pub use values::{LocalTime, Root, SpecVersion, TimeZoneName};
 
 use schemars::JsonSchema;
 use schemars::generate::SchemaSettings;
 use serde::{Deserialize, Serialize};
+
+use crate::fidelity::Timeframe;
 
 /// A signal strategy's specification: the instrument it trades, the timeframe of the signal bars
 /// whose closes decide, and its execution template.
@@ -29,14 +33,14 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct StrategySpec {
     /// The version of the document's layout: 1.
-    #[schemars(range(min = 1, max = 1))]
-    pub spec_version: u32,
+    #[schemars(with = "u32", range(min = 1, max = 1))]
+    pub spec_version: SpecVersion,
     /// The root the strategy trades, as the instrument table names it, such as `ES`.
-    #[schemars(length(min = 1))]
-    pub instrument: String,
+    #[schemars(with = "String", length(min = 1))]
+    pub instrument: Root,
     /// The timeframe of the signal bars, such as `5m`: a count, then `s`, `m`, `h`, or `d`.
-    #[schemars(regex(pattern = r"^[1-9][0-9]*[smhd]$"))]
-    pub timeframe: String,
+    #[schemars(with = "String", regex(pattern = r"^[1-9][0-9]*[smhd]$"))]
+    pub timeframe: Timeframe,
     /// What the strategy does with its signals.
     pub execution: Execution,
 }

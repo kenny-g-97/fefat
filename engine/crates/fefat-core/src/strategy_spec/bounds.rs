@@ -1,7 +1,10 @@
-//! The bounds a strategy specification's JSON schema states and serde does not check: the
-//! version, the root, the timeframe, and the counts, distances, multiples, fractions, sizes,
-//! names, and local times of its execution template. The engine holds a document to them where
-//! it first reads specs (BACKLOG.md, step 2.6), so that Rust refuses what the SDK's models refuse.
+//! The bounds a strategy specification's JSON schema states and serde does not check: the counts,
+//! distances, multiples, fractions, sizes, and names of its execution template; and the rules
+//! that need another, which no schema states (`docs/spec/fill-semantics.md` F-RND-02, F-TRL-04).
+//! The version, the root, the timeframe, the time zone, and the local times are types of their
+//! own (`values`), which refuse what the schema refuses when a document is read. The engine holds
+//! a document to the rest where it first reads specs (BACKLOG.md, step 2.6), so that Rust refuses
+//! what the SDK's models refuse.
 
 use std::fmt::Display;
 
@@ -9,9 +12,8 @@ use thiserror::Error;
 
 use super::{
     Cooldown, EntryOrder, Execution, Limits, ProfitTrigger, Sizing, StopRule, StrategySpec, Target,
-    TargetPrice, TimeRules, TrailBy, Trailing,
+    TargetPrice, TimeRules, TrailBy, TrailUpdate, Trailing,
 };
-use crate::fidelity::Timeframe;
 
 /// A value of a strategy specification outside the bounds its schema states.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -25,19 +27,108 @@ pub struct OutOfBounds {
     pub actual: String,
 }
 
-impl StrategySpec {
-    /// Refuses a document outside the bounds its JSON schema states.
-    pub fn validate(&self) -> Result<(), OutOfBounds> {
-        if self.spec_version != 1 {
-            return Err(out("spec_version", "1", self.spec_version));
+impl OutOfBounds {
+    pub(super) fn new(
+        field: impl Into<String>,
+        expected: &'static str,
+        actual: impl Display,
+    ) -> Self {
+        Self {
+            field: field.into(),
+            expected,
+            actual: actual.to_string(),
         }
-        not_empty("instrument", &self.instrument)?;
-        if self.timeframe.parse::<Timeframe>().is_err() {
-            let expected = "a count from 1, then s, m, h, or d, such as 5m";
-            return Err(out("timeframe", expected, &self.timeframe));
-        }
-        execution_bounds(&self.execution)
     }
+}
+
+impl StrategySpec {
+    /// Refuses a document outside the bounds its JSON schema states, or with a rule that needs
+    /// another it lacks.
+    pub fn validate(&self) -> Result<(), OutOfBounds> {
+        execution_bounds(&self.execution)?;
+        require_what_each_rule_needs(&self.execution)
+    }
+}
+
+/// Breakeven and a trailing stop move a stop, so they need one; R multiples and a risk size
+/// count in the stop's distance (F-RND-02); `after_target` names a target the specification has;
+/// and a trailing stop by the column moves at decisions alone (F-TRL-04).
+fn require_what_each_rule_needs(execution: &Execution) -> Result<(), OutOfBounds> {
+    let no_stop = execution.stop.is_none();
+    let needs_a_stop = [
+        ("execution.breakeven", execution.breakeven.is_some()),
+        ("execution.trailing", execution.trailing.is_some()),
+        ("execution.targets", execution.targets.iter().any(in_r)),
+        (
+            "execution.breakeven.trigger",
+            breakeven_trigger(execution).is_some_and(counts_in_r),
+        ),
+        (
+            "execution.trailing.activation",
+            activation(execution).is_some_and(counts_in_r),
+        ),
+        ("execution.sizing", is_risk(&execution.sizing)),
+    ];
+    if let Some((field, _)) = needs_a_stop.iter().find(|(_, needs)| no_stop && *needs) {
+        return Err(out(*field, "beside a stop", "none"));
+    }
+    let triggers = [
+        (
+            "execution.breakeven.trigger.target",
+            breakeven_trigger(execution),
+        ),
+        (
+            "execution.trailing.activation.target",
+            activation(execution),
+        ),
+    ];
+    for (field, trigger) in triggers {
+        if let Some(ProfitTrigger::AfterTarget { target }) = trigger
+            && usize::from(*target) > execution.targets.len()
+        {
+            let actual = format!("target {target} of {}", execution.targets.len());
+            return Err(out(field, "a target the specification has", actual));
+        }
+    }
+    match &execution.trailing {
+        Some(trailing)
+            if matches!(trailing.by, TrailBy::Column {})
+                && trailing.update != TrailUpdate::BarClose =>
+        {
+            Err(out(
+                "execution.trailing.update",
+                "bar_close for a trailing stop by the column",
+                "intrabar",
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn breakeven_trigger(execution: &Execution) -> Option<&ProfitTrigger> {
+    execution
+        .breakeven
+        .as_ref()
+        .map(|breakeven| &breakeven.trigger)
+}
+
+fn activation(execution: &Execution) -> Option<&ProfitTrigger> {
+    execution.trailing.as_ref()?.activation.as_ref()
+}
+
+fn in_r(target: &Target) -> bool {
+    matches!(target.price, TargetPrice::RMultiple { .. })
+}
+
+fn counts_in_r(trigger: &ProfitTrigger) -> bool {
+    matches!(trigger, ProfitTrigger::RMultiple { .. })
+}
+
+const fn is_risk(sizing: &Sizing) -> bool {
+    matches!(
+        sizing,
+        Sizing::RiskAmount { .. } | Sizing::RiskPercent { .. }
+    )
 }
 
 fn execution_bounds(execution: &Execution) -> Result<(), OutOfBounds> {
@@ -135,21 +226,14 @@ fn trailing_bounds(trailing: &Trailing) -> Result<(), OutOfBounds> {
 }
 
 fn time_bounds(time: &TimeRules) -> Result<(), OutOfBounds> {
-    not_empty("execution.time.tz", &time.tz)?;
     for (index, window) in time.windows.iter().enumerate() {
-        let field = format!("execution.time.windows[{index}]");
-        local_time(&format!("{field}.start"), &window.start)?;
-        local_time(&format!("{field}.end"), &window.end)?;
         if window.weekdays.as_ref().is_some_and(Vec::is_empty) {
             return Err(out(
-                format!("{field}.weekdays"),
+                format!("execution.time.windows[{index}].weekdays"),
                 "of one day or more",
                 "none",
             ));
         }
-    }
-    if let Some(flat_by) = &time.flat_by {
-        local_time("execution.time.flat_by", flat_by)?;
     }
     optional_count("execution.time.max_bars", time.max_bars)?;
     optional_count("execution.time.max_minutes", time.max_minutes)
@@ -228,32 +312,8 @@ fn not_empty(field: &str, text: &str) -> Result<(), OutOfBounds> {
     Err(out(field, "of one character or more", "an empty text"))
 }
 
-/// A local time `HH:MM` from 00:00 to 23:59, the schema's `^([01][0-9]|2[0-3]):[0-5][0-9]$`.
-fn local_time(field: &str, text: &str) -> Result<(), OutOfBounds> {
-    let is_local_time = match *text.as_bytes() {
-        [hour_tens, hour_units, b':', minute_tens, minute_units] => {
-            two_digits(hour_tens, hour_units).is_some_and(|hours| hours <= 23)
-                && two_digits(minute_tens, minute_units).is_some_and(|minutes| minutes <= 59)
-        }
-        _ => false,
-    };
-    if is_local_time {
-        return Ok(());
-    }
-    Err(out(field, "a local time HH:MM from 00:00 to 23:59", text))
-}
-
-fn two_digits(tens: u8, units: u8) -> Option<u8> {
-    let both = tens.is_ascii_digit() && units.is_ascii_digit();
-    both.then(|| (tens - b'0') * 10 + (units - b'0'))
-}
-
 fn out(field: impl Into<String>, expected: &'static str, actual: impl Display) -> OutOfBounds {
-    OutOfBounds {
-        field: field.into(),
-        expected,
-        actual: actual.to_string(),
-    }
+    OutOfBounds::new(field, expected, actual)
 }
 
 #[cfg(test)]
@@ -320,10 +380,6 @@ mod tests {
         let four_targets = Value::Array(vec![json!({"price": {"kind": "column"}}); 4]);
         #[rustfmt::skip]
         let refusals = [
-            ("/spec_version", json!(2), "spec_version"),
-            ("/instrument", json!(""), "instrument"),
-            ("/timeframe", json!("05m"), "timeframe"),
-            ("/timeframe", json!("5w"), "timeframe"),
             ("/execution/entry/time_to_live_bars", json!(0), "execution.entry.time_to_live_bars"),
             ("/execution/stop", json!({"kind": "ticks", "ticks": 0}), "execution.stop.ticks"),
             ("/execution/stop", json!({"kind": "percent", "percent": 0.0}), "execution.stop.percent"),
@@ -340,11 +396,7 @@ mod tests {
             ("/execution/trailing/by/ticks", json!(0), "execution.trailing.by.ticks"),
             ("/execution/trailing/step_ticks", json!(0), "execution.trailing.step_ticks"),
             ("/execution/trailing/activation/multiple", json!(-2.0), "execution.trailing.activation.multiple"),
-            ("/execution/time/tz", json!(""), "execution.time.tz"),
-            ("/execution/time/windows/0/start", json!("24:00"), "execution.time.windows[0].start"),
-            ("/execution/time/windows/0/end", json!("8:30"), "execution.time.windows[0].end"),
             ("/execution/time/windows/0/weekdays", json!([]), "execution.time.windows[0].weekdays"),
-            ("/execution/time/flat_by", json!("15:60"), "execution.time.flat_by"),
             ("/execution/time/max_bars", json!(0), "execution.time.max_bars"),
             ("/execution/time/max_minutes", json!(0), "execution.time.max_minutes"),
             ("/execution/limits/blackout", json!(""), "execution.limits.blackout"),
@@ -372,5 +424,86 @@ mod tests {
             spec.validate().unwrap_err().to_string(),
             "Expected execution.stop.ticks of 1 or more, got 0"
         );
+    }
+
+    #[test]
+    fn a_value_its_type_refuses_is_refused_when_the_document_is_read() {
+        #[rustfmt::skip]
+        let refusals = [
+            ("/spec_version", json!(2), "Expected spec_version 1, got 2"),
+            ("/instrument", json!(""), "Expected instrument of one character or more, got an empty text"),
+            ("/timeframe", json!("05m"), "Expected a bar timeframe such as 1s, 5m, 1h, or 1d, got \"05m\""),
+            ("/timeframe", json!("5w"), "got \"5w\""),
+            ("/execution/time/tz", json!(""), "Expected execution.time.tz of one character or more"),
+            ("/execution/time/windows/0/start", json!("24:00"), "Expected a local time HH:MM from 00:00 to 23:59, got 24:00"),
+            ("/execution/time/windows/0/end", json!("8:30"), "got 8:30"),
+            ("/execution/time/flat_by", json!("15:60"), "got 15:60"),
+        ];
+        for (pointer, value, message) in refusals {
+            let mut document = within_bounds();
+            *document.pointer_mut(pointer).unwrap() = value;
+            let refused = serde_json::from_value::<StrategySpec>(document).unwrap_err();
+            assert!(
+                refused.to_string().contains(message),
+                "{pointer}: {refused}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rule_without_the_rule_it_needs_is_refused_by_name() {
+        let without_stop = |change: Value| {
+            let mut document = within_bounds();
+            let execution = document["execution"].as_object_mut().unwrap();
+            execution.remove("stop");
+            execution.remove("breakeven");
+            execution.remove("trailing");
+            execution.insert("targets".to_owned(), json!([]));
+            for (key, value) in change.as_object().unwrap() {
+                execution.insert(key.clone(), value.clone());
+            }
+            let spec: StrategySpec = serde_json::from_value(document).unwrap();
+            spec.validate().map_err(|refused| refused.to_string())
+        };
+        #[rustfmt::skip]
+        let refusals = [
+            (json!({"breakeven": {"trigger": {"kind": "ticks", "ticks": 4}}}), "Expected execution.breakeven beside a stop, got none"),
+            (json!({"trailing": {"by": {"kind": "ticks", "ticks": 4}}}), "Expected execution.trailing beside a stop, got none"),
+            (json!({"targets": [{"price": {"kind": "r_multiple", "multiple": 2.0}}]}), "Expected execution.targets beside a stop, got none"),
+            (json!({"sizing": {"kind": "risk_amount", "amount": 250.0}}), "Expected execution.sizing beside a stop, got none"),
+            (json!({"sizing": {"kind": "risk_percent", "percent": 1.0}}), "Expected execution.sizing beside a stop, got none"),
+        ];
+        for (change, message) in refusals {
+            assert_eq!(
+                without_stop(change.clone()),
+                Err(message.to_owned()),
+                "{change}"
+            );
+        }
+        assert_eq!(
+            without_stop(json!({"targets": [{"price": {"kind": "ticks", "ticks": 4}}]})),
+            Ok(())
+        );
+
+        let mut document = within_bounds();
+        document["execution"]["targets"] = json!([{"price": {"kind": "ticks", "ticks": 8}}]);
+        document["execution"]["breakeven"]["trigger"]["target"] = json!(2);
+        let spec: StrategySpec = serde_json::from_value(document).unwrap();
+        assert_eq!(
+            spec.validate().unwrap_err().to_string(),
+            "Expected execution.breakeven.trigger.target a target the specification has, got \
+             target 2 of 1"
+        );
+
+        let mut document = within_bounds();
+        document["execution"]["trailing"]["by"] = json!({"kind": "column"});
+        let spec: StrategySpec = serde_json::from_value(document.clone()).unwrap();
+        assert_eq!(
+            spec.validate().unwrap_err().field,
+            "execution.trailing.update"
+        );
+        document["execution"]["trailing"]["update"] = json!("bar_close");
+        let spec: StrategySpec = serde_json::from_value(document).unwrap();
+        assert_eq!(spec.validate(), Ok(()));
     }
 }

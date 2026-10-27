@@ -162,12 +162,14 @@ EVERY_RULE = [
     ),
     spec_with(
         entry=ff.StopEntry(offset_ticks=4, time_to_live_bars=1),
+        stop=ff.Stop(ticks=12),
         breakeven=ff.Breakeven(r=1, offset_ticks=-1),
         trailing=ff.Trailing(
             ticks=8, step_ticks=2, activation=TicksTrigger(ticks=10), update=TrailUpdate.BAR_CLOSE
         ),
     ),
     spec_with(
+        stop=ff.Stop(ticks=12),
         trailing=ff.Trailing(atr=3),
         time=ff.TimeRules(
             tz="UTC",
@@ -181,7 +183,10 @@ EVERY_RULE = [
         ),
     ),
     spec_with(
-        trailing=ff.Trailing(column=True, activation=RMultipleTrigger(multiple=1)),
+        stop=ff.Stop(ticks=12),
+        trailing=ff.Trailing(
+            column=True, activation=RMultipleTrigger(multiple=1), update=TrailUpdate.BAR_CLOSE
+        ),
         limits=ff.Limits(
             blackout="news",
             max_trades_per_day=3,
@@ -194,11 +199,12 @@ EVERY_RULE = [
         sizing=ff.Notional(25_000),
     ),
     spec_with(
+        stop=ff.Stop(ticks=12),
         limits=ff.Limits(cooldown_after_loss=MinutesCooldown(minutes=30)),
         sizing=ff.RiskPerTrade(amount=250),
         signal_exit=False,
     ),
-    spec_with(sizing=ff.RiskPerTrade(percent=1)),
+    spec_with(stop=ff.Stop(ticks=12), sizing=ff.RiskPerTrade(percent=1)),
 ]
 
 
@@ -358,6 +364,59 @@ def test_a_document_the_schema_refuses_the_models_refuse(
 
     assert not VALIDATOR.is_valid(document)
     with pytest.raises(ValidationError):
+        StrategySpec.model_validate(document)
+
+
+def minimal_with(**rules: object) -> dict[str, Any]:
+    """A market entry of one lot on ES's 5-minute bars, with `rules` in its execution."""
+    execution = {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}, **rules}
+    return {"spec_version": 1, "instrument": "ES", "timeframe": "5m", "execution": execution}
+
+
+STOP = {"kind": "ticks", "ticks": 12}
+TICKS_TARGET = {"price": {"kind": "ticks", "ticks": 8}}
+
+
+@pytest.mark.parametrize(
+    ("document", "refusal"),
+    [
+        (
+            minimal_with(breakeven={"trigger": {"kind": "ticks", "ticks": 4}}),
+            "Expected execution.breakeven beside a stop, got none.",
+        ),
+        (
+            minimal_with(trailing={"by": {"kind": "ticks", "ticks": 4}}),
+            "Expected execution.trailing beside a stop, got none.",
+        ),
+        (
+            minimal_with(targets=[{"price": {"kind": "r_multiple", "multiple": 2.0}}]),
+            "Expected execution.targets beside a stop, got none.",
+        ),
+        (
+            minimal_with(sizing={"kind": "risk_percent", "percent": 1.0}),
+            "Expected execution.sizing beside a stop, got none.",
+        ),
+        (
+            minimal_with(
+                stop=STOP,
+                targets=[TICKS_TARGET],
+                breakeven={"trigger": {"kind": "after_target", "target": 2}},
+            ),
+            "Expected execution.breakeven.trigger.target a target the specification has, got "
+            "target 2 of 1.",
+        ),
+        (
+            minimal_with(stop=STOP, trailing={"by": {"kind": "column"}}),
+            "Expected execution.trailing.update bar_close for a trailing stop by the column, "
+            "got intrabar.",
+        ),
+    ],
+)
+def test_a_rule_without_the_rule_it_needs_is_refused_as_fefat_core_refuses_it(
+    document: dict[str, Any], refusal: str
+) -> None:
+    assert VALIDATOR.is_valid(document)
+    with pytest.raises(ValidationError, match=refusal):
         StrategySpec.model_validate(document)
 
 

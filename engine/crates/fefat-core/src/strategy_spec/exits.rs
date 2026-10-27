@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::values::{LocalTime, TimeZoneName};
+
 /// The stop placed against the position when an entry fills, a stop-market order (F-STP).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -173,8 +175,8 @@ pub enum TrailUpdate {
 #[serde(deny_unknown_fields)]
 pub struct TimeRules {
     /// The IANA time zone of the local times, such as `America/Chicago`.
-    #[schemars(length(min = 1))]
-    pub tz: String,
+    #[schemars(with = "String", length(min = 1))]
+    pub tz: TimeZoneName,
     /// The local times in which entries may be placed; without any, at any time.
     #[serde(default)]
     pub windows: Vec<EntryWindow>,
@@ -183,7 +185,7 @@ pub struct TimeRules {
     /// which must fall inside its session, outside its halts, and on the signal bars' grid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
-    pub flat_by: Option<String>,
+    pub flat_by: Option<LocalTime>,
     /// The signal bars a position may stay open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "u32", range(min = 1))]
@@ -205,12 +207,12 @@ pub struct TimeRules {
 #[serde(deny_unknown_fields)]
 pub struct EntryWindow {
     /// The local time, `HH:MM`, at which the window opens.
-    #[schemars(regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
-    pub start: String,
+    #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
+    pub start: LocalTime,
     /// The local time, `HH:MM`, at which the window closes; before `start`, it runs past
     /// midnight.
-    #[schemars(regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
-    pub end: String,
+    #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
+    pub end: LocalTime,
     /// The days on which the window holds; without them, every day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<Weekday>", length(min = 1))]
