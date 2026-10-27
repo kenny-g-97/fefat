@@ -22,6 +22,8 @@ mod outcomes;
 mod properties;
 mod records;
 #[cfg(test)]
+mod skip_equals_full;
+#[cfg(test)]
 mod tests;
 
 pub use descent::Replay;
