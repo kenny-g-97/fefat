@@ -15,8 +15,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CacheError, io_error};
 
-/// The version of the cache's files, columns, and index; a month of another version is rebuilt.
-pub const LAYOUT_VERSION: u32 = 1;
+/// The version of the cache's files, columns, and index, and of the rules for what a month keeps;
+/// a month of another version is rebuilt. 2 since step 2.7, which leaves out a finer level with a
+/// record outside the range of the bar holding it.
+pub const LAYOUT_VERSION: u32 = 2;
 /// A month's index, written last: a month folder without it holds no cache.
 pub const INDEX_FILE_NAME: &str = "index.json";
 /// The suffix of a month folder being built, which a reader passes over.

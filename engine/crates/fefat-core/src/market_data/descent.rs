@@ -81,8 +81,7 @@ pub(super) fn offsets_between_levels(
                 finer: *finer,
             };
             if finer.nests_in(*timeframe) {
-                descent.check_held_whole(coarser, finer_spans)?;
-                descent.check_within_range(coarser, finer_spans)?;
+                descent.check_held(coarser, finer_spans)?;
             }
             offsets.insert((*timeframe, *finer), descent.offsets(coarser, finer_spans)?);
         }
@@ -99,40 +98,22 @@ struct Descent {
 
 impl Descent {
     /// Refuses a finer record that no bar holds whole: one before the first bar, between two
-    /// bars, after the last, or one that lasts past its bar's close.
-    fn check_held_whole(&self, bars: &[BarRow], spans: &[Span]) -> Result<(), TapeError> {
+    /// bars, after the last, or one that lasts past its bar's close; and one that trades below
+    /// the low or above the high of the bar holding it, whose range a descent trusts (`02` §4).
+    fn check_held(&self, bars: &[BarRow], spans: &[Span]) -> Result<(), TapeError> {
         let mut held_until = 0;
         for bar in bars {
             let start = spans.partition_point(|span| span.first < bar.ts_open);
             if start > held_until {
                 return Err(self.outside(held_until));
             }
-            let mut held = spans
-                .iter()
-                .skip(start)
-                .take_while(|span| span.first < bar.ts_close);
-            if let Some(sticking_out) = held.position(|span| span.last >= bar.ts_close) {
+            held_until = spans.partition_point(|span| span.first < bar.ts_close);
+            let held = spans.get(start..held_until).unwrap_or_default();
+            if let Some(sticking_out) = held.iter().position(|span| span.last >= bar.ts_close) {
                 return Err(self.outside(start + sticking_out));
             }
-            held_until = spans.partition_point(|span| span.first < bar.ts_close);
-        }
-        if held_until < spans.len() {
-            return Err(self.outside(held_until));
-        }
-        Ok(())
-    }
-
-    /// Refuses a finer record that trades below the low or above the high of the bar holding it,
-    /// which [`Self::check_held_whole`] has found for every record.
-    fn check_within_range(&self, bars: &[BarRow], spans: &[Span]) -> Result<(), TapeError> {
-        for bar in bars {
-            let start = spans.partition_point(|span| span.first < bar.ts_open);
-            let end = spans.partition_point(|span| span.first < bar.ts_close);
-            let held = spans.get(start..end).unwrap_or_default();
-            let outside = held
-                .iter()
-                .position(|span| span.low < bar.low || span.high > bar.high);
-            if let Some(outside) = outside {
+            let beyond_range = |span: &Span| span.low < bar.low || span.high > bar.high;
+            if let Some(outside) = held.iter().position(beyond_range) {
                 return Err(TapeError::RecordOutsideRange {
                     trade_date: self.trade_date,
                     timeframe: self.timeframe,
@@ -140,6 +121,9 @@ impl Descent {
                     record: start + outside + 1,
                 });
             }
+        }
+        if held_until < spans.len() {
+            return Err(self.outside(held_until));
         }
         Ok(())
     }

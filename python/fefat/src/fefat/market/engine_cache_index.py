@@ -23,8 +23,10 @@ from fefat.market.store_files import parsed_json
 ENGINE_CACHE_FOLDER_NAME = "engine"
 """The engine cache's folder in `FEFAT_HOME/cache` (`fefat.config.FefatPaths.cache_dir`)."""
 INDEX_FILE_NAME = "index.json"
-LAYOUT_VERSION = 1
-"""The layout `fefat-data` writes; a month of another layout is rebuilt."""
+LAYOUT_VERSION = 2
+"""The layout `fefat-data` writes, and its rules for what a month keeps; a month of another layout
+is rebuilt. 2 since step 2.7, which leaves out a finer level with a record outside the range of
+the bar holding it."""
 PARTIAL_SUFFIX = ".partial"
 """The suffix of a month folder being built, which readers pass over."""
 

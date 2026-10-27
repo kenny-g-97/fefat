@@ -2,7 +2,8 @@
 //! per level its cases read, `trades.arrow`, `tbbo.arrow`, or a bar timeframe's such as
 //! `1m.arrow`, in the engine cache's columns plus `case` and `trade_date`, and the signal rows.
 //! Files are in Arrow IPC's file format, uncompressed, as Polars' `write_ipc` writes them;
-//! columns are read by name, and a file a batch does not need may be absent.
+//! columns are read by name. The file of every level a case names must be there, and
+//! `signals.arrow` may be absent where no case has signal rows.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
@@ -43,6 +44,13 @@ impl BatchTables {
         let mut levels = BTreeMap::new();
         for level in named {
             let path = input.join(format!("{level}.arrow"));
+            if !path.is_file() {
+                return Err(BatchError::Table {
+                    path,
+                    expected: format!("the {level} records that a case of run.json reads"),
+                    actual: "no such file".to_owned(),
+                });
+            }
             let records = records_by_case(&path, fefat_data::level_columns(level))?;
             levels.insert(level, records);
         }

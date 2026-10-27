@@ -103,7 +103,8 @@ pub trait MarketDataReader {
     /// bar `i` descends to rows `offsets[i]..offsets[i + 1]` (step 2.7). Where the levels nest
     /// (ticks in intraday bars, finer bars in intraday bars of a whole multiple of their length;
     /// a daily bar spans its session alone, D-43), every row of bar `i`'s range lies inside bar
-    /// `i`, so a descent never meets a record that no stored bar holds.
+    /// `i` and trades within its low and high, so a descent never meets a record that no stored
+    /// bar holds, nor one beyond the range it skipped by.
     fn offsets(
         &self,
         trade_date: TradeDate,

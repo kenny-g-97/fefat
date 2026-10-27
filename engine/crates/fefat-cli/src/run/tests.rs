@@ -401,6 +401,9 @@ fn a_case_without_records_is_refused_by_name() {
     let folder = TemporaryFolder::new("refused");
     let (input, output) = (folder.0.join("input"), folder.0.join("output"));
     fs::create_dir_all(&input).unwrap();
+    let names = ["case", "trade_date", "ts_recv", "price", "size"];
+    let no_rows = names.map(|name| (name, int64(Vec::new())));
+    write_table(&input.join("trades.arrow"), no_rows.to_vec());
     let only = json!({"cases": [case("S-fill-012", "trades", json!({"kind": "tape"}), json!({"kind": "orders", "orders": []}))]});
     fs::write(input.join("run.json"), only.to_string()).unwrap();
 
@@ -408,6 +411,76 @@ fn a_case_without_records_is_refused_by_name() {
 
     assert!(
         refused.starts_with("Expected case S-fill-012 to run, got: Expected a tape"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn a_level_a_case_names_without_its_file_is_refused() {
+    let folder = TemporaryFolder::new("missing-level");
+    let (input, output) = (folder.0.join("input"), folder.0.join("output"));
+    fs::create_dir_all(&input).unwrap();
+    trades_file(&input);
+    let mut skipping = case(
+        "S-fill-012",
+        "trades",
+        json!({"kind": "tape"}),
+        json!({"kind": "orders", "orders": []}),
+    );
+    skipping["market_data"]["levels"] = json!(["trades", "1m"]);
+    fs::write(
+        input.join("run.json"),
+        json!({"cases": [skipping]}).to_string(),
+    )
+    .unwrap();
+
+    let refused = run_batch(&input, &output).unwrap_err().to_string();
+
+    assert!(
+        refused.starts_with("Expected the 1m records that a case of run.json reads in "),
+        "{refused}"
+    );
+    assert!(refused.ends_with("1m.arrow, got no such file"), "{refused}");
+}
+
+#[test]
+fn a_skipping_case_reads_the_coarser_level_it_names() {
+    // The 14:30 bar's high, 4995.75, lies under S-fill-012's first trade at 4996.00: the reader
+    // refuses the tape only if the case's 1-minute level reaches it.
+    let folder = TemporaryFolder::new("levels");
+    let (input, output) = (folder.0.join("input"), folder.0.join("output"));
+    fs::create_dir_all(&input).unwrap();
+    trades_file(&input);
+    write_table(
+        &input.join("1m.arrow"),
+        vec![
+            ("case", int64(vec![0])),
+            ("trade_date", int64(vec![TRADE_DATE])),
+            ("ts_open", int64(vec![at(0)])),
+            ("ts_close", int64(vec![at(60_000)])),
+            ("open", int64(vec![price(499_575)])),
+            ("high", int64(vec![price(499_575)])),
+            ("low", int64(vec![price(499_025)])),
+            ("close", int64(vec![price(499_075)])),
+            ("volume", int64(vec![12])),
+        ],
+    );
+    let sell_stop = json!({"kind": "orders", "orders": [
+        {"id": 1, "placed_at": at(0), "side": "sell", "kind": "stop", "price": price(499_500), "lots": 1}
+    ]});
+    let mut skipping = case("S-fill-012", "trades", json!({"kind": "tape"}), sell_stop);
+    skipping["market_data"]["levels"] = json!(["trades", "1m"]);
+    skipping["replay"] = json!("skipping");
+    fs::write(
+        input.join("run.json"),
+        json!({"cases": [skipping]}).to_string(),
+    )
+    .unwrap();
+
+    let refused = run_batch(&input, &output).unwrap_err().to_string();
+
+    assert!(
+        refused.contains("inside the range of the 1m bar that holds it, got record 1 outside it"),
         "{refused}"
     );
 }
@@ -423,6 +496,7 @@ fn a_stop_without_a_price_is_refused() {
     let manifest =
         json!({"cases": [case("S-fill-012", "trades", json!({"kind": "tape"}), unpriced)]});
     fs::write(input.join("run.json"), manifest.to_string()).unwrap();
+    trades_file(&input);
 
     let refused = run_batch(&input, &output).unwrap_err().to_string();
 

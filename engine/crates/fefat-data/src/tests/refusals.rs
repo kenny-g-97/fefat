@@ -143,7 +143,7 @@ fn a_month_without_its_index_or_of_another_layout_or_contract_is_refused() {
     };
 
     CacheMonthIndex {
-        layout_version: 2,
+        layout_version: 3,
         ..index.clone()
     }
     .write(&month_folder)
@@ -160,7 +160,7 @@ fn a_month_without_its_index_or_of_another_layout_or_contract_is_refused() {
     let without_an_index = refusal();
 
     assert!(
-        other_layout.starts_with("Expected layout version 1; rebuild the month, got version 2")
+        other_layout.starts_with("Expected layout version 2; rebuild the month, got version 3")
     );
     assert!(other_contract.starts_with("Expected the cache of ESH2026, got ESM2026"));
     assert!(without_an_index.starts_with("Expected the month's index.json, got none"));
