@@ -58,8 +58,14 @@ class TbboRecord(TradeRecord):
         return (self.price, self.bid, self.ask)
 
     def quote(self, side: Side) -> tuple[int, int]:
-        """The quote an order of `side` takes, the ask for a buy, and its size."""
-        return (self.ask, self.ask_size) if side is Side.BUY else (self.bid, self.bid_size)
+        """The quote an order of `side` takes, the ask for a buy, and its size, read no better than
+        the record's trade (F-SLP-01): the later prints of a sweep carry the quote from before the
+        sweep, so an ask below the trade counts as that trade, its price and its size, as does a
+        bid above it."""
+        quoted = (self.ask, self.ask_size) if side is Side.BUY else (self.bid, self.bid_size)
+        if side.worse(quoted[0], self.price) == quoted[0]:
+            return quoted
+        return (self.price, self.size)
 
 
 class BarRecord(FrozenModel):

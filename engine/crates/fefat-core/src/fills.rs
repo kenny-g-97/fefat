@@ -62,6 +62,15 @@ pub enum Liquidity {
     Taker,
 }
 
+impl fmt::Display for Liquidity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Maker => "maker",
+            Self::Taker => "taker",
+        })
+    }
+}
+
 /// What a fill is flagged with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct FillFlags {

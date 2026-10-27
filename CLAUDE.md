@@ -6,7 +6,7 @@ This file holds what every session needs. Language conventions live in `.claude/
 
 ## Repository map
 
-- `engine/`: the Cargo workspace. `fefat-core` holds the types and the `MarketDataReader` trait, with no I/O; `fefat-engine`, `fefat-prop`, and `fefat-metrics` are pure computation; `fefat-data` is the only crate that opens files; `fefat-py` builds the Python module `fefat_engine`; `fefat-cli` drives goldens and benchmarks.
+- `engine/`: the Cargo workspace. `fefat-core` holds the types and the `MarketDataReader` trait, with no I/O; `fefat-engine`, `fefat-prop`, and `fefat-metrics` are pure computation; `fefat-data` is the only crate that opens files; `fefat-py` builds the Python module `fefat_engine`; `fefat-cli` drives goldens, benchmarks, and batches of cases through the engine (`run`).
 - `python/fefat/src/fefat/`: the SDK (`import fefat as ff`), with `market`, `features`, `indicators`, `strategy`, `backtest`, `prop`, `analytics`, `research`, and `reference`.
 - `python/fefat_app/src/fefat_app/`: the local server, with `http/`, `services/`, `ports.py`, `container.py`, and the adapters (`database/`, `jobs/`, `executor.py`, `agent/`, `credentials.py`).
 - `python/tests/`: pytest for both packages.
@@ -27,7 +27,7 @@ just doctor   # the tools FEFAT needs, each OK or MISSING
 just setup    # the commit gate, uv workspace, Cargo workspace, web dependencies, the engine build
 just check    # the data guard, ruff, pyright, import-linter, cargo fmt and clippy, oxlint, tsc
 just test     # the engine build, then pytest, the hook smoke tests, cargo test, vitest
-just build-engine  # compile the engine into .venv, where `import fefat` finds it
+just build-engine  # compile the engine into .venv, where `import fefat` finds it, and build fefat-cli
 just strip-notebooks  # clear notebook outputs; then git add the notebooks again
 just gen-schema  # write the StrategySpec JSON schema from the Rust types; a cargo test fails when it is stale
 just regenerate-goldens  # rewrite fixtures/goldens/ from the engine; only with the builder's approval (the engine-golden skill)

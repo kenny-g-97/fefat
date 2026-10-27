@@ -1,9 +1,9 @@
 //! The determinism harness (step 2.4, D-11): one digest of everything the engine computes from a
-//! seeded tape today, the records and offsets its in-memory reader serves, the ledger after a
-//! seeded run of fills and marks, and a run key, so that two runs, two processes, and Windows and
-//! Linux can be compared by one BLAKE3 hash. No wall clock, no hash map, and integers alone.
-//! `just regenerate-goldens` writes its golden manifest; from step 2.6 the loop's artifacts join
-//! the digest (`BACKLOG.md`).
+//! seeded tape, the records and offsets its in-memory reader serves, the ledger after a seeded
+//! run of fills and marks, the orders, fills, and event log of the tick loop on its trades and
+//! TBBO records with seeded orders (step 2.6), and a run key, so that two runs, two processes,
+//! and Windows and Linux can be compared by one BLAKE3 hash. No wall clock, no hash map, and
+//! integers alone. `just regenerate-goldens` writes its golden manifest.
 
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::{Fill, FillFlags, Liquidity, PricingRule};
@@ -16,13 +16,17 @@ use fefat_core::run_key::{
     ARTIFACT_SCHEMA_VERSION, ENGINE_VERSION, FILL_MODEL_VERSION, RunKeyError, run_key,
 };
 use fefat_core::strategy_spec::StrategySpec;
-use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
+use fefat_core::units::{MONEY_UNITS, Money, Overflow, PRICE_UNITS, Price, Qty};
+use fefat_engine::tick_run::RunError;
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::seeded_tape::{SEEDED_CONTRACT, SEEDED_TRADE_DATE, SplitMix64, TICK, seeded_tape};
+use loop_run::loop_run_hash;
 
-const DOMAIN: &[u8] = b"fefat determinism 1\n";
+mod loop_run;
+
+const DOMAIN: &[u8] = b"fefat determinism 2\n";
 /// The example specification of `02-engine-and-data.md` §2.1, the run key's spec.
 const EXAMPLE_SPEC: &str = r#"{"spec_version": 1, "instrument": "ES", "timeframe": "5m",
     "execution": {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}}}"#;
@@ -50,6 +54,12 @@ pub enum DeterminismError {
     /// The example specification did not read, or the manifest did not write.
     #[error("Expected JSON serde reads and writes, got: {0}")]
     Json(#[from] serde_json::Error),
+    /// The tick loop refused the seeded run.
+    #[error(transparent)]
+    Run(#[from] RunError),
+    /// A seeded order's price beyond 64 bits.
+    #[error(transparent)]
+    Overflow(#[from] Overflow),
 }
 
 /// The digest of `seed`: 64 lower-case hexadecimal digits of BLAKE3.
@@ -59,6 +69,7 @@ pub fn digest(seed: u64) -> Result<String, DeterminismError> {
     let reader = InMemoryMarketData::new(contract, seeded_tape(&mut generator))?;
     let records_digest = market_data_hash(&reader)?;
     let ledger_run_digest = ledger_run_hash(&reader, &mut generator)?;
+    let loop_run_digest = loop_run_hash(&reader, &mut generator)?;
     let spec: StrategySpec = serde_json::from_str(EXAMPLE_SPEC)?;
     let partitions = [records_digest.to_hex().to_string()];
     let key = run_key(&spec, &ledger_run_digest.to_hex(), &partitions)?;
@@ -66,8 +77,14 @@ pub fn digest(seed: u64) -> Result<String, DeterminismError> {
     hasher.update(DOMAIN);
     hasher.update(records_digest.as_bytes());
     hasher.update(ledger_run_digest.as_bytes());
+    hasher.update(loop_run_digest.as_bytes());
     hasher.update(key.as_str().as_bytes());
     Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// ES's instrument parameters: a tick of 0.25, 50 USD a point, and lots of one contract.
+fn es() -> Result<InstrumentParameters, NonPositiveParameter> {
+    InstrumentParameters::new(Price(TICK), Money(50 * MONEY_UNITS), LotStep(PRICE_UNITS))
 }
 
 /// The golden manifest of `seed`'s digest, as the `engine-golden` skill describes it: the
@@ -187,8 +204,7 @@ fn ledger_run_hash(
     reader: &impl MarketDataReader,
     generator: &mut SplitMix64,
 ) -> Result<blake3::Hash, DeterminismError> {
-    let es = InstrumentParameters::new(Price(TICK), Money(50 * MONEY_UNITS), LotStep(PRICE_UNITS))?;
-    let mut ledger = Ledger::new(es, Money(50_000 * MONEY_UNITS));
+    let mut ledger = Ledger::new(es()?, Money(50_000 * MONEY_UNITS));
     let trades = reader.trades(SEEDED_TRADE_DATE)?;
     let mut hasher = blake3::Hasher::new();
     for (index, (&ts, &price)) in trades.ts_recv.iter().zip(trades.price).enumerate() {

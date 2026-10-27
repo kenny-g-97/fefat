@@ -1,0 +1,26 @@
+id: S-fill-047
+title: A TBBO stop triggered on one record fills on the next before a market order of its OCO group active there
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5001.00", quantity: 1, oco: entry}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.200Z", side: buy, kind: market, quantity: 2, oco: entry}
+tape:
+  - {ts: "2026-03-06T14:30:00.150Z", price: "5001.00", size: 2, bid: "5000.75", ask: "5001.00", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "5001.25", size: 2, bid: "5001.00", ask: "5001.25", bid_size: 5, ask_size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.300Z", price: "5001.25", rule: F-STP-02}
+rules: [F-ACT-01, F-MKT-01, F-OCO-01, F-STP-01, F-STP-02]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01). Flat, a buy
+# stop at 5001.00 is active at 14:30:00.100, and a market buy of 2 in one OCO group with it,
+# decided at 14:30:00.200, is active at 14:30:00.300 (F-ACT-01):
+# the record at 14:30:00.150 trades 5001.00, at the stop, and triggers it (F-STP-01); on TBBO it
+# fills at the next tradeable record (F-STP-02), and from its trigger it is a market order already
+# sent, which fills before the orders that become active on that record;
+# the record at 14:30:00.300 fills the stop first:
+# fill = higher of (5001.00 + 0 × 0.25, 5001.25) = 5001.25 (F-STP-02), a long of 1;
+# the market order, active from this record, is cancelled before it fills (F-OCO-01);
+# had the market order gone first, it would have bought 2 lots at the ask, 5001.25 (F-MKT-01), and
+# cancelled the triggered stop, leaving a long of 2.

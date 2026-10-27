@@ -41,6 +41,10 @@ class CalendarHours:
         rows = table.between(utc_date(first) - _AROUND, utc_date(last) + _AROUND)
         return cls([Session.model_validate(row) for row in rows.iter_rows(named=True)])
 
+    def sessions(self) -> tuple[Session, ...]:
+        """The sessions it holds, ordered by their opens."""
+        return tuple(self._sessions)
+
     def is_open(self, instant: int) -> bool:
         index = bisect_right(self._opens, instant) - 1
         if index < 0 or instant >= self._sessions[index].close:

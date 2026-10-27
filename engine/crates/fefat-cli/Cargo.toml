@@ -10,8 +10,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+arrow-array = "59.3.1"
+arrow-ipc = "59.3.1"
+arrow-schema = "59.3.1"
 blake3.workspace = true
 fefat-core = { path = "../fefat-core" }
+fefat-data = { path = "../fefat-data" }
+fefat-engine = { path = "../fefat-engine" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

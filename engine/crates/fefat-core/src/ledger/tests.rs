@@ -191,6 +191,26 @@ fn an_open_position_has_no_equity_before_its_first_mark() {
 }
 
 #[test]
+fn a_ledger_opened_in_a_position_is_worth_its_cash_at_the_positions_price() {
+    // S-fill-012: a long of 1 at 5000.00, stopped out at 4990.25.
+    let mut long = Ledger::holding(es(), STARTING_CASH, Side::Buy, Qty(1), points(5_000)).unwrap();
+    assert_eq!(long.position(), Position::Long(HeldLots(Qty(1))));
+    assert_eq!(long.cash(), dollars(50_000 - 250_000));
+    assert_eq!(long.mark(), None);
+    long.mark_at(points(5_000));
+    assert_eq!(long.equity(), Ok(STARTING_CASH));
+    let stop = Price(4_990_250_000_000);
+    long.book(&fill(Side::Sell, 1, stop, Money(0))).unwrap();
+    assert_eq!(long.position(), Position::Flat);
+    assert_eq!(long.cash(), Money(49_512_500_000));
+
+    let short = Ledger::holding(es(), STARTING_CASH, Side::Sell, Qty(2), points(5_000)).unwrap();
+    assert_eq!(short.position(), Position::Short(HeldLots(Qty(2))));
+    assert_eq!(short.cash(), dollars(50_000 + 500_000));
+    assert!(Ledger::holding(es(), STARTING_CASH, Side::Buy, Qty(0), points(5_000)).is_err());
+}
+
+#[test]
 fn a_fill_beyond_64_bits_is_refused_and_books_nothing() {
     let mut ledger = Ledger::new(es(), Money(i64::MAX));
     let refused = ledger.book(&fill(Side::Sell, 1, points(5_000), Money(0)));

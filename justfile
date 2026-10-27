@@ -33,10 +33,11 @@ setup:
 setup-engine:
     cargo fetch --locked
 
-# Compile the engine (release) and install fefat_engine into the workspace environment, where `import fefat` finds it
+# Compile the engine (release) and install fefat_engine into the workspace environment, where `import fefat` finds it; build fefat-cli, which the differential tests run
 [working-directory("engine")]
 build-engine:
     uv run maturin develop --release --uv --manifest-path crates/fefat-py/Cargo.toml
+    cargo build --release -p fefat-cli
 
 # Run the data guard; lint, format-check, and type-check Python, Rust, and TypeScript; check the masterplan's shape
 check:

@@ -8,10 +8,12 @@
 //! SDK's models enforce; the engine checks them when it first reads specs (step 2.6). An optional
 //! rule left out is not used, and a document leaves it out rather than writing null.
 
+mod bounds;
 mod exits;
 #[cfg(test)]
 mod tests;
 
+pub use bounds::OutOfBounds;
 pub use exits::{
     Breakeven, Cooldown, EntryWindow, Limits, ProfitTrigger, StopRule, Target, TargetPrice,
     TimeRules, TrailBy, TrailUpdate, Trailing, Weekday,

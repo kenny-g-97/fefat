@@ -14,8 +14,8 @@ use crate::strategy_spec::StrategySpec;
 pub struct Version(pub u32);
 
 /// Bumped for any change of what a run produces that changes neither its fills nor the layout of
-/// its artifacts.
-pub const ENGINE_VERSION: Version = Version(1);
+/// its artifacts: 2 since step 2.6, whose tick loop joined the determinism digest.
+pub const ENGINE_VERSION: Version = Version(2);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
 /// Bumped when the layout of a run's artifacts changes.
@@ -174,19 +174,19 @@ mod tests {
                 &spec_json,
                 FRAME,
                 &partitions(),
-                [Version(2), fill_model, artifact_schema],
+                [Version(engine.0 + 1), fill_model, artifact_schema],
             ),
             key_of(
                 &spec_json,
                 FRAME,
                 &partitions(),
-                [engine, Version(2), artifact_schema],
+                [engine, Version(fill_model.0 + 1), artifact_schema],
             ),
             key_of(
                 &spec_json,
                 FRAME,
                 &partitions(),
-                [engine, fill_model, Version(2)],
+                [engine, fill_model, Version(artifact_schema.0 + 1)],
             ),
         ];
         for key in changed {

@@ -380,19 +380,20 @@ class ReferenceEngine:
         return (f_lmt_02 if self.touch else f_lmt_01)(order.side, order.level(), price)
 
     def _on_record(self, at: Moment, record: TradeRecord) -> None:
-        """A trade or TBBO record: the orders that see their first record, the stops the record
-        before triggered, the stops this one triggers, then the limits, so that a stop beats a
-        limit of its group (F-OCO-01); then the mark."""
+        """A trade or TBBO record: the stops the record before triggered, market orders since,
+        which fill before the orders that become active on this record (F-STP-02); the orders
+        that see their first record; the stops this one triggers; then the limits, so that a stop
+        beats a limit of its group (F-OCO-01); then the mark."""
         if not self._tradeable(at.ts):
             return
-        for order in self.book.each(WAITING):
-            if f_act_01(order, at.ts, at.index):
-                self._first_record(at, order, record)
         for order in self.book.each(TRIGGERED):
             if isinstance(record, TbboRecord):
                 price = f_stp_02(order.side, order.level(), record, self.ticks(STOP), self.tick)
                 shown = record.quote(order.side)[1]
                 self._fill(at, order, Priced(price, "F-STP-02", order.level(), shown))
+        for order in self.book.each(WAITING):
+            if f_act_01(order, at.ts, at.index):
+                self._first_record(at, order, record)
         for order in self.book.each(WORKING, STOP):
             if f_stp_01(order.side, order.level(), record.price):
                 self._triggered(at, order, record)
