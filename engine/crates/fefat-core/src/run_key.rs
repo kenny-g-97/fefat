@@ -14,8 +14,8 @@ use crate::strategy_spec::StrategySpec;
 pub struct Version(pub u32);
 
 /// Bumped for any change of what a run produces that changes neither its fills nor the layout of
-/// its artifacts: 2 since step 2.6, whose tick loop joined the determinism digest.
-pub const ENGINE_VERSION: Version = Version(2);
+/// its artifacts: 3 since step 2.7, whose bar replay and skipping joined the determinism digest.
+pub const ENGINE_VERSION: Version = Version(3);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
 /// Bumped when the layout of a run's artifacts changes.

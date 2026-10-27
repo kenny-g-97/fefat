@@ -3,7 +3,7 @@
 //! seeded orders, and its TBBO records again skipping by its bars, and every order, fill, and entry
 //! of the event log, with the final cash and position, hashed in order.
 
-use fefat_core::fidelity::Fidelity;
+use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::{OrderId, OrderKind, Side};
@@ -21,9 +21,12 @@ use crate::seeded_tape::{SEEDED_TRADE_DATE, SplitMix64, TICK};
 const TRADES_PER_ORDER: usize = 100;
 
 /// The runs of the digest: each level in full, then TBBO skipping by the bars above it.
-const RUNS: [(Fidelity, Replay); 2] = [
+const RUNS: [(Fidelity, Replay); 5] = [
     (Fidelity::Trades, Replay::Full),
     (Fidelity::Tbbo, Replay::Full),
+    (Fidelity::Bars(Timeframe::ONE_SECOND), Replay::Full),
+    (Fidelity::Bars(Timeframe::ONE_MINUTE), Replay::Full),
+    (Fidelity::Tbbo, Replay::Skipping),
 ];
 
 /// BLAKE3 over every order, fill, and entry of the event log, and the final cash and position, of
