@@ -1,12 +1,12 @@
 """Cases for the differential tests of steps 2.6 and 2.7, drawn by Hypothesis (the amendments
-of 2026-10-21), a development tool of the repository: tapes of trades or TBBO records that walk a
-tick or two at a time with planted jumps as wide as a session's range, so that gaps cross stops
-and limits, or the bars of 1 second, 1 minute, 5 minutes, or a UTC day that such a walk of trades
-makes; records received at one instant; tapes across a UTC midnight; a break of the market
-inside some tapes; and the run settings. An order case places one to four market, stop, and
-limit orders at one to three decision instants, with OCO pairs, brackets, and an opening
-position; a template case runs the execution template's basic subset over one to five drawn
-signal rows. Each case is an `EngineCase` that the reference engine and `fefat-cli run` both
+of 2026-10-21), a development tool of the repository: on ticks, tapes of trades or TBBO records
+that walk a tick or two at a time with planted jumps as wide as a session's range, so that gaps
+cross stops and limits; on bars, the bars of 1 second, 1 minute, 5 minutes, or a UTC day that
+such a walk of trades makes; records received at one instant; tapes across a UTC midnight; a
+break of the market inside some tapes; and the run settings. An order case places one to four
+market, stop, and limit orders at one to three decision instants, with OCO pairs, brackets, and
+an opening position; a template case runs the execution template's basic subset over one to
+five drawn signal rows. Each case is an `EngineCase` that the reference engine and `fefat-cli run` both
 run, the Rust engine in full or skipping by the coarser bars of its records. Every value is
 drawn as a small number relative to the one before, so that ten cases fit one example and a
 failure shrinks to its smallest tape. Hypothesis is imported when a strategy is built:
@@ -17,6 +17,7 @@ failure shrinks to its smallest tape. Hypothesis is imported when a strategy is 
 
 from datetime import timedelta
 from decimal import Decimal
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from fefat.market.calendar import Session
@@ -95,21 +96,29 @@ INSTRUMENTS = (
 """An ES-like future and a BTC-like perpetual with lots of 0.001."""
 
 
-def drawn_cases() -> "SearchStrategy[EngineCase]":
-    """The strategy of one drawn case of either kind."""
+class DrawnTapes(StrEnum):
+    """What drawn cases replay: trades or TBBO records, or the bars of 1 second, 1 minute,
+    5 minutes, or a UTC day that a walk of trades makes."""
+
+    TICKS = "ticks"
+    BARS = "bars"
+
+
+def drawn_cases(tapes: DrawnTapes = DrawnTapes.TICKS) -> "SearchStrategy[EngineCase]":
+    """The strategy of one drawn case of either kind on `tapes`."""
     from hypothesis import strategies as st
 
-    return st.one_of(tick_cases(), template_cases())
+    return st.one_of(order_cases(tapes), template_cases(tapes))
 
 
-def tick_cases() -> "SearchStrategy[EngineCase]":
-    """The strategy of one drawn order case."""
+def order_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
+    """The strategy of one drawn order case on `tapes`."""
     from hypothesis import strategies as st
 
     @st.composite
     def drawn_case(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
-        fidelity, tape = _fidelity_and_tape(draw, drawn)
+        fidelity, tape = _fidelity_and_tape(draw, drawn, tapes)
         scenario = Scenario.model_construct(
             id="a drawn case",
             title="a drawn case",
@@ -130,15 +139,15 @@ def tick_cases() -> "SearchStrategy[EngineCase]":
     return drawn_case()
 
 
-def template_cases() -> "SearchStrategy[EngineCase]":
-    """The strategy of one drawn template case: the execution template's basic subset
-    (`fefat.reference.template`) over drawn signal rows."""
+def template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
+    """The strategy of one drawn template case on `tapes`: the execution template's basic
+    subset (`fefat.reference.template`) over drawn signal rows."""
     from hypothesis import strategies as st
 
     @st.composite
     def drawn_template(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
-        fidelity, tape = _fidelity_and_tape(draw, drawn)
+        fidelity, tape = _fidelity_and_tape(draw, drawn, tapes)
         spec, at_columns = _template_spec(draw, drawn)
         scenario = TemplateScenario.model_construct(
             id="a drawn template",
@@ -162,18 +171,17 @@ def template_cases() -> "SearchStrategy[EngineCase]":
 
 
 def _fidelity_and_tape(
-    draw: "DrawFn", drawn: DrawnInstrument
+    draw: "DrawFn", drawn: DrawnInstrument, tapes: DrawnTapes
 ) -> tuple[TickFidelity | Timeframe, Tape]:
-    """A tape of TBBO records, of trades, or, half the time, the bars of a drawn timeframe that
-    a walk of trades makes, with its fidelity."""
+    """On ticks, a tape of TBBO records or of trades; on bars, the bars of a drawn timeframe that
+    a walk of trades makes; with its fidelity."""
     from hypothesis import strategies as st
 
-    kind = draw(st.sampled_from(("tbbo", "trades", "bars", "bars")))
-    if kind == "tbbo":
-        return TickFidelity.TBBO, _tape(draw, drawn, tbbo=True)
+    if tapes is DrawnTapes.TICKS:
+        if draw(st.booleans()):
+            return TickFidelity.TBBO, _tape(draw, drawn, tbbo=True)
+        return TickFidelity.TRADES, _tape(draw, drawn, tbbo=False)
     trades = _tape(draw, drawn, tbbo=False)
-    if kind == "trades":
-        return TickFidelity.TRADES, trades
     timeframe = draw(st.sampled_from(BAR_TIMEFRAMES))
     return timeframe, coarser_bars(trades, timeframe)
 

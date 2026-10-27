@@ -958,7 +958,14 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
         default=0,
         help="quiet stretches and price jumps planted in each session (default: 0)",
     )
-    return parser.parse_args(argv)
+    arguments = parser.parse_args(argv)
+    generated = arguments.dates is not None or arguments.contracts is not None
+    if (generated or arguments.planted_gaps > 0) and arguments.out.resolve().is_relative_to(ROOT):
+        parser.error(
+            "Expected --out outside the repository with --dates, --contracts, or "
+            f"--planted-gaps, whose tapes are never committed (D-51), got {arguments.out}"
+        )
+    return arguments
 
 
 def chosen_products(arguments: argparse.Namespace) -> tuple[FixtureProduct, ...]:

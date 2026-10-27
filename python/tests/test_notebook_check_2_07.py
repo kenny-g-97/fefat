@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from notebook_runs import run_notebook
+from notebook_runs import TICK_FIDELITIES, run_notebook, scenario_fidelities
 
 NOTEBOOKS = Path(__file__).resolve().parents[2] / "notebooks"
 AMBIGUOUS_FILL = (
@@ -30,12 +30,11 @@ def test_the_check_notebook_replays_generated_sessions_skipping_and_in_full_alik
     check = run_notebook(NOTEBOOKS / "checks" / "2.07.ipynb")
 
     printed = capsys.readouterr().out
-    agreeing = re.search(
-        r"(\d+) scenarios: (\d+) agree with the reference engine in both replays", printed
-    )
-    assert agreeing is not None, printed
-    assert int(agreeing[1]) >= 62
-    assert agreeing[1] == agreeing[2]
+    fidelities = scenario_fidelities()
+    on_bars = sum(fidelity not in TICK_FIDELITIES for fidelity in fidelities)
+    agreeing = f"{len(fidelities)} scenarios: {len(fidelities)} agree with the reference engine"
+    assert f"{agreeing} in both replays" in printed, printed
+    assert f"{on_bars} of them on bars" in printed
     assert AMBIGUOUS_FILL in printed
     assert FILLED_BEFORE_THE_DECISION in printed
     assert "generated 3 sessions in" in printed

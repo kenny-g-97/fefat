@@ -31,7 +31,7 @@ from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.tape import BarRecord, Record, TbboRecord
-from fefat.reference.time_rules import flat_by_instants
+from fefat.reference.template import flat_by_instants_for
 from fefat.reference.units import (
     PRICE_DECIMALS,
     InstrumentParameters,
@@ -445,20 +445,12 @@ def _flat_by(
     scenario: TemplateScenario, sessions: SessionTable | None, frame: pl.DataFrame
 ) -> list[pl.Series]:
     """The column `flat_by` of a template scenario whose specification has a flat-by time: each
-    row's instant of it, worked out from the session table as the reference's template works it
-    out (`fefat.reference.time_rules`); none without a flat-by time."""
-    spec = scenario.strategy
-    time = spec.execution.time
-    if time is None or time.flat_by is None:
+    row's instant of it, as the reference's template works it out; none without a flat-by
+    time."""
+    instants = flat_by_instants_for(scenario.strategy, frame, sessions)
+    if not instants:
         return []
-    if sessions is None:
-        raise ValueError(
-            f"Expected a session calendar for the flat-by time {time.flat_by} of "
-            f"{scenario.id}, got an instrument without one."
-        )
     trade_dates = frame.get_column("trade_date").to_list()
-    timeframe = Timeframe.parse(spec.timeframe)
-    instants = flat_by_instants(trade_dates, time.flat_by, time.tz, sessions, timeframe)
     return [pl.Series("flat_by", [instants[day] for day in trade_dates], dtype=pl.Int64)]
 
 

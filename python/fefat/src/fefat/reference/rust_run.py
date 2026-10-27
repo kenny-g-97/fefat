@@ -95,11 +95,9 @@ class RustEngine:
         """`cases` as one batch in one process, each case's outcome in their order."""
         return self._batch(partial(write_batch, cases), len(cases))
 
-    def run_on_caches(
-        self, cases: Sequence[CacheCase], timeout_seconds: int = CACHE_TIMEOUT_SECONDS
-    ) -> list[RustOutcome]:
+    def run_on_caches(self, cases: Sequence[CacheCase]) -> list[RustOutcome]:
         """`cases`, templates over engine caches, as one batch in one process."""
-        return self._batch(partial(write_cache_batch, cases), len(cases), timeout_seconds)
+        return self._batch(partial(write_cache_batch, cases), len(cases), CACHE_TIMEOUT_SECONDS)
 
     def _batch(
         self,

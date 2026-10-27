@@ -233,6 +233,27 @@ def test_planted_gaps_leave_quiet_minutes_and_jumps_in_each_session(tmp_path: Pa
     assert [int(trade["sequence"]) for trade in gapped] == list(range(1, len(gapped) + 1))
 
 
+@pytest.mark.parametrize(
+    "generated",
+    [["--dates", "2026-03-10..2026-03-10"], ["--contracts", "ESH2026"], ["--planted-gaps", "1"]],
+)
+def test_a_generated_tape_is_refused_inside_the_repository(
+    generated: list[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(gen_fixtures, "ROOT", tmp_path)
+    inside = tmp_path / "fixtures" / "synthetic"
+
+    with pytest.raises(SystemExit) as refused:
+        gen_fixtures.main(["--out", str(inside), *generated])
+
+    assert refused.value.code == 2
+    assert "Expected --out outside the repository" in capsys.readouterr().err
+    assert not inside.exists()
+
+
 def test_the_fixtures_stay_under_20_mb() -> None:
     total = sum(path.stat().st_size for path in FIXTURES.rglob("*") if path.is_file())
 

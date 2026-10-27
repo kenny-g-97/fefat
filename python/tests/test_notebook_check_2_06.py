@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from notebook_runs import run_notebook
+from notebook_runs import TICK_FIDELITIES, run_notebook, scenario_fidelities
 
 NOTEBOOKS = Path(__file__).resolve().parents[2] / "notebooks"
 
@@ -21,9 +21,9 @@ def test_the_check_notebook_compares_both_engines_and_prints_no_difference(
     agreeing = re.search(
         r"(\d+) scenarios on ticks: (\d+) agree with the reference engine", printed
     )
+    on_ticks = sum(fidelity in TICK_FIDELITIES for fidelity in scenario_fidelities())
     assert agreeing is not None, printed
-    assert int(agreeing[1]) >= 30
-    assert agreeing[1] == agreeing[2]
+    assert agreeing[1] == agreeing[2] == str(on_ticks)
     assert "Rust fills: order 1 sell 1 at 4990.25 at 2026-03-06T14:30:01.25Z (F-STP-03" in printed
     assert "1000 drawn tapes through both engines" in printed
     assert printed.rstrip().splitlines()[-1] == "0 differences"
