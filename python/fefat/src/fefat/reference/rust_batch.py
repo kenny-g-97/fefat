@@ -29,6 +29,7 @@ from fefat.reference.ledger import Fill
 from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
+from fefat.reference.settings import RunSettings
 from fefat.reference.tape import BarRecord, Record, TbboRecord
 from fefat.reference.time_rules import flat_by_instants
 from fefat.reference.units import (
@@ -37,6 +38,7 @@ from fefat.reference.units import (
     instrument_parameters,
     lots_of,
 )
+from fefat.strategy.spec import StrategySpec
 
 CAPITAL = 50_000_000_000
 """The run's capital in micro-units, 50,000 USD (D-51): the ledger's starting cash."""
@@ -206,34 +208,88 @@ def read_outcomes(folder: Path, cases: int) -> list[RustOutcome]:
     return outcomes
 
 
+@dataclass(frozen=True, slots=True)
+class CacheCase:
+    """A template run over an engine cache's contract folder (step 2.5), open around the clock,
+    as `fefat-cli run` reads one: the timed runs of step 2.7 on a generated year. `signals` is a
+    signal frame of the template's columns at raw prices."""
+
+    id: str
+    folder: Path
+    fidelity: TickFidelity | Timeframe
+    instrument: InstrumentParameters
+    settings: RunSettings
+    strategy: StrategySpec
+    signals: pl.DataFrame
+    replay: Replay
+
+
+def write_cache_batch(cases: Sequence[CacheCase], folder: Path) -> None:
+    """The batch of `cases` in `folder`: `run.json`, and their signal rows in `signals.arrow`,
+    each row tagged with its case's place in `run.json`."""
+    folder.mkdir(parents=True)
+    documents = [_cache_case_document(case) for case in cases]
+    (folder / "run.json").write_text(json.dumps({"cases": documents}), encoding="utf-8")
+    frames = []
+    for number, case in enumerate(cases):
+        columns = case.signals.columns
+        kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in columns)]
+        frames.append(case.signals.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept))
+    signals = pl.concat(frames, how="diagonal")
+    signals.write_ipc(folder / "signals.arrow", compression="uncompressed")
+
+
+def _cache_case_document(case: CacheCase) -> dict[str, object]:
+    return {
+        "id": case.id,
+        "fidelity": str(case.fidelity),
+        "replay": str(case.replay),
+        "contract": case.folder.name,
+        "instrument": _instrument_document(case.instrument),
+        "settings": _settings_document(case.settings),
+        "hours": {"kind": "always"},
+        "capital": CAPITAL,
+        "position": None,
+        "market_data": {"kind": "cache", "folder": str(case.folder)},
+        "decisions": {"kind": "template", "strategy": case.strategy.document()},
+    }
+
+
 def _case_document(case: EngineCase) -> dict[str, object]:
     scenario = case.scenario
     parameters = instrument_parameters(scenario.instrument)
-    settings = scenario.settings
     levels = [str(scenario.fidelity), *(str(level) for level in case.coarser_levels())]
     return {
         "id": scenario.id,
         "fidelity": str(scenario.fidelity),
         "replay": str(case.replay),
         "contract": scenario.id,
-        "instrument": {
-            "tick_size": parameters.tick,
-            "money_per_point": parameters.money_per_point,
-            "lot_step": int(parameters.lot_step.scaleb(PRICE_DECIMALS)),
-        },
-        "settings": {
-            "latency_ms": settings.latency_ms,
-            "slippage_ticks": {
-                "market": settings.slippage_ticks.market,
-                "stop": settings.slippage_ticks.stop,
-            },
-            "limit_fill": str(settings.limit_fill),
-        },
+        "instrument": _instrument_document(parameters),
+        "settings": _settings_document(scenario.settings),
         "hours": _hours_document(case.hours),
         "capital": CAPITAL,
         "position": _position_document(scenario),
         "market_data": {"kind": "tape", "levels": levels},
         "decisions": _decisions_document(scenario, parameters),
+    }
+
+
+def _instrument_document(parameters: InstrumentParameters) -> dict[str, object]:
+    return {
+        "tick_size": parameters.tick,
+        "money_per_point": parameters.money_per_point,
+        "lot_step": int(parameters.lot_step.scaleb(PRICE_DECIMALS)),
+    }
+
+
+def _settings_document(settings: RunSettings) -> dict[str, object]:
+    return {
+        "latency_ms": settings.latency_ms,
+        "slippage_ticks": {
+            "market": settings.slippage_ticks.market,
+            "stop": settings.slippage_ticks.stop,
+        },
+        "limit_fill": str(settings.limit_fill),
     }
 
 

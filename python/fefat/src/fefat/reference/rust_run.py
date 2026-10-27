@@ -16,8 +16,9 @@ import math
 import os
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from itertools import zip_longest
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.rust_batch import (
     CAPITAL,
+    CacheCase,
     EngineCase,
     FillView,
     LogView,
@@ -34,6 +36,7 @@ from fefat.reference.rust_batch import (
     RustOutcome,
     read_outcomes,
     write_batch,
+    write_cache_batch,
 )
 from fefat.reference.scenario_runner import (
     held_lots,
@@ -42,6 +45,7 @@ from fefat.reference.scenario_runner import (
     session_tables,
 )
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
+from fefat.reference.signal_rows import SignalRow
 from fefat.reference.tape import BarRecord, Record, TbboRecord
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_text, instrument_parameters, price_text
@@ -49,6 +53,10 @@ from fefat.reference.units import instant_text, instrument_parameters, price_tex
 BATCH_TIMEOUT_SECONDS = 120
 """How long a batch may run, where ten cases take a few milliseconds: a hang fails its example,
 which Hypothesis then shrinks and prints, instead of stalling the test run."""
+CACHE_TIMEOUT_SECONDS = 1_800
+"""How long a run over an engine cache may take: a generated year replayed in full takes seconds
+on this PC."""
+_SIGNAL_PRICES = ("entry_price", "stop_price", "target_price", "trail_ref")
 
 
 def engine_cases(
@@ -85,19 +93,33 @@ class RustEngine:
 
     def run(self, cases: Sequence[EngineCase]) -> list[RustOutcome]:
         """`cases` as one batch in one process, each case's outcome in their order."""
+        return self._batch(partial(write_batch, cases), len(cases))
+
+    def run_on_caches(
+        self, cases: Sequence[CacheCase], timeout_seconds: int = CACHE_TIMEOUT_SECONDS
+    ) -> list[RustOutcome]:
+        """`cases`, templates over engine caches, as one batch in one process."""
+        return self._batch(partial(write_cache_batch, cases), len(cases), timeout_seconds)
+
+    def _batch(
+        self,
+        write: Callable[[Path], None],
+        cases: int,
+        timeout_seconds: int = BATCH_TIMEOUT_SECONDS,
+    ) -> list[RustOutcome]:
         with tempfile.TemporaryDirectory(prefix="fefat-cli-run-") as folder:
             batch, outputs = Path(folder) / "input", Path(folder) / "output"
-            write_batch(cases, batch)
+            write(batch)
             command = [str(self.binary), "run", str(batch), str(outputs)]
             completed = subprocess.run(
-                command, capture_output=True, text=True, check=False, timeout=BATCH_TIMEOUT_SECONDS
+                command, capture_output=True, text=True, check=False, timeout=timeout_seconds
             )
             if completed.returncode != 0:
                 raise RuntimeError(
                     f"Expected fefat-cli run to pass, got exit code {completed.returncode}: "
                     f"{completed.stderr.strip()}"
                 )
-            return read_outcomes(outputs, len(cases))
+            return read_outcomes(outputs, cases)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -219,7 +241,10 @@ def _hours_lines(hours: AlwaysOpen | CalendarHours, tape: Sequence[Record]) -> l
 
 def _record_text(record: Record) -> str:
     if isinstance(record, BarRecord):
-        return str(record.model_dump())
+        span = f'ts_open: "{instant_text(record.ts_open)}", ts_close: "{instant_text(record.ts_close)}"'
+        named = zip(("open", "high", "low", "close"), record.prices(), strict=True)
+        prices = ", ".join(f'{name}: "{price_text(price)}"' for name, price in named)
+        return f"{{{span}, {prices}, volume: {record.volume}}}"
     text = (
         f'ts: "{instant_text(record.ts)}", price: "{price_text(record.price)}", size: {record.size}'
     )
@@ -231,11 +256,16 @@ def _record_text(record: Record) -> str:
 
 def _decision_lines(scenario: AnyScenario) -> list[str]:
     if isinstance(scenario, TemplateScenario):
-        rows = [
-            f"  {row.model_dump(mode='json', exclude_defaults=True)}" for row in scenario.signals
-        ]
+        rows = [f"  {_signal_text(row)}" for row in scenario.signals]
         return [f"strategy: {json.dumps(scenario.strategy.document())}", "signals:", *rows]
     return ["orders:", *(f"  {_order_text(order)}" for order in scenario.orders)]
+
+
+def _signal_text(row: SignalRow) -> str:
+    """The row's columns that differ from their defaults, its instant and prices as text."""
+    shown = row.model_dump(mode="json", exclude_defaults=True)
+    prices = {name: price_text(shown[name]) for name in _SIGNAL_PRICES if name in shown}
+    return str({**shown, "ts_close": instant_text(row.ts_close), **prices})
 
 
 def _order_text(order: Order) -> str:
