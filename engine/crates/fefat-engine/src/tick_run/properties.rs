@@ -1,9 +1,9 @@
 //! Done means 2 of step 2.6 as properties of the tick loop over random tapes: no fill before its
 //! order's activation, nor on a record received while the market is closed; every fill on the
-//! costly side of the trades its order saw, a buy never below the lowest and a sell never above the
-//! highest, which TBBO's quotes, read no better than their trades, cannot break (F-SLP-01); and,
-//! after every record, equity equal to cash plus the position's value at
-//! the mark, with the cash and the position tracked apart from the ledger, from the fills alone.
+//! costly side of the trade of the record it fills on, a buy never below it and a sell never above
+//! it, and so of every trade its order saw, which TBBO's quotes, read no better than their trades,
+//! cannot break (F-SLP-01); and, after every record, equity equal to cash plus the position's value
+//! at the mark, with the cash and the position tracked apart from the ledger, from the fills alone.
 
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
@@ -277,10 +277,10 @@ fn value(price: i64, lots: i64) -> i64 {
     i64::try_from(exact.div_euclid(i128::from(PRICE_UNITS))).unwrap()
 }
 
-/// A record the run saw: when, whether the market traded, and its trade's price.
+/// The record the run last stepped through: its place in the run, whether the market traded,
+/// and its trade's price.
 struct SeenRecord {
     index: usize,
-    ts: Ts,
     tradeable: bool,
     price: Price,
 }
@@ -320,11 +320,11 @@ proptest! {
         };
         let mut strategy = ScenarioOrders::new(orders(&case, &trades));
         let mut run = TickRun::new(&reader, level, &hours, settings, ledger, &mut strategy).unwrap();
-        let (mut seen, mut mark, mut checked, mut index) = (Vec::new(), None, 0, 0);
+        let (mut last_record, mut mark, mut checked, mut index) = (None, None, 0, 0);
         while let Some(stepped) = run.step().unwrap() {
             if let Stepped::Record(record) = stepped {
                 let tradeable = hours.is_open(record.ts);
-                seen.push(SeenRecord { index, ts: record.ts, tradeable, price: record.price });
+                last_record = Some(SeenRecord { index, tradeable, price: record.price });
                 if tradeable {
                     mark = Some(record.price.0);
                 }
@@ -334,18 +334,14 @@ proptest! {
                 let order = run.order(fill.order).unwrap();
                 prop_assert!(fill.ts >= order.order.activation, "{fill:?} before {order:?}");
                 prop_assert!(index > order.seen_after, "{fill:?} at {index} for {order:?}");
-                let filled_on = seen.last().filter(|record| record.index == index);
-                prop_assert!(filled_on.is_some_and(|record| record.tradeable), "{fill:?}");
-                let saw: Vec<&SeenRecord> = seen
-                    .iter()
-                    .filter(|record| record.index > order.seen_after)
-                    .filter(|record| record.ts >= order.order.activation && record.tradeable)
-                    .collect();
-                let low = saw.iter().map(|record| record.price).min().unwrap();
-                let high = saw.iter().map(|record| record.price).max().unwrap();
+                let filled_on = last_record
+                    .as_ref()
+                    .filter(|record| record.index == index && record.tradeable);
+                prop_assert!(filled_on.is_some(), "{fill:?} on no tradeable record at {index}");
+                let traded = filled_on.unwrap().price;
                 match fill.side {
-                    Side::Buy => prop_assert!(fill.price >= low, "{fill:?} below {low}"),
-                    Side::Sell => prop_assert!(fill.price <= high, "{fill:?} above {high}"),
+                    Side::Buy => prop_assert!(fill.price >= traded, "{fill:?} below its trade {traded}"),
+                    Side::Sell => prop_assert!(fill.price <= traded, "{fill:?} above its trade {traded}"),
                 }
                 let moved = value(fill.price.0, -fill.side.sign() * fill.lots.0);
                 prop_assert_eq!(booked.cash, Money(moved));

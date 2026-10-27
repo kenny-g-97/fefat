@@ -127,6 +127,8 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-045](S-fill-045.yaml) | tbbo | A TBBO market buy whose record trades above its ask fills at the trade |
 | [S-fill-046](S-fill-046.yaml) | tbbo | A TBBO bid above its record's trade counts as the trade and does not fill a sell limit |
 | [S-fill-047](S-fill-047.yaml) | tbbo | A TBBO stop triggered on one record fills on the next before a market order of its OCO group active there |
+| [S-fill-048](S-fill-048.yaml) | tbbo | A TBBO market buy whose record trades above its ask is flagged against the trade's size |
+| [S-fill-049](S-fill-049.yaml) | tbbo | A TBBO record that triggers a stop and bids at a limit of its OCO group fills the limit |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |

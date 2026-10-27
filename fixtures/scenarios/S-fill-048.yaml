@@ -1,0 +1,22 @@
+id: S-fill-048
+title: A TBBO market buy whose record trades above its ask is flagged against the trade's size
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 2}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5001.00", size: 1, bid: "4999.75", ask: "5000.00", bid_size: 4, ask_size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5001.00", rule: F-MKT-01, flags: [size_exceeded]}
+rules: [F-MKT-01, F-QTY-01, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks, and a quote is read
+# no better than its record's trade, its price and its size: F-SLP-01). A market buy of 2 lots is
+# active at 14:30:00.100 (F-ACT-01):
+# the record at 14:30:00.200, the first it sees, trades 1 lot at 5001.00, above the ask of 5000.00
+# it carries from before a buyer's sweep, so the ask counts as that trade, 5001.00 and its 1 lot
+# (F-SLP-01):
+# fill = 5001.00 + 0 × 0.25 = 5001.00 (F-MKT-01);
+# 2 lots on a record that shows 1 is flagged size_exceeded (F-QTY-01);
+# read with the ask's own 5 lots, the fill would not be flagged.

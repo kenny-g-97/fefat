@@ -1,0 +1,28 @@
+id: S-fill-049
+title: A TBBO record that triggers a stop and bids at a limit of its OCO group fills the limit
+fidelity: tbbo
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "5004.00", quantity: 1, oco: either}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5005.00", quantity: 1, oco: either}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5003.00", size: 2, bid: "5002.75", ask: "5003.00", bid_size: 6, ask_size: 4}
+  - {ts: "2026-03-06T14:30:00.300Z", price: "5005.00", size: 1, bid: "5005.00", ask: "5005.25", bid_size: 3, ask_size: 5}
+  - {ts: "2026-03-06T14:30:00.400Z", price: "5005.50", size: 2, bid: "5005.25", ask: "5005.50", bid_size: 4, ask_size: 6}
+expected:
+  fills:
+    - {order: 2, ts: "2026-03-06T14:30:00.300Z", price: "5005.00", rule: F-LMT-03}
+rules: [F-LMT-01, F-LMT-03, F-OCO-01, F-SLP-01, F-STP-01, F-STP-02]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks, and a quote is read
+# no better than its record's trade: F-SLP-01). Flat, one OCO group holds a buy stop at 5004.00
+# and a sell limit at 5005.00, both active at 14:30:00.100 (F-ACT-01):
+# the record at 14:30:00.200 trades 5003.00 under a bid of 5002.75: neither order fills, and the
+# limit rests;
+# the record at 14:30:00.300 trades 5005.00, above the stop, and triggers it (F-STP-01), but a stop
+# on TBBO fills only at the next record's quote (F-STP-02), so this record cannot fill it; its
+# trade is at the limit, not above it, but its bid, 5005.00, no better than the trade, is at the
+# limit, a buyer bidding there (F-LMT-01, a sell's mirror), so the limit fills at its own price:
+# fill = 5005.00 (F-LMT-03); the stop is cancelled (F-OCO-01);
+# had the stop won, it would have filled at the next record's ask:
+# higher of (5004.00 + 0 × 0.25, 5005.50) = 5005.50 (F-STP-02).

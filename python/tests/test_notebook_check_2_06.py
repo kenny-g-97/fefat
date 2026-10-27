@@ -17,7 +17,7 @@ def test_the_check_notebook_compares_both_engines_and_prints_no_difference(
     check = run_notebook(NOTEBOOKS / "checks" / "2.06.ipynb")
 
     printed = capsys.readouterr().out
-    assert "28 scenarios on ticks: 28 agree with the reference engine" in printed
+    assert "30 scenarios on ticks: 30 agree with the reference engine" in printed
     assert "Rust fills: order 1 sell 1 at 4990.25 at 2026-03-06T14:30:01.25Z (F-STP-03" in printed
     assert "1000 drawn tapes through both engines" in printed
     assert printed.rstrip().splitlines()[-1] == "0 differences"
