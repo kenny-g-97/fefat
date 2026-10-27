@@ -1,12 +1,13 @@
-"""The check notebook of step 2.6 (Your checks) runs top to bottom, as Run All does: the
-scenarios on ticks through both engines, S-fill-012's gap through a stop filled at 4990.25 by
-both, and 1,000 drawn tapes ending with the line `0 differences`."""
+"""The check notebook of step 2.6 (Your checks) runs top to bottom, as Run All does: every
+scenario on ticks through both engines, each agreeing, S-fill-012's gap through a stop filled at
+4990.25 by both, and 1,000 drawn tapes ending with the line `0 differences`."""
 
+import re
 from pathlib import Path
 
 import pytest
 
-from notebook_runs import run_notebook
+from notebook_runs import TICK_FIDELITIES, run_notebook, scenario_fidelities
 
 NOTEBOOKS = Path(__file__).resolve().parents[2] / "notebooks"
 
@@ -17,7 +18,12 @@ def test_the_check_notebook_compares_both_engines_and_prints_no_difference(
     check = run_notebook(NOTEBOOKS / "checks" / "2.06.ipynb")
 
     printed = capsys.readouterr().out
-    assert "30 scenarios on ticks: 30 agree with the reference engine" in printed
+    agreeing = re.search(
+        r"(\d+) scenarios on ticks: (\d+) agree with the reference engine", printed
+    )
+    on_ticks = sum(fidelity in TICK_FIDELITIES for fidelity in scenario_fidelities())
+    assert agreeing is not None, printed
+    assert agreeing[1] == agreeing[2] == str(on_ticks)
     assert "Rust fills: order 1 sell 1 at 4990.25 at 2026-03-06T14:30:01.25Z (F-STP-03" in printed
     assert "1000 drawn tapes through both engines" in printed
     assert printed.rstrip().splitlines()[-1] == "0 differences"

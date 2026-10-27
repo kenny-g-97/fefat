@@ -1,7 +1,7 @@
 //! The run's event log, as `fefat.reference.event_log` keeps it: every placement, activation,
-//! trigger, fill, and cancellation, and each break the working orders stay through, in the order
-//! they happen and with the rule behind them, so that a fill can be followed from the record that
-//! priced it back to the decision that placed its order.
+//! trigger, fill, and cancellation, each break the working orders stay through, and each
+//! ambiguous bar, in the order they happen and with the rule behind them, so that a fill can be
+//! followed from the record that priced it back to the decision that placed its order.
 
 use std::fmt;
 
@@ -15,7 +15,7 @@ use fefat_core::units::Price;
 pub enum EventKind {
     /// An order placed by a decision, or a bracket's leg placed by its entry's fill.
     Placed,
-    /// An order that saw its first record and works (F-ACT-01).
+    /// An order that saw its first record or bar and works (F-ACT-01, F-ACT-02).
     Active,
     /// A stop a trade reached (F-STP-01).
     Triggered,
@@ -25,6 +25,8 @@ pub enum EventKind {
     Cancelled,
     /// The market closed while orders worked, which stay (F-SES-01).
     Break,
+    /// A bar whose fills would differ with its extremes swapped (F-BAR-05).
+    Ambiguous,
 }
 
 impl fmt::Display for EventKind {
@@ -36,6 +38,7 @@ impl fmt::Display for EventKind {
             Self::Filled => "filled",
             Self::Cancelled => "cancelled",
             Self::Break => "break",
+            Self::Ambiguous => "ambiguous",
         })
     }
 }
@@ -95,6 +98,23 @@ impl LogEntry {
     pub(crate) fn active(ts: Ts, order: OrderId) -> Self {
         let text = format!("order {} sees its first record", order.0);
         Self::of(ts, EventKind::Active, Some(order), "F-ACT-01", text)
+    }
+
+    /// An order that sees its first bar and works (F-ACT-02), logged at the bar's close.
+    pub(crate) fn active_on_bar(ts: Ts, order: OrderId) -> Self {
+        let text = format!("order {} sees its first bar", order.0);
+        Self::of(ts, EventKind::Active, Some(order), "F-ACT-02", text)
+    }
+
+    /// A bar whose extremes, swapped, would fill otherwise (F-BAR-05), logged at its close.
+    pub(crate) fn ambiguous(ts: Ts) -> Self {
+        Self {
+            ts,
+            kind: EventKind::Ambiguous,
+            order: None,
+            rule: Some("F-BAR-05"),
+            text: "with its extremes swapped the bar fills otherwise".to_owned(),
+        }
     }
 
     /// A stop at `stop` that the trade at `trade` reached (F-STP-01).

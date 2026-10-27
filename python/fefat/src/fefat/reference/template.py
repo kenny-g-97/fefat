@@ -156,7 +156,7 @@ class TemplateStrategy:
         self._lots = lots_of(_exact(sizing.units), instrument.lot_step)
         self._target_ticks = _target_ticks(execution)
         self._require_price_columns(signals)
-        self._flat_by = _flat_by_instants(spec, signals, sessions)
+        self._flat_by = flat_by_instants_for(spec, signals, sessions)
 
     def on_bar(self, bar: Mapping[str, Any], context: DecisionContext) -> None:
         """The decision at one signal close, `bar` the signal frame's row (class docstring)."""
@@ -252,9 +252,12 @@ def _target_ticks(execution: Execution) -> int | None:
     return None
 
 
-def _flat_by_instants(
+def flat_by_instants_for(
     spec: StrategySpec, signals: pl.DataFrame, sessions: SessionTable | None
 ) -> dict[date, int]:
+    """The instant of `spec`'s flat-by time on each trade date of `signals`, from the session
+    table (`fefat.reference.time_rules`); none without a flat-by time. `fefat-cli run` reads
+    the same instants (`fefat.reference.rust_batch`)."""
     time = spec.execution.time
     if time is None or time.flat_by is None:
         return {}

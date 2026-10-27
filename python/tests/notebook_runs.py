@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,19 @@ from typing import Any
 from fefat.config import resolve_paths
 
 SYNTHETIC = Path(__file__).resolve().parents[2] / "fixtures" / "synthetic"
+SCENARIOS = Path(__file__).resolve().parents[2] / "fixtures" / "scenarios"
+TICK_FIDELITIES = frozenset({"trades", "tbbo"})
+
+
+def scenario_fidelities() -> list[str]:
+    """Each scenario file's fidelity as its `fidelity:` line writes it, read apart from
+    `fefat.reference.scenarios`, so that a scenario the loader drops still counts."""
+    fidelities = []
+    for path in sorted(SCENARIOS.glob("S-*.yaml")):
+        found = re.search(r"^fidelity: (\S+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        assert found is not None, f"Expected a fidelity line in {path.name}, got none"
+        fidelities.append(found[1])
+    return fidelities
 
 
 def store_with(*schemas: str) -> None:

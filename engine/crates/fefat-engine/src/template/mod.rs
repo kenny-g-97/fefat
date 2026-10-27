@@ -1,8 +1,9 @@
-//! The execution template's basic subset on ticks, as `fefat.reference.template` runs it (step 2.3,
-//! D-53): a market entry that ignores opposite signals; a stop in ticks or at the signal frame's
+//! The execution template's basic subset, as `fefat.reference.template` runs it (step 2.3, D-53):
+//! a market entry that ignores opposite signals; a stop in ticks or at the signal frame's
 //! `stop_price` and one target in ticks, as an R multiple of a stop in ticks, or at
-//! `target_price`; signal exits; and a fixed size times `size_mult` in whole lots. The rest of the
-//! template, its time rules included, arrives in step 2.8 and is refused until then.
+//! `target_price`; signal exits; flat-by, at the instant each signal row gives for its trade
+//! date's flat-by time (step 2.7); and a fixed size times `size_mult` in whole lots. The rest of
+//! the template, its other time rules included, arrives in step 2.8 and is refused until then.
 
 use fefat_core::instants::Ts;
 use fefat_core::instrument::InstrumentParameters;
@@ -22,11 +23,13 @@ use crate::strategy::{DecisionContext, DecisionError, Strategy};
 #[cfg(test)]
 mod tests;
 
-const SUBSET: &str = "a market entry, a stop and one target, signal exits, and a fixed size";
+const SUBSET: &str =
+    "a market entry, a stop and one target, signal exits, flat-by, and a fixed size";
 
 /// One row of a signal frame, at one signal close (D-53): its four signals, a null read as false;
 /// the raw prices a column stop and a column target take; the size's multiple, where the frame
-/// has one; and whether the bar may enter, a null read as true.
+/// has one; whether the bar may enter, a null read as true; and the instant of its trade date's
+/// flat-by time, where the specification has one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SignalRow {
     /// The signal bar's close, the decision's instant.
@@ -47,6 +50,9 @@ pub struct SignalRow {
     pub size_mult: Option<f64>,
     /// Whether an entry may be placed on the bar.
     pub wake: bool,
+    /// The instant of the flat-by time on the row's trade date, as `fefat.reference.time_rules`
+    /// works it out from the session table: from it the position is closed and no entry placed.
+    pub flat_by: Option<Ts>,
 }
 
 /// A specification or a signal frame the template refuses.
@@ -83,7 +89,8 @@ enum LegRule {
 
 /// A specification's basic subset as a strategy over its signal rows, each a decision. At each
 /// signal close, in this order: nothing while a market order is on its way out of the position,
-/// the exit it placed or a stop triggered on TBBO (F-STP-02); `long_exit` while
+/// the exit it placed or a stop triggered on TBBO (F-STP-02); from the trade date's flat-by time,
+/// the position is closed, the working orders cancelled, and no entry placed; `long_exit` while
 /// long or `short_exit` while short closes the position, with signal exits on; with a position
 /// or working orders, nothing more, an opposite signal being ignored; on a bar whose `wake` is
 /// false, no entry; and otherwise an entry signal enters at the market, its bracket placed when
@@ -112,6 +119,7 @@ impl TemplateStrategy {
         let stop = stop_rule(execution)?;
         let target = target_rule(execution, stop)?;
         require_rows_in_order(&rows)?;
+        require_flat_by_on_every_row(execution, &rows)?;
         Ok(Self {
             rows,
             signal_exit: execution.signal_exit,
@@ -228,6 +236,12 @@ impl Strategy for TemplateStrategy {
         if context.is_exiting() {
             return Ok(());
         }
+        if row.flat_by.is_some_and(|flat_by| row.ts_close >= flat_by) {
+            if context.position() != Position::Flat || context.has_working_orders() {
+                context.flatten()?;
+            }
+            return Ok(());
+        }
         if self.signals_exit(&row, context.position()) {
             return context.flatten();
         }
@@ -245,8 +259,8 @@ impl Strategy for TemplateStrategy {
     }
 }
 
-/// Refuses what the basic subset leaves out (`template.basic_subset_refusals`), time rules
-/// included.
+/// Refuses what the basic subset leaves out (`template.basic_subset_refusals`), the time rules
+/// but flat-by included.
 fn refuse_the_rest(execution: &Execution) -> Result<(), TemplateError> {
     let refusals = [
         (
@@ -273,8 +287,7 @@ fn refuse_the_rest(execution: &Execution) -> Result<(), TemplateError> {
 }
 
 fn uses_time_rules(time: &TimeRules) -> bool {
-    time.flat_by.is_some()
-        || !time.windows.is_empty()
+    !time.windows.is_empty()
         || time.max_bars.is_some()
         || time.max_minutes.is_some()
         || time.no_overnight
@@ -363,6 +376,34 @@ fn require_rows_in_order(rows: &[SignalRow]) -> Result<(), TemplateError> {
         }),
         None => Ok(()),
     }
+}
+
+/// Refuses a signal row without the instant of its flat-by time when the specification has one,
+/// and a row with one when it has none: the instants come from the session table, which the
+/// reference's `flat_by_instants` reads.
+fn require_flat_by_on_every_row(
+    execution: &Execution,
+    rows: &[SignalRow],
+) -> Result<(), TemplateError> {
+    let flat_by = execution
+        .time
+        .as_ref()
+        .and_then(|time| time.flat_by.as_ref());
+    let Some(row) = rows
+        .iter()
+        .find(|row| row.flat_by.is_some() != flat_by.is_some())
+    else {
+        return Ok(());
+    };
+    let expected = flat_by.map_or_else(
+        || "no flat-by instant on the rows of a specification without flat_by".to_owned(),
+        |time| format!("the instant of the flat-by time {time} on every signal row"),
+    );
+    let actual = match row.flat_by {
+        Some(at) => format!("{at} on the signal close of {}", row.ts_close),
+        None => format!("none on the signal close of {}", row.ts_close),
+    };
+    Err(TemplateError::Refused { expected, actual })
 }
 
 fn beyond(what: &str) -> TemplateError {

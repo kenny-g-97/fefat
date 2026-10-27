@@ -1,7 +1,8 @@
 //! `run.json`, the cases of a batch: each case's instrument in the engines' integers (D-55), its
 //! run settings as `fefat.reference.settings.RunSettings` writes them, its trading hours, its
-//! capital and the position held when its tape starts, where its records come from, and what
-//! decides its orders: an order scenario's orders, or a `StrategySpec` over its signal rows.
+//! capital and the position held when its tape starts, where its records come from and how they
+//! are replayed, and what decides its orders: an order scenario's orders, or a `StrategySpec`
+//! over its signal rows.
 
 use std::collections::BTreeSet;
 use std::iter;
@@ -18,6 +19,7 @@ use fefat_engine::book::{Bracket, BracketLeg, LegPrice};
 use fefat_engine::hours::{Halt, Session, TradingHours};
 use fefat_engine::settings::{LimitFill, RunSettings, SlippageTicks};
 use fefat_engine::strategy::ScenarioOrder;
+use fefat_engine::tick_run::Replay;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -34,8 +36,10 @@ pub(super) struct RunManifest {
 pub(super) struct CaseManifest {
     /// A name for the case in errors, such as a scenario's id.
     pub(super) id: String,
-    /// `trades` or `tbbo`.
+    /// The finest data it fills on, `tbbo`, `trades`, or a bar timeframe: each trade date fills
+    /// on its finest level at or coarser than this.
     pub(super) fidelity: Fidelity,
+    replay: ReplayWord,
     /// The contract its records are of.
     pub(super) contract: String,
     instrument: InstrumentManifest,
@@ -78,6 +82,14 @@ enum LimitFillWord {
     Touch,
 }
 
+/// How the case's records are replayed: skipping what no order can act on, or in full.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ReplayWord {
+    Skipping,
+    Full,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoursManifest {
@@ -115,12 +127,12 @@ struct PositionManifest {
     price: i64,
 }
 
-/// Where a case's records come from: the batch's own tape files, or an engine cache's contract
-/// folder (step 2.5).
+/// Where a case's records come from: the batch's own files of the levels it names, or an engine
+/// cache's contract folder (step 2.5).
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum MarketDataManifest {
-    Tape,
+    Tape { levels: Vec<Fidelity> },
     Cache { folder: PathBuf },
 }
 
@@ -186,6 +198,21 @@ struct LegManifest {
 }
 
 impl CaseManifest {
+    pub(super) const fn replay(&self) -> Replay {
+        match self.replay {
+            ReplayWord::Skipping => Replay::Skipping,
+            ReplayWord::Full => Replay::Full,
+        }
+    }
+
+    /// The levels of the batch's files the case reads; none for a case on a cache.
+    pub(super) fn tape_levels(&self) -> &[Fidelity] {
+        match &self.market_data {
+            MarketDataManifest::Tape { levels } => levels,
+            MarketDataManifest::Cache { .. } => &[],
+        }
+    }
+
     pub(super) fn instrument(&self) -> Result<InstrumentParameters, NonPositiveParameter> {
         let instrument = &self.instrument;
         InstrumentParameters::new(

@@ -1,0 +1,28 @@
+id: S-fill-054
+title: With no latency, a trade at the decision's instant sets the mark a stop is judged against but is not seen by it
+fidelity: trades
+instrument: ES
+settings: {latency_ms: 0}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: stop, price: "4989.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:29:59.500Z", price: "4988.00", size: 2}
+  - {ts: "2026-03-06T14:30:00.000Z", price: "4990.00", size: 3}
+  - {ts: "2026-03-06T14:30:00.400Z", price: "4990.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.400Z", price: "4990.75", rule: F-STP-05}
+rules: [F-ACT-01, F-CLK-02, F-MKT-02, F-MRK-01, F-SLP-01, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; no latency):
+# the trades at 14:29:59.500 and 14:30:00.000 mark the market at 4988.00, then at 4990.00 (F-MRK-01);
+# the trade at 14:30:00.000 is received at the decision's instant, so it comes before the decision
+# (F-CLK-02), and the buy stop at 4989.00 that the decision places sees only the trades after it,
+# though it is active at once (F-ACT-01);
+# judged against the market when it becomes active, 4990.00, the stop is below it, through the
+# market, and fills as a market order would on the first trade it sees (F-STP-05, F-MKT-02):
+# fill = 4990.50 + 1 × 0.25 = 4990.75, at 14:30:00.400;
+# had the stop seen the trade at its decision's instant, it would have been judged against 4988.00
+# and triggered on that trade: fill = higher of (4989.00 + 0.25, 4990.00) = 4990.00, by F-STP-03;
+# judged against 4988.00 without seeing that trade, it would have triggered at 14:30:00.400:
+# fill = higher of (4989.25, 4990.50) = 4990.50.

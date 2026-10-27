@@ -1,9 +1,10 @@
 //! The determinism harness (step 2.4, D-11): one digest of everything the engine computes from a
 //! seeded tape, the records and offsets its in-memory reader serves, the ledger after a seeded
-//! run of fills and marks, the orders, fills, and event log of the tick loop on its trades and
-//! TBBO records with seeded orders (step 2.6), and a run key, so that two runs, two processes,
-//! and Windows and Linux can be compared by one BLAKE3 hash. No wall clock, no hash map, and
-//! integers alone. `just regenerate-goldens` writes its golden manifest.
+//! run of fills and marks, the orders, fills, and event log of the loop on its trades and TBBO
+//! records with seeded orders (step 2.6) and on its bars, in full and skipping (step 2.7), and a
+//! run key, so that two runs, two processes, and Windows and Linux can be compared by one BLAKE3
+//! hash. No wall clock, no hash map, and integers alone. `just regenerate-goldens` writes its
+//! golden manifest.
 
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::{Fill, FillFlags, Liquidity, PricingRule};
@@ -26,7 +27,7 @@ use loop_run::loop_run_hash;
 
 mod loop_run;
 
-const DOMAIN: &[u8] = b"fefat determinism 2\n";
+const DOMAIN: &[u8] = b"fefat determinism 3\n";
 /// The example specification of `02-engine-and-data.md` §2.1, the run key's spec.
 const EXAMPLE_SPEC: &str = r#"{"spec_version": 1, "instrument": "ES", "timeframe": "5m",
     "execution": {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}}}"#;

@@ -1,7 +1,9 @@
-//! The tick loop's part of the determinism digest (step 2.6): the seeded tape's trades and then
-//! its TBBO records run through `TickRun` with seeded orders, and every order, fill, and entry of
-//! the event log, with the final cash and position, hashed in order.
+//! The loop's part of the determinism digest (steps 2.6 and 2.7): the seeded tape's trades, its
+//! TBBO records, its 1-second bars, and its 1-minute bars run in full through `TickRun` with
+//! seeded orders, and its TBBO records again skipping by its bars, and every order, fill, and entry
+//! of the event log, with the final cash and position, hashed in order.
 
+use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::{OrderId, OrderKind, Side};
@@ -10,7 +12,7 @@ use fefat_engine::book::{Bracket, BracketLeg, LegPrice};
 use fefat_engine::hours::TradingHours;
 use fefat_engine::settings::RunSettings;
 use fefat_engine::strategy::{ScenarioOrder, ScenarioOrders};
-use fefat_engine::tick_run::{RunOutputs, TickFidelity, TickRun};
+use fefat_engine::tick_run::{Replay, RunOutputs, TickRun};
 
 use super::{DeterminismError, es, hash_numbers};
 use crate::seeded_tape::{SEEDED_TRADE_DATE, SplitMix64, TICK};
@@ -18,9 +20,18 @@ use crate::seeded_tape::{SEEDED_TRADE_DATE, SplitMix64, TICK};
 /// Every hundredth trade of the seeded tape's instant decides an order of the loop's run.
 const TRADES_PER_ORDER: usize = 100;
 
+/// The runs of the digest: each level in full, then TBBO skipping by the bars above it.
+const RUNS: [(Fidelity, Replay); 5] = [
+    (Fidelity::Trades, Replay::Full),
+    (Fidelity::Tbbo, Replay::Full),
+    (Fidelity::Bars(Timeframe::ONE_SECOND), Replay::Full),
+    (Fidelity::Bars(Timeframe::ONE_MINUTE), Replay::Full),
+    (Fidelity::Tbbo, Replay::Skipping),
+];
+
 /// BLAKE3 over every order, fill, and entry of the event log, and the final cash and position, of
-/// the tick loop on the seeded tape's trades and then its TBBO records, with the same seeded
-/// orders and the specification's default settings.
+/// each of the loop's [`RUNS`] on the seeded tape, with the same seeded orders and the
+/// specification's default settings.
 pub(super) fn loop_run_hash(
     reader: &impl MarketDataReader,
     generator: &mut SplitMix64,
@@ -28,11 +39,19 @@ pub(super) fn loop_run_hash(
     let orders = seeded_orders(reader, generator)?;
     let hours = TradingHours::always();
     let mut hasher = blake3::Hasher::new();
-    for level in [TickFidelity::Trades, TickFidelity::Tbbo] {
+    for (fidelity, replay) in RUNS {
         let mut strategy = ScenarioOrders::new(orders.clone());
         let ledger = Ledger::new(es()?, Money(50_000 * MONEY_UNITS));
-        let settings = RunSettings::defaults_for(level.fidelity());
-        let run = TickRun::new(reader, level, &hours, settings, ledger, &mut strategy)?;
+        let settings = RunSettings::defaults_for(fidelity);
+        let run = TickRun::new(
+            reader,
+            fidelity,
+            replay,
+            &hours,
+            settings,
+            ledger,
+            &mut strategy,
+        )?;
         hash_outputs(&mut hasher, &run.run()?);
     }
     Ok(hasher.finalize())

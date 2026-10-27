@@ -1,0 +1,27 @@
+id: S-fill-056
+title: With a 1-minute bar's extremes swapped, its entry is still followed by the move against it, so the bar is not ambiguous
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4998.00", quantity: 1, bracket: {stop: {id: 2, price: "4995.00"}, target: {id: 3, price: "5004.00"}}}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5005.00", low: "4994.00", close: "5000.00", volume: 650}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "4998.00", rule: F-LMT-03}
+    - {order: 2, ts: "2026-03-06T14:31:00Z", price: "4994.75", rule: F-STP-04}
+rules: [F-BAR-03, F-BAR-04, F-BAR-05, F-LMT-01, F-LMT-03, F-OCO-01, F-OCO-02, F-SLP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). A buy limit at 4998.00
+# carries a bracket: stop 4995.00 (order 2) and target 5004.00 (order 3):
+# the bar from 14:30 to 14:31 opens at 5000.00 and reaches 5005.00 and 4994.00; flat, with a buy
+# entry working, its path goes to the high first (F-BAR-03), reaching nothing, then down through
+# 4998.00 (F-LMT-01): fill of order 1 = 4998.00 (F-LMT-03);
+# the bracket is placed at the entry's point of the path (F-OCO-02), and the low, not yet reached,
+# comes next, adverse for the long (F-BAR-04): on the way down it passes 4995.00:
+# fill of order 2 = 4995.00 - 1 × 0.25 = 4994.75 (F-STP-04), and the target is cancelled (F-OCO-01);
+# with its extremes swapped (F-BAR-05), only the first choice is the other way round: the path goes
+# down first, fills the entry at 4998.00, and the move against the long, by F-BAR-04 again, fills
+# the stop at 4994.75: the same fills, so the bar is not ambiguous;
+# had the swap also put the long's favourable extreme first, the target would have filled at
+# 5004.00 on the swapped path, and both fills would be flagged.

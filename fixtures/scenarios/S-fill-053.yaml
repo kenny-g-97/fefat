@@ -1,0 +1,26 @@
+id: S-fill-053
+title: Flat with a buy limit placed first, a 1-minute bar goes to its high first, as for a buy stop
+fidelity: 1m
+instrument: ES
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1, oco: range}
+  - {id: 2, placed_at: "2026-03-06T14:30:00.000Z", side: sell, kind: limit, price: "5005.00", quantity: 1, oco: range}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5006.00", low: "4994.00", close: "5000.00", volume: 700}
+expected:
+  fills:
+    - {order: 2, ts: "2026-03-06T14:31:00Z", price: "5005.00", rule: F-LMT-03, flags: [ambiguous]}
+rules: [F-BAR-03, F-BAR-05, F-LMT-01, F-LMT-03, F-OCO-01]
+
+# Arithmetic (ES, tick 0.25). A buy limit at 4995.00 (order 1) and a sell limit at 5005.00
+# (order 2), placed at one instant as one OCO group, fade either edge of a range:
+# the bar from 14:30 to 14:31 opens at 5000.00, between them, and reaches both, high 5006.00 and
+# low 4994.00;
+# flat after the open, the first extreme is the favourable one of the earliest placed entry, the
+# lower order id at one instant (F-BAR-03): order 1 buys, so the high comes first, whatever the
+# entry's kind; on the way up the path goes through 5005.00 (F-LMT-01):
+# fill of order 2 = 5005.00 (F-LMT-03), and order 1 is cancelled (F-OCO-01);
+# had the buy limit's own fill, on the way down, chosen the first extreme, the low would have come
+# first and order 1 would have filled at 4995.00;
+# with the low first, as the swapped replay has it, order 1 fills at 4995.00 instead: another fill,
+# so the bar is ambiguous and its fill flagged (F-BAR-05).

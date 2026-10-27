@@ -30,9 +30,10 @@ impl InMemoryMarketData {
     /// dates out of order, a day without records, ticks out of `ts_recv` order, sizes or quotes
     /// below one lot, a bid at or above its ask, a bar that does not open before it closes, that
     /// lasts longer than its timeframe, whose low and high miss its open or close, or that
-    /// overlaps the bar before, and a finer record that no coarser bar holds whole where the
-    /// levels nest (ticks in intraday bars, finer bars in intraday bars of a whole multiple of
-    /// their length; a daily bar spans its session alone, D-43).
+    /// overlaps the bar before, and a finer record that no coarser bar holds whole, or that trades
+    /// outside the low and high of the bar holding it, where the levels nest (ticks in intraday
+    /// bars, finer bars in intraday bars of a whole multiple of their length; a daily bar spans
+    /// its session alone, D-43).
     pub fn new(contract: Contract, days: Vec<TapeDay>) -> Result<Self, TapeError> {
         let (Some(first), Some(last)) = (days.first(), days.last()) else {
             return Err(TapeError::Empty);

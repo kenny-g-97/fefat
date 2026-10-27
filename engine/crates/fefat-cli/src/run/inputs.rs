@@ -1,9 +1,11 @@
-//! The Arrow IPC files a batch reads, each row tagged with its case's place in `run.json`: the
-//! trades and TBBO records, in the engine cache's columns plus `case` and `trade_date`, and the
-//! signal rows. Files are in Arrow IPC's file format, uncompressed, as Polars' `write_ipc` writes
-//! them; columns are read by name, and a file a batch does not need may be absent.
+//! The Arrow IPC files a batch reads, each row tagged with its case's place in `run.json`: a file
+//! per level its cases read, `trades.arrow`, `tbbo.arrow`, or a bar timeframe's such as
+//! `1m.arrow`, in the engine cache's columns plus `case` and `trade_date`, and the signal rows.
+//! Files are in Arrow IPC's file format, uncompressed, as Polars' `write_ipc` writes them;
+//! columns are read by name. The file of every level a case names must be there, and
+//! `signals.arrow` may be absent where no case has signal rows.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::path::Path;
 
@@ -16,54 +18,69 @@ use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::market_data::TapeDay;
 use fefat_core::units::Price;
 use fefat_engine::template::SignalRow;
-use fefat_engine::tick_run::TickFidelity;
 
+use super::manifest::RunManifest;
 use super::{BatchError, arrow_error};
 
 /// One level's records of each case, by trade date, as slices of the file's batches in the
 /// columns the engine cache uses.
 type RecordsByCase = BTreeMap<i64, BTreeMap<TradeDate, Vec<RecordBatch>>>;
 
-/// The batch's input tables: `trades.arrow`, `tbbo.arrow`, and `signals.arrow`, each present
-/// when a case needs it, grouped by case.
+/// The batch's input tables: the file of each level its cases read and `signals.arrow`, grouped
+/// by case.
 pub(super) struct BatchTables {
-    trades: RecordsByCase,
-    tbbo: RecordsByCase,
+    levels: BTreeMap<Fidelity, RecordsByCase>,
     signals: BTreeMap<i64, Vec<SignalRow>>,
 }
 
 impl BatchTables {
-    pub(super) fn read(input: &Path) -> Result<Self, BatchError> {
+    /// The file `<level>.arrow` of every level a case of `manifest` reads, and the signal rows.
+    pub(super) fn read(input: &Path, manifest: &RunManifest) -> Result<Self, BatchError> {
+        let named: BTreeSet<Fidelity> = manifest
+            .cases
+            .iter()
+            .flat_map(|case| case.tape_levels().iter().copied())
+            .collect();
+        let mut levels = BTreeMap::new();
+        for level in named {
+            let path = input.join(format!("{level}.arrow"));
+            if !path.is_file() {
+                return Err(BatchError::Table {
+                    path,
+                    expected: format!("the {level} records that a case of run.json reads"),
+                    actual: "no such file".to_owned(),
+                });
+            }
+            let records = records_by_case(&path, fefat_data::level_columns(level))?;
+            levels.insert(level, records);
+        }
         Ok(Self {
-            trades: records_by_case(
-                &input.join("trades.arrow"),
-                fefat_data::level_columns(Fidelity::Trades),
-            )?,
-            tbbo: records_by_case(
-                &input.join("tbbo.arrow"),
-                fefat_data::level_columns(Fidelity::Tbbo),
-            )?,
+            levels,
             signals: signal_rows_by_case(&input.join("signals.arrow"))?,
         })
     }
 
-    /// The tape days of `case` at `level`, read as the engine cache's batches are
+    /// The tape days of `case` at each of `levels`, read as the engine cache's batches are
     /// (`fefat_data::tape_day`).
     pub(super) fn tape_days(
         &self,
         case: i64,
-        level: TickFidelity,
+        levels: &[Fidelity],
     ) -> Result<Vec<TapeDay>, BatchError> {
-        let records = match level {
-            TickFidelity::Tbbo => &self.tbbo,
-            TickFidelity::Trades => &self.trades,
-        };
-        let Some(days) = records.get(&case) else {
-            return Ok(Vec::new());
-        };
-        let days = days.iter().map(|(&trade_date, batches)| {
-            fefat_data::tape_day(trade_date, vec![(level.fidelity(), batches.clone())])
-        });
+        let mut by_date: BTreeMap<TradeDate, Vec<(Fidelity, Vec<RecordBatch>)>> = BTreeMap::new();
+        for &level in levels {
+            let held = self
+                .levels
+                .get(&level)
+                .and_then(|records| records.get(&case));
+            for (&trade_date, batches) in held.into_iter().flatten() {
+                let day = by_date.entry(trade_date).or_default();
+                day.push((level, batches.clone()));
+            }
+        }
+        let days = by_date
+            .into_iter()
+            .map(|(trade_date, levels)| fefat_data::tape_day(trade_date, levels));
         Ok(days.collect::<Result<_, _>>()?)
     }
 
@@ -85,7 +102,7 @@ fn signal_rows_by_case(path: &Path) -> Result<BTreeMap<i64, Vec<SignalRow>>, Bat
 }
 
 /// Each row of `batch` as its case and its signal row (D-53: a null signal reads as false, a
-/// null or absent `wake` as true).
+/// null or absent `wake` as true, and a null or absent `flat_by` as none).
 fn signal_rows_of(path: &Path, batch: &RecordBatch) -> Result<Vec<(i64, SignalRow)>, BatchError> {
     let cases = int64s(path, batch, "case")?.values();
     let ts_close = int64s(path, batch, "ts_close")?.values();
@@ -109,9 +126,13 @@ fn signal_rows_of(path: &Path, batch: &RecordBatch) -> Result<Vec<(i64, SignalRo
     let wake = optional(path, batch, "wake", "boolean", |column| {
         column.as_boolean_opt()
     })?;
-    let price_at = |column: Option<&Int64Array>, row: usize| {
-        column.and_then(|column| column.is_valid(row).then(|| Price(column.value(row))))
+    let flat_by = optional(path, batch, "flat_by", "int64", |column| {
+        column.as_primitive_opt::<Int64Type>()
+    })?;
+    let int_at = |column: Option<&Int64Array>, row: usize| {
+        column.and_then(|column| column.is_valid(row).then(|| column.value(row)))
     };
+    let price_at = |column: Option<&Int64Array>, row: usize| int_at(column, row).map(Price);
     let float_at = |column: Option<&Float64Array>, row: usize| {
         column.and_then(|column| column.is_valid(row).then(|| column.value(row)))
     };
@@ -129,6 +150,7 @@ fn signal_rows_of(path: &Path, batch: &RecordBatch) -> Result<Vec<(i64, SignalRo
                 target_price: price_at(target_price, row),
                 size_mult: float_at(size_mult, row),
                 wake: wake.is_none_or(|wake| wake.is_null(row) || wake.value(row)),
+                flat_by: int_at(flat_by, row).map(Ts),
             };
             (case, signal_row)
         })

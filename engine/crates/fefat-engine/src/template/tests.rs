@@ -58,6 +58,7 @@ const fn entry_at(ts_close: i64) -> SignalRow {
         target_price: None,
         size_mult: None,
         wake: true,
+        flat_by: None,
     }
 }
 
@@ -114,10 +115,6 @@ fn a_specification_beyond_the_basic_subset_is_refused_until_step_2_8() {
         (json!({"breakeven": {"trigger": ticks(8)}}), "breakeven"),
         (json!({"trailing": {"by": ticks(8)}}), "a trailing stop"),
         (
-            json!({"time": {"tz": "UTC", "flat_by": "15:05"}}),
-            "time rules",
-        ),
-        (
             json!({"time": {"tz": "UTC", "windows": [{"start": "08:30", "end": "14:30"}]}}),
             "time rules",
         ),
@@ -152,6 +149,29 @@ fn a_specification_beyond_the_basic_subset_is_refused_until_step_2_8() {
         assert_eq!(template.err(), Some(expected), "{changes}");
     }
     assert!(TemplateStrategy::new(&spec_with(&json!({})), vec![entry_at(0)], &es()).is_ok());
+}
+
+#[test]
+fn flat_by_takes_its_instant_from_every_signal_row_and_only_with_a_flat_by_time() {
+    let flat_by = spec_with(&json!({"time": {"tz": "America/Chicago", "flat_by": "15:05"}}));
+    let at_flat_by = SignalRow {
+        flat_by: Some(Ts(9)),
+        ..entry_at(0)
+    };
+    let refused =
+        |spec: &StrategySpec, row: SignalRow| match TemplateStrategy::new(spec, vec![row], &es()) {
+            Err(TemplateError::Refused { expected, .. }) => expected,
+            other => panic!("Expected refused signal rows, got {other:?}"),
+        };
+    assert!(TemplateStrategy::new(&flat_by, vec![at_flat_by], &es()).is_ok());
+    assert_eq!(
+        refused(&flat_by, entry_at(0)),
+        "the instant of the flat-by time 15:05 on every signal row"
+    );
+    assert_eq!(
+        refused(&spec_with(&json!({})), at_flat_by),
+        "no flat-by instant on the rows of a specification without flat_by"
+    );
 }
 
 #[test]

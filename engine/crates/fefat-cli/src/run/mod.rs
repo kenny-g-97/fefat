@@ -1,11 +1,12 @@
-//! `fefat-cli run <input folder> <output folder>` (step 2.6): a batch of cases through the tick
-//! engine in one process, so that the differential test drives thousands of tapes through few
+//! `fefat-cli run <input folder> <output folder>` (steps 2.6 and 2.7): a batch of cases through
+//! the engine in one process, so that the differential test drives thousands of tapes through few
 //! invocations. The input folder holds `run.json`, which lists the cases ([`manifest`]), and the
-//! Arrow IPC files of their records and signal rows, `trades.arrow`, `tbbo.arrow`, and
-//! `signals.arrow`, each row tagged with its case's place in that list ([`inputs`]). A case reads
-//! its records from those files, through the in-memory reader, or from an engine cache's
-//! contract folder (step 2.5). The output folder receives `fills.arrow`, `orders.arrow`,
-//! `log.arrow`, and `ledger.arrow`, tagged the same way ([`outputs`]).
+//! Arrow IPC files of their records and signal rows, a file per level such as `trades.arrow`,
+//! `tbbo.arrow`, or `1m.arrow`, and `signals.arrow`, each row tagged with its case's place in that
+//! list ([`inputs`]). A case reads its records from those files, through the in-memory reader, or
+//! from an engine cache's contract folder (step 2.5), in full or skipping what no order can act
+//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, and `ledger.arrow`,
+//! tagged the same way ([`outputs`]).
 
 mod inputs;
 mod manifest;
@@ -17,6 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arrow_schema::ArrowError;
+use fefat_core::fidelity::Fidelity;
 use fefat_core::instrument::{Contract, NonPositiveParameter};
 use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::market_data::{InMemoryMarketData, MarketDataReader, TapeError};
@@ -25,7 +27,7 @@ use fefat_engine::hours::TradingHours;
 use fefat_engine::settings::RunSettings;
 use fefat_engine::strategy::{ScenarioOrders, Strategy};
 use fefat_engine::template::{TemplateError, TemplateStrategy};
-use fefat_engine::tick_run::{RunError, RunOutputs, TickFidelity, TickRun};
+use fefat_engine::tick_run::{Replay, RunError, RunOutputs, TickRun};
 use thiserror::Error;
 
 use inputs::BatchTables;
@@ -122,6 +124,8 @@ pub struct BatchSummary {
     pub cases: usize,
     /// Their fills, all told.
     pub fills: usize,
+    /// Their fills flagged ambiguous (F-BAR-05).
+    pub ambiguous_fills: usize,
 }
 
 /// Runs the batch in `input` and writes its outputs into `output`.
@@ -137,7 +141,7 @@ pub fn run_batch(input: &Path, output: &Path) -> Result<BatchSummary, BatchError
             path: manifest_path,
             source,
         })?;
-    let tables = BatchTables::read(input)?;
+    let tables = BatchTables::read(input, &manifest)?;
     let mut runs = Vec::with_capacity(manifest.cases.len());
     for (index, case) in (0_i64..).zip(&manifest.cases) {
         let run = run_case(case, index, &tables).map_err(|source| BatchError::Case {
@@ -153,9 +157,11 @@ pub fn run_batch(input: &Path, output: &Path) -> Result<BatchSummary, BatchError
     })?;
     outputs::write_outputs(output, &runs)?;
     let fills = runs.iter().map(|(_, run)| run.fills.len()).sum();
+    let ambiguous_fills = runs.iter().map(|(_, run)| run.ambiguous_fills()).sum();
     Ok(BatchSummary {
         cases: runs.len(),
         fills,
+        ambiguous_fills,
     })
 }
 
@@ -164,7 +170,6 @@ fn run_case(
     index: i64,
     tables: &BatchTables,
 ) -> Result<RunOutputs, CaseError> {
-    let level = TickFidelity::try_from(case.fidelity)?;
     let instrument = case.instrument()?;
     let ledger = case.ledger(instrument)?;
     let (hours, settings) = (case.hours(), case.settings());
@@ -180,14 +185,15 @@ fn run_case(
         }
     };
     let run = Run {
-        level,
+        fidelity: case.fidelity,
+        replay: case.replay(),
         hours: &hours,
         settings,
         ledger,
     };
     match &case.market_data {
-        MarketDataManifest::Tape => {
-            let days = tables.tape_days(index, level).map_err(Box::new)?;
+        MarketDataManifest::Tape { levels } => {
+            let days = tables.tape_days(index, levels).map_err(Box::new)?;
             let reader = InMemoryMarketData::new(Contract(case.contract.clone()), days)?;
             run.on(&reader, strategy.as_mut())
         }
@@ -201,7 +207,8 @@ fn run_case(
 
 /// A case's run but for its records and its strategy.
 struct Run<'case> {
-    level: TickFidelity,
+    fidelity: Fidelity,
+    replay: Replay,
     hours: &'case TradingHours,
     settings: RunSettings,
     ledger: Ledger,
@@ -214,12 +221,13 @@ impl Run<'_> {
         strategy: &mut dyn Strategy,
     ) -> Result<RunOutputs, CaseError> {
         let Self {
-            level,
+            fidelity,
+            replay,
             hours,
             settings,
             ledger,
         } = self;
-        let run = TickRun::new(reader, level, hours, settings, ledger, strategy)?;
+        let run = TickRun::new(reader, fidelity, replay, hours, settings, ledger, strategy)?;
         Ok(run.run()?)
     }
 }

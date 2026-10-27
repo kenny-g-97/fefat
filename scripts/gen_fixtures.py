@@ -1,10 +1,18 @@
 """Generate the synthetic market data under fixtures/synthetic/, the only data files in git.
 
 Run it in the project environment, since it writes Parquet through pyarrow and DBN through
-databento-dbn:
+databento-dbn, and takes its columns from the SDK's (`fefat.market.schema`):
 
     uv run python scripts/gen_fixtures.py
     uv run python scripts/gen_fixtures.py --out <folder> --seed <number>
+    uv run python scripts/gen_fixtures.py --out <folder outside the repository> \
+        --dates 2026-01-02..2026-12-31 --contracts ESH2026 --planted-gaps 3
+
+The last form writes a contract's sessions of a date range (its weekdays, or every day for a
+product that trades at weekends), each with planted gaps: jumps of the price and quiet minutes
+without prints, as months and years generated at test time need (step 2.7, D-51). It writes the
+store's partitions, their `dataset.json`, and the manifest, but not the Databento batch or the
+export samples, which belong to the committed set; never commit what it writes.
 
 The files follow the canonical store of docs/masterplan/02-engine-and-data.md
 section 1.1, with this folder as the provider `synthetic`: Parquet with zstd,
@@ -82,10 +90,13 @@ from itertools import groupby
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 from databento_dbn import Metadata, OHLCVMsg, RType, Schema, SType
 from databento_dbn.metadata import MappingInterval
+
+from fefat.market.schema import parse_schema_name, polars_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "fixtures" / "synthetic"
@@ -128,32 +139,33 @@ UPTICK_BELOW = 0.15
 DOWNTICK_BELOW = 0.30
 PRINTS_PER_EVENT = ((1, 0.75), (2, 0.90), (3, 0.97), (4, 1.0))
 
-TRADES_SCHEMA = pa.schema(
-    [
-        ("ts_recv", pa.int64()),
-        ("ts_event", pa.int64()),
-        ("instrument_id", pa.uint32()),
-        ("price", pa.int64()),
-        ("size", pa.uint32()),
-        ("side", pa.string()),
-        ("sequence", pa.uint32()),
-    ]
+_ARROW_TYPES = (
+    (pl.Int64, pa.int64()),
+    (pl.UInt32, pa.uint32()),
+    (pl.UInt64, pa.uint64()),
+    (pl.String, pa.string()),
+    (pl.Date, pa.date32()),
 )
-BARS_SCHEMA = pa.schema(
-    [
-        ("ts_open", pa.int64()),
-        ("ts_close", pa.int64()),
-        ("trade_date", pa.date32()),
-        ("instrument_id", pa.uint32()),
-        ("open", pa.int64()),
-        ("high", pa.int64()),
-        ("low", pa.int64()),
-        ("close", pa.int64()),
-        ("volume", pa.uint64()),
-        ("trade_count", pa.uint32()),
-        ("vwap", pa.int64()),
-    ]
-)
+"""The pyarrow type each column type of the store is written as."""
+
+
+def arrow_schema(schema_name: str) -> pa.Schema:
+    """The columns of a store schema as the SDK defines them (`fefat.market.schema`), in order and
+    with their types, as the pyarrow schema the fixtures are written in."""
+    fields = []
+    for name, dtype in polars_schema(parse_schema_name(schema_name)).items():
+        arrow = next((arrow for polars, arrow in _ARROW_TYPES if dtype == polars), None)
+        if arrow is None:
+            raise ValueError(
+                f"Expected a column type the fixtures can write, got {dtype} for {name} of "
+                f"{schema_name}."
+            )
+        fields.append((name, arrow))
+    return pa.schema(fields)
+
+
+TRADES_SCHEMA = arrow_schema("trades")
+BARS_SCHEMA = arrow_schema("ohlcv-1m")
 
 
 @dataclass(frozen=True)
@@ -168,7 +180,8 @@ class ActivityWindow:
 @dataclass(frozen=True)
 class FixtureProduct:
     """An instrument in the fixture set: its specification, its trading day, and its sessions,
-    each with a factor on the trade chances of its activity windows (`activity_scale`)."""
+    each with a factor on the trade chances of its activity windows (`activity_scale`), and
+    whether a date range gives it weekend sessions."""
 
     root: str
     contract: str
@@ -187,6 +200,7 @@ class FixtureProduct:
     opening_gap_ticks: int
     trade_dates: tuple[date, ...]
     activity_scale: tuple[float, ...]
+    trades_on_weekends: bool = False
 
     def __post_init__(self) -> None:
         if len(self.activity_scale) != len(self.trade_dates):
@@ -273,8 +287,23 @@ BTC = FixtureProduct(
     opening_gap_ticks=0,
     trade_dates=(date(2026, 3, 7),),
     activity_scale=(1.0,),
+    trades_on_weekends=True,
 )
 PRODUCTS = (ES, ES_JUNE, BTC)
+
+
+def in_date_range(product: FixtureProduct, first: date, last: date) -> FixtureProduct:
+    """`product` trading every session from `first` to `last`, weekdays only unless it trades at
+    weekends, each at its full activity."""
+    days = (first + timedelta(days=offset) for offset in range((last - first).days + 1))
+    trade_dates = tuple(
+        day for day in days if product.trades_on_weekends or day.weekday() < SATURDAY
+    )
+    if not trade_dates:
+        raise ValueError(
+            f"Expected a session of {product.contract} from {first} to {last}, got none."
+        )
+    return replace(product, trade_dates=trade_dates, activity_scale=(1.0,) * len(trade_dates))
 
 
 @dataclass(frozen=True)
@@ -462,6 +491,38 @@ def with_planted_prints(trades: pa.Table, session: Session) -> pa.Table:
     return pa.Table.from_pylist(numbered, schema=TRADES_SCHEMA)
 
 
+QUIET_MINUTES = (1, 6)
+"""How long a planted quiet stretch lasts, in whole minutes, from the first to just before the
+second."""
+JUMP_TICKS = (2, 61)
+"""How far a planted jump moves the price, in ticks, from the first to just before the second."""
+
+
+def with_planted_gaps(trades: pa.Table, session: Session, seed: int, count: int) -> pa.Table:
+    """The session's tape with `count` quiet stretches of one to five minutes without prints and
+    `count` jumps of 2 to 60 ticks, up or down, from which every later print of the session is
+    moved, so that bars of a minute go missing (F-BAR-07) and gaps pass stops and limits. They
+    draw from a random source of their own, so the rest of the tape stays as it was."""
+    if count == 0:
+        return trades
+    random_source = random.Random(
+        f"{seed}/{session.product.contract}/{session.trade_date.isoformat()}/gaps"
+    )
+    first, last = session.open_time(), session.close_time()
+    frame = pl.DataFrame(trades)
+    received, price = pl.col("ts_recv"), pl.col("price")
+    for _ in range(count):
+        start = random_source.randrange(first, last)
+        length = random_source.randrange(*QUIET_MINUTES) * NANOSECONDS_PER_MINUTE
+        frame = frame.filter(~received.is_between(start, start + length, closed="left"))
+        jump_at = random_source.randrange(first, last)
+        ticks = random_source.choice((-1, 1)) * random_source.randrange(*JUMP_TICKS)
+        moved = pl.when(received >= jump_at).then(price + ticks * session.product.tick)
+        frame = frame.with_columns(price=moved.otherwise(price))
+    numbered = frame.with_columns(sequence=pl.int_range(1, pl.len() + 1, dtype=pl.UInt32))
+    return numbered.to_arrow().cast(TRADES_SCHEMA)
+
+
 def bars_from_trades(trades: pa.Table, session: Session, width: int) -> pa.Table:
     """Bucket trades by `ts_recv` into [t, t + width) from the session open; only buckets with trades."""
     anchor = session.open_time()
@@ -550,11 +611,13 @@ def month_of(product: FixtureProduct) -> str:
     return months.pop()
 
 
-def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[str, str | int]]:
+def written_product(
+    product: FixtureProduct, out: Path, seed: int, planted_gaps: int = 0
+) -> list[dict[str, str | int]]:
     """Write a contract's trades and 1-second bars per trade date and its 1-minute bars per
-    month."""
+    month, each session with `planted_gaps` quiet stretches and jumps."""
     entries: list[dict[str, str | int]] = []
-    minute_bars: list[pa.Table] = []
+    minute_bars: dict[str, list[pa.Table]] = {}
     price_ticks = product.first_price_ticks
     for trade_date in product.trade_dates:
         session = Session(product, trade_date)
@@ -562,7 +625,9 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
         tape, price_ticks = simulate_session(
             session, random_source, opening_price_ticks(price_ticks, session, random_source)
         )
-        trades = with_planted_prints(tape, session)
+        trades = with_planted_gaps(with_planted_prints(tape, session), session, seed, planted_gaps)
+        if planted_gaps:
+            price_ticks = trades.column("price")[-1].as_py() // product.tick
         day = f"date={trade_date.isoformat()}"
         second_bars = bars_from_trades(trades, session, NANOSECONDS_PER_SECOND)
         entries.append(
@@ -571,10 +636,11 @@ def written_product(product: FixtureProduct, out: Path, seed: int) -> list[dict[
         entries.append(
             written_partition(second_bars, partition_path(out, "ohlcv-1s", product, day), out, seed)
         )
-        minute_bars.append(bars_from_trades(trades, session, NANOSECONDS_PER_MINUTE))
-    month = f"month={month_of(product)}"
-    month_path = partition_path(out, "ohlcv-1m", product, month)
-    entries.append(written_partition(pa.concat_tables(minute_bars), month_path, out, seed))
+        month_bars = minute_bars.setdefault(trade_date.strftime("%Y-%m"), [])
+        month_bars.append(bars_from_trades(trades, session, NANOSECONDS_PER_MINUTE))
+    for month, tables in minute_bars.items():
+        month_path = partition_path(out, "ohlcv-1m", product, f"month={month}")
+        entries.append(written_partition(pa.concat_tables(tables), month_path, out, seed))
     return entries
 
 
@@ -849,6 +915,20 @@ def write_manifest(out: Path, entries: Sequence[dict[str, str | int]]) -> None:
     (out / MANIFEST_NAME).write_text(text, encoding="utf-8", newline="\n")
 
 
+def date_range(text: str) -> tuple[date, date]:
+    """`2026-01-02..2026-12-31`: the first and the last date of a range, both included."""
+    first, separator, last = text.partition("..")
+    try:
+        dates = (date.fromisoformat(first), date.fromisoformat(last))
+    except ValueError:
+        dates = None
+    if not separator or dates is None or dates[1] < dates[0]:
+        raise argparse.ArgumentTypeError(
+            f"Expected a date range written FIRST..LAST, such as 2026-01-02..2026-12-31, got {text!r}"
+        )
+    return dates
+
+
 def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate the synthetic market-data fixtures and their manifest."
@@ -862,24 +942,63 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--seed", type=int, default=DEFAULT_SEED, help=f"base seed (default: {DEFAULT_SEED})"
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--dates",
+        type=date_range,
+        help="the sessions of a range instead of the fixtures' own, such as 2026-01-02..2026-12-31",
+    )
+    parser.add_argument(
+        "--contracts",
+        type=lambda text: tuple(text.split(",")),
+        help=f"the contracts to write, of {', '.join(product.contract for product in PRODUCTS)}",
+    )
+    parser.add_argument(
+        "--planted-gaps",
+        type=int,
+        default=0,
+        help="quiet stretches and price jumps planted in each session (default: 0)",
+    )
+    arguments = parser.parse_args(argv)
+    generated = arguments.dates is not None or arguments.contracts is not None
+    if (generated or arguments.planted_gaps > 0) and arguments.out.resolve().is_relative_to(ROOT):
+        parser.error(
+            "Expected --out outside the repository with --dates, --contracts, or "
+            f"--planted-gaps, whose tapes are never committed (D-51), got {arguments.out}"
+        )
+    return arguments
+
+
+def chosen_products(arguments: argparse.Namespace) -> tuple[FixtureProduct, ...]:
+    """The products the arguments name, each over the date range they give."""
+    products = PRODUCTS
+    if arguments.contracts is not None:
+        known = {product.contract: product for product in PRODUCTS}
+        unknown = sorted(set(arguments.contracts) - set(known))
+        if unknown:
+            raise SystemExit(f"Expected contracts among {sorted(known)}, got {unknown}.")
+        products = tuple(known[contract] for contract in arguments.contracts)
+    if arguments.dates is not None:
+        products = tuple(in_date_range(product, *arguments.dates) for product in products)
+    return products
 
 
 def main(argv: Sequence[str]) -> int:
     arguments = parse_arguments(argv)
+    products = chosen_products(arguments)
     entries = [
         entry
-        for product in PRODUCTS
-        for entry in written_product(product, arguments.out, arguments.seed)
+        for product in products
+        for entry in written_product(product, arguments.out, arguments.seed, arguments.planted_gaps)
     ]
-    one_product_a_root = {product.root: product for product in PRODUCTS}.values()
+    one_product_a_root = {product.root: product for product in products}.values()
     entries.extend(
         written_dataset_metadata(product, schema, arguments.out, arguments.seed)
         for product in one_product_a_root
         for schema in ("trades", "ohlcv-1s", "ohlcv-1m")
     )
-    entries.extend(written_databento_batch(arguments.out, arguments.seed))
-    entries.extend(written_preset_samples(arguments.out, arguments.seed))
+    if arguments.dates is None and arguments.contracts is None:
+        entries.extend(written_databento_batch(arguments.out, arguments.seed))
+        entries.extend(written_preset_samples(arguments.out, arguments.seed))
     write_manifest(arguments.out, entries)
     total_bytes = sum(int(entry["bytes"]) for entry in entries)
     print(

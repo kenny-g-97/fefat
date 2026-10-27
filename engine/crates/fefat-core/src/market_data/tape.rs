@@ -120,6 +120,22 @@ pub enum TapeError {
         /// Its place among the level's records, counting from 1.
         record: usize,
     },
+    /// A finer record that trades outside the range of the coarser bar holding it, whose high
+    /// and low a descent trusts (`02` §4).
+    #[error(
+        "Expected every {finer} record of {trade_date} inside the range of the {timeframe} bar \
+         that holds it, got record {record} outside it"
+    )]
+    RecordOutsideRange {
+        /// Its trade date.
+        trade_date: TradeDate,
+        /// The coarser bars.
+        timeframe: Timeframe,
+        /// Its level.
+        finer: Fidelity,
+        /// Its place among the level's records, counting from 1.
+        record: usize,
+    },
     /// More records of one level than the offsets can count.
     #[error(
         "Expected at most {} {level} records on {trade_date}, got {records}",

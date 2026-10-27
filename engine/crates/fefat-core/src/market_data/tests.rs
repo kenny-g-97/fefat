@@ -183,6 +183,34 @@ fn a_second_bar_across_its_minute_close_is_refused() {
 }
 
 #[test]
+fn a_record_traded_outside_the_range_of_the_bar_holding_it_is_refused() {
+    // A descent trusts a bar's high and low to bound the trading it holds (`02` §4).
+    let tick = Price(250_000_000);
+    let mut above_its_second = sample_tape();
+    above_its_second[0].trades[4].price = Price(above_its_second[0].trades[4].price.0 + tick.0);
+    assert_eq!(
+        sample_reader(above_its_second).unwrap_err(),
+        TapeError::RecordOutsideRange {
+            trade_date: FIRST_DAY,
+            timeframe: Timeframe::ONE_SECOND,
+            finer: Fidelity::Trades,
+            record: 5,
+        }
+    );
+    let mut above_its_minute = sample_tape();
+    let seconds = above_its_minute[0]
+        .bars
+        .get_mut(&Timeframe::ONE_SECOND)
+        .unwrap();
+    seconds[3].high = Price(seconds[3].high.0 + tick.0);
+    assert_eq!(
+        sample_reader(above_its_minute).unwrap_err().to_string(),
+        "Expected every 1s record of 2026-03-05 inside the range of the 1m bar that holds it, got \
+         record 4 outside it"
+    );
+}
+
+#[test]
 fn a_quote_of_no_lots_is_refused() {
     let mut tape = sample_tape();
     tape[0].tbbo[0].ask_size = Qty(0);

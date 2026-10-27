@@ -1,18 +1,22 @@
-//! The tick loop on hand-written tapes transcribed from the scenarios they cite, through the
-//! in-memory reader; `python/tests/test_rust_engine_scenarios.py` runs every tick scenario.
+//! The loop on hand-written tapes transcribed from the scenarios they cite, ticks and bars,
+//! through the in-memory reader; `python/tests/test_rust_engine_scenarios.py` runs every
+//! scenario.
 
-use fefat_core::fidelity::Fidelity;
+use std::collections::BTreeMap;
+
+use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::fills::PricingRule;
 use fefat_core::instants::TradeDate;
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
 use fefat_core::ledger::Position;
-use fefat_core::market_data::{InMemoryMarketData, TapeDay, TbboRow, TradeRow};
+use fefat_core::market_data::{BarRow, InMemoryMarketData, TapeDay, TbboRow, TradeRow};
 use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, OrderState, Side};
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 
 use super::*;
 use crate::book::{Bracket, BracketLeg, LegPrice};
+use crate::hours::Session;
 use crate::strategy::{ScenarioOrder, ScenarioOrders};
 use crate::template::{SignalRow, TemplateStrategy};
 
@@ -137,27 +141,83 @@ fn flat() -> Ledger {
     Ledger::new(es(), Money(50_000 * MONEY_UNITS))
 }
 
+/// Bars of `timeframe` of `(seconds after 14:30 it opens, its length in seconds, its open, high,
+/// low, and close in hundredths, its volume)`.
+fn bars(timeframe: Timeframe, rows: &[(i64, i64, [i64; 4], i64)]) -> InMemoryMarketData {
+    let rows = rows.iter().map(
+        |&(opens, seconds, [open, high, low, close], volume)| BarRow {
+            ts_open: at(opens * 1_000),
+            ts_close: at((opens + seconds) * 1_000),
+            open: price(open),
+            high: price(high),
+            low: price(low),
+            close: price(close),
+            volume: Qty(volume),
+        },
+    );
+    let tape = TapeDay {
+        trade_date: TRADE_DATE,
+        tbbo: Vec::new(),
+        trades: Vec::new(),
+        bars: BTreeMap::from([(timeframe, rows.collect())]),
+    };
+    InMemoryMarketData::new(Contract("ESH2026".to_owned()), vec![tape]).unwrap()
+}
+
+/// 1-minute bars of `(minutes after 14:30 it opens, its open, high, low, and close in
+/// hundredths, its volume)`.
+fn minutes(rows: &[(i64, [i64; 4], i64)]) -> InMemoryMarketData {
+    let rows: Vec<(i64, i64, [i64; 4], i64)> = rows
+        .iter()
+        .map(|&(minute, prices, volume)| (minute * 60, 60, prices, volume))
+        .collect();
+    bars(Timeframe::ONE_MINUTE, &rows)
+}
+
 fn run(
     reader: &InMemoryMarketData,
-    level: TickFidelity,
+    fidelity: Fidelity,
     ledger: Ledger,
     strategy: &mut dyn Strategy,
 ) -> RunOutputs {
     let hours = TradingHours::always();
-    let settings = RunSettings::defaults_for(level.fidelity());
-    TickRun::new(reader, level, &hours, settings, ledger, strategy)
-        .unwrap()
-        .run()
-        .unwrap()
+    let settings = RunSettings::defaults_for(fidelity);
+    TickRun::new(
+        reader,
+        fidelity,
+        Replay::Full,
+        &hours,
+        settings,
+        ledger,
+        strategy,
+    )
+    .unwrap()
+    .run()
+    .unwrap()
 }
 
 fn run_orders(
     reader: &InMemoryMarketData,
-    level: TickFidelity,
+    fidelity: Fidelity,
     ledger: Ledger,
     orders: Vec<ScenarioOrder>,
 ) -> RunOutputs {
-    run(reader, level, ledger, &mut ScenarioOrders::new(orders))
+    run(reader, fidelity, ledger, &mut ScenarioOrders::new(orders))
+}
+
+/// Each fill's order and whether it is flagged ambiguous (F-BAR-05).
+fn ambiguity(outputs: &RunOutputs) -> Vec<(u64, bool)> {
+    let booked = outputs.fills.iter().map(|booked| booked.fill);
+    booked
+        .map(|fill| (fill.order.0, fill.flags.ambiguous))
+        .collect()
+}
+
+fn logged_ambiguous(outputs: &RunOutputs) -> usize {
+    let entries = outputs.log.iter();
+    entries
+        .filter(|entry| entry.kind == crate::event_log::EventKind::Ambiguous)
+        .count()
 }
 
 /// Each fill's order, milliseconds after 14:30, price in hundredths, and rule.
@@ -194,7 +254,7 @@ fn a_sell_stop_gapped_through_on_trades_fills_at_the_first_trade_past_it() {
         (1_400, 499_075, 3),
     ]);
     let orders = vec![order(1, Side::Sell, stop(499_500))];
-    let outputs = run_orders(&reader, TickFidelity::Trades, long_one(), orders);
+    let outputs = run_orders(&reader, Fidelity::Trades, long_one(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 1_250, 499_025, PricingRule::StopOnTrades)]
@@ -212,7 +272,7 @@ fn the_first_stop_of_an_oco_pair_to_trigger_fills_and_cancels_the_other() {
         in_group(order(1, Side::Buy, stop(500_500)), 1),
         in_group(order(2, Side::Sell, stop(499_500)), 1),
     ];
-    let outputs = run_orders(&reader, TickFidelity::Trades, flat(), orders);
+    let outputs = run_orders(&reader, Fidelity::Trades, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 2_100, 500_525, PricingRule::StopOnTrades)]
@@ -226,7 +286,7 @@ fn a_bracket_stop_at_the_market_fills_on_the_next_trade_not_on_its_entrys_own() 
     let reader = trades(&[(200, 500_000, 3), (600, 500_050, 2)]);
     let entry = order(1, Side::Buy, OrderKind::Market);
     let orders = vec![bracketed(entry, (2, 500_000), (3, 501_000))];
-    let outputs = run_orders(&reader, TickFidelity::Trades, flat(), orders);
+    let outputs = run_orders(&reader, Fidelity::Trades, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [
@@ -248,7 +308,7 @@ fn when_one_tbbo_record_would_fill_a_triggered_stop_and_its_target_the_stop_fill
         in_group(order(1, Side::Sell, stop(499_500)), 1),
         in_group(order(2, Side::Sell, limit(500_500)), 1),
     ];
-    let outputs = run_orders(&reader, TickFidelity::Tbbo, long_one(), orders);
+    let outputs = run_orders(&reader, Fidelity::Tbbo, long_one(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 300, 499_500, PricingRule::StopAtNextQuote)]
@@ -264,7 +324,7 @@ fn on_tbbo_a_bracket_stop_at_its_entry_records_trade_is_through_the_market() {
     ]);
     let entry = order(1, Side::Buy, OrderKind::Market);
     let orders = vec![bracketed(entry, (2, 499_975), (3, 501_000))];
-    let outputs = run_orders(&reader, TickFidelity::Tbbo, flat(), orders);
+    let outputs = run_orders(&reader, Fidelity::Tbbo, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [
@@ -286,7 +346,7 @@ fn a_tbbo_record_that_triggers_a_stop_and_trades_through_a_limit_of_its_group_fi
         in_group(order(1, Side::Buy, stop(500_500)), 1),
         in_group(order(2, Side::Sell, limit(500_400)), 1),
     ];
-    let outputs = run_orders(&reader, TickFidelity::Tbbo, flat(), orders);
+    let outputs = run_orders(&reader, Fidelity::Tbbo, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [(2, 300, 500_400, PricingRule::LimitAtItsPrice)]
@@ -305,7 +365,7 @@ fn in_a_tbbo_sweep_a_stop_fills_at_the_print_below_the_bid_it_carries() {
         (400, 499_375, 1, 499_350, 499_375, 3, 2),
     ]);
     let orders = vec![order(1, Side::Sell, stop(499_550))];
-    let outputs = run_orders(&reader, TickFidelity::Tbbo, long_one(), orders);
+    let outputs = run_orders(&reader, Fidelity::Tbbo, long_one(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 300, 499_400, PricingRule::StopAtNextQuote)]
@@ -326,7 +386,7 @@ fn a_tbbo_stop_triggered_on_one_record_fills_before_a_market_order_of_its_group(
         ..in_group(order(2, Side::Buy, OrderKind::Market), 1)
     };
     let orders = vec![in_group(order(1, Side::Buy, stop(500_100)), 1), market];
-    let outputs = run_orders(&reader, TickFidelity::Tbbo, flat(), orders);
+    let outputs = run_orders(&reader, Fidelity::Tbbo, flat(), orders);
     assert_eq!(
         fills(&outputs),
         [(1, 300, 500_125, PricingRule::StopAtNextQuote)]
@@ -360,6 +420,7 @@ fn a_templates_short_takes_its_size_from_size_mult_and_its_bracket_from_the_colu
         target_price: Some(price(499_000)),
         size_mult: Some(2.0),
         wake: true,
+        flat_by: None,
     };
     let mut template = TemplateStrategy::new(&spec, vec![row], &es()).unwrap();
     let reader = trades(&[
@@ -368,7 +429,7 @@ fn a_templates_short_takes_its_size_from_size_mult_and_its_bracket_from_the_colu
         (302_000, 500_300, 4),
         (302_500, 500_350, 2),
     ]);
-    let outputs = run(&reader, TickFidelity::Trades, flat(), &mut template);
+    let outputs = run(&reader, Fidelity::Trades, flat(), &mut template);
     assert_eq!(
         fills(&outputs),
         [
@@ -395,21 +456,436 @@ fn records_that_go_back_in_time_across_trade_dates_are_refused() {
     let days = vec![day(20_518, 500), day(20_519, 100)];
     let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
     let (hours, mut strategy) = (TradingHours::always(), ScenarioOrders::new(Vec::new()));
-    let (level, settings) = (
-        TickFidelity::Trades,
-        RunSettings::defaults_for(Fidelity::Trades),
-    );
-    let run = TickRun::new(&reader, level, &hours, settings, flat(), &mut strategy).unwrap();
+    let settings = RunSettings::defaults_for(Fidelity::Trades);
+    let (fidelity, replay) = (Fidelity::Trades, Replay::Full);
+    let run = TickRun::new(
+        &reader,
+        fidelity,
+        replay,
+        &hours,
+        settings,
+        flat(),
+        &mut strategy,
+    )
+    .unwrap();
     assert!(matches!(run.run(), Err(RunError::RecordsOutOfOrder { .. })));
 }
 
 #[test]
-fn a_bar_fidelity_is_refused_until_step_2_7() {
-    let fidelity = Fidelity::Bars(fefat_core::fidelity::Timeframe::ONE_MINUTE);
-    let refused = TickFidelity::try_from(fidelity);
-    assert_eq!(refused, Err(RunError::BarFidelity { fidelity }));
+fn a_stop_triggered_on_tbbo_is_refused_on_a_trade_or_a_bar_of_the_next_date() {
+    // F-STP-02 fills a stop triggered on TBBO at the next record's quote, which trades and bars
+    // lack.
+    let quoted = |milliseconds: i64, hundredths: i64| TbboRow {
+        ts_recv: at(milliseconds),
+        price: price(hundredths),
+        size: Qty(1),
+        bid: price(hundredths - 25),
+        ask: price(hundredths),
+        bid_size: Qty(1),
+        ask_size: Qty(1),
+    };
+    let next_date = TradeDate(TRADE_DATE.0 + 1);
+    let trade = TradeRow {
+        ts_recv: at(86_400_000),
+        price: price(499_000),
+        size: Qty(2),
+    };
+    let minute = BarRow {
+        ts_open: at(86_400_000),
+        ts_close: at(86_460_000),
+        open: price(499_000),
+        high: price(499_000),
+        low: price(499_000),
+        close: price(499_000),
+        volume: Qty(2),
+    };
+    let next_days = [
+        (
+            TapeDay {
+                trade_date: next_date,
+                tbbo: Vec::new(),
+                trades: vec![trade],
+                bars: Default::default(),
+            },
+            Fidelity::Trades,
+        ),
+        (
+            TapeDay {
+                trade_date: next_date,
+                tbbo: Vec::new(),
+                trades: Vec::new(),
+                bars: BTreeMap::from([(Timeframe::ONE_MINUTE, vec![minute])]),
+            },
+            Fidelity::Bars(Timeframe::ONE_MINUTE),
+        ),
+    ];
+    for (next_day, level) in next_days {
+        let triggering = TapeDay {
+            trade_date: TRADE_DATE,
+            tbbo: vec![quoted(200, 500_000), quoted(400, 499_475)],
+            trades: Vec::new(),
+            bars: Default::default(),
+        };
+        let days = vec![triggering, next_day];
+        let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+        let mut strategy = ScenarioOrders::new(vec![order(1, Side::Sell, stop(499_500))]);
+        let hours = TradingHours::always();
+        let settings = RunSettings::defaults_for(Fidelity::Tbbo);
+        let (fidelity, replay) = (Fidelity::Tbbo, Replay::Full);
+        let run = TickRun::new(
+            &reader,
+            fidelity,
+            replay,
+            &hours,
+            settings,
+            long_one(),
+            &mut strategy,
+        )
+        .unwrap();
+
+        let refused = run.run().unwrap_err();
+
+        assert!(
+            matches!(
+                refused,
+                RunError::TriggeredWithoutQuotes { order: 1, fidelity, .. } if fidelity == level
+            ),
+            "{refused}"
+        );
+    }
+}
+
+#[test]
+fn a_stop_triggered_on_tbbo_fills_at_the_next_tradeable_quote_past_a_closed_date_of_trades() {
+    // F-STP-02 with F-SES-02: the trades of 2026-03-07 fall in no session, so the next tradeable
+    // record is 2026-03-08's TBBO record: fill = lower of (4995.00 - 0, bid 4987.75) = 4987.75.
+    const DAY: i64 = 86_400_000;
+    const MIDNIGHT: i64 = -52_200_000;
+    let quoted = |milliseconds: i64, hundredths: i64| TbboRow {
+        ts_recv: at(milliseconds),
+        price: price(hundredths),
+        size: Qty(1),
+        bid: price(hundredths - 25),
+        ask: price(hundredths),
+        bid_size: Qty(1),
+        ask_size: Qty(1),
+    };
+    let closed = TradeRow {
+        ts_recv: at(DAY),
+        price: price(499_000),
+        size: Qty(2),
+    };
+    let days = vec![
+        TapeDay {
+            trade_date: TRADE_DATE,
+            tbbo: vec![quoted(200, 500_000), quoted(400, 499_475)],
+            trades: Vec::new(),
+            bars: Default::default(),
+        },
+        TapeDay {
+            trade_date: TradeDate(TRADE_DATE.0 + 1),
+            tbbo: Vec::new(),
+            trades: vec![closed],
+            bars: Default::default(),
+        },
+        TapeDay {
+            trade_date: TradeDate(TRADE_DATE.0 + 2),
+            tbbo: vec![quoted(2 * DAY, 498_800)],
+            trades: Vec::new(),
+            bars: Default::default(),
+        },
+    ];
+    let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+    let session = |day: i64| Session {
+        open: at(day * DAY + MIDNIGHT),
+        close: at(day * DAY + MIDNIGHT + 21 * 3_600_000),
+        halts: Vec::new(),
+    };
+    let hours = TradingHours::of_sessions(vec![session(0), session(2)]);
+    let mut strategy = ScenarioOrders::new(vec![order(1, Side::Sell, stop(499_500))]);
+    let settings = RunSettings::defaults_for(Fidelity::Tbbo);
+    let (fidelity, replay) = (Fidelity::Tbbo, Replay::Full);
+    let run = TickRun::new(
+        &reader,
+        fidelity,
+        replay,
+        &hours,
+        settings,
+        long_one(),
+        &mut strategy,
+    )
+    .unwrap();
+
+    let outputs = run.run().unwrap();
+
     assert_eq!(
-        TickFidelity::try_from(Fidelity::Tbbo),
-        Ok(TickFidelity::Tbbo)
+        fills(&outputs),
+        [(1, 2 * DAY, 498_775, PricingRule::StopAtNextQuote)]
     );
+}
+
+#[test]
+fn a_trade_date_without_a_level_at_or_coarser_than_the_runs_fidelity_is_refused() {
+    let reader = trades(&[(200, 500_000, 1)]);
+    let (hours, mut strategy) = (TradingHours::always(), ScenarioOrders::new(Vec::new()));
+    let fidelity = Fidelity::Bars(Timeframe::ONE_MINUTE);
+    let settings = RunSettings::defaults_for(fidelity);
+    let run = TickRun::new(
+        &reader,
+        fidelity,
+        Replay::Full,
+        &hours,
+        settings,
+        flat(),
+        &mut strategy,
+    )
+    .unwrap();
+    let refused = run.run().unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        "Expected a level at or coarser than 1m on 2026-03-06, which holds trades"
+    );
+}
+
+#[test]
+fn a_longs_stop_and_target_inside_one_bar_resolve_to_the_stop_flagged_ambiguous() {
+    // S-fill-022
+    let reader = minutes(&[
+        (0, [500_025, 500_300, 499_850, 500_175], 210),
+        (1, [500_150, 501_125, 499_375, 500_600], 640),
+    ]);
+    let orders = vec![
+        in_group(order(1, Side::Sell, stop(499_500)), 1),
+        in_group(order(2, Side::Sell, limit(501_000)), 1),
+    ];
+    let outputs = run_orders(&reader, minute(), long_one(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [(1, 120_000, 499_475, PricingRule::StopOnBars)]
+    );
+    assert_eq!(ambiguity(&outputs), [(1, true)]);
+    assert_eq!(outputs.fills[0].fill.fidelity, minute());
+    assert_eq!(
+        (outputs.ambiguous_fills(), logged_ambiguous(&outputs)),
+        (1, 1)
+    );
+    assert_eq!(state_of(&outputs, 2), OrderState::Cancelled);
+}
+
+#[test]
+fn a_stop_entry_and_its_bracket_stop_both_fill_in_one_bar_flagged_ambiguous() {
+    // S-fill-024
+    let reader = minutes(&[
+        (0, [500_300, 500_450, 500_225, 500_400], 190),
+        (1, [500_400, 501_300, 500_050, 500_825], 720),
+    ]);
+    let entry = order(1, Side::Buy, stop(500_500));
+    let orders = vec![bracketed(entry, (2, 500_100), (3, 501_200))];
+    let outputs = run_orders(&reader, minute(), flat(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 120_000, 500_525, PricingRule::StopOnBars),
+            (2, 120_000, 500_075, PricingRule::StopOnBars),
+        ]
+    );
+    assert_eq!(ambiguity(&outputs), [(1, true), (2, true)]);
+    assert_eq!(outputs.ledger.position(), Position::Flat);
+}
+
+#[test]
+fn of_an_oco_pair_of_entry_stops_inside_one_bar_the_lower_id_fills() {
+    // S-fill-033
+    let reader = minutes(&[(0, [500_000, 500_600, 499_400, 500_100], 400)]);
+    let orders = vec![
+        in_group(order(1, Side::Buy, stop(500_500)), 1),
+        in_group(order(2, Side::Sell, stop(499_500)), 1),
+    ];
+    let outputs = run_orders(&reader, minute(), flat(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [(1, 60_000, 500_525, PricingRule::StopOnBars)]
+    );
+    assert_eq!(ambiguity(&outputs), [(1, true)]);
+}
+
+#[test]
+fn a_bracket_stop_through_the_market_at_its_entrys_bar_open_fills_there() {
+    // S-fill-040
+    let reader = minutes(&[
+        (0, [499_950, 500_025, 499_925, 500_000], 120),
+        (1, [499_000, 499_200, 498_850, 499_100], 600),
+    ]);
+    let entry = ScenarioOrder {
+        placed_at: at(60_000),
+        ..order(1, Side::Buy, OrderKind::Market)
+    };
+    let orders = vec![bracketed(entry, (2, 499_500), (3, 501_000))];
+    let outputs = run_orders(&reader, minute(), flat(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 120_000, 499_025, PricingRule::MarketAtBarOpen),
+            (2, 120_000, 498_975, PricingRule::StopThroughMarket),
+        ]
+    );
+    assert_eq!(ambiguity(&outputs), [(1, false), (2, false)]);
+    assert_eq!(state_of(&outputs, 3), OrderState::Cancelled);
+}
+
+#[test]
+fn a_stop_that_reverses_a_long_inside_a_bar_turns_the_path_adverse_for_the_short() {
+    // S-fill-042
+    let reader = minutes(&[(0, [500_000, 500_600, 499_400, 500_000], 500)]);
+    let reversal = ScenarioOrder {
+        lots: Qty(2),
+        ..order(1, Side::Sell, stop(499_500))
+    };
+    let orders = vec![
+        reversal,
+        in_group(order(2, Side::Buy, stop(500_500)), 1),
+        in_group(order(3, Side::Buy, limit(499_475)), 1),
+    ];
+    let outputs = run_orders(&reader, minute(), long_one(), orders);
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 60_000, 499_475, PricingRule::StopOnBars),
+            (2, 60_000, 500_525, PricingRule::StopOnBars),
+        ]
+    );
+    assert_eq!(ambiguity(&outputs), [(1, false), (2, false)]);
+}
+
+#[test]
+fn a_template_closes_at_its_flat_by_time_and_enters_nothing_after_it_that_day() {
+    // S-template-003: 15:05 in Chicago on 2026-03-06 is 21:05 UTC, 23,700 s after 14:30.
+    let spec: StrategySpec = serde_json::from_value(serde_json::json!({
+        "spec_version": 1,
+        "instrument": "ES",
+        "timeframe": "5m",
+        "execution": {
+            "entry": {"kind": "market"},
+            "stop": {"kind": "ticks", "ticks": 12},
+            "targets": [{"price": {"kind": "ticks", "ticks": 24}}],
+            "time": {"tz": "America/Chicago", "flat_by": "15:05"},
+            "sizing": {"kind": "fixed", "units": 1}
+        }
+    }))
+    .unwrap();
+    let row = |seconds: i64, long_entry: bool| SignalRow {
+        ts_close: at(seconds * 1_000),
+        long_entry,
+        short_entry: false,
+        long_exit: false,
+        short_exit: false,
+        stop_price: None,
+        target_price: None,
+        size_mult: None,
+        wake: true,
+        flat_by: Some(at(23_700_000)),
+    };
+    let rows = vec![
+        row(22_800, true),
+        row(23_400, false),
+        row(23_700, false),
+        row(24_000, true),
+    ];
+    let mut template = TemplateStrategy::new(&spec, rows, &es()).unwrap();
+    let reader = bars(
+        Timeframe::ONE_MINUTE,
+        &[
+            (22_800, 60, [500_000, 500_100, 499_950, 500_050], 80),
+            (23_700, 60, [500_200, 500_250, 500_150, 500_225], 60),
+            (24_000, 60, [500_300, 500_350, 500_275, 500_325], 40),
+        ],
+    );
+    let outputs = run(&reader, minute(), flat(), &mut template);
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 22_860_000, 500_025, PricingRule::MarketAtBarOpen),
+            (4, 23_760_000, 500_175, PricingRule::MarketAtBarOpen),
+        ]
+    );
+    assert_eq!(outputs.ledger.position(), Position::Flat);
+}
+
+#[test]
+fn skipping_passes_over_records_no_order_can_act_on_and_ends_as_a_full_replay() {
+    // S-template-006's trades, with the 1-second and 1-minute bars they make.
+    let ticks = [
+        (200, 500_000, 2),
+        (30_000, 500_050, 1),
+        (60_000, 499_900, 3),
+        (80_000, 499_950, 1),
+    ];
+    let trades: Vec<TradeRow> = ticks
+        .iter()
+        .map(|&(milliseconds, hundredths, size)| TradeRow {
+            ts_recv: at(milliseconds),
+            price: price(hundredths),
+            size: Qty(size),
+        })
+        .collect();
+    let bar = |opens: i64, seconds: i64, held: &[TradeRow]| BarRow {
+        ts_open: at(opens * 1_000),
+        ts_close: at((opens + seconds) * 1_000),
+        open: held[0].price,
+        high: held.iter().map(|trade| trade.price).max().unwrap(),
+        low: held.iter().map(|trade| trade.price).min().unwrap(),
+        close: held[held.len() - 1].price,
+        volume: Qty(held.iter().map(|trade| trade.size.0).sum()),
+    };
+    let second_bars = vec![
+        bar(0, 1, &trades[0..1]),
+        bar(30, 1, &trades[1..2]),
+        bar(60, 1, &trades[2..3]),
+        bar(80, 1, &trades[3..4]),
+    ];
+    let minute_bars = vec![bar(0, 60, &trades[0..2]), bar(60, 60, &trades[2..4])];
+    let tape = TapeDay {
+        trade_date: TRADE_DATE,
+        tbbo: Vec::new(),
+        trades,
+        bars: BTreeMap::from([
+            (Timeframe::ONE_SECOND, second_bars),
+            (Timeframe::ONE_MINUTE, minute_bars),
+        ]),
+    };
+    let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), vec![tape]).unwrap();
+    let far = vec![order(1, Side::Sell, stop(490_000))];
+    let (hours, settings) = (
+        TradingHours::always(),
+        RunSettings::defaults_for(Fidelity::Trades),
+    );
+    let replayed = |replay: Replay| {
+        let mut strategy = ScenarioOrders::new(far.clone());
+        let mut run = TickRun::new(
+            &reader,
+            Fidelity::Trades,
+            replay,
+            &hours,
+            settings,
+            long_one(),
+            &mut strategy,
+        )
+        .unwrap();
+        let mut skipped = 0;
+        while let Some(stepped) = run.step().unwrap() {
+            if let Stepped::Skipped { units } = stepped {
+                skipped += units;
+            }
+        }
+        (run.run().unwrap(), skipped)
+    };
+    let (full, none_skipped) = replayed(Replay::Full);
+    let (skipping, skipped) = replayed(Replay::Skipping);
+    assert_eq!((none_skipped, skipped), (0, 3));
+    assert_eq!(skipping, full);
+    assert_eq!(skipping.ledger.mark(), Some(price(499_950)));
+}
+
+fn minute() -> Fidelity {
+    Fidelity::Bars(Timeframe::ONE_MINUTE)
 }

@@ -1,0 +1,38 @@
+id: S-template-007
+title: A template's entry decided at a signal close fills on the next trade, though the records before the close need no replay
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 4}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:31:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:30.000Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-06T14:31:00.000Z", price: "5001.00", size: 3}
+  - {ts: "2026-03-06T14:31:20.000Z", price: "5001.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:20.000Z", price: "5001.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-CLK-02, F-MKT-02, F-OCO-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01). Flat, with no order
+# working until the decision at the 14:31 close:
+# the trades at 14:30:00.200 and 14:30:30.000 meet no order;
+# the trade at 14:31:00.000 is received at the 14:31 close, so it comes before that close's
+# decision (F-CLK-02), and it too meets no order;
+# at the 14:31 close long_entry is true: the template buys 1 lot at the market, order 1, active
+# at 14:31:00.100 (F-ACT-01), which the trade at 14:31:00.000 came before;
+# the trade at 14:31:20.000 fills it: 5001.50 + 0.25 = 5001.75 (F-MKT-02), and its bracket is
+# placed then (F-OCO-02): a sell stop at 5001.75 - 4 × 0.25 = 5000.75 and a sell limit at
+# 5001.75 + 40 × 0.25 = 5011.75, which no later trade reaches.
+# A replay that skips the records no order can act on passes over the first three trades, but
+# must end its block at the decision: a block running to the end of the 14:31 minute would pass
+# over the trade at 14:31:20.000 before the entry is placed, and the entry would never fill.

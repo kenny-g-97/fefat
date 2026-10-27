@@ -1,0 +1,44 @@
+id: S-template-006
+title: A trade received at a signal close fills the long's stop before the decision, which finds the position flat
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 4}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:31:00Z", trade_date: "2026-03-06", contract: ESH2026, long_exit: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:30.000Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-06T14:31:00.000Z", price: "4999.00", size: 3}
+  - {ts: "2026-03-06T14:31:20.000Z", price: "4999.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:31:00.000Z", price: "4999.00", rule: F-STP-03}
+rules: [F-ACT-01, F-CLK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-SLP-01, F-STP-01, F-STP-03, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# at the 14:30 close long_entry is true: the template buys 1 lot at the market, order 1, active at
+# 14:30:00.100 (F-ACT-01), which fills on the trade at 14:30:00.200: 5000.00 + 0.25 = 5000.25
+# (F-MKT-02);
+# its bracket is placed then (F-OCO-02): a sell stop, order 2, 4 ticks under the fill,
+# 5000.25 - 4 × 0.25 = 4999.25, under the entry's trade of 5000.00 and so not through the market
+# (F-STP-05), and a sell limit, order 3, 40 ticks over it, 5000.25 + 40 × 0.25 = 5010.25;
+# the trade at 14:30:30.000, 5000.50, reaches neither;
+# the trade at 14:31:00.000 is received at the 14:31 close, so it comes before that close's
+# decision (F-CLK-02); it trades 4999.00, through the stop (F-STP-01):
+# fill = lower of (4999.25 - 0.25, 4999.00) = 4999.00 (F-STP-03), and the target is cancelled
+# (F-OCO-01);
+# at the 14:31 close long_exit is true, but the position is flat, so the template places nothing;
+# had the decision come before that trade, it would have cancelled the bracket and sold at the
+# market, order 4, active at 14:31:00.100, which the trade at 14:31:20.000 fills at
+# 4999.50 - 0.25 = 4999.25 (F-MKT-02).
