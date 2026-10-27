@@ -29,7 +29,10 @@ use fefat_engine::tick_run::{RunError, RunOutputs, TickFidelity, TickRun};
 use thiserror::Error;
 
 use inputs::BatchTables;
-use manifest::{CaseManifest, DecisionsManifest, MarketDataManifest, MispricedOrder, RunManifest};
+use manifest::{
+    CaseManifest, DecisionsManifest, MarketDataManifest, MispricedOrder, RepeatedOrderId,
+    RunManifest, with_distinct_ids,
+};
 
 /// What stopped a batch.
 #[derive(Debug, Error)]
@@ -95,6 +98,9 @@ pub enum CaseError {
     /// An order of its scenario.
     #[error(transparent)]
     Order(#[from] MispricedOrder),
+    /// Two of its orders under one id.
+    #[error(transparent)]
+    RepeatedOrder(#[from] RepeatedOrderId),
     /// Its specification or its signal rows.
     #[error(transparent)]
     Template(#[from] TemplateError),
@@ -165,7 +171,8 @@ fn run_case(
     let mut strategy: Box<dyn Strategy> = match &case.decisions {
         DecisionsManifest::Orders { orders } => {
             let placed = orders.iter().map(|order| order.scenario_order());
-            Box::new(ScenarioOrders::new(placed.collect::<Result<_, _>>()?))
+            let placed = with_distinct_ids(placed.collect::<Result<_, _>>()?)?;
+            Box::new(ScenarioOrders::new(placed))
         }
         DecisionsManifest::Template { strategy } => {
             let rows = tables.signal_rows(index);

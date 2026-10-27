@@ -3,6 +3,8 @@
 //! capital and the position held when its tape starts, where its records come from, and what
 //! decides its orders: an order scenario's orders, or a `StrategySpec` over its signal rows.
 
+use std::collections::BTreeSet;
+use std::iter;
 use std::path::PathBuf;
 
 use fefat_core::fidelity::Fidelity;
@@ -256,6 +258,36 @@ pub struct MispricedOrder {
     kind: &'static str,
     /// The price it names, in 1e-9 units.
     price: Option<i64>,
+}
+
+/// Two orders of a case, or an order and a bracket's leg, under one id, which the reference's
+/// scenarios refuse as well (`fefat.reference.scenarios`).
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error(
+    "Expected every order and bracket leg of a case under an id of its own, got order {order} twice"
+)]
+pub struct RepeatedOrderId {
+    /// The id given twice.
+    order: u64,
+}
+
+/// `orders`, refused when two of them, or an order and a bracket's leg, share an id.
+pub(super) fn with_distinct_ids(
+    orders: Vec<ScenarioOrder>,
+) -> Result<Vec<ScenarioOrder>, RepeatedOrderId> {
+    let mut given = BTreeSet::new();
+    for order in &orders {
+        let legs = order
+            .bracket
+            .iter()
+            .flat_map(|bracket| [bracket.stop.id, bracket.target.id]);
+        for id in iter::once(Some(order.id)).chain(legs).flatten() {
+            if !given.insert(id) {
+                return Err(RepeatedOrderId { order: id.0 });
+            }
+        }
+    }
+    Ok(orders)
 }
 
 impl OrderManifest {

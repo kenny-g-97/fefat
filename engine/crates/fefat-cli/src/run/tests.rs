@@ -338,3 +338,26 @@ fn a_case_without_records_is_refused_by_name() {
         "{refused}"
     );
 }
+
+#[test]
+fn a_case_with_two_orders_under_one_id_is_refused() {
+    let folder = TemporaryFolder::new("repeated");
+    let (input, output) = (folder.0.join("input"), folder.0.join("output"));
+    fs::create_dir_all(&input).unwrap();
+    let twice = json!({"kind": "orders", "orders": [
+        {"id": 1, "placed_at": at(0), "side": "sell", "kind": "stop", "price": price(499_500), "lots": 1},
+        {"id": 2, "placed_at": at(0), "side": "buy", "kind": "market", "lots": 1,
+         "bracket": {"stop": {"id": 3, "price": price(499_000)}, "target": {"id": 1, "price": price(501_000)}}}
+    ]});
+    let manifest = json!({"cases": [case("S-fill-012", "trades", json!({"kind": "tape"}), twice)]});
+    fs::write(input.join("run.json"), manifest.to_string()).unwrap();
+    trades_file(&input);
+
+    let refused = run_batch(&input, &output).unwrap_err().to_string();
+
+    assert!(
+        refused.starts_with("Expected case S-fill-012 to run, got: Expected every order"),
+        "{refused}"
+    );
+    assert!(refused.ends_with("got order 1 twice"), "{refused}");
+}
