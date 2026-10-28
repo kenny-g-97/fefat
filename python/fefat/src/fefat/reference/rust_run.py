@@ -47,6 +47,7 @@ from fefat.reference.signal_rows import SignalRow
 from fefat.reference.tape import BarRecord, Record, TbboRecord
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_text, price_text
+from fefat.strategy.signal_frame import PRICE_COLUMNS
 
 BATCH_TIMEOUT_SECONDS = 120
 """How long a batch may run, where ten cases take a few milliseconds: a hang fails its example,
@@ -54,7 +55,6 @@ which Hypothesis then shrinks and prints, instead of stalling the test run."""
 CACHE_TIMEOUT_SECONDS = 1_800
 """How long a run over an engine cache may take: a generated year replayed in full takes seconds
 on this PC."""
-_SIGNAL_PRICES = ("entry_price", "stop_price", "target_price", "trail_ref")
 
 
 def engine_cases(
@@ -256,7 +256,7 @@ def _decision_lines(scenario: AnyScenario) -> list[str]:
 def _signal_text(row: SignalRow) -> str:
     """The row's columns that differ from their defaults, its instant and prices as text."""
     shown = row.model_dump(mode="json", exclude_defaults=True)
-    prices = {name: price_text(shown[name]) for name in _SIGNAL_PRICES if name in shown}
+    prices = {name: price_text(shown[name]) for name in PRICE_COLUMNS if name in shown}
     return str({**shown, "ts_close": instant_text(row.ts_close), **prices})
 
 

@@ -40,18 +40,11 @@ from fefat.reference.units import (
     lots_of,
 )
 from fefat.strategy import exits as rules
+from fefat.strategy.signal_frame import OPTIONAL_SIGNAL_COLUMNS
 from fefat.strategy.spec import StrategySpec
 
 NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
-_OPTIONAL_SIGNALS = (
-    "entry_price",
-    "stop_price",
-    "target_price",
-    "trail_ref",
-    "size_mult",
-    "wake",
-)
 _TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")
 _SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
@@ -454,7 +447,7 @@ def _template_rows(
     reference's template works them out (`with_time_rules`), and the features its exit plan
     names."""
     timed = with_time_rules(strategy, frame.sort("ts_close"), sessions)
-    kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in frame.columns)]
+    kept = [*_SIGNALS, *(name for name in OPTIONAL_SIGNAL_COLUMNS if name in frame.columns)]
     times = [name for name in _TIME_COLUMNS if name in timed.columns]
     features = _feature_columns(strategy, frame)
     case = pl.lit(number, dtype=pl.Int64).alias("case")
