@@ -136,6 +136,12 @@ impl LivePlan {
         self.stop
     }
 
+    /// Whether the plan has a trailing stop, which follows its best price (F-PLN-05).
+    #[cfg(test)]
+    pub(crate) const fn trails(&self) -> bool {
+        self.plan.trailing.is_some()
+    }
+
     /// F-PLN-02: the plan's leg `leg` filled `lots`. A target's lots leave the open lots, and what
     /// follows is to cancel the other legs, when the stop filled or no lots stay open, or to
     /// reduce the stop to the lots still open.
