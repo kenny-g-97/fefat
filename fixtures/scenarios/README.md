@@ -182,3 +182,13 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-043](S-template-043.yaml) | trades | With no_weekend a long closes on Thursday 2025-04-17, before the Good Friday close |
 | [S-template-044](S-template-044.yaml) | trades | An entry window from 08:30 to 09:00 Chicago opens at 14:30 UTC before the clock change and at 13:30 UTC after it |
 | [S-template-045](S-template-045.yaml) | trades | A Tuesday window from 23:30 past midnight to 00:30 takes Tuesday's early minutes and leaves Monday's late ones |
+| [S-template-046](S-template-046.yaml) | trades | A limit entry at the row's entry_price fills once the trades go through it, and its plan follows the fill |
+| [S-template-047](S-template-047.yaml) | trades | A limit entry with time_to_live_bars 2 is cancelled at the second decision after it, and the next entry signal places another |
+| [S-template-048](S-template-048.yaml) | trades | A limit entry 4 ticks under the mark at the decision fills when the trades go through it, and its stop closes the long |
+| [S-template-049](S-template-049.yaml) | trades | A short's stop entry at the row's entry_price fills when a trade reaches it, and its target closes the short |
+| [S-template-050](S-template-050.yaml) | trades | A stop entry 4 ticks above the mark at the decision fills when a trade reaches it, and its target closes the long |
+| [S-template-051](S-template-051.yaml) | trades | Both entry signals place a buy stop and a sell stop as one OCO group; the sell fills, the buy is cancelled |
+| [S-template-052](S-template-052.yaml) | tbbo | A stop entry triggered on TBBO before flat-by fills after it, and the next decision closes the position |
+| [S-template-053](S-template-053.yaml) | trades | With on_opposite_signal close a short_entry closes the long, and the next one, flat, enters short |
+| [S-template-054](S-template-054.yaml) | trades | With on_opposite_signal reverse a short_entry closes the long and sells short on the same trade, the exit first |
+| [S-template-055](S-template-055.yaml) | trades | An offset entry with no mark yet places nothing and the log says why; the next signal, marked, enters |

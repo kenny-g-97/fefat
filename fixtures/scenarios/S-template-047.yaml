@@ -1,0 +1,37 @@
+id: S-template-047
+title: A limit entry with time_to_live_bars 2 is cancelled at the second decision after it, and the next entry signal places another
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: limit_at_column, time_to_live_bars: 2}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, entry_price: "4999.00"}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, entry_price: "4999.00"}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T14:33:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, entry_price: "4998.00"}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-05T14:31:00.500Z", price: "4999.50", size: 1}
+  - {ts: "2026-03-05T14:32:00.500Z", price: "4998.50", size: 1}
+  - {ts: "2026-03-05T14:33:00.500Z", price: "4997.75", size: 1}
+expected:
+  fills:
+    - {order: 2, ts: "2026-03-05T14:33:00.500Z", price: "4998.00", rule: F-LMT-03}
+rules: [F-ACT-01, F-ENT-01, F-ENT-02, F-ENT-03, F-LMT-01, F-LMT-03, F-OCO-02]
+
+# Arithmetic (ES, tick 0.25; limits fill through their price, at it: F-LMT-01, F-LMT-03):
+# at 14:30 long_entry places a buy limit at 4999.00, order 1 (F-ENT-02), live for two decisions;
+# at 14:31 order 1 is still live, so the template, which enters only flat with nothing live,
+# places nothing (F-ENT-01);
+# at 14:32, the second decision after the one that placed it, order 1 is still live and is
+# cancelled there, first thing (F-ENT-03); the trade at 14:32:00.500, 4998.50, would have filled it;
+# at 14:33 the template is flat with nothing live, so long_entry places a buy limit at 4998.00,
+# order 2, which the trade at 14:33:00.500, 4997.75, goes through: it fills at 4998.00 (F-LMT-03),
+# its stop and target orders 3 and 4.

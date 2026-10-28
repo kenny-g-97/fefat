@@ -1,0 +1,36 @@
+id: S-template-046
+title: A limit entry at the row's entry_price fills once the trades go through it, and its plan follows the fill
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: limit_at_column}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, entry_price: "4999.00"}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "4999.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.000Z", price: "4998.75", size: 1}
+  - {ts: "2026-03-05T14:32:00.000Z", price: "5001.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:31:00.000Z", price: "4999.00", rule: F-LMT-03}
+    - {order: 3, ts: "2026-03-05T14:32:00.000Z", price: "5001.00", rule: F-LMT-03}
+rules: [F-ACT-01, F-ENT-02, F-LMT-01, F-LMT-03, F-LMT-04, F-OCO-02, F-PLN-01]
+
+# Arithmetic (ES, tick 0.25; limits fill through their price, at it: F-LMT-01, F-LMT-03):
+# at the 14:30 close long_entry is true and the entry is a limit at the row's entry_price
+# (F-ENT-02): a buy limit at 4999.00, order 1, active at 14:30:00.100 (F-ACT-01);
+# the trade at 14:30:00.200, 5000.00, is its first and it works from it, resting (F-LMT-04);
+# the trade at 14:30:30.000 is at the limit, 4999.00, not through it: no fill;
+# the trade at 14:31:00.000, 4998.75, goes through it: order 1 fills at its own price, 4999.00
+# (F-LMT-03), a maker;
+# its exit plan is placed at the fill (F-OCO-02, F-PLN-01): the stop, order 2, at
+# 4999.00 - 8 × 0.25 = 4997.00, and the target, order 3, at 4999.00 + 8 × 0.25 = 5001.00;
+# the trade at 14:32:00.000, 5001.25, goes through the target, which fills at 5001.00.

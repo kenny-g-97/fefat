@@ -1,0 +1,33 @@
+id: S-template-049
+title: A short's stop entry at the row's entry_price fills when a trade reaches it, and its target closes the short
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: stop_at_column}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, short_entry: true, entry_price: "4999.00"}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "4998.50", size: 1}
+  - {ts: "2026-03-05T14:31:00.000Z", price: "4996.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:30.000Z", price: "4998.50", rule: F-STP-03}
+    - {order: 3, ts: "2026-03-05T14:31:00.000Z", price: "4996.50", rule: F-LMT-03}
+rules: [F-ACT-01, F-ENT-02, F-LMT-01, F-LMT-03, F-OCO-02, F-PLN-01, F-STP-01, F-STP-03, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# at the 14:30 close short_entry places a sell stop at the row's entry_price, 4999.00, order 1
+# (F-ENT-02), active at 14:30:00.100; no trade before it, so it is on the right side (F-STP-05);
+# the trade at 14:30:00.200, 5000.00, is above it; the one at 14:30:30.000, 4998.50, reaches it
+# (F-STP-01): it fills at the lower of 4999.00 - 0.25 and 4998.50, 4998.50 (F-STP-03);
+# the short's exit plan is placed at the fill (F-PLN-01): its stop, order 2, 8 ticks above,
+# 4998.50 + 2.00 = 5000.50, and its target, order 3, 8 ticks below, 4996.50;
+# the trade at 14:31:00.000, 4996.25, goes through the target, a buy limit, which fills at 4996.50.
