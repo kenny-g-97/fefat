@@ -157,6 +157,11 @@ class SessionTable:
         """The time zone the calendar's hours are kept in, such as `America/Chicago`."""
         return self._calendar.hours.time_zone
 
+    def hours(self) -> SessionHours:
+        """The calendar's regular hours: its time zone, its open and close times, and the days of
+        the week that are trade dates."""
+        return self._calendar.hours
+
     def between_with_next_opens(self, first: date, last: date) -> pl.DataFrame:
         """The sessions of `between`, each with `next_open`, the open of the session after it,
         which ends the break in which a print still takes its trade date (D-43)."""

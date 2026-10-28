@@ -2,27 +2,27 @@
 runs a `StrategySpec` over its signal frame as an `on_bar` strategy (`fefat.reference.strategy`),
 by the rules of `docs/spec/fill-semantics.md` §20 to §28, so that the Rust engine has an oracle
 for templates too. An entry carries its exit plan (`fefat.reference.template.exits`), which the
-engine works on every record (`fefat.reference.exit_plan`).
+engine works on every record (`fefat.reference.exit_plan`), and the time rules read the columns
+`fefat.reference.time_rules` adds to the frame.
 
     template = TemplateStrategy(strategy.to_spec(), signals, parameters, sessions)
     engine.run(tape, decisions_of(signals), template.on_bar)
 """
 
+from bisect import bisect_left, bisect_right
 from collections.abc import Mapping
-from datetime import date
 from decimal import Decimal
 from typing import Any
 
 import polars as pl
 
 from fefat.market.calendar import SessionTable, utc_text
-from fefat.market.schema import Timeframe
 from fefat.reference.orders import OrderRole, Side
 from fefat.reference.strategy import DecisionContext
 from fefat.reference.template.exits import exit_plan_of
-from fefat.reference.time_rules import flat_by_instants
+from fefat.reference.time_rules import f_tim_02, with_time_rules
 from fefat.reference.units import InstrumentParameters, lots_of
-from fefat.strategy.exits import ColumnStop, ColumnTarget, Limits, TimeRules
+from fefat.strategy.exits import ColumnStop, ColumnTarget, Limits
 from fefat.strategy.signal_frame import require_one_entry_per_bar, validated_signal_frame
 from fefat.strategy.spec import (
     Execution,
@@ -32,7 +32,7 @@ from fefat.strategy.spec import (
     StrategySpec,
 )
 
-_SUBSET = "a market entry, any exit plan, signal exits, flat-by, and a fixed size"
+_SUBSET = "a market entry, any exit plan, signal exits, any time rule, and a fixed size"
 
 
 def basic_subset_refusals(spec: StrategySpec) -> list[str]:
@@ -40,7 +40,7 @@ def basic_subset_refusals(spec: StrategySpec) -> list[str]:
     it runs all of it."""
     execution = spec.execution
     limits = [] if execution.limits == Limits() else ["entry limits"]
-    return [*_entry_refusals(execution), *_time_refusals(execution.time), *limits]
+    return [*_entry_refusals(execution), *limits]
 
 
 def _entry_refusals(execution: Execution) -> list[str]:
@@ -52,19 +52,6 @@ def _entry_refusals(execution: Execution) -> list[str]:
     if not isinstance(execution.sizing, FixedSize):
         refusals.append(f"sizing of kind {execution.sizing.kind}")
     return refusals
-
-
-def _time_refusals(time: TimeRules | None) -> list[str]:
-    if time is None:
-        return []
-    used = {
-        "entry windows": bool(time.windows),
-        "max_bars": time.max_bars is not None,
-        "max_minutes": time.max_minutes is not None,
-        "no_overnight": time.no_overnight,
-        "no_weekend": time.no_weekend,
-    }
-    return [rule for rule, is_used in used.items() if is_used]
 
 
 def _exact(number: float) -> Decimal:
@@ -81,11 +68,14 @@ class TemplateStrategy:
     decisions (`decisions_of`). At each signal close, in this order (F-ENT-01): the exit plans'
     turn at the decision (F-PLN-04); nothing more while a market order is on its way out of the
     position or into it, its own exit or a stop triggered on TBBO (F-STP-02); from the trade
-    date's flat-by time, the position is closed and no entry placed; `long_exit` while long or
-    `short_exit` while short closes the position, with signal exits on; with a position or
-    working orders, nothing more, an opposite signal being ignored; on a bar whose `wake` is
-    false, no entry; and otherwise an entry signal enters at the market, its exit plan placed
-    when it fills (F-PLN-01)."""
+    date's flat-by time, and from the last signal close before a stop of trading with no
+    overnight or before a weekend with no weekend, the position is closed, the working orders
+    cancelled, and no entry placed (F-TIM-01, F-TIM-03); a position held max_bars decisions or
+    max_minutes is closed (F-TIM-02); `long_exit` while long or `short_exit` while short closes
+    the position, with signal exits on; with a position or working orders, nothing more, an
+    opposite signal being ignored; on a bar whose `wake` is false, or outside the entry windows
+    (F-TIM-04), no entry; and otherwise an entry signal enters at the market, its exit plan
+    placed when it fills (F-PLN-01)."""
 
     def __init__(
         self,
@@ -107,30 +97,43 @@ class TemplateStrategy:
         self._tick = instrument.tick
         self._lots = lots_of(_exact(sizing.units), instrument.lot_step)
         self._require_price_columns(signals)
-        self._flat_by = flat_by_instants_for(spec, signals, sessions)
+        timed = with_time_rules(spec, signals.sort("ts_close"), sessions)
+        self._timed = {row["ts_close"]: row for row in timed.iter_rows(named=True)}
+        self._closes = timed.get_column("ts_close").to_list()
 
     def on_bar(self, bar: Mapping[str, Any], context: DecisionContext) -> None:
         """The decision at one signal close, `bar` the signal frame's row (class docstring)."""
         context.update_exit_plans(bar)
         if context.is_exiting() or context.is_entering():
             return
-        if self._past_flat_by(bar):
+        timed = self._timed[bar["ts_close"]]
+        stop_exit = _stop_exit(timed)
+        if stop_exit is not None:
             if context.position != 0 or context.has_working_orders():
-                context.flatten(OrderRole.FLAT_BY)
+                context.flatten(stop_exit)
+            return
+        held_exit = self._held_exit(bar["ts_close"], context)
+        if held_exit is not None:
+            context.flatten(held_exit)
             return
         if self._signals_exit(bar, context.position):
             context.flatten(OrderRole.SIGNAL_EXIT)
             return
         if context.position != 0 or context.has_working_orders() or not _wakes(bar):
             return
-        if bar["long_entry"] or bar["short_entry"]:
+        if (bar["long_entry"] or bar["short_entry"]) and timed.get("in_window", True):
             side = Side.BUY if bar["long_entry"] else Side.SELL
             plan = exit_plan_of(self._execution, bar, side, self._tick)
             context.market(side, self._lots_at(bar), plan)
 
-    def _past_flat_by(self, bar: Mapping[str, Any]) -> bool:
-        trade_date = bar["trade_date"]
-        return trade_date in self._flat_by and bar["ts_close"] >= self._flat_by[trade_date]
+    def _held_exit(self, now: int, context: DecisionContext) -> OrderRole | None:
+        """Max bars or max minutes of an open position (F-TIM-02), counting the decisions from
+        its entry's fill to `now`."""
+        opened_at = context.opened_at
+        if context.position == 0 or opened_at is None:
+            return None
+        decisions = bisect_right(self._closes, now) - bisect_left(self._closes, opened_at)
+        return f_tim_02(self._execution.time, opened_at, now, decisions)
 
     def _signals_exit(self, bar: Mapping[str, Any], position: int) -> bool:
         if not self._execution.signal_exit or position == 0:
@@ -167,23 +170,17 @@ class TemplateStrategy:
                 )
 
 
-def flat_by_instants_for(
-    spec: StrategySpec, signals: pl.DataFrame, sessions: SessionTable | None
-) -> dict[date, int]:
-    """The instant of `spec`'s flat-by time on each trade date of `signals`, from the session
-    table (`fefat.reference.time_rules`); none without a flat-by time. `fefat-cli run` reads
-    the same instants (`fefat.reference.rust_batch`)."""
-    time = spec.execution.time
-    if time is None or time.flat_by is None:
-        return {}
-    if sessions is None:
-        raise ValueError(
-            f"Expected a session calendar for the flat-by time {time.flat_by}, got an instrument "
-            "without one."
-        )
-    trade_dates = signals.get_column("trade_date").to_list()
-    timeframe = Timeframe.parse(spec.timeframe)
-    return flat_by_instants(trade_dates, time.flat_by, time.tz, sessions, timeframe)
+def _stop_exit(timed: Mapping[str, Any]) -> OrderRole | None:
+    """The time exit that closes the position and places no entry on a row, the first that
+    applies: the flat-by time, then a stop of trading, then a weekend (F-TIM-01, F-TIM-03); each
+    reads its column of `fefat.reference.time_rules`, there only with its rule."""
+    if "flat_by" in timed and timed["ts_close"] >= timed["flat_by"]:
+        return OrderRole.FLAT_BY
+    if timed.get("session_end"):
+        return OrderRole.NO_OVERNIGHT
+    if timed.get("week_end"):
+        return OrderRole.NO_WEEKEND
+    return None
 
 
 def _wakes(bar: Mapping[str, Any]) -> bool:

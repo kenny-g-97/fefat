@@ -125,6 +125,7 @@ struct SignalColumns<'batch> {
     size_mult: Option<&'batch Float64Array>,
     wake: Option<&'batch BooleanArray>,
     flat_by: Option<&'batch Int64Array>,
+    times: [Option<&'batch BooleanArray>; 3],
 }
 
 impl<'batch> SignalColumns<'batch> {
@@ -138,6 +139,11 @@ impl<'batch> SignalColumns<'batch> {
         let floats = |name| {
             optional(path, batch, name, "float64", |column| {
                 column.as_primitive_opt::<Float64Type>()
+            })
+        };
+        let flags = |name| {
+            optional(path, batch, name, "boolean", |column| {
+                column.as_boolean_opt()
             })
         };
         Ok(Self {
@@ -160,10 +166,13 @@ impl<'batch> SignalColumns<'batch> {
                 floats("trail_feature")?,
             ],
             size_mult: floats("size_mult")?,
-            wake: optional(path, batch, "wake", "boolean", |column| {
-                column.as_boolean_opt()
-            })?,
+            wake: flags("wake")?,
             flat_by: ints("flat_by")?,
+            times: [
+                flags("session_end")?,
+                flags("week_end")?,
+                flags("in_window")?,
+            ],
         })
     }
 
@@ -179,6 +188,10 @@ impl<'batch> SignalColumns<'batch> {
             value.map(|column| column.value(row))
         });
         let flat_by = self.flat_by.filter(|column| column.is_valid(row));
+        let [session_end, week_end, in_window] = self.times.map(|column| {
+            let flag = column.filter(|column| column.is_valid(row));
+            flag.map(|column| column.value(row))
+        });
         SignalRow {
             ts_close,
             long_entry,
@@ -201,6 +214,9 @@ impl<'batch> SignalColumns<'batch> {
                 .wake
                 .is_none_or(|wake| wake.is_null(row) || wake.value(row)),
             flat_by: flat_by.map(|column| Ts(column.value(row))),
+            session_end,
+            week_end,
+            in_window,
         }
     }
 }

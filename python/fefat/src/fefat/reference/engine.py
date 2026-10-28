@@ -450,7 +450,7 @@ class ReferenceEngine:
         price, rule, reference, shown = priced
         liquidity = f_lmt_04(order)
         book.close(order, OrderState.FILLED)
-        book.position += order.side.sign() * order.lots
+        book.take(order.side.sign() * order.lots, at.ts)
         settled = f_pln_02(book, order)
         cancelled = (*f_oco_01(book, order), *settled.cancelled)
         legs = tuple(f_oco_02(book, order, price, market, at, self.tick))

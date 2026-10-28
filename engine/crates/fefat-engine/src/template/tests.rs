@@ -75,23 +75,6 @@ fn a_specification_beyond_the_basic_subset_is_refused_until_step_2_8() {
             "an opposite signal that is not ignored",
         ),
         (
-            json!({"time": {"tz": "UTC", "windows": [{"start": "08:30", "end": "14:30"}]}}),
-            "time rules",
-        ),
-        (json!({"time": {"tz": "UTC", "max_bars": 12}}), "time rules"),
-        (
-            json!({"time": {"tz": "UTC", "max_minutes": 60}}),
-            "time rules",
-        ),
-        (
-            json!({"time": {"tz": "UTC", "no_overnight": true}}),
-            "time rules",
-        ),
-        (
-            json!({"time": {"tz": "UTC", "no_weekend": true}}),
-            "time rules",
-        ),
-        (
             json!({"limits": {"cooldown_after_loss": {"kind": "bars", "bars": 3}}}),
             "entry limits",
         ),
@@ -261,4 +244,33 @@ fn an_entry_rows_features_become_whole_ticks_rounded_toward_the_entry_for_stops(
     };
     let refused = refused_row(exit_plan_of(&spec.execution, &at_zero, Side::Buy, tick));
     assert_eq!(refused, "the feature atr above zero");
+}
+
+#[test]
+fn a_time_rule_needs_its_column_on_every_signal_row() {
+    // F-TIM-03, F-TIM-04: the flags come from `fefat.reference.time_rules`, which writes them on
+    // every row; a batch without them would run as if no stop of trading came.
+    let refused = |time: Value, row: SignalRow| {
+        let spec = spec_with(&json!({ "time": time }));
+        match TemplateStrategy::new(&spec, vec![row], &es()) {
+            Err(TemplateError::Refused { expected, .. }) => expected,
+            other => panic!("Expected refused signal rows, got {other:?}"),
+        }
+    };
+    let overnight = json!({"tz": "America/Chicago", "no_overnight": true});
+    assert_eq!(
+        refused(overnight.clone(), entry_at(0)),
+        "the session_end of every signal row for its time rule"
+    );
+    let windows = json!({"tz": "UTC", "windows": [{"start": "08:30", "end": "09:00"}]});
+    assert_eq!(
+        refused(windows, entry_at(0)),
+        "the in_window of every signal row for its time rule"
+    );
+    let flagged = SignalRow {
+        session_end: Some(false),
+        ..entry_at(0)
+    };
+    let spec = spec_with(&json!({ "time": overnight }));
+    assert!(TemplateStrategy::new(&spec, vec![flagged], &es()).is_ok());
 }

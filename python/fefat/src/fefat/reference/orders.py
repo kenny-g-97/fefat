@@ -258,14 +258,16 @@ class WorkingOrder:
 class Book:
     """What the engine holds while it runs: the live orders, the position in lots (positive
     long, negative short), the mark (F-MRK-01), none before the first tradeable price, the next
-    id it gives an order of its own, and the exit plans of the entries that have filled, by the
-    entry's id, while a leg of theirs is live (F-PLN-01)."""
+    id it gives an order of its own, the exit plans of the entries that have filled, by the
+    entry's id, while a leg of theirs is live (F-PLN-01), and the instant of the fill that opened
+    the position, none when flat or for a position held when the tape starts (F-TIM-02)."""
 
     orders: list[WorkingOrder] = field(default_factory=list)
     position: int = 0
     mark: int | None = None
     next_id: int = 1
     plans: "dict[int, LivePlan]" = field(default_factory=dict)
+    opened_at: int | None = None
 
     def live(self, *states: OrderState, kind: OrderKind | None = None) -> list[WorkingOrder]:
         """The live orders in one of `states`, all of them without, of `kind` where it is
@@ -293,6 +295,16 @@ class Book:
         if entry is not None and not any(other.leg_of == entry for other in self.orders):
             self.plans.pop(entry, None)
 
+    def take(self, lots: int, ts: int) -> None:
+        """A fill of `lots`, positive bought, at `ts`: the position moves by them, and a fill that
+        opens a position, from flat or by reversing one, sets `opened_at`."""
+        before = self.position
+        self.position += lots
+        if self.position == 0:
+            self.opened_at = None
+        elif before * self.position <= 0:
+            self.opened_at = ts
+
     def live_order(self, order_id: int | None) -> WorkingOrder | None:
         """The live order `order_id`, if there is one."""
         return next((order for order in self.orders if order.id == order_id), None)
@@ -307,7 +319,7 @@ class Book:
         was."""
         plans = {entry: plan.copied() for entry, plan in self.plans.items()}
         orders = [replace(order) for order in self.orders]
-        return Book(orders, self.position, self.mark, self.next_id, plans)
+        return Book(orders, self.position, self.mark, self.next_id, plans, self.opened_at)
 
     def new_id(self) -> int:
         self.next_id += 1

@@ -108,6 +108,12 @@ impl<'run> DecisionContext<'run> {
         self.ledger.position()
     }
 
+    /// The instant of the fill that opened the position, none when flat or for a position held
+    /// when the tape starts (F-TIM-02).
+    pub const fn opened_at(&self) -> Option<Ts> {
+        self.ledger.opened_at()
+    }
+
     /// Whether any order works or waits.
     pub fn has_working_orders(&self) -> bool {
         self.book.has_live()

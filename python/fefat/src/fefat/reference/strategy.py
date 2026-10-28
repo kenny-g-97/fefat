@@ -73,6 +73,12 @@ class DecisionContext:
     def position(self) -> int:
         return self._book.position
 
+    @property
+    def opened_at(self) -> int | None:
+        """The instant of the fill that opened the position, none when flat or for a position
+        held when the tape starts (F-TIM-02)."""
+        return self._book.opened_at
+
     def has_working_orders(self) -> bool:
         return bool(self._book.live())
 

@@ -182,7 +182,8 @@ pub struct TimeRules {
     pub windows: Vec<EntryWindow>,
     /// The local time, `HH:MM`, from which each trade date the position is closed and no entry
     /// is placed: at the first signal close at or after that time on the trade date's own day,
-    /// which must fall inside its session, outside its halts, and on the signal bars' grid.
+    /// which must fall after its session's open, outside its halts, and on the signal bars' grid,
+    /// or, where the session closes at or before it, at the last signal close before the close.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
     pub flat_by: Option<LocalTime>,

@@ -31,7 +31,7 @@ from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.tape import BarRecord, Record, TbboRecord
-from fefat.reference.template import flat_by_instants_for
+from fefat.reference.time_rules import with_time_rules
 from fefat.reference.units import (
     PRICE_DECIMALS,
     InstrumentParameters,
@@ -46,6 +46,7 @@ CAPITAL = 50_000_000_000
 NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
 _OPTIONAL_SIGNALS = ("stop_price", "target_price", "trail_ref", "size_mult", "wake")
+_TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")
 _SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
 _MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
@@ -231,13 +232,10 @@ def write_cache_batch(cases: Sequence[CacheCase], folder: Path) -> None:
     folder.mkdir(parents=True)
     documents = [_cache_case_document(case) for case in cases]
     (folder / "run.json").write_text(json.dumps({"cases": documents}), encoding="utf-8")
-    frames = []
-    for number, case in enumerate(cases):
-        columns = case.signals.columns
-        kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in columns)]
-        features = _feature_columns(case.strategy, case.signals)
-        case_number = pl.lit(number, dtype=pl.Int64).alias("case")
-        frames.append(case.signals.select(case_number, *kept, *features))
+    frames = [
+        _template_rows(number, case.strategy, case.signals, None)
+        for number, case in enumerate(cases)
+    ]
     signals = pl.concat(frames, how="diagonal")
     signals.write_ipc(folder / "signals.arrow", compression="uncompressed")
 
@@ -438,11 +436,23 @@ def _signal_rows(cases: Sequence[EngineCase]) -> pl.DataFrame | None:
         if not isinstance(scenario, TemplateScenario):
             continue
         frame = scenario.signal_frame()
-        kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in frame.columns)]
-        features = _feature_columns(scenario.strategy, frame)
-        rows = frame.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept, *features)
-        frames.append(rows.with_columns(_flat_by(scenario, case.sessions, frame)))
+        frames.append(_template_rows(number, scenario.strategy, frame, case.sessions))
     return pl.concat(frames, how="diagonal") if frames else None
+
+
+def _template_rows(
+    number: int, strategy: StrategySpec, frame: pl.DataFrame, sessions: SessionTable | None
+) -> pl.DataFrame:
+    """The rows of one template case, tagged with its number: the four signals, the optional
+    columns the template reads, absent ones null (D-53), the columns of its time rules, as the
+    reference's template works them out (`with_time_rules`), and the features its exit plan
+    names."""
+    timed = with_time_rules(strategy, frame.sort("ts_close"), sessions)
+    kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in frame.columns)]
+    times = [name for name in _TIME_COLUMNS if name in timed.columns]
+    features = _feature_columns(strategy, frame)
+    case = pl.lit(number, dtype=pl.Int64).alias("case")
+    return timed.select(case, *kept, *times, *features)
 
 
 def _feature_columns(strategy: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
@@ -465,19 +475,6 @@ def _feature_columns(strategy: StrategySpec, frame: pl.DataFrame) -> list[pl.Exp
         for column, feature in named.items()
         if feature in frame.columns
     ]
-
-
-def _flat_by(
-    scenario: TemplateScenario, sessions: SessionTable | None, frame: pl.DataFrame
-) -> list[pl.Series]:
-    """The column `flat_by` of a template scenario whose specification has a flat-by time: each
-    row's instant of it, as the reference's template works it out; none without a flat-by
-    time."""
-    instants = flat_by_instants_for(scenario.strategy, frame, sessions)
-    if not instants:
-        return []
-    trade_dates = frame.get_column("trade_date").to_list()
-    return [pl.Series("flat_by", [instants[day] for day in trade_dates], dtype=pl.Int64)]
 
 
 def _read(path: Path) -> pl.DataFrame:

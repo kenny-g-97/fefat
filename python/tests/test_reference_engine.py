@@ -17,9 +17,9 @@ from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.event_log import EventKind
+from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.ledger import Trade, trades_of
-from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.orders import OrderRole, PositionSide, Side
 from fefat.reference.scenario_runner import run_scenario
 from fefat.reference.scenarios import Scenario

@@ -186,12 +186,12 @@ class Execution(FrozenModel):
         ):
             _require_a_target_it_has(f"execution.{field}.target", trigger, len(self.targets))
         trailing = self.trailing
-        if trailing is not None and isinstance(trailing.by, ColumnTrail):
-            if trailing.update is not TrailUpdate.BAR_CLOSE:
-                raise ValueError(
-                    "Expected execution.trailing.update bar_close for a trailing stop by the "
-                    f"column, got {trailing.update}."
-                )
+        by_column = trailing is not None and isinstance(trailing.by, ColumnTrail)
+        if by_column and trailing is not None and trailing.update is not TrailUpdate.BAR_CLOSE:
+            raise ValueError(
+                "Expected execution.trailing.update bar_close for a trailing stop by the "
+                f"column, got {trailing.update}."
+            )
         return self
 
 

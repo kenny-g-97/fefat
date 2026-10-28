@@ -12,8 +12,10 @@ use super::TemplateError;
 /// One row of a signal frame, at one signal close (D-53): its four signals, a null read as false;
 /// the raw prices of the columns the exit plan reads (`stop_price`, `target_price`,
 /// `trail_ref`); the features its rules name; the size's multiple, where the frame has one;
-/// whether the bar may enter, a null read as true; and the instant of its trade date's flat-by
-/// time, where the specification has one.
+/// whether the bar may enter, a null read as true; and what the time rules of the specification
+/// read on it, as `fefat.reference.time_rules` works them out from the session table: the
+/// instant of its trade date's flat-by time, whether it lies before a stop of trading or a
+/// weekend, and whether it lies in an entry window (§26).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SignalRow {
     /// The signal bar's close, the decision's instant.
@@ -38,9 +40,16 @@ pub struct SignalRow {
     pub size_mult: Option<f64>,
     /// Whether an entry may be placed on the bar.
     pub wake: bool,
-    /// The instant of the flat-by time on the row's trade date, as `fefat.reference.time_rules`
-    /// works it out from the session table: from it the position is closed and no entry placed.
+    /// The instant of the flat-by time on the row's trade date: from it the position is closed
+    /// and no entry placed (F-TIM-01).
     pub flat_by: Option<Ts>,
+    /// Whether the row lies from the last signal close before a stop of trading until trading
+    /// resumes (F-TIM-03).
+    pub session_end: Option<bool>,
+    /// Whether it lies so before a stop over a weekend (F-TIM-03).
+    pub week_end: Option<bool>,
+    /// Whether an entry may be placed at its close, inside an entry window (F-TIM-04).
+    pub in_window: Option<bool>,
 }
 
 impl SignalRow {
@@ -60,6 +69,9 @@ impl SignalRow {
             size_mult: None,
             wake: true,
             flat_by: None,
+            session_end: None,
+            week_end: None,
+            in_window: None,
         }
     }
 }
@@ -137,4 +149,33 @@ pub(super) fn require_flat_by_on_every_row(
         None => format!("none on the signal close of {}", row.ts_close),
     };
     Err(TemplateError::Refused { expected, actual })
+}
+
+/// A column a time rule reads: its name, whether the specification has the rule, and its value on
+/// a row.
+type TimeColumn = (&'static str, bool, fn(&SignalRow) -> Option<bool>);
+
+/// Refuses a signal row without a column a time rule of the specification reads: `session_end`
+/// for no overnight, `week_end` for no weekend, and `in_window` for entry windows.
+pub(super) fn require_time_columns(
+    execution: &Execution,
+    rows: &[SignalRow],
+) -> Result<(), TemplateError> {
+    let Some(time) = execution.time.as_ref() else {
+        return Ok(());
+    };
+    let columns: [TimeColumn; 3] = [
+        ("session_end", time.no_overnight, |row| row.session_end),
+        ("week_end", time.no_weekend, |row| row.week_end),
+        ("in_window", !time.windows.is_empty(), |row| row.in_window),
+    ];
+    for (column, read, value) in columns {
+        if let Some(row) = rows.iter().find(|row| read && value(row).is_none()) {
+            return Err(TemplateError::Refused {
+                expected: format!("the {column} of every signal row for its time rule"),
+                actual: format!("none on the signal close of {}", row.ts_close),
+            });
+        }
+    }
+    Ok(())
 }
