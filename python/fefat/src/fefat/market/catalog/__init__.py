@@ -97,6 +97,12 @@ class Catalog(FrozenModel):
         """The products' roots, in catalog order."""
         return tuple(product.root for product in self.products)
 
+    def roll_rule(self, root: str) -> RollRule:
+        """The roll rule of `root`: its product's, and for a root the catalog does not list,
+        volume, the default rule of continuous series (D-44)."""
+        named = [product.roll_rule for product in self.products if product.root == root]
+        return named[0] if named else RollRule.VOLUME
+
 
 def parse_catalog(
     text: str, instruments: InstrumentTable = STATIC_TABLE, guide: SourceGuide = SOURCE_GUIDE

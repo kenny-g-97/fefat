@@ -45,6 +45,12 @@ def test_each_product_rolls_on_volume_and_recommends_databento_first() -> None:
         assert all(SOURCE_GUIDE.source(source) for source in product.sources)
 
 
+def test_a_product_s_roll_rule_is_its_own_and_a_root_outside_the_catalog_rolls_by_volume() -> None:
+    # Step 2.9: load reads the rule from the catalog; ES, which it does not list, takes D-44's.
+    assert [CATALOG.roll_rule(root) for root in CATALOG.roots()] == [RollRule.VOLUME] * 4
+    assert CATALOG.roll_rule("ES") is RollRule.VOLUME
+
+
 def test_each_product_s_history_starts_at_its_launch() -> None:
     assert {product.root: product.history_from for product in CATALOG.products} == {
         "MES": date(2019, 5, 6),

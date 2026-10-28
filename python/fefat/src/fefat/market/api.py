@@ -72,7 +72,7 @@ import polars as pl
 from fefat.config import resolve_paths
 from fefat.market.bars import build_bars, resample_bars, session_grid
 from fefat.market.calendar import SessionTable
-from fefat.market.catalog import CATALOG
+from fefat.market.catalog import CATALOG, RollRule
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar, volume_rolls
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.contracts import parse_contract_name
@@ -290,7 +290,15 @@ def _roll_calendar(
     """The root's roll calendar, from the 1-minute bars of its whole dataset, or else its
     finest bars (an import's 5-minute bars), whatever the window, and from its first whole
     session: the bars of a first session the data starts
-    inside are left out, since their volumes are partial."""
+    inside are left out, since their volumes are partial. It rolls by volume, the only rule load
+    applies, and a product the catalog gives another rule is refused rather than rolled by
+    volume (step 2.9)."""
+    rule = CATALOG.roll_rule(instrument.root)
+    if rule is not RollRule.VOLUME:
+        raise ValueError(
+            f"Expected the roll rule volume for {instrument.root}, the only rule load applies, "
+            f"got {rule} in the product catalog (fefat.market.catalog)."
+        )
     request = PartitionRequest(
         dataset=roll_dataset(datasets, instrument.root), start=date.min, end=date.max
     )
