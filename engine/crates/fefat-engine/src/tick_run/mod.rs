@@ -19,6 +19,8 @@ mod descent;
 mod fills;
 mod outcomes;
 #[cfg(test)]
+mod plan_properties;
+#[cfg(test)]
 mod properties;
 mod records;
 #[cfg(test)]
