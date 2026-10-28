@@ -149,14 +149,19 @@ def test_a_bar_is_skipped_only_where_no_plan_could_move_in_it() -> None:
     # 5000.00, must be replayed; one that only reaches it need not be.
     trailing = TrailingPlan(4, None, None, None, None, True)
     following = live_long(trailing)
-    assert f_pln_05(following, price("4999.75"), price("5000.00"), TICK)
-    assert not f_pln_05(following, price("4999.75"), price("5000.25"), TICK)
+    at_its_level = price("4999.00")
+    assert f_pln_05(following, at_its_level, price("4999.75"), price("5000.00"), TICK)
+    assert not f_pln_05(following, at_its_level, price("4999.75"), price("5000.25"), TICK)
+
+    # S-template-072: a stop held a tick under the market, at 4998.00, below the trailing level
+    # 4999.00, rises at prices under the best price, so no bar is skipped while it stands there.
+    assert not f_pln_05(following, price("4998.00"), price("4998.50"), price("4999.75"), TICK)
 
     # A trailing stop waiting for its activation at 5000.25 + 8 ticks = 5002.25 must be replayed
     # where a bar reaches that level, and so must the best price it follows meanwhile.
     waiting = live_long(TrailingPlan(4, None, None, None, TicksTrigger(8), True))
-    assert not f_pln_05(waiting, price("4999.75"), price("5002.25"), TICK)
+    assert not f_pln_05(waiting, None, price("4999.75"), price("5002.25"), TICK)
 
     # Without breakeven or a trailing stop nothing moves: any bar may be passed over.
     still = live_long(None)
-    assert f_pln_05(still, price("4990.00"), price("5010.00"), TICK)
+    assert f_pln_05(still, None, price("4990.00"), price("5010.00"), TICK)

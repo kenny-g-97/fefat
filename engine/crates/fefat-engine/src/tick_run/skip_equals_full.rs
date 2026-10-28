@@ -28,7 +28,7 @@ use crate::exit_plan::LivePlan;
 use crate::hours::{Halt, Session, TradingHours};
 use crate::settings::{LimitFill, RunSettings, SlippageTicks};
 use crate::strategy::{ScenarioOrder, ScenarioOrders, Strategy as RunStrategy};
-use crate::template::{SignalRow, TemplateStrategy};
+use crate::template::{RowFeatures, SignalRow, TemplateStrategy};
 
 /// The run's seed, recorded in the pull request, so that a failure reproduces.
 const SEED: u64 = 20_261_027;
@@ -151,6 +151,8 @@ struct DrawnRow {
     long_exit: bool,
     short_exit: bool,
     wake: bool,
+    /// The row's feature for a trailing stop by a feature, in ticks.
+    trail_ticks: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -165,12 +167,13 @@ struct DrawnTemplate {
 
 /// The rest of a drawn template's exit plan (step 2.8): a second target, each closing half of two
 /// lots, a breakeven trigger in ticks, and a trailing stop: its ticks, whether it moves intrabar,
-/// and its activation in ticks.
+/// its activation in ticks, and whether it trails by the feature each row gives instead, whose
+/// distance a decision can shorten while the market holds the stop below it (F-PLN-05).
 #[derive(Debug, Clone)]
 struct DrawnPlan {
     two_targets: bool,
     breakeven: Option<u32>,
-    trailing: Option<(u32, bool, Option<u32>)>,
+    trailing: Option<(u32, bool, Option<u32>, bool)>,
 }
 
 #[derive(Debug, Clone)]
@@ -272,14 +275,18 @@ fn drawn_row() -> impl Strategy<Value = DrawnRow> {
         any::<bool>(),
         any::<bool>(),
         prop_oneof![3 => Just(true), 1 => Just(false)],
+        1_u32..=8,
     )
-        .prop_map(|(instant, entry, long_exit, short_exit, wake)| DrawnRow {
-            instant,
-            entry,
-            long_exit,
-            short_exit,
-            wake,
-        })
+        .prop_map(
+            |(instant, entry, long_exit, short_exit, wake, trail_ticks)| DrawnRow {
+                instant,
+                entry,
+                long_exit,
+                short_exit,
+                wake,
+                trail_ticks,
+            },
+        )
 }
 
 fn drawn_strategy() -> impl Strategy<Value = DrawnStrategy> {
@@ -291,7 +298,12 @@ fn drawn_strategy() -> impl Strategy<Value = DrawnStrategy> {
     let plan = (
         any::<bool>(),
         proptest::option::of(1_u32..=8),
-        proptest::option::of((1_u32..=8, any::<bool>(), proptest::option::of(1_u32..=6))),
+        proptest::option::of((
+            1_u32..=8,
+            any::<bool>(),
+            proptest::option::of(1_u32..=6),
+            any::<bool>(),
+        )),
     )
         .prop_map(|(two_targets, breakeven, trailing)| DrawnPlan {
             two_targets,
@@ -559,6 +571,10 @@ fn template(drawn: &DrawnTemplate, walks: &[Vec<TbboRow>]) -> TemplateStrategy {
             short_exit: row.short_exit,
             wake: row.wake,
             flat_by: drawn.flat_by.then(|| Ts(day_start(day) + FLAT_BY)),
+            features: RowFeatures {
+                trailing: Some(f64::from(row.trail_ticks) * 250_000_000.0),
+                ..RowFeatures::NONE
+            },
             ..SignalRow::at(ts_close)
         });
     }
@@ -578,9 +594,13 @@ fn plan_of(plan: &DrawnPlan, target_ticks: u32, execution: &mut serde_json::Valu
     if let Some(trigger) = plan.breakeven {
         execution["breakeven"] = serde_json::json!({"trigger": ticks(trigger)});
     }
-    if let Some((distance, intrabar, activation)) = plan.trailing {
+    if let Some((distance, intrabar, activation, by_feature)) = plan.trailing {
         let update = if intrabar { "intrabar" } else { "bar_close" };
-        let mut trailing = serde_json::json!({"by": ticks(distance), "update": update});
+        let by = match by_feature {
+            true => serde_json::json!({"kind": "atr", "multiple": 1.0, "feature": "atr"}),
+            false => ticks(distance),
+        };
+        let mut trailing = serde_json::json!({"by": by, "update": update});
         if let Some(activation) = activation {
             trailing["activation"] = ticks(activation);
         }

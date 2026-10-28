@@ -77,8 +77,17 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let of_bars = self.day.as_ref().is_some_and(|day| day.records.are_bars());
         let open = self.hours.is_open_throughout(bar.ts_open, bar.ts_close);
         let tick = self.ledger.instrument().tick_size();
-        let plans_stay =
-            |plan: &LivePlan| plan.untouched_by(bar.low, bar.high, tick).unwrap_or(false);
+        let stop_of = |plan: &LivePlan| {
+            let stop = self
+                .book
+                .live()
+                .find(|order| Some(order.order.id) == plan.stop());
+            stop.and_then(WorkingOrder::level)
+        };
+        let plans_stay = |plan: &LivePlan| {
+            plan.untouched_by(stop_of(plan), bar.low, bar.high, tick)
+                .unwrap_or(false)
+        };
         open && self
             .book
             .live()

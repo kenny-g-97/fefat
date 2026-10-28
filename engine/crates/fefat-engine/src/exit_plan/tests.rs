@@ -314,12 +314,19 @@ fn a_trailing_stop_by_the_column_moves_at_decisions_to_trail_ref_on_the_tick() {
 fn a_bar_beyond_a_trailing_plans_best_price_or_a_waiting_trigger_is_not_skipped() {
     // F-PLN-05: the best price is 5000.00 and the breakeven fires 8 ticks up, at 5002.00.
     let trailing = long_plan(with(None, Some(trailing_in_ticks(4, None))), 1);
+    let at_its_level = Some(price(499_900));
     assert_eq!(
-        trailing.untouched_by(price(499_000), price(500_000), TICK),
+        trailing.untouched_by(at_its_level, price(499_000), price(500_000), TICK),
         Ok(true)
     );
     assert_eq!(
-        trailing.untouched_by(price(499_000), price(500_025), TICK),
+        trailing.untouched_by(at_its_level, price(499_000), price(500_025), TICK),
+        Ok(false)
+    );
+    // S-template-072: a stop held a tick under the market, at 4998.00, below the trailing level
+    // 4999.00, rises at prices under the best price, so no bar is skipped while it stands there.
+    assert_eq!(
+        trailing.untouched_by(Some(price(499_800)), price(499_850), price(499_975), TICK),
         Ok(false)
     );
     let breakeven = BreakevenPlan {
@@ -328,11 +335,11 @@ fn a_bar_beyond_a_trailing_plans_best_price_or_a_waiting_trigger_is_not_skipped(
     };
     let waiting = long_plan(with(Some(breakeven), None), 1);
     assert_eq!(
-        waiting.untouched_by(price(499_000), price(500_175), TICK),
+        waiting.untouched_by(None, price(499_000), price(500_175), TICK),
         Ok(true)
     );
     assert_eq!(
-        waiting.untouched_by(price(499_000), price(500_200), TICK),
+        waiting.untouched_by(None, price(499_000), price(500_200), TICK),
         Ok(false)
     );
 }

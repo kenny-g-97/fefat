@@ -285,11 +285,13 @@ impl LivePlan {
         }))
     }
 
-    /// F-PLN-05: whether a bar from `low` to `high` leaves the plan as a replay of it would: it
-    /// rises no higher than the best price of a plan with a trailing stop, and reaches no profit
-    /// trigger still waiting.
+    /// F-PLN-05: whether a bar from `low` to `high` leaves the plan, its stop standing at `stop`,
+    /// as a replay of it would: it rises no higher than the best price of a plan with a trailing
+    /// stop, finds no intrabar trailing stop held below its level by the market, and reaches no
+    /// profit trigger still waiting.
     pub(crate) fn untouched_by(
         &self,
+        stop: Option<Price>,
         low: Price,
         high: Price,
         tick: Price,
@@ -302,6 +304,11 @@ impl LivePlan {
         if self.plan.trailing.is_some() && past_the_best {
             return Ok(false);
         }
+        if let Some(stop) = stop
+            && self.held_short(stop, tick)?
+        {
+            return Ok(false);
+        }
         for trigger in self.waiting_triggers() {
             if let Some(level) = self.trigger_level(trigger, tick)?
                 && self.side.better(beyond, level) == beyond
@@ -310,6 +317,23 @@ impl LivePlan {
             }
         }
         Ok(true)
+    }
+
+    /// Whether a working intrabar trailing stop stands below the whole steps its level allows
+    /// from `stop`, held there by the market (F-PLN-03, F-TRL-03): a price under the best price
+    /// can still raise it, as after a decision shortens its distance (S-template-072).
+    fn held_short(&self, stop: Price, tick: Price) -> Result<bool, Overflow> {
+        let Some(trailing) = self.plan.trailing else {
+            return Ok(false);
+        };
+        if !(self.trailing_works && f_trl_04(&trailing, false)) {
+            return Ok(false);
+        }
+        let Some(level) = self.f_trl_01(tick)? else {
+            return Ok(false);
+        };
+        let raised = f_trl_03(self.side, stop, level, trailing.step_ticks, tick)?;
+        Ok(self.side.better(raised, stop) != stop)
     }
 
     /// F-BRK-02: whether `trigger` has fired: a profit trigger once the best price reaches its

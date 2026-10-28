@@ -234,17 +234,34 @@ def f_pln_04(book: Book, price: int, tick: int) -> list[Move]:
     return [move for live in book.plans_in_order() for move in live.at_price(book, price, tick)]
 
 
-def f_pln_05(live: "LivePlan", low: int, high: int, tick: int) -> bool:
-    """Whether a bar from `low` to `high` leaves a plan as a replay of it would: it rises no
-    higher than the best price of a plan with a trailing stop, and reaches no profit trigger
+def f_pln_05(live: "LivePlan", stop: int | None, low: int, high: int, tick: int) -> bool:
+    """Whether a bar from `low` to `high` leaves a plan, its stop standing at `stop`, as a replay
+    of it would: it rises no higher than the best price of a plan with a trailing stop, finds no
+    intrabar trailing stop held below its level by the market, and reaches no profit trigger
     still waiting (the skipping replay's condition, which the reference engine never needs)."""
     beyond = high if live.side is Side.BUY else low
     if live.plan.trailing is not None and live.side.better(beyond, live.best) != live.best:
+        return False
+    if stop is not None and _held_short(live, stop, tick):
         return False
     levels = [live.trigger_level(trigger, tick) for trigger in live.waiting_triggers()]
     return not any(
         level is not None and live.side.better(beyond, level) == beyond for level in levels
     )
+
+
+def _held_short(live: "LivePlan", stop: int, tick: int) -> bool:
+    """Whether a working intrabar trailing stop stands below the whole steps its level allows
+    from `stop`, held there by the market (F-PLN-03, F-TRL-03): a price under the best price can
+    still raise it, as after a decision shortens its distance (S-template-072)."""
+    trailing = live.plan.trailing
+    if trailing is None or not (live.trailing_active and f_trl_04(trailing, False)):
+        return False
+    level = f_trl_01(live, tick)
+    if level is None:
+        return False
+    raised = f_trl_03(live.side, stop, level, trailing.step_ticks, tick)
+    return live.side.better(raised, stop) != stop
 
 
 # §23 Breakeven
