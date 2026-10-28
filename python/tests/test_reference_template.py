@@ -31,7 +31,6 @@ from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_nanoseconds, instrument_parameters, price_units
 from fefat.strategy import (
     BarsCooldown,
-    Breakeven,
     EntryWindow,
     Execution,
     Fixed,
@@ -44,7 +43,6 @@ from fefat.strategy import (
     StrategySpec,
     Target,
     TimeRules,
-    Trailing,
 )
 from test_reference_engine import ONE_MINUTE, bar, decision_at, run_on_bars
 
@@ -125,19 +123,6 @@ def test_a_flat_by_time_outside_its_session_inside_a_halt_or_off_the_grid_is_ref
     [
         ({"entry": Limit(offset_ticks=2)}, "an entry of kind limit_offset"),
         ({"on_opposite_signal": OppositeSignal.REVERSE}, "on_opposite_signal reverse"),
-        ({"stop": Stop(percent=0.5)}, "a stop of kind percent"),
-        ({"stop": Stop(atr=1.5)}, "a stop of kind atr"),
-        ({"stop": None}, "no stop"),
-        ({"targets": [Target(ticks=8, fraction=0.5), Target(ticks=24)]}, "2 targets"),
-        ({"targets": [Target(ticks=8, fraction=0.5)]}, "a target closing part of the position"),
-        ({"targets": [Target(atr=2)]}, "a target of kind atr"),
-        ({"targets": [Target(r=1.3)]}, "an R multiple of 1.3 times 12 ticks, off the tick"),
-        (
-            {"stop": Stop(column=True), "targets": [Target(r=2)]},
-            "an R multiple without a stop in ticks",
-        ),
-        ({"breakeven": Breakeven(after_target=1)}, "breakeven"),
-        ({"trailing": Trailing(ticks=8)}, "a trailing stop"),
         (
             {"time": TimeRules(tz="UTC", windows=[EntryWindow(start="08:30", end="14:30")])},
             "entry windows",
@@ -191,7 +176,7 @@ def test_an_exit_still_working_is_not_placed_again_at_the_next_decision() -> Non
 
     assert [(fill.order, fill.role) for fill in result.fills] == [
         (1, OrderRole.ENTRY),
-        (4, OrderRole.EXIT),
+        (4, OrderRole.SIGNAL_EXIT),
     ]
     cancelled = [entry.order for entry in result.log.entries if entry.kind is EventKind.CANCELLED]
     assert cancelled == [2, 3]

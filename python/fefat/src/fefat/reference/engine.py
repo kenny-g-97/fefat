@@ -14,23 +14,24 @@ and instants nanoseconds since the Unix epoch, UTC (`fefat.reference.units`):
     result.fills, result.log.lines()
 """
 
-import math
 from collections.abc import Sequence
-from decimal import Decimal
+from dataclasses import replace
 from fractions import Fraction
 
 from fefat.market.fees import CryptoFee, FuturesFee
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe
 from fefat.reference.event_log import EventKind, EventLog
+from fefat.reference.exit_plan import Move, f_pln_02, f_pln_04, place_exit_plan
 from fefat.reference.hours import TradingHours
 from fefat.reference.ledger import Fill, FillFlag, FundingPayment, Liquidity, Mark
+from fefat.reference.money import f_fee_01, f_fee_02, f_fee_03, f_fnd_01
 from fefat.reference.orders import Book, OrderKind, OrderState, Side, WorkingOrder
 from fefat.reference.settings import LimitFill, RunSettings
 from fefat.reference.strategy import Decision, DecisionContext, OnBar
 from fefat.reference.tape import BarRecord, FundingRate, Record, TbboRecord, TradeRecord
 from fefat.reference.timeline import Event, Execution, Extreme, Moment, Phase, Priced, RunResult
-from fefat.reference.units import InstrumentParameters, exact_money, instant_text
+from fefat.reference.units import InstrumentParameters, instant_text
 
 STOP, MARKET, LIMIT = OrderKind.STOP, OrderKind.MARKET, OrderKind.LIMIT
 WAITING, WORKING, TRIGGERED = OrderState.WAITING, OrderState.WORKING, OrderState.TRIGGERED
@@ -217,20 +218,15 @@ def f_oco_01(book: Book, filled: WorkingOrder) -> tuple[WorkingOrder, ...]:
 
 
 def f_oco_02(
-    book: Book, entry: WorkingOrder, price: int, at: Moment, tick: int
+    book: Book, entry: WorkingOrder, price: int, market: int, at: Moment, tick: int
 ) -> list[WorkingOrder]:
-    """A bracket's stop and target are placed when their entry fills, as one OCO group, without
-    latency, working from the next record after the fill or, on bars, from the entry's point
-    of the path; a bracket in ticks counts from the fill price."""
-    if entry.bracket is None:
-        return []
-    legs = zip((STOP, LIMIT), entry.bracket.legs(entry.side, price, tick, book.new_id), strict=True)
-    placed = [entry.bracket_leg(kind, leg, at.ts, at.index) for kind, leg in legs]
-    book.orders.extend(placed)
-    return placed
+    """An entry's bracket, its exit plan's stop and targets (F-PLN-01), is placed when it fills
+    at `price`, the market at `market`, without latency, working from the next record after
+    the fill or, on bars, from the entry's point of the path."""
+    return place_exit_plan(book, entry, price, market, at.ts, at.index, tick)
 
 
-# §12 to §16 Slippage, quantities, money, marks, and what a fill records
+# §12 to §16 Slippage, quantities, marks, and what a fill records; money in `fefat.reference.money`
 def f_slp_01(settings: RunSettings, kind: OrderKind) -> int:
     """Slippage is whole ticks per order class, market or stop-market, set for the run."""
     return settings.slippage_ticks.market if kind is MARKET else settings.slippage_ticks.stop
@@ -239,33 +235,6 @@ def f_slp_01(settings: RunSettings, kind: OrderKind) -> int:
 def f_qty_01(lots: int, shown_size: int | None) -> tuple[FillFlag, ...]:
     """Orders fill whole; on trades and TBBO a fill larger than its record shows is flagged."""
     return (FillFlag.SIZE_EXCEEDED,) if shown_size is not None and lots > shown_size else ()
-
-
-def f_fee_01(fee: FuturesFee, quantity: Decimal) -> Fraction:
-    """A futures fill pays the charge per contract per side of the schedule in force."""
-    return exact_money(fee.per_contract_side * quantity)
-
-
-def f_fee_02(fee: CryptoFee, value: Fraction, liquidity: Liquidity) -> Fraction:
-    """A crypto fill pays basis points of its value: the maker rate for a limit that rested, the
-    taker rate for every other fill."""
-    rate = fee.maker_bps if liquidity is Liquidity.MAKER else fee.taker_bps
-    return abs(value) * Fraction(rate) / 10_000
-
-
-def f_fee_03(cash_change: Fraction, what: str) -> int:
-    """An exact amount is booked to the micro-unit toward minus infinity of the cash, so what the
-    trader pays rounds up and what it receives down; past 64 bits it is an error."""
-    booked = math.floor(cash_change)
-    if not -(2**63) <= booked < 2**63:
-        raise ValueError(f"Expected {what} within 64 bits of micro-units, got {booked}.")
-    return booked
-
-
-def f_fnd_01(position: int, mark: int, instrument: InstrumentParameters, rate: Decimal) -> Fraction:
-    """At a funding time an open position pays signed quantity x mark x point value x rate, so a
-    long pays a positive rate and a short receives it: returned as the change to the cash."""
-    return -instrument.value(mark, position) * Fraction(rate)
 
 
 def f_mrk_01(book: Book, price: int) -> None:
@@ -353,8 +322,10 @@ class ReferenceEngine:
     def _on_event(self, at: Moment, event: Event, on_bar: OnBar | None) -> None:
         subject = event.subject
         if isinstance(subject, Decision) and on_bar is not None:
-            latency, lot_step = self.settings.latency_nanoseconds(), self.instrument.lot_step
-            context = DecisionContext(self.book, at.ts, at.index, latency, lot_step, self.log)
+            latency = self.settings.latency_nanoseconds()
+            context = DecisionContext(
+                self.book, at.ts, at.index, latency, self.instrument, self.log
+            )
             on_bar(subject.bar, context)
         elif isinstance(subject, FundingRate):
             self._on_funding(subject)
@@ -390,7 +361,8 @@ class ReferenceEngine:
             if isinstance(record, TbboRecord):
                 price = f_stp_02(order.side, order.level(), record, self.ticks(STOP), self.tick)
                 shown = record.quote(order.side)[1]
-                self._fill(at, order, Priced(price, "F-STP-02", order.level(), shown))
+                priced = Priced(price, "F-STP-02", order.level(), shown)
+                self._fill(at, order, priced, record.price)
         for order in self.book.each(WAITING):
             if f_act_01(order, at.ts, at.index):
                 self._first_record(at, order, record)
@@ -400,6 +372,8 @@ class ReferenceEngine:
         for order in self.book.each(WORKING, LIMIT):
             self._limit_on_record(at, order, record)
         f_mrk_01(self.book, record.price)
+        for move in f_pln_04(self.book, record.price, self.tick):
+            self._moved(at.ts, move)
 
     def _first_record(self, at: Moment, order: WorkingOrder, record: TradeRecord) -> None:
         order.state = WORKING
@@ -414,7 +388,8 @@ class ReferenceEngine:
         else:
             reference, shown, rule = record.price, record.size, "F-MKT-02"
             price = f_mkt_02(order.side, record, ticks, self.tick)
-        self._fill(at, order, Priced(price, "F-STP-05" if through else rule, reference, shown))
+        priced = Priced(price, "F-STP-05" if through else rule, reference, shown)
+        self._fill(at, order, priced, record.price)
 
     def _triggered(self, at: Moment, order: WorkingOrder, record: TradeRecord) -> None:
         stop = order.level()
@@ -423,7 +398,7 @@ class ReferenceEngine:
             order.state = TRIGGERED
             return
         price = f_stp_03(order.side, stop, record.price, self.ticks(STOP), self.tick)
-        self._fill(at, order, Priced(price, "F-STP-03", stop, record.size))
+        self._fill(at, order, Priced(price, "F-STP-03", stop, record.size), record.price)
 
     def _limit_on_record(self, at: Moment, order: WorkingOrder, record: TradeRecord) -> None:
         traded, shown = self.limit_past(order, record.price), record.size
@@ -433,10 +408,14 @@ class ReferenceEngine:
         if not traded:
             order.rested = True
             return
-        self._fill(at, order, Priced(f_lmt_03(order), "F-LMT-03", order.level(), shown))
+        priced = Priced(f_lmt_03(order), "F-LMT-03", order.level(), shown)
+        self._fill(at, order, priced, record.price)
 
-    def _fill(self, at: Moment, order: WorkingOrder, priced: Priced) -> None:
-        self._book(at.ts, self.execute(self.book, order, priced, at))
+    def _fill(self, at: Moment, order: WorkingOrder, priced: Priced, market: int) -> None:
+        self._book(at.ts, self.execute(self.book, order, priced, at, market))
+
+    def _moved(self, ts: int, move: Move) -> None:
+        self.log.moved(ts, move.order, move.before, move.after, move.rule)
 
     def _on_bar(self, moment: Moment, bar: BarRecord) -> None:
         """A stored bar, replayed as its pseudo-ticks; when it fills anything, replayed again on a
@@ -449,24 +428,34 @@ class ReferenceEngine:
             if f_act_02(order, bar):
                 self.log.active(at.ts, order.id, "bar", "F-ACT-02")
         trial = self.book.copied()
-        executions = BarReplay(self, self.book, at).run(bar, swapped=False)
-        swapped = BarReplay(self, trial, at).run(bar, swapped=True) if executions else executions
-        flags = (FillFlag.AMBIGUOUS,) if f_bar_05(executions, swapped) else ()
+        events = BarReplay(self, self.book, at).run(bar, swapped=False)
+        executions = [event for event in events if isinstance(event, Execution)]
+        swapped = BarReplay(self, trial, at).run(bar, swapped=True) if executions else []
+        others = [event for event in swapped if isinstance(event, Execution)]
+        flags = (FillFlag.AMBIGUOUS,) if f_bar_05(executions, others) else ()
         if flags:
             self.log.ambiguous(at.ts)
-        for execution in executions:
-            self._book(at.ts, execution, flags)
+        for event in events:
+            if isinstance(event, Execution):
+                self._book(at.ts, event, flags)
+            else:
+                self._moved(at.ts, event)
 
-    def execute(self, book: Book, order: WorkingOrder, priced: Priced, at: Moment) -> Execution:
-        """Fills `order` in `book` as `priced` says: the position moves, its OCO group is
-        cancelled (F-OCO-01), and the bracket of an entry is placed (F-OCO-02)."""
+    def execute(
+        self, book: Book, order: WorkingOrder, priced: Priced, at: Moment, market: int
+    ) -> Execution:
+        """Fills `order` in `book` as `priced` says, the market at `market`: the position moves,
+        its OCO group is cancelled (F-OCO-01), its exit plan settles its open lots (F-PLN-02),
+        and the exit plan of an entry is placed (F-OCO-02)."""
         price, rule, reference, shown = priced
         liquidity = f_lmt_04(order)
         book.close(order, OrderState.FILLED)
         book.position += order.side.sign() * order.lots
-        cancelled = f_oco_01(book, order)
-        legs = tuple(f_oco_02(book, order, price, at, self.tick))
-        return Execution(order, price, rule, reference, liquidity, shown, cancelled, legs)
+        settled = f_pln_02(book, order)
+        cancelled = (*f_oco_01(book, order), *settled.cancelled)
+        legs = tuple(f_oco_02(book, order, price, market, at, self.tick))
+        execution = Execution(order, price, rule, reference, liquidity, shown, cancelled, legs)
+        return replace(execution, reduced=settled.reduced)
 
     def _book(self, ts: int, execution: Execution, flags: tuple[FillFlag, ...] = ()) -> None:
         """Books a fill: its value moves the cash and it pays its fee, each rounded once
@@ -479,7 +468,7 @@ class ReferenceEngine:
         fill = f_tag_01(execution, ts, self.fidelity, self.tick)
         fill = fill.model_copy(update={"flags": (*flags, *fill.flags), "fee": fee, "cash": cash})
         self.fills.append(fill)
-        self.log.filled(fill, execution.cancelled, execution.bracket)
+        self.log.filled(fill, execution.cancelled, execution.bracket, execution.reduced)
 
     def _fee(self, value: Fraction, execution: Execution) -> Fraction:
         if isinstance(self.fees, FuturesFee):
@@ -509,9 +498,9 @@ class BarReplay:
     def __init__(self, engine: ReferenceEngine, book: Book, at: Moment) -> None:
         self.engine, self.book, self.at, self.tick = engine, book, at, engine.tick
         self.stop_ticks, self.through_ticks = engine.ticks(STOP), engine.ticks(MARKET, through=True)
-        self.executions: list[Execution] = []
+        self.events: list[Execution | Move] = []
 
-    def run(self, bar: BarRecord, swapped: bool) -> list[Execution]:
+    def run(self, bar: BarRecord, swapped: bool) -> list[Execution | Move]:
         self.open(bar)
         book = self.book
         first = f_bar_02(book.position) if book.position else f_bar_03(book.live(WORKING))
@@ -523,13 +512,18 @@ class BarReplay:
             extreme = bar.low if remaining[0] is Extreme.LOW else bar.high
             point, opened = self.leg(point, extreme)
             if point == extreme:
-                f_mrk_01(book, extreme)
+                self.marked(extreme)
                 remaining.pop(0)
             if opened:
                 remaining = f_bar_04(remaining, book.position)
         self.leg(point, bar.close)
-        f_mrk_01(book, bar.close)
-        return self.executions
+        self.marked(bar.close)
+        return self.events
+
+    def marked(self, price: int) -> None:
+        """A point of the path marked (F-MRK-01), and each exit plan's turn at it (F-PLN-04)."""
+        f_mrk_01(self.book, price)
+        self.events.extend(f_pln_04(self.book, price, self.tick))
 
     def open(self, bar: BarRecord) -> None:
         """The open's pseudo-tick: market orders and stops through the market that see their first
@@ -552,7 +546,7 @@ class BarReplay:
                 self.fill(point, order, f_lmt_03(order), "F-LMT-03", order.level())
         for order in self.book.live(WORKING, kind=LIMIT):
             order.rested = True
-        f_mrk_01(self.book, point)
+        self.marked(point)
 
     def leg(self, point: int, extreme: int) -> tuple[int, bool]:
         """The path from `point` to `extreme`: the nearest level first, all its orders together,
@@ -582,8 +576,8 @@ class BarReplay:
         """A fill at a point of the path, whose bracket's legs are judged there at once (F-OCO-02,
         F-STP-05): a stop or a target the point is through fills, and the rest work from it."""
         priced = Priced(price, rule, reference, None)
-        execution = self.engine.execute(self.book, order, priced, self.at)
-        self.executions.append(execution)
+        execution = self.engine.execute(self.book, order, priced, self.at, point)
+        self.events.append(execution)
         for leg in execution.bracket:
             if leg.state is not WAITING:
                 continue

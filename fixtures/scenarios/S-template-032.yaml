@@ -1,0 +1,44 @@
+id: S-template-032
+title: A short's trailing stop on trades follows each new low 4 ticks above it and closes the short
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: ticks, ticks: 4}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, short_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "4999.50", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "4998.75", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "4999.25", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "4998.00", size: 1}
+  - {ts: "2026-03-06T14:30:05.000Z", price: "4999.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "4999.75", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:05.000Z", price: "4999.25", rule: F-STP-03}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01). A short mirrors the long of
+# S-template-023:
+# order 1 sells 1 lot on the trade at 14:30:00.200, at 5000.00 - 0.25 = 4999.75 (F-MKT-02);
+# its plan: the stop 8 ticks above the fill, 4999.75 + 2.00 = 5001.75, which the trailing stop,
+# working from the fill, lowers at once to the market at the fill plus 4 ticks, 5000.00 + 1.00 =
+# 5001.00 (F-PLN-04, F-TRL-01): order 2, a buy stop at 5001.00; the target, order 3, a buy limit at
+# 4999.75 - 10.00 = 4989.75;
+# each new low is the short's best price, and the stop falls to 4 ticks above it (F-TRL-04,
+# F-PLN-03):
+# 14:30:01, 4999.50: the stop falls to 5000.50;
+# 14:30:02, 4998.75: to 4999.75;
+# 14:30:03, 4999.25: no new low, and it stays below the stop;
+# 14:30:04, 4998.00: to 4999.00;
+# 14:30:05, 4999.00: the trade is at the stop and triggers it (F-STP-01): it buys at the higher of
+# 4999.00 + 0.25 and 4999.00, 4999.25 (F-STP-03), and the target is cancelled (F-OCO-01).
