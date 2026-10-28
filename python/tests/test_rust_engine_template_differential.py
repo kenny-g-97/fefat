@@ -32,6 +32,8 @@ from fefat.reference.scenario_runner import run_scenario
 from fefat.reference.scenarios import TemplateScenario
 from fefat.strategy.exits import Limits
 
+pytestmark = pytest.mark.usefixtures("draws_of_the_seed_alone")
+
 DIFFERENTIAL_SEED = 20_261_026
 """The run's seed, recorded in the pull request, as the other differential tests'."""
 EXAMPLES = 500

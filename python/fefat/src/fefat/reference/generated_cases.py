@@ -192,17 +192,21 @@ def template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
 
 
 def fidelity_and_tape(
-    draw: "DrawFn", drawn: DrawnInstrument, tapes: DrawnTapes
+    draw: "DrawFn",
+    drawn: DrawnInstrument,
+    tapes: DrawnTapes,
+    bars_walk: tuple[int, int] = (1, 25),
 ) -> tuple[TickFidelity | Timeframe, Tape]:
     """On ticks, a tape of TBBO records or of trades; on bars, the bars of a drawn timeframe that
-    a walk of trades makes; with its fidelity."""
+    a walk of trades makes, as many as `bars_walk` gives, the fewest and the most; with its
+    fidelity."""
     from hypothesis import strategies as st
 
     if tapes is DrawnTapes.TICKS:
         if draw(st.booleans()):
             return TickFidelity.TBBO, _tape(draw, drawn, tbbo=True)
         return TickFidelity.TRADES, _tape(draw, drawn, tbbo=False)
-    trades = _tape(draw, drawn, tbbo=False)
+    trades = _tape(draw, drawn, tbbo=False, walk=bars_walk)
     timeframe = draw(st.sampled_from(BAR_TIMEFRAMES))
     return timeframe, coarser_bars(trades, timeframe)
 
@@ -277,7 +281,9 @@ def _signal_rows(
     return tuple(rows)
 
 
-def _tape(draw: "DrawFn", drawn: DrawnInstrument, tbbo: bool) -> tuple[TradeRecord, ...]:
+def _tape(
+    draw: "DrawFn", drawn: DrawnInstrument, tbbo: bool, walk: tuple[int, int] = (1, 25)
+) -> tuple[TradeRecord, ...]:
     from hypothesis import strategies as st
 
     move = st.tuples(st.sampled_from(GAPS_MS), st.sampled_from(STEPS), st.integers(1, 9))
@@ -285,7 +291,7 @@ def _tape(draw: "DrawFn", drawn: DrawnInstrument, tbbo: bool) -> tuple[TradeReco
     record = st.tuples(move, quote) if tbbo else st.tuples(move, st.just((0, 1, 1, 1)))
     ts, price, tape = FIRST, drawn.opening, []
     for (gap, step, size), (bid_ticks, spread, bid_size, ask_size) in draw(
-        st.lists(record, min_size=1, max_size=25)
+        st.lists(record, min_size=walk[0], max_size=walk[1])
     ):
         ts, price = ts + gap * MILLISECOND, price + step * drawn.tick
         if not tbbo:

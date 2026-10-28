@@ -30,6 +30,8 @@ from fefat.reference.rust_run import (
 )
 from fefat.reference.settings import RollHandling
 
+pytestmark = pytest.mark.usefixtures("draws_of_the_seed_alone")
+
 DIFFERENTIAL_SEED = 20_261_026
 """The run's seed, recorded in the pull request."""
 EXAMPLES = 1_000
