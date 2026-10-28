@@ -1,0 +1,32 @@
+id: S-fill-066
+title: On TBBO a roll's legs fill at the new front's quote, read no better than its trade, flagged by the size it shows
+fidelity: tbbo
+instrument: ES
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T20:00:00.000Z", side: buy, kind: market, quantity: 2, bracket: {stop: {id: 2, price: "4990.00"}, target: {id: 3, price: "5100.00"}}}
+tape:
+  - {ts: "2026-03-06T20:00:00.200Z", price: "5001.00", size: 3, bid: "5000.75", ask: "5001.25", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00", size: 2, bid: "5024.75", ask: "5025.25", bid_size: 1, ask_size: 4}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T20:00:00.200Z", price: "5001.25", rule: F-MKT-01, role: entry, contract: ESH2026}
+    - {order: 4, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, flags: [size_exceeded], role: roll_volume, contract: ESH2026}
+    - {order: 5, ts: "2026-03-08T22:00:00.500Z", price: "5025.25", rule: F-ROL-02, role: roll_volume, contract: ESM2026}
+rules: [F-ACT-01, F-MKT-01, F-OCO-02, F-QTY-01, F-ROL-01, F-ROL-02, F-ROL-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01; the
+# session of 2026-03-09 opens at 2026-03-08T22:00Z, 17:00 Chicago):
+# decided at 20:00:00.000 and active at 20:00:00.100 (F-ACT-01), the buy of 2 fills at the ask of
+# the record at 20:00:00.200, 5001.25, whose 5 lots shown hold it (F-MKT-01, F-QTY-01), on
+# ESH2026; its bracket, stop 4990.00 and target 5100.00, is placed (F-OCO-02);
+# at the roll, 22:00:00 on 03-08 (F-ROL-01), the stop moves by the gap of 20.00 to 5010.00 and the
+# target to 5120.00 (F-ROL-03), and the long's legs are sent, orders 4 and 5, the next ids after
+# the scenario's 1 to 3 (F-ROL-02);
+# the new front's first record, at 22:00:00.500, fills them at its quote, each read no better than
+# its trade, 5025.00 (F-SLP-01): the close leg sells at the bid, 5024.75, no better than 5025.00,
+# less the gap: 5024.75 - 20.00 = 5004.75, on ESH2026, and its 2 lots exceed the 1 the bid shows,
+# so it is flagged size_exceeded (F-QTY-01); the open leg buys at the ask, 5025.25, no better than
+# 5025.00, on ESM2026, within the 4 the ask shows (F-ROL-02); the moved stop and target stay
+# working, neither reached by 5025.00.

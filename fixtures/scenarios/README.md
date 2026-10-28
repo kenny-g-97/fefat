@@ -146,6 +146,8 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-063](S-fill-063.yaml) | trades | A CL long is stopped below zero, as on 2020-04-20, its sell at a negative price paying cash out |
 | [S-fill-064](S-fill-064.yaml) | 1d | Funding inside a daily bar is paid on the position as it stood before the bar, at the mark the bar before left |
 | [S-fill-065](S-fill-065.yaml) | trades | With a negative funding rate a short pays, its amount rounded against the trader |
+| [S-fill-066](S-fill-066.yaml) | tbbo | On TBBO a roll's legs fill at the new front's quote, read no better than its trade, flagged by the size it shows |
+| [S-fill-067](S-fill-067.yaml) | trades | Two rolls in one run move the bracket by each gap in turn, each sending its legs on the next front |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |
