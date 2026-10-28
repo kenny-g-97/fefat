@@ -12,25 +12,53 @@ import pytest
 
 from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS
-from fefat.market.calendar import sessions_of
+from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.continuous import volume_rolls
 from fefat.market.fidelity import TickFidelity
-from fefat.market.schema import Timeframe
+from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.schema import Timeframe, parse_schema_name
+from fefat.market.store import Store
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.event_log import EventKind
 from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.ledger import Trade, trades_of
 from fefat.reference.orders import OrderRole, PositionSide, Side
+from fefat.reference.rolls import rolls_within
 from fefat.reference.scenario_runner import run_scenario
 from fefat.reference.scenarios import Scenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.strategy import Decision, DecisionContext
-from fefat.reference.tape import BarRecord, TbboRecord, TradeRecord, tape_of_bars, tape_of_trades
+from fefat.reference.tape import (
+    BarRecord,
+    TbboRecord,
+    TradeRecord,
+    funding_rates_of,
+    tape_of_bars,
+    tape_of_trades,
+)
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_nanoseconds, instrument_parameters, lots_of, price_units
 
 ONE_MINUTE = Timeframe.parse("1m")
 MES = instrument_parameters(instruments.get("MES"))
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
+BTC_FUNDING = Dataset(
+    provider="synthetic", schema_name=parse_schema_name("funding"), root="BTCUSDT-PERP"
+)
+QUIET = ("5000.00", "5000.00", "5000.00", "5000.00")
+END = instant_nanoseconds("2026-03-09T21:00:00Z")
+
+
+def fixture_minutes() -> pl.DataFrame:
+    """The fixtures' 1-minute bars of ES, each with its contract (`Store.scan_contracts`)."""
+    es_minutes = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
+    request = PartitionRequest(dataset=es_minutes, start=date(2026, 3, 5), end=date(2026, 3, 9))
+    return Store(FIXTURES).scan_contracts(request).collect()
+
+
+def sessions_of_es(cache: Path) -> SessionTable:
+    return sessions_of(instruments.get("ES").session_calendar(), cache)
 
 
 def bar(ts_open: str, ts_close: str, *prices: str, day: str = "2026-03-06") -> BarRecord:
@@ -261,11 +289,59 @@ def test_a_tape_of_bars_leaves_out_empty_buckets_and_takes_the_raw_prices() -> N
     assert (stored.ts_open, stored.ts_close, stored.volume) == (1_000, 61_000, 7)
 
 
-def test_a_tape_of_bars_refuses_a_back_adjusted_series_and_a_roll() -> None:
+def test_a_tape_of_bars_refuses_a_back_adjusted_series() -> None:
     with pytest.raises(ValueError, match="Expected a series with raw prices"):
         tape_of_bars(signal_bars(close_raw=[None, None], adj_offset=[None, None]))
-    with pytest.raises(ValueError, match="Expected the bars of one contract"):
-        tape_of_bars(signal_bars(contract=["MESH2026", "MESM2026"]))
+
+
+def test_a_tape_of_bars_across_a_roll_gives_each_front_at_its_own_prices() -> None:
+    # Step 2.9 (F-ROL-01): a spliced series is replayed at each contract's raw prices, its
+    # prices less its adj_offset, which the roll's gap separates (D-09).
+    spliced = signal_bars(
+        contract=["MESH2026", "MESM2026"],
+        adj_offset=[0, -20_000_000_000],
+        volume=[7, 5],
+        zero_volume=[False, False],
+    )
+
+    first, second = tape_of_bars(spliced)
+
+    assert (first.open, first.close) == (price_units("5010.00"), price_units("5011.00"))
+    assert (second.open, second.close) == (price_units("5031.00"), price_units("5031.00"))
+
+
+def test_the_rolls_a_tape_crosses_are_those_of_the_roll_calendar_inside_it(
+    tmp_path: Path,
+) -> None:
+    # Step 2.9 (F-ROL-01): the fixtures' roll at the open of 2026-03-09 lies inside a tape from
+    # 2026-03-06 to 03-09, and outside one of 03-09 alone, which starts after it.
+    calendar = volume_rolls(fixture_minutes(), sessions_of_es(tmp_path), instruments.get("ES"), END)
+    across = (
+        bar("14:30:00", "14:31:00", *QUIET),
+        bar("14:30:00", "14:31:00", *QUIET, day="2026-03-09"),
+    )
+    after = (bar("14:30:00", "14:31:00", *QUIET, day="2026-03-09"),)
+
+    (roll,) = rolls_within(calendar, across)
+
+    assert (roll.rolled_from, roll.contract, str(roll.reason)) == ("ESH2026", "ESM2026", "volume")
+    assert roll.session_open == instant_nanoseconds("2026-03-08T22:00:00Z")
+    assert rolls_within(calendar, after) == ()
+
+
+def test_the_fixtures_funding_rows_read_as_the_engines_funding_rates() -> None:
+    # Step 2.9 (F-FND-01): a rate at each funding time of the BTC day, read from 1e-9 units.
+    request = PartitionRequest(dataset=BTC_FUNDING, start=date(2026, 3, 7), end=date(2026, 3, 7))
+    rates = funding_rates_of(Store(FIXTURES).scan(request).collect())
+
+    assert [rate.ts for rate in rates] == [
+        instant_nanoseconds(f"2026-03-07T{hour}:00:00Z") for hour in ("00", "08", "16")
+    ]
+    assert [rate.rate for rate in rates] == [
+        Decimal("0.000082070"),
+        Decimal("0.000146280"),
+        Decimal("-0.000005730"),
+    ]
 
 
 def test_a_tape_of_trades_reads_the_receive_clock_in_the_vendors_order() -> None:

@@ -112,8 +112,24 @@ def test_every_committed_fixture_file_is_listed_with_its_hash() -> None:
         if path.is_file() and path != MANIFEST
     }
 
-    assert len(on_disk) == 33
+    assert len(on_disk) == 35
     assert on_disk == listed
+
+
+def test_the_btc_day_holds_a_funding_rate_at_each_of_binances_funding_times() -> None:
+    # Step 2.9: the store's first funding data, a rate at 00:00, 08:00, and 16:00 UTC, received
+    # when it is fixed, in 1e-9 units with Binance's eight decimals, in the SDK's columns.
+    path = FIXTURES / "funding" / "root=BTCUSDT-PERP" / "contract=BTCUSDT-PERP" / "part.parquet"
+    funding = rows(path)
+    times = [nanoseconds(datetime(2026, 3, 7, hour, tzinfo=UTC)) for hour in (0, 8, 16)]
+
+    assert [row["ts_recv"] for row in funding] == times
+    assert all(row["ts_event"] == row["ts_recv"] for row in funding)
+    assert {row["instrument_id"] for row in funding} == {2001}
+    assert all(int(row["funding_rate"]) % 10 == 0 for row in funding)
+    assert all(-50_000 <= int(row["funding_rate"]) <= 150_000 for row in funding)
+    schema = pq.read_schema(path)
+    assert schema.names == list(polars_schema(parse_schema_name("funding")))
 
 
 @pytest.mark.parametrize(

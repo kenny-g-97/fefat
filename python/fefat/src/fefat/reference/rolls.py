@@ -12,8 +12,10 @@ from dataclasses import dataclass, replace
 from datetime import date
 from typing import TYPE_CHECKING, Annotated
 
+import polars as pl
 from pydantic import Field
 
+from fefat.market.continuous import RollCalendar
 from fefat.market.roll_decisions import RollReason
 from fefat.market.schema import FrozenModel
 from fefat.reference.booking import book_fill
@@ -28,6 +30,7 @@ from fefat.reference.orders import (
     WorkingOrder,
 )
 from fefat.reference.settings import RollHandling
+from fefat.reference.tape import Record
 from fefat.reference.timeline import Moment, Priced
 from fefat.reference.units import Instant, Price, instant_text
 
@@ -70,6 +73,18 @@ class Transfer:
     gap: int
     rolled_from: str
     opened_at: int | None
+
+
+def rolls_within(calendar: RollCalendar, tape: Sequence[Record]) -> tuple[RollRow, ...]:
+    """The rolls of `calendar` that `tape` crosses, as the engines take them, never worked out
+    again (F-ROL-01): those whose session opens after the tape's first record starts, and by
+    the time its last one is available."""
+    first, last = tape[0].starts_at(), tape[-1].available_at()
+    crossed = pl.col("session_open").is_between(first, last, closed="right")
+    rows = calendar.rolls().filter(crossed).iter_rows(named=True)
+    return tuple(
+        RollRow.model_construct(**{**row, "reason": RollReason(row["reason"])}) for row in rows
+    )
 
 
 def f_rol_01(rolls: Sequence[RollRow], contract: str) -> None:

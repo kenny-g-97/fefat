@@ -71,6 +71,21 @@
       "sha256": "7cffabee6d59f0005981977854fac9c93fa540f07a302e9806338e4c8c8b7c99"
     },
     {
+      "bytes": 1488,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "funding/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/part.parquet",
+      "rows": 3,
+      "seed": 20260308,
+      "sha256": "bafbd0b389344af1a777a347b17650171e18582fb208738c9359508ad10e9e69"
+    },
+    {
+      "bytes": 170,
+      "generator": "scripts/gen_fixtures.py",
+      "path": "funding/root=BTCUSDT-PERP/dataset.json",
+      "seed": 20260308,
+      "sha256": "a256ee9b4f21c9ecd484a41d0beda69a7f9d0bc6d4526e55f3b800815f27d00a"
+    },
+    {
       "bytes": 40140,
       "generator": "scripts/gen_fixtures.py",
       "path": "ohlcv-1m/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/month=2026-03/part.parquet",

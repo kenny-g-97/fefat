@@ -1,5 +1,6 @@
 """The SDK's data API (steps 1.8 and 1.9): `load` gives the signal bars of a product or a
-contract in one call, and `catalog` lists what the store holds.
+contract in one call, `catalog` lists what the store holds, and `roll_calendar` gives the roll
+calendar `load` splices a future with (step 2.9).
 
     import fefat as ff
 
@@ -149,6 +150,23 @@ def _some(bars: pl.DataFrame, named: str, first: date, last: date) -> pl.DataFra
     if bars.is_empty():
         raise ValueError(f"Expected bars of {named} from {first} to {last} in the store, got none.")
     return bars
+
+
+def roll_calendar(
+    root: str, provider: str | None = None, origin: str | None = None
+) -> RollCalendar:
+    """The roll calendar `load` splices the futures product `root` with, from the datasets it
+    would read (D-44): each session's front, and at each roll the contract rolled from, the gap,
+    and the reason, which a backtest across the roll transfers its position by
+    (`RollCalendar.rolls()`, step 2.9); `provider` and `origin` choose the datasets as `load`'s
+    do."""
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    table = instrument_table(paths.data_dir)
+    instrument = table.get(root)
+    sessions = table.sessions_of(root, paths.cache_dir)
+    datasets = provider_datasets(store, root, provider, _origin(origin))
+    return _roll_calendar(store, datasets, instrument, sessions)
 
 
 def catalog() -> pl.DataFrame:
