@@ -22,10 +22,10 @@ tape:
   - {ts_open: "2026-03-06T14:32:00Z", ts_close: "2026-03-06T14:33:00Z", open: "5003.50", high: "5004.50", low: "5003.25", close: "5004.00", volume: 90}
 expected:
   fills:
-    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, quantity: 3}
-    - {order: 3, ts: "2026-03-06T14:32:00Z", price: "5001.25", rule: F-LMT-03, quantity: 1}
-    - {order: 4, ts: "2026-03-06T14:32:00Z", price: "5002.25", rule: F-LMT-03, quantity: 1}
-    - {order: 5, ts: "2026-03-06T14:33:00Z", price: "5004.25", rule: F-LMT-03, quantity: 1}
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, quantity: 3, role: entry}
+    - {order: 3, ts: "2026-03-06T14:32:00Z", price: "5001.25", rule: F-LMT-03, quantity: 1, role: target_1}
+    - {order: 4, ts: "2026-03-06T14:32:00Z", price: "5002.25", rule: F-LMT-03, quantity: 1, role: target_2}
+    - {order: 5, ts: "2026-03-06T14:33:00Z", price: "5004.25", rule: F-LMT-03, quantity: 1, role: target_3}
 rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-LMT-01, F-LMT-03, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-02, F-SLP-01]
 
 # Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):

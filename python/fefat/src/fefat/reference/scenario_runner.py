@@ -173,7 +173,8 @@ def scenario_hours(
 
 class FillSummary(NamedTuple):
     """What the runner compares of a fill: its order, time, price, rule, and flags, its fee in a
-    scenario with fees, and its lots in a scenario that states its fills' quantities."""
+    scenario with fees, its lots in a scenario that states its fills' quantities, and its role in
+    one that states their roles."""
 
     order: int
     ts: int
@@ -182,22 +183,25 @@ class FillSummary(NamedTuple):
     flags: tuple[str, ...]
     fee: int | None
     lots: int | None
+    role: str | None
 
     def text(self) -> str:
         flags = "".join(f", {flag}" for flag in self.flags)
         fee = "" if self.fee is None else f", fee {money_text(self.fee)}"
+        role = "" if self.role is None else f", as {self.role}"
         lots = "" if self.lots is None else f" x {self.lots}"
         at = f"{price_text(self.price)}{lots} at {instant_text(self.ts)}"
-        return f"order {self.order} at {at} ({self.rule}{flags}{fee})"
+        return f"order {self.order} at {at} ({self.rule}{flags}{fee}{role})"
 
 
 def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
     """How the run differs from what the scenario expects: each fill's order, time, price,
-    rule, flags, fee where the scenario has fees, and lots where it states quantities, its
-    fidelity tag (F-TAG-01), the marks, and the funding payments."""
+    rule, flags, fee where the scenario has fees, lots where it states quantities, and role where
+    it states roles, its fidelity tag (F-TAG-01), the marks, and the funding payments."""
     with_fees = scenario.fees is not None
     lot_step = scenario.instrument.lot_step
     with_lots = any(f.quantity is not None for f in scenario.expected.fills)
+    with_roles = any(f.role is not None for f in scenario.expected.fills)
     expected = [
         FillSummary(
             f.order,
@@ -207,6 +211,7 @@ def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
             tuple(sorted(f.flags)),
             f.fee,
             None if f.quantity is None else lots_of(f.quantity, lot_step),
+            f.role,
         )
         for f in scenario.expected.fills
     ]
@@ -219,6 +224,7 @@ def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
             tuple(sorted(f.flags)),
             f.fee if with_fees else None,
             f.lots if with_lots else None,
+            f.role if with_roles else None,
         )
         for f in result.fills
     ]

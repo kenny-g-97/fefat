@@ -38,7 +38,7 @@ from fefat.market.fidelity import Fidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.schema import FrozenModel
 from fefat.reference.ledger import FillFlag
-from fefat.reference.orders import OpenPosition, Order, OrderId, oco_groups
+from fefat.reference.orders import OpenPosition, Order, OrderId, OrderRole, oco_groups
 from fefat.reference.settings import RunSettings, default_slippage_ticks
 from fefat.reference.signal_rows import SignalRow, signal_frame
 from fefat.reference.tape import FundingRate, Tape, check_tape, parse_tape
@@ -72,7 +72,8 @@ ScenarioInstrument = Annotated[Instrument | InlineInstrument, BeforeValidator(_i
 class ExpectedFill(FrozenModel):
     """A fill the rules give: the order it fills, when, at what price, the rule that priced it
     (F-TAG-01), its flags, in a scenario with fees its fee, and, where the scenario states them,
-    its quantity in the instrument's units, which a template's targets and sizes decide."""
+    its quantity in the instrument's units, which a template's targets and sizes decide, and its
+    role, which records a template's exit reason (F-TAG-01)."""
 
     order: OrderId
     ts: Instant
@@ -81,6 +82,7 @@ class ExpectedFill(FrozenModel):
     flags: tuple[FillFlag, ...] = ()
     fee: Money | None = None
     quantity: Quantity | None = None
+    role: OrderRole | None = None
 
 
 class ExpectedMark(FrozenModel):
@@ -231,6 +233,12 @@ class ScenarioBase(FrozenModel):
             raise ValueError(
                 f"Expected a quantity on every fill of {self.id} or on none, got one on "
                 f"{sum(stated)} of {len(stated)}."
+            )
+        roles = [fill.role is not None for fill in self.expected.fills]
+        if any(roles) and not all(roles):
+            raise ValueError(
+                f"Expected a role on every fill of {self.id} or on none, got one on "
+                f"{sum(roles)} of {len(roles)}."
             )
         filled = Counter(fill.order for fill in self.expected.fills)
         again = sorted(order for order, fills in filled.items() if fills > 1)

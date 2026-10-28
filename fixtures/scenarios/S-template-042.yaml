@@ -22,8 +22,8 @@ tape:
   - {ts: "2026-03-06T21:55:00.300Z", price: "5003.00", size: 1}
 expected:
   fills:
-    - {order: 1, ts: "2026-03-05T21:50:00.200Z", price: "5000.25", rule: F-MKT-02}
-    - {order: 4, ts: "2026-03-06T21:55:00.300Z", price: "5002.75", rule: F-MKT-02}
+    - {order: 1, ts: "2026-03-05T21:50:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry}
+    - {order: 4, ts: "2026-03-06T21:55:00.300Z", price: "5002.75", rule: F-MKT-02, role: no_weekend}
 rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-03]
 
 # Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
