@@ -21,7 +21,7 @@ from dataclasses import replace
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe
 from fefat.reference.booking import book_fill, pay_funding
-from fefat.reference.costs import RunFees
+from fefat.reference.costs import RunFees, funding_in_order
 from fefat.reference.event_log import EventKind, EventLog
 from fefat.reference.exit_plan import Move, f_pln_02, f_pln_04, place_exit_plan
 from fefat.reference.hours import TradingHours
@@ -36,7 +36,6 @@ from fefat.reference.tape import (
     Record,
     TbboRecord,
     TradeRecord,
-    trade_dates_of,
 )
 from fefat.reference.timeline import Event, Execution, Extreme, Moment, Phase, Priced, RunResult
 from fefat.reference.units import CAPITAL, InstrumentParameters, instant_text
@@ -278,11 +277,13 @@ class ReferenceEngine:
     ) -> RunResult:
         """Runs `tape` with the funding times, the rolls, and the decisions, calling `on_bar` at
         each, from `position` lots held when it starts (positive long) of `contract`, and `cash`
-        in micro-units. `trade_dates` gives each record's, which price its fees (F-FEE-01), the
-        UTC days without them; the engine's own orders take ids from `first_id`."""
+        in micro-units. `trade_dates` gives each record's, which price its fees (F-FEE-01), and
+        without them each takes the one its trading hours give the instant it starts at; the
+        engine's own orders take ids from `first_id`."""
         if decisions and on_bar is None:
             raise ValueError("Expected an on_bar strategy for the decisions, got none.")
         f_rol_01(rolls, contract)
+        funding_in_order(funding_rates)
         self.book = Book(position=position, cash=cash, next_id=first_id)
         self.log, self.in_break, self.front = EventLog(), False, contract
         self.transfer: Transfer | None = None
@@ -290,7 +291,11 @@ class ReferenceEngine:
         self.fills: list[Fill] = []
         self.funding: list[FundingPayment] = []
         self.marks: list[Mark] = []
-        dates = trade_dates_of(tape, None) if trade_dates is None else trade_dates
+        dates = (
+            [self.hours.trade_date_of(record.starts_at()) for record in tape]
+            if trade_dates is None
+            else trade_dates
+        )
         events = self._events(tape, decisions, funding_rates, rolls, dates)
         for index, event in enumerate(events):
             self._on_event(Moment(event.ts, index), event, on_bar)

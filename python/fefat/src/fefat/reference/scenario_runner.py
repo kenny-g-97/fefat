@@ -84,6 +84,8 @@ def run_scenario(
     """`scenario` through the reference engine, open during `hours`: an order scenario's orders
     placed at their decisions, or a template scenario's strategy run from its signal rows on
     `sessions`, its instrument's session table, which also dates its records (F-FEE-01)."""
+    if sessions is not None:
+        _rolls_at_their_opens(scenario, sessions)
     parameters = instrument_parameters(scenario.instrument)
     fees = scenario.run_fees()
     engine = ReferenceEngine(scenario.settings, parameters, scenario.fidelity, hours, fees)
@@ -105,6 +107,19 @@ def run_scenario(
         first_id=first_own_id(scenario),
     )
     return ScenarioOutcome(scenario, result, differences(scenario, result))
+
+
+def _rolls_at_their_opens(scenario: AnyScenario, sessions: SessionTable) -> None:
+    """Each roll comes at the open of its trade date's session, as the roll calendar gives it
+    (F-ROL-01): a scenario that names another instant is refused."""
+    for roll in scenario.rolls:
+        opens = sessions.session(roll.trade_date).open
+        if roll.session_open != opens:
+            raise ValueError(
+                f"Expected the roll on {roll.trade_date} at its session's open, "
+                f"{instant_text(opens)}, got {instant_text(roll.session_open)} in {scenario.id} "
+                "(F-ROL-01)."
+            )
 
 
 def first_own_id(scenario: AnyScenario) -> int:

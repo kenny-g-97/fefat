@@ -1,8 +1,9 @@
 """The tape the reference engine reads: trade prints, TBBO records, or stored bars, as its
 fidelity says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01),
 and a perpetual's funding rates. A scenario writes its tape (`fefat.reference.scenarios`);
-`tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2), and
-`funding_rates_of` the funding rates (step 2.9)."""
+`tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2), `stored_bars`
+the tape of a series spliced across rolls, which `fefat.reference.rolls.tape_across_rolls` gives
+with its rolls, and `funding_rates_of` the funding rates (step 2.9)."""
 
 import itertools
 from collections.abc import Sequence
@@ -190,14 +191,28 @@ _RAW_PRICES = ("open", "high", "low", "close")
 
 
 def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
+    """The stored bars of one contract in a frame `load` returned (`SIGNAL_BAR_COLUMNS`), as the
+    engine replays them (`stored_bars`). The bars of more than one contract are refused: a series
+    spliced across rolls needs its rolls, which `fefat.reference.rolls.tape_across_rolls` gives
+    with its bars (F-ROL-01)."""
+    tape = stored_bars(frame)
+    contracts = sorted(frame.get_column("contract").unique().to_list())
+    if len(contracts) > 1:
+        raise ValueError(
+            f"Expected the bars of one contract, got {', '.join(contracts)}: a series spliced "
+            "across rolls needs its rolls, which fefat.reference.rolls.tape_across_rolls gives "
+            "with its bars (F-ROL-01)."
+        )
+    return tape
+
+
+def stored_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
     """The stored bars of a frame `load` returned (`SIGNAL_BAR_COLUMNS`), as the engine replays
-    them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at the
+    them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at each
     contract's raw prices, a spliced bar's open, high, low, and close less its `adj_offset`
-    (D-09), so that a continuous series gives each session's front at its own prices, which the
-    rolls of its roll calendar carry a position across (F-ROL-01, `rolls_within`), and in the
-    order of their closes. A back-adjusted import, without raw prices (D-49), and a window
-    without trades are refused. The store checked each row when it was written (ADR-0019), so
-    the records are built without parsing it again."""
+    (D-09), and in the order of their closes. A back-adjusted import, without raw prices
+    (D-49), and a window without trades are refused. The store checked each row when it was
+    written (ADR-0019), so the records are built without parsing it again."""
     if frame.get_column("close_raw").null_count() > 0:
         contracts = sorted(frame.get_column("contract").unique().to_list())
         raise ValueError(

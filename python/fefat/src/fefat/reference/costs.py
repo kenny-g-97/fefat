@@ -4,6 +4,7 @@ run warns of (F-FEE-01), as a scenario states it, one fee in force on every date
 and the fee of one fill, by the rules of `fefat.reference.money`."""
 
 import itertools
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -16,6 +17,8 @@ from fefat.market.fees import CryptoFee, FuturesFee
 from fefat.market.schema import FrozenModel
 from fefat.reference.ledger import Liquidity
 from fefat.reference.money import f_fee_01, f_fee_02
+from fefat.reference.tape import FundingRate
+from fefat.reference.units import day_number, instant_text
 
 
 class DatedFuturesFee(FuturesFee):
@@ -52,14 +55,6 @@ class DatedFees(FrozenModel):
                 f"{', '.join(map(str, dates))}."
             )
         return self
-
-
-_EPOCH_DAY = date(1970, 1, 1)
-
-
-def day_number(day: date) -> int:
-    """A date as the days since 1970-01-01, as the store and the Rust engine count trade dates."""
-    return (day - _EPOCH_DAY).days
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,3 +99,12 @@ def fee_of(
     if isinstance(fee, FuturesFee):
         return f_fee_01(fee, quantity), extended
     return f_fee_02(fee, value, liquidity), extended
+
+
+def funding_in_order(rates: Sequence[FundingRate]) -> None:
+    """A run's funding times in order, each once, as the Rust engine takes them (F-FND-01): a
+    time out of order or repeated is refused rather than sorted or paid twice."""
+    times = [rate.ts for rate in rates]
+    if any(later <= earlier for earlier, later in itertools.pairwise(times)):
+        listed = ", ".join(instant_text(at) for at in times)
+        raise ValueError(f"Expected the funding times in order, each once, got {listed}.")

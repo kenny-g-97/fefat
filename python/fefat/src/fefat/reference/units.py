@@ -91,6 +91,11 @@ def utc_date(nanoseconds: int) -> date:
     return (_EPOCH + timedelta(microseconds=nanoseconds // 1_000)).date()
 
 
+def day_number(day: date) -> int:
+    """A date as the days since 1970-01-01, as the store and the Rust engine count trade dates."""
+    return (day - _EPOCH.date()).days
+
+
 def money_text(units: int) -> str:
     """An amount in micro-units as the decimal it is written as, such as -0.084514."""
     return format(Decimal(units).scaleb(-MONEY_DECIMALS), "f")

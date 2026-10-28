@@ -7,6 +7,7 @@ order on the first record or bar after it. Each rule is a small function named a
 identifier, as in `fefat.reference.engine`, which calls `on_roll` at each roll and `fill_legs`
 at the first tradeable record or bar after it."""
 
+import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -30,7 +31,7 @@ from fefat.reference.orders import (
     WorkingOrder,
 )
 from fefat.reference.settings import RollHandling
-from fefat.reference.tape import Record
+from fefat.reference.tape import BarRecord, Record, stored_bars
 from fefat.reference.timeline import Moment, Priced
 from fefat.reference.units import Instant, Price, instant_text
 
@@ -77,14 +78,46 @@ class Transfer:
 
 def rolls_within(calendar: RollCalendar, tape: Sequence[Record]) -> tuple[RollRow, ...]:
     """The rolls of `calendar` that `tape` crosses, as the engines take them, never worked out
-    again (F-ROL-01): those whose session opens after the tape's first record starts, and by
-    the time its last one is available."""
-    first, last = tape[0].starts_at(), tape[-1].available_at()
+    again (F-ROL-01): those whose session opens after the tape's first record starts and by the
+    time its last one starts, so that a record follows each, a trade at the open itself coming
+    after the roll and a bar that closes at it before (F-CLK-02)."""
+    first, last = tape[0].starts_at(), tape[-1].starts_at()
     crossed = pl.col("session_open").is_between(first, last, closed="right")
     rows = calendar.rolls().filter(crossed).iter_rows(named=True)
     return tuple(
         RollRow.model_construct(**{**row, "reason": RollReason(row["reason"])}) for row in rows
     )
+
+
+def tape_across_rolls(
+    frame: pl.DataFrame, calendar: RollCalendar
+) -> tuple[tuple[BarRecord, ...], tuple[RollRow, ...]]:
+    """A series `load` spliced with `calendar` (`SIGNAL_BAR_COLUMNS`), as the engines replay it:
+    its stored bars, each session's front at its own raw prices (`stored_bars`), and the rolls
+    between them (`rolls_within`), which a run across them must be given (F-ROL-01). A frame
+    whose contract changes other than at a new front's first bar (`roll_flag`), as the bars of
+    every contract a load without splicing returns, or whose contracts are not those the rolls
+    pass between, is refused."""
+    changes = frame.sort("ts_close").filter(pl.col("contract") != pl.col("contract").shift(1))
+    unspliced = changes.filter(~pl.col("roll_flag"))
+    if not unspliced.is_empty():
+        raise ValueError(
+            f"Expected a series spliced by the roll calendar of {calendar.root}, whose contract "
+            "changes only at a new front's first bar (roll_flag), got a change to "
+            f"{unspliced.item(0, 'contract')} at {instant_text(unspliced.item(0, 'ts_open'))}: "
+            "load the root with its splice (D-44)."
+        )
+    tape = stored_bars(frame)
+    rolls = rolls_within(calendar, tape)
+    stored = frame.filter(~pl.col("zero_volume")).sort("ts_close").get_column("contract")
+    passed = [contract for contract, _ in itertools.groupby(stored)]
+    between = [rolls[0].rolled_from, *(roll.contract for roll in rolls)] if rolls else passed[:1]
+    if passed != between:
+        raise ValueError(
+            f"Expected the bars of {', '.join(between)}, the contracts the rolls of "
+            f"{calendar.root} pass between, got {', '.join(passed)}."
+        )
+    return tape, rolls
 
 
 def f_rol_01(rolls: Sequence[RollRow], contract: str) -> None:
