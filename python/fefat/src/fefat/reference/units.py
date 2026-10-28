@@ -96,6 +96,10 @@ def money_text(units: int) -> str:
     return format(Decimal(units).scaleb(-MONEY_DECIMALS), "f")
 
 
+CAPITAL = 50_000_000_000
+"""A run's capital in micro-units, 50,000 USD (D-51): the cash it starts with."""
+
+
 def exact_money(amount: Decimal) -> Fraction:
     """An amount of money as an exact count of micro-units, before it is rounded (F-FEE-03)."""
     return Fraction(amount) * 10**MONEY_DECIMALS

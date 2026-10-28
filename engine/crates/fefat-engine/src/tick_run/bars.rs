@@ -78,7 +78,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         }
         for event in events {
             match event {
-                BarEvent::Filled(execution) => self.record(execution),
+                BarEvent::Filled(execution) => self.record(execution)?,
                 BarEvent::Moved(moved) => self.log_moves(at.ts, &[moved]),
             }
         }

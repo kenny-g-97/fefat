@@ -13,6 +13,7 @@ to the log.
 
 import argparse
 import io
+import math
 import os
 import sys
 from collections import Counter
@@ -38,6 +39,7 @@ from fefat.reference.strategy import Decision, DecisionContext, OnBar, decisions
 from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import (
+    CAPITAL,
     InlineInstrument,
     InstrumentParameters,
     instant_text,
@@ -87,7 +89,8 @@ def run_scenario(
         decisions, on_bar = _template_decisions(scenario, parameters, sessions)
     else:
         decisions, on_bar = _order_decisions(scenario)
-    result = engine.run(scenario.tape, decisions, on_bar, scenario.funding, held_lots(scenario))
+    held, cash = held_lots(scenario), opening_cash(scenario)
+    result = engine.run(scenario.tape, decisions, on_bar, scenario.funding, held, cash)
     return ScenarioOutcome(scenario, result, differences(scenario, result))
 
 
@@ -113,6 +116,15 @@ def _template_decisions(
     frame = scenario.signal_frame()
     template = TemplateStrategy(scenario.strategy, frame, parameters, sessions)
     return list(decisions_of(frame)), template.on_bar
+
+
+def opening_cash(scenario: AnyScenario) -> int:
+    """The cash a scenario starts with: the capital (D-51), moved by its opening position's value
+    at its price, floored once, as the Rust ledger opens it (`Ledger::holding`)."""
+    if scenario.position is None:
+        return CAPITAL
+    parameters = instrument_parameters(scenario.instrument)
+    return CAPITAL + math.floor(-parameters.value(scenario.position.price, held_lots(scenario)))
 
 
 def held_lots(scenario: AnyScenario) -> int:

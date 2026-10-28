@@ -3,7 +3,7 @@
 //! market entry, and the instant of the flat-by time on every row exactly when the specification
 //! has one.
 
-use fefat_core::instants::Ts;
+use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::strategy_spec::Execution;
 use fefat_core::units::Price;
 
@@ -20,6 +20,8 @@ use super::TemplateError;
 pub struct SignalRow {
     /// The signal bar's close, the decision's instant.
     pub ts_close: Ts,
+    /// The trade date of the signal bar, on which the limits count (F-LIM-02).
+    pub trade_date: Option<TradeDate>,
     /// Enter long.
     pub long_entry: bool,
     /// Enter short.
@@ -52,6 +54,9 @@ pub struct SignalRow {
     pub week_end: Option<bool>,
     /// Whether an entry may be placed at its close, inside an entry window (F-TIM-04).
     pub in_window: Option<bool>,
+    /// The blackout column the limits name: true keeps the row from entering, false and null do
+    /// not (F-LIM-01).
+    pub blackout: Option<bool>,
 }
 
 impl SignalRow {
@@ -60,6 +65,7 @@ impl SignalRow {
     pub const fn at(ts_close: Ts) -> Self {
         Self {
             ts_close,
+            trade_date: None,
             long_entry: false,
             short_entry: false,
             long_exit: false,
@@ -75,6 +81,7 @@ impl SignalRow {
             session_end: None,
             week_end: None,
             in_window: None,
+            blackout: None,
         }
     }
 }
@@ -155,6 +162,25 @@ pub(super) fn require_flat_by_on_every_row(
         None => format!("none on the signal close of {}", row.ts_close),
     };
     Err(TemplateError::Refused { expected, actual })
+}
+
+/// Refuses a signal row without its trade date when the limits count by trade date (F-LIM-02).
+pub(super) fn require_trade_dates(
+    execution: &Execution,
+    rows: &[SignalRow],
+) -> Result<(), TemplateError> {
+    let limits = &execution.limits;
+    let daily = limits.max_trades_per_day.is_some()
+        || limits.max_losses_per_day.is_some()
+        || limits.daily_loss_stop.is_some()
+        || limits.profit_lock.is_some();
+    match rows.iter().find(|row| daily && row.trade_date.is_none()) {
+        Some(row) => Err(TemplateError::Refused {
+            expected: "the trade_date of every signal row for the daily limits".to_owned(),
+            actual: format!("none on the signal close of {}", row.ts_close),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// A column a time rule reads: its name, whether the specification has the rule, and its value on

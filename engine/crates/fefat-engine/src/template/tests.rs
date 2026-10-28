@@ -1,6 +1,6 @@
-//! The template's refusals, as `python/tests/test_reference_template.py` holds the reference's: a
-//! specification beyond what the template runs so far, until the rest of step 2.8 brings it, and
-//! signal rows the template cannot act on; and the exit plans it builds from the entry row.
+//! The template's refusals, as `python/tests/test_reference_template.py` holds the reference's:
+//! signal rows the template cannot act on; that every rule of the template runs; and the exit
+//! plans it builds from the entry row.
 
 use fefat_core::instants::Ts;
 use fefat_core::instrument::{InstrumentParameters, LotStep};
@@ -10,6 +10,7 @@ use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 use serde_json::{Value, json};
 
 use super::exits::exit_plan_of;
+use super::sizing::f_siz_01;
 use super::{RowFeatures, SignalRow, TemplateError, TemplateStrategy};
 use crate::exit_plan::{StopAt, TargetAt, TrailDistance};
 use crate::strategy::DecisionError;
@@ -64,31 +65,8 @@ fn refused_row<T: std::fmt::Debug>(decided: Result<T, DecisionError>) -> String 
 }
 
 #[test]
-fn a_specification_beyond_the_basic_subset_is_refused_until_step_2_8() {
-    let refusals = [
-        (
-            json!({"limits": {"cooldown_after_loss": {"kind": "bars", "bars": 3}}}),
-            "entry limits",
-        ),
-        (json!({"limits": {"fresh_signal": true}}), "entry limits"),
-        (
-            json!({"sizing": {"kind": "notional", "amount": 25_000.0}}),
-            "a size other than fixed",
-        ),
-    ];
-    for (changes, refused) in refusals {
-        let template = TemplateStrategy::new(&spec_with(&changes), vec![entry_at(0)], &es());
-        let expected = TemplateError::BeyondTheSubset {
-            refused: refused.to_owned(),
-        };
-        assert_eq!(template.err(), Some(expected), "{changes}");
-    }
-    assert!(TemplateStrategy::new(&spec_with(&json!({})), vec![entry_at(0)], &es()).is_ok());
-}
-
-#[test]
-fn every_rule_of_the_exit_plan_runs() {
-    // Step 2.3 refused these until step 2.8; S-template-008 to S-template-033 pin their fills.
+fn every_rule_of_the_template_runs() {
+    // Step 2.3 refused these until step 2.8; S-template-008 to S-template-071 pin their fills.
     let ticks = |ticks: u32| json!({"kind": "ticks", "ticks": ticks});
     let feature = json!({"kind": "atr", "multiple": 2.0, "feature": "atr_14"});
     let exit_plans = [
@@ -103,6 +81,13 @@ fn every_rule_of_the_exit_plan_runs() {
         json!({"breakeven": {"trigger": ticks(8)}}),
         json!({"trailing": {"by": ticks(8)}}),
         json!({"trailing": {"by": {"kind": "column"}, "update": "bar_close"}}),
+        json!({"entry": {"kind": "limit_offset", "ticks": 2, "time_to_live_bars": 3}}),
+        json!({"on_opposite_signal": "reverse"}),
+        json!({"time": {"tz": "UTC", "max_bars": 12, "max_minutes": 60}}),
+        json!({"limits": {"cooldown_after_loss": {"kind": "bars", "bars": 3}}}),
+        json!({"limits": {"fresh_signal": true, "blackout": "news"}}),
+        json!({"sizing": {"kind": "notional", "amount": 25_000.0}}),
+        json!({"sizing": {"kind": "risk_percent", "percent": 1.0}}),
     ];
     for changes in exit_plans {
         let template = TemplateStrategy::new(&spec_with(&changes), vec![entry_at(0)], &es());
@@ -150,17 +135,16 @@ fn signal_rows_out_of_order_or_with_both_entries_on_a_bar_are_refused() {
 
 #[test]
 fn a_row_whose_size_or_column_prices_the_template_cannot_act_on_is_refused() {
-    let fixed = TemplateStrategy::new(&spec_with(&json!({})), vec![entry_at(0)], &es()).unwrap();
     let doubled = SignalRow {
         size_mult: Some(2.0),
         ..entry_at(0)
     };
-    assert_eq!(fixed.lots_at(&doubled), Ok(Qty(2)));
+    assert_eq!(f_siz_01(Qty(1), &doubled), Ok(Qty(2)));
     let a_lot_and_a_half = SignalRow {
         size_mult: Some(1.5),
         ..entry_at(0)
     };
-    let refused = refused_row(fixed.lots_at(&a_lot_and_a_half));
+    let refused = refused_row(f_siz_01(Qty(1), &a_lot_and_a_half));
     assert!(
         refused.starts_with("a size_mult that makes whole lots"),
         "{refused}"
@@ -265,4 +249,23 @@ fn a_time_rule_needs_its_column_on_every_signal_row() {
     };
     let spec = spec_with(&json!({ "time": overnight }));
     assert!(TemplateStrategy::new(&spec, vec![flagged], &es()).is_ok());
+}
+
+#[test]
+fn the_daily_limits_need_the_trade_date_of_every_signal_row() {
+    // F-LIM-02 counts by trade date, which `fefat.reference.rust_batch` writes on every row.
+    let spec = spec_with(&json!({"limits": {"max_trades_per_day": 2}}));
+    let refused = match TemplateStrategy::new(&spec, vec![entry_at(0)], &es()) {
+        Err(TemplateError::Refused { expected, .. }) => expected,
+        other => panic!("Expected refused signal rows, got {other:?}"),
+    };
+    assert_eq!(
+        refused,
+        "the trade_date of every signal row for the daily limits"
+    );
+    let dated = SignalRow {
+        trade_date: Some(fefat_core::instants::TradeDate(20_517)),
+        ..entry_at(0)
+    };
+    assert!(TemplateStrategy::new(&spec, vec![dated], &es()).is_ok());
 }

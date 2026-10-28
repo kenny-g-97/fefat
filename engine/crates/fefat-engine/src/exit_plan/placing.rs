@@ -98,7 +98,12 @@ pub(crate) fn place(
 
 /// A stop below a long's fill: at a price, in ticks, or a percentage of the fill price rounded
 /// down to the tick (F-RND-01).
-fn stop_level(at: StopAt, side: Side, fill: Price, tick: Price) -> Result<Price, Overflow> {
+pub(crate) fn stop_level(
+    at: StopAt,
+    side: Side,
+    fill: Price,
+    tick: Price,
+) -> Result<Price, Overflow> {
     match at {
         StopAt::Price(price) => Ok(price),
         StopAt::TicksFromFill(ticks) => side.opposite().moved(fill, ticks, tick),

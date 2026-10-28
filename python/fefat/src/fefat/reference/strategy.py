@@ -9,6 +9,7 @@ closes its position. A signal strategy's specification runs through the same pro
             context.market(Side.BUY, 1, ExitPlan.in_ticks(stop_ticks=12, target_ticks=24))
 """
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,7 @@ from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.orders import (
     EXIT_ROLES,
     Book,
+    ClosedTrade,
     Order,
     OrderKind,
     OrderRole,
@@ -90,6 +92,22 @@ class DecisionContext:
         """The mark, the last tradeable price before the decision (F-MRK-01), none before the
         first."""
         return self._book.mark
+
+    @property
+    def equity(self) -> int:
+        """Cash plus the open position's value at the mark, floored, in micro-units (F-MRK-01)."""
+        book = self._book
+        if book.position == 0:
+            return book.cash
+        if book.mark is None:
+            raise ValueError(
+                f"Expected a mark for the equity at {instant_text(self.now)}, got none."
+            )
+        return book.cash + math.floor(self._instrument.value(book.mark, book.position))
+
+    def closed_trades(self, after: int) -> list[ClosedTrade]:
+        """The trades closed so far but the first `after` (F-LIM-02)."""
+        return self._book.closed_trades[after:]
 
     @property
     def opened_at(self) -> int | None:

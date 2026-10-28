@@ -33,6 +33,7 @@ from fefat.reference.settings import RunSettings
 from fefat.reference.tape import BarRecord, Record, TbboRecord
 from fefat.reference.time_rules import with_time_rules
 from fefat.reference.units import (
+    CAPITAL,
     PRICE_DECIMALS,
     InstrumentParameters,
     instrument_parameters,
@@ -41,8 +42,6 @@ from fefat.reference.units import (
 from fefat.strategy import exits as rules
 from fefat.strategy.spec import StrategySpec
 
-CAPITAL = 50_000_000_000
-"""The run's capital in micro-units, 50,000 USD (D-51): the ledger's starting cash."""
 NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
 _OPTIONAL_SIGNALS = (
@@ -459,7 +458,11 @@ def _template_rows(
     times = [name for name in _TIME_COLUMNS if name in timed.columns]
     features = _feature_columns(strategy, frame)
     case = pl.lit(number, dtype=pl.Int64).alias("case")
-    return timed.select(case, *kept, *times, *features)
+    days = [pl.col("trade_date").cast(pl.Int32).cast(pl.Int64)] if "trade_date" in frame else []
+    blackout, flags = strategy.execution.limits.blackout, []
+    if blackout is not None and blackout in frame.columns:
+        flags.append(pl.col(blackout).cast(pl.Boolean).alias("blackout"))
+    return timed.select(case, *days, *kept, *times, *features, *flags)
 
 
 def _feature_columns(strategy: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:

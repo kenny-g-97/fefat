@@ -5,10 +5,10 @@
 //! template is [`crate::template::TemplateStrategy`].
 
 use fefat_core::instants::Ts;
-use fefat_core::ledger::{Ledger, Position};
+use fefat_core::ledger::{Ledger, LedgerError, Position};
 use fefat_core::orders::{ExitReason, TimeInForce};
 use fefat_core::orders::{OcoGroupId, Order, OrderId, OrderKind, OrderRole, OrderState, Side};
-use fefat_core::units::{Overflow, Price, Qty};
+use fefat_core::units::{Money, Overflow, Price, Qty};
 use thiserror::Error;
 
 use crate::book::{Book, BracketLink, Closing, WorkingOrder};
@@ -73,6 +73,9 @@ pub enum DecisionError {
     /// A signal row an exit plan cannot follow (F-RND-01, F-TRL-02).
     #[error(transparent)]
     Plan(#[from] PlanError),
+    /// Equity the ledger cannot work out, a position without a mark.
+    #[error(transparent)]
+    Ledger(#[from] LedgerError),
     /// An instant or a price beyond 64 bits.
     #[error(transparent)]
     Overflow(#[from] Overflow),
@@ -85,6 +88,7 @@ pub struct DecisionContext<'run> {
     book: &'run mut Book,
     log: &'run mut Vec<LogEntry>,
     ledger: &'run Ledger,
+    closed_trades: &'run [ClosedTrade],
     now: Ts,
     timeline: usize,
     latency_nanoseconds: i64,
@@ -95,6 +99,7 @@ impl<'run> DecisionContext<'run> {
         book: &'run mut Book,
         log: &'run mut Vec<LogEntry>,
         ledger: &'run Ledger,
+        closed_trades: &'run [ClosedTrade],
         now: Ts,
         timeline: usize,
         latency_nanoseconds: i64,
@@ -103,6 +108,7 @@ impl<'run> DecisionContext<'run> {
             book,
             log,
             ledger,
+            closed_trades,
             now,
             timeline,
             latency_nanoseconds,
@@ -117,6 +123,16 @@ impl<'run> DecisionContext<'run> {
     /// The mark, the last tradeable price before the decision (F-MRK-01), none before the first.
     pub const fn mark(&self) -> Option<Price> {
         self.ledger.mark()
+    }
+
+    /// Cash plus the open position's value at the mark, floored (F-MRK-01).
+    pub fn equity(&self) -> Result<Money, DecisionError> {
+        Ok(self.ledger.equity()?)
+    }
+
+    /// The trades closed so far but the first `after` (F-LIM-02).
+    pub fn closed_trades(&self, after: usize) -> &[ClosedTrade] {
+        self.closed_trades.get(after..).unwrap_or_default()
     }
 
     /// The instant of the fill that opened the position, none when flat or for a position held
@@ -319,6 +335,16 @@ impl<'run> DecisionContext<'run> {
             .place(WorkingOrder::placed(order, self.timeline, link));
         Ok(())
     }
+}
+
+/// A trade that closed (`docs/spec/fill-semantics.md` §20): the instant of the fill that left
+/// the position flat, and what its fills moved the cash by, less their fees, a loss below zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClosedTrade {
+    /// The instant of the fill that left the position flat.
+    pub closed_at: Ts,
+    /// What its fills moved the cash by, less their fees.
+    pub pnl: Money,
 }
 
 /// An entry a decision places: its side, its class with its price, its lots, how long it works,

@@ -26,12 +26,12 @@ fn flatten_leaves_a_stop_triggered_on_tbbo_to_fill_as_the_market_order_it_is() {
         oco: None,
         bracket: None,
     };
-    let mut placing = DecisionContext::new(&mut book, &mut log, &ledger, Ts(0), 0, 0);
+    let mut placing = DecisionContext::new(&mut book, &mut log, &ledger, &[], Ts(0), 0, 0);
     placing.place(&stop).unwrap();
     book.activate(OrderId(1)).unwrap();
     book.trigger(OrderId(1)).unwrap();
 
-    let mut later = DecisionContext::new(&mut book, &mut log, &ledger, Ts(1), 1, 0);
+    let mut later = DecisionContext::new(&mut book, &mut log, &ledger, &[], Ts(1), 1, 0);
     later.flatten(ExitReason::Strategy).unwrap();
 
     let still = book.live_in(OrderId(1), OrderState::Triggered);

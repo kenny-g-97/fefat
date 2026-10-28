@@ -63,8 +63,9 @@ class Priced(NamedTuple):
 class Execution:
     """A fill as the rules give it, before it is booked: the order, its price, the rule that
     priced it, its reference before ticks (F-TAG-01), its liquidity, the size its record shows
-    (F-QTY-01), and what it set off: the orders it cancelled, its exit plan's legs, and the stop
-    of its plan it reduced, by id, with the lots left (F-PLN-02)."""
+    (F-QTY-01), and what it set off: the orders it cancelled, its exit plan's legs, the stop of
+    its plan it reduced, by id, with the lots left (F-PLN-02), and whether it left the position
+    flat, closing a trade (§20)."""
 
     order: WorkingOrder
     price: int
@@ -75,6 +76,7 @@ class Execution:
     cancelled: tuple[WorkingOrder, ...]
     bracket: tuple[WorkingOrder, ...]
     reduced: tuple[int, int] | None = None
+    flat_after: bool = False
 
 
 @dataclass(frozen=True, slots=True)

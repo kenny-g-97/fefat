@@ -34,8 +34,8 @@ rules: [F-ACT-01, F-ENT-01, F-ENT-02, F-ENT-03, F-MKT-01, F-OCO-02, F-STP-01, F-
 # next tradeable record's quote (F-STP-02), a market order already sent;
 # at 21:05, the flat-by time, the entry is on its way into a position, so the template decides
 # nothing more (F-ENT-01, F-ENT-03);
-# the record at 21:05:00.300 fills it at the higher of 5001.00 + 0 and its ask, 5001.75; its plan:
-# stop, order 2, at 4999.75, target, order 3, at 5003.75;
+# the record at 21:05:00.300 fills it at the higher of 5001.00 + 0 = 5001.00 and its ask,
+# 5001.75; its plan: stop, order 2, at 4999.75, target, order 3, at 5003.75;
 # at 21:10, past the flat-by time, the template sells the long at the market, order 4, exit
 # reason flat_by (F-TIM-01), cancelling orders 2 and 3; it fills on the record at 21:10:00.300
 # at its bid, 5002.00 (F-MKT-01).

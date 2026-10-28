@@ -13,7 +13,7 @@ mod tests;
 
 pub(crate) use live::{LegSettlement, LivePlan, Proposal};
 pub use live::{Move, MoveRule, PlanRow};
-pub(crate) use placing::{FilledAt, place};
+pub(crate) use placing::{FilledAt, place, stop_level};
 
 use std::cmp::Ordering;
 

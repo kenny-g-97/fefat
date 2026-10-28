@@ -9,16 +9,17 @@
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::PricingRule;
 use fefat_core::instants::Ts;
-use fefat_core::ledger::Ledger;
+use fefat_core::ledger::{Ledger, Position};
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::{Order, OrderId, OrderKind, OrderState};
-use fefat_core::units::{Price, Qty};
+use fefat_core::units::{Money, Price, Qty};
 
 use super::{BookedFill, RunError, TickRecord, TickRun};
 use crate::book::{Book, Closing};
 use crate::event_log::LogEntry;
 use crate::exit_plan::{self, FilledAt, Move};
 use crate::rules::{self, Priced};
+use crate::strategy::ClosedTrade;
 
 /// Where a fill happens in the run: its instant, the point of the timeline after which its exit
 /// plan's legs see records (F-OCO-02), and the fidelity of the data that priced it (F-TAG-01).
@@ -31,13 +32,15 @@ pub(super) struct FillPoint {
 
 /// A fill as the book and the ledger took it, before the log records it: the fill with the cash
 /// its value moved, the orders of its OCO group or its exit plan it cancelled, the stop of its
-/// plan it reduced with the lots left (F-PLN-02), and its exit plan's legs.
+/// plan it reduced with the lots left (F-PLN-02), its exit plan's legs, and whether it left the
+/// position flat, closing a trade (§20).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Execution {
     pub(super) booked: BookedFill,
     pub(super) cancelled: Vec<OrderId>,
     pub(super) reduced: Option<(OrderId, Qty)>,
     pub(super) legs: Vec<Order>,
+    pub(super) flat_after: bool,
 }
 
 /// Fills `id` as `priced` says at `at`, the market at `market`: the book closes it, the ledger
@@ -73,6 +76,7 @@ pub(super) fn execute(
         cancelled,
         reduced: settled.reduced,
         legs,
+        flat_after: ledger.position() == Position::Flat,
     })
 }
 
@@ -296,20 +300,27 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         };
         let (book, ledger) = (&mut self.book, &mut self.ledger);
         let execution = execute(book, ledger, id, &priced, at, record.price)?;
-        self.record(execution);
-        Ok(())
+        self.record(execution)
     }
 
     /// Logs a fill, the orders of its group or its plan it cancelled, the stop of its plan it
     /// reduced, and its exit plan's legs, as the reference's `EventLog.filled` does, and keeps it
-    /// among the run's fills.
-    pub(super) fn record(&mut self, execution: Execution) {
+    /// among the run's fills; the fill that leaves the position flat closes its trade (§20).
+    pub(super) fn record(&mut self, execution: Execution) -> Result<(), RunError> {
         let Execution {
             booked,
             cancelled,
             reduced,
             legs,
+            flat_after,
         } = execution;
+        let moved = booked.cash.checked_sub(booked.fill.fee)?;
+        self.trade_cash = self.trade_cash.checked_add(moved)?;
+        if flat_after {
+            let closed_at = booked.fill.ts;
+            let pnl = std::mem::replace(&mut self.trade_cash, Money(0));
+            self.closed_trades.push(ClosedTrade { closed_at, pnl });
+        }
         let (ts, id) = (booked.fill.ts, booked.fill.order);
         self.log.push(LogEntry::filled(&booked.fill));
         let cancelled = cancelled
@@ -322,6 +333,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let placed = legs.iter().map(|leg| LogEntry::bracket_placed(leg, id));
         self.log.extend(placed);
         self.fills.push(booked);
+        Ok(())
     }
 
     fn tick(&self) -> Price {

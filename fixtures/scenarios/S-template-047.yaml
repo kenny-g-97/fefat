@@ -27,7 +27,8 @@ expected:
 rules: [F-ACT-01, F-ENT-01, F-ENT-02, F-ENT-03, F-LMT-01, F-LMT-03, F-OCO-02]
 
 # Arithmetic (ES, tick 0.25; limits fill through their price, at it: F-LMT-01, F-LMT-03):
-# at 14:30 long_entry places a buy limit at 4999.00, order 1 (F-ENT-02), live for two decisions;
+# at 14:30 long_entry places a buy limit at 4999.00, order 1 (F-ENT-02), live for two decisions:
+# it is cancelled at the decision 0 + 2 = 2 after it, 14:32;
 # at 14:31 order 1 is still live, so the template, which enters only flat with nothing live,
 # places nothing (F-ENT-01);
 # at 14:32, the second decision after the one that placed it, order 1 is still live and is

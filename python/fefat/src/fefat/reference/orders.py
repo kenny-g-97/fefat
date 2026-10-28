@@ -254,13 +254,25 @@ class WorkingOrder:
         return f"{self.side} {self.kind}{at} x {self.lots}"
 
 
+@dataclass(frozen=True, slots=True)
+class ClosedTrade:
+    """A trade that closed (`docs/spec/fill-semantics.md` §20): the instant of the fill that left
+    the position flat, and what its fills moved the cash by, less their fees, in micro-units, a
+    loss below zero."""
+
+    closed_at: int
+    pnl: int
+
+
 @dataclass(slots=True)
 class Book:
     """What the engine holds while it runs: the live orders, the position in lots (positive
     long, negative short), the mark (F-MRK-01), none before the first tradeable price, the next
     id it gives an order of its own, the exit plans of the entries that have filled, by the
-    entry's id, while a leg of theirs is live (F-PLN-01), and the instant of the fill that opened
-    the position, none when flat or for a position held when the tape starts (F-TIM-02)."""
+    entry's id, while a leg of theirs is live (F-PLN-01), the instant of the fill that opened
+    the position, none when flat or for a position held when the tape starts (F-TIM-02), the
+    cash in micro-units, what the fills of the trade still open moved it by, and the trades
+    closed so far (F-LIM-02)."""
 
     orders: list[WorkingOrder] = field(default_factory=list)
     position: int = 0
@@ -268,6 +280,9 @@ class Book:
     next_id: int = 1
     plans: "dict[int, LivePlan]" = field(default_factory=dict)
     opened_at: int | None = None
+    cash: int = 0
+    trade_cash: int = 0
+    closed_trades: list[ClosedTrade] = field(default_factory=list)
 
     def live(self, *states: OrderState, kind: OrderKind | None = None) -> list[WorkingOrder]:
         """The live orders in one of `states`, all of them without, of `kind` where it is
@@ -305,6 +320,15 @@ class Book:
         elif before * self.position <= 0:
             self.opened_at = ts
 
+    def booked(self, cash: int, ts: int, flat_after: bool) -> None:
+        """A fill booked at `ts`, its value and fee moving the cash by `cash`, and the trade it
+        belongs to with it: the fill that leaves the position flat closes the trade (§20)."""
+        self.cash += cash
+        self.trade_cash += cash
+        if flat_after:
+            self.closed_trades.append(ClosedTrade(closed_at=ts, pnl=self.trade_cash))
+            self.trade_cash = 0
+
     def live_order(self, order_id: int | None) -> WorkingOrder | None:
         """The live order `order_id`, if there is one."""
         return next((order for order in self.orders if order.id == order_id), None)
@@ -319,7 +343,9 @@ class Book:
         was."""
         plans = {entry: plan.copied() for entry, plan in self.plans.items()}
         orders = [replace(order) for order in self.orders]
-        return Book(orders, self.position, self.mark, self.next_id, plans, self.opened_at)
+        copied = Book(orders, self.position, self.mark, self.next_id, plans, self.opened_at)
+        copied.cash, copied.trade_cash = self.cash, self.trade_cash
+        return copied
 
     def new_id(self) -> int:
         self.next_id += 1

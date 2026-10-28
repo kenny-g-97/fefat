@@ -31,7 +31,7 @@ from fefat.reference.settings import LimitFill, RunSettings
 from fefat.reference.strategy import Decision, DecisionContext, OnBar
 from fefat.reference.tape import BarRecord, FundingRate, Record, TbboRecord, TradeRecord
 from fefat.reference.timeline import Event, Execution, Extreme, Moment, Phase, Priced, RunResult
-from fefat.reference.units import InstrumentParameters, instant_text
+from fefat.reference.units import CAPITAL, InstrumentParameters, instant_text
 
 STOP, MARKET, LIMIT = OrderKind.STOP, OrderKind.MARKET, OrderKind.LIMIT
 WAITING, WORKING, TRIGGERED = OrderState.WAITING, OrderState.WORKING, OrderState.TRIGGERED
@@ -284,12 +284,13 @@ class ReferenceEngine:
         on_bar: OnBar | None = None,
         funding_rates: Sequence[FundingRate] = (),
         position: int = 0,
+        cash: int = CAPITAL,
     ) -> RunResult:
         """Runs `tape` with the funding times and the decisions, calling `on_bar` at each, from
-        `position` lots held when it starts (positive long)."""
+        `position` lots held when it starts (positive long) and `cash` in micro-units."""
         if decisions and on_bar is None:
             raise ValueError("Expected an on_bar strategy for the decisions, got none.")
-        self.book, self.log = Book(position=position), EventLog()
+        self.book, self.log = Book(position=position, cash=cash), EventLog()
         self.in_break = False
         self.fills: list[Fill] = []
         self.funding: list[FundingPayment] = []
@@ -455,7 +456,7 @@ class ReferenceEngine:
         cancelled = (*f_oco_01(book, order), *settled.cancelled)
         legs = tuple(f_oco_02(book, order, price, market, at, self.tick))
         execution = Execution(order, price, rule, reference, liquidity, shown, cancelled, legs)
-        return replace(execution, reduced=settled.reduced)
+        return replace(execution, reduced=settled.reduced, flat_after=book.position == 0)
 
     def _book(self, ts: int, execution: Execution, flags: tuple[FillFlag, ...] = ()) -> None:
         """Books a fill: its value moves the cash and it pays its fee, each rounded once
@@ -468,6 +469,7 @@ class ReferenceEngine:
         fill = f_tag_01(execution, ts, self.fidelity, self.tick)
         fill = fill.model_copy(update={"flags": (*flags, *fill.flags), "fee": fee, "cash": cash})
         self.fills.append(fill)
+        self.book.booked(cash - fee, ts, execution.flat_after)
         self.log.filled(fill, execution.cancelled, execution.bracket, execution.reduced)
 
     def _fee(self, value: Fraction, execution: Execution) -> Fraction:
@@ -487,6 +489,7 @@ class ReferenceEngine:
         owed = f_fnd_01(self.book.position, mark, self.instrument, rate.rate)
         change = f_fee_03(owed, f"the funding at {instant_text(rate.ts)}")
         self.funding.append(FundingPayment(ts=rate.ts, amount=change))
+        self.book.cash += change
         self.log.funded(rate.ts, change, mark)
 
 

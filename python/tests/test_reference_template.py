@@ -32,11 +32,14 @@ from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_nanoseconds, instrument_parameters, price_units
 from fefat.strategy import (
     BarsCooldown,
+    EntryWindow,
     Execution,
     Fixed,
+    Limit,
     Limits,
     Market,
     Notional,
+    OppositeSignal,
     Stop,
     StrategySpec,
     Target,
@@ -116,19 +119,22 @@ def test_a_flat_by_time_inside_a_halt_or_off_the_grid_is_refused(
 
 
 @pytest.mark.parametrize(
-    ("rules", "refused"),
+    "rules",
     [
-        ({"limits": Limits(cooldown_after_loss=BarsCooldown(bars=3))}, "entry limits"),
-        ({"sizing": Notional(25_000)}, "sizing of kind notional"),
+        {"entry": Limit(offset_ticks=2, time_to_live_bars=3)},
+        {"on_opposite_signal": OppositeSignal.REVERSE},
+        {"time": TimeRules(tz="UTC", windows=[EntryWindow(start="08:30", end="14:30")])},
+        {"time": TimeRules(tz="UTC", max_bars=12, max_minutes=60)},
+        {"limits": Limits(cooldown_after_loss=BarsCooldown(bars=3), fresh_signal=True)},
+        {"sizing": Notional(25_000)},
     ],
+    ids=["limit entry", "reverse", "windows", "max bars and minutes", "limits", "notional"],
 )
-def test_a_spec_beyond_the_basic_subset_is_refused_until_step_2_8(
-    rules: dict[str, Any], refused: str
-) -> None:
+def test_every_rule_of_the_template_runs(rules: dict[str, Any]) -> None:
+    # Step 2.3 refused these until step 2.8; S-template-035 to S-template-071 pin their fills.
     frame = signals({"ts_close": "14:31:00", "long_entry": True})
 
-    with pytest.raises(ValueError, match=rf"basic subset .*{re.escape(refused)}.*step 2\.8"):
-        TemplateStrategy(spec_of(**rules), frame, MES, None)
+    TemplateStrategy(spec_of(**rules), frame, MES, None)
 
 
 @pytest.mark.parametrize(

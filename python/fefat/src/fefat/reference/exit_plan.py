@@ -419,7 +419,7 @@ def place_exit_plan(
     if plan is None:
         return []
     side, trailing = entry.side, plan.trailing
-    stop = None if plan.stop is None else _stop_level(plan.stop.price, side, fill, tick)
+    stop = None if plan.stop is None else stop_level(plan.stop.price, side, fill, tick)
     risk = None if stop is None else f_rnd_02(side, fill, stop, tick)
     if stop is not None and trailing is not None:
         stop = _raised_at_the_fill(trailing, side, stop, market, tick)
@@ -470,7 +470,7 @@ def _raised_at_the_fill(
     return side.better(stop, f_trl_03(side, stop, level, trailing.step_ticks, tick))
 
 
-def _stop_level(price: LegPrice, side: Side, fill: int, tick: int) -> int:
+def stop_level(price: LegPrice, side: Side, fill: int, tick: int) -> int:
     """A stop below a long's fill: in ticks, a percentage of the fill price rounded down to the
     tick (F-RND-01), or at a price."""
     if isinstance(price, AtPrice):

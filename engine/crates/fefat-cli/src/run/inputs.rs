@@ -126,6 +126,8 @@ struct SignalColumns<'batch> {
     wake: Option<&'batch BooleanArray>,
     flat_by: Option<&'batch Int64Array>,
     times: [Option<&'batch BooleanArray>; 3],
+    trade_date: Option<&'batch Int64Array>,
+    blackout: Option<&'batch BooleanArray>,
 }
 
 impl<'batch> SignalColumns<'batch> {
@@ -174,6 +176,8 @@ impl<'batch> SignalColumns<'batch> {
                 flags("week_end")?,
                 flags("in_window")?,
             ],
+            trade_date: ints("trade_date")?,
+            blackout: flags("blackout")?,
         })
     }
 
@@ -189,12 +193,16 @@ impl<'batch> SignalColumns<'batch> {
             value.map(|column| column.value(row))
         });
         let flat_by = self.flat_by.filter(|column| column.is_valid(row));
+        let trade_date = self.trade_date.filter(|column| column.is_valid(row));
+        let trade_date = trade_date.and_then(|column| i32::try_from(column.value(row)).ok());
+        let blackout = self.blackout.filter(|column| column.is_valid(row));
         let [session_end, week_end, in_window] = self.times.map(|column| {
             let flag = column.filter(|column| column.is_valid(row));
             flag.map(|column| column.value(row))
         });
         SignalRow {
             ts_close,
+            trade_date: trade_date.map(TradeDate),
             long_entry,
             short_entry,
             long_exit,
@@ -219,6 +227,7 @@ impl<'batch> SignalColumns<'batch> {
             session_end,
             week_end,
             in_window,
+            blackout: blackout.map(|column| column.value(row)),
         }
     }
 }
