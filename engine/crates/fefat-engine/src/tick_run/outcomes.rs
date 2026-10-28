@@ -1,8 +1,10 @@
 //! What the loop produces, step by step and at its end, and what stops it.
 
+use fefat_core::costs::CostLine;
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::Fill;
 use fefat_core::instants::{TradeDate, Ts};
+use fefat_core::instrument::Contract;
 use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::market_data::{BarRow, MarketDataError};
 use fefat_core::units::{Money, Overflow};
@@ -26,6 +28,8 @@ pub enum Stepped {
         /// How many records it held.
         units: usize,
     },
+    /// A session event or a timer at this instant: a roll, or a funding time (F-CLK-02).
+    Timer(Ts),
     /// The decision at this instant.
     Decision(Ts),
 }
@@ -36,22 +40,26 @@ impl Stepped {
     pub(super) const fn events(&self) -> usize {
         match self {
             Self::Skipped { units } => *units,
-            Self::Record(_) | Self::Bar(_) | Self::Decision(_) => 1,
+            Self::Record(_) | Self::Bar(_) | Self::Timer(_) | Self::Decision(_) => 1,
         }
     }
 }
 
-/// A fill with what its value moved the cash by, the reference engine's `Fill.cash`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A fill with what its value moved the cash by, the reference engine's `Fill.cash`, and the
+/// contract it is of (F-TAG-01, F-ROL-01).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BookedFill {
     /// The fill, as F-TAG-01 records it.
     pub fill: Fill,
     /// The cash its value moved, rounded against the trader (F-FEE-03).
     pub cash: Money,
+    /// The contract it is of: the run's front, or a roll's close leg's contract rolled from.
+    pub contract: Contract,
 }
 
-/// What a run produces: every order in its last state, the fills, the event log, and the ledger
-/// it ends with.
+/// What a run produces: every order in its last state, the fills, the event log, the ledger it
+/// ends with, and its cost lines, each fee of a run that names a fee table and each funding
+/// payment, in the order they were paid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunOutputs {
     /// Every order, by id.
@@ -62,6 +70,8 @@ pub struct RunOutputs {
     pub log: Vec<LogEntry>,
     /// The ledger at the end.
     pub ledger: Ledger,
+    /// The cost lines, in the order they were paid.
+    pub costs: Vec<CostLine>,
 }
 
 impl RunOutputs {
@@ -129,6 +139,48 @@ pub enum RunError {
         previous: Ts,
         /// The next record's instant.
         next: Ts,
+    },
+    /// Rolls or funding times out of the order of their instants, or two at one instant.
+    #[error(
+        "Expected the {what} in ascending order of their instants, each once, got {next} after {previous}"
+    )]
+    TimersOutOfOrder {
+        /// `rolls` or `funding times`.
+        what: &'static str,
+        /// The earlier instant.
+        previous: Ts,
+        /// The instant after it.
+        next: Ts,
+    },
+    /// A roll that does not roll from the front the one before it left, or that rolls to it.
+    #[error(
+        "Expected the roll at {at} to roll from {front} to another contract, got {rolled_from} to \
+         {contract} (F-ROL-01)"
+    )]
+    RollFromAnotherFront {
+        /// The roll's open.
+        at: Ts,
+        /// The front the run trades.
+        front: Contract,
+        /// The contract the roll names as rolled from.
+        rolled_from: Contract,
+        /// The roll's new front.
+        contract: Contract,
+    },
+    /// A roll whose open comes before the legs of the roll before it have filled.
+    #[error(
+        "Expected the legs of the roll before {at} to fill before it, got them still on their way \
+         (F-ROL-01)"
+    )]
+    RollBeforeItsLegs {
+        /// The second roll's open.
+        at: Ts,
+    },
+    /// A funding time with an open position and no price to value it at.
+    #[error("Expected a mark at the funding of {at}, got none (F-FND-01)")]
+    FundingWithoutMark {
+        /// The funding time.
+        at: Ts,
     },
     /// An order the run lost, which is a defect of the loop.
     #[error("Expected order {order} among the live orders, got none")]

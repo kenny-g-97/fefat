@@ -1,6 +1,7 @@
 //! The Arrow IPC files a batch writes, each row tagged with its case's place in `run.json`: the
-//! fills, the orders in their last state, the event log, and each case's ledger at its end, in
-//! Arrow IPC's file format, uncompressed, which Polars' `read_ipc` reads.
+//! fills, each with the contract it is of, the orders in their last state, the event log, each
+//! case's ledger at its end, and its cost lines, in Arrow IPC's file format, uncompressed, which
+//! Polars' `read_ipc` reads.
 
 use std::fs::File;
 use std::io::BufWriter;
@@ -10,6 +11,7 @@ use std::sync::Arc;
 use arrow_array::{ArrayRef, BooleanArray, Int64Array, RecordBatch, StringArray, UInt64Array};
 use arrow_ipc::writer::FileWriter;
 use arrow_schema::{ArrowError, Field, Schema};
+use fefat_core::costs::{CostLine, CostReason};
 use fefat_engine::book::WorkingOrder;
 use fefat_engine::event_log::LogEntry;
 use fefat_engine::tick_run::{BookedFill, RunOutputs};
@@ -19,14 +21,17 @@ use super::{BatchError, arrow_error};
 type FillRow<'run> = (i64, &'run BookedFill);
 type OrderRow<'run> = (i64, &'run WorkingOrder);
 type LogRow<'run> = (i64, &'run LogEntry);
+type CostRow<'run> = (i64, &'run CostLine);
 
-/// Writes `fills.arrow`, `orders.arrow`, `log.arrow`, and `ledger.arrow` into `output`.
+/// Writes `fills.arrow`, `orders.arrow`, `log.arrow`, `ledger.arrow`, and `costs.arrow` into
+/// `output`.
 pub(super) fn write_outputs(output: &Path, runs: &[(i64, RunOutputs)]) -> Result<(), BatchError> {
     let written = [
         ("fills.arrow", fills_batch(runs)),
         ("orders.arrow", orders_batch(runs)),
         ("log.arrow", log_batch(runs)),
         ("ledger.arrow", ledger_batch(runs)),
+        ("costs.arrow", costs_batch(runs)),
     ];
     for (name, batch) in written {
         let path = output.join(name);
@@ -80,6 +85,45 @@ fn fills_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
         ),
         ("fee", int(|(_, booked)| booked.fill.fee.0)),
         ("cash", int(|(_, booked)| booked.cash.0)),
+        ("contract", text(|(_, booked)| booked.contract.0.clone())),
+    ])
+}
+
+/// Each case's cost lines, in the order they were paid: when, why, `fee` of an order or
+/// `funding` at a rate in 1e-9 units, and the amount the trader paid in micro-units.
+fn costs_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
+    let rows: Vec<CostRow<'_>> = runs
+        .iter()
+        .flat_map(|(case, run)| run.costs.iter().map(move |line| (*case, line)))
+        .collect();
+    let int = |value: fn(&CostRow<'_>) -> i64| -> ArrayRef {
+        Arc::new(Int64Array::from_iter_values(rows.iter().map(value)))
+    };
+    let reasons = rows.iter().map(|(_, line)| match line.reason {
+        CostReason::Fee { .. } => "fee",
+        CostReason::Funding { .. } => "funding",
+    });
+    let orders = rows.iter().map(|(_, line)| match line.reason {
+        CostReason::Fee { order } => Some(order.0),
+        CostReason::Funding { .. } => None,
+    });
+    let rates = rows.iter().map(|(_, line)| match line.reason {
+        CostReason::Fee { .. } => None,
+        CostReason::Funding { rate } => Some(rate.0),
+    });
+    batch(vec![
+        ("case", int(|(case, _)| *case)),
+        ("ts", int(|(_, line)| line.ts.0)),
+        ("reason", Arc::new(StringArray::from_iter_values(reasons))),
+        (
+            "order",
+            Arc::new(UInt64Array::from(orders.collect::<Vec<_>>())),
+        ),
+        (
+            "rate",
+            Arc::new(Int64Array::from(rates.collect::<Vec<_>>())),
+        ),
+        ("amount", int(|(_, line)| line.amount.0)),
     ])
 }
 

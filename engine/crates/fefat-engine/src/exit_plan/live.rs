@@ -136,6 +136,14 @@ impl LivePlan {
         self.stop
     }
 
+    /// F-ROL-03: a roll moved the market by `gap`: the fill price and the best price move with
+    /// it, and with them every level the plan works out.
+    pub(crate) fn shift_by(&mut self, gap: Price) -> Result<(), Overflow> {
+        self.fill = self.fill.checked_add(gap)?;
+        self.best = self.best.checked_add(gap)?;
+        Ok(())
+    }
+
     /// Whether the plan has a trailing stop, which follows its best price (F-PLN-05).
     #[cfg(test)]
     pub(crate) const fn trails(&self) -> bool {

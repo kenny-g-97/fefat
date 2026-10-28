@@ -1,7 +1,8 @@
 //! How a stored bar works the run's orders, as `fefat.reference.engine` replays one (`_on_bar`
 //! and `BarReplay`): the market's hours by the bar's open (F-SES-02); the orders that see their
 //! first bar (F-ACT-02); the bar replayed as four pseudo-ticks, its open, its extremes in the
-//! order F-BAR-02 to F-BAR-04 give, and its close (F-BAR-01); when that fills anything, the bar
+//! order F-BAR-02 to F-BAR-04 give, and its close (F-BAR-01), after a roll's legs, which fill at
+//! the open of the first bar after the roll (F-ROL-02); when that fills anything, the bar
 //! replayed again on a copy with its first extreme the other way round, and every fill of the bar
 //! flagged ambiguous when the copy fills otherwise (F-BAR-05); and every fill at the bar's close
 //! (F-BAR-06). Each point of the path marked, the open, each extreme reached, and the close, is
@@ -19,7 +20,7 @@ use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::exit_plan::Move;
 use crate::rules::{self, Priced};
-use crate::settings::RunSettings;
+use crate::settings::{RunCosts, RunSettings};
 
 /// What a bar's replay did, in the order it did it: a fill, or a stop its plan moved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +40,8 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         if !self.tradeable(bar.ts_open) {
             return Ok(());
         }
+        let at = self.fill_point(rules::f_bar_06(bar), index);
+        self.transfer_on_bar(bar, at)?;
         if let Some(stop) = self.book.ids_in(OrderState::Triggered, |_| true).first() {
             return Err(RunError::TriggeredWithoutQuotes {
                 order: stop.0,
@@ -50,11 +53,6 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             self.ledger.mark_at(bar.close);
             return Ok(());
         }
-        let at = FillPoint {
-            ts: rules::f_bar_06(bar),
-            index,
-            fidelity: self.fidelity,
-        };
         for id in self.book.ids_in(OrderState::Waiting, |_| true) {
             let waiting = self.book.live_in(id, OrderState::Waiting);
             if waiting.is_some_and(|order| rules::f_act_02(order, bar)) {
@@ -62,16 +60,17 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             }
         }
         let (mut trial_book, mut trial_ledger) = (self.book.trial(), self.ledger.clone());
-        let real = BarReplay::on(&mut self.book, &mut self.ledger, &self.settings, at);
+        let (settings, costs) = (&self.settings, &self.costs);
+        let real = BarReplay::on(&mut self.book, &mut self.ledger, settings, costs, at);
         let mut events = real.run(bar, false)?;
         if fills_of(&events).next().is_some() {
-            let trial = BarReplay::on(&mut trial_book, &mut trial_ledger, &self.settings, at);
+            let trial = BarReplay::on(&mut trial_book, &mut trial_ledger, settings, costs, at);
             let swapped = trial.run(bar, true)?;
             if rules::f_bar_05(fills_of(&events), fills_of(&swapped)) {
                 self.log.push(LogEntry::ambiguous(at.ts));
                 for event in &mut events {
                     if let BarEvent::Filled(execution) = event {
-                        execution.booked.fill.flags.ambiguous = true;
+                        execution.fill.flags.ambiguous = true;
                     }
                 }
             }
@@ -89,10 +88,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
 /// Each fill's order and price, as F-BAR-05 compares them.
 fn fills_of(events: &[BarEvent]) -> impl Iterator<Item = (OrderId, Price)> + '_ {
     events.iter().filter_map(|event| match event {
-        BarEvent::Filled(execution) => {
-            let fill = execution.booked.fill;
-            Some((fill.order, fill.price))
-        }
+        BarEvent::Filled(execution) => Some((execution.fill.order, execution.fill.price)),
         BarEvent::Moved(_) => None,
     })
 }
@@ -102,6 +98,7 @@ struct BarReplay<'replay> {
     book: &'replay mut Book,
     ledger: &'replay mut Ledger,
     settings: &'replay RunSettings,
+    costs: &'replay RunCosts,
     at: FillPoint,
     events: Vec<BarEvent>,
 }
@@ -111,12 +108,14 @@ impl<'replay> BarReplay<'replay> {
         book: &'replay mut Book,
         ledger: &'replay mut Ledger,
         settings: &'replay RunSettings,
+        costs: &'replay RunCosts,
         at: FillPoint,
     ) -> Self {
         Self {
             book,
             ledger,
             settings,
+            costs,
             at,
             events: Vec::new(),
         }
@@ -298,7 +297,15 @@ impl<'replay> BarReplay<'replay> {
     /// A fill at `point` of the path, whose exit plan's legs are judged there at once (F-OCO-02,
     /// F-STP-05): a stop or a target the point is through fills, and the rest work from it.
     fn fill(&mut self, point: Price, id: OrderId, priced: Priced) -> Result<(), RunError> {
-        let execution = execute(self.book, self.ledger, id, &priced, self.at, point)?;
+        let execution = execute(
+            self.book,
+            self.ledger,
+            self.costs,
+            id,
+            &priced,
+            self.at,
+            point,
+        )?;
         let legs: Vec<OrderId> = execution.legs.iter().map(|leg| leg.id).collect();
         self.events.push(BarEvent::Filled(execution));
         for leg in legs {

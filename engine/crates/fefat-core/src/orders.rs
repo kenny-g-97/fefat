@@ -7,6 +7,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 use crate::instants::Ts;
+use crate::rolls::RollReason;
 use crate::units::{Overflow, Price, Qty};
 
 /// An order's identity within a run; among orders placed at one instant, the lower id comes first.
@@ -95,8 +96,8 @@ pub enum OrderKind {
 }
 
 /// What an order does for a position, which its fill records (F-TAG-01): open it, protect it (an
-/// exit plan's stop), take its profit (one of the plan's targets), or close it at the market on
-/// the strategy's word, for a reason.
+/// exit plan's stop), take its profit (one of the plan's targets), close it at the market on the
+/// strategy's word, for a reason, or carry it across a roll, a leg of the roll (F-ROL-02).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OrderRole {
     /// Opens or adds to a position.
@@ -107,6 +108,9 @@ pub enum OrderRole {
     Target(TargetNumber),
     /// Closes the position at the market on the strategy's word.
     Exit(ExitReason),
+    /// A leg of a roll for this reason, which closes the position on the contract rolled from or
+    /// opens it on the new front.
+    Roll(RollReason),
 }
 
 /// Which of an exit plan's three targets (F-PLN-01).
@@ -229,14 +233,16 @@ impl fmt::Display for OrderKind {
     }
 }
 
-/// The role as a fill records it: `entry`, `stop`, `target_1` to `target_3`, or an exit's reason,
-/// `exit` for a strategy's own.
+/// The role as a fill records it: `entry`, `stop`, `target_1` to `target_3`, an exit's reason,
+/// `exit` for a strategy's own, or a roll's leg's, `roll_` and the roll's reason, such as
+/// `roll_open_interest`.
 impl fmt::Display for OrderRole {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Entry => formatter.write_str("entry"),
             Self::Stop => formatter.write_str("stop"),
             Self::Target(target) => write!(formatter, "target_{}", target.number()),
+            Self::Roll(reason) => write!(formatter, "roll_{}", reason.word().replace('-', "_")),
             Self::Exit(reason) => formatter.write_str(match reason {
                 ExitReason::Strategy => "exit",
                 ExitReason::FlatBy => "flat_by",

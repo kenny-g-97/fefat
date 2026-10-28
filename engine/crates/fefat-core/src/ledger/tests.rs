@@ -3,6 +3,7 @@
 use proptest::prelude::*;
 
 use super::*;
+use crate::costs::FeeRate;
 use crate::fidelity::Fidelity;
 use crate::fills::{FillFlags, Liquidity, PricingRule};
 use crate::instants::Ts;
@@ -247,6 +248,20 @@ fn steps() -> impl Strategy<Value = Vec<Step>> {
     proptest::collection::vec(step, 1..60)
 }
 
+fn fee_rates() -> impl Strategy<Value = FeeRate> {
+    prop_oneof![
+        (0_i64..=5_000_000).prop_map(|per| FeeRate::Futures {
+            per_contract_side: Money(per)
+        }),
+        (-200_000_i64..=1_000_000, 0_i64..=1_000_000).prop_map(|(maker, taker)| {
+            FeeRate::Crypto {
+                maker: Rate(maker),
+                taker: Rate(taker),
+            }
+        }),
+    ]
+}
+
 fn real_products() -> impl Strategy<Value = InstrumentParameters> {
     proptest::sample::select(PRODUCTS.to_vec()).prop_map(instrument)
 }
@@ -361,6 +376,33 @@ proptest! {
             };
             prop_assert_eq!(held, bought);
         }
+    }
+
+    /// Step 2.9's Done means 2 in the ledger: what the fills' values moved the cash by, with the
+    /// position's value at the mark, less every cost line, the fees a random fee rate prices and
+    /// the funding paid at random rates, is the change of equity.
+    #[test]
+    fn gross_profit_and_loss_less_the_cost_lines_is_the_net(
+        instrument in any_instrument(),
+        fee in fee_rates(),
+        steps in steps(),
+        rates in proptest::collection::vec(-1_000_000_i64..=1_000_000, 60),
+    ) {
+        let tick = instrument.tick_size().0;
+        let mut ledger = Ledger::new(instrument, STARTING_CASH);
+        let (mut moved, mut costs) = (0_i128, 0_i128);
+        for (step, rate) in steps.iter().zip(rates) {
+            let price = Price(step.price_ticks * tick);
+            let liquidity = if step.fee % 2 == 0 { Liquidity::Maker } else { Liquidity::Taker };
+            let paid = fee.fee(&instrument, price, Qty(step.lots), liquidity)?;
+            moved += i128::from(ledger.book(&fill(step.side, step.lots, price, paid))?.0);
+            costs += i128::from(paid.0);
+            ledger.mark_at(Price(step.mark_ticks * tick));
+            costs -= i128::from(ledger.pay_funding(Rate(rate))?.0);
+        }
+        let gross = moved + i128::from(ledger.position_value()?.0);
+        let net = i128::from(ledger.equity()?.0) - i128::from(STARTING_CASH.0);
+        prop_assert_eq!(gross - costs, net);
     }
 
     #[test]

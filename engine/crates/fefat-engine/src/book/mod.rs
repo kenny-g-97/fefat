@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState};
-use fefat_core::units::Price;
+use fefat_core::units::{Overflow, Price};
 
 use crate::exit_plan::{ExitPlan, LivePlan};
 
@@ -102,6 +102,18 @@ impl WorkingOrder {
         }
     }
 
+    /// A market order already sent, a roll's leg, which no decision cancels and which fills on the
+    /// first tradeable record or bar after it (F-ROL-02).
+    pub(crate) const fn sent(order: Order, seen_after: usize) -> Self {
+        Self {
+            order,
+            state: OrderState::Triggered,
+            rested: false,
+            seen_after,
+            link: BracketLink::Unbracketed,
+        }
+    }
+
     /// Where it stands.
     pub const fn state(&self) -> OrderState {
         self.state
@@ -126,6 +138,17 @@ impl WorkingOrder {
     }
 }
 
+/// A live order a roll moved by its gap, from `before` to `after` (F-ROL-03).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shift {
+    /// The order.
+    pub order: OrderId,
+    /// Its stop's or limit's price before.
+    pub before: Price,
+    /// Its price after.
+    pub after: Price,
+}
+
 /// The orders of a run: the live ones, waiting, working, or triggered, and those filled or
 /// cancelled; the ids it has given orders of its own, from 1; and the live exit plans, by their
 /// entries' ids.
@@ -138,10 +161,77 @@ pub struct Book {
 }
 
 impl Book {
-    /// A new id for an order the run places itself: 1, then 2, and so on.
+    /// A new id for an order the run places itself: 1, then 2, and so on, after the ids a
+    /// strategy reserved.
     pub(crate) fn new_id(&mut self) -> OrderId {
         self.issued += 1;
         OrderId(self.issued)
+    }
+
+    /// Keeps the ids through `highest`, which a strategy gives its own orders, from the run's
+    /// (F-ROL-02).
+    pub(crate) fn reserve_through(&mut self, highest: Option<OrderId>) {
+        self.issued = self.issued.max(highest.map_or(0, |id| id.0));
+    }
+
+    /// F-ROL-04: with `roll_handling: flatten`, the position's exit plans and any exit on its way
+    /// out of it are cancelled, the roll's close leg doing their work; their ids, lowest first.
+    pub(crate) fn cancel_for_roll(&mut self) -> Vec<OrderId> {
+        let closes = |order: &WorkingOrder| {
+            order.link.leg_of().is_some() || matches!(order.order.role, OrderRole::Exit(_))
+        };
+        let mut ids: Vec<OrderId> = self
+            .live
+            .iter()
+            .filter(|order| closes(order))
+            .map(|order| order.order.id)
+            .collect();
+        ids.sort_unstable();
+        for &id in &ids {
+            self.close(id, Closing::Cancelled);
+        }
+        ids
+    }
+
+    /// F-ROL-03: a roll's `gap` moves every live stop and limit, returned by id, lowest first, a
+    /// stop triggered on TBBO among them; the prices that entries still to fill name for their
+    /// plans, and the live plans' fill and best prices, move with it.
+    pub(crate) fn shift_by(&mut self, gap: Price) -> Result<Vec<Shift>, Overflow> {
+        let mut shifts = Vec::new();
+        for id in self.live_ids() {
+            let Some(order) = self.live.iter_mut().find(|order| order.order.id == id) else {
+                continue;
+            };
+            if let BracketLink::Entry(plan) = &mut order.link {
+                plan.shift_by(gap)?;
+            }
+            let (before, kind) = match order.order.kind {
+                OrderKind::Market => continue,
+                OrderKind::StopMarket { stop } => (
+                    stop,
+                    OrderKind::StopMarket {
+                        stop: stop.checked_add(gap)?,
+                    },
+                ),
+                OrderKind::Limit { limit } => (
+                    limit,
+                    OrderKind::Limit {
+                        limit: limit.checked_add(gap)?,
+                    },
+                ),
+            };
+            order.order.kind = kind;
+            let after = before.checked_add(gap)?;
+            shifts.push(Shift {
+                order: id,
+                before,
+                after,
+            });
+        }
+        for plan in self.plans.values_mut() {
+            plan.shift_by(gap)?;
+        }
+        Ok(shifts)
     }
 
     pub(crate) fn place(&mut self, order: WorkingOrder) {
@@ -268,7 +358,7 @@ impl Book {
     /// (F-STP-02).
     pub(crate) fn is_exiting(&self) -> bool {
         self.live.iter().any(|order| match order.order.role {
-            OrderRole::Exit(_) => true,
+            OrderRole::Exit(_) | OrderRole::Roll(_) => true,
             OrderRole::Entry => false,
             OrderRole::Stop | OrderRole::Target(_) => order.state == OrderState::Triggered,
         })

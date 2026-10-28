@@ -29,6 +29,9 @@ pub enum PricingRule {
     StopThroughMarket,
     /// F-LMT-03: a limit at its own price, never better.
     LimitAtItsPrice,
+    /// F-ROL-02: a roll's leg at the price a market order takes on the new front's first record or
+    /// bar, the close leg's less the gap.
+    RollLeg,
 }
 
 impl PricingRule {
@@ -43,6 +46,7 @@ impl PricingRule {
             Self::StopOnBars => "F-STP-04",
             Self::StopThroughMarket => "F-STP-05",
             Self::LimitAtItsPrice => "F-LMT-03",
+            Self::RollLeg => "F-ROL-02",
         }
     }
 }

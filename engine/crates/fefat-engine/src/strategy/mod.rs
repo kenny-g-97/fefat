@@ -32,6 +32,12 @@ pub trait Strategy {
         now: Ts,
         context: &mut DecisionContext<'_>,
     ) -> Result<(), DecisionError>;
+
+    /// The highest id it gives its own orders, after which the run numbers its own, a roll's legs
+    /// (F-ROL-02); none when the run numbers every order.
+    fn highest_order_id(&self) -> Option<OrderId> {
+        None
+    }
 }
 
 /// A decision the engine refused.

@@ -134,6 +134,26 @@ pub struct ExitPlan {
     pub trailing: Option<TrailingPlan>,
 }
 
+impl ExitPlan {
+    /// F-ROL-03: the plan with the prices it names, at `stop_price` or `target_price`, moved by a
+    /// roll's gap; legs placed from the fill move with it.
+    pub(crate) fn shift_by(&mut self, gap: Price) -> Result<(), Overflow> {
+        if let Some(PlannedStop {
+            at: StopAt::Price(price),
+            ..
+        }) = &mut self.stop
+        {
+            *price = price.checked_add(gap)?;
+        }
+        for target in &mut self.targets {
+            if let TargetAt::Price(price) = &mut target.at {
+                *price = price.checked_add(gap)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl From<Bracket> for ExitPlan {
     /// A bracket as a plan of one stop and one target for the whole entry, under the bracket's
     /// ids.

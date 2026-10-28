@@ -1,23 +1,26 @@
 //! `run.json`, the cases of a batch: each case's instrument in the engines' integers (D-55), its
 //! run settings as `fefat.reference.settings.RunSettings` writes them, its trading hours, its
 //! capital and the position held when its tape starts, where its records come from and how they
-//! are replayed, and what decides its orders: an order scenario's orders, or a `StrategySpec`
-//! over its signal rows.
+//! are replayed, what decides its orders, an order scenario's orders or a `StrategySpec` over its
+//! signal rows, and what it pays and rolls across (step 2.9): its fee table, its funding rates, and
+//! its rolls, each left out where it has none.
 
 use std::collections::BTreeSet;
 use std::iter;
 use std::path::PathBuf;
 
+use fefat_core::costs::{FeeRate, FeeSchedule, FeeTable, FeeTableError, FundingRate, Rate};
 use fefat_core::fidelity::Fidelity;
-use fefat_core::instants::Ts;
-use fefat_core::instrument::{InstrumentParameters, LotStep, NonPositiveParameter};
+use fefat_core::instants::{TradeDate, Ts};
+use fefat_core::instrument::{Contract, InstrumentParameters, LotStep, NonPositiveParameter};
 use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, Side};
+use fefat_core::rolls::{Roll, RollReason};
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{Money, Price, Qty};
 use fefat_engine::book::{Bracket, BracketLeg, LegPrice};
 use fefat_engine::hours::{Halt, Session, TradingHours};
-use fefat_engine::settings::{LimitFill, RunSettings, SlippageTicks};
+use fefat_engine::settings::{LimitFill, RollHandling, RunCosts, RunSettings, SlippageTicks};
 use fefat_engine::strategy::ScenarioOrder;
 use fefat_engine::tick_run::Replay;
 use serde::Deserialize;
@@ -50,6 +53,73 @@ pub(super) struct CaseManifest {
     position: Option<PositionManifest>,
     pub(super) market_data: MarketDataManifest,
     pub(super) decisions: DecisionsManifest,
+    /// The fee table, none where the run names none.
+    #[serde(default)]
+    fees: Option<FeesManifest>,
+    /// A perpetual's funding rates, in the order of their times.
+    #[serde(default)]
+    funding: Vec<FundingManifest>,
+    /// A future's rolls, in the order of their opens.
+    #[serde(default)]
+    rolls: Vec<RollManifest>,
+}
+
+/// A fee table, its schedules in the order of their dates, all of its kind.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum FeesManifest {
+    Futures {
+        schedules: Vec<FuturesScheduleManifest>,
+    },
+    Crypto {
+        schedules: Vec<CryptoScheduleManifest>,
+    },
+}
+
+/// A futures fee from a trade date, in days since 1970-01-01, per contract per side in
+/// micro-units.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FuturesScheduleManifest {
+    effective_from: i32,
+    per_contract_side: i64,
+}
+
+/// A crypto fee from a trade date, its maker and taker rates in 1e-9 units.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CryptoScheduleManifest {
+    effective_from: i32,
+    maker_rate: i64,
+    taker_rate: i64,
+}
+
+/// A funding rate in 1e-9 units, paid at `ts`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FundingManifest {
+    ts: i64,
+    rate: i64,
+}
+
+/// A roll as the roll calendar gives it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RollManifest {
+    session_open: i64,
+    rolled_from: String,
+    contract: String,
+    gap: i64,
+    reason: RollReasonWord,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RollReasonWord {
+    Volume,
+    OpenInterest,
+    Calendar,
+    Expiry,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,6 +136,16 @@ struct SettingsManifest {
     latency_ms: u32,
     slippage_ticks: SlippageManifest,
     limit_fill: LimitFillWord,
+    #[serde(default)]
+    roll_handling: RollHandlingWord,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RollHandlingWord {
+    #[default]
+    Transfer,
+    Flatten,
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,6 +315,65 @@ impl CaseManifest {
                 LimitFillWord::Touch => LimitFill::Touch,
             },
         }
+    }
+
+    /// What a roll does with an open position (F-ROL-02, F-ROL-04).
+    pub(super) const fn roll_handling(&self) -> RollHandling {
+        match self.settings.roll_handling {
+            RollHandlingWord::Transfer => RollHandling::Transfer,
+            RollHandlingWord::Flatten => RollHandling::Flatten,
+        }
+    }
+
+    /// What the case pays: its fee table and its funding rates (§14).
+    pub(super) fn costs(&self) -> Result<RunCosts, FeeTableError> {
+        let fees = match &self.fees {
+            None => None,
+            Some(FeesManifest::Futures { schedules }) => {
+                let dated = schedules.iter().map(|schedule| FeeSchedule {
+                    effective_from: TradeDate(schedule.effective_from),
+                    fee: FeeRate::Futures {
+                        per_contract_side: Money(schedule.per_contract_side),
+                    },
+                });
+                Some(FeeTable::new(dated.collect())?)
+            }
+            Some(FeesManifest::Crypto { schedules }) => {
+                let dated = schedules.iter().map(|schedule| FeeSchedule {
+                    effective_from: TradeDate(schedule.effective_from),
+                    fee: FeeRate::Crypto {
+                        maker: Rate(schedule.maker_rate),
+                        taker: Rate(schedule.taker_rate),
+                    },
+                });
+                Some(FeeTable::new(dated.collect())?)
+            }
+        };
+        let funding = self.funding.iter().map(|rate| FundingRate {
+            ts: Ts(rate.ts),
+            rate: Rate(rate.rate),
+        });
+        Ok(RunCosts {
+            fees,
+            funding: funding.collect(),
+        })
+    }
+
+    /// The case's rolls, in the order of their opens (F-ROL-01).
+    pub(super) fn rolls(&self) -> Vec<Roll> {
+        let rolls = self.rolls.iter().map(|roll| Roll {
+            session_open: Ts(roll.session_open),
+            rolled_from: Contract(roll.rolled_from.clone()),
+            contract: Contract(roll.contract.clone()),
+            gap: Price(roll.gap),
+            reason: match roll.reason {
+                RollReasonWord::Volume => RollReason::Volume,
+                RollReasonWord::OpenInterest => RollReason::OpenInterest,
+                RollReasonWord::Calendar => RollReason::Calendar,
+                RollReasonWord::Expiry => RollReason::Expiry,
+            },
+        });
+        rolls.collect()
     }
 
     pub(super) fn hours(&self) -> TradingHours {
