@@ -4,18 +4,23 @@
 //! trade dates, each holding the levels of a drawn profile (TBBO, trades, 1-second, 1-minute,
 //! 5-minute, or daily bars, all built from one walk of trades with jumps and quiet minutes), the
 //! finest fidelity it fills on, an order scenario or the template over drawn signal rows, flat-by
-//! included, run settings, and trading hours with a break and a halt. The cases must skip records
-//! and fill by every rule on ticks and bars, so that agreement never means that nothing happened.
+//! included, run settings, and trading hours with a break and a halt; and from step 2.9 a dated
+//! fee table, funding times, and a roll between two dates, transferring or flattening, whose
+//! instants bound the blocks a skip passes over (F-CLK-02). The cases must skip records, fill by
+//! every rule on ticks and bars, pay fees and funding, and roll, so that agreement never means that
+//! nothing happened.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use fefat_core::costs::{CostReason, FeeRate, FeeSchedule, FeeTable, FundingRate, Rate};
 use fefat_core::fidelity::{Fidelity, TimeUnit, Timeframe};
 use fefat_core::instants::{NANOSECONDS_PER_SECOND, SECONDS_PER_DAY, TradeDate, Ts};
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::{BarRow, InMemoryMarketData, TapeDay, TbboRow, TradeRow};
-use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, Side};
+use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, OrderRole, Side};
+use fefat_core::rolls::{Roll, RollReason};
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 use proptest::prelude::*;
@@ -26,7 +31,7 @@ use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::event_log::EventKind;
 use crate::exit_plan::LivePlan;
 use crate::hours::{Halt, Session, TradingHours};
-use crate::settings::{LimitFill, RunSettings, SlippageTicks};
+use crate::settings::{LimitFill, RollHandling, RunCosts, RunSettings, SlippageTicks};
 use crate::strategy::{ScenarioOrder, ScenarioOrders, Strategy as RunStrategy};
 use crate::template::{RowFeatures, SignalRow, TemplateStrategy};
 
@@ -35,7 +40,7 @@ const SEED: u64 = 20_261_027;
 const CASES: u32 = 1_000;
 const TICK: i64 = 250_000_000;
 const MONEY_PER_POINT: i64 = 50 * MONEY_UNITS;
-const CAPITAL: i64 = 50_000 * MONEY_UNITS;
+pub(super) const CAPITAL: i64 = 50_000 * MONEY_UNITS;
 const MILLISECOND: i64 = 1_000_000;
 const SECOND: i64 = NANOSECONDS_PER_SECOND;
 const DAY: i64 = SECONDS_PER_DAY * NANOSECONDS_PER_SECOND;
@@ -185,8 +190,30 @@ enum DrawnStrategy {
     Template(DrawnTemplate),
 }
 
+/// A drawn fee table (step 2.9): futures or crypto, the day its first schedule takes effect,
+/// counted from the first trade date, and the fees of its two schedules, the second a day later:
+/// cents per contract per side, or maker and taker rates in thousandths of a basis point, the
+/// maker's below zero for a rebate.
 #[derive(Debug, Clone)]
-struct DrawnMonth {
+pub(super) struct DrawnFees {
+    futures: bool,
+    first_day: i32,
+    first: (i64, i64),
+    second: (i64, i64),
+}
+
+/// A drawn roll between two trade dates, at 13:00 UTC of the later one, its gap in ticks, its
+/// reason, and whether it flattens.
+#[derive(Debug, Clone)]
+pub(super) struct DrawnRoll {
+    day: usize,
+    gap_ticks: i64,
+    reason: u8,
+    flattens: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct DrawnMonth {
     days: Vec<DrawnDay>,
     fidelity: Fidelity,
     strategy: DrawnStrategy,
@@ -196,6 +223,9 @@ struct DrawnMonth {
     touch: bool,
     closed: Option<(usize, usize)>,
     halted: Option<(usize, usize)>,
+    fees: Option<DrawnFees>,
+    funding: Vec<(DrawnInstant, i64)>,
+    roll: Option<DrawnRoll>,
 }
 
 fn drawn_tick() -> impl Strategy<Value = DrawnTick> {
@@ -333,7 +363,46 @@ fn drawn_strategy() -> impl Strategy<Value = DrawnStrategy> {
     prop_oneof![3 => orders, 2 => template]
 }
 
-fn drawn_month() -> impl Strategy<Value = DrawnMonth> {
+fn drawn_fees() -> impl Strategy<Value = DrawnFees> {
+    let fee = || (0_i64..=500, 0_i64..=500);
+    (any::<bool>(), -1_i32..=3, fee(), fee()).prop_map(|(futures, first_day, first, second)| {
+        DrawnFees {
+            futures,
+            first_day,
+            first,
+            second,
+        }
+    })
+}
+
+fn drawn_roll() -> impl Strategy<Value = DrawnRoll> {
+    (0_usize..3, -40_i64..=40, 0_u8..4, any::<bool>()).prop_map(
+        |(day, gap_ticks, reason, flattens)| DrawnRoll {
+            day,
+            gap_ticks,
+            reason,
+            flattens,
+        },
+    )
+}
+
+/// The drawn costs and roll of a month (step 2.9).
+fn drawn_costs() -> impl Strategy<
+    Value = (
+        Option<DrawnFees>,
+        Vec<(DrawnInstant, i64)>,
+        Option<DrawnRoll>,
+    ),
+> {
+    let funding = proptest::collection::vec((drawn_instant(), -1_000_000_i64..=1_000_000), 0..4);
+    (
+        proptest::option::of(drawn_fees()),
+        funding,
+        proptest::option::of(drawn_roll()),
+    )
+}
+
+pub(super) fn drawn_month() -> impl Strategy<Value = DrawnMonth> {
     let fidelity = proptest::sample::select(vec![
         Fidelity::Tbbo,
         Fidelity::Trades,
@@ -354,9 +423,10 @@ fn drawn_month() -> impl Strategy<Value = DrawnMonth> {
         settings,
         span(),
         span(),
+        drawn_costs(),
     )
         .prop_map(
-            |(days, fidelity, strategy, opening, settings, closed, halted)| DrawnMonth {
+            |(days, fidelity, strategy, opening, settings, closed, halted, costs)| DrawnMonth {
                 days,
                 fidelity,
                 strategy,
@@ -366,8 +436,103 @@ fn drawn_month() -> impl Strategy<Value = DrawnMonth> {
                 touch: settings.2,
                 closed,
                 halted,
+                fees: costs.0,
+                funding: costs.1,
+                roll: costs.2,
             },
         )
+}
+
+/// The month's fee table and funding rates, each funding time once, in order, after the month's
+/// first mark, so that a position held when the tape starts mostly has a mark to pay at.
+fn costs(month: &DrawnMonth, walks: &[Vec<TbboRow>]) -> RunCosts {
+    let fees = month.fees.as_ref().map(|drawn| {
+        let fee = |(first, second): (i64, i64)| match drawn.futures {
+            true => FeeRate::Futures {
+                per_contract_side: Money(first * 10_000),
+            },
+            false => FeeRate::Crypto {
+                maker: Rate((first - 100) * 1_000),
+                taker: Rate(second * 1_000),
+            },
+        };
+        let from = |offset: i32| TradeDate(FIRST_DATE + drawn.first_day + offset);
+        let schedules = vec![
+            FeeSchedule {
+                effective_from: from(0),
+                fee: fee(drawn.first),
+            },
+            FeeSchedule {
+                effective_from: from(1),
+                fee: fee(drawn.second),
+            },
+        ];
+        FeeTable::new(schedules).unwrap()
+    });
+    let marked_from = first_mark(month, walks);
+    let mut funding: BTreeMap<Ts, Rate> = BTreeMap::new();
+    for &(instant, rate) in &month.funding {
+        let (ts, _) = instant_of(instant, walks);
+        if marked_from.is_some_and(|first| ts > first) {
+            funding.insert(ts, Rate(rate));
+        }
+    }
+    let funding = funding
+        .into_iter()
+        .map(|(ts, rate)| FundingRate { ts, rate });
+    RunCosts {
+        fees,
+        funding: funding.collect(),
+    }
+}
+
+/// When the run first marks a position: the first trade of its first date at the level it fills
+/// on, or the close of that trade's bar.
+fn first_mark(month: &DrawnMonth, walks: &[Vec<TbboRow>]) -> Option<Ts> {
+    let (day, walk) = month.days.first().zip(walks.first())?;
+    let first = walk.first()?.ts_recv.0;
+    let (tbbo, trades) = day.profile.ticks();
+    let ticks = [(tbbo, Fidelity::Tbbo), (trades, Fidelity::Trades)];
+    let ticks = ticks
+        .into_iter()
+        .filter(|(held, _)| *held)
+        .map(|(_, level)| (level, 0));
+    let timeframes = day.profile.timeframes().into_iter();
+    let bars = timeframes.map(|timeframe| (Fidelity::Bars(timeframe), length_of(timeframe)));
+    let (_, length) = ticks
+        .chain(bars)
+        .find(|(level, _)| *level >= month.fidelity)?;
+    Some(Ts(match length {
+        0 => first,
+        _ => first - first.rem_euclid(length) + length,
+    }))
+}
+
+/// The month's roll, between two of its dates, at 13:00 UTC of the later one, before its walk
+/// starts; none for a month of one date.
+pub(super) fn rolls(month: &DrawnMonth) -> (Vec<Roll>, RollHandling) {
+    let (Some(drawn), true) = (&month.roll, month.days.len() > 1) else {
+        return (Vec::new(), RollHandling::Transfer);
+    };
+    let day = 1 + drawn.day % (month.days.len() - 1);
+    let reason = [
+        RollReason::Volume,
+        RollReason::OpenInterest,
+        RollReason::Calendar,
+        RollReason::Expiry,
+    ][usize::from(drawn.reason % 4)];
+    let roll = Roll {
+        session_open: Ts(day_start(day) + 13 * 3_600 * SECOND),
+        rolled_from: Contract("ESH2026".to_owned()),
+        contract: Contract("ESM2026".to_owned()),
+        gap: Price(drawn.gap_ticks * TICK),
+        reason,
+    };
+    let handling = match drawn.flattens {
+        true => RollHandling::Flatten,
+        false => RollHandling::Transfer,
+    };
+    (vec![roll], handling)
 }
 
 /// Each drawn trade date's walk of trades, with the quote before each, in order: the walk goes on
@@ -653,6 +818,45 @@ struct Replayed {
 }
 
 fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
+    with_month(month, replay, |mut run| {
+        let (mut skipped, mut skipped_trailing) = (0, 0);
+        loop {
+            match run.step() {
+                Ok(Some(Stepped::Skipped { units })) => {
+                    skipped += units;
+                    // F-PLN-05: a skip that a live trailing stop allowed, its bar not past the best
+                    // price.
+                    if run.book.plans().any(LivePlan::trails) {
+                        skipped_trailing += units;
+                    }
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(error) => {
+                    return Replayed {
+                        outputs: Err(error),
+                        refused_at: Some((run.fills().to_vec(), run.ledger().clone())),
+                        skipped,
+                        skipped_trailing,
+                    };
+                }
+            }
+        }
+        Replayed {
+            outputs: run.run(),
+            refused_at: None,
+            skipped,
+            skipped_trailing,
+        }
+    })
+}
+
+/// `inspect` given the run of `month`, replayed as `replay`, before its first step.
+pub(super) fn with_month<T>(
+    month: &DrawnMonth,
+    replay: Replay,
+    inspect: impl FnOnce(TickRun<'_, InMemoryMarketData>) -> T,
+) -> T {
     let walks = walks(month);
     let reader = reader(month, &walks);
     let hours = hours(month, &walks);
@@ -685,7 +889,8 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
         )),
         DrawnStrategy::Template(drawn) => Box::new(template(drawn, &walks)),
     };
-    let mut run = TickRun::new(
+    let (rolls, handling) = rolls(month);
+    let run = TickRun::new(
         &reader,
         month.fidelity,
         replay,
@@ -694,35 +899,12 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
         ledger,
         strategy.as_mut(),
     )
+    .unwrap()
+    .with_costs(costs(month, &walks))
+    .unwrap()
+    .with_rolls(rolls, handling)
     .unwrap();
-    let (mut skipped, mut skipped_trailing) = (0, 0);
-    loop {
-        match run.step() {
-            Ok(Some(Stepped::Skipped { units })) => {
-                skipped += units;
-                // F-PLN-05: a skip that a live trailing stop allowed, its bar not past the best price.
-                if run.book.plans().any(LivePlan::trails) {
-                    skipped_trailing += units;
-                }
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => break,
-            Err(error) => {
-                return Replayed {
-                    outputs: Err(error),
-                    refused_at: Some((run.fills().to_vec(), run.ledger().clone())),
-                    skipped,
-                    skipped_trailing,
-                };
-            }
-        }
-    }
-    Replayed {
-        outputs: run.run(),
-        refused_at: None,
-        skipped,
-        skipped_trailing,
-    }
+    inspect(run)
 }
 
 /// What the cases reached, so that agreement never means that nothing happened.
@@ -735,6 +917,15 @@ struct Coverage {
     /// Months whose stop, triggered on TBBO, meets a tradeable trade or bar before a quote,
     /// which both replays refuse alike, since F-STP-02 prices such a fill from a quote alone.
     unquoted: usize,
+    /// Months that pay funding on a position held when the tape starts before its first
+    /// tradeable record, without a mark, which both replays refuse alike (F-FND-01).
+    unmarked: usize,
+    /// Fee and funding lines paid, warnings of a fee table's first schedule taken before its
+    /// date, and roll legs filled (step 2.9).
+    fee_lines: usize,
+    funding_lines: usize,
+    extended: usize,
+    roll_legs: usize,
     ambiguous: usize,
     /// Stops moved by an exit plan, by the rule that moved them (F-BRK-01, F-TRL-01).
     moves: BTreeMap<&'static str, usize>,
@@ -778,6 +969,10 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
                 seen.unquoted += 1;
                 return Ok(());
             }
+            Err(RunError::FundingWithoutMark { .. }) => {
+                seen.unmarked += 1;
+                return Ok(());
+            }
             Err(_) => {
                 seen.refused += 1;
                 return Ok(());
@@ -799,7 +994,19 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
             let fill = booked.fill;
             let key = format!("{} on {}", fill.rule.id(), fill.fidelity);
             *seen.fills.entry(key).or_default() += 1;
+            seen.roll_legs += usize::from(matches!(fill.role, OrderRole::Roll(_)));
         }
+        for line in &outputs.costs {
+            match line.reason {
+                CostReason::Fee { .. } => seen.fee_lines += 1,
+                CostReason::Funding { .. } => seen.funding_lines += 1,
+            }
+        }
+        let warnings = outputs
+            .log
+            .iter()
+            .filter(|entry| entry.kind == EventKind::Warning);
+        seen.extended += warnings.count();
         Ok(())
     });
     if let Err(failure) = outcome {
@@ -810,6 +1017,15 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
     assert_eq!(coverage.cases, CASES as usize);
     assert_eq!(coverage.refused, 0, "{coverage:#?}");
     assert!(coverage.unquoted <= CASES as usize / 100, "{coverage:#?}");
+    assert!(coverage.unmarked <= CASES as usize / 50, "{coverage:#?}");
+    for paid in [
+        coverage.fee_lines,
+        coverage.funding_lines,
+        coverage.extended,
+        coverage.roll_legs,
+    ] {
+        assert!(paid > 0, "{coverage:#?}");
+    }
     assert!(coverage.cases_skipping >= 300, "{coverage:#?}");
     assert!(coverage.ambiguous > 0, "{coverage:#?}");
     assert!(coverage.skipped_trailing > 0, "{coverage:#?}");

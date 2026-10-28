@@ -17,6 +17,8 @@
 //! bars above them (`02` §4).
 
 mod bars;
+#[cfg(test)]
+mod cost_properties;
 mod descent;
 mod fills;
 #[cfg(test)]
@@ -27,6 +29,8 @@ mod plan_properties;
 #[cfg(test)]
 mod properties;
 mod records;
+#[cfg(test)]
+mod roll_tests;
 mod rolls;
 #[cfg(test)]
 mod skip_equals_full;
