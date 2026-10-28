@@ -8,6 +8,7 @@
 //! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, `ledger.arrow`, and
 //! `costs.arrow`, tagged the same way ([`outputs`]).
 
+mod costs_and_rolls;
 mod inputs;
 mod manifest;
 mod outputs;

@@ -4,6 +4,7 @@
 //! market orders already sent that fill before any other order on the first tradeable record or
 //! bar after it (F-ROL-02), or the close leg alone with `roll_handling: flatten` (F-ROL-04).
 
+use fefat_core::costs::ScheduleUse;
 use fefat_core::fills::Fill;
 use fefat_core::instants::Ts;
 use fefat_core::instrument::Contract;
@@ -13,7 +14,7 @@ use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, Side, TimeInForce
 use fefat_core::rolls::RollReason;
 use fefat_core::units::{Price, Qty};
 
-use super::fills::{Execution, FillPoint, closed_and_tagged};
+use super::execution::{Execution, FillPoint, closed_and_tagged};
 use super::{RunError, TickRecord, TickRun};
 use crate::book::WorkingOrder;
 use crate::event_log::LogEntry;
@@ -143,32 +144,32 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             gap,
             rolled_from,
         } = transfer;
-        let (close_fill, close_extended) = self.leg(close, gap, at, &priced)?;
+        let (close_fill, close_schedule) = self.leg(close, gap, at, &priced)?;
         let Some(open) = open else {
             let cash = self.ledger.book(&close_fill)?;
             let flat = self.ledger.position() == Position::Flat;
-            let closed = Execution::alone(close_fill, cash, close_extended, flat);
+            let closed = Execution::alone(close_fill, cash, close_schedule, flat);
             return self.record_on(closed, rolled_from);
         };
-        let (open_fill, open_extended) = self.leg(open, Price(0), at, &priced)?;
+        let (open_fill, open_schedule) = self.leg(open, Price(0), at, &priced)?;
         let [closed, opened] = self.ledger.transfer(&close_fill, &open_fill)?;
-        let close_leg = Execution::alone(close_fill, closed, close_extended, false);
+        let close_leg = Execution::alone(close_fill, closed, close_schedule, false);
         self.record_on(close_leg, rolled_from)?;
         let front = self.front.clone();
-        let open_leg = Execution::alone(open_fill, opened, open_extended, false);
+        let open_leg = Execution::alone(open_fill, opened, open_schedule, false);
         self.record_on(open_leg, front)
     }
 
     /// The leg `id`, less `gap` for the close leg, closed in the book and tagged as F-ROL-02
-    /// prices it, with its fee: the fill, and whether the fee table's first schedule priced it
-    /// before its date (F-FEE-01).
+    /// prices it, with its fee: the fill, and how the fee table's schedule that priced it was used
+    /// (F-FEE-01).
     fn leg(
         &mut self,
         id: OrderId,
         gap: Price,
         at: FillPoint,
         priced: &impl Fn(Side) -> (Price, Option<Qty>),
-    ) -> Result<(Fill, bool), RunError> {
+    ) -> Result<(Fill, ScheduleUse), RunError> {
         let order = self.book.order(id);
         let side = order
             .map(|order| order.order.side)
@@ -177,7 +178,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let ticks = self.settings.slippage.market;
         let leg = rules::f_rol_02(side, price, shown, gap, ticks, self.tick())?;
         let (book, ledger, costs) = (&mut self.book, &self.ledger, &self.costs);
-        let (_, fill, extended) = closed_and_tagged(book, ledger, costs, id, &leg, at)?;
-        Ok((fill, extended))
+        let (_, fill, schedule) = closed_and_tagged(book, ledger, costs, id, &leg, at)?;
+        Ok((fill, schedule))
     }
 }

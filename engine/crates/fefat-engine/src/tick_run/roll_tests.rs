@@ -261,7 +261,7 @@ fn a_roll_with_an_open_long_fills_two_legs_on_two_contracts_for_its_reason() {
         .find(|order| order.order.id == OrderId(2));
     assert_eq!(stop.and_then(WorkingOrder::level), Some(price(501_000)));
     assert_eq!(outputs.ledger.cash(), Money(49_440 * MONEY_UNITS));
-    assert_eq!(outputs.costs.len(), 4);
+    assert_eq!(outputs.cost_lines.len(), 4);
 }
 
 #[test]
@@ -306,7 +306,7 @@ fn a_flattening_roll_closes_the_long_by_its_close_leg_alone_and_cancels_its_brac
         vec![(Some(2), Some("F-ROL-04")), (Some(3), Some("F-ROL-04"))]
     );
     assert_eq!(outputs.ledger.position(), Position::Flat);
-    assert!(outputs.costs.is_empty());
+    assert!(outputs.cost_lines.is_empty());
 }
 
 #[test]
@@ -359,7 +359,7 @@ fn a_dated_fee_table_prices_each_fill_by_its_trade_date_and_warns_once() {
         warned.map(|at| kinds.get(at + 1)),
         Some(Some(&EventKind::Filled))
     );
-    let paid: Vec<CostLine> = outputs.costs.clone();
+    let paid: Vec<CostLine> = outputs.cost_lines.clone();
     assert_eq!(
         paid.iter()
             .map(|line| (line.reason, line.amount))
@@ -423,7 +423,7 @@ fn a_short_pays_a_negative_funding_rate_at_the_mark_before_the_trade_of_its_inst
         amount: Money(260_495),
         reason: CostReason::Funding { rate },
     };
-    assert_eq!(outputs.costs, vec![funding]);
+    assert_eq!(outputs.cost_lines, vec![funding]);
     assert_eq!(
         logged(&outputs, EventKind::Funding),
         vec![(None, Some("F-FND-01"))]

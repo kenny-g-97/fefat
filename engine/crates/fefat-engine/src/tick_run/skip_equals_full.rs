@@ -996,7 +996,7 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
             *seen.fills.entry(key).or_default() += 1;
             seen.roll_legs += usize::from(matches!(fill.role, OrderRole::Roll(_)));
         }
-        for line in &outputs.costs {
+        for line in &outputs.cost_lines {
             match line.reason {
                 CostReason::Fee { .. } => seen.fee_lines += 1,
                 CostReason::Funding { .. } => seen.funding_lines += 1,

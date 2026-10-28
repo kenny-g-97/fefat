@@ -71,7 +71,7 @@ pub struct RunOutputs {
     /// The ledger at the end.
     pub ledger: Ledger,
     /// The cost lines, in the order they were paid.
-    pub costs: Vec<CostLine>,
+    pub cost_lines: Vec<CostLine>,
 }
 
 impl RunOutputs {

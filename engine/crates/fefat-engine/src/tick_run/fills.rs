@@ -7,124 +7,20 @@
 //! the run's front with its cost line; and the price marked, which each plan follows (F-MRK-01,
 //! F-PLN-04).
 
-use fefat_core::costs::{CostLine, CostReason};
-use fefat_core::fidelity::Fidelity;
+use fefat_core::costs::{CostLine, CostReason, ScheduleUse};
 use fefat_core::fills::{Fill, PricingRule};
-use fefat_core::instants::{TradeDate, Ts};
+use fefat_core::instants::Ts;
 use fefat_core::instrument::Contract;
-use fefat_core::ledger::{Ledger, Position};
 use fefat_core::market_data::MarketDataReader;
-use fefat_core::orders::{Order, OrderId, OrderKind, OrderState};
-use fefat_core::units::{Money, Price, Qty};
+use fefat_core::orders::{OrderId, OrderKind, OrderState};
+use fefat_core::units::{Money, Price};
 
+use super::execution::{Execution, FillPoint, execute};
 use super::{BookedFill, RunError, TickRecord, TickRun};
-use crate::book::{Book, Closing, WorkingOrder};
 use crate::event_log::LogEntry;
-use crate::exit_plan::{self, FilledAt, Move};
+use crate::exit_plan::Move;
 use crate::rules::{self, Priced};
-use crate::settings::RunCosts;
 use crate::strategy::ClosedTrade;
-
-/// Where a fill happens in the run: its instant, the point of the timeline after which its exit
-/// plan's legs see records (F-OCO-02), the fidelity of the data that priced it (F-TAG-01), and
-/// the trade date that prices its fee (F-FEE-01).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FillPoint {
-    pub(super) ts: Ts,
-    pub(super) index: usize,
-    pub(super) fidelity: Fidelity,
-    pub(super) trade_date: TradeDate,
-}
-
-/// A fill as the book and the ledger took it, before the log records it: the fill, the cash its
-/// value moved, whether the fee table's first schedule priced it before its date (F-FEE-01), the
-/// orders of its OCO group or its exit plan it cancelled, the stop of its plan it reduced with the
-/// lots left (F-PLN-02), its exit plan's legs, and whether it left the position flat, closing a
-/// trade (§20).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Execution {
-    pub(super) fill: Fill,
-    pub(super) cash: Money,
-    pub(super) extended: bool,
-    pub(super) cancelled: Vec<OrderId>,
-    pub(super) reduced: Option<(OrderId, Qty)>,
-    pub(super) legs: Vec<Order>,
-    pub(super) flat_after: bool,
-}
-
-impl Execution {
-    /// A fill that set nothing off, a roll's leg (F-ROL-02).
-    pub(super) const fn alone(fill: Fill, cash: Money, extended: bool, flat_after: bool) -> Self {
-        Self {
-            fill,
-            cash,
-            extended,
-            cancelled: Vec::new(),
-            reduced: None,
-            legs: Vec::new(),
-            flat_after,
-        }
-    }
-}
-
-/// Closes `id` in the book, filled, and tags its fill as `priced` says at `at`, with the fee the
-/// run's fee table prices it at on its trade date (F-TAG-01, F-FEE-01, F-FEE-02): the order, the
-/// fill, and whether the table's first schedule priced it before its date.
-pub(super) fn closed_and_tagged(
-    book: &mut Book,
-    ledger: &Ledger,
-    costs: &RunCosts,
-    id: OrderId,
-    priced: &Priced,
-    at: FillPoint,
-) -> Result<(WorkingOrder, Fill, bool), RunError> {
-    let filled = book
-        .close(id, Closing::Filled)
-        .ok_or(RunError::UnknownOrder { order: id.0 })?;
-    let instrument = ledger.instrument();
-    let (lots, liquidity) = (filled.order.lots, rules::f_lmt_04(&filled));
-    let (fee, extended) = costs.fee(&instrument, priced.price, lots, liquidity, at.trade_date)?;
-    let tick = instrument.tick_size();
-    let fill = rules::f_tag_01(&filled, priced, at.ts, at.fidelity, tick, fee)?;
-    Ok((filled, fill, extended))
-}
-
-/// Fills `id` as `priced` says at `at`, the market at `market`: the book closes it, the ledger
-/// books it with its fee, its OCO group is cancelled (F-OCO-01), its plan settles its open lots
-/// (F-PLN-02), and the exit plan of an entry is placed (F-OCO-02, F-PLN-01).
-pub(super) fn execute(
-    book: &mut Book,
-    ledger: &mut Ledger,
-    costs: &RunCosts,
-    id: OrderId,
-    priced: &Priced,
-    at: FillPoint,
-    market: Price,
-) -> Result<Execution, RunError> {
-    let (filled, fill, extended) = closed_and_tagged(book, ledger, costs, id, priced, at)?;
-    let tick = ledger.instrument().tick_size();
-    let cash = ledger.book(&fill)?;
-    let mut cancelled = book.group_of(&filled);
-    for &other in &cancelled {
-        book.close(other, Closing::Cancelled);
-    }
-    let settled = book.settle(&filled);
-    cancelled.extend(settled.cancelled);
-    let filled_at = FilledAt {
-        ts: at.ts,
-        index: at.index,
-    };
-    let legs = exit_plan::place(book, &filled, priced.price, market, filled_at, tick)?;
-    Ok(Execution {
-        fill,
-        cash,
-        extended,
-        cancelled,
-        reduced: settled.reduced,
-        legs,
-        flat_after: ledger.position() == Position::Flat,
-    })
-}
 
 impl<R: MarketDataReader> TickRun<'_, R> {
     /// A record: the stops the record before triggered, market orders since, which fill before
@@ -365,9 +261,8 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     /// Logs a fill, after a warning the first time the fee table's first schedule prices a fill
     /// before its date (F-FEE-01), with the orders of its group or its plan it cancelled, the stop
     /// of its plan it reduced, and its exit plan's legs, as the reference's `EventLog.filled`
-    /// does, and keeps it among the run's fills, on `contract`, with its fee's cost line when the
-    /// run names a fee table; its money counts in the trade open, and the fill that leaves the
-    /// position flat closes it (§20).
+    /// does, and keeps it among the run's fills, on `contract`, its money counted in the trade
+    /// open (`Self::count_costs`).
     pub(super) fn record_on(
         &mut self,
         execution: Execution,
@@ -376,27 +271,16 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let Execution {
             fill,
             cash,
-            extended,
+            schedule,
             cancelled,
             reduced,
             legs,
             flat_after,
         } = execution;
-        let moved = cash.checked_sub(fill.fee)?;
-        self.trade_cash = self.trade_cash.checked_add(moved)?;
-        if flat_after {
-            let closed_at = fill.ts;
-            let pnl = std::mem::replace(&mut self.trade_cash, Money(0));
-            self.closed_trades.push(ClosedTrade { closed_at, pnl });
-        }
-        if extended && !self.warned {
+        self.count_costs(&fill, cash, flat_after)?;
+        if schedule == ScheduleUse::BeforeItsDate && !self.warned {
             self.warned = true;
             self.log.push(LogEntry::fee_table_extended(&fill));
-        }
-        if self.costs.fees.is_some() {
-            let reason = CostReason::Fee { order: fill.order };
-            let (ts, amount) = (fill.ts, fill.fee);
-            self.cost_lines.push(CostLine { ts, amount, reason });
         }
         let (ts, id) = (fill.ts, fill.order);
         self.log.push(LogEntry::filled(&fill));
@@ -414,6 +298,25 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             cash,
             contract,
         });
+        Ok(())
+    }
+
+    /// A fill's money, its value less its fee, counted in the trade open, which the fill that
+    /// leaves the position flat closes (§20), and its fee's cost line when the run names a fee
+    /// table.
+    fn count_costs(&mut self, fill: &Fill, cash: Money, flat_after: bool) -> Result<(), RunError> {
+        let moved = cash.checked_sub(fill.fee)?;
+        self.trade_cash = self.trade_cash.checked_add(moved)?;
+        if flat_after {
+            let closed_at = fill.ts;
+            let pnl = std::mem::replace(&mut self.trade_cash, Money(0));
+            self.closed_trades.push(ClosedTrade { closed_at, pnl });
+        }
+        if self.costs.fees.is_some() {
+            let reason = CostReason::Fee { order: fill.order };
+            let (ts, amount) = (fill.ts, fill.fee);
+            self.cost_lines.push(CostLine { ts, amount, reason });
+        }
         Ok(())
     }
 

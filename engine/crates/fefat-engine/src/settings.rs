@@ -4,7 +4,7 @@
 //! an open position (F-ROL-02, F-ROL-04); and what the run pays, its fee table and a perpetual's
 //! funding rates (§14).
 
-use fefat_core::costs::{FeeTable, FundingRate};
+use fefat_core::costs::{FeeTable, FundingRate, ScheduleUse};
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::Liquidity;
 use fefat_core::instants::TradeDate;
@@ -96,11 +96,11 @@ impl RunCosts {
         lots: Qty,
         liquidity: Liquidity,
         trade_date: TradeDate,
-    ) -> Result<(Money, bool), Overflow> {
+    ) -> Result<(Money, ScheduleUse), Overflow> {
         let Some(table) = &self.fees else {
-            return Ok((Money(0), false));
+            return Ok((Money(0), ScheduleUse::OnItsDate));
         };
-        let (fee, extended) = table.in_force(trade_date);
-        Ok((fee.fee(instrument, price, lots, liquidity)?, extended))
+        let (fee, used) = table.in_force(trade_date);
+        Ok((fee.fee(instrument, price, lots, liquidity)?, used))
     }
 }

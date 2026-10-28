@@ -162,17 +162,30 @@ impl FeeTable {
 
     /// The fee in force on `trade_date`, and whether it is the first schedule's, taken before its
     /// date, which the run warns of (F-FEE-01).
-    pub fn in_force(&self, trade_date: TradeDate) -> (FeeRate, bool) {
+    pub fn in_force(&self, trade_date: TradeDate) -> (FeeRate, ScheduleUse) {
         let latest = self
             .later
             .iter()
             .rev()
             .find(|schedule| schedule.effective_from <= trade_date);
         match latest {
-            Some(schedule) => (schedule.fee, false),
-            None => (self.first.fee, trade_date < self.first.effective_from),
+            Some(schedule) => (schedule.fee, ScheduleUse::OnItsDate),
+            None if trade_date < self.first.effective_from => {
+                (self.first.fee, ScheduleUse::BeforeItsDate)
+            }
+            None => (self.first.fee, ScheduleUse::OnItsDate),
         }
     }
+}
+
+/// How the schedule that priced a fill was used (F-FEE-01): in force on the fill's trade date, or
+/// the table's first, taken for a trade date before it, which the run warns of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleUse {
+    /// The schedule in force on the fill's trade date, or no fee table.
+    OnItsDate,
+    /// The table's first schedule, taken for a trade date before its own.
+    BeforeItsDate,
 }
 
 /// A perpetual's funding rate, paid at `ts` (F-FND-01).
@@ -326,19 +339,22 @@ mod tests {
             },
         };
         let table = FeeTable::new(vec![schedule(20_518, 200), schedule(20_519, 250)]).unwrap();
-        let charge = |(fee, extended): (FeeRate, bool)| match fee {
-            FeeRate::Futures { per_contract_side } => (per_contract_side.0, extended),
-            FeeRate::Crypto { .. } => (0, extended),
+        let charge = |(fee, used): (FeeRate, ScheduleUse)| match fee {
+            FeeRate::Futures { per_contract_side } => (per_contract_side.0, used),
+            FeeRate::Crypto { .. } => (0, used),
         };
 
-        assert_eq!(charge(table.in_force(TradeDate(20_517))), (2_000_000, true));
+        assert_eq!(
+            charge(table.in_force(TradeDate(20_517))),
+            (2_000_000, ScheduleUse::BeforeItsDate)
+        );
         assert_eq!(
             charge(table.in_force(TradeDate(20_518))),
-            (2_000_000, false)
+            (2_000_000, ScheduleUse::OnItsDate)
         );
         assert_eq!(
             charge(table.in_force(TradeDate(20_521))),
-            (2_500_000, false)
+            (2_500_000, ScheduleUse::OnItsDate)
         );
         assert_eq!(
             FeeTable::new(vec![schedule(20_519, 250), schedule(20_518, 200)]),

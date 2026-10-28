@@ -14,7 +14,8 @@ use fefat_core::market_data::{BarRow, MarketDataReader};
 use fefat_core::orders::{OrderId, OrderKind, OrderState};
 use fefat_core::units::Price;
 
-use super::fills::{Execution, FillPoint, execute, is_limit, is_stop};
+use super::execution::{Execution, FillPoint, execute};
+use super::fills::{is_limit, is_stop};
 use super::{RunError, TickRun};
 use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;

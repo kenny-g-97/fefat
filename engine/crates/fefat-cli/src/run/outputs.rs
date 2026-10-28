@@ -94,7 +94,7 @@ fn fills_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
 fn costs_batch(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
     let rows: Vec<CostRow<'_>> = runs
         .iter()
-        .flat_map(|(case, run)| run.costs.iter().map(move |line| (*case, line)))
+        .flat_map(|(case, run)| run.cost_lines.iter().map(move |line| (*case, line)))
         .collect();
     let int = |value: fn(&CostRow<'_>) -> i64| -> ArrayRef {
         Arc::new(Int64Array::from_iter_values(rows.iter().map(value)))

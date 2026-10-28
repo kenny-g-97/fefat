@@ -288,7 +288,7 @@ fn hash_outputs(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
             ],
         );
     }
-    for line in &outputs.costs {
+    for line in &outputs.cost_lines {
         let (reason, detail) = match line.reason {
             CostReason::Fee { order } => (1, order.0 as i64),
             CostReason::Funding { rate } => (2, rate.0),

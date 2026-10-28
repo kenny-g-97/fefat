@@ -14,7 +14,7 @@ use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
 use super::skip_equals_full::{CAPITAL, drawn_month, with_month};
-use super::{BookedFill, Replay, RunOutputs};
+use super::{BookedFill, Replay, RunError, RunOutputs};
 
 /// The run's seed, recorded in the pull request, so that a failure reproduces.
 const SEED: u64 = 20_261_030;
@@ -65,7 +65,7 @@ fn net_reconciles(opening: Money, outputs: &RunOutputs) -> Result<bool, TestCase
     let capital = i128::from(CAPITAL);
     let moved = sum(outputs.fills.iter().map(|booked| booked.cash));
     let gross = i128::from(opening.0) - capital + moved + i128::from(value.0);
-    let paid = sum(outputs.costs.iter().map(|line| line.amount));
+    let paid = sum(outputs.cost_lines.iter().map(|line| line.amount));
     let net = i128::from(equity.0) - capital;
     prop_assert_eq!(gross - paid, net);
     Ok(true)
@@ -90,10 +90,14 @@ fn gross_profit_and_loss_less_the_cost_lines_is_the_net_after_every_step() {
                 match run.step() {
                     Ok(Some(_)) => {}
                     Ok(None) => break,
-                    Err(_) => {
+                    Err(
+                        RunError::TriggeredWithoutQuotes { .. }
+                        | RunError::FundingWithoutMark { .. },
+                    ) => {
                         coverage.borrow_mut().refused += 1;
                         return Ok(());
                     }
+                    Err(error) => prop_assert!(false, "an unexpected refusal: {error:?}"),
                 }
                 cash_reconciles(opening, run.fills(), run.cost_lines(), run.ledger().cash())?;
             }
@@ -106,7 +110,7 @@ fn gross_profit_and_loss_less_the_cost_lines_is_the_net_after_every_step() {
             let mut seen = coverage.borrow_mut();
             seen.reconciled += usize::from(reconciled);
             let paid = |funding: bool| {
-                let mut reasons = outputs.costs.iter().map(|line| line.reason);
+                let mut reasons = outputs.cost_lines.iter().map(|line| line.reason);
                 reasons.any(|reason| matches!(reason, CostReason::Funding { .. }) == funding)
             };
             let (fees, funding) = (paid(false), paid(true));
