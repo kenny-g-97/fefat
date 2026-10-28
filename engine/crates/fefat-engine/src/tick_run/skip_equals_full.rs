@@ -525,16 +525,13 @@ fn template(drawn: &DrawnTemplate, walks: &[Vec<TbboRow>]) -> TemplateStrategy {
         let (ts_close, _) = instant_of(row.instant, walks);
         let day = usize::try_from(ts_close.0.div_euclid(DAY) - i64::from(FIRST_DATE)).unwrap();
         by_close.entry(ts_close).or_insert(SignalRow {
-            ts_close,
             long_entry: row.entry == 1,
             short_entry: row.entry == 2,
             long_exit: row.long_exit,
             short_exit: row.short_exit,
-            stop_price: None,
-            target_price: None,
-            size_mult: None,
             wake: row.wake,
             flat_by: drawn.flat_by.then(|| Ts(day_start(day) + FLAT_BY)),
+            ..SignalRow::at(ts_close)
         });
     }
     TemplateStrategy::new(&spec, by_close.into_values().collect(), &instrument()).unwrap()

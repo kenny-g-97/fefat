@@ -4,14 +4,21 @@
 
 /// A float of a specification or a signal frame as the decimal it prints as, `1.3` for 1.3: the
 /// shortest decimal that reads back as the float, which Python's `repr` writes too, so that sizes
-/// and multiples are whole exactly when `fefat.reference.template` finds them whole.
+/// and multiples are whole exactly when `fefat.reference.template` finds them whole, and every
+/// distance rounds as the reference rounds it (F-RND-01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ExactDecimal {
+pub struct ExactDecimal {
     digits: i128,
     scale: u32,
 }
 
 impl ExactDecimal {
+    /// One, a whole target's fraction.
+    pub(crate) const ONE: Self = Self {
+        digits: 1,
+        scale: 0,
+    };
+
     /// The decimal of `number`; none for a NaN, an infinity, or a decimal too long to count.
     pub(crate) fn of(number: f64) -> Option<Self> {
         let text = number.to_string();
@@ -24,12 +31,44 @@ impl ExactDecimal {
 
     /// `self × multiplier ÷ divisor` when it is a whole number.
     pub(crate) fn whole_times(self, multiplier: i64, divisor: i64) -> Option<i128> {
-        let numerator = self.digits.checked_mul(i128::from(multiplier))?;
-        let denominator = 10_i128
-            .checked_pow(self.scale)?
-            .checked_mul(i128::from(divisor))?;
+        let (numerator, denominator) = self.over(multiplier.into(), divisor.into())?;
         let whole = numerator.checked_rem(denominator)? == 0;
         whole.then(|| numerator.checked_div(denominator)).flatten()
+    }
+
+    /// `self × multiplier ÷ divisor`, rounded down, for a divisor above zero.
+    pub(crate) fn floor_times(self, multiplier: i128, divisor: i128) -> Option<i128> {
+        let (numerator, denominator) = self.over(multiplier, divisor)?;
+        numerator.checked_div_euclid(denominator)
+    }
+
+    /// `self × multiplier ÷ divisor`, rounded up, for a divisor above zero.
+    pub(crate) fn ceil_times(self, multiplier: i128, divisor: i128) -> Option<i128> {
+        let (numerator, denominator) = self.over(multiplier, divisor)?;
+        numerator
+            .checked_neg()?
+            .checked_div_euclid(denominator)?
+            .checked_neg()
+    }
+
+    /// The decimal cut to whole units of 10^-`places`, toward zero, as a feature's value is cut
+    /// to 1e-9 units of price (F-RND-01); none beyond 64 bits.
+    pub(crate) fn truncated_units(self, places: u32) -> Option<i64> {
+        let units = match self.scale.checked_sub(places) {
+            None => self
+                .digits
+                .checked_mul(10_i128.checked_pow(places - self.scale)?)?,
+            Some(cut) => 10_i128
+                .checked_pow(cut)
+                .map_or(0, |divisor| self.digits / divisor),
+        };
+        i64::try_from(units).ok()
+    }
+
+    fn over(self, multiplier: i128, divisor: i128) -> Option<(i128, i128)> {
+        let numerator = self.digits.checked_mul(multiplier)?;
+        let denominator = 10_i128.checked_pow(self.scale)?.checked_mul(divisor)?;
+        (denominator > 0).then_some((numerator, denominator))
     }
 }
 
@@ -54,5 +93,27 @@ mod tests {
         );
         assert_eq!(ExactDecimal::of(f64::NAN), None);
         assert_eq!(ExactDecimal::of(f64::INFINITY), None);
+    }
+
+    #[test]
+    fn a_decimal_rounds_down_and_up_exactly_and_cuts_to_units_toward_zero() {
+        // F-RND-01: 0.07 % of 5000.25 is 14.0007 ticks of 0.25, and 2 × 1.30 is 10.4 ticks.
+        let percent = ExactDecimal::of(0.07).unwrap();
+        let fill = 5_000_250_000_000_i128;
+        assert_eq!(percent.floor_times(fill, 100 * 250_000_000), Some(14));
+        let distance = ExactDecimal::of(2.0).unwrap();
+        assert_eq!(distance.ceil_times(1_300_000_000, 250_000_000), Some(11));
+        assert_eq!(distance.ceil_times(1_000_000_000, 250_000_000), Some(8));
+        assert_eq!(
+            ExactDecimal::of(1.2345678901234)
+                .unwrap()
+                .truncated_units(9),
+            Some(1_234_567_890)
+        );
+        assert_eq!(
+            ExactDecimal::of(1.3).unwrap().truncated_units(9),
+            Some(1_300_000_000)
+        );
+        assert_eq!(ExactDecimal::of(1e-30).unwrap().truncated_units(9), Some(0));
     }
 }

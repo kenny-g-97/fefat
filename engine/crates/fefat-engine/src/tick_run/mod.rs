@@ -226,9 +226,8 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
     fn decide(&mut self, now: Ts, index: usize) -> Result<Stepped, RunError> {
         self.next_decision += 1;
         let latency = self.settings.latency_nanoseconds();
-        let position = self.ledger.position();
-        let mut context =
-            DecisionContext::new(&mut self.book, &mut self.log, position, now, index, latency);
+        let (book, log, ledger) = (&mut self.book, &mut self.log, &self.ledger);
+        let mut context = DecisionContext::new(book, log, ledger, now, index, latency);
         self.strategy.on_decision(now, &mut context)?;
         Ok(Stepped::Decision(now))
     }

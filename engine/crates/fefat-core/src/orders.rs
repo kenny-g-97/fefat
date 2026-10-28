@@ -66,6 +66,15 @@ impl Side {
             Self::Sell => first.min(second),
         }
     }
+
+    /// The price further in the favour of a position this side opened: the higher for a long,
+    /// the lower for a short.
+    pub fn better(self, first: Price, second: Price) -> Price {
+        match self {
+            Self::Buy => first.max(second),
+            Self::Sell => first.min(second),
+        }
+    }
 }
 
 /// An order's class, with the price it names (`fill-semantics.md` §2): a market order names none.
@@ -85,18 +94,66 @@ pub enum OrderKind {
     },
 }
 
-/// What an order does for a position: open it, protect it (a bracket's stop), take its profit (a
-/// bracket's target), or close it when the strategy says so.
+/// What an order does for a position, which its fill records (F-TAG-01): open it, protect it (an
+/// exit plan's stop), take its profit (one of the plan's targets), or close it at the market on
+/// the strategy's word, for a reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OrderRole {
     /// Opens or adds to a position.
     Entry,
-    /// A bracket's stop.
+    /// An exit plan's stop, or a bracket's.
     Stop,
-    /// A bracket's target.
-    Target,
-    /// Closes the position on the strategy's word: a signal exit or a time rule.
-    Exit,
+    /// An exit plan's target, or a bracket's, the first.
+    Target(TargetNumber),
+    /// Closes the position at the market on the strategy's word.
+    Exit(ExitReason),
+}
+
+/// Which of an exit plan's three targets (F-PLN-01).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TargetNumber {
+    /// Target 1.
+    First,
+    /// Target 2.
+    Second,
+    /// Target 3.
+    Third,
+}
+
+impl TargetNumber {
+    /// The targets in order.
+    pub const ALL: [Self; 3] = [Self::First, Self::Second, Self::Third];
+
+    /// The target's number, from 1.
+    pub const fn number(self) -> u8 {
+        match self {
+            Self::First => 1,
+            Self::Second => 2,
+            Self::Third => 3,
+        }
+    }
+}
+
+/// Why a market order closes the position (`docs/spec/fill-semantics.md` §20): the strategy's own
+/// word, outside an execution template, or one of the template's time rules or signals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExitReason {
+    /// A strategy's own exit, outside the template.
+    Strategy,
+    /// The flat-by time (F-TIM-01).
+    FlatBy,
+    /// A stop of trading (F-TIM-03).
+    NoOvernight,
+    /// A stop of trading over a weekend (F-TIM-03).
+    NoWeekend,
+    /// The bars a position may stay open (F-TIM-02).
+    MaxBars,
+    /// The minutes a position may stay open (F-TIM-02).
+    MaxMinutes,
+    /// An entry signal against the position (F-ENT-04).
+    OppositeSignal,
+    /// `long_exit` or `short_exit` (F-ENT-04).
+    SignalExit,
 }
 
 /// How long an order works.
@@ -172,14 +229,25 @@ impl fmt::Display for OrderKind {
     }
 }
 
+/// The role as a fill records it: `entry`, `stop`, `target_1` to `target_3`, or an exit's reason,
+/// `exit` for a strategy's own.
 impl fmt::Display for OrderRole {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Entry => "entry",
-            Self::Stop => "stop",
-            Self::Target => "target",
-            Self::Exit => "exit",
-        })
+        match self {
+            Self::Entry => formatter.write_str("entry"),
+            Self::Stop => formatter.write_str("stop"),
+            Self::Target(target) => write!(formatter, "target_{}", target.number()),
+            Self::Exit(reason) => formatter.write_str(match reason {
+                ExitReason::Strategy => "exit",
+                ExitReason::FlatBy => "flat_by",
+                ExitReason::NoOvernight => "no_overnight",
+                ExitReason::NoWeekend => "no_weekend",
+                ExitReason::MaxBars => "max_bars",
+                ExitReason::MaxMinutes => "max_minutes",
+                ExitReason::OppositeSignal => "opposite_signal",
+                ExitReason::SignalExit => "signal_exit",
+            }),
+        }
     }
 }
 

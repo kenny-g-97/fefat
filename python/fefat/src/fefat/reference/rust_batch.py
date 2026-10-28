@@ -38,13 +38,14 @@ from fefat.reference.units import (
     instrument_parameters,
     lots_of,
 )
+from fefat.strategy import exits as rules
 from fefat.strategy.spec import StrategySpec
 
 CAPITAL = 50_000_000_000
 """The run's capital in micro-units, 50,000 USD (D-51): the ledger's starting cash."""
 NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
-_OPTIONAL_SIGNALS = ("stop_price", "target_price", "size_mult", "wake")
+_OPTIONAL_SIGNALS = ("stop_price", "target_price", "trail_ref", "size_mult", "wake")
 _FLAGS = ("ambiguous", "size_exceeded")
 _SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
 _MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
@@ -234,7 +235,9 @@ def write_cache_batch(cases: Sequence[CacheCase], folder: Path) -> None:
     for number, case in enumerate(cases):
         columns = case.signals.columns
         kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in columns)]
-        frames.append(case.signals.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept))
+        features = _feature_columns(case.strategy, case.signals)
+        case_number = pl.lit(number, dtype=pl.Int64).alias("case")
+        frames.append(case.signals.select(case_number, *kept, *features))
     signals = pl.concat(frames, how="diagonal")
     signals.write_ipc(folder / "signals.arrow", compression="uncompressed")
 
@@ -427,8 +430,8 @@ def _record_values(case: int, trade_date: int, record: Record) -> dict[str, int]
 
 def _signal_rows(cases: Sequence[EngineCase]) -> pl.DataFrame | None:
     """The signal rows of the template cases, each tagged with its case: the four signals, the
-    optional columns the template reads, absent ones null (D-53), and with a flat-by time the
-    instant of each row's trade date's flat-by time."""
+    optional columns the template reads, absent ones null (D-53), the features its exit plan
+    names, and with a flat-by time the instant of each row's trade date's flat-by time."""
     frames = []
     for number, case in enumerate(cases):
         scenario = case.scenario
@@ -436,9 +439,32 @@ def _signal_rows(cases: Sequence[EngineCase]) -> pl.DataFrame | None:
             continue
         frame = scenario.signal_frame()
         kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in frame.columns)]
-        rows = frame.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept)
+        features = _feature_columns(scenario.strategy, frame)
+        rows = frame.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept, *features)
         frames.append(rows.with_columns(_flat_by(scenario, case.sessions, frame)))
     return pl.concat(frames, how="diagonal") if frames else None
+
+
+def _feature_columns(strategy: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
+    """The features the exit plan's rules name, as float64 columns under the names of their
+    rules, which `fefat-cli run` reads: `stop_feature`, `target_feature_1` to `target_feature_3`,
+    and `trail_feature`. A feature the frame lacks stays out, and the Rust template refuses an
+    entry that needs it, as the reference's does."""
+    execution = strategy.execution
+    named: dict[str, str] = {}
+    if isinstance(execution.stop, rules.AtrStop):
+        named["stop_feature"] = execution.stop.feature
+    for number, target in enumerate(execution.targets, start=1):
+        if isinstance(target.price, rules.AtrTarget):
+            named[f"target_feature_{number}"] = target.price.feature
+    trailing = execution.trailing
+    if trailing is not None and isinstance(trailing.by, rules.AtrTrail):
+        named["trail_feature"] = trailing.by.feature
+    return [
+        pl.col(feature).cast(pl.Float64).alias(column)
+        for column, feature in named.items()
+        if feature in frame.columns
+    ]
 
 
 def _flat_by(

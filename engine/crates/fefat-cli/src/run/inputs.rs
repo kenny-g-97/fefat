@@ -17,7 +17,7 @@ use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::market_data::TapeDay;
 use fefat_core::units::Price;
-use fefat_engine::template::SignalRow;
+use fefat_engine::template::{RowFeatures, SignalRow};
 
 use super::manifest::RunManifest;
 use super::{BatchError, arrow_error};
@@ -102,59 +102,107 @@ fn signal_rows_by_case(path: &Path) -> Result<BTreeMap<i64, Vec<SignalRow>>, Bat
 }
 
 /// Each row of `batch` as its case and its signal row (D-53: a null signal reads as false, a
-/// null or absent `wake` as true, and a null or absent `flat_by` as none).
+/// null or absent `wake` as true, and a null or absent price, feature, or `flat_by` as none).
 fn signal_rows_of(path: &Path, batch: &RecordBatch) -> Result<Vec<(i64, SignalRow)>, BatchError> {
     let cases = int64s(path, batch, "case")?.values();
     let ts_close = int64s(path, batch, "ts_close")?.values();
-    let (long_entry, short_entry) = (
-        booleans(path, batch, "long_entry")?,
-        booleans(path, batch, "short_entry")?,
-    );
-    let (long_exit, short_exit) = (
-        booleans(path, batch, "long_exit")?,
-        booleans(path, batch, "short_exit")?,
-    );
-    let stop_price = optional(path, batch, "stop_price", "int64", |column| {
-        column.as_primitive_opt::<Int64Type>()
-    })?;
-    let target_price = optional(path, batch, "target_price", "int64", |column| {
-        column.as_primitive_opt::<Int64Type>()
-    })?;
-    let size_mult = optional(path, batch, "size_mult", "float64", |column| {
-        column.as_primitive_opt::<Float64Type>()
-    })?;
-    let wake = optional(path, batch, "wake", "boolean", |column| {
-        column.as_boolean_opt()
-    })?;
-    let flat_by = optional(path, batch, "flat_by", "int64", |column| {
-        column.as_primitive_opt::<Int64Type>()
-    })?;
-    let int_at = |column: Option<&Int64Array>, row: usize| {
-        column.and_then(|column| column.is_valid(row).then(|| column.value(row)))
-    };
-    let price_at = |column: Option<&Int64Array>, row: usize| int_at(column, row).map(Price);
-    let float_at = |column: Option<&Float64Array>, row: usize| {
-        column.and_then(|column| column.is_valid(row).then(|| column.value(row)))
-    };
-    let signal = |column: &BooleanArray, row: usize| column.is_valid(row) && column.value(row);
+    let columns = SignalColumns::of(path, batch)?;
     let rows = cases.iter().zip(ts_close).enumerate();
     Ok(rows
-        .map(|(row, (&case, &ts))| {
-            let signal_row = SignalRow {
-                ts_close: Ts(ts),
-                long_entry: signal(long_entry, row),
-                short_entry: signal(short_entry, row),
-                long_exit: signal(long_exit, row),
-                short_exit: signal(short_exit, row),
-                stop_price: price_at(stop_price, row),
-                target_price: price_at(target_price, row),
-                size_mult: float_at(size_mult, row),
-                wake: wake.is_none_or(|wake| wake.is_null(row) || wake.value(row)),
-                flat_by: int_at(flat_by, row).map(Ts),
-            };
-            (case, signal_row)
-        })
+        .map(|(row, (&case, &ts))| (case, columns.row(row, Ts(ts))))
         .collect())
+}
+
+/// The columns of the signal rows but their case and close: the four signals; the prices the
+/// exit plan reads; the features its rules name, which `fefat.reference.rust_batch` writes
+/// under the names of their rules (`stop_feature`, `target_feature_1` to `target_feature_3`,
+/// `trail_feature`); and the size's multiple, `wake`, and `flat_by`, each absent where the frame
+/// leaves it out.
+struct SignalColumns<'batch> {
+    signals: [&'batch BooleanArray; 4],
+    prices: [Option<&'batch Int64Array>; 3],
+    features: [Option<&'batch Float64Array>; 5],
+    size_mult: Option<&'batch Float64Array>,
+    wake: Option<&'batch BooleanArray>,
+    flat_by: Option<&'batch Int64Array>,
+}
+
+impl<'batch> SignalColumns<'batch> {
+    fn of(path: &Path, batch: &'batch RecordBatch) -> Result<Self, BatchError> {
+        let signal = |name| booleans(path, batch, name);
+        let ints = |name| {
+            optional(path, batch, name, "int64", |column| {
+                column.as_primitive_opt::<Int64Type>()
+            })
+        };
+        let floats = |name| {
+            optional(path, batch, name, "float64", |column| {
+                column.as_primitive_opt::<Float64Type>()
+            })
+        };
+        Ok(Self {
+            signals: [
+                signal("long_entry")?,
+                signal("short_entry")?,
+                signal("long_exit")?,
+                signal("short_exit")?,
+            ],
+            prices: [
+                ints("stop_price")?,
+                ints("target_price")?,
+                ints("trail_ref")?,
+            ],
+            features: [
+                floats("stop_feature")?,
+                floats("target_feature_1")?,
+                floats("target_feature_2")?,
+                floats("target_feature_3")?,
+                floats("trail_feature")?,
+            ],
+            size_mult: floats("size_mult")?,
+            wake: optional(path, batch, "wake", "boolean", |column| {
+                column.as_boolean_opt()
+            })?,
+            flat_by: ints("flat_by")?,
+        })
+    }
+
+    fn row(&self, row: usize, ts_close: Ts) -> SignalRow {
+        let signal = |column: &BooleanArray| column.is_valid(row) && column.value(row);
+        let [long_entry, short_entry, long_exit, short_exit] = self.signals.map(signal);
+        let [stop_price, target_price, trail_ref] = self.prices.map(|column| {
+            let price = column.filter(|column| column.is_valid(row));
+            price.map(|column| Price(column.value(row)))
+        });
+        let [stop, first, second, third, trailing] = self.features.map(|column| {
+            let value = column.filter(|column| column.is_valid(row));
+            value.map(|column| column.value(row))
+        });
+        let flat_by = self.flat_by.filter(|column| column.is_valid(row));
+        SignalRow {
+            ts_close,
+            long_entry,
+            short_entry,
+            long_exit,
+            short_exit,
+            stop_price,
+            target_price,
+            trail_ref,
+            features: RowFeatures {
+                stop,
+                targets: [first, second, third],
+                trailing,
+            },
+            size_mult: self
+                .size_mult
+                .filter(|column| column.is_valid(row))
+                .map(|column| column.value(row)),
+            wake: self
+                .wake
+                .is_none_or(|wake| wake.is_null(row) || wake.value(row)),
+            flat_by: flat_by.map(|column| Ts(column.value(row))),
+        }
+    }
 }
 
 /// The records of a level's file grouped by case and trade date, each run of rows a slice of its

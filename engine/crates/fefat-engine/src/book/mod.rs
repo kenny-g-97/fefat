@@ -1,10 +1,17 @@
 //! The orders of a run from placement to fill or cancellation, as `fefat.reference.orders.Book`
 //! holds them: each with its state, whether it has rested (F-LMT-04), the point of the run's
-//! timeline after which it sees records (F-ACT-01), its OCO group (F-OCO-01), and the bracket its
-//! fill places (F-OCO-02).
+//! timeline after which it sees records (F-ACT-01), its OCO group (F-OCO-01), and the exit plan its
+//! fill places (F-OCO-02, F-PLN-01); and the plans of the entries that have filled, while a leg of
+//! theirs lives, which move their stops and settle their open lots (F-PLN-02 to F-PLN-04).
 
-use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState, Side};
-use fefat_core::units::{Overflow, Price};
+use std::collections::BTreeMap;
+
+use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState};
+use fefat_core::units::Price;
+
+use crate::exit_plan::{ExitPlan, LivePlan};
+
+mod plans;
 
 /// Where a bracket's leg is placed: at a price, or a number of ticks from its entry's fill price,
 /// against the position for the stop and in its favour for the target (F-OCO-02).
@@ -26,34 +33,14 @@ pub struct BracketLeg {
     pub price: LegPrice,
 }
 
-/// The stop and the target placed, as one OCO group, when their entry fills (F-OCO-02).
+/// The stop and the target placed when their entry fills (F-OCO-02): an order scenario's
+/// bracket, an exit plan of one stop and one target for the whole entry (`ExitPlan::from`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Bracket {
     /// The stop, a stop-market order against the position.
     pub stop: BracketLeg,
     /// The target, a limit order in the position's favour.
     pub target: BracketLeg,
-}
-
-impl Bracket {
-    /// The stop's and the target's prices for an entry on `side` filled at `fill`: in ticks, a
-    /// buy's stop below the fill and its target above it, a sell's the other way round.
-    pub(crate) fn prices(
-        &self,
-        side: Side,
-        fill: Price,
-        tick: Price,
-    ) -> Result<(Price, Price), Overflow> {
-        let stop = match self.stop.price {
-            LegPrice::At(price) => price,
-            LegPrice::TicksFromFill(ticks) => side.opposite().moved(fill, ticks, tick)?,
-        };
-        let target = match self.target.price {
-            LegPrice::At(price) => price,
-            LegPrice::TicksFromFill(ticks) => side.moved(fill, ticks, tick)?,
-        };
-        Ok((stop, target))
-    }
 }
 
 /// An order the run holds. Its state and whether it rested change only through the book's
@@ -81,23 +68,23 @@ pub enum Closing {
     Cancelled,
 }
 
-/// What an order has to do with a bracket (F-OCO-02): nothing, an entry whose fill places one, or
-/// one of its legs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What an order has to do with an exit plan (F-OCO-02, F-PLN-01): nothing, an entry whose fill
+/// places one, or one of its legs.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BracketLink {
-    /// No bracket.
+    /// No exit plan.
     Unbracketed,
-    /// An entry whose fill places this bracket.
-    Entry(Bracket),
-    /// A leg of the bracket of this entry; the legs of one entry form one OCO group.
+    /// An entry whose fill places this plan.
+    Entry(Box<ExitPlan>),
+    /// A leg of the plan of this entry; the plan settles its legs' open lots (F-PLN-02).
     LegOf(OrderId),
 }
 
 impl BracketLink {
-    /// The entry whose bracket this order is a leg of.
-    pub const fn leg_of(self) -> Option<OrderId> {
+    /// The entry whose plan this order is a leg of.
+    pub const fn leg_of(&self) -> Option<OrderId> {
         match self {
-            Self::LegOf(entry) => Some(entry),
+            Self::LegOf(entry) => Some(*entry),
             Self::Unbracketed | Self::Entry(_) => None,
         }
     }
@@ -135,22 +122,19 @@ impl WorkingOrder {
     }
 
     fn shares_group_with(&self, other: &Self) -> bool {
-        let named = self.order.oco.is_some() && self.order.oco == other.order.oco;
-        let bracket = match (self.link, other.link) {
-            (BracketLink::LegOf(entry), BracketLink::LegOf(other_entry)) => entry == other_entry,
-            _ => false,
-        };
-        named || bracket
+        self.order.oco.is_some() && self.order.oco == other.order.oco
     }
 }
 
 /// The orders of a run: the live ones, waiting, working, or triggered, and those filled or
-/// cancelled; and the ids it has given orders of its own, from 1.
+/// cancelled; the ids it has given orders of its own, from 1; and the live exit plans, by their
+/// entries' ids.
 #[derive(Debug, Clone, Default)]
 pub struct Book {
     live: Vec<WorkingOrder>,
     closed: Vec<WorkingOrder>,
     issued: u64,
+    plans: BTreeMap<OrderId, LivePlan>,
 }
 
 impl Book {
@@ -169,14 +153,15 @@ impl Book {
         self.live.iter()
     }
 
-    /// The live orders and the ids given, without the closed orders: the book a bar is replayed
-    /// on with its extremes the other way round (F-BAR-05), which the run then drops, as
-    /// `Book.copied` copies the reference's.
+    /// The live orders, the ids given, and the live plans, without the closed orders: the book a
+    /// bar is replayed on with its extremes the other way round (F-BAR-05), which the run then
+    /// drops, as `Book.copied` copies the reference's.
     pub(crate) fn trial(&self) -> Self {
         Self {
             live: self.live.clone(),
             closed: Vec::new(),
             issued: self.issued,
+            plans: self.plans.clone(),
         }
     }
 
@@ -234,7 +219,8 @@ impl Book {
         Some(())
     }
 
-    /// Closes the live order `id`, filled or cancelled, and returns it.
+    /// Closes the live order `id`, filled or cancelled, and returns it; its plan leaves with its
+    /// last leg.
     pub(crate) fn close(&mut self, id: OrderId, closing: Closing) -> Option<WorkingOrder> {
         let index = self.live.iter().position(|order| order.order.id == id)?;
         let mut order = self.live.remove(index);
@@ -242,6 +228,14 @@ impl Book {
             Closing::Filled => OrderState::Filled,
             Closing::Cancelled => OrderState::Cancelled,
         };
+        if let Some(entry) = order.link.leg_of()
+            && !self
+                .live
+                .iter()
+                .any(|other| other.link.leg_of() == Some(entry))
+        {
+            self.plans.remove(&entry);
+        }
         self.closed.push(order.clone());
         Some(order)
     }
@@ -269,12 +263,22 @@ impl Book {
         !self.live.is_empty()
     }
 
-    /// Whether a market order is on its way out of the position: the exit that flatten placed,
-    /// or a stop triggered on TBBO, a market order from its trigger that no decision cancels
+    /// Whether a market order is on its way out of the position: an exit that flatten placed, or
+    /// a stop triggered on TBBO, a market order from its trigger that no decision cancels
     /// (F-STP-02).
     pub(crate) fn is_exiting(&self) -> bool {
+        self.live.iter().any(|order| match order.order.role {
+            OrderRole::Exit(_) => true,
+            OrderRole::Entry => false,
+            OrderRole::Stop | OrderRole::Target(_) => order.state == OrderState::Triggered,
+        })
+    }
+
+    /// Whether an entry stop triggered on TBBO is on its way into a position, a market order from
+    /// its trigger that no decision cancels (F-STP-02, F-ENT-03).
+    pub(crate) fn is_entering(&self) -> bool {
         self.live.iter().any(|order| {
-            order.order.role == OrderRole::Exit || order.state == OrderState::Triggered
+            order.order.role == OrderRole::Entry && order.state == OrderState::Triggered
         })
     }
 

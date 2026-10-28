@@ -9,19 +9,21 @@ import pytest
 
 from fefat.reference.exit_plan import (
     ExitPlan,
+    LegFill,
     LivePlan,
     PlannedLeg,
     TicksAway,
     TicksTrigger,
     TrailingPlan,
     f_pln_01,
+    f_pln_02,
     f_pln_03,
     f_pln_05,
     f_rnd_01,
     f_trl_03,
     place_exit_plan,
 )
-from fefat.reference.orders import Book, OrderKind, OrderRole, Side, WorkingOrder
+from fefat.reference.orders import Book, OrderKind, OrderRole, OrderState, Side, WorkingOrder
 
 TICK = 250_000_000
 """ES's tick, 0.25, in 1e-9 units."""
@@ -103,25 +105,43 @@ def test_a_trailing_stop_moves_by_whole_steps(
     assert f_trl_03(side, price(stop), price(level), 2, TICK) == price(moved)
 
 
-def live_long(trailing: TrailingPlan | None) -> LivePlan:
-    """A long of 1 lot filled at 5000.25 with the market at 5000.00, a stop 8 ticks under the
-    fill, and `trailing`, its plan placed in a book of its own."""
-    book = Book(position=1)
-    plan = ExitPlan(PlannedLeg(TicksAway(8)), (), None, trailing)
-    entry = WorkingOrder(
+def long_entry(book: Book, lots: int, plan: ExitPlan) -> WorkingOrder:
+    """A market buy of `lots` carrying `plan`, with the book's next id."""
+    return WorkingOrder(
         id=book.new_id(),
         side=Side.BUY,
         kind=OrderKind.MARKET,
         price=None,
-        lots=1,
+        lots=lots,
         role=OrderRole.ENTRY,
         placed_at=0,
         activation=0,
         seen_after=0,
         plan=plan,
     )
+
+
+def live_long(trailing: TrailingPlan | None) -> LivePlan:
+    """A long of 1 lot filled at 5000.25 with the market at 5000.00, a stop 8 ticks under the
+    fill, and `trailing`, its plan placed in a book of its own."""
+    book = Book(position=1)
+    entry = long_entry(book, 1, ExitPlan(PlannedLeg(TicksAway(8)), (), None, trailing))
     place_exit_plan(book, entry, price("5000.25"), price("5000.00"), 0, 0, TICK)
     return book.plans[entry.id]
+
+
+def test_a_plan_without_a_stop_keeps_its_later_targets_when_an_earlier_one_fills() -> None:
+    # F-PLN-02: a target's fill cancels the plan's other legs only when no lots stay open; with
+    # no stop to reduce, the second target still works for the lot the first left.
+    book = Book(position=2)
+    targets = (PlannedLeg(TicksAway(4), fraction=Fraction(1, 2)), PlannedLeg(TicksAway(8)))
+    entry = long_entry(book, 2, ExitPlan(None, targets))
+    first, second = place_exit_plan(book, entry, price("5000.00"), price("5000.00"), 0, 0, TICK)
+    book.close(first, OrderState.FILLED)
+
+    assert f_pln_02(book, first) == LegFill()
+    assert book.live() == [second]
+    assert book.plans[entry.id].open_lots == 1
 
 
 def test_a_bar_is_skipped_only_where_no_plan_could_move_in_it() -> None:

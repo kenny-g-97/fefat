@@ -2,23 +2,26 @@
 //! the market's hours (F-SES-01, F-SES-02), the orders that see their first record (F-ACT-01,
 //! F-MKT-01, F-MKT-02, F-STP-05), stops triggered and filled (F-STP-01 to F-STP-03), limits filled
 //! or resting (F-LMT-01 to F-LMT-04); and each fill, on ticks or on bars, executed in the book
-//! and the ledger with its OCO group (F-OCO-01) and its bracket (F-OCO-02), then logged.
+//! and the ledger with its OCO group (F-OCO-01), its exit plan's open lots (F-PLN-02), and the
+//! exit plan an entry carries (F-OCO-02, F-PLN-01), then logged; and the price marked, which each
+//! plan follows (F-MRK-01, F-PLN-04).
 
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::PricingRule;
 use fefat_core::instants::Ts;
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
-use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState, TimeInForce};
-use fefat_core::units::Price;
+use fefat_core::orders::{Order, OrderId, OrderKind, OrderState};
+use fefat_core::units::{Price, Qty};
 
 use super::{BookedFill, RunError, TickRecord, TickRun};
-use crate::book::{Book, BracketLink, Closing, WorkingOrder};
+use crate::book::{Book, Closing};
 use crate::event_log::LogEntry;
+use crate::exit_plan::{self, FilledAt, Move};
 use crate::rules::{self, Priced};
 
-/// Where a fill happens in the run: its instant, the point of the timeline after which its
-/// bracket's legs see records (F-OCO-02), and the fidelity of the data that priced it (F-TAG-01).
+/// Where a fill happens in the run: its instant, the point of the timeline after which its exit
+/// plan's legs see records (F-OCO-02), and the fidelity of the data that priced it (F-TAG-01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct FillPoint {
     pub(super) ts: Ts,
@@ -27,22 +30,26 @@ pub(super) struct FillPoint {
 }
 
 /// A fill as the book and the ledger took it, before the log records it: the fill with the cash
-/// its value moved, the orders of its OCO group it cancelled, and its bracket's legs.
+/// its value moved, the orders of its OCO group or its exit plan it cancelled, the stop of its
+/// plan it reduced with the lots left (F-PLN-02), and its exit plan's legs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Execution {
     pub(super) booked: BookedFill,
     pub(super) cancelled: Vec<OrderId>,
+    pub(super) reduced: Option<(OrderId, Qty)>,
     pub(super) legs: Vec<Order>,
 }
 
-/// Fills `id` as `priced` says at `at`: the book closes it, the ledger books it, its OCO group is
-/// cancelled (F-OCO-01), and its bracket placed (F-OCO-02).
+/// Fills `id` as `priced` says at `at`, the market at `market`: the book closes it, the ledger
+/// books it, its OCO group is cancelled (F-OCO-01), its plan settles its open lots (F-PLN-02),
+/// and the exit plan of an entry is placed (F-OCO-02, F-PLN-01).
 pub(super) fn execute(
     book: &mut Book,
     ledger: &mut Ledger,
     id: OrderId,
     priced: &Priced,
     at: FillPoint,
+    market: Price,
 ) -> Result<Execution, RunError> {
     let filled = book
         .close(id, Closing::Filled)
@@ -50,67 +57,31 @@ pub(super) fn execute(
     let tick = ledger.instrument().tick_size();
     let fill = rules::f_tag_01(&filled, priced, at.ts, at.fidelity, tick)?;
     let cash = ledger.book(&fill)?;
-    let cancelled = book.group_of(&filled);
+    let mut cancelled = book.group_of(&filled);
     for &other in &cancelled {
         book.close(other, Closing::Cancelled);
     }
-    let legs = place_bracket(book, &filled, priced.price, at, tick)?;
+    let settled = book.settle(&filled);
+    cancelled.extend(settled.cancelled);
+    let filled_at = FilledAt {
+        ts: at.ts,
+        index: at.index,
+    };
+    let legs = exit_plan::place(book, &filled, priced.price, market, filled_at, tick)?;
     Ok(Execution {
         booked: BookedFill { fill, cash },
         cancelled,
+        reduced: settled.reduced,
         legs,
     })
-}
-
-/// The stop and the target of `entry`'s bracket, placed at its fill at `fill` as one OCO group,
-/// active at once and seeing the records after the fill's (F-OCO-02).
-fn place_bracket(
-    book: &mut Book,
-    entry: &WorkingOrder,
-    fill: Price,
-    at: FillPoint,
-    tick: Price,
-) -> Result<Vec<Order>, RunError> {
-    let BracketLink::Entry(bracket) = entry.link else {
-        return Ok(Vec::new());
-    };
-    let (stop, target) = bracket.prices(entry.order.side, fill, tick)?;
-    let stop_id = bracket.stop.id.unwrap_or_else(|| book.new_id());
-    let target_id = bracket.target.id.unwrap_or_else(|| book.new_id());
-    let legs = [
-        (stop_id, OrderKind::StopMarket { stop }, OrderRole::Stop),
-        (
-            target_id,
-            OrderKind::Limit { limit: target },
-            OrderRole::Target,
-        ),
-    ];
-    let mut placed = Vec::with_capacity(legs.len());
-    for (id, kind, role) in legs {
-        let order = Order {
-            id,
-            side: entry.order.side.opposite(),
-            lots: entry.order.lots,
-            kind,
-            role,
-            time_in_force: TimeInForce::GoodTillCancelled,
-            placed_at: at.ts,
-            activation: at.ts,
-            oco: None,
-        };
-        let leg = BracketLink::LegOf(entry.order.id);
-        book.place(WorkingOrder::placed(order, at.index, leg));
-        placed.push(order);
-    }
-    Ok(placed)
 }
 
 impl<R: MarketDataReader> TickRun<'_, R> {
     /// A record: the stops the record before triggered, market orders since, which fill before
     /// the orders that become active on it (F-STP-02); the orders that see their first record;
     /// the stops this one triggers; then the limits, so that a stop beats a limit of its group
-    /// (F-OCO-01); then the mark (F-MRK-01). Each loop takes the ids in its state at its start
-    /// and passes over an order an earlier fill closed.
+    /// (F-OCO-01); then the mark (F-MRK-01), which each exit plan follows (F-PLN-04). Each loop
+    /// takes the ids in its state at its start and passes over an order an earlier fill closed.
     pub(super) fn on_record(&mut self, record: &TickRecord, index: usize) -> Result<(), RunError> {
         if !self.tradeable(record.ts) {
             return Ok(());
@@ -119,7 +90,15 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             self.work_orders(record, index)?;
         }
         self.ledger.mark_at(record.price);
+        let moves = self.book.marked(record.price, self.tick())?;
+        self.log_moves(record.ts, &moves);
         Ok(())
+    }
+
+    /// Logs the stops their plans moved at `ts` (F-PLN-03).
+    pub(super) fn log_moves(&mut self, ts: Ts, moves: &[Move]) {
+        let entries = moves.iter().map(|moved| LogEntry::moved(ts, moved));
+        self.log.extend(entries);
     }
 
     /// The live orders' turn on a tradeable record, in the order of `on_record`.
@@ -200,7 +179,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         } else {
             priced.rule
         };
-        self.fill(id, Priced { rule, ..priced }, record.ts, index)
+        self.fill(id, Priced { rule, ..priced }, record, index)
     }
 
     /// F-STP-02: a stop triggered on TBBO fills at this record's quote, never better than the
@@ -232,7 +211,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             reference: stop,
             shown_size: Some(shown_size),
         };
-        self.fill(id, priced, record.ts, index)
+        self.fill(id, priced, record, index)
     }
 
     /// F-STP-01: a working stop the trade reaches triggers; on trades it fills at once (F-STP-03),
@@ -262,7 +241,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             reference: stop,
             shown_size: Some(record.size),
         };
-        self.fill(id, priced, record.ts, index)
+        self.fill(id, priced, record, index)
     }
 
     /// A working limit fills when the trade passes it (F-LMT-01, F-LMT-02), or on TBBO when its
@@ -298,27 +277,37 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             reference: limit,
             shown_size: Some(shown_size),
         };
-        self.fill(id, priced, record.ts, index)
+        self.fill(id, priced, record, index)
     }
 
-    /// Fills `id` as `priced` says at `ts`, the `index`th event, and logs it.
-    fn fill(&mut self, id: OrderId, priced: Priced, ts: Ts, index: usize) -> Result<(), RunError> {
+    /// Fills `id` as `priced` says on `record`, the `index`th event, the market at its trade, and
+    /// logs it.
+    fn fill(
+        &mut self,
+        id: OrderId,
+        priced: Priced,
+        record: &TickRecord,
+        index: usize,
+    ) -> Result<(), RunError> {
         let at = FillPoint {
-            ts,
+            ts: record.ts,
             index,
             fidelity: self.fidelity,
         };
-        let execution = execute(&mut self.book, &mut self.ledger, id, &priced, at)?;
+        let (book, ledger) = (&mut self.book, &mut self.ledger);
+        let execution = execute(book, ledger, id, &priced, at, record.price)?;
         self.record(execution);
         Ok(())
     }
 
-    /// Logs a fill, the orders of its group it cancelled, and its bracket's legs, as the
-    /// reference's `EventLog.filled` does, and keeps it among the run's fills.
+    /// Logs a fill, the orders of its group or its plan it cancelled, the stop of its plan it
+    /// reduced, and its exit plan's legs, as the reference's `EventLog.filled` does, and keeps it
+    /// among the run's fills.
     pub(super) fn record(&mut self, execution: Execution) {
         let Execution {
             booked,
             cancelled,
+            reduced,
             legs,
         } = execution;
         let (ts, id) = (booked.fill.ts, booked.fill.order);
@@ -327,6 +316,9 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             .into_iter()
             .map(|other| LogEntry::cancelled_by_group(ts, other, id));
         self.log.extend(cancelled);
+        if let Some((stop, lots)) = reduced {
+            self.log.push(LogEntry::reduced(ts, stop, lots, id));
+        }
         let placed = legs.iter().map(|leg| LogEntry::bracket_placed(leg, id));
         self.log.extend(placed);
         self.fills.push(booked);

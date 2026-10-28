@@ -199,7 +199,7 @@ def f_pln_01(lots: int, fractions: Sequence[Fraction]) -> list[int]:
 def f_pln_02(book: Book, filled: WorkingOrder) -> LegFill:
     """A leg's fill works out its plan's open lots: the stop's fill cancels the targets; a
     target's cancels the rest when no lots stay open, a stop triggered on TBBO among them, and
-    otherwise reduces the stop to the lots left."""
+    otherwise reduces the stop, where the plan has one, to the lots left."""
     live = None if filled.leg_of is None else book.plans.get(filled.leg_of)
     if live is None:
         return LegFill()
@@ -207,7 +207,9 @@ def f_pln_02(book: Book, filled: WorkingOrder) -> LegFill:
         live.open_lots -= filled.lots
         live.filled_targets.add(live.targets[filled.id])
     stop = book.live_order(live.stop)
-    if filled.id != live.stop and live.open_lots > 0 and stop is not None:
+    if filled.id != live.stop and live.open_lots > 0:
+        if stop is None:
+            return LegFill()
         stop.lots = live.open_lots
         return LegFill(reduced=(stop.id, stop.lots))
     legs = tuple(order for order in book.live() if order.leg_of == live.entry)

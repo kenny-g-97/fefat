@@ -1,59 +1,31 @@
-//! The execution template's basic subset, as `fefat.reference.template` runs it (step 2.3, D-53):
-//! a market entry that ignores opposite signals; a stop in ticks or at the signal frame's
-//! `stop_price` and one target in ticks, as an R multiple of a stop in ticks, or at
-//! `target_price`; signal exits; flat-by, at the instant each signal row gives for its trade
-//! date's flat-by time (step 2.7); and a fixed size times `size_mult` in whole lots. The rest of
-//! the template, its other time rules included, arrives in step 2.8 and is refused until then.
+//! The execution template, as `fefat.reference.template` runs it (steps 2.3 and 2.8, D-53): a
+//! market entry that ignores opposite signals, carrying its exit plan (`exits`, §22 to §24);
+//! signal exits; flat-by, at the instant each signal row gives for its trade date's flat-by time
+//! (step 2.7); and a fixed size times `size_mult` in whole lots. The other entries, time rules,
+//! limits, and sizes arrive later in step 2.8 and are refused until then.
+
+mod exits;
+mod rows;
+#[cfg(test)]
+mod tests;
+
+pub use rows::{RowFeatures, SignalRow};
 
 use fefat_core::instants::Ts;
 use fefat_core::instrument::InstrumentParameters;
 use fefat_core::ledger::Position;
-use fefat_core::orders::Side;
+use fefat_core::orders::{ExitReason, Side};
 use fefat_core::strategy_spec::{
-    EntryOrder, Execution, Limits, OppositeSignal, OutOfBounds, Sizing, StopRule, StrategySpec,
-    TargetPrice, TimeRules,
+    EntryOrder, Execution, Limits, OppositeSignal, OutOfBounds, Sizing, StrategySpec, TimeRules,
 };
 use fefat_core::units::{PRICE_UNITS, Price, Qty};
 use thiserror::Error;
 
-use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::exact_decimal::ExactDecimal;
+use crate::exit_plan::PlanRow;
 use crate::strategy::{DecisionContext, DecisionError, Strategy};
 
-#[cfg(test)]
-mod tests;
-
-const SUBSET: &str =
-    "a market entry, a stop and one target, signal exits, flat-by, and a fixed size";
-
-/// One row of a signal frame, at one signal close (D-53): its four signals, a null read as false;
-/// the raw prices a column stop and a column target take; the size's multiple, where the frame
-/// has one; whether the bar may enter, a null read as true; and the instant of its trade date's
-/// flat-by time, where the specification has one.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SignalRow {
-    /// The signal bar's close, the decision's instant.
-    pub ts_close: Ts,
-    /// Enter long.
-    pub long_entry: bool,
-    /// Enter short.
-    pub short_entry: bool,
-    /// Close a long.
-    pub long_exit: bool,
-    /// Close a short.
-    pub short_exit: bool,
-    /// The stop of a column stop, a raw price of the row's contract.
-    pub stop_price: Option<Price>,
-    /// The target of a column target, a raw price of the row's contract.
-    pub target_price: Option<Price>,
-    /// The multiple of the fixed size.
-    pub size_mult: Option<f64>,
-    /// Whether an entry may be placed on the bar.
-    pub wake: bool,
-    /// The instant of the flat-by time on the row's trade date, as `fefat.reference.time_rules`
-    /// works it out from the session table: from it the position is closed and no entry placed.
-    pub flat_by: Option<Ts>,
-}
+const SUBSET: &str = "a market entry, any exit plan, signal exits, flat-by, and a fixed size";
 
 /// A specification or a signal frame the template refuses.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -61,7 +33,7 @@ pub enum TemplateError {
     /// A value outside the bounds of the specification's schema.
     #[error(transparent)]
     OutOfBounds(#[from] OutOfBounds),
-    /// A rule beyond the basic subset.
+    /// A rule beyond what the template runs so far.
     #[error(
         "Expected a StrategySpec within the tick engine's basic subset ({SUBSET}), got {refused}: \
          the rest arrives in step 2.8"
@@ -80,28 +52,19 @@ pub enum TemplateError {
     },
 }
 
-/// Where the template's stop or target goes: ticks from the entry's fill, or the row's column.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LegRule {
-    Ticks(u32),
-    Column,
-}
-
-/// A specification's basic subset as a strategy over its signal rows, each a decision. At each
-/// signal close, in this order: nothing while a market order is on its way out of the position,
-/// the exit it placed or a stop triggered on TBBO (F-STP-02); from the trade date's flat-by time,
-/// the position is closed, the working orders cancelled, and no entry placed; `long_exit` while
-/// long or `short_exit` while short closes the position, with signal exits on; with a position
-/// or working orders, nothing more, an opposite signal being ignored; on a bar whose `wake` is
-/// false, no entry; and otherwise an entry signal enters at the market, its bracket placed when
-/// it fills (F-OCO-02).
+/// A specification as a strategy over its signal rows, each a decision. At each signal close, in
+/// this order (F-ENT-01): the exit plans' turn at the decision (F-PLN-04); nothing more while a
+/// market order is on its way out of the position or into it, its own exit or a stop triggered on
+/// TBBO (F-STP-02); from the trade date's flat-by time, the position is closed, the working orders
+/// cancelled, and no entry placed; `long_exit` while long or `short_exit` while short closes the
+/// position, with signal exits on; with a position or working orders, nothing more, an opposite
+/// signal being ignored; on a bar whose `wake` is false, no entry; and otherwise an entry signal
+/// enters at the market, its exit plan placed when it fills (F-PLN-01).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TemplateStrategy {
     rows: Vec<SignalRow>,
-    signal_exit: bool,
+    execution: Execution,
     lots: Qty,
-    stop: LegRule,
-    target: LegRule,
     tick: Price,
 }
 
@@ -116,22 +79,18 @@ impl TemplateStrategy {
         spec.validate()?;
         let execution = &spec.execution;
         refuse_the_rest(execution)?;
-        let stop = stop_rule(execution)?;
-        let target = target_rule(execution, stop)?;
-        require_rows_in_order(&rows)?;
-        require_flat_by_on_every_row(execution, &rows)?;
+        rows::require_rows_in_order(&rows)?;
+        rows::require_flat_by_on_every_row(execution, &rows)?;
         Ok(Self {
             rows,
-            signal_exit: execution.signal_exit,
+            execution: execution.clone(),
             lots: fixed_lots(&execution.sizing, instrument)?,
-            stop,
-            target,
             tick: instrument.tick_size(),
         })
     }
 
     fn signals_exit(&self, row: &SignalRow, position: Position) -> bool {
-        self.signal_exit
+        self.execution.signal_exit
             && match position {
                 Position::Flat => false,
                 Position::Long(_) => row.long_exit,
@@ -155,63 +114,14 @@ impl TemplateStrategy {
         }
     }
 
-    /// The entry's stop and target: in ticks from its fill, or at the row's prices, the stop on
-    /// the losing side of the target.
-    fn bracket(&self, row: &SignalRow, side: Side) -> Result<Bracket, DecisionError> {
-        let stop = self.leg_price(self.stop, row.stop_price, "stop_price", row.ts_close)?;
-        let target = self.leg_price(self.target, row.target_price, "target_price", row.ts_close)?;
-        if let (LegPrice::At(stop), LegPrice::At(target)) = (stop, target) {
-            let on_the_losing_side = match side {
-                Side::Buy => stop < target,
-                Side::Sell => stop > target,
-            };
-            if !on_the_losing_side {
-                let below = if side == Side::Buy { "below" } else { "above" };
-                return Err(DecisionError::Signal {
-                    expected: format!("the stop_price {below} the target_price of a {side} entry"),
-                    actual: format!("{stop} and {target}"),
-                    at: row.ts_close,
-                });
-            }
-        }
-        Ok(Bracket {
-            stop: BracketLeg {
-                id: None,
-                price: stop,
-            },
-            target: BracketLeg {
-                id: None,
-                price: target,
-            },
+    fn row_at(&self, now: Ts) -> Result<SignalRow, DecisionError> {
+        let found = self.rows.binary_search_by_key(&now, |row| row.ts_close);
+        let row = found.ok().and_then(|index| self.rows.get(index)).copied();
+        row.ok_or_else(|| DecisionError::Signal {
+            expected: "a signal row at the decision".to_owned(),
+            actual: "none".to_owned(),
+            at: now,
         })
-    }
-
-    fn leg_price(
-        &self,
-        rule: LegRule,
-        column: Option<Price>,
-        name: &str,
-        at: Ts,
-    ) -> Result<LegPrice, DecisionError> {
-        let price = match (rule, column) {
-            (LegRule::Ticks(ticks), _) => return Ok(LegPrice::TicksFromFill(ticks)),
-            (LegRule::Column, Some(price)) => price,
-            (LegRule::Column, None) => {
-                return Err(DecisionError::Signal {
-                    expected: format!("the signal frame's {name} on the entry's bar"),
-                    actual: "null".to_owned(),
-                    at,
-                });
-            }
-        };
-        if price.0.rem_euclid(self.tick.0) != 0 {
-            return Err(DecisionError::Signal {
-                expected: format!("{name} on the instrument's tick of {}", self.tick),
-                actual: price.to_string(),
-                at,
-            });
-        }
-        Ok(LegPrice::At(price))
     }
 }
 
@@ -225,25 +135,23 @@ impl Strategy for TemplateStrategy {
         now: Ts,
         context: &mut DecisionContext<'_>,
     ) -> Result<(), DecisionError> {
-        let found = self.rows.binary_search_by_key(&now, |row| row.ts_close);
-        let Some(row) = found.ok().and_then(|index| self.rows.get(index)).copied() else {
-            return Err(DecisionError::Signal {
-                expected: "a signal row at the decision".to_owned(),
-                actual: "none".to_owned(),
-                at: now,
-            });
-        };
-        if context.is_exiting() {
+        let row = self.row_at(now)?;
+        context.update_exit_plans(&PlanRow {
+            at: row.ts_close,
+            trail_feature: row.features.trailing,
+            trail_ref: row.trail_ref,
+        })?;
+        if context.is_exiting() || context.is_entering() {
             return Ok(());
         }
         if row.flat_by.is_some_and(|flat_by| row.ts_close >= flat_by) {
             if context.position() != Position::Flat || context.has_working_orders() {
-                context.flatten()?;
+                context.flatten(ExitReason::FlatBy)?;
             }
             return Ok(());
         }
         if self.signals_exit(&row, context.position()) {
-            return context.flatten();
+            return context.flatten(ExitReason::SignalExit);
         }
         if context.position() != Position::Flat || context.has_working_orders() || !row.wake {
             return Ok(());
@@ -253,14 +161,14 @@ impl Strategy for TemplateStrategy {
             (false, true) => Side::Sell,
             (false, false) => return Ok(()),
         };
-        let bracket = self.bracket(&row, side)?;
-        context.market(side, self.lots_at(&row)?, Some(bracket))?;
+        let plan = exits::exit_plan_of(&self.execution, &row, side, self.tick)?;
+        context.market(side, self.lots_at(&row)?, Some(plan))?;
         Ok(())
     }
 }
 
-/// Refuses what the basic subset leaves out (`template.basic_subset_refusals`), the time rules
-/// but flat-by included.
+/// Refuses what the template does not run yet (`template.basic_subset_refusals`): entries other
+/// than market, opposite signals that are not ignored, time rules but flat-by, and entry limits.
 fn refuse_the_rest(execution: &Execution) -> Result<(), TemplateError> {
     let refusals = [
         (
@@ -271,9 +179,6 @@ fn refuse_the_rest(execution: &Execution) -> Result<(), TemplateError> {
             execution.on_opposite_signal != OppositeSignal::Ignore,
             "an opposite signal that is not ignored",
         ),
-        (execution.targets.len() != 1, "other than one target"),
-        (execution.breakeven.is_some(), "breakeven"),
-        (execution.trailing.is_some(), "a trailing stop"),
         (
             execution.time.as_ref().is_some_and(uses_time_rules),
             "time rules",
@@ -294,48 +199,6 @@ fn uses_time_rules(time: &TimeRules) -> bool {
         || time.no_weekend
 }
 
-fn stop_rule(execution: &Execution) -> Result<LegRule, TemplateError> {
-    match execution.stop {
-        Some(StopRule::Ticks { ticks }) => Ok(LegRule::Ticks(ticks)),
-        Some(StopRule::Column {}) => Ok(LegRule::Column),
-        Some(_) => Err(beyond("a stop other than ticks or the stop_price column")),
-        None => Err(beyond("no stop")),
-    }
-}
-
-/// The target's distance from the fill in ticks, its own or its R multiple of a stop in ticks,
-/// or the `target_price` column.
-fn target_rule(execution: &Execution, stop: LegRule) -> Result<LegRule, TemplateError> {
-    let Some(target) = execution.targets.first() else {
-        return Err(beyond("no target"));
-    };
-    if target.fraction != 1.0 {
-        return Err(beyond("a target closing part of the position"));
-    }
-    match (&target.price, stop) {
-        (TargetPrice::Ticks { ticks }, _) => Ok(LegRule::Ticks(*ticks)),
-        (TargetPrice::Column {}, _) => Ok(LegRule::Column),
-        (TargetPrice::RMultiple { multiple }, LegRule::Ticks(stop_ticks)) => {
-            r_multiple_ticks(*multiple, stop_ticks).map(LegRule::Ticks)
-        }
-        (TargetPrice::RMultiple { .. }, LegRule::Column) => {
-            Err(beyond("an R multiple without a stop in ticks"))
-        }
-        (TargetPrice::Atr { .. }, _) => Err(beyond("a target at a multiple of a feature")),
-    }
-}
-
-fn r_multiple_ticks(multiple: f64, stop_ticks: u32) -> Result<u32, TemplateError> {
-    let ticks = ExactDecimal::of(multiple)
-        .and_then(|exact| exact.whole_times(i64::from(stop_ticks), 1))
-        .and_then(|ticks| u32::try_from(ticks).ok());
-    ticks.ok_or_else(|| {
-        beyond(&format!(
-            "an R multiple of {multiple} times {stop_ticks} ticks, off the tick"
-        ))
-    })
-}
-
 /// The lots of the fixed size: its units in whole lot steps of the instrument (`lots_of`).
 fn fixed_lots(sizing: &Sizing, instrument: &InstrumentParameters) -> Result<Qty, TemplateError> {
     let Sizing::Fixed { units } = *sizing else {
@@ -352,58 +215,6 @@ fn fixed_lots(sizing: &Sizing, instrument: &InstrumentParameters) -> Result<Qty,
             actual: units.to_string(),
         }),
     }
-}
-
-fn require_rows_in_order(rows: &[SignalRow]) -> Result<(), TemplateError> {
-    let later = rows.iter().skip(1);
-    if let Some((earlier, row)) = rows
-        .iter()
-        .zip(later)
-        .find(|(earlier, row)| row.ts_close <= earlier.ts_close)
-    {
-        return Err(TemplateError::Refused {
-            expected: format!(
-                "signal rows in ascending order of their closes after {}",
-                earlier.ts_close
-            ),
-            actual: row.ts_close.to_string(),
-        });
-    }
-    match rows.iter().find(|row| row.long_entry && row.short_entry) {
-        Some(row) => Err(TemplateError::Refused {
-            expected: "one of long_entry and short_entry per bar with a market entry".to_owned(),
-            actual: format!("both on the signal close of {}", row.ts_close),
-        }),
-        None => Ok(()),
-    }
-}
-
-/// Refuses a signal row without the instant of its flat-by time when the specification has one,
-/// and a row with one when it has none: the instants come from the session table, which the
-/// reference's `flat_by_instants` reads.
-fn require_flat_by_on_every_row(
-    execution: &Execution,
-    rows: &[SignalRow],
-) -> Result<(), TemplateError> {
-    let flat_by = execution
-        .time
-        .as_ref()
-        .and_then(|time| time.flat_by.as_ref());
-    let Some(row) = rows
-        .iter()
-        .find(|row| row.flat_by.is_some() != flat_by.is_some())
-    else {
-        return Ok(());
-    };
-    let expected = flat_by.map_or_else(
-        || "no flat-by instant on the rows of a specification without flat_by".to_owned(),
-        |time| format!("the instant of the flat-by time {time} on every signal row"),
-    );
-    let actual = match row.flat_by {
-        Some(at) => format!("{at} on the signal close of {}", row.ts_close),
-        None => format!("none on the signal close of {}", row.ts_close),
-    };
-    Err(TemplateError::Refused { expected, actual })
 }
 
 fn beyond(what: &str) -> TemplateError {

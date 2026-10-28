@@ -170,3 +170,4 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-031](S-template-031.yaml) | trades | A minute of trades above a trailing stop but past its best price is replayed, not skipped |
 | [S-template-032](S-template-032.yaml) | trades | A short's trailing stop on trades follows each new low 4 ticks above it and closes the short |
 | [S-template-033](S-template-033.yaml) | 1m | A short's first target closes half, breakeven lowers the stop to the fill, and it closes the rest |
+| [S-template-034](S-template-034.yaml) | 1m | Without a stop, the first target's fill leaves the second working for the lot left |
