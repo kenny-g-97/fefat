@@ -1,7 +1,8 @@
-"""Step 2.3's template in the reference engine: a `StrategySpec`'s basic subset runs from a signal
-frame through `TemplateStrategy`, the flat-by time becomes one instant per trade date across the
-clock change, the rest of the template is refused until step 2.8, and the template fills as the
-hand-written strategy of step 2.2 does on the same bars."""
+"""Steps 2.3 and 2.8's template in the reference engine: a `StrategySpec` runs from a signal frame
+through `TemplateStrategy`, every rule of the specification runs, the flat-by time becomes one
+instant per trade date across the clock change, and on an early close the last signal close
+before the close, and the template fills as the hand-written strategy of step 2.2 does on the
+same bars."""
 
 import re
 from datetime import date
@@ -26,12 +27,11 @@ from fefat.reference.signal_rows import SignalRow, signal_frame
 from fefat.reference.strategy import decisions_of
 from fefat.reference.tape import BarRecord
 from fefat.reference.template import TemplateStrategy
-from fefat.reference.time_rules import flat_by_instants
+from fefat.reference.time_rules import flat_by_instants, with_time_rules
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_nanoseconds, instrument_parameters, price_units
 from fefat.strategy import (
     BarsCooldown,
-    Breakeven,
     EntryWindow,
     Execution,
     Fixed,
@@ -45,6 +45,7 @@ from fefat.strategy import (
     Target,
     TimeRules,
     Trailing,
+    TrailUpdate,
 )
 from test_reference_engine import ONE_MINUTE, bar, decision_at, run_on_bars
 
@@ -106,13 +107,12 @@ def test_the_flat_by_time_is_one_instant_per_trade_date_across_the_clock_change(
 @pytest.mark.parametrize(
     ("day", "flat_by", "refusal"),
     [
-        (date(2026, 3, 6), "16:30", "inside the session of 2026-03-06"),
         (date(2021, 6, 24), "15:20", "outside the halts of the session of 2021-06-24"),
         (date(2021, 6, 24), "15:15", "at or inside the halt from 2021-06-24T20:15:00Z"),
         (date(2026, 3, 6), "15:03", "on a close of the 5m signal bars of 2026-03-06"),
     ],
 )
-def test_a_flat_by_time_outside_its_session_inside_a_halt_or_off_the_grid_is_refused(
+def test_a_flat_by_time_inside_a_halt_or_off_the_grid_is_refused(
     es_sessions: SessionTable, day: date, flat_by: str, refusal: str
 ) -> None:
     # Equity index halted daily from 15:15 to 15:30 Chicago until trade date 2021-06-28.
@@ -121,40 +121,22 @@ def test_a_flat_by_time_outside_its_session_inside_a_halt_or_off_the_grid_is_ref
 
 
 @pytest.mark.parametrize(
-    ("rules", "refused"),
+    "rules",
     [
-        ({"entry": Limit(offset_ticks=2)}, "an entry of kind limit_offset"),
-        ({"on_opposite_signal": OppositeSignal.REVERSE}, "on_opposite_signal reverse"),
-        ({"stop": Stop(percent=0.5)}, "a stop of kind percent"),
-        ({"stop": Stop(atr=1.5)}, "a stop of kind atr"),
-        ({"stop": None}, "no stop"),
-        ({"targets": [Target(ticks=8, fraction=0.5), Target(ticks=24)]}, "2 targets"),
-        ({"targets": [Target(ticks=8, fraction=0.5)]}, "a target closing part of the position"),
-        ({"targets": [Target(atr=2)]}, "a target of kind atr"),
-        ({"targets": [Target(r=1.3)]}, "an R multiple of 1.3 times 12 ticks, off the tick"),
-        (
-            {"stop": Stop(column=True), "targets": [Target(r=2)]},
-            "an R multiple without a stop in ticks",
-        ),
-        ({"breakeven": Breakeven(after_target=1)}, "breakeven"),
-        ({"trailing": Trailing(ticks=8)}, "a trailing stop"),
-        (
-            {"time": TimeRules(tz="UTC", windows=[EntryWindow(start="08:30", end="14:30")])},
-            "entry windows",
-        ),
-        ({"time": TimeRules(tz="UTC", max_bars=12)}, "max_bars"),
-        ({"time": TimeRules(tz="UTC", no_overnight=True)}, "no_overnight"),
-        ({"limits": Limits(cooldown_after_loss=BarsCooldown(bars=3))}, "entry limits"),
-        ({"sizing": Notional(25_000)}, "sizing of kind notional"),
+        {"entry": Limit(offset_ticks=2, time_to_live_bars=3)},
+        {"on_opposite_signal": OppositeSignal.REVERSE},
+        {"time": TimeRules(tz="UTC", windows=[EntryWindow(start="08:30", end="14:30")])},
+        {"time": TimeRules(tz="UTC", max_bars=12, max_minutes=60)},
+        {"limits": Limits(cooldown_after_loss=BarsCooldown(bars=3), fresh_signal=True)},
+        {"sizing": Notional(25_000)},
     ],
+    ids=["limit entry", "reverse", "windows", "max bars and minutes", "limits", "notional"],
 )
-def test_a_spec_beyond_the_basic_subset_is_refused_until_step_2_8(
-    rules: dict[str, Any], refused: str
-) -> None:
+def test_every_rule_of_the_template_runs(rules: dict[str, Any]) -> None:
+    # Step 2.3 refused these until step 2.8; S-template-035 to S-template-071 pin their fills.
     frame = signals({"ts_close": "14:31:00", "long_entry": True})
 
-    with pytest.raises(ValueError, match=rf"basic subset .*{re.escape(refused)}.*step 2\.8"):
-        TemplateStrategy(spec_of(**rules), frame, MES, None)
+    TemplateStrategy(spec_of(**rules), frame, MES, None)
 
 
 @pytest.mark.parametrize(
@@ -191,7 +173,7 @@ def test_an_exit_still_working_is_not_placed_again_at_the_next_decision() -> Non
 
     assert [(fill.order, fill.role) for fill in result.fills] == [
         (1, OrderRole.ENTRY),
-        (4, OrderRole.EXIT),
+        (4, OrderRole.SIGNAL_EXIT),
     ]
     cancelled = [entry.order for entry in result.log.entries if entry.kind is EventKind.CANCELLED]
     assert cancelled == [2, 3]
@@ -244,6 +226,29 @@ def test_a_stop_at_the_column_needs_its_price_on_the_tick(
         run_template(spec_of(stop=Stop(column=True)), signals(*rows), tape)
 
 
+@pytest.mark.parametrize(
+    ("rules", "refusal"),
+    [
+        (
+            {"trailing": Trailing(column=True, update=TrailUpdate.BAR_CLOSE)},
+            "Expected the signal frame's trail_ref for a trailing stop by the column, got no such "
+            "column",
+        ),
+        (
+            {"limits": Limits(blackout="news")},
+            "Expected the signal frame's news for the blackout, got no such column",
+        ),
+    ],
+)
+def test_a_rule_needs_the_column_it_reads(rules: dict[str, Any], refusal: str) -> None:
+    # Both engines read a missing column as null on every row: a trailing stop by the column
+    # would never move, and a blackout would never hold, so the template refuses the frame.
+    frame = signals({"ts_close": "14:31:00", "long_entry": True})
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        TemplateStrategy(spec_of(**rules), frame, MES, None)
+
+
 def test_a_stop_and_a_target_at_the_columns_on_the_wrong_sides_are_refused() -> None:
     # A short's stop belongs above its target: here the columns are swapped.
     row = {"ts_close": "14:31:00", "short_entry": True}
@@ -289,11 +294,20 @@ def test_signal_rows_give_a_frame_of_raw_prices_with_only_the_columns_they_set()
     assert frame.get_column("adj_offset").to_list() == [0, 0]
 
 
-def test_a_flat_by_time_at_the_sessions_close_is_refused(es_sessions: SessionTable) -> None:
-    # The session of Friday 2026-03-06 closes at 16:00 Chicago, 22:00 UTC: an exit decided at that
-    # close becomes active in the break and would fill only when the market reopens on Sunday.
-    with pytest.raises(ValueError, match="before its close at 2026-03-06T22:00:00Z"):
-        flat_by_instants([date(2026, 3, 6)], "16:00", "America/Chicago", es_sessions, FIVE_MINUTES)
+@pytest.mark.parametrize("flat_by", ["16:00", "16:30"])
+def test_a_flat_by_time_at_or_after_the_close_acts_at_the_last_signal_close_before_it(
+    es_sessions: SessionTable, flat_by: str
+) -> None:
+    # F-TIM-01: the session of Friday 2026-03-06 closes at 16:00 Chicago, 22:00 UTC, at or before
+    # the flat-by time, as an early close does; an exit decided at the close would wait for
+    # Sunday's open, so the template closes at the last signal close before it, 21:55.
+    spec = spec_of(time=TimeRules(tz="America/Chicago", flat_by=flat_by))
+    frame = signals({"ts_close": "21:50:00"}, {"ts_close": "21:55:00"}, {"ts_close": "22:00:00"})
+
+    timed = with_time_rules(spec, frame, es_sessions)
+
+    last_before_the_close = instant_nanoseconds("2026-03-06T21:55:00Z")
+    assert timed.get_column("flat_by").to_list() == [last_before_the_close] * 3
 
 
 def test_a_flat_by_time_at_the_sessions_open_is_refused(tmp_path: Path) -> None:

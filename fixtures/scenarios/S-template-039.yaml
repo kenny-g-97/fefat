@@ -1,0 +1,39 @@
+id: S-template-039
+title: With no_overnight a long closes at the last signal close before the session's close, and none enters at the close
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: America/Chicago, no_overnight: true}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T21:45:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T21:50:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T21:55:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T22:00:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T21:45:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T21:50:00.300Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-05T21:55:00.300Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-05T23:00:00.500Z", price: "5002.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T21:45:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry}
+    - {order: 4, ts: "2026-03-05T21:55:00.300Z", price: "5000.75", rule: F-MKT-02, role: no_overnight}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# the session of Thursday 2026-03-05 closes at 16:00 CST, 22:00 UTC, a stop of trading from which
+# trading resumes at the next session's open, 23:00 UTC; the last signal close before it is 21:55;
+# at 21:45 long_entry buys, order 1, which fills on the trade at 21:45:00.200:
+# 5000.00 + 0.25 = 5000.25, its stop and target orders 2 and 3, which no trade reaches;
+# at 21:55 the template sells at the market, order 4, exit reason no_overnight (F-TIM-03),
+# cancelling orders 2 and 3; it fills on the trade at 21:55:00.300: 5001.00 - 0.25 = 5000.75;
+# at 22:00, the close, long_entry places nothing until trading resumes; had it bought, the order
+# would have filled on the next session's trade at 23:00:00.500.

@@ -1,0 +1,35 @@
+id: S-template-043
+title: With no_weekend a long closes on Thursday 2025-04-17, before the Good Friday close
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: America/Chicago, no_weekend: true}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2025-04-17T20:50:00Z", trade_date: "2025-04-17", contract: ESM2025, long_entry: true}
+  - {ts_close: "2025-04-17T20:55:00Z", trade_date: "2025-04-17", contract: ESM2025}
+tape:
+  - {ts: "2025-04-17T20:50:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2025-04-17T20:55:00.300Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2025-04-17T20:50:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 4, ts: "2025-04-17T20:55:00.300Z", price: "5000.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# Good Friday 2025-04-18 is a full close, so Thursday's session, closing at 16:00 CDT, 21:00 UTC,
+# breaks until Sunday's open at 17:00 CDT: the break holds a Saturday, on which the calendar has no
+# trade date, so it is a weekend (F-TIM-03), and the last signal close before it is 20:55 (in 2026
+# Good Friday traded until 08:15 CDT, so that week's weekend began at Friday's early close);
+# at 20:50 long_entry buys, order 1, filled on the trade at 20:50:00.200: 5000.00 + 0.25 =
+# 5000.25, its stop and target orders 2 and 3, which no trade reaches;
+# at 20:55 the template sells at the market, order 4, exit reason no_weekend, filled on the trade
+# at 20:55:00.300: 5001.00 - 0.25 = 5000.75.

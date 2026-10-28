@@ -12,7 +12,6 @@ case ends with, and its count of ambiguous fills.
 """
 
 import json
-import math
 import os
 import subprocess
 import tempfile
@@ -27,7 +26,6 @@ from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.rust_batch import (
-    CAPITAL,
     CacheCase,
     EngineCase,
     FillView,
@@ -39,7 +37,7 @@ from fefat.reference.rust_batch import (
     write_cache_batch,
 )
 from fefat.reference.scenario_runner import (
-    held_lots,
+    opening_cash,
     run_scenario,
     scenario_hours,
     session_tables,
@@ -48,7 +46,8 @@ from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.signal_rows import SignalRow
 from fefat.reference.tape import BarRecord, Record, TbboRecord
 from fefat.reference.timeline import RunResult
-from fefat.reference.units import instant_text, instrument_parameters, price_text
+from fefat.reference.units import instant_text, price_text
+from fefat.strategy.signal_frame import PRICE_COLUMNS
 
 BATCH_TIMEOUT_SECONDS = 120
 """How long a batch may run, where ten cases take a few milliseconds: a hang fails its example,
@@ -56,7 +55,6 @@ which Hypothesis then shrinks and prints, instead of stalling the test run."""
 CACHE_TIMEOUT_SECONDS = 1_800
 """How long a run over an engine cache may take: a generated year replayed in full takes seconds
 on this PC."""
-_SIGNAL_PRICES = ("entry_price", "stop_price", "target_price", "trail_ref")
 
 
 def engine_cases(
@@ -174,11 +172,7 @@ def compare_engines(engine: RustEngine, cases: Sequence[EngineCase]) -> list[Cas
 def _reference_cash(scenario: AnyScenario, result: RunResult) -> int:
     """The capital, moved by the opening position's value at its price and by each fill's value,
     each floored once as the ledger books them (F-FEE-03), fees left out."""
-    opening = 0
-    if scenario.position is not None:
-        parameters = instrument_parameters(scenario.instrument)
-        opening = math.floor(-parameters.value(scenario.position.price, held_lots(scenario)))
-    return CAPITAL + opening + sum(fill.cash for fill in result.fills)
+    return opening_cash(scenario) + sum(fill.cash for fill in result.fills)
 
 
 def explained(comparison: CaseComparison) -> str:
@@ -262,7 +256,7 @@ def _decision_lines(scenario: AnyScenario) -> list[str]:
 def _signal_text(row: SignalRow) -> str:
     """The row's columns that differ from their defaults, its instant and prices as text."""
     shown = row.model_dump(mode="json", exclude_defaults=True)
-    prices = {name: price_text(shown[name]) for name in _SIGNAL_PRICES if name in shown}
+    prices = {name: price_text(shown[name]) for name in PRICE_COLUMNS if name in shown}
     return str({**shown, "ts_close": instant_text(row.ts_close), **prices})
 
 

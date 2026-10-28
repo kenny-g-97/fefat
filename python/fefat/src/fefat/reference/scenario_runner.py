@@ -13,6 +13,7 @@ to the log.
 
 import argparse
 import io
+import math
 import os
 import sys
 from collections import Counter
@@ -38,6 +39,7 @@ from fefat.reference.strategy import Decision, DecisionContext, OnBar, decisions
 from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import (
+    CAPITAL,
     InlineInstrument,
     InstrumentParameters,
     instant_text,
@@ -87,7 +89,8 @@ def run_scenario(
         decisions, on_bar = _template_decisions(scenario, parameters, sessions)
     else:
         decisions, on_bar = _order_decisions(scenario)
-    result = engine.run(scenario.tape, decisions, on_bar, scenario.funding, held_lots(scenario))
+    held, cash = held_lots(scenario), opening_cash(scenario)
+    result = engine.run(scenario.tape, decisions, on_bar, scenario.funding, held, cash)
     return ScenarioOutcome(scenario, result, differences(scenario, result))
 
 
@@ -113,6 +116,15 @@ def _template_decisions(
     frame = scenario.signal_frame()
     template = TemplateStrategy(scenario.strategy, frame, parameters, sessions)
     return list(decisions_of(frame)), template.on_bar
+
+
+def opening_cash(scenario: AnyScenario) -> int:
+    """The cash a scenario starts with: the capital (D-51), moved by its opening position's value
+    at its price, floored once, as the Rust ledger opens it (`Ledger::holding`)."""
+    if scenario.position is None:
+        return CAPITAL
+    parameters = instrument_parameters(scenario.instrument)
+    return CAPITAL + math.floor(-parameters.value(scenario.position.price, held_lots(scenario)))
 
 
 def held_lots(scenario: AnyScenario) -> int:
@@ -160,8 +172,9 @@ def scenario_hours(
 
 
 class FillSummary(NamedTuple):
-    """What the runner compares of a fill: its order, time, price, rule, and flags, and its fee
-    in a scenario with fees."""
+    """What the runner compares of a fill: its order, time, price, rule, and flags, its fee in a
+    scenario with fees, its lots in a scenario that states its fills' quantities, and its role in
+    one that states their roles."""
 
     order: int
     ts: int
@@ -169,26 +182,49 @@ class FillSummary(NamedTuple):
     rule: str
     flags: tuple[str, ...]
     fee: int | None
+    lots: int | None
+    role: str | None
 
     def text(self) -> str:
         flags = "".join(f", {flag}" for flag in self.flags)
         fee = "" if self.fee is None else f", fee {money_text(self.fee)}"
-        at = f"{price_text(self.price)} at {instant_text(self.ts)}"
-        return f"order {self.order} at {at} ({self.rule}{flags}{fee})"
+        role = "" if self.role is None else f", as {self.role}"
+        lots = "" if self.lots is None else f" x {self.lots}"
+        at = f"{price_text(self.price)}{lots} at {instant_text(self.ts)}"
+        return f"order {self.order} at {at} ({self.rule}{flags}{fee}{role})"
 
 
 def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
     """How the run differs from what the scenario expects: each fill's order, time, price,
-    rule, flags, and fee where the scenario has fees, its fidelity tag (F-TAG-01), the marks,
-    and the funding payments."""
+    rule, flags, fee where the scenario has fees, lots where it states quantities, and role where
+    it states roles, its fidelity tag (F-TAG-01), the marks, and the funding payments."""
     with_fees = scenario.fees is not None
+    lot_step = scenario.instrument.lot_step
+    with_lots = any(f.quantity is not None for f in scenario.expected.fills)
+    with_roles = any(f.role is not None for f in scenario.expected.fills)
     expected = [
-        FillSummary(f.order, f.ts, f.price, f.rule, tuple(sorted(f.flags)), f.fee)
+        FillSummary(
+            f.order,
+            f.ts,
+            f.price,
+            f.rule,
+            tuple(sorted(f.flags)),
+            f.fee,
+            None if f.quantity is None else lots_of(f.quantity, lot_step),
+            f.role,
+        )
         for f in scenario.expected.fills
     ]
     got = [
         FillSummary(
-            f.order, f.ts, f.price, f.rule, tuple(sorted(f.flags)), f.fee if with_fees else None
+            f.order,
+            f.ts,
+            f.price,
+            f.rule,
+            tuple(sorted(f.flags)),
+            f.fee if with_fees else None,
+            f.lots if with_lots else None,
+            f.role if with_roles else None,
         )
         for f in result.fills
     ]

@@ -1,0 +1,39 @@
+id: S-template-061
+title: After a losing trade, cooldown_after_loss of 2 bars skips the decision that counts it and the next
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 4}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    limits: {cooldown_after_loss: {kind: bars, bars: 2}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:33:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "4999.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "4999.50", size: 1}
+  - {ts: "2026-03-05T14:32:00.200Z", price: "4999.75", size: 1}
+  - {ts: "2026-03-05T14:33:00.200Z", price: "5000.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-05T14:30:30.000Z", price: "4999.00", rule: F-STP-03}
+    - {order: 4, ts: "2026-03-05T14:33:00.200Z", price: "5000.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-LIM-02, F-LIM-03, F-MKT-02, F-OCO-02, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at 14:30 long_entry buys, order 1, filled at 5000.25, its stop, order 2, at 4999.25; the trade
+# at 14:30:30.000, 4999.00, fills the stop at 4999.00: a losing trade, closed at 14:30:30;
+# the decision at 14:31 counts it (F-LIM-02), and the cooldown of bars = 2 skips the entries of
+# that decision and the next (F-LIM-03): no entry at 14:31 or 14:32, though long_entry is true
+# and the trades at 14:31:00.200 and 14:32:00.200 would fill them;
+# at 14:33 the cooldown is over: long_entry buys, order 4, filled at 5000.00 + 0.25 = 5000.25.

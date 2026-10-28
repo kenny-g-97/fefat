@@ -1,0 +1,36 @@
+id: S-template-011
+title: A target whose fraction of one lot rounds down to none is not placed, and the next takes the lot
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets:
+      - {price: {kind: ticks, ticks: 4}, fraction: 0.5}
+      - {price: {kind: ticks, ticks: 12}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 100}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5001.00", high: "5001.75", low: "5000.75", close: "5001.50", volume: 80}
+  - {ts_open: "2026-03-06T14:32:00Z", ts_close: "2026-03-06T14:33:00Z", open: "5002.00", high: "5003.50", low: "5001.75", close: "5003.00", volume: 90}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, quantity: 1}
+    - {order: 3, ts: "2026-03-06T14:33:00Z", price: "5003.25", rule: F-LMT-03, quantity: 1}
+rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-LMT-01, F-LMT-03, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01), on the tape of S-template-008:
+# order 1 buys 1 lot at 5000.00 + 0.25 = 5000.25 (F-MKT-03), at 14:31;
+# its plan (F-PLN-01): the stop, order 2, at 5000.25 - 2.00 = 4998.25; target 1 would close the whole
+# lots of 0.5 × 1 = 0.5, none, so it is not placed and takes no id; target 2 closes 1 × 1 = 1 lot,
+# at 5000.25 + 3.00 = 5003.25, and takes the next id, order 3;
+# the bar from 14:31 to 14:32 rises to 5001.75, through 5001.25, where target 1 would have filled;
+# nothing is there, and target 2 lies above the bar;
+# the bar from 14:32 to 14:33 rises to 5003.50, through 5003.25: order 3 sells the lot at 5003.25
+# (F-LMT-01, F-LMT-03), and the stop is cancelled (F-OCO-01).

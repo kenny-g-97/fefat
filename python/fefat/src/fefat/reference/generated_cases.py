@@ -118,13 +118,13 @@ def order_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
     @st.composite
     def drawn_case(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
-        fidelity, tape = _fidelity_and_tape(draw, drawn, tapes)
+        fidelity, tape = fidelity_and_tape(draw, drawn, tapes)
         scenario = Scenario.model_construct(
             id="a drawn case",
             title="a drawn case",
             fidelity=fidelity,
             instrument=drawn.instrument,
-            settings=_settings(draw),
+            settings=drawn_settings(draw),
             fees=None,
             position=_position(draw, drawn),
             tape=tape,
@@ -134,7 +134,7 @@ def order_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
             orders=_orders(draw, drawn, tape),
         )
         replay = draw(st.sampled_from(tuple(Replay)))
-        return EngineCase(scenario, _hours(draw, tape), replay=replay)
+        return EngineCase(scenario, drawn_hours(draw, tape), replay=replay)
 
     return drawn_case()
 
@@ -147,14 +147,14 @@ def template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
     @st.composite
     def drawn_template(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
-        fidelity, tape = _fidelity_and_tape(draw, drawn, tapes)
+        fidelity, tape = fidelity_and_tape(draw, drawn, tapes)
         spec, at_columns = _template_spec(draw, drawn)
         scenario = TemplateScenario.model_construct(
             id="a drawn template",
             title="a drawn template",
             fidelity=fidelity,
             instrument=drawn.instrument,
-            settings=_settings(draw),
+            settings=drawn_settings(draw),
             fees=None,
             position=None,
             tape=tape,
@@ -165,12 +165,12 @@ def template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
             signals=_signal_rows(draw, drawn, tape, at_columns),
         )
         replay = draw(st.sampled_from(tuple(Replay)))
-        return EngineCase(scenario, _hours(draw, tape), replay=replay)
+        return EngineCase(scenario, drawn_hours(draw, tape), replay=replay)
 
     return drawn_template()
 
 
-def _fidelity_and_tape(
+def fidelity_and_tape(
     draw: "DrawFn", drawn: DrawnInstrument, tapes: DrawnTapes
 ) -> tuple[TickFidelity | Timeframe, Tape]:
     """On ticks, a tape of TBBO records or of trades; on bars, the bars of a drawn timeframe that
@@ -349,7 +349,7 @@ def _position(draw: "DrawFn", drawn: DrawnInstrument) -> OpenPosition | None:
     return OpenPosition.model_construct(side=side, quantity=quantity, price=drawn.opening)
 
 
-def _settings(draw: "DrawFn") -> RunSettings:
+def drawn_settings(draw: "DrawFn") -> RunSettings:
     from hypothesis import strategies as st
 
     ticks = SlippageTicks.model_construct(
@@ -362,7 +362,7 @@ def _settings(draw: "DrawFn") -> RunSettings:
     )
 
 
-def _hours(draw: "DrawFn", tape: Tape) -> AlwaysOpen | CalendarHours:
+def drawn_hours(draw: "DrawFn", tape: Tape) -> AlwaysOpen | CalendarHours:
     """Always open, or closed from one record's instant to another's, both included: on bars,
     from one bar's close to another's."""
     from hypothesis import strategies as st

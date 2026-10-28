@@ -216,10 +216,11 @@ def _windows_of_pairs(windows: object) -> object:
 class TimeRules(FrozenModel):
     """Entry windows and time exits, in local time of `tz`. From `flat_by` each trade date, the
     position is closed at the first signal close at or after that time on the trade date's own
-    day, which must fall inside its session, outside its halts, and on the signal bars' grid,
-    and no entry is placed; `max_bars` and `max_minutes` limit how long a position stays open;
-    `no_overnight` and `no_weekend` close it before each session's close and before the week's
-    last session closes."""
+    day, which must fall after its session's open, outside its halts, and on the signal bars'
+    grid, or, where the session closes at or before it, at the last signal close before the
+    close, and no entry is placed; `max_bars` and `max_minutes` limit how long a position stays
+    open; `no_overnight` and `no_weekend` close it before each stop of trading and before each
+    weekend (`docs/spec/fill-semantics.md` §26)."""
 
     tz: TimeZoneName
     windows: Annotated[

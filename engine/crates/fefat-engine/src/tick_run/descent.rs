@@ -1,6 +1,7 @@
 //! Hierarchical replay (`02` §4): the coarsest bar first, then finer bars, then the finest records,
-//! descending only where a bar's range can reach a working order's level or an order can become
-//! active. A block of the finest records inside a bar that nothing can act on is passed over
+//! descending only where a bar's range can reach a working order's level, an order can become
+//! active, or an exit plan could move (F-PLN-05). A block of the finest records inside a bar that
+//! nothing can act on is passed over
 //! whole, with what a full replay of it would leave: every working limit resting (F-LMT-04), the
 //! market open (F-SES-02), and the position marked at the block's last record (F-MRK-01). The
 //! bar's range bounds the prices of the records it holds, which every reader checks where the
@@ -14,6 +15,7 @@ use super::fills::is_limit;
 use super::records::{Unit, bar_row};
 use super::{RunError, Stepped, TickRun};
 use crate::book::WorkingOrder;
+use crate::exit_plan::LivePlan;
 
 /// How a run reads each trade date's finest records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,14 +72,27 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     }
 
     /// Whether every record of a block inside `bar`, the last of them available at `last`, finds
-    /// the market open and leaves every live order as it was.
+    /// the market open and leaves every live order and every exit plan as it was (F-PLN-05).
     fn untouched_by(&self, bar: &BarRow, last: Ts) -> bool {
         let of_bars = self.day.as_ref().is_some_and(|day| day.records.are_bars());
         let open = self.hours.is_open_throughout(bar.ts_open, bar.ts_close);
+        let tick = self.ledger.instrument().tick_size();
+        let stop_of = |plan: &LivePlan| {
+            let stop = self
+                .book
+                .live()
+                .find(|order| Some(order.order.id) == plan.stop());
+            stop.and_then(WorkingOrder::level)
+        };
+        let plans_stay = |plan: &LivePlan| {
+            plan.untouched_by(stop_of(plan), bar.low, bar.high, tick)
+                .unwrap_or(false)
+        };
         open && self
             .book
             .live()
             .all(|order| beyond(order, bar, last, of_bars))
+            && self.book.plans().all(plans_stay)
     }
 
     /// Passes over the block that `first` opens, as a full replay of it would leave the run.

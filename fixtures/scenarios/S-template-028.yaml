@@ -1,0 +1,39 @@
+id: S-template-028
+title: A trailing stop updated at bar closes waits for the decision, and stops a tick below the mark
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: ticks, ticks: 4}, update: bar_close}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:31:00.000Z", price: "5002.00", size: 1}
+  - {ts: "2026-03-06T14:33:00.000Z", price: "5000.75", size: 1}
+  - {ts: "2026-03-06T14:36:00.000Z", price: "5000.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:36:00.000Z", price: "5000.25", rule: F-STP-03}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its stop,
+# order 2, at 4998.25, its target, order 3, at 5010.25; updated at bar closes, the trailing stop does
+# not move at the fill or at any trade (F-TRL-04), though the plan follows the best price (F-PLN-04);
+# 14:31, 5002.00: the best price; the stop stays;
+# 14:33, 5000.75: above the stop at 4998.25; a stop trailing intrabar would stand at
+# 5002.00 - 1.00 = 5001.00 and sell here at 5000.75;
+# at the 14:35 decision the trailing level is 5002.00 - 1.00 = 5001.00, at or above the mark 5000.75,
+# so the stop rises to a tick below the mark instead, 5000.50 (F-TRL-01, F-PLN-03);
+# 14:36, 5000.50: at the stop, which sells at the lower of 5000.25 and 5000.50, 5000.25 (F-STP-03),
+# and the target is cancelled (F-OCO-01).

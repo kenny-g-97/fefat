@@ -1,0 +1,31 @@
+id: S-template-055
+title: An offset entry with no mark yet places nothing and the log says why; the next signal, marked, enters
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: limit_offset, ticks: 4}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.500Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:31:30.000Z", price: "4998.75", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:31:30.000Z", price: "4999.00", rule: F-LMT-03}
+rules: [F-ACT-01, F-ENT-02, F-LMT-01, F-LMT-03, F-MRK-01, F-OCO-02]
+
+# Arithmetic (ES, tick 0.25; limits fill through their price, at it: F-LMT-01, F-LMT-03):
+# at the 14:30 close no trade has been seen, so there is no mark to count the offset from: the
+# template places no entry and logs why (F-ENT-02);
+# the trade at 14:30:00.500 marks the market at 5000.00 (F-MRK-01); at the 14:31 close long_entry
+# places a buy limit 4 ticks under it, 5000.00 - 4 × 0.25 = 4999.00, order 1, which the trade at
+# 14:31:30.000, 4998.75, goes through: it fills at 4999.00 (F-LMT-03), its stop and target orders 2
+# and 3.

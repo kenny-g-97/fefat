@@ -1,0 +1,44 @@
+id: S-template-025
+title: A trailing stop in steps of 2 ticks moves only by whole steps, and stays when one does not fit
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: ticks, ticks: 4}, step_ticks: 2}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5001.25", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "5001.50", size: 1}
+  - {ts: "2026-03-06T14:30:05.000Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-06T14:30:06.000Z", price: "5000.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:06.000Z", price: "5000.00", rule: F-STP-03}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-03, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; a step is 2 × 0.25 = 0.50):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); the stop
+# 8 ticks below the fill, 4998.25; the trailing stop, working from the fill, wants 5000.00 - 1.00 =
+# 4999.00, 0.75 above it, room for one whole step: order 2 at 4998.25 + 0.50 = 4998.75 (F-PLN-04,
+# F-TRL-01, F-TRL-03); the target, order 3, at 5010.25;
+# each new best price gives a trailing level 4 ticks below it, and the stop moves up by the whole
+# steps that fit between where it stands and that level (F-TRL-03):
+# 14:30:01, 5000.50: level 4999.50, 0.75 above 4998.75, one step: 4999.25;
+# 14:30:02, 5001.00: level 5000.00, 0.75 above 4999.25, one step: 4999.75;
+# 14:30:03, 5001.25: level 5000.25, 0.50 above 4999.75, one step: 5000.25;
+# 14:30:04, 5001.50: level 5000.50, 0.25 above 5000.25, no step: the stop stays at 5000.25;
+# 14:30:05, 5000.50: above the stop; a stop trailing every tick would stand at 5000.50 and sell here;
+# 14:30:06, 5000.25: at the stop, which sells at the lower of 5000.00 and 5000.25, 5000.00 (F-STP-03),
+# and the target is cancelled (F-OCO-01).

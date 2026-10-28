@@ -1,0 +1,40 @@
+id: S-template-027
+title: A trailing stop by the column raises the stop to each decision's trail_ref, never lowering it
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: column}, update: bar_close}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, trail_ref: "5001.00"}
+  - {ts_close: "2026-03-06T14:40:00Z", trade_date: "2026-03-06", contract: ESH2026, trail_ref: "4999.00"}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:33:00.000Z", price: "5002.00", size: 1}
+  - {ts: "2026-03-06T14:37:00.000Z", price: "5001.25", size: 1}
+  - {ts: "2026-03-06T14:41:00.000Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:41:00.000Z", price: "5000.75", rule: F-STP-03}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-02, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its stop,
+# order 2, at 5000.25 - 2.00 = 4998.25, and its target, order 3, at 5010.25; a trailing stop by the
+# column moves at decisions alone (F-TRL-04), so the fill does not move it;
+# 14:33, 5002.00: no move between decisions;
+# at the 14:35 decision the row's trail_ref is 5001.00: the stop rises to it, below the mark 5002.00
+# less a tick (F-TRL-02, F-PLN-03);
+# 14:37, 5001.25: above the stop;
+# at the 14:40 decision the row's trail_ref, 4999.00, would lower the stop, which stays (F-PLN-03);
+# 14:41, 5001.00: at the stop, which sells at the lower of 5000.75 and 5001.00, 5000.75 (F-STP-03),
+# and the target is cancelled (F-OCO-01).

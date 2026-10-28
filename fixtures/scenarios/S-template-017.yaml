@@ -1,0 +1,41 @@
+id: S-template-017
+title: Breakeven moves a long's stop to its fill price once a trade reaches 4 ticks of profit
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    breakeven: {trigger: {kind: ticks, ticks: 4}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5000.75", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5001.25", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5000.75", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "5000.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:04.000Z", price: "5000.00", rule: F-STP-03}
+rules: [F-ACT-01, F-BRK-01, F-BRK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-STP-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# at the 14:30 close order 1 buys 1 lot at the market, active at 14:30:00.100 (F-ACT-01); the trade
+# at 14:30:00.200 fills it at 5000.00 + 0.25 = 5000.25 (F-MKT-02);
+# its plan (F-OCO-02): the stop, order 2, at 5000.25 - 2.00 = 4998.25, below the entry's trade and
+# so not through the market (F-STP-05), and the target, order 3, at 5010.25; breakeven fires at
+# the first price marked at or above 5000.25 + 4 × 0.25 = 5001.25 (F-BRK-02);
+# the trade at 14:30:01, 5000.75, is under it;
+# the trade at 14:30:02, 5001.25, reaches it once the record's fills are done (F-PLN-04): the stop
+# moves to the fill price, 5000.25, one tick or more below that trade (F-BRK-01, F-PLN-03);
+# the trade at 14:30:03, 5000.75, stays above the stop;
+# the trade at 14:30:04, 5000.25, is at the stop and triggers it (F-STP-01): it sells at the lower
+# of 5000.25 - 0.25 and 5000.25, 5000.00 (F-STP-03), and the target is cancelled (F-OCO-01); the
+# stop at 4998.25 would still be working.

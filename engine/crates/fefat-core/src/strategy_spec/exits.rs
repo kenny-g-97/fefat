@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::values::{LocalTime, TimeZoneName};
+
 /// The stop placed against the position when an entry fills, a stop-market order (F-STP).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -24,7 +26,8 @@ pub enum StopRule {
         /// The multiple of the feature.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
-        /// The feature's column in the signal frame, such as `atr`.
+        /// The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units
+        /// of price the bars' prices are in, as a feature worked out from them is (F-RND-01).
         #[schemars(length(min = 1))]
         feature: String,
     },
@@ -65,7 +68,8 @@ pub enum TargetPrice {
         /// The multiple of the feature.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
-        /// The feature's column in the signal frame, such as `atr`.
+        /// The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units
+        /// of price the bars' prices are in, as a feature worked out from them is (F-RND-01).
         #[schemars(length(min = 1))]
         feature: String,
     },
@@ -101,13 +105,13 @@ pub enum ProfitTrigger {
         #[schemars(range(min = 1))]
         ticks: u32,
     },
-    /// A profit of `multiple` times the trade's initial risk.
+    /// A profit of `multiple` times the trade's initial risk, which needs a stop.
     RMultiple {
         /// The multiple of the initial risk.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
     },
-    /// The fill of a target, counted from 1.
+    /// The fill of a target, counted from 1, one the specification has.
     AfterTarget {
         /// The target, counted from 1.
         #[schemars(range(min = 1, max = 3))]
@@ -149,11 +153,13 @@ pub enum TrailBy {
         /// The multiple of the feature.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
-        /// The feature's column in the signal frame, such as `atr`.
+        /// The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units
+        /// of price the bars' prices are in, as a feature worked out from them is (F-RND-01).
         #[schemars(length(min = 1))]
         feature: String,
     },
-    /// At the signal frame's `trail_ref` of each signal bar, a raw price.
+    /// At the signal frame's `trail_ref` of each signal bar, a raw price, moved at bar closes
+    /// alone (`update: bar_close`).
     Column {},
 }
 
@@ -173,17 +179,18 @@ pub enum TrailUpdate {
 #[serde(deny_unknown_fields)]
 pub struct TimeRules {
     /// The IANA time zone of the local times, such as `America/Chicago`.
-    #[schemars(length(min = 1))]
-    pub tz: String,
+    #[schemars(with = "String", length(min = 1))]
+    pub tz: TimeZoneName,
     /// The local times in which entries may be placed; without any, at any time.
     #[serde(default)]
     pub windows: Vec<EntryWindow>,
     /// The local time, `HH:MM`, from which each trade date the position is closed and no entry
     /// is placed: at the first signal close at or after that time on the trade date's own day,
-    /// which must fall inside its session, outside its halts, and on the signal bars' grid.
+    /// which must fall after its session's open, outside its halts, and on the signal bars' grid,
+    /// or, where the session closes at or before it, at the last signal close before the close.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
-    pub flat_by: Option<String>,
+    pub flat_by: Option<LocalTime>,
     /// The signal bars a position may stay open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "u32", range(min = 1))]
@@ -205,12 +212,12 @@ pub struct TimeRules {
 #[serde(deny_unknown_fields)]
 pub struct EntryWindow {
     /// The local time, `HH:MM`, at which the window opens.
-    #[schemars(regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
-    pub start: String,
+    #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
+    pub start: LocalTime,
     /// The local time, `HH:MM`, at which the window closes; before `start`, it runs past
     /// midnight.
-    #[schemars(regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
-    pub end: String,
+    #[schemars(with = "String", regex(pattern = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"))]
+    pub end: LocalTime,
     /// The days on which the window holds; without them, every day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Vec<Weekday>", length(min = 1))]

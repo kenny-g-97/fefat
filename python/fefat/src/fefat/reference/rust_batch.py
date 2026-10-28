@@ -31,20 +31,21 @@ from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.tape import BarRecord, Record, TbboRecord
-from fefat.reference.template import flat_by_instants_for
+from fefat.reference.time_rules import with_time_rules
 from fefat.reference.units import (
+    CAPITAL,
     PRICE_DECIMALS,
     InstrumentParameters,
     instrument_parameters,
     lots_of,
 )
+from fefat.strategy import exits as rules
+from fefat.strategy.signal_frame import OPTIONAL_SIGNAL_COLUMNS
 from fefat.strategy.spec import StrategySpec
 
-CAPITAL = 50_000_000_000
-"""The run's capital in micro-units, 50,000 USD (D-51): the ledger's starting cash."""
 NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
-_OPTIONAL_SIGNALS = ("stop_price", "target_price", "size_mult", "wake")
+_TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")
 _SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
 _MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
@@ -230,11 +231,10 @@ def write_cache_batch(cases: Sequence[CacheCase], folder: Path) -> None:
     folder.mkdir(parents=True)
     documents = [_cache_case_document(case) for case in cases]
     (folder / "run.json").write_text(json.dumps({"cases": documents}), encoding="utf-8")
-    frames = []
-    for number, case in enumerate(cases):
-        columns = case.signals.columns
-        kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in columns)]
-        frames.append(case.signals.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept))
+    frames = [
+        _template_rows(number, case.strategy, case.signals, None)
+        for number, case in enumerate(cases)
+    ]
     signals = pl.concat(frames, how="diagonal")
     signals.write_ipc(folder / "signals.arrow", compression="uncompressed")
 
@@ -427,31 +427,61 @@ def _record_values(case: int, trade_date: int, record: Record) -> dict[str, int]
 
 def _signal_rows(cases: Sequence[EngineCase]) -> pl.DataFrame | None:
     """The signal rows of the template cases, each tagged with its case: the four signals, the
-    optional columns the template reads, absent ones null (D-53), and with a flat-by time the
-    instant of each row's trade date's flat-by time."""
+    optional columns the template reads, absent ones null (D-53), the features its exit plan
+    names, and with a flat-by time the instant of each row's trade date's flat-by time."""
     frames = []
     for number, case in enumerate(cases):
         scenario = case.scenario
         if not isinstance(scenario, TemplateScenario):
             continue
         frame = scenario.signal_frame()
-        kept = [*_SIGNALS, *(name for name in _OPTIONAL_SIGNALS if name in frame.columns)]
-        rows = frame.select(pl.lit(number, dtype=pl.Int64).alias("case"), *kept)
-        frames.append(rows.with_columns(_flat_by(scenario, case.sessions, frame)))
+        frames.append(_template_rows(number, scenario.strategy, frame, case.sessions))
     return pl.concat(frames, how="diagonal") if frames else None
 
 
-def _flat_by(
-    scenario: TemplateScenario, sessions: SessionTable | None, frame: pl.DataFrame
-) -> list[pl.Series]:
-    """The column `flat_by` of a template scenario whose specification has a flat-by time: each
-    row's instant of it, as the reference's template works it out; none without a flat-by
-    time."""
-    instants = flat_by_instants_for(scenario.strategy, frame, sessions)
-    if not instants:
-        return []
-    trade_dates = frame.get_column("trade_date").to_list()
-    return [pl.Series("flat_by", [instants[day] for day in trade_dates], dtype=pl.Int64)]
+def _template_rows(
+    number: int, strategy: StrategySpec, frame: pl.DataFrame, sessions: SessionTable | None
+) -> pl.DataFrame:
+    """The rows of one template case, tagged with its number: the four signals, the optional
+    columns the template reads, absent ones null (D-53), the columns of its time rules, as the
+    reference's template works them out (`with_time_rules`), and the features its exit plan
+    names."""
+    timed = with_time_rules(strategy, frame.sort("ts_close"), sessions)
+    kept = [*_SIGNALS, *(name for name in OPTIONAL_SIGNAL_COLUMNS if name in frame.columns)]
+    times = [name for name in _TIME_COLUMNS if name in timed.columns]
+    features = _feature_columns(strategy, frame)
+    case = pl.lit(number, dtype=pl.Int64).alias("case")
+    days = [pl.col("trade_date").cast(pl.Int32).cast(pl.Int64)] if "trade_date" in frame else []
+    blackout, flags = strategy.execution.limits.blackout, []
+    if blackout is not None:
+        if blackout not in frame.columns:
+            raise ValueError(
+                f"Expected the signal frame's {blackout} for the blackout, got no such column."
+            )
+        flags.append(pl.col(blackout).cast(pl.Boolean).alias("blackout"))
+    return timed.select(case, *days, *kept, *times, *features, *flags)
+
+
+def _feature_columns(strategy: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
+    """The features the exit plan's rules name, as float64 columns under the names of their
+    rules, which `fefat-cli run` reads: `stop_feature`, `target_feature_1` to `target_feature_3`,
+    and `trail_feature`. A feature the frame lacks stays out, and the Rust template refuses an
+    entry that needs it, as the reference's does."""
+    execution = strategy.execution
+    named: dict[str, str] = {}
+    if isinstance(execution.stop, rules.AtrStop):
+        named["stop_feature"] = execution.stop.feature
+    for number, target in enumerate(execution.targets, start=1):
+        if isinstance(target.price, rules.AtrTarget):
+            named[f"target_feature_{number}"] = target.price.feature
+    trailing = execution.trailing
+    if trailing is not None and isinstance(trailing.by, rules.AtrTrail):
+        named["trail_feature"] = trailing.by.feature
+    return [
+        pl.col(feature).cast(pl.Float64).alias(column)
+        for column, feature in named.items()
+        if feature in frame.columns
+    ]
 
 
 def _read(path: Path) -> pl.DataFrame:

@@ -1,0 +1,43 @@
+id: S-template-019
+title: Breakeven firing under a trailing stop that is already higher leaves the stop at the trailing level
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    breakeven: {trigger: {kind: ticks, ticks: 8}}
+    trailing: {by: {kind: ticks, ticks: 4}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T14:30:01.000Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-06T14:30:02.000Z", price: "5002.25", size: 1}
+  - {ts: "2026-03-06T14:30:03.000Z", price: "5001.50", size: 1}
+  - {ts: "2026-03-06T14:30:04.000Z", price: "5001.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-06T14:30:04.000Z", price: "5001.00", rule: F-STP-03}
+rules: [F-ACT-01, F-BRK-01, F-BRK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02);
+# its plan: the stop 12 ticks below the fill, 4997.25, which the trailing stop, working from the
+# fill, raises at once to the market at the fill less 4 ticks, 5000.00 - 1.00 = 4999.00 (F-PLN-04,
+# F-TRL-01): order 2 at 4999.00; the target, order 3, at 5010.25; breakeven waits for 5000.25 +
+# 8 × 0.25 = 5002.25 (F-BRK-02);
+# the trade at 14:30:01, 5001.00, is a new best price: the stop rises to 5001.00 - 1.00 = 5000.00
+# (F-TRL-01, F-TRL-04);
+# the trade at 14:30:02, 5002.25, is a new best price and fires breakeven: the stop takes the highest
+# of where it stands, 5000.00, the breakeven level, the fill price 5000.25, and the trailing level
+# 5002.25 - 1.00 = 5001.25: 5001.25, a tick or more below 5002.25 (F-BRK-01, F-PLN-03);
+# the trade at 14:30:03, 5001.50, stays above the stop;
+# the trade at 14:30:04, 5001.25, triggers it (F-STP-01): it sells at the lower of 5001.00 and
+# 5001.25, 5001.00 (F-STP-03); a stop that breakeven had lowered to 5000.25 would still be working.

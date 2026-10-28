@@ -3,8 +3,10 @@ payments of a perpetual, the marks of an open position (F-MRK-01), and the flat-
 a run's fills make. Money counts micro-units of the instrument's currency, rounded once, where
 it is booked (F-FEE-03)."""
 
+import math
 from collections.abc import Iterable
 from enum import StrEnum
+from fractions import Fraction
 
 from fefat.market.fidelity import Fidelity
 from fefat.market.schema import FrozenModel
@@ -63,8 +65,10 @@ class Mark(FrozenModel):
 
 
 class Trade(FrozenModel):
-    """One flat-to-flat trade: its side and lots, its entry and exit, why it closed, what its
-    fills' values made, before fees, and the fees, both in micro-units."""
+    """One exit of a flat-to-flat trade: its side and the lots this exit closed, its entry and
+    this exit, why the exit closed them, its role (F-TAG-01), what the fills' values made on
+    those lots, before fees, and the fees, both in micro-units. A trade an exit plan closes in
+    parts (F-PLN-02) gives one of these per exit, each with the entry of the whole trade."""
 
     side: PositionSide
     lots: int
@@ -78,33 +82,39 @@ class Trade(FrozenModel):
 
 
 def trades_of(fills: Iterable[Fill]) -> tuple[Trade, ...]:
-    """The trades of a run that starts flat and holds one position at a time, each opened by
-    one fill and closed whole by the next; a position still open is no trade yet."""
+    """The exits of the trades of a run that starts flat and holds one position at a time, each
+    opened by one fill and closed by one or more: each exit's share of the entry's cash and fee is
+    rounded against the trader (F-FEE-03), so a whole exit makes exactly what its two fills moved.
+    A position still open is no trade yet."""
     trades = []
     entry: Fill | None = None
+    open_lots = 0
     for fill in fills:
         if entry is None:
-            entry = fill
+            entry, open_lots = fill, fill.lots
             continue
-        if fill.side is entry.side or fill.lots != entry.lots:
+        if fill.side is entry.side or fill.lots > open_lots:
             raise ValueError(
-                f"Expected each trade closed whole by one fill, got order {fill.order}'s "
-                f"{fill.side} of {fill.lots} after order {entry.order}'s {entry.side} of "
-                f"{entry.lots}."
+                f"Expected each exit to close some of the open {open_lots} lots, got order "
+                f"{fill.order}'s {fill.side} of {fill.lots} after order {entry.order}'s "
+                f"{entry.side} of {entry.lots}."
             )
+        share = Fraction(fill.lots, entry.lots)
         side = PositionSide.LONG if entry.side is Side.BUY else PositionSide.SHORT
         trades.append(
             Trade(
                 side=side,
-                lots=entry.lots,
+                lots=fill.lots,
                 entry_ts=entry.ts,
                 entry_price=entry.price,
                 exit_ts=fill.ts,
                 exit_price=fill.price,
                 exit_reason=fill.role,
-                pnl=entry.cash + fill.cash,
-                fees=entry.fee + fill.fee,
+                pnl=math.floor(entry.cash * share) + fill.cash,
+                fees=math.ceil(entry.fee * share) + fill.fee,
             )
         )
-        entry = None
+        open_lots -= fill.lots
+        if open_lots == 0:
+            entry = None
     return tuple(trades)

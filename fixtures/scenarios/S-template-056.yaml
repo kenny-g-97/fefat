@@ -1,0 +1,30 @@
+id: S-template-056
+title: A row on which the blackout column is true places no entry, and one where it is null places it
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    limits: {blackout: news}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, flags: {news: true}}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:31:00.200Z", price: "5001.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-LIM-01, F-MKT-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at 14:30 long_entry is true but so is the blackout column, news: no entry (F-LIM-01), and the
+# trade at 14:30:00.200 fills nothing;
+# at 14:31 the row leaves news out, a null, which counts as false: long_entry buys at the
+# market, order 1, filled on the trade at 14:31:00.200: 5001.00 + 0.25 = 5001.25.

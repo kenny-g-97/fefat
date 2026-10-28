@@ -411,16 +411,11 @@ fn a_templates_short_takes_its_size_from_size_mult_and_its_bracket_from_the_colu
     }))
     .unwrap();
     let row = SignalRow {
-        ts_close: at(300_000),
-        long_entry: false,
         short_entry: true,
-        long_exit: false,
-        short_exit: false,
         stop_price: Some(price(500_300)),
         target_price: Some(price(499_000)),
         size_mult: Some(2.0),
-        wake: true,
-        flat_by: None,
+        ..SignalRow::at(at(300_000))
     };
     let mut template = TemplateStrategy::new(&spec, vec![row], &es()).unwrap();
     let reader = trades(&[
@@ -774,16 +769,9 @@ fn a_template_closes_at_its_flat_by_time_and_enters_nothing_after_it_that_day() 
     }))
     .unwrap();
     let row = |seconds: i64, long_entry: bool| SignalRow {
-        ts_close: at(seconds * 1_000),
         long_entry,
-        short_entry: false,
-        long_exit: false,
-        short_exit: false,
-        stop_price: None,
-        target_price: None,
-        size_mult: None,
-        wake: true,
         flat_by: Some(at(23_700_000)),
+        ..SignalRow::at(at(seconds * 1_000))
     };
     let rows = vec![
         row(22_800, true),

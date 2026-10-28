@@ -23,10 +23,12 @@ use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
 use super::{BookedFill, Replay, RunError, RunOutputs, Stepped, TickRun};
 use crate::book::{Bracket, BracketLeg, LegPrice};
+use crate::event_log::EventKind;
+use crate::exit_plan::LivePlan;
 use crate::hours::{Halt, Session, TradingHours};
 use crate::settings::{LimitFill, RunSettings, SlippageTicks};
 use crate::strategy::{ScenarioOrder, ScenarioOrders, Strategy as RunStrategy};
-use crate::template::{SignalRow, TemplateStrategy};
+use crate::template::{RowFeatures, SignalRow, TemplateStrategy};
 
 /// The run's seed, recorded in the pull request, so that a failure reproduces.
 const SEED: u64 = 20_261_027;
@@ -149,6 +151,8 @@ struct DrawnRow {
     long_exit: bool,
     short_exit: bool,
     wake: bool,
+    /// The row's feature for a trailing stop by a feature, in ticks.
+    trail_ticks: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -158,6 +162,18 @@ struct DrawnTemplate {
     signal_exit: bool,
     flat_by: bool,
     rows: Vec<DrawnRow>,
+    plan: DrawnPlan,
+}
+
+/// The rest of a drawn template's exit plan (step 2.8): a second target, each closing half of two
+/// lots, a breakeven trigger in ticks, and a trailing stop: its ticks, whether it moves intrabar,
+/// its activation in ticks, and whether it trails by the feature each row gives instead, whose
+/// distance a decision can shorten while the market holds the stop below it (F-PLN-05).
+#[derive(Debug, Clone)]
+struct DrawnPlan {
+    two_targets: bool,
+    breakeven: Option<u32>,
+    trailing: Option<(u32, bool, Option<u32>, bool)>,
 }
 
 #[derive(Debug, Clone)]
@@ -259,14 +275,18 @@ fn drawn_row() -> impl Strategy<Value = DrawnRow> {
         any::<bool>(),
         any::<bool>(),
         prop_oneof![3 => Just(true), 1 => Just(false)],
+        1_u32..=8,
     )
-        .prop_map(|(instant, entry, long_exit, short_exit, wake)| DrawnRow {
-            instant,
-            entry,
-            long_exit,
-            short_exit,
-            wake,
-        })
+        .prop_map(
+            |(instant, entry, long_exit, short_exit, wake, trail_ticks)| DrawnRow {
+                instant,
+                entry,
+                long_exit,
+                short_exit,
+                wake,
+                trail_ticks,
+            },
+        )
 }
 
 fn drawn_strategy() -> impl Strategy<Value = DrawnStrategy> {
@@ -275,22 +295,41 @@ fn drawn_strategy() -> impl Strategy<Value = DrawnStrategy> {
         proptest::collection::vec(drawn_order(), 1..5),
     )
         .prop_map(|(decisions, orders)| DrawnStrategy::Orders { decisions, orders });
+    let plan = (
+        any::<bool>(),
+        proptest::option::of(1_u32..=8),
+        proptest::option::of((
+            1_u32..=8,
+            any::<bool>(),
+            proptest::option::of(1_u32..=6),
+            any::<bool>(),
+        )),
+    )
+        .prop_map(|(two_targets, breakeven, trailing)| DrawnPlan {
+            two_targets,
+            breakeven,
+            trailing,
+        });
     let template = (
         1_u32..=12,
         1_u32..=24,
         any::<bool>(),
         any::<bool>(),
         proptest::collection::vec(drawn_row(), 1..8),
+        plan,
     )
-        .prop_map(|(stop_ticks, target_ticks, signal_exit, flat_by, rows)| {
-            DrawnStrategy::Template(DrawnTemplate {
-                stop_ticks,
-                target_ticks,
-                signal_exit,
-                flat_by,
-                rows,
-            })
-        });
+        .prop_map(
+            |(stop_ticks, target_ticks, signal_exit, flat_by, rows, plan)| {
+                DrawnStrategy::Template(DrawnTemplate {
+                    stop_ticks,
+                    target_ticks,
+                    signal_exit,
+                    flat_by,
+                    rows,
+                    plan,
+                })
+            },
+        );
     prop_oneof![3 => orders, 2 => template]
 }
 
@@ -513,6 +552,7 @@ fn template(drawn: &DrawnTemplate, walks: &[Vec<TbboRow>]) -> TemplateStrategy {
         "sizing": {"kind": "fixed", "units": 1},
         "signal_exit": drawn.signal_exit
     });
+    plan_of(&drawn.plan, drawn.target_ticks, &mut execution);
     if drawn.flat_by {
         execution["time"] = serde_json::json!({"tz": "UTC", "flat_by": "15:00"});
     }
@@ -525,19 +565,47 @@ fn template(drawn: &DrawnTemplate, walks: &[Vec<TbboRow>]) -> TemplateStrategy {
         let (ts_close, _) = instant_of(row.instant, walks);
         let day = usize::try_from(ts_close.0.div_euclid(DAY) - i64::from(FIRST_DATE)).unwrap();
         by_close.entry(ts_close).or_insert(SignalRow {
-            ts_close,
             long_entry: row.entry == 1,
             short_entry: row.entry == 2,
             long_exit: row.long_exit,
             short_exit: row.short_exit,
-            stop_price: None,
-            target_price: None,
-            size_mult: None,
             wake: row.wake,
             flat_by: drawn.flat_by.then(|| Ts(day_start(day) + FLAT_BY)),
+            features: RowFeatures {
+                trailing: Some(f64::from(row.trail_ticks) * 250_000_000.0),
+                ..RowFeatures::NONE
+            },
+            ..SignalRow::at(ts_close)
         });
     }
     TemplateStrategy::new(&spec, by_close.into_values().collect(), &instrument()).unwrap()
+}
+
+/// The drawn plan's second target, breakeven, and trailing stop, written into `execution`.
+fn plan_of(plan: &DrawnPlan, target_ticks: u32, execution: &mut serde_json::Value) {
+    let ticks = |ticks: u32| serde_json::json!({"kind": "ticks", "ticks": ticks});
+    if plan.two_targets {
+        execution["targets"] = serde_json::json!([
+            {"price": ticks(target_ticks), "fraction": 0.5},
+            {"price": ticks(target_ticks * 2)}
+        ]);
+        execution["sizing"] = serde_json::json!({"kind": "fixed", "units": 2});
+    }
+    if let Some(trigger) = plan.breakeven {
+        execution["breakeven"] = serde_json::json!({"trigger": ticks(trigger)});
+    }
+    if let Some((distance, intrabar, activation, by_feature)) = plan.trailing {
+        let update = if intrabar { "intrabar" } else { "bar_close" };
+        let by = match by_feature {
+            true => serde_json::json!({"kind": "atr", "multiple": 1.0, "feature": "atr"}),
+            false => ticks(distance),
+        };
+        let mut trailing = serde_json::json!({"by": by, "update": update});
+        if let Some(activation) = activation {
+            trailing["activation"] = ticks(activation);
+        }
+        execution["trailing"] = trailing;
+    }
 }
 
 fn instrument() -> InstrumentParameters {
@@ -581,6 +649,7 @@ struct Replayed {
     outputs: Result<RunOutputs, RunError>,
     refused_at: Option<(Vec<BookedFill>, Ledger)>,
     skipped: usize,
+    skipped_trailing: usize,
 }
 
 fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
@@ -626,10 +695,16 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
         strategy.as_mut(),
     )
     .unwrap();
-    let mut skipped = 0;
+    let (mut skipped, mut skipped_trailing) = (0, 0);
     loop {
         match run.step() {
-            Ok(Some(Stepped::Skipped { units })) => skipped += units,
+            Ok(Some(Stepped::Skipped { units })) => {
+                skipped += units;
+                // F-PLN-05: a skip that a live trailing stop allowed, its bar not past the best price.
+                if run.book.plans().any(LivePlan::trails) {
+                    skipped_trailing += units;
+                }
+            }
             Ok(Some(_)) => {}
             Ok(None) => break,
             Err(error) => {
@@ -637,6 +712,7 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
                     outputs: Err(error),
                     refused_at: Some((run.fills().to_vec(), run.ledger().clone())),
                     skipped,
+                    skipped_trailing,
                 };
             }
         }
@@ -645,6 +721,7 @@ fn replayed(month: &DrawnMonth, replay: Replay) -> Replayed {
         outputs: run.run(),
         refused_at: None,
         skipped,
+        skipped_trailing,
     }
 }
 
@@ -659,6 +736,10 @@ struct Coverage {
     /// which both replays refuse alike, since F-STP-02 prices such a fill from a quote alone.
     unquoted: usize,
     ambiguous: usize,
+    /// Stops moved by an exit plan, by the rule that moved them (F-BRK-01, F-TRL-01).
+    moves: BTreeMap<&'static str, usize>,
+    /// Records skipped while a trailing stop was live, each bar no higher than its best price.
+    skipped_trailing: usize,
     fills: BTreeMap<String, usize>,
     profiles: BTreeMap<String, usize>,
 }
@@ -683,6 +764,7 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
         let mut seen = coverage.borrow_mut();
         seen.cases += 1;
         seen.skipped += skipping.skipped;
+        seen.skipped_trailing += skipping.skipped_trailing;
         seen.cases_skipping += usize::from(skipping.skipped > 0);
         for day in &month.days {
             *seen
@@ -706,6 +788,13 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
             Ok(outputs.ambiguous_fills())
         );
         seen.ambiguous += outputs.ambiguous_fills();
+        let moves = outputs
+            .log
+            .iter()
+            .filter(|entry| entry.kind == EventKind::Moved);
+        for rule in moves.filter_map(|entry| entry.rule) {
+            *seen.moves.entry(rule).or_default() += 1;
+        }
         for booked in &outputs.fills {
             let fill = booked.fill;
             let key = format!("{} on {}", fill.rule.id(), fill.fidelity);
@@ -723,6 +812,10 @@ fn the_skipping_engine_fills_1000_generated_months_as_the_full_replay_does() {
     assert!(coverage.unquoted <= CASES as usize / 100, "{coverage:#?}");
     assert!(coverage.cases_skipping >= 300, "{coverage:#?}");
     assert!(coverage.ambiguous > 0, "{coverage:#?}");
+    assert!(coverage.skipped_trailing > 0, "{coverage:#?}");
+    for rule in ["F-BRK-01", "F-TRL-01"] {
+        assert!(coverage.moves.contains_key(rule), "{coverage:#?}");
+    }
     let rules: Vec<&str> = coverage.fills.keys().map(String::as_str).collect();
     for wanted in [
         "F-MKT-01 on tbbo",

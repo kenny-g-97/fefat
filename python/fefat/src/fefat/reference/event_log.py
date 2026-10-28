@@ -13,7 +13,9 @@ from fefat.reference.units import instant_text, money_text, price_text
 
 class EventKind(StrEnum):
     """What happened: an order placed or active, a stop triggered, a fill, a cancellation, a
-    funding payment, a break the working orders stay through, or an ambiguous bar."""
+    funding payment, a break the working orders stay through, an ambiguous bar, a stop moved or
+    reduced by its exit plan (F-PLN-02, F-PLN-03), or an entry signal the template could not
+    act on (F-ENT-02, F-SIZ-04)."""
 
     PLACED = "placed"
     ACTIVE = "active"
@@ -23,6 +25,9 @@ class EventKind(StrEnum):
     FUNDING = "funding"
     BREAK = "break"
     AMBIGUOUS = "ambiguous"
+    MOVED = "moved"
+    REDUCED = "reduced"
+    SKIPPED = "skipped"
 
 
 class LogEntry(FrozenModel):
@@ -47,19 +52,37 @@ class EventLog:
         self.entries.append(LogEntry(ts=ts, kind=kind, order=order, rule=rule, text=text))
 
     def filled(
-        self, fill: Fill, cancelled: Iterable[WorkingOrder], bracket: Iterable[WorkingOrder]
+        self,
+        fill: Fill,
+        cancelled: Iterable[WorkingOrder],
+        bracket: Iterable[WorkingOrder],
+        reduced: tuple[int, int] | None = None,
     ) -> None:
-        """A fill, by the rule that priced it; the orders of its OCO group it cancelled
-        (F-OCO-01); and the legs of its bracket it placed (F-OCO-02)."""
+        """A fill, by the rule that priced it; the orders of its OCO group or its exit plan it
+        cancelled (F-OCO-01); the stop of its plan it reduced (F-PLN-02); and the legs of its
+        exit plan it placed (F-OCO-02)."""
         details = "".join(f", {detail}" for detail in (fill.liquidity, *fill.flags))
         filled = f"order {fill.order}: {fill.side} {fill.lots} at {price_text(fill.price)}"
         self.note(fill.ts, EventKind.FILLED, filled + details, fill.order, fill.rule)
         for other in cancelled:
             text = f"order {other.id}: order {fill.order} of its group filled"
             self.note(fill.ts, EventKind.CANCELLED, text, other.id, "F-OCO-01")
+        if reduced is not None:
+            stop, lots = reduced
+            text = f"order {stop}: reduced to {lots}, order {fill.order} of its plan filled"
+            self.note(fill.ts, EventKind.REDUCED, text, stop, "F-PLN-02")
         for leg in bracket:
-            text = f"order {leg.id}: {leg.described()}, the bracket of order {fill.order}"
+            text = f"order {leg.id}: {leg.described()}, the exit plan of order {fill.order}"
             self.note(fill.ts, EventKind.PLACED, text, leg.id, "F-OCO-02")
+
+    def moved(self, ts: int, order: int, before: int, after: int, rule: str) -> None:
+        """A stop its exit plan moved, by breakeven or a trailing stop (F-PLN-03)."""
+        text = f"order {order}: the stop moved from {price_text(before)} to {price_text(after)}"
+        self.note(ts, EventKind.MOVED, text, order, rule)
+
+    def skipped(self, ts: int, why: str, rule: str) -> None:
+        """An entry signal the template could not act on (F-ENT-02, F-SIZ-04)."""
+        self.note(ts, EventKind.SKIPPED, f"no entry: {why}", rule=rule)
 
     def active(self, ts: int, order: int, sees: str, rule: str) -> None:
         """An order that sees its first record or bar (F-ACT-01, F-ACT-02)."""

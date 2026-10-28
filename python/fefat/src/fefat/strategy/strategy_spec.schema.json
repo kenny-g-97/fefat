@@ -215,7 +215,7 @@
       "properties": {
         "breakeven": {
           "$ref": "#/$defs/Breakeven",
-          "description": "When the stop moves to the entry's fill price."
+          "description": "When the stop moves to the entry's fill price; it needs a stop."
         },
         "entry": {
           "$ref": "#/$defs/EntryOrder",
@@ -240,7 +240,7 @@
         },
         "sizing": {
           "$ref": "#/$defs/Sizing",
-          "description": "How many units an entry trades."
+          "description": "How many units an entry trades; a risk size needs a stop."
         },
         "stop": {
           "$ref": "#/$defs/StopRule",
@@ -248,7 +248,7 @@
         },
         "targets": {
           "default": [],
-          "description": "The targets placed when an entry fills, three at most, each closing a fraction of the\nposition still open; with the stop, they form one OCO group.",
+          "description": "The targets placed when an entry fills, three at most, each closing a fraction of the\nposition still open; with the stop, they form one OCO group. A target in R multiples\nneeds a stop.",
           "items": {
             "$ref": "#/$defs/Target"
           },
@@ -261,7 +261,7 @@
         },
         "trailing": {
           "$ref": "#/$defs/Trailing",
-          "description": "How the stop follows the price."
+          "description": "How the stop follows the price; it needs a stop."
         }
       },
       "required": [
@@ -361,7 +361,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A profit of `multiple` times the trade's initial risk.",
+          "description": "A profit of `multiple` times the trade's initial risk, which needs a stop.",
           "properties": {
             "kind": {
               "const": "r_multiple",
@@ -382,7 +382,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The fill of a target, counted from 1.",
+          "description": "The fill of a target, counted from 1, one the specification has.",
           "properties": {
             "kind": {
               "const": "after_target",
@@ -543,7 +543,7 @@
           "description": "`multiple` times a feature of the entry's signal bar, such as its ATR, from the fill.",
           "properties": {
             "feature": {
-              "description": "The feature's column in the signal frame, such as `atr`.",
+              "description": "The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units\nof price the bars' prices are in, as a feature worked out from them is (F-RND-01).",
               "minLength": 1,
               "type": "string"
             },
@@ -632,7 +632,7 @@
           "description": "`multiple` times a feature of the entry's signal bar, such as its ATR, from the fill.",
           "properties": {
             "feature": {
-              "description": "The feature's column in the signal frame, such as `atr`.",
+              "description": "The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units\nof price the bars' prices are in, as a feature worked out from them is (F-RND-01).",
               "minLength": 1,
               "type": "string"
             },
@@ -696,7 +696,7 @@
       "description": "Entry windows and time exits, in local time of `tz`.",
       "properties": {
         "flat_by": {
-          "description": "The local time, `HH:MM`, from which each trade date the position is closed and no entry\nis placed: at the first signal close at or after that time on the trade date's own day,\nwhich must fall inside its session, outside its halts, and on the signal bars' grid.",
+          "description": "The local time, `HH:MM`, from which each trade date the position is closed and no entry\nis placed: at the first signal close at or after that time on the trade date's own day,\nwhich must fall after its session's open, outside its halts, and on the signal bars' grid,\nor, where the session closes at or before it, at the last signal close before the close.",
           "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
           "type": "string"
         },
@@ -770,7 +770,7 @@
           "description": "`multiple` times a feature of the signal bars, such as their ATR, behind the best price.",
           "properties": {
             "feature": {
-              "description": "The feature's column in the signal frame, such as `atr`.",
+              "description": "The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units\nof price the bars' prices are in, as a feature worked out from them is (F-RND-01).",
               "minLength": 1,
               "type": "string"
             },
@@ -794,7 +794,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "At the signal frame's `trail_ref` of each signal bar, a raw price.",
+          "description": "At the signal frame's `trail_ref` of each signal bar, a raw price, moved at bar closes\nalone (`update: bar_close`).",
           "properties": {
             "kind": {
               "const": "column",

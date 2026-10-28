@@ -1,0 +1,34 @@
+id: S-template-048
+title: A limit entry 4 ticks under the mark at the decision fills when the trades go through it, and its stop closes the long
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: limit_offset, ticks: 4}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "4999.50", size: 1}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "4998.75", size: 1}
+  - {ts: "2026-03-05T14:31:00.000Z", price: "4996.75", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:30.000Z", price: "4999.00", rule: F-LMT-03}
+    - {order: 2, ts: "2026-03-05T14:31:00.000Z", price: "4996.75", rule: F-STP-03}
+rules: [F-ACT-01, F-ENT-02, F-LMT-01, F-LMT-03, F-MRK-01, F-OCO-01, F-OCO-02, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# the trade at 14:29:59.000 marks the market at 5000.00 (F-MRK-01); at the 14:30 close long_entry
+# places a buy limit 4 ticks under that mark, 5000.00 - 4 × 0.25 = 4999.00, order 1 (F-ENT-02);
+# the trade at 14:30:00.200, 4999.50, stays above it; the one at 14:30:30.000, 4998.75, goes
+# through it: it fills at 4999.00 (F-LMT-03), its stop, order 2, at 4999.00 - 8 × 0.25 = 4997.00
+# and its target, order 3, at 5001.00;
+# the trade at 14:31:00.000, 4996.75, reaches the stop (F-STP-01), which fills at the lower of
+# 4997.00 - 0.25 and 4996.75, 4996.75 (F-STP-03), cancelling the target (F-OCO-01).

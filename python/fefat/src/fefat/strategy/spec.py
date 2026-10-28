@@ -14,21 +14,26 @@ import json
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, model_validator
 
 from fefat.market.schema import FrozenModel, Timeframe
 from fefat.strategy.exits import (
+    AfterTargetTrigger,
     BreakevenRule,
+    ColumnTrail,
     Count,
     Limits,
     Positive,
     ProfitTarget,
+    ProfitTrigger,
+    RMultipleTarget,
     StopRule,
     TickDistance,
     TimeRules,
     TrailingStop,
+    TrailUpdate,
 )
 
 SPEC_SCHEMA_PATH = Path(__file__).with_name("strategy_spec.schema.json")
@@ -154,6 +159,48 @@ class Execution(FrozenModel):
     limits: Limits = Field(default_factory=Limits)
     sizing: Sizing
     signal_exit: bool = True
+
+    @model_validator(mode="after")
+    def _each_rule_has_what_it_needs(self) -> Self:
+        """Breakeven and a trailing stop move a stop, R multiples and a risk size count in its
+        distance (F-RND-02), `after_target` names a target the specification has, and a trailing
+        stop by the column moves at decisions alone (F-TRL-04), as `StrategySpec::validate` of
+        `fefat-core` refuses them."""
+        breakeven = None if self.breakeven is None else self.breakeven.trigger
+        activation = None if self.trailing is None else self.trailing.activation
+        needs_a_stop = {
+            "execution.breakeven": self.breakeven is not None,
+            "execution.trailing": self.trailing is not None,
+            "execution.targets": any(isinstance(t.price, RMultipleTarget) for t in self.targets),
+            "execution.sizing": isinstance(self.sizing, RiskAmountSize | RiskPercentSize),
+        }
+        lacking = [field for field, needs in needs_a_stop.items() if needs]
+        if self.stop is None and lacking:
+            raise ValueError(f"Expected {lacking[0]} beside a stop, got none.")
+        for field, trigger in (
+            ("breakeven.trigger", breakeven),
+            ("trailing.activation", activation),
+        ):
+            _require_a_target_it_has(f"execution.{field}.target", trigger, len(self.targets))
+        trailing = self.trailing
+        if (
+            trailing is not None
+            and isinstance(trailing.by, ColumnTrail)
+            and trailing.update is not TrailUpdate.BAR_CLOSE
+        ):
+            raise ValueError(
+                "Expected execution.trailing.update bar_close for a trailing stop by the "
+                f"column, got {trailing.update}."
+            )
+        return self
+
+
+def _require_a_target_it_has(field: str, trigger: ProfitTrigger | None, targets: int) -> None:
+    if isinstance(trigger, AfterTargetTrigger) and trigger.target > targets:
+        raise ValueError(
+            f"Expected {field} a target the specification has, got target {trigger.target} of "
+            f"{targets}."
+        )
 
 
 class StrategySpec(FrozenModel):

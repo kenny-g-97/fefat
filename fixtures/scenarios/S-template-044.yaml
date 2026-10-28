@@ -1,0 +1,50 @@
+id: S-template-044
+title: An entry window from 08:30 to 09:00 Chicago opens at 14:30 UTC before the clock change and at 13:30 UTC after it
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time:
+      tz: America/Chicago
+      windows: [{start: "08:30", end: "09:00"}]
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, long_exit: true}
+  - {ts_close: "2026-03-09T13:30:00Z", trade_date: "2026-03-09", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-09T13:35:00Z", trade_date: "2026-03-09", contract: ESH2026, long_exit: true}
+  - {ts_close: "2026-03-09T14:30:00Z", trade_date: "2026-03-09", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-06T14:35:00.300Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-09T13:30:00.200Z", price: "5010.00", size: 1}
+  - {ts: "2026-03-09T13:35:00.300Z", price: "5011.00", size: 1}
+  - {ts: "2026-03-09T14:30:00.300Z", price: "5012.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 4, ts: "2026-03-06T14:35:00.300Z", price: "5000.75", rule: F-MKT-02}
+    - {order: 5, ts: "2026-03-09T13:30:00.200Z", price: "5010.25", rule: F-MKT-02}
+    - {order: 8, ts: "2026-03-09T13:35:00.300Z", price: "5010.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-ENT-04, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-04, F-TIM-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# the window runs from 08:30 to just before 09:00 Chicago time (F-TIM-04), which is 14:30 to 15:00
+# UTC under CST, UTC-6, on 2026-03-06, and 13:30 to 14:00 UTC under CDT, UTC-5, from 2026-03-08
+# (F-TIM-05);
+# at 14:30 on 03-06, 08:30 CST, long_entry buys, order 1, filled on the trade at 14:30:00.200:
+# 5000.00 + 0.25 = 5000.25, its stop and target orders 2 and 3; at 14:35 long_exit sells, order 4,
+# exit reason signal_exit (F-ENT-04), filled at 5001.00 - 0.25 = 5000.75: exits act outside
+# windows too;
+# at 13:30 on 03-09, 08:30 CDT, long_entry buys, order 5, filled at 5010.00 + 0.25 = 5010.25, its
+# stop and target orders 6 and 7; at 13:35 long_exit sells, order 8, filled at 5011.00 - 0.25 =
+# 5010.75;
+# at 14:30 on 03-09, 09:30 CDT, outside the window, long_entry places nothing, and the trade at
+# 14:30:00.300 fills nothing.

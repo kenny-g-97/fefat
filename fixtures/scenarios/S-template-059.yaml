@@ -1,0 +1,37 @@
+id: S-template-059
+title: With daily_loss_stop 100 a loss of 162.50 stops the day's entries
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    limits: {daily_loss_stop: 100}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "4997.00", size: 1}
+  - {ts: "2026-03-05T14:32:00.200Z", price: "4997.50", size: 1}
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5005.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-05T14:31:00.200Z", price: "4997.00", rule: F-STP-03}
+    - {order: 4, ts: "2026-03-06T14:30:00.200Z", price: "5005.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-LIM-02, F-MKT-02, F-OCO-02, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at 14:30 long_entry buys, order 1, filled at 5000.25; its stop, order 2, at
+# 5000.25 - 12 × 0.25 = 4997.25; the trade at 14:31:00.200, 4997.00, fills it at the lower of
+# 4997.25 - 0.25 and 4997.00, 4997.00: the trade lost 3.25 × 50 = -162.50 USD;
+# at 14:32 the day's closed trades lost 162.50, at or below minus daily_loss_stop = -100: no
+# entry (F-LIM-02);
+# on 03-06 the day's profit and loss starts again at 0: long_entry buys, order 4, at 5005.25.

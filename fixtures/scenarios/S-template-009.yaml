@@ -1,0 +1,39 @@
+id: S-template-009
+title: After the first of two targets fills, the reduced stop closes the one lot left
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets:
+      - {price: {kind: ticks, ticks: 4}, fraction: 0.5}
+      - {price: {kind: ticks, ticks: 12}}
+    sizing: {kind: fixed, units: 2}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 100}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5001.00", high: "5001.75", low: "5000.75", close: "5001.50", volume: 80}
+  - {ts_open: "2026-03-06T14:32:00Z", ts_close: "2026-03-06T14:33:00Z", open: "5000.50", high: "5000.75", low: "4998.00", close: "4998.50", volume: 120}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, quantity: 2}
+    - {order: 3, ts: "2026-03-06T14:32:00Z", price: "5001.25", rule: F-LMT-03, quantity: 1}
+    - {order: 2, ts: "2026-03-06T14:33:00Z", price: "4998.00", rule: F-STP-04, quantity: 1}
+rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-LMT-01, F-LMT-03, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-02, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01). The first two bars are those
+# of S-template-008:
+# order 1 buys 2 lots at 5000.00 + 0.25 = 5000.25 (F-MKT-03), at 14:31; its plan places the stop,
+# order 2, at 4998.25 for 2 lots, target 1, order 3, at 5001.25 for 1 lot, and target 2, order 4,
+# at 5003.25 for 1 lot (F-PLN-01);
+# the bar from 14:31 to 14:32 fills target 1, 1 lot at 5001.25 (F-LMT-03), and the stop is
+# reduced to the 1 lot left (F-PLN-02);
+# the bar from 14:32 to 14:33 replays for the long as 5000.50, 4998.00, 5000.75, 4998.50
+# (F-BAR-02): the fall to 4998.00 reaches the stop at 4998.25 (F-STP-01), which sells its 1 lot at
+# 4998.25 - 0.25 = 4998.00 (F-STP-04); none stay open, so target 2 is cancelled (F-OCO-01);
+# a stop still for 2 lots would have sold 2 and left the strategy short 1 lot.

@@ -17,9 +17,10 @@ from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.event_log import EventKind
+from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.ledger import Trade, trades_of
-from fefat.reference.orders import OrderRole, PositionSide, Side, TicksBracket
+from fefat.reference.orders import OrderRole, PositionSide, Side
 from fefat.reference.scenario_runner import run_scenario
 from fefat.reference.scenarios import Scenario
 from fefat.reference.settings import RunSettings
@@ -57,7 +58,7 @@ def buy_with_a_bracket_then_flatten(bar_row: Any, context: DecisionContext) -> N
     """Buy one lot with a bracket 12 ticks under and 24 over the fill when flat, and close the
     position at the next decision."""
     if context.position == 0 and not context.has_working_orders():
-        context.market(Side.BUY, 1, TicksBracket(stop_ticks=12, target_ticks=24))
+        context.market(Side.BUY, 1, ExitPlan.in_ticks(stop_ticks=12, target_ticks=24))
     elif context.position != 0:
         context.flatten()
 
@@ -89,7 +90,7 @@ def test_a_bracket_in_ticks_is_set_from_its_entrys_fill_and_closes_the_trade() -
     assert (target.price, target.rule, target.role) == (
         price_units("5006.75"),
         "F-LMT-03",
-        OrderRole.TARGET,
+        OrderRole.TARGET_1,
     )
     assert trades_of(result.fills) == (
         Trade(
@@ -99,7 +100,7 @@ def test_a_bracket_in_ticks_is_set_from_its_entrys_fill_and_closes_the_trade() -
             entry_price=price_units("5000.75"),
             exit_ts=instant_nanoseconds("2026-03-06T14:33:00Z"),
             exit_price=price_units("5006.75"),
-            exit_reason=OrderRole.TARGET,
+            exit_reason=OrderRole.TARGET_1,
             pnl=30_000_000,
             fees=0,
         ),

@@ -10,6 +10,7 @@ use std::fmt;
 use thiserror::Error;
 
 use crate::fills::Fill;
+use crate::instants::Ts;
 use crate::instrument::InstrumentParameters;
 use crate::orders::Side;
 use crate::units::{Money, Overflow, Price, Qty};
@@ -105,6 +106,7 @@ pub struct Ledger {
     cash: Money,
     position: Position,
     mark: Option<Price>,
+    opened_at: Option<Ts>,
 }
 
 impl Ledger {
@@ -116,6 +118,7 @@ impl Ledger {
             cash: starting_cash,
             position: Position::Flat,
             mark: None,
+            opened_at: None,
         }
     }
 
@@ -148,6 +151,12 @@ impl Ledger {
             self.after(fill.side, fill.lots, fill.price, fill.fee)?;
         #[cfg(debug_assertions)]
         let before = self.clone();
+        let (held, holds) = (self.position.signed_lots().0, position.signed_lots().0);
+        self.opened_at = match holds {
+            0 => None,
+            _ if held.signum() != holds.signum() => Some(fill.ts),
+            _ => self.opened_at,
+        };
         self.position = position;
         self.cash = cash;
         #[cfg(debug_assertions)]
@@ -194,6 +203,12 @@ impl Ledger {
     /// The mark, none before the first tradeable price.
     pub const fn mark(&self) -> Option<Price> {
         self.mark
+    }
+
+    /// The instant of the fill that opened the position, from flat or by reversing one; none when
+    /// flat, and for a position held when the tape starts, which no fill opened.
+    pub const fn opened_at(&self) -> Option<Ts> {
+        self.opened_at
     }
 
     /// The position's value at the mark, rounded once (F-FEE-03): zero when flat, negative for a

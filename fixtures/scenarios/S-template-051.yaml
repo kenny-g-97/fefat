@@ -1,0 +1,37 @@
+id: S-template-051
+title: Both entry signals place a buy stop and a sell stop as one OCO group; the sell fills, the buy is cancelled
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: stop_offset, ticks: 4}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, short_entry: true}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.25", size: 1}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "4998.75", size: 1}
+  - {ts: "2026-03-05T14:31:00.000Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 2, ts: "2026-03-05T14:30:30.000Z", price: "4998.75", rule: F-STP-03}
+    - {order: 3, ts: "2026-03-05T14:31:00.000Z", price: "5001.00", rule: F-STP-03}
+rules: [F-ACT-01, F-ENT-01, F-ENT-02, F-MRK-01, F-OCO-01, F-OCO-02, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# the trade at 14:29:59.000 marks the market at 5000.00; at the 14:30 close both long_entry and
+# short_entry are true under a stop entry, so the template places the pair as one OCO group
+# (F-ENT-01): the buy stop 4 ticks above the mark, 5001.00, order 1, then the sell stop 4 ticks
+# under it, 4999.00, order 2 (F-ENT-02);
+# the trade at 14:30:00.200, 5000.25, reaches neither; the one at 14:30:30.000, 4998.75, reaches
+# the sell stop (F-STP-01), which fills at the lower of 4999.00 - 0.25 and 4998.75, 4998.75
+# (F-STP-03), and cancels the buy stop of its group (F-OCO-01);
+# the short's plan: its stop, order 3, at 4998.75 + 8 × 0.25 = 5000.75, its target, order 4, at
+# 4996.75; the trade at 14:31:00.000, 5001.00, reaches the stop, which fills at the higher of
+# 5000.75 + 0.25 and 5001.00, 5001.00; the cancelled buy stop at 5001.00 fills nothing.

@@ -1,0 +1,38 @@
+id: S-template-012
+title: A bar reaching the stop and a partial target sells all the lots at the stop, flagged ambiguous
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 4}
+    targets:
+      - {price: {kind: ticks, ticks: 4}, fraction: 0.5}
+      - {price: {kind: ticks, ticks: 12}}
+    sizing: {kind: fixed, units: 2}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 100}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "5000.50", high: "5001.50", low: "4999.00", close: "5000.00", volume: 200}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, quantity: 2}
+    - {order: 2, ts: "2026-03-06T14:32:00Z", price: "4999.00", rule: F-STP-04, flags: [ambiguous], quantity: 2}
+rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-BAR-05, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-02, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# order 1 buys 2 lots at 5000.00 + 0.25 = 5000.25 (F-MKT-03), at 14:31; its plan (F-PLN-01): the
+# stop, order 2, at 5000.25 - 1.00 = 4999.25 for 2 lots; target 1, order 3, at 5001.25 for 1 lot;
+# target 2, order 4, at 5003.25 for 1 lot; the rest of the entry's bar, 4999.75 to 5000.50,
+# reaches none;
+# the bar from 14:31 to 14:32 reaches both the stop and target 1; holding a long, its low comes
+# first (F-BAR-02): 5000.50, 4999.00, 5001.50, 5000.00; the fall to 4999.00 reaches the stop at
+# 4999.25 (F-STP-01), which sells all 2 lots at 4999.25 - 0.25 = 4999.00 (F-STP-04); none stay
+# open, so both targets are cancelled (F-PLN-02, F-OCO-01), and the rise to 5001.50 fills nothing;
+# with its extremes swapped (F-BAR-05) the rise comes first: target 1 sells 1 lot at 5001.25, the
+# stop is reduced to 1 lot, and the fall sells that lot at 4999.00; other fills, so the bar's fill
+# is flagged ambiguous.

@@ -1,0 +1,33 @@
+id: S-template-015
+title: A stop of 0.07 % of a 5000.25 fill lies 14 ticks below it, its 14.0007 ticks rounded down
+fidelity: 1m
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: percent, percent: 0.07}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5000.50", low: "4999.75", close: "5000.25", volume: 100}
+  - {ts_open: "2026-03-06T14:31:00Z", ts_close: "2026-03-06T14:32:00Z", open: "4999.50", high: "4999.75", low: "4996.75", close: "4997.25", volume: 160}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03}
+    - {order: 2, ts: "2026-03-06T14:32:00Z", price: "4996.50", rule: F-STP-04}
+rules: [F-ACT-02, F-BAR-02, F-BAR-04, F-MKT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-RND-01, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01):
+# order 1 buys 1 lot at 5000.00 + 0.25 = 5000.25 (F-MKT-03), at 14:31;
+# its stop lies 0.07 % of the fill price below it: 5000.25 × 0.07 / 100 = 3.500175 points =
+# 14.0007 ticks, rounded down to 14 (F-RND-01): order 2 at 5000.25 - 3.50 = 4996.75; its target,
+# order 3, at 5000.25 + 40 × 0.25 = 5010.25 (F-PLN-01);
+# the bar from 14:31 to 14:32 replays for the long as 4999.50, 4996.75, 4999.75, 4997.25 (F-BAR-02):
+# its low reaches the stop at 4996.75 (F-STP-01), which sells at 4996.75 - 0.25 = 4996.50
+# (F-STP-04), and the target is cancelled (F-OCO-01); a stop rounded up to 15 ticks, at 4996.50,
+# would have stayed under that low.

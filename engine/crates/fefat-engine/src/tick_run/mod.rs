@@ -17,7 +17,11 @@
 mod bars;
 mod descent;
 mod fills;
+#[cfg(test)]
+mod limit_properties;
 mod outcomes;
+#[cfg(test)]
+mod plan_properties;
 #[cfg(test)]
 mod properties;
 mod records;
@@ -35,6 +39,7 @@ use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::OrderId;
+use fefat_core::units::Money;
 
 use descent::BarLevel;
 use records::{DayRecords, Unit};
@@ -43,7 +48,7 @@ use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::hours::TradingHours;
 use crate::settings::RunSettings;
-use crate::strategy::{DecisionContext, Strategy};
+use crate::strategy::{ClosedTrade, DecisionContext, Strategy};
 
 /// One run of a strategy over one contract's trade dates.
 pub struct TickRun<'run, R: MarketDataReader> {
@@ -57,6 +62,8 @@ pub struct TickRun<'run, R: MarketDataReader> {
     ledger: Ledger,
     fills: Vec<BookedFill>,
     log: Vec<LogEntry>,
+    trade_cash: Money,
+    closed_trades: Vec<ClosedTrade>,
     in_break: bool,
     decisions: Vec<Ts>,
     next_decision: usize,
@@ -106,6 +113,8 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             ledger,
             fills: Vec::new(),
             log: Vec::new(),
+            trade_cash: Money(0),
+            closed_trades: Vec::new(),
             in_break: false,
             decisions,
             next_decision: 0,
@@ -226,9 +235,9 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
     fn decide(&mut self, now: Ts, index: usize) -> Result<Stepped, RunError> {
         self.next_decision += 1;
         let latency = self.settings.latency_nanoseconds();
-        let position = self.ledger.position();
-        let mut context =
-            DecisionContext::new(&mut self.book, &mut self.log, position, now, index, latency);
+        let (book, log, ledger) = (&mut self.book, &mut self.log, &self.ledger);
+        let trades = &self.closed_trades;
+        let mut context = DecisionContext::new(book, log, ledger, trades, now, index, latency);
         self.strategy.on_decision(now, &mut context)?;
         Ok(Stepped::Decision(now))
     }

@@ -1,0 +1,40 @@
+id: S-template-041
+title: Before 2021-06-28 no_overnight holds a long through the daily 15:15 pause and closes it before the session's close
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: America/Chicago, no_overnight: true}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2021-03-04T21:05:00Z", trade_date: "2021-03-04", contract: ESH2021, long_entry: true}
+  - {ts_close: "2021-03-04T21:10:00Z", trade_date: "2021-03-04", contract: ESH2021}
+  - {ts_close: "2021-03-04T21:35:00Z", trade_date: "2021-03-04", contract: ESH2021}
+  - {ts_close: "2021-03-04T21:55:00Z", trade_date: "2021-03-04", contract: ESH2021}
+tape:
+  - {ts: "2021-03-04T21:05:00.200Z", price: "3800.00", size: 1}
+  - {ts: "2021-03-04T21:10:00.300Z", price: "3800.50", size: 1}
+  - {ts: "2021-03-04T21:35:00.300Z", price: "3801.00", size: 1}
+  - {ts: "2021-03-04T21:55:00.300Z", price: "3802.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2021-03-04T21:05:00.200Z", price: "3800.25", rule: F-MKT-02}
+    - {order: 4, ts: "2021-03-04T21:55:00.300Z", price: "3801.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# until trade date 2021-06-28 every equity index session paused from 15:15 to 15:30 CST, 21:15 to
+# 21:30 UTC; that daily halt is no stop of trading (§20), so the decision at 21:10, the last before
+# it, closes nothing; the session closes at 16:00 CST, 22:00 UTC, and the last signal close before
+# that stop is 21:55;
+# at 21:05 long_entry buys, order 1, filled on the trade at 21:05:00.200: 3800.00 + 0.25 =
+# 3800.25, its stop and target orders 2 and 3, which no trade reaches;
+# at 21:10 and 21:35 the position stays; at 21:55 the template sells at the market, order 4,
+# exit reason no_overnight (F-TIM-03), filled on the trade at 21:55:00.300: 3802.00 - 0.25 =
+# 3801.75.

@@ -1,0 +1,34 @@
+id: S-template-063
+title: A winning trade starts no cooldown, so the next decision enters at once
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 4}}]
+    limits: {cooldown_after_loss: {kind: bars, bars: 2}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "5001.50", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 3, ts: "2026-03-05T14:30:30.000Z", price: "5001.25", rule: F-LMT-03}
+    - {order: 4, ts: "2026-03-05T14:31:00.200Z", price: "5001.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-LIM-03, F-LMT-01, F-LMT-03, F-MKT-02, F-OCO-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at 14:30 long_entry buys, order 1, filled at 5000.25, its target, order 3, at
+# 5000.25 + 4 × 0.25 = 5001.25, which the trade at 14:30:30.000, 5001.50, goes through: it
+# fills at 5001.25, a win of 50.00 USD;
+# a cooldown follows a losing trade only (F-LIM-03): at 14:31 long_entry buys, order 4, filled
+# at 5001.00 + 0.25 = 5001.25.

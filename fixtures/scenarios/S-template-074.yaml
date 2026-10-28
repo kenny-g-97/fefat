@@ -1,0 +1,46 @@
+id: S-template-074
+title: A limit entry resting past a decision trails from its fill by the entry row's ATR, then by a later decision's
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: limit_at_column}
+    stop: {kind: ticks, ticks: 20}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    trailing: {by: {kind: atr, multiple: 1.0, feature: atr}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true, entry_price: "4999.00", features: {atr: 2000000000.0}}
+  - {ts_close: "2026-03-06T14:35:00Z", trade_date: "2026-03-06", contract: ESH2026, features: {atr: 500000000.0}}
+  - {ts_close: "2026-03-06T14:40:00Z", trade_date: "2026-03-06", contract: ESH2026, features: {atr: 500000000.0}}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-06T14:36:00.000Z", price: "4998.75", size: 1}
+  - {ts: "2026-03-06T14:37:00.000Z", price: "4998.25", size: 1}
+  - {ts: "2026-03-06T14:41:00.000Z", price: "4998.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:36:00.000Z", price: "4999.00", rule: F-LMT-03, role: entry}
+    - {order: 2, ts: "2026-03-06T14:41:00.000Z", price: "4997.75", rule: F-STP-03, role: stop}
+rules: [F-ACT-01, F-ENT-02, F-LMT-01, F-LMT-03, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-03, F-PLN-04, F-RND-01, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-02, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# at 14:30 long_entry places a buy limit at the row's entry_price, 4999.00, order 1 (F-ENT-02);
+# the trade at 14:30:00.200, 5000.00, does not reach it;
+# the 14:35 decision's row gives an atr of 0.50 point, but no position is open: a plan's distance
+# comes from its entry row and is taken again only at decisions after its fill (F-TRL-02);
+# 14:36, 4998.75: the trade goes through the limit, which fills at 4999.00 (F-LMT-03); its stop,
+# order 2, 20 ticks below at 4994.00, rises at once to the market at the fill less the entry row's
+# distance, 1.0 × 2.00 points = 8 ticks: 4998.75 - 2.00 = 4996.75 (F-PLN-04, F-TRL-01); its
+# target, order 3, at 5009.00;
+# 14:37, 4998.25: above the stop, and no new best price; with the 14:35 row's distance of 2 ticks
+# the stop would have stood at 4998.75 - 0.50 = 4998.25 and sold here;
+# at the 14:40 decision the row's atr is 0.50: the distance becomes 2 ticks, and the trailing
+# level 4998.75 - 0.50 = 4998.25 lies at the mark 4998.25, so the stop rises to a tick below it,
+# 4998.00 (F-TRL-02, F-PLN-03);
+# 14:41, 4998.00: the trade is at the stop and triggers it (F-STP-01): it sells at the lower of
+# 4998.00 - 0.25 = 4997.75 and 4998.00, 4997.75 (F-STP-03), and the target is cancelled
+# (F-OCO-01).

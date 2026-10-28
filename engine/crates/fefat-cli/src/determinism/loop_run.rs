@@ -1,21 +1,45 @@
-//! The loop's part of the determinism digest (steps 2.6 and 2.7): the seeded tape's trades, its
+//! The loop's part of the determinism digest (steps 2.6 to 2.8): the seeded tape's trades, its
 //! TBBO records, its 1-second bars, and its 1-minute bars run in full through `TickRun` with
-//! seeded orders, and its TBBO records again skipping by its bars, and every order, fill, and entry
-//! of the event log, with the final cash and position, hashed in order.
+//! seeded orders, its TBBO records again skipping by its bars, and its 1-minute bars under a
+//! seeded execution template whose exit plan has two targets, breakeven, a trailing stop, and max
+//! bars; and every order, fill, and entry of the event log, with the final cash and position,
+//! hashed in order.
 
 use fefat_core::fidelity::{Fidelity, Timeframe};
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::{OrderId, OrderKind, Side};
+use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{MONEY_UNITS, Money, Price, Qty};
 use fefat_engine::book::{Bracket, BracketLeg, LegPrice};
 use fefat_engine::hours::TradingHours;
 use fefat_engine::settings::RunSettings;
-use fefat_engine::strategy::{ScenarioOrder, ScenarioOrders};
+use fefat_engine::strategy::{ScenarioOrder, ScenarioOrders, Strategy};
+use fefat_engine::template::{SignalRow, TemplateStrategy};
 use fefat_engine::tick_run::{Replay, RunOutputs, TickRun};
 
 use super::{DeterminismError, es, hash_numbers};
 use crate::seeded_tape::{SEEDED_TRADE_DATE, SplitMix64, TICK};
+
+/// The seeded template of the digest's sixth run (step 2.8): a market entry of two lots, a stop
+/// of 8 ticks, two targets each closing half, breakeven after the first, an intrabar trailing
+/// stop of 6 ticks working from 8 ticks of profit, ten bars at most, and signal exits.
+const TEMPLATE_SPEC: &str = r#"{
+    "spec_version": 1, "instrument": "ES", "timeframe": "1m",
+    "execution": {
+        "entry": {"kind": "market"},
+        "stop": {"kind": "ticks", "ticks": 8},
+        "targets": [
+            {"price": {"kind": "ticks", "ticks": 4}, "fraction": 0.5},
+            {"price": {"kind": "ticks", "ticks": 12}}
+        ],
+        "breakeven": {"trigger": {"kind": "after_target", "target": 1}},
+        "trailing": {"by": {"kind": "ticks", "ticks": 6}, "activation": {"kind": "ticks", "ticks": 8}},
+        "time": {"tz": "UTC", "max_bars": 10},
+        "sizing": {"kind": "fixed", "units": 2},
+        "signal_exit": true
+    }
+}"#;
 
 /// Every hundredth trade of the seeded tape's instant decides an order of the loop's run.
 const TRADES_PER_ORDER: usize = 100;
@@ -31,30 +55,71 @@ const RUNS: [(Fidelity, Replay); 5] = [
 
 /// BLAKE3 over every order, fill, and entry of the event log, and the final cash and position, of
 /// each of the loop's [`RUNS`] on the seeded tape, with the same seeded orders and the
-/// specification's default settings.
+/// specification's default settings, and of the seeded template's run on its 1-minute bars.
 pub(super) fn loop_run_hash(
     reader: &impl MarketDataReader,
     generator: &mut SplitMix64,
 ) -> Result<blake3::Hash, DeterminismError> {
-    let orders = seeded_orders(reader, generator)?;
-    let hours = TradingHours::always();
     let mut hasher = blake3::Hasher::new();
-    for (fidelity, replay) in RUNS {
-        let mut strategy = ScenarioOrders::new(orders.clone());
-        let ledger = Ledger::new(es()?, Money(50_000 * MONEY_UNITS));
-        let settings = RunSettings::defaults_for(fidelity);
-        let run = TickRun::new(
-            reader,
-            fidelity,
-            replay,
-            &hours,
-            settings,
-            ledger,
-            &mut strategy,
-        )?;
-        hash_outputs(&mut hasher, &run.run()?);
+    for outputs in loop_runs(reader, generator)? {
+        hash_outputs(&mut hasher, &outputs);
     }
     Ok(hasher.finalize())
+}
+
+/// The outputs of the loop's [`RUNS`] with the seeded orders, then of the seeded template's run on
+/// the 1-minute bars, in that order.
+pub(super) fn loop_runs(
+    reader: &impl MarketDataReader,
+    generator: &mut SplitMix64,
+) -> Result<Vec<RunOutputs>, DeterminismError> {
+    let orders = seeded_orders(reader, generator)?;
+    let mut runs = Vec::with_capacity(RUNS.len() + 1);
+    for (fidelity, replay) in RUNS {
+        let mut strategy = ScenarioOrders::new(orders.clone());
+        runs.push(seeded_run(reader, fidelity, replay, &mut strategy)?);
+    }
+    let mut template = seeded_template(reader, generator)?;
+    let minutes = Fidelity::Bars(Timeframe::ONE_MINUTE);
+    runs.push(seeded_run(reader, minutes, Replay::Full, &mut template)?);
+    Ok(runs)
+}
+
+/// `strategy` run on the seeded tape at `fidelity`, replayed as `replay`, from the run's capital
+/// with the specification's default settings.
+fn seeded_run(
+    reader: &impl MarketDataReader,
+    fidelity: Fidelity,
+    replay: Replay,
+    strategy: &mut dyn Strategy,
+) -> Result<RunOutputs, DeterminismError> {
+    let hours = TradingHours::always();
+    let ledger = Ledger::new(es()?, Money(50_000 * MONEY_UNITS));
+    let settings = RunSettings::defaults_for(fidelity);
+    let run = TickRun::new(reader, fidelity, replay, &hours, settings, ledger, strategy)?;
+    Ok(run.run()?)
+}
+
+/// The seeded template over a signal row at each 1-minute bar's close of the seeded tape, each
+/// with a long entry, a short entry, both exits, or no signal, at random.
+fn seeded_template(
+    reader: &impl MarketDataReader,
+    generator: &mut SplitMix64,
+) -> Result<TemplateStrategy, DeterminismError> {
+    let bars = reader.bars(SEEDED_TRADE_DATE, Timeframe::ONE_MINUTE)?;
+    let rows = bars.ts_close.iter().map(|&ts_close| {
+        let signal = generator.below(4);
+        SignalRow {
+            trade_date: Some(SEEDED_TRADE_DATE),
+            long_entry: signal == 1,
+            short_entry: signal == 2,
+            long_exit: signal == 3,
+            short_exit: signal == 3,
+            ..SignalRow::at(ts_close)
+        }
+    });
+    let spec: StrategySpec = serde_json::from_str(TEMPLATE_SPEC)?;
+    Ok(TemplateStrategy::new(&spec, rows.collect(), &es()?)?)
 }
 
 /// An order at every hundredth trade's instant: market, stop, or limit, on either side, one to

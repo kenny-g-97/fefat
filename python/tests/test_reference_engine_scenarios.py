@@ -1,8 +1,9 @@
 """Step 2.2's reference engine on every fill scenario of `fixtures/scenarios/`: each fills as
 its expected fills, marks, and funding say (Done means 1); the runner prints how the scenarios
-cover the rules; and `engine.py` stays under 600 lines with a function for every rule of
-`docs/spec/fill-semantics.md`, so that one fill can be followed from the tape to the log
-(Done means 2)."""
+cover the rules; and `engine.py` stays under 600 lines, every rule of
+`docs/spec/fill-semantics.md` having one function, in the engine or beside it in the reference's
+modules of money, exit plans, time rules, and the template (step 2.8), so that one fill can be
+followed from the tape to the log (Done means 2)."""
 
 from pathlib import Path
 
@@ -14,7 +15,16 @@ from fefat.reference.scenarios import load_scenarios, specified_rules
 ROOT = Path(__file__).resolve().parents[2]
 SCENARIOS = ROOT / "fixtures" / "scenarios"
 SPECIFICATION = ROOT / "docs" / "spec" / "fill-semantics.md"
-ENGINE = ROOT / "python" / "fefat" / "src" / "fefat" / "reference" / "engine.py"
+REFERENCE = ROOT / "python" / "fefat" / "src" / "fefat" / "reference"
+ENGINE = REFERENCE / "engine.py"
+RULE_MODULES = (
+    ENGINE,
+    REFERENCE / "money.py",
+    REFERENCE / "exit_plan.py",
+    REFERENCE / "time_rules.py",
+    *sorted((REFERENCE / "template").glob("*.py")),
+)
+"""The modules that hold the reference engine's rules, one function each."""
 SCENARIO_IDS = sorted(path.stem for path in SCENARIOS.glob("*.yaml"))
 RULES = specified_rules(SPECIFICATION.read_text(encoding="utf-8"))
 
@@ -68,11 +78,14 @@ def test_the_runner_runs_every_scenario_and_prints_the_rule_coverage(
 
 
 def test_the_engine_is_under_600_lines_with_a_function_for_every_rule() -> None:
-    source = ENGINE.read_text(encoding="utf-8")
+    sources = [module.read_text(encoding="utf-8") for module in RULE_MODULES]
+    defined = {
+        rule: sum(source.count(f"def {rule.lower().replace('-', '_')}(") for source in sources)
+        for rule in RULES
+    }
 
-    assert len(source.splitlines()) < 600
-    missing = [rule for rule in RULES if f"def {rule.lower().replace('-', '_')}(" not in source]
-    assert missing == []
+    assert len(ENGINE.read_text(encoding="utf-8").splitlines()) < 600
+    assert {rule: count for rule, count in defined.items() if count != 1} == {}
 
 
 def test_one_fill_can_be_followed_from_the_tape_to_the_log(

@@ -1,0 +1,37 @@
+id: S-template-042
+title: With no_weekend a long held over Thursday's close closes before Friday's close
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: America/Chicago, no_weekend: true}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T21:50:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T21:55:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-06T21:55:00Z", trade_date: "2026-03-06", contract: ESH2026}
+tape:
+  - {ts: "2026-03-05T21:50:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T21:55:00.300Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-06T21:55:00.300Z", price: "5003.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T21:50:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry}
+    - {order: 4, ts: "2026-03-06T21:55:00.300Z", price: "5002.75", rule: F-MKT-02, role: no_weekend}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# Thursday's close, 16:00 CST on 2026-03-05, is a stop of trading whose break, to 17:00 CST, holds
+# no Saturday, so no_weekend leaves the position at 21:55 that day; Friday's close, 16:00 CST,
+# 22:00 UTC on 03-06, breaks until Sunday's open and holds a Saturday, on which the calendar has no
+# trade date: a weekend (F-TIM-03), whose last signal close before it is 21:55;
+# at 21:50 on 03-05 long_entry buys, order 1, filled on the trade at 21:50:00.200: 5000.00 + 0.25 =
+# 5000.25, its stop and target orders 2 and 3, which no trade reaches;
+# at 21:55 on 03-06 the template sells at the market, order 4, exit reason no_weekend, filled on
+# the trade at 21:55:00.300: 5003.00 - 0.25 = 5002.75.

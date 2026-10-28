@@ -1,0 +1,41 @@
+id: S-template-052
+title: A stop entry triggered on TBBO before flat-by fills after it, and the next decision closes the position
+fidelity: tbbo
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: stop_at_column}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    time: {tz: America/Chicago, flat_by: "15:05"}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T21:00:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true, entry_price: "5001.00"}
+  - {ts_close: "2026-03-06T21:05:00Z", trade_date: "2026-03-06", contract: ESH2026}
+  - {ts_close: "2026-03-06T21:10:00Z", trade_date: "2026-03-06", contract: ESH2026}
+tape:
+  - {ts: "2026-03-06T21:00:00.200Z", price: "5000.00", size: 2, bid: "4999.75", ask: "5000.25", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T21:04:59.900Z", price: "5001.00", size: 2, bid: "5000.75", ask: "5001.25", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T21:05:00.300Z", price: "5001.50", size: 2, bid: "5001.25", ask: "5001.75", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T21:10:00.300Z", price: "5002.25", size: 2, bid: "5002.00", ask: "5002.50", bid_size: 5, ask_size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T21:05:00.300Z", price: "5001.75", rule: F-STP-02}
+    - {order: 4, ts: "2026-03-06T21:10:00.300Z", price: "5002.00", rule: F-MKT-01}
+rules: [F-ACT-01, F-ENT-01, F-ENT-02, F-ENT-03, F-MKT-01, F-OCO-02, F-STP-01, F-STP-02, F-TIM-01]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01):
+# flat-by 15:05 CST is 21:05 UTC on 2026-03-06; at 21:00 long_entry places a buy stop at the row's
+# entry_price, 5001.00, order 1 (F-ENT-02);
+# the record at 21:04:59.900 trades 5001.00 and triggers it (F-STP-01): on TBBO it fills at the
+# next tradeable record's quote (F-STP-02), a market order already sent;
+# at 21:05, the flat-by time, the entry is on its way into a position, so the template decides
+# nothing more (F-ENT-01, F-ENT-03);
+# the record at 21:05:00.300 fills it at the higher of 5001.00 + 0 = 5001.00 and its ask,
+# 5001.75; its plan: stop, order 2, at 4999.75, target, order 3, at 5003.75;
+# at 21:10, past the flat-by time, the template sells the long at the market, order 4, exit
+# reason flat_by (F-TIM-01), cancelling orders 2 and 3; it fills on the record at 21:10:00.300
+# at its bid, 5002.00 (F-MKT-01).

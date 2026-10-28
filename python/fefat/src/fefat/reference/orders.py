@@ -3,19 +3,20 @@ instants, with OCO groups and brackets, and the position held when the tape star
 (`docs/spec/fill-semantics.md`, F-ACT-01, F-OCO-01, and F-OCO-02); and the orders the
 reference engine holds while it runs, in its `Book` (step 2.2)."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Annotated, Literal, Protocol, Self
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
 from fefat.market.schema import FrozenModel
 from fefat.reference.units import Instant, Price, Quantity, price_text
 
+if TYPE_CHECKING:
+    from fefat.reference.exit_plan import ExitPlan, LivePlan
+
 OrderId = Annotated[int, Field(ge=1)]
-BracketLegs = tuple[tuple[int, int], tuple[int, int]]
-"""A bracket's stop and target, each as its order id and price."""
 
 
 class Side(StrEnum):
@@ -39,6 +40,11 @@ class Side(StrEnum):
         """The costlier of two prices: the higher for a buy, the lower for a sell."""
         return max(first, second) if self is Side.BUY else min(first, second)
 
+    def better(self, first: int, second: int) -> int:
+        """The price further in the favour of a position this side opened: the higher for a
+        long, the lower for a short."""
+        return max(first, second) if self is Side.BUY else min(first, second)
+
 
 class PositionSide(StrEnum):
     LONG = "long"
@@ -58,9 +64,13 @@ class Bracket(FrozenModel):
     stop: BracketLeg
     target: BracketLeg
 
-    def legs(self, side: Side, price: int, tick: int, new_id: Callable[[], int]) -> BracketLegs:
-        """The ids and prices of the stop and the target, as the scenario gives them."""
-        return ((self.stop.id, self.stop.price), (self.target.id, self.target.price))
+    def exit_plan(self) -> "ExitPlan":
+        """The bracket as an exit plan of one stop and one target for the whole entry, at the
+        scenario's prices and under its ids (F-PLN-01)."""
+        from fefat.reference.exit_plan import AtPrice, ExitPlan, PlannedLeg
+
+        stop = PlannedLeg(AtPrice(self.stop.price), order_id=self.stop.id)
+        return ExitPlan(stop, (PlannedLeg(AtPrice(self.target.price), order_id=self.target.id),))
 
 
 class ScenarioOrder(FrozenModel):
@@ -159,13 +169,38 @@ class OrderKind(StrEnum):
 
 
 class OrderRole(StrEnum):
-    """What an order does for a position: open it, protect it (a bracket's stop), take its
-    profit (a bracket's target), or close it when the strategy says so."""
+    """What an order does for a position, which its fill records (F-TAG-01): open it, protect it
+    (an exit plan's stop), take its profit (target 1 to 3), or close it at the market, for the
+    strategy's own reason (`exit`) or an execution template's exit reason (§20)."""
 
     ENTRY = "entry"
     STOP = "stop"
-    TARGET = "target"
+    TARGET_1 = "target_1"
+    TARGET_2 = "target_2"
+    TARGET_3 = "target_3"
     EXIT = "exit"
+    FLAT_BY = "flat_by"
+    NO_OVERNIGHT = "no_overnight"
+    NO_WEEKEND = "no_weekend"
+    MAX_BARS = "max_bars"
+    MAX_MINUTES = "max_minutes"
+    OPPOSITE_SIGNAL = "opposite_signal"
+    SIGNAL_EXIT = "signal_exit"
+
+
+EXIT_ROLES = frozenset(
+    {
+        OrderRole.EXIT,
+        OrderRole.FLAT_BY,
+        OrderRole.NO_OVERNIGHT,
+        OrderRole.NO_WEEKEND,
+        OrderRole.MAX_BARS,
+        OrderRole.MAX_MINUTES,
+        OrderRole.OPPOSITE_SIGNAL,
+        OrderRole.SIGNAL_EXIT,
+    }
+)
+"""The roles of a market order that closes the position on the strategy's word."""
 
 
 class OrderState(StrEnum):
@@ -183,78 +218,14 @@ class OrderState(StrEnum):
 LIVE_STATES = frozenset({OrderState.WAITING, OrderState.WORKING, OrderState.TRIGGERED})
 
 
-class TicksBracket(FrozenModel):
-    """A bracket set in ticks from its entry's fill price: the stop `stop_ticks` against the
-    position, the target `target_ticks` in its favour (the strategy protocol of step 2.2)."""
-
-    stop_ticks: int = Field(gt=0)
-    target_ticks: int = Field(gt=0)
-
-    def legs(self, side: Side, price: int, tick: int, new_id: Callable[[], int]) -> BracketLegs:
-        """New ids, and the stop and the target set from the entry's fill `price`, a buy's stop
-        below it and its target above."""
-        away = side.sign() * tick
-        return (new_id(), price - self.stop_ticks * away), (
-            new_id(),
-            price + self.target_ticks * away,
-        )
-
-
-class BracketRule(Protocol):
-    """How a bracket, a frozen value, sets its stop and its target when its entry on `side` fills
-    at `price` (F-OCO-02): `Bracket`, `TicksBracket`, or `TemplateBracket`."""
-
-    def legs(self, side: Side, price: int, tick: int, new_id: Callable[[], int]) -> BracketLegs:
-        """The ids and prices of the stop and the target, ids from `new_id` where the bracket
-        names none."""
-        ...
-
-
-class TicksAway(FrozenModel):
-    """A bracket leg `ticks` from its entry's fill price: against the position for a stop, in its
-    favour for a target."""
-
-    ticks: int = Field(gt=0)
-
-    def level(self, fill: int, step: int) -> int:
-        """The leg's price: `ticks` steps of `step` from the `fill`."""
-        return fill + self.ticks * step
-
-
-class AtPrice(FrozenModel):
-    """A bracket leg at `price`, a raw price in 1e-9 units, wherever its entry fills."""
-
-    price: int
-
-    def level(self, fill: int, step: int) -> int:
-        """The leg's own price."""
-        return self.price
-
-
-class TemplateBracket(FrozenModel):
-    """The bracket of an execution template's basic subset (step 2.3): its stop and its target,
-    each in ticks from the entry's fill or at a price of the signal frame."""
-
-    stop: TicksAway | AtPrice
-    target: TicksAway | AtPrice
-
-    def legs(self, side: Side, price: int, tick: int, new_id: Callable[[], int]) -> BracketLegs:
-        """New ids, and the stop and the target from the entry's fill `price`: in ticks, a buy's
-        stop below it and its target above."""
-        away = side.sign() * tick
-        return (new_id(), self.stop.level(price, -away)), (
-            new_id(),
-            self.target.level(price, away),
-        )
-
-
 @dataclass(slots=True)
 class WorkingOrder:
     """An order the engine holds from its placement to its fill or cancellation. `price` is a
     stop's or a limit's, in 1e-9 units; `activation` the instant from which it can fill; and
     `seen_after` its place in the run's timeline after which it sees records: the decision
     that placed it, or the record that filled its entry. `rested` says whether it has seen a
-    price without filling (F-LMT-04)."""
+    price without filling (F-LMT-04). An entry carries the exit plan its fill places, and a leg
+    of that plan names its entry (F-PLN-01)."""
 
     id: int
     side: Side
@@ -266,7 +237,8 @@ class WorkingOrder:
     activation: int
     seen_after: int
     oco: str | None = None
-    bracket: BracketRule | None = None
+    plan: "ExitPlan | None" = None
+    leg_of: int | None = None
     state: OrderState = OrderState.WAITING
     rested: bool = False
 
@@ -281,35 +253,36 @@ class WorkingOrder:
         at = "" if self.price is None else f" at {price_text(self.price)}"
         return f"{self.side} {self.kind}{at} x {self.lots}"
 
-    def bracket_leg(self, kind: OrderKind, leg: tuple[int, int], ts: int, index: int) -> Self:
-        """The stop or the target, of `leg`'s id and price, that this entry's fill at `ts`, the
-        `index`th event of the run, places: an exit of its lots in the group of its bracket,
-        active at once (F-OCO-02)."""
-        leg_id, price = leg
-        return type(self)(
-            id=leg_id,
-            side=self.side.opposite(),
-            kind=kind,
-            price=price,
-            lots=self.lots,
-            role=OrderRole.STOP if kind is OrderKind.STOP else OrderRole.TARGET,
-            placed_at=ts,
-            activation=ts,
-            seen_after=index,
-            oco=f"bracket of {self.id}",
-        )
+
+@dataclass(frozen=True, slots=True)
+class ClosedTrade:
+    """A trade that closed (`docs/spec/fill-semantics.md` §20): the instant of the fill that left
+    the position flat, and what its fills moved the cash by, less their fees, in micro-units, a
+    loss below zero."""
+
+    closed_at: int
+    pnl: int
 
 
 @dataclass(slots=True)
 class Book:
     """What the engine holds while it runs: the live orders, the position in lots (positive
-    long, negative short), the mark (F-MRK-01), none before the first tradeable price, and the
-    next id it gives an order of its own."""
+    long, negative short), the mark (F-MRK-01), none before the first tradeable price, the next
+    id it gives an order of its own, the exit plans of the entries that have filled, by the
+    entry's id, while a leg of theirs is live (F-PLN-01), the instant of the fill that opened
+    the position, none when flat or for a position held when the tape starts (F-TIM-02), the
+    cash in micro-units, what the fills of the trade still open moved it by, and the trades
+    closed so far (F-LIM-02)."""
 
     orders: list[WorkingOrder] = field(default_factory=list)
     position: int = 0
     mark: int | None = None
     next_id: int = 1
+    plans: "dict[int, LivePlan]" = field(default_factory=dict)
+    opened_at: int | None = None
+    cash: int = 0
+    trade_cash: int = 0
+    closed_trades: list[ClosedTrade] = field(default_factory=list)
 
     def live(self, *states: OrderState, kind: OrderKind | None = None) -> list[WorkingOrder]:
         """The live orders in one of `states`, all of them without, of `kind` where it is
@@ -330,16 +303,49 @@ class Book:
                 yield order
 
     def close(self, order: WorkingOrder, state: OrderState) -> None:
-        """`order` filled or cancelled: it leaves the book."""
+        """`order` filled or cancelled: it leaves the book, and its plan with its last leg."""
         order.state = state
         self.orders.remove(order)
+        entry = order.leg_of
+        if entry is not None and not any(other.leg_of == entry for other in self.orders):
+            self.plans.pop(entry, None)
+
+    def take(self, lots: int, ts: int) -> None:
+        """A fill of `lots`, positive bought, at `ts`: the position moves by them, and a fill that
+        opens a position, from flat or by reversing one, sets `opened_at`."""
+        before = self.position
+        self.position += lots
+        if self.position == 0:
+            self.opened_at = None
+        elif before * self.position <= 0:
+            self.opened_at = ts
+
+    def booked(self, cash: int, ts: int, flat_after: bool) -> None:
+        """A fill booked at `ts`, its value and fee moving the cash by `cash`, and the trade it
+        belongs to with it: the fill that leaves the position flat closes the trade (§20)."""
+        self.cash += cash
+        self.trade_cash += cash
+        if flat_after:
+            self.closed_trades.append(ClosedTrade(closed_at=ts, pnl=self.trade_cash))
+            self.trade_cash = 0
+
+    def live_order(self, order_id: int | None) -> WorkingOrder | None:
+        """The live order `order_id`, if there is one."""
+        return next((order for order in self.orders if order.id == order_id), None)
+
+    def plans_in_order(self) -> list["LivePlan"]:
+        """The live plans, by their entries' ids."""
+        return [self.plans[entry] for entry in sorted(self.plans)]
 
     def copied(self) -> "Book":
-        """A copy to replay a bar on (F-BAR-05), its orders copied and its brackets, which are
-        frozen, shared, so that the replay leaves this book as it was."""
-        return Book(
-            [replace(order) for order in self.orders], self.position, self.mark, self.next_id
-        )
+        """A copy to replay a bar on (F-BAR-05), its orders and its plans copied, and the
+        rules of its plans, which are frozen, shared, so that the replay leaves this book as it
+        was."""
+        plans = {entry: plan.copied() for entry, plan in self.plans.items()}
+        orders = [replace(order) for order in self.orders]
+        copied = Book(orders, self.position, self.mark, self.next_id, plans, self.opened_at)
+        copied.cash, copied.trade_cash = self.cash, self.trade_cash
+        return copied
 
     def new_id(self) -> int:
         self.next_id += 1

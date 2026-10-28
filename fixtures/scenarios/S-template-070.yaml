@@ -1,0 +1,28 @@
+id: S-template-070
+title: A notional size of 1,000 USD buys 16 lots of 0.001 BTC at 60,000, in whole lot steps
+fidelity: trades
+instrument: BTCUSDT-PERP
+strategy:
+  spec_version: 1
+  instrument: BTCUSDT-PERP
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: notional, amount: 1000}
+signals:
+  - {ts_close: "2026-03-07T09:00:00Z", trade_date: "2026-03-07", contract: BTCUSDT-PERP, long_entry: true}
+tape:
+  - {ts: "2026-03-07T08:59:59.000Z", price: "60000.0", size: 50}
+  - {ts: "2026-03-07T09:00:00.200Z", price: "60000.0", size: 50}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-07T09:00:00.200Z", price: "60000.1", rule: F-MKT-02, quantity: "0.016"}
+rules: [F-ACT-01, F-MKT-02, F-MRK-01, F-SIZ-02, F-SLP-01]
+
+# Arithmetic (BTCUSDT-PERP, tick 0.1, lots of 0.001 BTC at 1 USD a point a BTC; one tick of
+# slippage on trades: F-SLP-01; latency 100 ms):
+# the trade at 08:59:59.000 marks the market at 60,000.0 (F-MRK-01); a lot of 0.001 BTC is
+# worth 60.00 USD there, so 1,000 USD buys floor(1,000 / 60) = 16 lots, 0.016 BTC (F-SIZ-02);
+# at 09:00 long_entry buys them at the market, order 1, filled at 60000.0 + 0.1 = 60000.1.

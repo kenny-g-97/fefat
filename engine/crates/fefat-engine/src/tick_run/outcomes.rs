@@ -11,6 +11,7 @@ use thiserror::Error;
 use super::TickRecord;
 use crate::book::WorkingOrder;
 use crate::event_log::LogEntry;
+use crate::exit_plan::PlanError;
 use crate::strategy::DecisionError;
 
 /// What one step of the run handled.
@@ -147,6 +148,9 @@ pub enum RunError {
     /// The strategy's decision was refused.
     #[error(transparent)]
     Decision(#[from] DecisionError),
+    /// An entry's exit plan could not be placed.
+    #[error(transparent)]
+    Plan(#[from] PlanError),
 }
 
 fn listed(levels: &[Fidelity]) -> String {

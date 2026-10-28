@@ -1,0 +1,28 @@
+id: S-template-068
+title: A risk of 1,000 USD over a stop at the row's stop_price 5 points under the mark buys 4 lots
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: column}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: risk_amount, amount: 1000}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, stop_price: "4995.00"}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, quantity: 4}
+rules: [F-ACT-01, F-MKT-02, F-MRK-01, F-SIZ-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# the mark at the decision is 5000.00 (F-MRK-01), the entry's price; the stop at the row's
+# stop_price, 4995.00, lies 5.00 points under it, a loss of 5.00 × 50 = 250 USD a lot, so a risk
+# of 1,000 USD buys floor(1,000 / 250) = 4 lots (F-SIZ-03);
+# at 14:30 long_entry buys 4 lots, order 1, filled at 5000.00 + 0.25 = 5000.25.

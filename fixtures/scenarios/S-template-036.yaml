@@ -1,0 +1,38 @@
+id: S-template-036
+title: A position with max_minutes 2 closes at the first decision two minutes after its entry's fill
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: UTC, max_minutes: 2}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T14:33:00Z", trade_date: "2026-03-05", contract: ESH2026}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-05T14:31:00.500Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-05T14:32:00.400Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-05T14:33:00.300Z", price: "4999.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry}
+    - {order: 4, ts: "2026-03-05T14:33:00.300Z", price: "4999.25", rule: F-MKT-02, role: max_minutes}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-PLN-01, F-SLP-01, F-TIM-02]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at the 14:30 close long_entry is true: the template buys 1 lot at the market, order 1, which
+# fills on the trade at 14:30:00.200: 5000.00 + 0.25 = 5000.25 (F-MKT-02), and places its stop,
+# order 2, at 4990.25 and its target, order 3, at 5010.25, which no trade reaches;
+# two minutes after the fill is 14:32:00.200: the decision at 14:32 comes before it, so the
+# position stays; the first decision at or after it is 14:33, where the template sells at the
+# market, order 4, exit reason max_minutes (F-TIM-02); order 4 is active at 14:33:00.100 and fills
+# on the trade at 14:33:00.300: 4999.50 - 0.25 = 4999.25.

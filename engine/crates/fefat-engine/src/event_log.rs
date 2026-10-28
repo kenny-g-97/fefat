@@ -1,14 +1,17 @@
 //! The run's event log, as `fefat.reference.event_log` keeps it: every placement, activation,
-//! trigger, fill, and cancellation, each break the working orders stay through, and each
-//! ambiguous bar, in the order they happen and with the rule behind them, so that a fill can be
-//! followed from the record that priced it back to the decision that placed its order.
+//! trigger, fill, and cancellation, each break the working orders stay through, each ambiguous
+//! bar, and each stop its exit plan moved or reduced, in the order they happen and with the rule
+//! behind them, so that a fill can be followed from the record that priced it back to the decision
+//! that placed its order.
 
 use std::fmt;
 
 use fefat_core::fills::Fill;
 use fefat_core::instants::Ts;
 use fefat_core::orders::{Order, OrderId, OrderKind};
-use fefat_core::units::Price;
+use fefat_core::units::{Price, Qty};
+
+use crate::exit_plan::Move;
 
 /// What happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +30,12 @@ pub enum EventKind {
     Break,
     /// A bar whose fills would differ with its extremes swapped (F-BAR-05).
     Ambiguous,
+    /// A stop its exit plan moved, by breakeven or a trailing stop (F-PLN-03).
+    Moved,
+    /// A stop its exit plan reduced to the lots a target left (F-PLN-02).
+    Reduced,
+    /// An entry signal the template could not act on (F-ENT-02, F-SIZ-04).
+    Skipped,
 }
 
 impl fmt::Display for EventKind {
@@ -39,6 +48,9 @@ impl fmt::Display for EventKind {
             Self::Cancelled => "cancelled",
             Self::Break => "break",
             Self::Ambiguous => "ambiguous",
+            Self::Moved => "moved",
+            Self::Reduced => "reduced",
+            Self::Skipped => "skipped",
         })
     }
 }
@@ -77,10 +89,10 @@ impl LogEntry {
         )
     }
 
-    /// A bracket's leg that its entry's fill placed (F-OCO-02).
+    /// A leg of an exit plan that its entry's fill placed (F-OCO-02).
     pub(crate) fn bracket_placed(leg: &Order, entry: OrderId) -> Self {
         let text = format!(
-            "order {}: {}, the bracket of order {}",
+            "order {}: {}, the exit plan of order {}",
             leg.id.0,
             described(leg),
             entry.0
@@ -151,6 +163,48 @@ impl LogEntry {
     pub(crate) fn cancelled_by_group(ts: Ts, order: OrderId, filled: OrderId) -> Self {
         let text = format!("order {}: order {} of its group filled", order.0, filled.0);
         Self::of(ts, EventKind::Cancelled, Some(order), "F-OCO-01", text)
+    }
+
+    /// The stop `stop` its plan reduced to `lots` when `filled`, a target of the plan, filled
+    /// (F-PLN-02).
+    pub(crate) fn reduced(ts: Ts, stop: OrderId, lots: Qty, filled: OrderId) -> Self {
+        let text = format!(
+            "order {}: reduced to {lots}, order {} of its plan filled",
+            stop.0, filled.0
+        );
+        Self::of(ts, EventKind::Reduced, Some(stop), "F-PLN-02", text)
+    }
+
+    /// A stop its plan moved (F-PLN-03), under the rule that moved it.
+    pub(crate) fn moved(ts: Ts, moved: &Move) -> Self {
+        let text = format!(
+            "order {}: the stop moved from {} to {}",
+            moved.order.0, moved.before, moved.after
+        );
+        Self::of(
+            ts,
+            EventKind::Moved,
+            Some(moved.order),
+            moved.rule.id(),
+            text,
+        )
+    }
+
+    /// An entry whose time to live ended, cancelled at the decision `ts` (F-ENT-03).
+    pub(crate) fn expired(ts: Ts, order: OrderId) -> Self {
+        let text = format!("order {}: its time to live has ended", order.0);
+        Self::of(ts, EventKind::Cancelled, Some(order), "F-ENT-03", text)
+    }
+
+    /// An entry signal the strategy could not act on at `ts`, and why, under `rule`.
+    pub(crate) fn skipped(ts: Ts, why: &str, rule: &'static str) -> Self {
+        Self {
+            ts,
+            kind: EventKind::Skipped,
+            order: None,
+            rule: Some(rule),
+            text: format!("no entry: {why}"),
+        }
     }
 
     /// An order its strategy cancelled.
