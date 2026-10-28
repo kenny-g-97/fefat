@@ -110,6 +110,9 @@ fn move_stop(
     market: Price,
     tick: Price,
 ) -> Result<Option<Move>, Overflow> {
+    if proposed.is_empty() {
+        return Ok(None);
+    }
     let stop = live
         .iter_mut()
         .find(|order| Some(order.order.id) == plan.stop());

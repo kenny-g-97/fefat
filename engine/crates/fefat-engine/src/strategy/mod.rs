@@ -188,31 +188,6 @@ impl<'run> DecisionContext<'run> {
         self.placed(entry)
     }
 
-    /// Enters at the market with `lots`, its exit plan placed when it fills (F-OCO-02, F-PLN-01),
-    /// and returns its id. A strategy holds one position at a time, so it enters flat and with
-    /// nothing working.
-    pub fn market(
-        &mut self,
-        side: Side,
-        lots: Qty,
-        plan: Option<ExitPlan>,
-    ) -> Result<OrderId, DecisionError> {
-        self.require_flat()?;
-        let id = self.book.new_id();
-        let entry = PlacedEntry {
-            id,
-            side,
-            lots,
-            kind: OrderKind::Market,
-            role: OrderRole::Entry,
-            time_in_force: TimeInForce::GoodTillCancelled,
-            oco: None,
-            plan,
-        };
-        self.placed(entry)?;
-        Ok(id)
-    }
-
     /// Places `entries`, one entry or a long and short pair, the pair as one OCO group
     /// (F-ENT-01), and returns their ids. A strategy holds one position at a time, so it enters
     /// flat with nothing working, or, `reversing`, right after [`Self::flatten`] placed its exit,
