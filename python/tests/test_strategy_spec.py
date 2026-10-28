@@ -429,6 +429,19 @@ def test_the_helpers_build_the_rule_of_their_one_choice() -> None:
     assert ff.RiskPerTrade(percent=1) == RiskPercentSize(percent=1)
 
 
+def test_a_trailing_stop_by_the_column_moves_at_bar_closes_unless_told_otherwise() -> None:
+    # F-TRL-04: a trailing stop by the column moves at decisions alone, so the helper's own call
+    # must pass the validator without update=.
+    by_column = ff.Trailing(column=True)
+    execution = ff.Execution(
+        entry=ff.Market(), stop=ff.Stop(ticks=8), trailing=by_column, sizing=ff.Fixed(1)
+    )
+
+    assert execution.trailing == by_column
+    assert by_column.update is TrailUpdate.BAR_CLOSE
+    assert ff.Trailing(ticks=4).update is TrailUpdate.INTRABAR
+
+
 def test_a_breakeven_offset_beyond_the_schemas_64_bit_integers_is_refused() -> None:
     with pytest.raises(ValidationError, match="less than or equal to 9223372036854775807"):
         ff.Breakeven(ticks=4, offset_ticks=2**70)

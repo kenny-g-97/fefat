@@ -44,6 +44,8 @@ from fefat.strategy import (
     StrategySpec,
     Target,
     TimeRules,
+    Trailing,
+    TrailUpdate,
 )
 from test_reference_engine import ONE_MINUTE, bar, decision_at, run_on_bars
 
@@ -222,6 +224,29 @@ def test_a_stop_at_the_column_needs_its_price_on_the_tick(
 
     with pytest.raises(ValueError, match=re.escape(refusal)):
         run_template(spec_of(stop=Stop(column=True)), signals(*rows), tape)
+
+
+@pytest.mark.parametrize(
+    ("rules", "refusal"),
+    [
+        (
+            {"trailing": Trailing(column=True, update=TrailUpdate.BAR_CLOSE)},
+            "Expected the signal frame's trail_ref for a trailing stop by the column, got no such "
+            "column",
+        ),
+        (
+            {"limits": Limits(blackout="news")},
+            "Expected the signal frame's news for the blackout, got no such column",
+        ),
+    ],
+)
+def test_a_rule_needs_the_column_it_reads(rules: dict[str, Any], refusal: str) -> None:
+    # Both engines read a missing column as null on every row: a trailing stop by the column
+    # would never move, and a blackout would never hold, so the template refuses the frame.
+    frame = signals({"ts_close": "14:31:00", "long_entry": True})
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        TemplateStrategy(spec_of(**rules), frame, MES, None)
 
 
 def test_a_stop_and_a_target_at_the_columns_on_the_wrong_sides_are_refused() -> None:

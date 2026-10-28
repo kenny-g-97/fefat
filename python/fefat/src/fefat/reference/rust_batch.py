@@ -460,7 +460,7 @@ def _template_rows(
     case = pl.lit(number, dtype=pl.Int64).alias("case")
     days = [pl.col("trade_date").cast(pl.Int32).cast(pl.Int64)] if "trade_date" in frame else []
     blackout, flags = strategy.execution.limits.blackout, []
-    if blackout is not None and blackout in frame.columns:
+    if blackout is not None:
         flags.append(pl.col(blackout).cast(pl.Boolean).alias("blackout"))
     return timed.select(case, *days, *kept, *times, *features, *flags)
 

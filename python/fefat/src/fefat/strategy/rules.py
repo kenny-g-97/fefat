@@ -151,12 +151,15 @@ def Trailing(  # noqa: N802
     feature: str = "atr",
     step_ticks: int | None = None,
     activation: ProfitTrigger | None = None,
-    update: TrailUpdate = TrailUpdate.INTRABAR,
+    update: TrailUpdate | None = None,
 ) -> TrailingStop:
     """A stop that follows the price `ticks` or `atr` times the signal bars' `feature` behind
     the best price, or at the signal frame's `trail_ref` (`column=True`), `step_ticks` at a
-    time, from `activation`, moving as `update` says."""
+    time, from `activation`, moving as `update` says: by default at every price, and at bar
+    closes for the column, which moves at decisions alone (F-TRL-04)."""
     _require_one("a trailing stop", ticks=ticks, atr=atr, column=column)
+    if update is None:
+        update = TrailUpdate.BAR_CLOSE if column else TrailUpdate.INTRABAR
     by: TrailBy = ColumnTrail()
     if ticks is not None:
         by = TicksTrail(ticks=ticks)
