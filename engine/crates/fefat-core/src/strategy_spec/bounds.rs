@@ -27,20 +27,6 @@ pub struct OutOfBounds {
     pub actual: String,
 }
 
-impl OutOfBounds {
-    pub(super) fn new(
-        field: impl Into<String>,
-        expected: &'static str,
-        actual: impl Display,
-    ) -> Self {
-        Self {
-            field: field.into(),
-            expected,
-            actual: actual.to_string(),
-        }
-    }
-}
-
 impl StrategySpec {
     /// Refuses a document outside the bounds its JSON schema states, or with a rule that needs
     /// another it lacks.
@@ -59,14 +45,6 @@ fn require_what_each_rule_needs(execution: &Execution) -> Result<(), OutOfBounds
         ("execution.breakeven", execution.breakeven.is_some()),
         ("execution.trailing", execution.trailing.is_some()),
         ("execution.targets", execution.targets.iter().any(in_r)),
-        (
-            "execution.breakeven.trigger",
-            breakeven_trigger(execution).is_some_and(counts_in_r),
-        ),
-        (
-            "execution.trailing.activation",
-            activation(execution).is_some_and(counts_in_r),
-        ),
         ("execution.sizing", is_risk(&execution.sizing)),
     ];
     if let Some((field, _)) = needs_a_stop.iter().find(|(_, needs)| no_stop && *needs) {
@@ -118,10 +96,6 @@ fn activation(execution: &Execution) -> Option<&ProfitTrigger> {
 
 fn in_r(target: &Target) -> bool {
     matches!(target.price, TargetPrice::RMultiple { .. })
-}
-
-fn counts_in_r(trigger: &ProfitTrigger) -> bool {
-    matches!(trigger, ProfitTrigger::RMultiple { .. })
 }
 
 const fn is_risk(sizing: &Sizing) -> bool {
@@ -305,15 +279,23 @@ fn above_zero(field: &str, value: f64) -> Result<(), OutOfBounds> {
     Err(out(field, "above 0", value))
 }
 
-fn not_empty(field: &str, text: &str) -> Result<(), OutOfBounds> {
+pub(super) fn not_empty(field: &str, text: &str) -> Result<(), OutOfBounds> {
     if !text.is_empty() {
         return Ok(());
     }
     Err(out(field, "of one character or more", "an empty text"))
 }
 
-fn out(field: impl Into<String>, expected: &'static str, actual: impl Display) -> OutOfBounds {
-    OutOfBounds::new(field, expected, actual)
+pub(super) fn out(
+    field: impl Into<String>,
+    expected: &'static str,
+    actual: impl Display,
+) -> OutOfBounds {
+    OutOfBounds {
+        field: field.into(),
+        expected,
+        actual: actual.to_string(),
+    }
 }
 
 #[cfg(test)]

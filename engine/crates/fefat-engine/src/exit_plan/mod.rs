@@ -320,7 +320,12 @@ pub(crate) fn f_trl_03(
     let step = i128::from(step_ticks) * i128::from(tick.0);
     let room = i128::from(side.sign()) * (i128::from(level.0) - i128::from(stop.0));
     let steps = u32::try_from(room.div_euclid(step).max(0)).unwrap_or(u32::MAX);
-    side.moved(stop, steps, Price(i64::from(step_ticks) * tick.0))
+    let step = tick.0.checked_mul(i64::from(step_ticks)).ok_or(Overflow {
+        operation: "a trailing stop's step",
+        left: tick.0.into(),
+        right: step_ticks.into(),
+    })?;
+    side.moved(stop, steps, Price(step))
 }
 
 /// F-TRL-04: whether a trailing stop moves now: `intrabar` at every price marked and at decisions,

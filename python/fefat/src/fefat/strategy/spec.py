@@ -29,7 +29,6 @@ from fefat.strategy.exits import (
     ProfitTarget,
     ProfitTrigger,
     RMultipleTarget,
-    RMultipleTrigger,
     StopRule,
     TickDistance,
     TimeRules,
@@ -173,8 +172,6 @@ class Execution(FrozenModel):
             "execution.breakeven": self.breakeven is not None,
             "execution.trailing": self.trailing is not None,
             "execution.targets": any(isinstance(t.price, RMultipleTarget) for t in self.targets),
-            "execution.breakeven.trigger": isinstance(breakeven, RMultipleTrigger),
-            "execution.trailing.activation": isinstance(activation, RMultipleTrigger),
             "execution.sizing": isinstance(self.sizing, RiskAmountSize | RiskPercentSize),
         }
         lacking = [field for field, needs in needs_a_stop.items() if needs]
@@ -186,8 +183,11 @@ class Execution(FrozenModel):
         ):
             _require_a_target_it_has(f"execution.{field}.target", trigger, len(self.targets))
         trailing = self.trailing
-        by_column = trailing is not None and isinstance(trailing.by, ColumnTrail)
-        if by_column and trailing is not None and trailing.update is not TrailUpdate.BAR_CLOSE:
+        if (
+            trailing is not None
+            and isinstance(trailing.by, ColumnTrail)
+            and trailing.update is not TrailUpdate.BAR_CLOSE
+        ):
             raise ValueError(
                 "Expected execution.trailing.update bar_close for a trailing stop by the "
                 f"column, got {trailing.update}."

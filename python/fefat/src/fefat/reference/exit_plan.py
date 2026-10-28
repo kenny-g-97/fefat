@@ -363,8 +363,11 @@ class LivePlan:
         self.best = self.side.better(self.best, price)
         proposed: list[tuple[int, str]] = []
         breakeven, trailing = self.plan.breakeven, self.plan.trailing
-        fires = breakeven is not None and not self.breakeven_fired
-        if breakeven is not None and fires and f_brk_02(self, breakeven.trigger, tick):
+        if (
+            breakeven is not None
+            and not self.breakeven_fired
+            and f_brk_02(self, breakeven.trigger, tick)
+        ):
             self.breakeven_fired = True
             level = f_brk_01(self.side, self.fill, breakeven.offset_ticks, tick)
             proposed.append((level, "F-BRK-01"))

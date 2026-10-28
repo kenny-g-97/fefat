@@ -7,7 +7,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use super::bounds::OutOfBounds;
+use super::bounds::{OutOfBounds, not_empty, out};
 
 /// The version of a specification's layout: 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ impl TryFrom<u32> for SpecVersion {
         if version == Self::ONE.0 {
             return Ok(Self::ONE);
         }
-        Err(OutOfBounds::new("spec_version", "1", version))
+        Err(out("spec_version", "1", version))
     }
 }
 
@@ -46,19 +46,14 @@ impl TryFrom<String> for Root {
     type Error = OutOfBounds;
 
     fn try_from(root: String) -> Result<Self, Self::Error> {
-        non_empty("instrument", root).map(Self)
+        not_empty("instrument", &root)?;
+        Ok(Self(root))
     }
 }
 
 impl From<Root> for String {
     fn from(root: Root) -> Self {
         root.0
-    }
-}
-
-impl fmt::Display for Root {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
     }
 }
 
@@ -72,7 +67,8 @@ impl TryFrom<String> for TimeZoneName {
     type Error = OutOfBounds;
 
     fn try_from(name: String) -> Result<Self, Self::Error> {
-        non_empty("execution.time.tz", name).map(Self)
+        not_empty("execution.time.tz", &name)?;
+        Ok(Self(name))
     }
 }
 
@@ -103,11 +99,7 @@ impl TryFrom<String> for LocalTime {
         };
         match read {
             Some((hour, minute)) if hour <= 23 && minute <= 59 => Ok(Self { hour, minute }),
-            _ => Err(OutOfBounds::new(
-                "a local time",
-                "HH:MM from 00:00 to 23:59",
-                text,
-            )),
+            _ => Err(out("a local time", "HH:MM from 00:00 to 23:59", text)),
         }
     }
 }
@@ -122,17 +114,6 @@ impl fmt::Display for LocalTime {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:02}:{:02}", self.hour, self.minute)
     }
-}
-
-fn non_empty(field: &'static str, text: String) -> Result<String, OutOfBounds> {
-    if text.is_empty() {
-        return Err(OutOfBounds::new(
-            field,
-            "of one character or more",
-            "an empty text",
-        ));
-    }
-    Ok(text)
 }
 
 fn two_digits(tens: u8, units: u8) -> Option<u8> {

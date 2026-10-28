@@ -1,8 +1,8 @@
 """Steps 2.3 and 2.8's template in the reference engine: a `StrategySpec` runs from a signal frame
-through `TemplateStrategy`, the flat-by time becomes one instant per trade date across the clock
-change, and on an early close the last signal close before the close, the entries, limits, and
-sizes beyond what it runs so far are refused until the rest of step 2.8, and the template fills
-as the hand-written strategy of step 2.2 does on the same bars."""
+through `TemplateStrategy`, every rule of the specification runs, the flat-by time becomes one
+instant per trade date across the clock change, and on an early close the last signal close
+before the close, and the template fills as the hand-written strategy of step 2.2 does on the
+same bars."""
 
 import re
 from datetime import date

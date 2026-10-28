@@ -34,8 +34,7 @@ def exit_plan_of(execution: Execution, row: Mapping[str, Any], side: Side, tick:
     """The exit plan of an entry on `side` that `row`, the entry row, places (F-PLN-01)."""
     stop = None if execution.stop is None else _stop(execution.stop, row, tick)
     targets = tuple(_target(target, row, tick) for target in execution.targets)
-    stops_and_targets = [leg for leg in (stop, *targets) if leg is not None]
-    _require_the_stop_below_the_targets(stops_and_targets, stop, row, side)
+    _require_the_stop_below_the_targets(stop, targets, row, side)
     return ExitPlan(
         stop,
         targets,
@@ -117,13 +116,12 @@ def column_price(row: Mapping[str, Any], column: str, tick: int) -> int:
 
 
 def _require_the_stop_below_the_targets(
-    legs: list[PlannedLeg], stop: PlannedLeg | None, row: Mapping[str, Any], side: Side
+    stop: PlannedLeg | None, targets: tuple[PlannedLeg, ...], row: Mapping[str, Any], side: Side
 ) -> None:
     """A stop at `stop_price` lies on the losing side of a target at `target_price`."""
-    prices = [leg.price for leg in legs]
     if stop is None or not isinstance(stop.price, AtPrice):
         return
-    for target in prices[1:]:
+    for target in (leg.price for leg in targets):
         if isinstance(target, AtPrice) and (target.price - stop.price.price) * side.sign() <= 0:
             below = "below" if side is Side.BUY else "above"
             raise ValueError(
