@@ -4,7 +4,7 @@ returns."""
 
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from fefat.reference.event_log import EventLog
 from fefat.reference.ledger import Fill, FundingPayment, Liquidity, Mark
@@ -12,11 +12,15 @@ from fefat.reference.orders import WorkingOrder
 from fefat.reference.strategy import Decision
 from fefat.reference.tape import FundingRate, Record
 
+if TYPE_CHECKING:
+    from fefat.reference.rolls import RollRow
+
 
 class Phase(IntEnum):
-    """The order of events at one instant (F-CLK-02): the bars closing then, timers such as
-    funding, the records received then, and the bar-close decision. Activations need no event of
-    their own, since an order is active at a record that comes at or after its activation."""
+    """The order of events at one instant (F-CLK-02): the bars closing then, timers such as a
+    roll at a session's open and then funding, the records received then, and the bar-close
+    decision. Activations need no event of their own, since an order is active at a record that
+    comes at or after its activation."""
 
     BARS = 0
     TIMERS = 1
@@ -33,11 +37,13 @@ class Extreme(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Event:
-    """What happens at `ts`, in `phase`: a record arriving, a funding time, or a decision."""
+    """What happens at `ts`, in `phase`: a record arriving, with its trade date in days since
+    1970-01-01, a roll, a funding time, or a decision."""
 
     ts: int
     phase: Phase
-    subject: Record | FundingRate | Decision
+    subject: "Record | RollRow | FundingRate | Decision"
+    trade_date: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

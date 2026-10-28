@@ -1,0 +1,43 @@
+id: S-template-078
+title: Funding paid while a trade is open counts in its loss, which meets daily_loss_stop
+fidelity: trades
+instrument: BTCUSDT-PERP
+settings: {slippage_ticks: {market: 0, stop: 0}}
+funding:
+  - {ts: "2026-03-07T08:00:00.000Z", rate: "0.001"}
+strategy:
+  spec_version: 1
+  instrument: BTCUSDT-PERP
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    limits: {daily_loss_stop: 0.5}
+    sizing: {kind: fixed, units: 0.01}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-07T07:59:00Z", trade_date: "2026-03-07", contract: BTCUSDT-PERP, long_entry: true}
+  - {ts_close: "2026-03-07T08:01:00Z", trade_date: "2026-03-07", contract: BTCUSDT-PERP, long_exit: true}
+  - {ts_close: "2026-03-07T08:02:00Z", trade_date: "2026-03-07", contract: BTCUSDT-PERP, long_entry: true}
+tape:
+  - {ts: "2026-03-07T07:59:00.200Z", price: "65000.0", size: 40}
+  - {ts: "2026-03-07T08:01:00.200Z", price: "65000.0", size: 40}
+  - {ts: "2026-03-07T08:02:00.200Z", price: "65010.0", size: 40}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-07T07:59:00.200Z", price: "65000.0", rule: F-MKT-02, role: entry}
+    - {order: 2, ts: "2026-03-07T08:01:00.200Z", price: "65000.0", rule: F-MKT-02, role: signal_exit}
+  funding:
+    - {ts: "2026-03-07T08:00:00.000Z", amount: "-0.65"}
+rules: [F-ENT-04, F-FND-01, F-LIM-02, F-MKT-02, F-MRK-01, F-SLP-01]
+
+# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC on a lot step of 0.001; no
+# slippage ticks, set for the scenario: F-SLP-01; latency 100 ms):
+# at 07:59 long_entry buys 0.010 BTC, order 1, filled at 65000.0 (F-MKT-02) and marked there
+# (F-MRK-01);
+# at the funding time of 08:00 the long pays 0.010 x 65000.0 x 1 x 0.001 = 0.65, a cash change of
+# -0.65 (F-FND-01), which counts in the open trade's profit and loss (§20);
+# at 08:01 long_exit closes the long, order 2 (F-ENT-04), filled at 65000.0: the trade's fills
+# moved the cash by 0.00, and with the funding it lost 0.65;
+# at 08:02 the day's closed trades lost 0.65, at or below minus daily_loss_stop = -0.5
+# (F-LIM-02): no entry. With funding left out of the trade the loss would be 0.00, and the
+# template would buy at 08:02.

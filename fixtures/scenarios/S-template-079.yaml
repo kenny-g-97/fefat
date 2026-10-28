@@ -1,0 +1,49 @@
+id: S-template-079
+title: Across a roll a template's exit plan keeps its fill price in the new front's prices, so breakeven moves its stop where it would
+fidelity: trades
+instrument: ES
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    breakeven: {trigger: {kind: ticks, ticks: 8}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T20:00:00.000Z", price: "5001.00", size: 2}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5021.50", size: 2}
+  - {ts: "2026-03-08T22:00:01.000Z", price: "5022.25", size: 2}
+  - {ts: "2026-03-08T22:00:02.000Z", price: "5020.00", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry, contract: ESH2026}
+    - {order: 3, ts: "2026-03-08T22:00:00.500Z", price: "5001.25", rule: F-ROL-02, role: roll_volume, contract: ESH2026}
+    - {order: 4, ts: "2026-03-08T22:00:00.500Z", price: "5021.75", rule: F-ROL-02, role: roll_volume, contract: ESM2026}
+    - {order: 2, ts: "2026-03-08T22:00:02.000Z", price: "5020.00", rule: F-STP-03, role: stop, contract: ESM2026}
+rules: [F-BRK-01, F-BRK-02, F-MKT-02, F-PLN-01, F-PLN-03, F-PLN-04, F-ROL-02, F-ROL-03, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at 14:30 long_entry buys, order 1, filled at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its plan places
+# the stop, order 2, at 5000.25 - 8 x 0.25 = 4998.25 (F-PLN-01), and breakeven waits for the best
+# price to reach 5000.25 + 8 x 0.25 = 5002.25 (F-BRK-02), the best price starting at the trade of
+# the fill, 5000.00, and rising to 5001.00 at 20:00 (F-PLN-04);
+# at the roll, 22:00:00 on 03-08, the gap of 20.00 moves the stop to 5018.25, and the plan's fill
+# price to 5020.25 and its best price to 5021.00 (F-ROL-03), so breakeven now waits for 5022.25;
+# the long's legs are orders 3 and 4, the next ids (F-ROL-02);
+# the trade at 5021.50 fills them first, the close leg at 5021.50 - 20.00 - 0.25 = 5001.25 on
+# ESH2026, the open leg at 5021.50 + 0.25 = 5021.75 on ESM2026; the best price becomes 5021.50,
+# short of 5022.25;
+# the trade at 5022.25 reaches it: breakeven fires and holds the stop at the fill price 5020.25
+# (F-BRK-01), below the market less a tick, 5022.00, so the stop moves from 5018.25 to 5020.25
+# (F-PLN-03);
+# the trade at 5020.00 reaches it (F-STP-01): fill = lower of 5020.25 - 0.25 and 5020.00 = 5020.00
+# (F-STP-03). With the plan's prices left at the old front's, breakeven would fire on the first
+# trade after the roll and hold the stop at 5000.25, under the moved one, which 5020.00 never
+# reaches.

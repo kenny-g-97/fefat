@@ -30,7 +30,7 @@ from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.settings import RunSettings
-from fefat.reference.tape import BarRecord, Record, TbboRecord
+from fefat.reference.tape import BarRecord, Record, TbboRecord, trade_dates_of
 from fefat.reference.time_rules import with_time_rules
 from fefat.reference.units import (
     CAPITAL,
@@ -359,7 +359,7 @@ def _tapes(cases: Sequence[EngineCase]) -> dict[str, pl.DataFrame]:
         levels += [(level, coarser_bars(tape, level)) for level in case.coarser_levels()]
         for level, records in levels:
             table = columns.setdefault(str(level), {})
-            dates = _trade_dates(records, case.sessions)
+            dates = trade_dates_of(records, case.sessions)
             for record, trade_date in zip(records, dates, strict=True):
                 for name, value in _record_values(number, trade_date, record).items():
                     table.setdefault(name, []).append(value)
@@ -397,20 +397,6 @@ def _ohlcv(record: Record) -> tuple[int, int, int, int, int]:
     if isinstance(record, BarRecord):
         return (record.open, record.high, record.low, record.close, record.volume)
     return (record.price, record.price, record.price, record.price, record.size)
-
-
-def _trade_dates(records: Sequence[Record], sessions: SessionTable | None) -> list[int]:
-    """Each record's trade date in days since 1970-01-01: that of the session it falls in, or of
-    the last one opened before it, by the instant it starts at; the UTC day without a session
-    table."""
-    starts = [record.starts_at() for record in records]
-    if sessions is None:
-        return [start // NANOSECONDS_PER_DAY for start in starts]
-    frame = pl.DataFrame(
-        {"ts": starts, "order": range(len(starts))}, schema_overrides={"ts": pl.Int64}
-    )
-    dated = sessions.assign_trade_dates_or_previous(frame, "ts").sort("order")
-    return dated.get_column("trade_date").cast(pl.Int32).cast(pl.Int64).to_list()
 
 
 def _record_values(case: int, trade_date: int, record: Record) -> dict[str, int]:

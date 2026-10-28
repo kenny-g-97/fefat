@@ -170,8 +170,9 @@ class OrderKind(StrEnum):
 
 class OrderRole(StrEnum):
     """What an order does for a position, which its fill records (F-TAG-01): open it, protect it
-    (an exit plan's stop), take its profit (target 1 to 3), or close it at the market, for the
-    strategy's own reason (`exit`) or an execution template's exit reason (§20)."""
+    (an exit plan's stop), take its profit (target 1 to 3), close it at the market, for the
+    strategy's own reason (`exit`) or an execution template's exit reason (§20), or carry it
+    across a roll, a leg of the roll for its reason (F-ROL-02)."""
 
     ENTRY = "entry"
     STOP = "stop"
@@ -186,6 +187,10 @@ class OrderRole(StrEnum):
     MAX_MINUTES = "max_minutes"
     OPPOSITE_SIGNAL = "opposite_signal"
     SIGNAL_EXIT = "signal_exit"
+    ROLL_VOLUME = "roll_volume"
+    ROLL_OPEN_INTEREST = "roll_open_interest"
+    ROLL_CALENDAR = "roll_calendar"
+    ROLL_EXPIRY = "roll_expiry"
 
 
 EXIT_ROLES = frozenset(
@@ -201,6 +206,16 @@ EXIT_ROLES = frozenset(
     }
 )
 """The roles of a market order that closes the position on the strategy's word."""
+
+ROLL_ROLES = frozenset(
+    {
+        OrderRole.ROLL_VOLUME,
+        OrderRole.ROLL_OPEN_INTEREST,
+        OrderRole.ROLL_CALENDAR,
+        OrderRole.ROLL_EXPIRY,
+    }
+)
+"""The roles of a roll's legs, which carry a position from one contract to the next (F-ROL-02)."""
 
 
 class OrderState(StrEnum):

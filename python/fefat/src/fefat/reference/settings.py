@@ -1,7 +1,7 @@
 """The settings a run fills under, which every run records (`docs/spec/fill-semantics.md` §2):
-the latency (F-ACT-01), the slippage ticks per order class (F-SLP-01), and when limits fill
-(F-LMT-01, F-LMT-02). A fill scenario may state its own; left out, the specification's
-defaults apply (D-51)."""
+the latency (F-ACT-01), the slippage ticks per order class (F-SLP-01), when limits fill
+(F-LMT-01, F-LMT-02), and what a roll does with an open position (F-ROL-02, F-ROL-04). A fill
+scenario may state its own; left out, the specification's defaults apply (D-51)."""
 
 from enum import StrEnum
 from typing import Self
@@ -23,6 +23,14 @@ class LimitFill(StrEnum):
     TOUCH = "touch"
 
 
+class RollHandling(StrEnum):
+    """What a roll does with an open position: transfer it to the new front (F-ROL-02, the
+    default), or close it (F-ROL-04)."""
+
+    TRANSFER = "transfer"
+    FLATTEN = "flatten"
+
+
 class SlippageTicks(FrozenModel):
     """Ticks by which market and stop-market fills are worse than their reference (F-SLP-01)."""
 
@@ -38,11 +46,12 @@ def default_slippage_ticks(fidelity: object) -> SlippageTicks:
 
 
 class RunSettings(FrozenModel):
-    """The run settings of F-ACT-01, F-SLP-01, F-LMT-01, and F-LMT-02."""
+    """The run settings of F-ACT-01, F-SLP-01, F-LMT-01, F-LMT-02, and F-ROL-04."""
 
     latency_ms: int = Field(default=DEFAULT_LATENCY_MS, ge=0)
     slippage_ticks: SlippageTicks
     limit_fill: LimitFill = LimitFill.THROUGH
+    roll_handling: RollHandling = RollHandling.TRANSFER
 
     @classmethod
     def for_fidelity(cls, fidelity: TickFidelity | Timeframe) -> Self:

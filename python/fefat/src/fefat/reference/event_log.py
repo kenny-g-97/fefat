@@ -14,8 +14,9 @@ from fefat.reference.units import instant_text, money_text, price_text
 class EventKind(StrEnum):
     """What happened: an order placed or active, a stop triggered, a fill, a cancellation, a
     funding payment, a break the working orders stay through, an ambiguous bar, a stop moved or
-    reduced by its exit plan (F-PLN-02, F-PLN-03), or an entry signal the template could not
-    act on (F-ENT-02, F-SIZ-04)."""
+    reduced by its exit plan (F-PLN-02, F-PLN-03), an entry signal the template could not act on
+    (F-ENT-02, F-SIZ-04), a roll (F-ROL-01), or a default the run took, which it warns of
+    (F-FEE-01)."""
 
     PLACED = "placed"
     ACTIVE = "active"
@@ -28,6 +29,8 @@ class EventKind(StrEnum):
     MOVED = "moved"
     REDUCED = "reduced"
     SKIPPED = "skipped"
+    ROLLED = "rolled"
+    WARNING = "warning"
 
 
 class LogEntry(FrozenModel):
@@ -79,6 +82,22 @@ class EventLog:
         """A stop its exit plan moved, by breakeven or a trailing stop (F-PLN-03)."""
         text = f"order {order}: the stop moved from {price_text(before)} to {price_text(after)}"
         self.note(ts, EventKind.MOVED, text, order, rule)
+
+    def shifted(self, ts: int, order: int, before: int, after: int) -> None:
+        """An order a roll moved by its gap (F-ROL-03)."""
+        moved = f"moved by the roll's gap from {price_text(before)} to {price_text(after)}"
+        self.note(ts, EventKind.MOVED, f"order {order}: {moved}", order, "F-ROL-03")
+
+    def rolled(self, ts: int, rolled_from: str, contract: str, gap: int, reason: str) -> None:
+        """A roll: the front passes from one contract to the next, its prices by the gap
+        (F-ROL-01)."""
+        passes = f"the front passes from {rolled_from} to {contract}"
+        text = f"{passes}, a gap of {price_text(gap)} ({reason})"
+        self.note(ts, EventKind.ROLLED, text, rule="F-ROL-01")
+
+    def warning(self, ts: int, text: str, order: int | None, rule: str) -> None:
+        """A default the run took, which its record shows (F-FEE-01)."""
+        self.note(ts, EventKind.WARNING, text, order, rule)
 
     def skipped(self, ts: int, why: str, rule: str) -> None:
         """An entry signal the template could not act on (F-ENT-02, F-SIZ-04)."""

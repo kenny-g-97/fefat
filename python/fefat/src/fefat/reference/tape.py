@@ -4,11 +4,13 @@ and a perpetual's funding rates. A scenario writes its tape (`fefat.reference.sc
 `tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2)."""
 
 import itertools
+from collections.abc import Sequence
 from typing import Annotated, Self
 
 import polars as pl
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
+from fefat.market.calendar import SessionTable
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
 from fefat.reference.orders import Side
@@ -162,6 +164,24 @@ class FundingRate(FrozenModel):
 
     ts: Instant
     rate: QuotedDecimal
+
+
+NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
+
+
+def trade_dates_of(records: Sequence[Record], sessions: SessionTable | None) -> list[int]:
+    """Each record's trade date in days since 1970-01-01, which prices its fills' fees
+    (F-FEE-01): that of the session it falls in, or of the last one opened before it, by the
+    instant it starts at (`SessionTable.assign_trade_dates_or_previous`, as `load` dates them);
+    the UTC day without a session table."""
+    starts = [record.starts_at() for record in records]
+    if sessions is None or not starts:
+        return [start // NANOSECONDS_PER_DAY for start in starts]
+    frame = pl.DataFrame(
+        {"ts": starts, "order": range(len(starts))}, schema_overrides={"ts": pl.Int64}
+    )
+    dated = sessions.assign_trade_dates_or_previous(frame, "ts").sort("order")
+    return dated.get_column("trade_date").cast(pl.Int32).cast(pl.Int64).to_list()
 
 
 _RAW_PRICES = ("open", "high", "low", "close")
