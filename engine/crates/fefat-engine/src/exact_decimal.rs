@@ -51,18 +51,13 @@ impl ExactDecimal {
             .checked_neg()
     }
 
-    /// The decimal cut to whole units of 10^-`places`, toward zero, as a feature's value is cut
-    /// to 1e-9 units of price (F-RND-01); none beyond 64 bits.
-    pub(crate) fn truncated_units(self, places: u32) -> Option<i64> {
-        let units = match self.scale.checked_sub(places) {
-            None => self
-                .digits
-                .checked_mul(10_i128.checked_pow(places - self.scale)?)?,
-            Some(cut) => 10_i128
-                .checked_pow(cut)
-                .map_or(0, |divisor| self.digits / divisor),
-        };
-        i64::try_from(units).ok()
+    /// The decimal cut toward zero to a whole number, as a feature's value is cut to whole 1e-9
+    /// units of price (F-RND-01); none beyond 64 bits.
+    pub(crate) fn truncated(self) -> Option<i64> {
+        let whole = 10_i128
+            .checked_pow(self.scale)
+            .map_or(0, |divisor| self.digits / divisor);
+        i64::try_from(whole).ok()
     }
 
     fn over(self, multiplier: i128, divisor: i128) -> Option<(i128, i128)> {
@@ -105,15 +100,11 @@ mod tests {
         assert_eq!(distance.ceil_times(1_300_000_000, 250_000_000), Some(11));
         assert_eq!(distance.ceil_times(1_000_000_000, 250_000_000), Some(8));
         assert_eq!(
-            ExactDecimal::of(1.2345678901234)
-                .unwrap()
-                .truncated_units(9),
-            Some(1_234_567_890)
-        );
-        assert_eq!(
-            ExactDecimal::of(1.3).unwrap().truncated_units(9),
+            ExactDecimal::of(1_300_000_000.75).unwrap().truncated(),
             Some(1_300_000_000)
         );
-        assert_eq!(ExactDecimal::of(1e-30).unwrap().truncated_units(9), Some(0));
+        assert_eq!(ExactDecimal::of(0.5).unwrap().truncated(), Some(0));
+        assert_eq!(ExactDecimal::of(1e-30).unwrap().truncated(), Some(0));
+        assert_eq!(ExactDecimal::of(1e19).unwrap().truncated(), None);
     }
 }

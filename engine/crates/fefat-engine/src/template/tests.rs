@@ -180,15 +180,16 @@ fn a_row_whose_size_or_column_prices_the_template_cannot_act_on_is_refused() {
 
 #[test]
 fn an_entry_rows_features_become_whole_ticks_rounded_toward_the_entry_for_stops() {
-    // F-RND-01, S-template-014: 1.3 points is 5.2 ticks; a stop of 2 ATR rounds 10.4 down to
-    // 10 ticks, a target of 2 ATR up to 11, and a trailing stop of 2 ATR down to 10.
+    // F-RND-01, S-template-014: an ATR of 1.3 points, in 1e-9 units of price as the bars' prices
+    // are, is 5.2 ticks; a stop of 2 ATR rounds 10.4 down to 10 ticks, a target of 2 ATR up to 11,
+    // and a trailing stop of 2 ATR down to 10.
     let feature = json!({"kind": "atr", "multiple": 2.0, "feature": "atr"});
     let spec = spec_with(&json!({
         "stop": feature,
         "targets": [{"price": feature}],
         "trailing": {"by": feature},
     }));
-    let atr = Some(1.3);
+    let atr = Some(1_300_000_000.0);
     let row = SignalRow {
         features: RowFeatures {
             stop: atr,

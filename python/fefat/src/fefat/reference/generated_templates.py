@@ -295,7 +295,7 @@ def _rows(
                 short_exit=draw(st.booleans()),
                 size_mult=draw(st.sampled_from(multiples)) if sized else None,
                 wake=draw(st.sampled_from((True, True, False))),
-                features={"atr": draw(st.integers(1, 40)) * 0.25},
+                features={"atr": draw(st.integers(1, 40)) * 250_000_000.0},
                 flags={"news": draw(st.booleans())},
                 entry_price=prices["entry_price"],
                 stop_price=prices["stop_price"],

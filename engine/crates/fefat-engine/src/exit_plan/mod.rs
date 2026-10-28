@@ -233,13 +233,14 @@ pub(crate) fn f_rnd_02(side: Side, fill: Price, stop: Price, tick: Price) -> u32
     u32::try_from(ticks).unwrap_or(u32::MAX)
 }
 
-/// A feature's value as the decimal it prints as, cut to whole 1e-9 units (F-RND-01); none at or
-/// below zero, or beyond 64 bits.
+/// A feature's value, in 1e-9 units of price as one worked out from the bars' prices is, read as
+/// the decimal it prints as and cut to whole units (F-RND-01); none at or below zero, or beyond
+/// 64 bits.
 pub(crate) fn feature_units(value: f64) -> Option<i64> {
     if value.partial_cmp(&0.0) != Some(Ordering::Greater) {
         return None;
     }
-    ExactDecimal::of(value)?.truncated_units(9)
+    ExactDecimal::of(value)?.truncated()
 }
 
 /// `multiple` times a feature of `units` 1e-9 units, in whole ticks (F-RND-01).

@@ -167,8 +167,9 @@ def f_rnd_02(side: Side, fill: int, stop: int, tick: int) -> int:
 
 
 def feature_units(row: Mapping[str, Any], feature: str) -> int:
-    """The feature's value on `row` as the decimal it prints as, cut to whole 1e-9 units
-    (F-RND-01); a feature missing, or at or below zero, is refused."""
+    """The feature's value on `row`, in 1e-9 units of price as one worked out from the bars'
+    prices is, read as the decimal it prints as and cut to whole units (F-RND-01); a feature
+    missing, or at or below zero, is refused."""
     value = row.get(feature)
     if value is None or not value > 0:
         at = instant_text(row["ts_close"])
@@ -176,7 +177,7 @@ def feature_units(row: Mapping[str, Any], feature: str) -> int:
             f"Expected the feature {feature} above zero on the signal row closing at {at}, got "
             f"{value}."
         )
-    return int(Decimal(repr(value)).scaleb(9))
+    return int(Decimal(repr(value)))
 
 
 def feature_ticks(multiple: Fraction, units: int, tick: int, away_from_entry: bool) -> int:

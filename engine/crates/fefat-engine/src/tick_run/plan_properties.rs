@@ -217,7 +217,8 @@ fn signal_rows(case: &DrawnCase, trades: &[TradeRow]) -> Vec<SignalRow> {
         let Some(record) = trades.get(row.record % trades.len()) else {
             continue;
         };
-        let feature = f64::from(row.feature_quarters) * 0.25;
+        // Quarter points in 1e-9 units of price, as a feature worked out from the bars' prices is.
+        let feature = f64::from(row.feature_quarters) * 250_000_000.0;
         by_close.entry(record.ts_recv).or_insert(SignalRow {
             long_entry: row.entry == 1,
             short_entry: row.entry == 2,
