@@ -1,0 +1,41 @@
+id: S-template-038
+title: On the early close after Thanksgiving, flat-by acts at the last signal close before the close
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: America/Chicago, flat_by: "15:05"}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-11-27T17:55:00Z", trade_date: "2026-11-27", contract: ESZ2026, long_entry: true}
+  - {ts_close: "2026-11-27T18:05:00Z", trade_date: "2026-11-27", contract: ESZ2026}
+  - {ts_close: "2026-11-27T18:10:00Z", trade_date: "2026-11-27", contract: ESZ2026}
+  - {ts_close: "2026-11-27T18:15:00Z", trade_date: "2026-11-27", contract: ESZ2026, long_entry: true}
+tape:
+  - {ts: "2026-11-27T17:55:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-11-27T18:05:00.300Z", price: "5001.00", size: 1}
+  - {ts: "2026-11-27T18:10:00.300Z", price: "5002.00", size: 1}
+  - {ts: "2026-11-29T23:00:00.500Z", price: "5003.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-11-27T17:55:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 4, ts: "2026-11-27T18:10:00.300Z", price: "5001.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# the session of Friday 2026-11-27, the day after Thanksgiving, closes early at 12:15 CST, 18:15
+# UTC; flat-by 15:05 CST, 21:05 UTC, comes after the close, so the template acts at the last signal
+# close before the close, 18:10 (F-TIM-01);
+# at 17:55 long_entry buys, order 1, which fills on the trade at 17:55:00.200:
+# 5000.00 + 0.25 = 5000.25, its stop and target orders 2 and 3, which no trade reaches;
+# at 18:05 nothing happens; at 18:10 the template sells at the market, order 4, exit reason
+# flat_by, cancelling orders 2 and 3; it fills on the trade at 18:10:00.300: 5002.00 - 0.25 =
+# 5001.75;
+# at 18:15, the close, long_entry places nothing: the trade date is past its flat-by time; had it
+# bought, the order would have filled on the next session's trade at 23:00:00.500 on 11-29.

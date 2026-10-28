@@ -1,0 +1,43 @@
+id: S-template-045
+title: A Tuesday window from 23:30 past midnight to 00:30 takes Tuesday's early minutes and leaves Monday's late ones
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time:
+      tz: UTC
+      windows: [{start: "23:30", end: "00:30", weekdays: [tuesday]}]
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-09T23:30:00Z", trade_date: "2026-03-10", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-10T00:15:00Z", trade_date: "2026-03-10", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-10T00:20:00Z", trade_date: "2026-03-10", contract: ESH2026, long_exit: true}
+  - {ts_close: "2026-03-10T00:35:00Z", trade_date: "2026-03-10", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-09T23:30:00.300Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-10T00:15:00.200Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-10T00:20:00.300Z", price: "5002.00", size: 1}
+  - {ts: "2026-03-10T00:35:00.300Z", price: "5003.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-10T00:15:00.200Z", price: "5001.25", rule: F-MKT-02}
+    - {order: 4, ts: "2026-03-10T00:20:00.300Z", price: "5001.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-ENT-04, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# the window's end, 00:30, comes before its start, 23:30, so it runs past midnight: a decision is in
+# it from 23:30 to midnight and from midnight to just before 00:30 (F-TIM-04), and only on a
+# Tuesday, the weekday of the decision's own local date, here in UTC;
+# at 23:30 on Monday 03-09 the time is in the window but the day is a Monday: long_entry places
+# nothing, and the trade at 23:30:00.300 fills nothing;
+# at 00:15 on Tuesday 03-10 long_entry buys, order 1, filled on the trade at 00:15:00.200:
+# 5001.00 + 0.25 = 5001.25, its stop and target orders 2 and 3;
+# at 00:20 long_exit sells, order 4, exit reason signal_exit, filled at 5002.00 - 0.25 = 5001.75;
+# at 00:35, past the window's end, long_entry places nothing.

@@ -171,3 +171,14 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-032](S-template-032.yaml) | trades | A short's trailing stop on trades follows each new low 4 ticks above it and closes the short |
 | [S-template-033](S-template-033.yaml) | 1m | A short's first target closes half, breakeven lowers the stop to the fill, and it closes the rest |
 | [S-template-034](S-template-034.yaml) | 1m | Without a stop, the first target's fill leaves the second working for the lot left |
+| [S-template-035](S-template-035.yaml) | trades | A position with max_bars 2 closes at the second decision after its entry's fill |
+| [S-template-036](S-template-036.yaml) | trades | A position with max_minutes 2 closes at the first decision two minutes after its entry's fill |
+| [S-template-037](S-template-037.yaml) | trades | Flat-by 15:05 Chicago closes at 21:05 UTC before the clock change and at 20:05 UTC after it |
+| [S-template-038](S-template-038.yaml) | trades | On the early close after Thanksgiving, flat-by acts at the last signal close before the close |
+| [S-template-039](S-template-039.yaml) | trades | With no_overnight a long closes at the last signal close before the session's close, and none enters at the close |
+| [S-template-040](S-template-040.yaml) | trades | With no_overnight a long closes before the Presidents' Day halt, and the template enters again once trading resumes |
+| [S-template-041](S-template-041.yaml) | trades | Before 2021-06-28 no_overnight holds a long through the daily 15:15 pause and closes it before the session's close |
+| [S-template-042](S-template-042.yaml) | trades | With no_weekend a long held over Thursday's close closes before Friday's close |
+| [S-template-043](S-template-043.yaml) | trades | With no_weekend a long closes on Thursday 2025-04-17, before the Good Friday close |
+| [S-template-044](S-template-044.yaml) | trades | An entry window from 08:30 to 09:00 Chicago opens at 14:30 UTC before the clock change and at 13:30 UTC after it |
+| [S-template-045](S-template-045.yaml) | trades | A Tuesday window from 23:30 past midnight to 00:30 takes Tuesday's early minutes and leaves Monday's late ones |

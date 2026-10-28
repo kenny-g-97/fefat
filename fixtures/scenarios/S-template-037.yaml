@@ -1,0 +1,48 @@
+id: S-template-037
+title: Flat-by 15:05 Chicago closes at 21:05 UTC before the clock change and at 20:05 UTC after it
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 5m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: America/Chicago, flat_by: "15:05"}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T21:00:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T21:05:00Z", trade_date: "2026-03-06", contract: ESH2026}
+  - {ts_close: "2026-03-09T20:00:00Z", trade_date: "2026-03-09", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-09T20:05:00Z", trade_date: "2026-03-09", contract: ESH2026}
+  - {ts_close: "2026-03-09T20:10:00Z", trade_date: "2026-03-09", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T21:00:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-06T21:05:00.300Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-09T20:00:00.200Z", price: "5010.00", size: 1}
+  - {ts: "2026-03-09T20:05:00.300Z", price: "5011.00", size: 1}
+  - {ts: "2026-03-09T20:10:00.300Z", price: "5012.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T21:00:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 4, ts: "2026-03-06T21:05:00.300Z", price: "5000.75", rule: F-MKT-02}
+    - {order: 5, ts: "2026-03-09T20:00:00.200Z", price: "5010.25", rule: F-MKT-02}
+    - {order: 8, ts: "2026-03-09T20:05:00.300Z", price: "5010.75", rule: F-MKT-02}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-SLP-01, F-TIM-01, F-TIM-05]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# Chicago keeps CST, UTC-6, until 2026-03-08, then CDT, UTC-5 (F-TIM-05): flat-by 15:05 is
+# 21:05 UTC on Friday 2026-03-06 and 20:05 UTC on Monday 2026-03-09, each on its session's 5-minute
+# grid (the sessions open at 23:00 and 22:00 UTC the evening before);
+# at 21:00 on 03-06 (15:00 CST) long_entry buys, order 1, which fills on the trade at
+# 21:00:00.200: 5000.00 + 0.25 = 5000.25, its stop and target orders 2 and 3;
+# at 21:05 the flat-by time has come (F-TIM-01): the template sells at the market, order 4, exit
+# reason flat_by, cancelling orders 2 and 3; it fills on the trade at 21:05:00.300:
+# 5001.00 - 0.25 = 5000.75;
+# at 20:00 on 03-09 (15:00 CDT) long_entry buys, order 5, filled at 5010.00 + 0.25 = 5010.25, its
+# stop and target orders 6 and 7; at 20:05 UTC, 15:05 CDT, the flat-by time has come, an hour
+# earlier in UTC than on 03-06: order 8 sells at the market, filled at 5011.00 - 0.25 = 5010.75;
+# at 20:10 the trade date is past its flat-by time, so long_entry places nothing, and the trade at
+# 20:10:00.300 fills nothing.
