@@ -34,6 +34,8 @@ pub enum EventKind {
     Moved,
     /// A stop its exit plan reduced to the lots a target left (F-PLN-02).
     Reduced,
+    /// An entry signal the template could not act on (F-ENT-02, F-SIZ-04).
+    Skipped,
 }
 
 impl fmt::Display for EventKind {
@@ -48,6 +50,7 @@ impl fmt::Display for EventKind {
             Self::Ambiguous => "ambiguous",
             Self::Moved => "moved",
             Self::Reduced => "reduced",
+            Self::Skipped => "skipped",
         })
     }
 }
@@ -185,6 +188,23 @@ impl LogEntry {
             moved.rule.id(),
             text,
         )
+    }
+
+    /// An entry whose time to live ended, cancelled at the decision `ts` (F-ENT-03).
+    pub(crate) fn expired(ts: Ts, order: OrderId) -> Self {
+        let text = format!("order {}: its time to live has ended", order.0);
+        Self::of(ts, EventKind::Cancelled, Some(order), "F-ENT-03", text)
+    }
+
+    /// An entry signal the strategy could not act on at `ts`, and why, under `rule`.
+    pub(crate) fn skipped(ts: Ts, why: &str, rule: &'static str) -> Self {
+        Self {
+            ts,
+            kind: EventKind::Skipped,
+            order: None,
+            rule: Some(rule),
+            text: format!("no entry: {why}"),
+        }
     }
 
     /// An order its strategy cancelled.

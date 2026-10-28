@@ -45,7 +45,14 @@ CAPITAL = 50_000_000_000
 """The run's capital in micro-units, 50,000 USD (D-51): the ledger's starting cash."""
 NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
-_OPTIONAL_SIGNALS = ("stop_price", "target_price", "trail_ref", "size_mult", "wake")
+_OPTIONAL_SIGNALS = (
+    "entry_price",
+    "stop_price",
+    "target_price",
+    "trail_ref",
+    "size_mult",
+    "wake",
+)
 _TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")
 _SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)

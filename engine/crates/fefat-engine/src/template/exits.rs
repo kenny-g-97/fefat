@@ -144,7 +144,7 @@ fn trailing_of(
 
 /// A price the signal frame gives on `row` in `column`, which must be there and on the tick
 /// (F-RND-01).
-fn column_price(
+pub(super) fn column_price(
     price: Option<Price>,
     column: &str,
     row: &SignalRow,

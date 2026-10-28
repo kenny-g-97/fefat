@@ -120,7 +120,7 @@ fn signal_rows_of(path: &Path, batch: &RecordBatch) -> Result<Vec<(i64, SignalRo
 /// leaves it out.
 struct SignalColumns<'batch> {
     signals: [&'batch BooleanArray; 4],
-    prices: [Option<&'batch Int64Array>; 3],
+    prices: [Option<&'batch Int64Array>; 4],
     features: [Option<&'batch Float64Array>; 5],
     size_mult: Option<&'batch Float64Array>,
     wake: Option<&'batch BooleanArray>,
@@ -154,6 +154,7 @@ impl<'batch> SignalColumns<'batch> {
                 signal("short_exit")?,
             ],
             prices: [
+                ints("entry_price")?,
                 ints("stop_price")?,
                 ints("target_price")?,
                 ints("trail_ref")?,
@@ -179,7 +180,7 @@ impl<'batch> SignalColumns<'batch> {
     fn row(&self, row: usize, ts_close: Ts) -> SignalRow {
         let signal = |column: &BooleanArray| column.is_valid(row) && column.value(row);
         let [long_entry, short_entry, long_exit, short_exit] = self.signals.map(signal);
-        let [stop_price, target_price, trail_ref] = self.prices.map(|column| {
+        let [entry_price, stop_price, target_price, trail_ref] = self.prices.map(|column| {
             let price = column.filter(|column| column.is_valid(row));
             price.map(|column| Price(column.value(row)))
         });
@@ -198,6 +199,7 @@ impl<'batch> SignalColumns<'batch> {
             short_entry,
             long_exit,
             short_exit,
+            entry_price,
             stop_price,
             target_price,
             trail_ref,

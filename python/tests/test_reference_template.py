@@ -34,11 +34,9 @@ from fefat.strategy import (
     BarsCooldown,
     Execution,
     Fixed,
-    Limit,
     Limits,
     Market,
     Notional,
-    OppositeSignal,
     Stop,
     StrategySpec,
     Target,
@@ -120,8 +118,6 @@ def test_a_flat_by_time_inside_a_halt_or_off_the_grid_is_refused(
 @pytest.mark.parametrize(
     ("rules", "refused"),
     [
-        ({"entry": Limit(offset_ticks=2)}, "an entry of kind limit_offset"),
-        ({"on_opposite_signal": OppositeSignal.REVERSE}, "on_opposite_signal reverse"),
         ({"limits": Limits(cooldown_after_loss=BarsCooldown(bars=3))}, "entry limits"),
         ({"sizing": Notional(25_000)}, "sizing of kind notional"),
     ],

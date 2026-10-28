@@ -28,6 +28,8 @@ pub struct SignalRow {
     pub long_exit: bool,
     /// Close a short.
     pub short_exit: bool,
+    /// The price of an entry at the column, a raw price of the row's contract.
+    pub entry_price: Option<Price>,
     /// The stop of a column stop, a raw price of the row's contract.
     pub stop_price: Option<Price>,
     /// The target of a column target, a raw price of the row's contract.
@@ -62,6 +64,7 @@ impl SignalRow {
             short_entry: false,
             long_exit: false,
             short_exit: false,
+            entry_price: None,
             stop_price: None,
             target_price: None,
             trail_ref: None,
@@ -98,8 +101,8 @@ impl RowFeatures {
 }
 
 /// Refuses rows out of the order of their closes, and a row with both entry signals under a
-/// market entry.
-pub(super) fn require_rows_in_order(rows: &[SignalRow]) -> Result<(), TemplateError> {
+/// `market` entry.
+pub(super) fn require_rows_in_order(rows: &[SignalRow], market: bool) -> Result<(), TemplateError> {
     let later = rows.iter().skip(1);
     if let Some((earlier, row)) = rows
         .iter()
@@ -114,7 +117,10 @@ pub(super) fn require_rows_in_order(rows: &[SignalRow]) -> Result<(), TemplateEr
             actual: row.ts_close.to_string(),
         });
     }
-    match rows.iter().find(|row| row.long_entry && row.short_entry) {
+    match rows
+        .iter()
+        .find(|row| market && row.long_entry && row.short_entry)
+    {
         Some(row) => Err(TemplateError::Refused {
             expected: "one of long_entry and short_entry per bar with a market entry".to_owned(),
             actual: format!("both on the signal close of {}", row.ts_close),

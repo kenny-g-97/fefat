@@ -18,7 +18,8 @@ import polars as pl
 
 from fefat.market.calendar import SessionTable, utc_text
 from fefat.reference.orders import OrderRole, Side
-from fefat.reference.strategy import DecisionContext
+from fefat.reference.strategy import DecisionContext, Entry
+from fefat.reference.template.entries import f_ent_01, f_ent_02, f_ent_03, f_ent_04
 from fefat.reference.template.exits import exit_plan_of
 from fefat.reference.time_rules import f_tim_02, with_time_rules
 from fefat.reference.units import InstrumentParameters, lots_of
@@ -27,12 +28,14 @@ from fefat.strategy.signal_frame import require_one_entry_per_bar, validated_sig
 from fefat.strategy.spec import (
     Execution,
     FixedSize,
+    LimitEntryAtColumn,
     MarketEntry,
     OppositeSignal,
+    StopEntryAtColumn,
     StrategySpec,
 )
 
-_SUBSET = "a market entry, any exit plan, signal exits, any time rule, and a fixed size"
+_SUBSET = "any entry, exit plan, and time rule, and a fixed size"
 
 
 def basic_subset_refusals(spec: StrategySpec) -> list[str]:
@@ -44,14 +47,9 @@ def basic_subset_refusals(spec: StrategySpec) -> list[str]:
 
 
 def _entry_refusals(execution: Execution) -> list[str]:
-    refusals = []
-    if not isinstance(execution.entry, MarketEntry):
-        refusals.append(f"an entry of kind {execution.entry.kind}")
-    if execution.on_opposite_signal is not OppositeSignal.IGNORE:
-        refusals.append(f"on_opposite_signal {execution.on_opposite_signal}")
     if not isinstance(execution.sizing, FixedSize):
-        refusals.append(f"sizing of kind {execution.sizing.kind}")
-    return refusals
+        return [f"sizing of kind {execution.sizing.kind}"]
+    return []
 
 
 def _exact(number: float) -> Decimal:
@@ -92,7 +90,8 @@ class TemplateStrategy:
                 f"got {'; '.join(refusals)}: the rest arrives in step 2.8."
             )
         validated_signal_frame(signals)
-        require_one_entry_per_bar(signals)
+        if isinstance(execution.entry, MarketEntry):
+            require_one_entry_per_bar(signals)
         self._execution = execution
         self._tick = instrument.tick
         self._lots = lots_of(_exact(sizing.units), instrument.lot_step)
@@ -104,6 +103,9 @@ class TemplateStrategy:
     def on_bar(self, bar: Mapping[str, Any], context: DecisionContext) -> None:
         """The decision at one signal close, `bar` the signal frame's row (class docstring)."""
         context.update_exit_plans(bar)
+        expired = f_ent_03(self._execution.entry, self._closes, bar["ts_close"])
+        if expired is not None:
+            context.cancel_entries_placed_by(expired)
         if context.is_exiting() or context.is_entering():
             return
         timed = self._timed[bar["ts_close"]]
@@ -116,15 +118,38 @@ class TemplateStrategy:
         if held_exit is not None:
             context.flatten(held_exit)
             return
+        allowed = _wakes(bar) and timed.get("in_window", True)
+        reverse_to = f_ent_04(self._execution.on_opposite_signal, bar, context.position)
+        if reverse_to is not None:
+            context.flatten(OrderRole.OPPOSITE_SIGNAL)
+            if self._execution.on_opposite_signal is OppositeSignal.REVERSE and allowed:
+                self._enter(bar, context, [reverse_to], reversing=True)
+            return
         if self._signals_exit(bar, context.position):
             context.flatten(OrderRole.SIGNAL_EXIT)
             return
-        if context.position != 0 or context.has_working_orders() or not _wakes(bar):
-            return
-        if (bar["long_entry"] or bar["short_entry"]) and timed.get("in_window", True):
-            side = Side.BUY if bar["long_entry"] else Side.SELL
+        if context.position == 0 and not context.has_working_orders() and allowed:
+            self._enter(bar, context, f_ent_01(bar))
+
+    def _enter(
+        self,
+        bar: Mapping[str, Any],
+        context: DecisionContext,
+        sides: list[Side],
+        reversing: bool = False,
+    ) -> None:
+        """Enters on `sides`, each order with its exit plan (F-ENT-02, F-PLN-01); an offset entry
+        with no mark yet places nothing, and the log says why."""
+        entries = []
+        for side in sides:
+            order = f_ent_02(self._execution.entry, side, bar, context.mark, self._tick)
+            if order is None:
+                context.skipped("no mark to count the entry's offset from", "F-ENT-02")
+                return
             plan = exit_plan_of(self._execution, bar, side, self._tick)
-            context.market(side, self._lots_at(bar), plan)
+            entries.append(Entry(side, *order, self._lots_at(bar), plan))
+        if entries:
+            context.enter(entries, reversing)
 
     def _held_exit(self, now: int, context: DecisionContext) -> OrderRole | None:
         """Max bars or max minutes of an open position (F-TIM-02), counting the decisions from
@@ -155,7 +180,12 @@ class TemplateStrategy:
 
     def _require_price_columns(self, signals: pl.DataFrame) -> None:
         targets = self._execution.targets
+        entry = self._execution.entry
         at_columns = {
+            "entry_price": (
+                "an entry",
+                isinstance(entry, LimitEntryAtColumn | StopEntryAtColumn),
+            ),
             "stop_price": ("a stop", isinstance(self._execution.stop, ColumnStop)),
             "target_price": (
                 "a target",

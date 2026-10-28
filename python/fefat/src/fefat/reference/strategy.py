@@ -9,7 +9,7 @@ closes its position. A signal strategy's specification runs through the same pro
             context.market(Side.BUY, 1, ExitPlan.in_ticks(stop_ticks=12, target_ticks=24))
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,6 +37,18 @@ class Decision:
 
     ts: int
     bar: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class Entry:
+    """An entry a decision places: its side, its class and price, a limit's or a stop's, its
+    lots, and the exit plan its fill places (F-PLN-01)."""
+
+    side: Side
+    kind: OrderKind
+    price: int | None
+    lots: int
+    plan: ExitPlan | None = None
 
 
 def decisions_of(frame: pl.DataFrame) -> tuple[Decision, ...]:
@@ -72,6 +84,12 @@ class DecisionContext:
     @property
     def position(self) -> int:
         return self._book.position
+
+    @property
+    def mark(self) -> int | None:
+        """The mark, the last tradeable price before the decision (F-MRK-01), none before the
+        first."""
+        return self._book.mark
 
     @property
     def opened_at(self) -> int | None:
@@ -112,18 +130,51 @@ class DecisionContext:
         """Enters with a market order for `lots`, with an exit plan placed when it fills
         (F-OCO-02, F-PLN-01), and returns its id. A strategy holds one position at a time, so it
         enters flat and with nothing working; `flatten` closes the position."""
-        if lots < 1:
-            raise ValueError(f"Expected a whole number of lots above zero, got {lots}.")
+        return self.enter([Entry(side, OrderKind.MARKET, None, lots, plan)])[0]
+
+    def enter(self, entries: Sequence[Entry], reversing: bool = False) -> list[int]:
+        """Places `entries`, one entry or a long and short pair, the pair as one OCO group
+        (F-ENT-01), and returns their ids. A strategy holds one position at a time, so it enters
+        flat with nothing working, or, `reversing`, right after `flatten` placed its exit, whose
+        id comes first (F-ENT-04)."""
+        for entry in entries:
+            if entry.lots < 1:
+                raise ValueError(f"Expected a whole number of lots above zero, got {entry.lots}.")
         working = len(self._book.live())
-        if self._book.position != 0 or working:
+        if not reversing and (self._book.position != 0 or working):
             raise ValueError(
                 "Expected an entry while flat with no working orders (one position per strategy), "
                 f"got {self._book.position} lots and {working} working orders at "
                 f"{instant_text(self.now)}; close the position with flatten()."
             )
-        order_id = self._book.new_id()
-        self._place(order_id, side, OrderKind.MARKET, None, lots, plan=plan)
-        return order_id
+        ids = [self._book.new_id() for _ in entries]
+        group = f"pair {ids[0]}" if len(ids) > 1 else None
+        for order_id, entry in zip(ids, entries, strict=True):
+            self._place(
+                order_id,
+                entry.side,
+                entry.kind,
+                entry.price,
+                entry.lots,
+                oco=group,
+                plan=entry.plan,
+            )
+        return ids
+
+    def cancel_entries_placed_by(self, instant: int) -> None:
+        """Cancels the live entries placed at or before `instant`, whose time to live has ended
+        (F-ENT-03); an entry stop triggered on TBBO, a market order already sent, stays
+        (F-STP-02)."""
+        for order in self._book.live():
+            ended = order.role is OrderRole.ENTRY and order.placed_at <= instant
+            if ended and order.state is not OrderState.TRIGGERED:
+                self._book.close(order, OrderState.CANCELLED)
+                text = f"order {order.id}: its time to live has ended"
+                self._log.note(self.now, EventKind.CANCELLED, text, order.id, "F-ENT-03")
+
+    def skipped(self, why: str, rule: str) -> None:
+        """Logs an entry signal the strategy could not act on, and why (F-ENT-02, F-SIZ-04)."""
+        self._log.skipped(self.now, why, rule)
 
     def flatten(self, reason: OrderRole = OrderRole.EXIT) -> None:
         """Cancels every working order and, with a position open, places a market order that

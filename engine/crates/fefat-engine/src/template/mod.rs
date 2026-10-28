@@ -1,9 +1,10 @@
-//! The execution template, as `fefat.reference.template` runs it (steps 2.3 and 2.8, D-53): a
-//! market entry that ignores opposite signals, carrying its exit plan (`exits`, §22 to §24);
-//! signal exits; the time rules (§26), from what each signal row gives for them; and a fixed size
-//! times `size_mult` in whole lots. The other entries, limits, and sizes arrive later in step 2.8
+//! The execution template, as `fefat.reference.template` runs it (steps 2.3 and 2.8, D-53): its
+//! entries (`entries`, §25), each carrying its exit plan (`exits`, §22 to §24); signal exits and
+//! opposite signals; the time rules (§26), from what each signal row gives for them; and a fixed
+//! size times `size_mult` in whole lots. The limits and the other sizes arrive later in step 2.8
 //! and are refused until then.
 
+mod entries;
 mod exits;
 mod rows;
 #[cfg(test)]
@@ -23,9 +24,9 @@ use thiserror::Error;
 
 use crate::exact_decimal::ExactDecimal;
 use crate::exit_plan::PlanRow;
-use crate::strategy::{DecisionContext, DecisionError, Strategy};
+use crate::strategy::{DecisionContext, DecisionError, Entry, Strategy};
 
-const SUBSET: &str = "a market entry, any exit plan, signal exits, any time rule, and a fixed size";
+const SUBSET: &str = "any entry, exit plan, and time rule, and a fixed size";
 
 /// A specification or a signal frame the template refuses.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -82,7 +83,8 @@ impl TemplateStrategy {
         spec.validate()?;
         let execution = &spec.execution;
         refuse_the_rest(execution)?;
-        rows::require_rows_in_order(&rows)?;
+        let market = matches!(execution.entry, EntryOrder::Market {});
+        rows::require_rows_in_order(&rows, market)?;
         rows::require_flat_by_on_every_row(execution, &rows)?;
         rows::require_time_columns(execution, &rows)?;
         Ok(Self {
@@ -152,6 +154,38 @@ impl TemplateStrategy {
             .then_some(ExitReason::MaxMinutes)
     }
 
+    /// Enters on `sides`, each order with its exit plan (F-ENT-02, F-PLN-01), flat with nothing
+    /// working or `reversing`; an offset entry with no mark yet places nothing, and the log says
+    /// why.
+    fn enter(
+        &self,
+        row: &SignalRow,
+        context: &mut DecisionContext<'_>,
+        sides: Vec<Side>,
+        reversing: bool,
+    ) -> Result<(), DecisionError> {
+        let entry = &self.execution.entry;
+        let mut placed = Vec::with_capacity(sides.len());
+        for side in sides {
+            let Some(kind) = entries::f_ent_02(entry, side, row, context.mark(), self.tick)? else {
+                context.skipped("no mark to count the entry's offset from", "F-ENT-02");
+                return Ok(());
+            };
+            let plan = exits::exit_plan_of(&self.execution, row, side, self.tick)?;
+            placed.push(Entry {
+                side,
+                kind,
+                lots: self.lots_at(row)?,
+                time_in_force: entries::time_in_force(entry),
+                plan: Some(plan),
+            });
+        }
+        if !placed.is_empty() {
+            context.enter(placed, reversing)?;
+        }
+        Ok(())
+    }
+
     fn row_at(&self, now: Ts) -> Result<SignalRow, DecisionError> {
         let found = self.rows.binary_search_by_key(&now, |row| row.ts_close);
         let row = found.ok().and_then(|index| self.rows.get(index)).copied();
@@ -179,6 +213,9 @@ impl Strategy for TemplateStrategy {
             trail_feature: row.features.trailing,
             trail_ref: row.trail_ref,
         })?;
+        if let Some(at) = entries::f_ent_03(&self.execution.entry, &self.rows, now) {
+            context.cancel_entries_placed_by(at);
+        }
         if context.is_exiting() || context.is_entering() {
             return Ok(());
         }
@@ -193,46 +230,31 @@ impl Strategy for TemplateStrategy {
         {
             return context.flatten(reason);
         }
+        let allowed = row.wake && row.in_window != Some(false);
+        let on_opposite = self.execution.on_opposite_signal;
+        if let Some(side) = entries::f_ent_04(on_opposite, &row, context.position()) {
+            context.flatten(ExitReason::OppositeSignal)?;
+            if on_opposite == OppositeSignal::Reverse && allowed {
+                self.enter(&row, context, vec![side], true)?;
+            }
+            return Ok(());
+        }
         if self.signals_exit(&row, context.position()) {
             return context.flatten(ExitReason::SignalExit);
         }
-        let in_window = row.in_window != Some(false);
-        if context.position() != Position::Flat
-            || context.has_working_orders()
-            || !row.wake
-            || !in_window
-        {
-            return Ok(());
+        if context.position() == Position::Flat && !context.has_working_orders() && allowed {
+            self.enter(&row, context, entries::f_ent_01(&row), false)?;
         }
-        let side = match (row.long_entry, row.short_entry) {
-            (true, _) => Side::Buy,
-            (false, true) => Side::Sell,
-            (false, false) => return Ok(()),
-        };
-        let plan = exits::exit_plan_of(&self.execution, &row, side, self.tick)?;
-        context.market(side, self.lots_at(&row)?, Some(plan))?;
         Ok(())
     }
 }
 
-/// Refuses what the template does not run yet (`template.basic_subset_refusals`): entries other
-/// than market, opposite signals that are not ignored, and entry limits.
+/// Refuses what the template does not run yet (`template.basic_subset_refusals`): entry limits.
 fn refuse_the_rest(execution: &Execution) -> Result<(), TemplateError> {
-    let refusals = [
-        (
-            !matches!(execution.entry, EntryOrder::Market {}),
-            "an entry other than market",
-        ),
-        (
-            execution.on_opposite_signal != OppositeSignal::Ignore,
-            "an opposite signal that is not ignored",
-        ),
-        (execution.limits != Limits::default(), "entry limits"),
-    ];
-    match refusals.iter().find(|(refused, _)| *refused) {
-        Some((_, what)) => Err(beyond(what)),
-        None => Ok(()),
+    if execution.limits != Limits::default() {
+        return Err(beyond("entry limits"));
     }
+    Ok(())
 }
 
 /// The lots of the fixed size: its units in whole lot steps of the instrument (`lots_of`).

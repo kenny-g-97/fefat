@@ -8,12 +8,18 @@ use fefat_core::instants::Ts;
 use fefat_core::ledger::{Ledger, Position};
 use fefat_core::orders::{ExitReason, TimeInForce};
 use fefat_core::orders::{OcoGroupId, Order, OrderId, OrderKind, OrderRole, OrderState, Side};
-use fefat_core::units::{Overflow, Qty};
+use fefat_core::units::{Overflow, Price, Qty};
 use thiserror::Error;
 
-use crate::book::{Book, Bracket, BracketLink, Closing, WorkingOrder};
+use crate::book::{Book, BracketLink, Closing, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::exit_plan::{ExitPlan, PlanError, PlanRow};
+
+mod scenario;
+#[cfg(test)]
+mod tests;
+
+pub use scenario::{ScenarioOrder, ScenarioOrders};
 
 /// A strategy: the instants it decides at and what it decides there.
 pub trait Strategy {
@@ -108,6 +114,11 @@ impl<'run> DecisionContext<'run> {
         self.ledger.position()
     }
 
+    /// The mark, the last tradeable price before the decision (F-MRK-01), none before the first.
+    pub const fn mark(&self) -> Option<Price> {
+        self.ledger.mark()
+    }
+
     /// The instant of the fill that opened the position, none when flat or for a position held
     /// when the tape starts (F-TIM-02).
     pub const fn opened_at(&self) -> Option<Ts> {
@@ -154,6 +165,7 @@ impl<'run> DecisionContext<'run> {
             lots: order.lots,
             kind: order.kind,
             role: OrderRole::Entry,
+            time_in_force: TimeInForce::GoodTillCancelled,
             oco: order.oco,
             plan: order.bracket.map(ExitPlan::from),
         };
@@ -169,13 +181,7 @@ impl<'run> DecisionContext<'run> {
         lots: Qty,
         plan: Option<ExitPlan>,
     ) -> Result<OrderId, DecisionError> {
-        if self.position() != Position::Flat || self.book.has_live() {
-            return Err(DecisionError::NotFlat {
-                position: self.position(),
-                working: self.book.live_ids().len(),
-                at: self.now,
-            });
-        }
+        self.require_flat()?;
         let id = self.book.new_id();
         let entry = PlacedEntry {
             id,
@@ -183,11 +189,74 @@ impl<'run> DecisionContext<'run> {
             lots,
             kind: OrderKind::Market,
             role: OrderRole::Entry,
+            time_in_force: TimeInForce::GoodTillCancelled,
             oco: None,
             plan,
         };
         self.placed(entry)?;
         Ok(id)
+    }
+
+    /// Places `entries`, one entry or a long and short pair, the pair as one OCO group
+    /// (F-ENT-01), and returns their ids. A strategy holds one position at a time, so it enters
+    /// flat with nothing working, or, `reversing`, right after [`Self::flatten`] placed its exit,
+    /// whose id comes first (F-ENT-04).
+    pub fn enter(
+        &mut self,
+        entries: Vec<Entry>,
+        reversing: bool,
+    ) -> Result<Vec<OrderId>, DecisionError> {
+        if !reversing {
+            self.require_flat()?;
+        }
+        let ids: Vec<OrderId> = entries.iter().map(|_| self.book.new_id()).collect();
+        let pair = ids.first().filter(|_| ids.len() > 1);
+        let group = pair.map(|first| OcoGroupId(first.0));
+        for (&id, entry) in ids.iter().zip(entries) {
+            self.placed(PlacedEntry {
+                id,
+                side: entry.side,
+                lots: entry.lots,
+                kind: entry.kind,
+                role: OrderRole::Entry,
+                time_in_force: entry.time_in_force,
+                oco: group,
+                plan: entry.plan,
+            })?;
+        }
+        Ok(ids)
+    }
+
+    /// Cancels the live entries placed at or before `at`, whose time to live has ended
+    /// (F-ENT-03); an entry stop triggered on TBBO, a market order already sent, stays (F-STP-02).
+    pub fn cancel_entries_placed_by(&mut self, at: Ts) {
+        let ended: Vec<OrderId> = self
+            .book
+            .live()
+            .filter(|order| order.order.role == OrderRole::Entry && order.order.placed_at <= at)
+            .filter(|order| order.state() != OrderState::Triggered)
+            .map(|order| order.order.id)
+            .collect();
+        for id in ended {
+            self.book.close(id, Closing::Cancelled);
+            self.log.push(LogEntry::expired(self.now, id));
+        }
+    }
+
+    /// Logs an entry signal the strategy could not act on, and why (F-ENT-02, F-SIZ-04).
+    pub fn skipped(&mut self, why: &str, rule: &'static str) {
+        self.log.push(LogEntry::skipped(self.now, why, rule));
+    }
+
+    fn require_flat(&self) -> Result<(), DecisionError> {
+        if self.position() != Position::Flat || self.book.has_live() {
+            return Err(DecisionError::NotFlat {
+                position: self.position(),
+                working: self.book.live_ids().len(),
+                at: self.now,
+            });
+        }
+        Ok(())
     }
 
     /// Cancels every working order and, with a position open, places a market order that closes
@@ -216,6 +285,7 @@ impl<'run> DecisionContext<'run> {
             lots: held.lots(),
             kind: OrderKind::Market,
             role: OrderRole::Exit(reason),
+            time_in_force: TimeInForce::GoodTillCancelled,
             oco: None,
             plan: None,
         };
@@ -236,7 +306,7 @@ impl<'run> DecisionContext<'run> {
             lots: entry.lots,
             kind: entry.kind,
             role: entry.role,
-            time_in_force: TimeInForce::GoodTillCancelled,
+            time_in_force: entry.time_in_force,
             placed_at: self.now,
             activation: self.now.checked_add_nanoseconds(self.latency_nanoseconds)?,
             oco: entry.oco,
@@ -251,6 +321,22 @@ impl<'run> DecisionContext<'run> {
     }
 }
 
+/// An entry a decision places: its side, its class with its price, its lots, how long it works,
+/// and the exit plan its fill places (F-PLN-01).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    /// Buy or sell.
+    pub side: Side,
+    /// Market, stop-market, or limit, with its price.
+    pub kind: OrderKind,
+    /// Its lots.
+    pub lots: Qty,
+    /// How long it works: a resting entry's time to live, in signal bars (F-ENT-03).
+    pub time_in_force: TimeInForce,
+    /// The exit plan its fill places.
+    pub plan: Option<ExitPlan>,
+}
+
 /// What a decision places.
 struct PlacedEntry {
     id: OrderId,
@@ -258,102 +344,7 @@ struct PlacedEntry {
     lots: Qty,
     kind: OrderKind,
     role: OrderRole,
+    time_in_force: TimeInForce,
     oco: Option<OcoGroupId>,
     plan: Option<ExitPlan>,
-}
-
-/// An order of an order scenario: placed at `placed_at`, a decision instant, under its own id,
-/// with its OCO group and its bracket.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScenarioOrder {
-    /// The decision instant that places it.
-    pub placed_at: Ts,
-    /// Its id.
-    pub id: OrderId,
-    /// Buy or sell.
-    pub side: Side,
-    /// Its lots.
-    pub lots: Qty,
-    /// Market, stop-market, or limit, with its price.
-    pub kind: OrderKind,
-    /// Its OCO group, if any.
-    pub oco: Option<OcoGroupId>,
-    /// The bracket its fill places, if any.
-    pub bracket: Option<Bracket>,
-}
-
-/// An order scenario's orders, each placed at its decision instant, in the scenario's order
-/// (`fefat.reference.scenario_runner`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScenarioOrders {
-    orders: Vec<ScenarioOrder>,
-}
-
-impl ScenarioOrders {
-    /// The strategy that places `orders`.
-    pub const fn new(orders: Vec<ScenarioOrder>) -> Self {
-        Self { orders }
-    }
-}
-
-impl Strategy for ScenarioOrders {
-    fn decision_instants(&self) -> Vec<Ts> {
-        let mut instants: Vec<Ts> = self.orders.iter().map(|order| order.placed_at).collect();
-        instants.sort_unstable();
-        instants.dedup();
-        instants
-    }
-
-    fn on_decision(
-        &mut self,
-        now: Ts,
-        context: &mut DecisionContext<'_>,
-    ) -> Result<(), DecisionError> {
-        for order in self.orders.iter().filter(|order| order.placed_at == now) {
-            context.place(order)?;
-        }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use fefat_core::instants::Ts;
-    use fefat_core::instrument::{InstrumentParameters, LotStep};
-    use fefat_core::ledger::Ledger;
-    use fefat_core::orders::{ExitReason, OrderId, OrderKind, OrderState, Side};
-    use fefat_core::units::{Money, Price, Qty};
-
-    use super::{DecisionContext, ScenarioOrder};
-    use crate::book::Book;
-
-    #[test]
-    fn flatten_leaves_a_stop_triggered_on_tbbo_to_fill_as_the_market_order_it_is() {
-        // F-STP-02, S-template-005: no decision cancels a triggered stop.
-        let (mut book, mut log) = (Book::default(), Vec::new());
-        let es = InstrumentParameters::new(Price(250_000_000), Money(50_000_000), LotStep(1));
-        let ledger = Ledger::new(es.unwrap(), Money(0));
-        let stop = ScenarioOrder {
-            placed_at: Ts(0),
-            id: OrderId(1),
-            side: Side::Sell,
-            lots: Qty(1),
-            kind: OrderKind::StopMarket {
-                stop: Price(4_999_000_000_000),
-            },
-            oco: None,
-            bracket: None,
-        };
-        let mut placing = DecisionContext::new(&mut book, &mut log, &ledger, Ts(0), 0, 0);
-        placing.place(&stop).unwrap();
-        book.activate(OrderId(1)).unwrap();
-        book.trigger(OrderId(1)).unwrap();
-
-        let mut later = DecisionContext::new(&mut book, &mut log, &ledger, Ts(1), 1, 0);
-        later.flatten(ExitReason::Strategy).unwrap();
-
-        let still = book.live_in(OrderId(1), OrderState::Triggered);
-        assert_eq!(still.map(|order| order.order.id), Some(OrderId(1)));
-        assert_eq!(log.len(), 1, "{log:?}");
-    }
 }

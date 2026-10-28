@@ -67,14 +67,6 @@ fn refused_row<T: std::fmt::Debug>(decided: Result<T, DecisionError>) -> String 
 fn a_specification_beyond_the_basic_subset_is_refused_until_step_2_8() {
     let refusals = [
         (
-            json!({"entry": {"kind": "limit_offset", "ticks": 2}}),
-            "an entry other than market",
-        ),
-        (
-            json!({"on_opposite_signal": "reverse"}),
-            "an opposite signal that is not ignored",
-        ),
-        (
             json!({"limits": {"cooldown_after_loss": {"kind": "bars", "bars": 3}}}),
             "entry limits",
         ),
