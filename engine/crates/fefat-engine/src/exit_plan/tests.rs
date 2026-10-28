@@ -303,10 +303,11 @@ fn a_trailing_stop_by_the_column_moves_at_decisions_to_trail_ref_on_the_tick() {
         trail_ref: Some(Price(trail_ref * 10_000_000)),
     };
     let proposed = live.at_decision(&row(499_900), TICK).unwrap();
-    assert_eq!(
-        proposed.first().map(|proposal| proposal.level),
-        Some(price(499_900))
-    );
+    let to_trail_ref = Proposal {
+        level: price(499_900),
+        rule: MoveRule::Trailing,
+    };
+    assert_eq!(proposed, vec![to_trail_ref]);
     let off_the_tick = live.at_decision(&row(499_910), TICK);
     assert!(matches!(off_the_tick, Err(PlanError::OffTheTick { .. })));
 }

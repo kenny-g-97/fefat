@@ -1,0 +1,47 @@
+id: S-template-075
+title: Breakeven moves a stepped trailing stop off its steps, and the trailing stop steps on from where the stop stands
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 8}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    breakeven: {trigger: {kind: ticks, ticks: 4}, offset_ticks: 1}
+    trailing: {by: {kind: ticks, ticks: 4}, step_ticks: 4}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-06T14:30:10.000Z", price: "5000.25", size: 1}
+  - {ts: "2026-03-06T14:30:20.000Z", price: "5001.25", size: 1}
+  - {ts: "2026-03-06T14:30:30.000Z", price: "5003.00", size: 1}
+  - {ts: "2026-03-06T14:30:40.000Z", price: "5001.25", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry}
+    - {order: 2, ts: "2026-03-06T14:30:40.000Z", price: "5001.25", rule: F-STP-03, role: stop}
+rules: [F-ACT-01, F-BRK-01, F-BRK-02, F-MKT-02, F-OCO-01, F-OCO-02, F-PLN-01, F-PLN-03, F-PLN-04, F-SLP-01, F-STP-01, F-STP-03, F-TRL-01, F-TRL-03, F-TRL-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
+# order 1 buys 1 lot on the trade at 14:30:00.200, at 5000.00 + 0.25 = 5000.25 (F-MKT-02); its
+# stop, order 2, 8 ticks below at 4998.25: the trailing level at the fill, 5000.00 - 1.00 =
+# 4999.00, lies less than a step of 4 ticks above it (F-PLN-04, F-TRL-03); its target, order 3, at
+# 5010.25 (F-PLN-01);
+# breakeven fires 4 ticks above the fill, at 5001.25, and holds the fill plus a tick, 5000.50
+# (F-BRK-02, F-BRK-01);
+# 14:30:10, 5000.25: the trailing level 4999.25 lies a whole step above the stop: the stop rises
+# to 4999.25 (F-TRL-01, F-TRL-03);
+# 14:30:20, 5001.25: breakeven fires; its 5000.50 beats the trailing stop's one step to 5000.25,
+# and the stop rises to 5000.50 (F-BRK-01), off the trailing stop's steps;
+# 14:30:30, 5003.00: the trailing level 5002.00 lies under the market; from where the stop stands,
+# 5000.50, one whole step fits under it: the stop rises to 5001.50 (F-TRL-03);
+# 14:30:40, 5001.25: the trade is below the stop and triggers it (F-STP-01): it sells at the lower
+# of 5001.50 - 0.25 = 5001.25 and 5001.25, 5001.25 (F-STP-03), and the target is cancelled
+# (F-OCO-01).
+# On 1-minute bars the trailing stop steps at the bar's high from where it stood before breakeven
+# fired there, so the stop can stand a step lower than on these trades (F-PLN-04).

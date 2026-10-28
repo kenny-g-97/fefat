@@ -454,6 +454,10 @@ def _template_rows(
     days = [pl.col("trade_date").cast(pl.Int32).cast(pl.Int64)] if "trade_date" in frame else []
     blackout, flags = strategy.execution.limits.blackout, []
     if blackout is not None:
+        if blackout not in frame.columns:
+            raise ValueError(
+                f"Expected the signal frame's {blackout} for the blackout, got no such column."
+            )
         flags.append(pl.col(blackout).cast(pl.Boolean).alias("blackout"))
     return timed.select(case, *days, *kept, *times, *features, *flags)
 

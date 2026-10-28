@@ -1,0 +1,30 @@
+id: S-template-076
+title: A notional size rounds to whole lots before size_mult, so 16.67 lots times 2 make 32, not 33
+fidelity: trades
+instrument: BTCUSDT-PERP
+strategy:
+  spec_version: 1
+  instrument: BTCUSDT-PERP
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: notional, amount: 1000}
+signals:
+  - {ts_close: "2026-03-07T09:00:00Z", trade_date: "2026-03-07", contract: BTCUSDT-PERP, long_entry: true, size_mult: 2.0}
+tape:
+  - {ts: "2026-03-07T08:59:59.000Z", price: "60000.0", size: 50}
+  - {ts: "2026-03-07T09:00:00.200Z", price: "60000.0", size: 50}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-07T09:00:00.200Z", price: "60000.1", rule: F-MKT-02, quantity: "0.032"}
+rules: [F-ACT-01, F-MKT-02, F-MRK-01, F-SIZ-02, F-SIZ-04, F-SLP-01]
+
+# Arithmetic (BTCUSDT-PERP, tick 0.1, lots of 0.001 BTC at 1 USD a point a BTC; one tick of
+# slippage on trades: F-SLP-01; latency 100 ms):
+# the trade at 08:59:59.000 marks the market at 60,000.0 (F-MRK-01); a lot of 0.001 BTC is
+# worth 60.00 USD there, so 1,000 USD buys floor(1,000 / 60) = floor(16.67) = 16 whole lots
+# (F-SIZ-02), and the row's size_mult of 2 makes 2 × 16 = 32 lots, 0.032 BTC (F-SIZ-04); rounding
+# once, after size_mult, would give floor(33.33) = 33;
+# at 09:00 long_entry buys them at the market, order 1, filled at 60000.0 + 0.1 = 60000.1.
