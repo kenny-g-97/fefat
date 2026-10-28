@@ -60,15 +60,16 @@ pub struct Execution {
     #[schemars(with = "StopRule")]
     pub stop: Option<StopRule>,
     /// The targets placed when an entry fills, three at most, each closing a fraction of the
-    /// position still open; with the stop, they form one OCO group.
+    /// position still open; with the stop, they form one OCO group. A target in R multiples
+    /// needs a stop.
     #[serde(default)]
     #[schemars(length(max = 3))]
     pub targets: Vec<Target>,
-    /// When the stop moves to the entry's fill price.
+    /// When the stop moves to the entry's fill price; it needs a stop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Breakeven")]
     pub breakeven: Option<Breakeven>,
-    /// How the stop follows the price.
+    /// How the stop follows the price; it needs a stop.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Trailing")]
     pub trailing: Option<Trailing>,
@@ -79,7 +80,7 @@ pub struct Execution {
     /// A blackout column, daily limits, a cooldown, and fresh signals, which filter entries.
     #[serde(default)]
     pub limits: Limits,
-    /// How many units an entry trades.
+    /// How many units an entry trades; a risk size needs a stop.
     pub sizing: Sizing,
     /// Whether the signal frame's `long_exit` and `short_exit` close the position.
     #[serde(default = "signal_exits_on")]

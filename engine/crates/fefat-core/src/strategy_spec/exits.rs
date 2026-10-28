@@ -26,7 +26,8 @@ pub enum StopRule {
         /// The multiple of the feature.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
-        /// The feature's column in the signal frame, such as `atr`.
+        /// The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units
+        /// of price the bars' prices are in, as a feature worked out from them is (F-RND-01).
         #[schemars(length(min = 1))]
         feature: String,
     },
@@ -67,7 +68,8 @@ pub enum TargetPrice {
         /// The multiple of the feature.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
-        /// The feature's column in the signal frame, such as `atr`.
+        /// The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units
+        /// of price the bars' prices are in, as a feature worked out from them is (F-RND-01).
         #[schemars(length(min = 1))]
         feature: String,
     },
@@ -103,13 +105,13 @@ pub enum ProfitTrigger {
         #[schemars(range(min = 1))]
         ticks: u32,
     },
-    /// A profit of `multiple` times the trade's initial risk.
+    /// A profit of `multiple` times the trade's initial risk, which needs a stop.
     RMultiple {
         /// The multiple of the initial risk.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
     },
-    /// The fill of a target, counted from 1.
+    /// The fill of a target, counted from 1, one the specification has.
     AfterTarget {
         /// The target, counted from 1.
         #[schemars(range(min = 1, max = 3))]
@@ -151,11 +153,13 @@ pub enum TrailBy {
         /// The multiple of the feature.
         #[schemars(extend("exclusiveMinimum" = 0))]
         multiple: f64,
-        /// The feature's column in the signal frame, such as `atr`.
+        /// The feature's column in the signal frame, such as `atr`: a distance in the 1e-9 units
+        /// of price the bars' prices are in, as a feature worked out from them is (F-RND-01).
         #[schemars(length(min = 1))]
         feature: String,
     },
-    /// At the signal frame's `trail_ref` of each signal bar, a raw price.
+    /// At the signal frame's `trail_ref` of each signal bar, a raw price, moved at bar closes
+    /// alone (`update: bar_close`).
     Column {},
 }
 
