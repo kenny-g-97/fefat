@@ -251,9 +251,14 @@ def f_pln_05(live: "LivePlan", stop: int | None, low: int, high: int, tick: int)
 
 
 def _held_short(live: "LivePlan", stop: int, tick: int) -> bool:
-    """Whether a working intrabar trailing stop stands below the whole steps its level allows
-    from `stop`, held there by the market (F-PLN-03, F-TRL-03): a price under the best price can
-    still raise it, as after a decision shortens its distance (S-template-072)."""
+    """Whether the stop at `stop` stands below a fired breakeven's level, or below the whole
+    steps a working intrabar trailing stop's level allows, held there by the market (F-PLN-03,
+    F-TRL-03): a price under the best price can still raise it, as after a breakeven fired at a
+    price its level lies at or above (S-template-073) or a decision shortened a trailing distance
+    (S-template-072)."""
+    for level, _ in live.held_by_breakeven(tick):
+        if live.side.better(level, stop) != stop:
+            return True
     trailing = live.plan.trailing
     if trailing is None or not (live.trailing_active and f_trl_04(trailing, False)):
         return False
@@ -359,9 +364,8 @@ class LivePlan:
 
     def at_price(self, book: Book, price: int, tick: int) -> list[Move]:
         """A price marked (F-PLN-04): the best price follows it, waiting triggers may fire, and
-        breakeven and an intrabar trailing stop may move the stop."""
+        a fired breakeven and an intrabar trailing stop may move the stop."""
         self.best = self.side.better(self.best, price)
-        proposed: list[tuple[int, str]] = []
         breakeven, trailing = self.plan.breakeven, self.plan.trailing
         if (
             breakeven is not None
@@ -369,8 +373,7 @@ class LivePlan:
             and f_brk_02(self, breakeven.trigger, tick)
         ):
             self.breakeven_fired = True
-            level = f_brk_01(self.side, self.fill, breakeven.offset_ticks, tick)
-            proposed.append((level, "F-BRK-01"))
+        proposed = self.held_by_breakeven(tick)
         if trailing is not None and not self.trailing_active and trailing.activation is not None:
             self.trailing_active = f_brk_02(self, trailing.activation, tick)
         if trailing is not None and self.trailing_active and f_trl_04(trailing, False):
@@ -382,25 +385,42 @@ class LivePlan:
     def at_decision(
         self, book: Book, row: Mapping[str, Any], mark: int | None, tick: int
     ) -> list[Move]:
-        """A decision (F-PLN-04): a trailing stop by a feature takes the row's distance, and a
-        working trailing stop moves from the best price so far, or to the row's `trail_ref`."""
-        trailing = self.plan.trailing
-        if trailing is None or mark is None:
+        """A decision (F-PLN-04): a fired breakeven holds its level, a trailing stop by a feature
+        takes the row's distance, and a working trailing stop moves from the best price so far, or
+        to the row's `trail_ref`."""
+        if mark is None:
             return []
+        proposed = self.held_by_breakeven(tick)
+        level = self._trailing_at_decision(row, tick)
+        if level is not None:
+            proposed.append((level, "F-TRL-01"))
+        return self._moved(book, proposed, mark, tick)
+
+    def held_by_breakeven(self, tick: int) -> list[tuple[int, str]]:
+        """A fired breakeven's level, which it holds the stop to at every price marked and at
+        each decision, as far as the market allows (F-BRK-01, F-PLN-03)."""
+        breakeven = self.plan.breakeven
+        if breakeven is None or not self.breakeven_fired:
+            return []
+        return [(f_brk_01(self.side, self.fill, breakeven.offset_ticks, tick), "F-BRK-01")]
+
+    def _trailing_at_decision(self, row: Mapping[str, Any], tick: int) -> int | None:
+        """The trailing stop's level at a decision on `row` (F-TRL-02, F-TRL-04)."""
+        trailing = self.plan.trailing
+        if trailing is None:
+            return None
         distance = f_trl_02(trailing, row, tick)
         if distance is not None:
             self.distance = distance
         if not (self.trailing_active and f_trl_04(trailing, True)):
-            return []
+            return None
         level = f_trl_01(self, tick) if trailing.ticks is not None else row.get("trail_ref")
-        if level is None:
-            return []
-        if trailing.ticks is None and level % tick:
+        if level is not None and trailing.ticks is None and level % tick:
             raise ValueError(
                 f"Expected trail_ref on the instrument's tick, got {level} on the signal row "
                 f"closing at {instant_text(row['ts_close'])}."
             )
-        return self._moved(book, [(level, "F-TRL-01")], mark, tick)
+        return level
 
     def _moved(
         self, book: Book, proposed: list[tuple[int, str]], market: int, tick: int

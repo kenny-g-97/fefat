@@ -209,3 +209,5 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-070](S-template-070.yaml) | trades | A notional size of 1,000 USD buys 16 lots of 0.001 BTC at 60,000, in whole lot steps |
 | [S-template-071](S-template-071.yaml) | trades | A notional size of 3 lots times a size_mult of 1.5 rounds down to 4 lots |
 | [S-template-072](S-template-072.yaml) | trades | A trailing stop held a tick under the mark at a decision rises on later trades below its best price, which skipping must replay |
+| [S-template-073](S-template-073.yaml) | trades | A breakeven held a tick under the trade that fires it rises to its level once the market allows |
+| [S-template-074](S-template-074.yaml) | trades | A limit entry resting past a decision trails from its fill by the entry row's ATR, then by a later decision's |

@@ -39,8 +39,9 @@ impl Book {
         Ok(moves)
     }
 
-    /// F-PLN-04 at a decision on `row`, the position marked at `mark`: each plan's trailing stop
-    /// that moves at decisions may move its stop (F-TRL-02, F-TRL-04).
+    /// F-PLN-04 at a decision on `row`, the position marked at `mark`: each plan's fired
+    /// breakeven and trailing stop that moves at decisions may move its stop (F-BRK-01, F-TRL-02,
+    /// F-TRL-04).
     pub(crate) fn at_decision(
         &mut self,
         row: &PlanRow,
@@ -49,7 +50,7 @@ impl Book {
     ) -> Result<Vec<Move>, PlanError> {
         let mut moves = Vec::new();
         for plan in self.plans.values_mut() {
-            let proposed: Vec<Proposal> = plan.at_decision(row, tick)?.into_iter().collect();
+            let proposed = plan.at_decision(row, tick)?;
             moves.extend(move_stop(&mut self.live, plan, &proposed, mark, tick)?);
         }
         Ok(moves)

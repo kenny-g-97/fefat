@@ -195,8 +195,9 @@ fn a_targets_fill_reduces_the_stop_and_the_last_lots_cancel_the_rest() {
 }
 
 #[test]
-fn breakeven_fires_once_at_its_trigger_and_after_its_target() {
-    // F-BRK-02: 8 ticks above 5000.00 is 5002.00.
+fn breakeven_fires_at_its_trigger_and_after_its_target_then_holds_its_level() {
+    // F-BRK-02: 8 ticks above 5000.00 is 5002.00; once fired, F-BRK-01 proposes its level at
+    // every later price, so that a level the market held back is reached (S-template-073).
     let breakeven = BreakevenPlan {
         trigger: Trigger::Ticks(8),
         offset_ticks: 0,
@@ -207,8 +208,8 @@ fn breakeven_fires_once_at_its_trigger_and_after_its_target() {
         level: price(500_000),
         rule: MoveRule::Breakeven,
     }];
-    assert_eq!(live.at_price(price(500_200), TICK), Ok(fired));
-    assert_eq!(live.at_price(price(500_300), TICK), Ok(Vec::new()), "once");
+    assert_eq!(live.at_price(price(500_200), TICK), Ok(fired.clone()));
+    assert_eq!(live.at_price(price(500_300), TICK), Ok(fired), "held");
 
     let after_first = BreakevenPlan {
         trigger: Trigger::AfterTarget(TargetNumber::First),
@@ -303,7 +304,7 @@ fn a_trailing_stop_by_the_column_moves_at_decisions_to_trail_ref_on_the_tick() {
     };
     let proposed = live.at_decision(&row(499_900), TICK).unwrap();
     assert_eq!(
-        proposed.map(|proposal| proposal.level),
+        proposed.first().map(|proposal| proposal.level),
         Some(price(499_900))
     );
     let off_the_tick = live.at_decision(&row(499_910), TICK);
@@ -333,7 +334,7 @@ fn a_bar_beyond_a_trailing_plans_best_price_or_a_waiting_trigger_is_not_skipped(
         trigger: Trigger::Ticks(8),
         offset_ticks: 0,
     };
-    let waiting = long_plan(with(Some(breakeven), None), 1);
+    let mut waiting = long_plan(with(Some(breakeven), None), 1);
     assert_eq!(
         waiting.untouched_by(None, price(499_000), price(500_175), TICK),
         Ok(true)
@@ -341,5 +342,16 @@ fn a_bar_beyond_a_trailing_plans_best_price_or_a_waiting_trigger_is_not_skipped(
     assert_eq!(
         waiting.untouched_by(None, price(499_000), price(500_200), TICK),
         Ok(false)
+    );
+    // S-template-073: a fired breakeven whose stop the market held at 4999.75, below its level
+    // 5000.00, still rises at prices under the best price, so no bar is skipped meanwhile.
+    waiting.at_price(price(500_200), TICK).unwrap();
+    assert_eq!(
+        waiting.untouched_by(Some(price(499_975)), price(500_000), price(500_100), TICK),
+        Ok(false)
+    );
+    assert_eq!(
+        waiting.untouched_by(Some(price(500_000)), price(500_025), price(500_100), TICK),
+        Ok(true)
     );
 }

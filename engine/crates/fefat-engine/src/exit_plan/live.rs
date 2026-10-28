@@ -161,26 +161,22 @@ impl LivePlan {
     }
 
     /// F-PLN-04: a price marked once the fills at it are done. The best price follows it, a
-    /// waiting trigger may fire (F-BRK-02), and the breakeven (F-BRK-01) and an intrabar trailing
-    /// stop (F-TRL-01, F-TRL-04) propose their levels for the stop, the breakeven's first.
+    /// waiting trigger may fire (F-BRK-02), and a fired breakeven (F-BRK-01) and an intrabar
+    /// trailing stop (F-TRL-01, F-TRL-04) propose their levels for the stop, the breakeven's
+    /// first.
     pub(crate) fn at_price(
         &mut self,
         price: Price,
         tick: Price,
     ) -> Result<Vec<Proposal>, Overflow> {
         self.best = self.side.better(self.best, price);
-        let mut proposed = Vec::new();
         if let Some(breakeven) = self.plan.breakeven
             && !self.breakeven_fired
             && self.f_brk_02(breakeven.trigger, tick)?
         {
             self.breakeven_fired = true;
-            let level = f_brk_01(self.side, self.fill, breakeven.offset_ticks, tick)?;
-            proposed.push(Proposal {
-                level,
-                rule: MoveRule::Breakeven,
-            });
         }
+        let mut proposed: Vec<Proposal> = self.held_by_breakeven(tick)?.into_iter().collect();
         let Some(trailing) = self.plan.trailing else {
             return Ok(proposed);
         };
@@ -201,10 +197,35 @@ impl LivePlan {
         Ok(proposed)
     }
 
-    /// F-PLN-04 at a decision on `row`: a trailing stop by a feature takes the row's distance
-    /// (F-TRL-02), and a working trailing stop proposes the best price less its distance, or the
-    /// row's `trail_ref` for one by the column, which must lie on the tick (F-RND-01).
+    /// F-PLN-04 at a decision on `row`: a fired breakeven proposes its level (F-BRK-01), a
+    /// trailing stop by a feature takes the row's distance (F-TRL-02), and a working trailing stop
+    /// proposes the best price less its distance, or the row's `trail_ref` for one by the column,
+    /// which must lie on the tick (F-RND-01); the breakeven's first.
     pub(crate) fn at_decision(
+        &mut self,
+        row: &PlanRow,
+        tick: Price,
+    ) -> Result<Vec<Proposal>, PlanError> {
+        let mut proposed: Vec<Proposal> = self.held_by_breakeven(tick)?.into_iter().collect();
+        proposed.extend(self.trailing_at_decision(row, tick)?);
+        Ok(proposed)
+    }
+
+    /// F-BRK-01: a fired breakeven's level, which it holds the stop to at every price marked and
+    /// at each decision, as far as the market allows (F-PLN-03).
+    fn held_by_breakeven(&self, tick: Price) -> Result<Option<Proposal>, Overflow> {
+        let Some(breakeven) = self.plan.breakeven.filter(|_| self.breakeven_fired) else {
+            return Ok(None);
+        };
+        let level = f_brk_01(self.side, self.fill, breakeven.offset_ticks, tick)?;
+        Ok(Some(Proposal {
+            level,
+            rule: MoveRule::Breakeven,
+        }))
+    }
+
+    /// The trailing stop's part of a decision on `row` (F-TRL-02, F-TRL-04).
+    fn trailing_at_decision(
         &mut self,
         row: &PlanRow,
         tick: Price,
@@ -319,10 +340,17 @@ impl LivePlan {
         Ok(true)
     }
 
-    /// Whether a working intrabar trailing stop stands below the whole steps its level allows
-    /// from `stop`, held there by the market (F-PLN-03, F-TRL-03): a price under the best price
-    /// can still raise it, as after a decision shortens its distance (S-template-072).
+    /// Whether the stop at `stop` stands below a fired breakeven's level, or below the whole
+    /// steps a working intrabar trailing stop's level allows, held there by the market (F-PLN-03,
+    /// F-TRL-03): a price under the best price can still raise it, as after a breakeven fired at
+    /// a price its level lies at or above (S-template-073) or a decision shortened a trailing
+    /// distance (S-template-072).
     fn held_short(&self, stop: Price, tick: Price) -> Result<bool, Overflow> {
+        if let Some(breakeven) = self.held_by_breakeven(tick)?
+            && self.side.better(breakeven.level, stop) != stop
+        {
+            return Ok(true);
+        }
         let Some(trailing) = self.plan.trailing else {
             return Ok(false);
         };
