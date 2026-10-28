@@ -6,7 +6,11 @@ such a walk of trades makes; records received at one instant; tapes across a UTC
 break of the market inside some tapes; and the run settings. An order case places one to four
 market, stop, and limit orders at one to three decision instants, with OCO pairs, brackets, and
 an opening position; a template case runs the execution template's basic subset over one to
-five drawn signal rows. Each case is an `EngineCase` that the reference engine and `fefat-cli run` both
+five drawn signal rows. From step 2.9 a case draws its costs and rolls: a fee table, one fee or
+dated schedules around the tape's dates, futures or crypto with maker rebates; for the
+perpetual-like instrument funding times after the first mark; for the futures-like ones, one of
+which trades below zero as CL did in April 2020, a roll inside the tape, transferring or
+flattening. Each case is an `EngineCase` that the reference engine and `fefat-cli run` both
 run, the Rust engine in full or skipping by the coarser bars of its records. Every value is
 drawn as a small number relative to the one before, so that ten cases fit one example and a
 failure shrinks to its smallest tape. Hypothesis is imported when a strategy is built:
@@ -18,11 +22,14 @@ failure shrinks to its smallest tape. Hypothesis is imported when a strategy is 
 from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fefat.market.calendar import Session
+from fefat.market.fees import CryptoFee, FuturesFee
 from fefat.market.fidelity import TickFidelity
+from fefat.market.roll_decisions import RollReason
 from fefat.market.schema import Timeframe, TimeUnit
+from fefat.reference.costs import DatedCryptoFee, DatedFees, DatedFuturesFee
 from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.orders import (
     Bracket,
@@ -35,11 +42,12 @@ from fefat.reference.orders import (
     Side,
     StopOrder,
 )
+from fefat.reference.rolls import RollRow
 from fefat.reference.rust_batch import EngineCase, Replay, coarser_bars
 from fefat.reference.scenarios import Expected, Scenario, TemplateScenario
-from fefat.reference.settings import LimitFill, RunSettings, SlippageTicks
+from fefat.reference.settings import LimitFill, RollHandling, RunSettings, SlippageTicks
 from fefat.reference.signal_rows import SignalRow
-from fefat.reference.tape import Tape, TbboRecord, TradeRecord
+from fefat.reference.tape import FundingRate, Tape, TbboRecord, TradeRecord
 from fefat.reference.units import InlineInstrument, utc_date
 from fefat.strategy.spec import StrategySpec
 
@@ -68,10 +76,14 @@ trade, a day's bucket being the UTC day."""
 
 
 class DrawnInstrument:
-    """An instrument without a calendar, its tick and an opening price in 1e-9 units."""
+    """An instrument without a calendar, its tick, an opening price in 1e-9 units, and whether it
+    is a perpetual, which pays funding, or a future, which rolls."""
 
-    def __init__(self, instrument: InlineInstrument, tick: int, opening: int) -> None:
+    def __init__(
+        self, instrument: InlineInstrument, tick: int, opening: int, perpetual: bool = False
+    ) -> None:
         self.instrument, self.tick, self.opening = instrument, tick, opening
+        self.perpetual = perpetual
 
     def quantity(self, lots: int) -> Decimal:
         return lots * self.instrument.lot_step
@@ -91,9 +103,18 @@ INSTRUMENTS = (
         ),
         100_000_000,
         65_000_000_000_000,
+        perpetual=True,
+    ),
+    DrawnInstrument(
+        InlineInstrument.model_construct(
+            tick_size=Decimal("0.01"), point_value=Decimal("1000"), lot_step=Decimal("1")
+        ),
+        10_000_000,
+        -2_000_000_000,
     ),
 )
-"""An ES-like future and a BTC-like perpetual with lots of 0.001."""
+"""An ES-like future, a BTC-like perpetual with lots of 0.001, and a CL-like future opening at
+-2.00, whose walks cross zero as CL's prices did on 2020-04-20."""
 
 
 class DrawnTapes(StrEnum):
@@ -119,22 +140,22 @@ def order_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
     def drawn_case(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
         fidelity, tape = fidelity_and_tape(draw, drawn, tapes)
+        hours = drawn_hours(draw, tape)
         scenario = Scenario.model_construct(
             id="a drawn case",
             title="a drawn case",
             fidelity=fidelity,
             instrument=drawn.instrument,
             settings=drawn_settings(draw),
-            fees=None,
             position=_position(draw, drawn),
             tape=tape,
-            funding=(),
             expected=Expected.model_construct(fills=(), marks=(), funding=()),
             rules=("F-CLK-01",),
             orders=_orders(draw, drawn, tape),
+            **drawn_costs_and_rolls(draw, drawn, tape, hours),
         )
         replay = draw(st.sampled_from(tuple(Replay)))
-        return EngineCase(scenario, drawn_hours(draw, tape), replay=replay)
+        return EngineCase(scenario, hours, replay=replay)
 
     return drawn_case()
 
@@ -148,6 +169,7 @@ def template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
     def drawn_template(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
         fidelity, tape = fidelity_and_tape(draw, drawn, tapes)
+        hours = drawn_hours(draw, tape)
         spec, at_columns = _template_spec(draw, drawn)
         scenario = TemplateScenario.model_construct(
             id="a drawn template",
@@ -155,17 +177,16 @@ def template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
             fidelity=fidelity,
             instrument=drawn.instrument,
             settings=drawn_settings(draw),
-            fees=None,
             position=None,
             tape=tape,
-            funding=(),
             expected=Expected.model_construct(fills=(), marks=(), funding=()),
             rules=("F-CLK-01",),
             strategy=spec,
             signals=_signal_rows(draw, drawn, tape, at_columns),
+            **drawn_costs_and_rolls(draw, drawn, tape, hours),
         )
         replay = draw(st.sampled_from(tuple(Replay)))
-        return EngineCase(scenario, drawn_hours(draw, tape), replay=replay)
+        return EngineCase(scenario, hours, replay=replay)
 
     return drawn_template()
 
@@ -359,7 +380,104 @@ def drawn_settings(draw: "DrawFn") -> RunSettings:
         latency_ms=draw(st.sampled_from((100, 0, 1_000))),
         slippage_ticks=ticks,
         limit_fill=draw(st.sampled_from((LimitFill.THROUGH, LimitFill.TOUCH))),
+        roll_handling=draw(st.sampled_from((RollHandling.TRANSFER, RollHandling.FLATTEN))),
     )
+
+
+def drawn_costs_and_rolls(
+    draw: "DrawFn", drawn: DrawnInstrument, tape: Tape, hours: AlwaysOpen | CalendarHours
+) -> dict[str, Any]:
+    """A case's fees, its funding times on the perpetual-like instrument, after the first mark so
+    that a position held when the tape starts has one to pay at (F-FND-01), and a roll on the
+    futures-like ones (step 2.9), as the scenario's fields."""
+    marked = next(
+        (record.available_at() for record in tape if hours.is_open(record.starts_at())), None
+    )
+    funding = _funding(draw, tape, marked) if drawn.perpetual and marked is not None else ()
+    rolls = () if drawn.perpetual else _rolls(draw, drawn, tape)
+    return {"fees": drawn_fees(draw, drawn.perpetual), "funding": funding, "rolls": rolls}
+
+
+def drawn_fees(draw: "DrawFn", crypto: bool) -> FuturesFee | CryptoFee | DatedFees | None:
+    """None, one fee in force on every date, or one to three dated schedules a day apart from
+    around the tape's first date, the first also before its date (F-FEE-01): for a future cents
+    per contract per side, and for crypto maker and taker basis points to a tenth, the maker's
+    below zero for a rebate."""
+    from hypothesis import strategies as st
+
+    if not draw(st.booleans()):
+        return None
+    kind = "crypto" if crypto else "futures"
+    if not draw(st.booleans()):
+        if kind == "futures":
+            return FuturesFee(per_contract_side=_cents(draw))
+        maker, taker = _basis_points(draw)
+        return CryptoFee(maker_bps=maker, taker_bps=taker)
+    first = utc_date(FIRST) + timedelta(days=draw(st.integers(-1, 1)))
+    days = [first + timedelta(days=day) for day in range(draw(st.integers(1, 3)))]
+    if kind == "futures":
+        futures = (
+            DatedFuturesFee(per_contract_side=_cents(draw), effective_from=day) for day in days
+        )
+        return DatedFees(kind="futures", schedules=tuple(futures))
+    rates = []
+    for day in days:
+        maker, taker = _basis_points(draw)
+        rates.append(DatedCryptoFee(maker_bps=maker, taker_bps=taker, effective_from=day))
+    return DatedFees(kind="crypto", schedules=tuple(rates))
+
+
+def _cents(draw: "DrawFn") -> Decimal:
+    """A futures fee per contract per side, 0.00 to 5.00."""
+    from hypothesis import strategies as st
+
+    return Decimal(draw(st.integers(0, 500))).scaleb(-2)
+
+
+def _basis_points(draw: "DrawFn") -> tuple[Decimal, Decimal]:
+    """A maker rate of -2.0 to 5.0 basis points, below zero a rebate, and a taker rate of 0 to
+    10.0."""
+    from hypothesis import strategies as st
+
+    maker, taker = draw(st.integers(-20, 50)), draw(st.integers(0, 100))
+    return Decimal(maker).scaleb(-1), Decimal(taker).scaleb(-1)
+
+
+def _funding(draw: "DrawFn", tape: Tape, marked: int) -> tuple[FundingRate, ...]:
+    """Zero to three funding times beside the tape's records, after `marked`, at rates of
+    -0.001 to 0.001."""
+    from hypothesis import strategies as st
+
+    beside = st.tuples(st.integers(0, len(tape) - 1), st.sampled_from(OFFSETS_MS))
+    drawn_times = draw(st.lists(beside, max_size=3))
+    times = sorted(
+        {tape[record].available_at() + offset * MILLISECOND for record, offset in drawn_times}
+    )
+    return tuple(
+        FundingRate.model_construct(ts=ts, rate=Decimal(draw(st.integers(-100, 100))).scaleb(-5))
+        for ts in times
+        if ts > marked
+    )
+
+
+def _rolls(draw: "DrawFn", drawn: DrawnInstrument, tape: Tape) -> tuple[RollRow, ...]:
+    """None, or one roll beside a record of the tape, from DRAWN-H to DRAWN-M, its gap -20 to 20
+    ticks, for a drawn reason."""
+    from hypothesis import strategies as st
+
+    if not draw(st.booleans()):
+        return ()
+    record = tape[draw(st.integers(0, len(tape) - 1))]
+    at = record.available_at() + draw(st.sampled_from(OFFSETS_MS)) * MILLISECOND
+    roll = RollRow.model_construct(
+        trade_date=utc_date(at),
+        session_open=at,
+        rolled_from="DRAWN-H",
+        contract="DRAWN-M",
+        gap=draw(st.integers(-20, 20)) * drawn.tick,
+        reason=draw(st.sampled_from(tuple(RollReason))),
+    )
+    return (roll,)
 
 
 def drawn_hours(draw: "DrawFn", tape: Tape) -> AlwaysOpen | CalendarHours:

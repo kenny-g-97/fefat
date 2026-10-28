@@ -21,6 +21,7 @@ from fefat.reference.generated_cases import (
     OFFSETS_MS,
     DrawnInstrument,
     DrawnTapes,
+    drawn_costs_and_rolls,
     drawn_hours,
     drawn_settings,
     fidelity_and_tape,
@@ -48,11 +49,13 @@ LIMITS = (
     {"daily_loss_stop": 25.0},
     {"profit_lock": 0.0001},
     {"profit_lock": 0.0001},
+    {"profit_lock": 0.0001},
     {"cooldown_after_loss": {"kind": "bars", "bars": 2}},
     {"cooldown_after_loss": {"kind": "minutes", "minutes": 1}},
     {"fresh_signal": True},
 )
-"""The entry limits a template draws, one at most, those that need a loss first more often."""
+"""The entry limits a template draws, one at most, those that need a loss first more often, and
+the profit lock, which needs a win net of the drawn fees (step 2.9), as often."""
 CLOCKS = ("00:00", "14:00", "14:30", "14:31", "15:00", "23:00")
 """Local times, in UTC, that the drawn tapes' records fall around (from 14:30 on 2026-03-06)."""
 
@@ -79,6 +82,7 @@ def full_template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
     def drawn_template(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
         fidelity, tape = fidelity_and_tape(draw, drawn, tapes)
+        hours = drawn_hours(draw, tape)
         spec, needs = _spec(draw, drawn)
         scenario = TemplateScenario.model_construct(
             id="a drawn full template",
@@ -86,17 +90,16 @@ def full_template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
             fidelity=fidelity,
             instrument=drawn.instrument,
             settings=drawn_settings(draw),
-            fees=None,
             position=None,
             tape=tape,
-            funding=(),
             expected=Expected.model_construct(fills=(), marks=(), funding=()),
             rules=("F-CLK-01",),
             strategy=spec,
             signals=_rows(draw, drawn, tape, needs),
+            **drawn_costs_and_rolls(draw, drawn, tape, hours),
         )
         replay = draw(st.sampled_from(tuple(Replay)))
-        return EngineCase(scenario, drawn_hours(draw, tape), replay=replay)
+        return EngineCase(scenario, hours, replay=replay)
 
     return drawn_template()
 
@@ -254,7 +257,9 @@ def _sizing(draw: "DrawFn", drawn: DrawnInstrument, stopped: bool) -> dict[str, 
     if kind == "fixed":
         return {"kind": "fixed", "units": float(drawn.quantity(draw(st.integers(1, 3))))}
     if kind == "notional":
-        one_lot = drawn.opening * drawn.instrument.point_value * drawn.instrument.lot_step / 10**9
+        one_lot = (
+            abs(drawn.opening) * drawn.instrument.point_value * drawn.instrument.lot_step / 10**9
+        )
         return {"kind": "notional", "amount": float(one_lot * draw(st.sampled_from((1, 2, 3))))}
     if kind == "risk_amount":
         return {"kind": "risk_amount", "amount": draw(st.sampled_from((5.0, 50.0, 500.0, 5000.0)))}
