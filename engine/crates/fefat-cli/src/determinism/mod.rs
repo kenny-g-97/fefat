@@ -18,6 +18,7 @@ use fefat_core::run_key::{
 };
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{MONEY_UNITS, Money, Overflow, PRICE_UNITS, Price, Qty};
+use fefat_engine::template::TemplateError;
 use fefat_engine::tick_run::RunError;
 use serde::Serialize;
 use thiserror::Error;
@@ -27,7 +28,7 @@ use loop_run::loop_run_hash;
 
 mod loop_run;
 
-const DOMAIN: &[u8] = b"fefat determinism 3\n";
+const DOMAIN: &[u8] = b"fefat determinism 4\n";
 /// The example specification of `02-engine-and-data.md` §2.1, the run key's spec.
 const EXAMPLE_SPEC: &str = r#"{"spec_version": 1, "instrument": "ES", "timeframe": "5m",
     "execution": {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}}}"#;
@@ -61,6 +62,9 @@ pub enum DeterminismError {
     /// A seeded order's price beyond 64 bits.
     #[error(transparent)]
     Overflow(#[from] Overflow),
+    /// The seeded template was refused.
+    #[error(transparent)]
+    Template(#[from] TemplateError),
 }
 
 /// The digest of `seed`: 64 lower-case hexadecimal digits of BLAKE3.
@@ -258,6 +262,22 @@ mod tests {
         assert_eq!(digest(20_260_308).unwrap(), digest_of_the_seed);
         assert_ne!(digest(20_260_309).unwrap(), digest_of_the_seed);
         assert_eq!(digest_of_the_seed.len(), 64);
+    }
+
+    #[test]
+    fn the_digests_template_run_flags_ambiguous_fills() {
+        // BACKLOG.md, step 2.7: the golden pins the swapped replay of bars (F-BAR-05) once one of
+        // the digest's runs on bars flags fills ambiguous, the template's on the 1-minute bars.
+        let mut generator = SplitMix64::new(20_260_308);
+        let contract = Contract(SEEDED_CONTRACT.to_owned());
+        let reader = InMemoryMarketData::new(contract, seeded_tape(&mut generator)).unwrap();
+        ledger_run_hash(&reader, &mut generator).unwrap();
+        let runs = loop_run::loop_runs(&reader, &mut generator).unwrap();
+        let ambiguous: Vec<usize> = runs
+            .iter()
+            .map(fefat_engine::tick_run::RunOutputs::ambiguous_fills)
+            .collect();
+        assert!(ambiguous[5] > 0, "{ambiguous:?}");
     }
 
     #[test]
