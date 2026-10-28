@@ -192,3 +192,19 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-053](S-template-053.yaml) | trades | With on_opposite_signal close a short_entry closes the long, and the next one, flat, enters short |
 | [S-template-054](S-template-054.yaml) | trades | With on_opposite_signal reverse a short_entry closes the long and sells short on the same trade, the exit first |
 | [S-template-055](S-template-055.yaml) | trades | An offset entry with no mark yet places nothing and the log says why; the next signal, marked, enters |
+| [S-template-056](S-template-056.yaml) | trades | A row on which the blackout column is true places no entry, and one where it is null places it |
+| [S-template-057](S-template-057.yaml) | trades | With max_trades_per_day 2 a third entry waits for the next trade date |
+| [S-template-058](S-template-058.yaml) | trades | With max_losses_per_day 1 a losing trade stops the day's entries, and the next day enters again |
+| [S-template-059](S-template-059.yaml) | trades | With daily_loss_stop 100 a loss of 162.50 stops the day's entries |
+| [S-template-060](S-template-060.yaml) | trades | With profit_lock 100 a win of exactly 100 stops the day's entries |
+| [S-template-061](S-template-061.yaml) | trades | After a losing trade, cooldown_after_loss of 2 bars skips the decision that counts it and the next |
+| [S-template-062](S-template-062.yaml) | trades | After a losing trade closed at 14:30:30, cooldown_after_loss of 3 minutes skips the decisions before 14:33:30 |
+| [S-template-063](S-template-063.yaml) | trades | A winning trade starts no cooldown, so the next decision enters at once |
+| [S-template-064](S-template-064.yaml) | trades | With fresh_signal a long_entry still true after an exit does not enter again until it turns false and back |
+| [S-template-065](S-template-065.yaml) | trades | A notional size of 600,000 USD buys the 2 lots of ES worth at most that at the mark |
+| [S-template-066](S-template-066.yaml) | trades | A risk of 500 USD over a stop of 12 ticks, 150 USD a lot, buys 3 lots |
+| [S-template-067](S-template-067.yaml) | trades | A risk of 1 % of equity buys 3 lots, and after a win of 10,500 USD the next entry buys 4 |
+| [S-template-068](S-template-068.yaml) | trades | A risk of 1,000 USD over a stop at the row's stop_price 5 points under the mark buys 4 lots |
+| [S-template-069](S-template-069.yaml) | trades | A size that rounds to no lots places no entry and the log says why; the next row's size enters |
+| [S-template-070](S-template-070.yaml) | trades | A notional size of 1,000 USD buys 16 lots of 0.001 BTC at 60,000, in whole lot steps |
+| [S-template-071](S-template-071.yaml) | trades | A notional size of 3 lots times a size_mult of 1.5 rounds down to 4 lots |

@@ -22,7 +22,7 @@ expected:
   fills:
     - {order: 1, ts: "2026-03-06T14:35:00.200Z", price: "4999.75", rule: F-MKT-02}
     - {order: 2, ts: "2026-03-06T14:35:02.000Z", price: "5003.25", rule: F-STP-03}
-rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-QTY-01, F-SLP-01, F-STP-01, F-STP-03, F-STP-05]
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-QTY-01, F-SIZ-01, F-SLP-01, F-STP-01, F-STP-03, F-STP-05]
 
 # Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01):
 # at the 14:35 close short_entry is true: the template sells 1 unit × size_mult 2 = 2 lots at the

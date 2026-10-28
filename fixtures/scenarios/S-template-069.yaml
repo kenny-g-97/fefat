@@ -1,0 +1,32 @@
+id: S-template-069
+title: A size that rounds to no lots places no entry and the log says why; the next row's size enters
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: risk_amount, amount: 160}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, size_mult: 0.5}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true, size_mult: 1.0}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:31:00.200Z", price: "5001.25", rule: F-MKT-02, quantity: 1}
+rules: [F-ACT-01, F-MKT-02, F-SIZ-03, F-SIZ-04, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# a stop of 12 ticks loses 150 USD a lot, so a risk of 160 USD makes floor(160 / 150) = 1 lot
+# (F-SIZ-03);
+# at 14:30 the row's size_mult of 0.5 makes floor(1 × 0.5) = 0 lots (F-SIZ-04): no entry, and
+# the log says why; the trade at 14:30:00.200 fills nothing;
+# at 14:31 the size_mult of 1.0 keeps the lot: long_entry buys 1 lot, order 1, filled at
+# 5001.00 + 0.25 = 5001.25.

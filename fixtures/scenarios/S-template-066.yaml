@@ -1,0 +1,27 @@
+id: S-template-066
+title: A risk of 500 USD over a stop of 12 ticks, 150 USD a lot, buys 3 lots
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: risk_amount, amount: 500}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, quantity: 3}
+rules: [F-ACT-01, F-MKT-02, F-SIZ-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# a stop 12 ticks from the entry's price loses 12 × 0.25 × 50 = 150 USD a lot, so a risk of
+# 500 USD buys floor(500 / 150) = 3 lots (F-SIZ-03), rounded down from 3.33;
+# at 14:30 long_entry buys 3 lots, order 1, filled at 5000.00 + 0.25 = 5000.25.

@@ -1,0 +1,35 @@
+id: S-template-067
+title: A risk of 1 % of equity buys 3 lots, and after a win of 10,500 USD the next entry buys 4
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 12}
+    targets: [{price: {kind: ticks, ticks: 280}}]
+    sizing: {kind: risk_percent, percent: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 5}
+  - {ts: "2026-03-05T14:31:00.000Z", price: "5071.00", size: 5}
+  - {ts: "2026-03-05T14:32:00.200Z", price: "5071.00", size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, quantity: 3}
+    - {order: 3, ts: "2026-03-05T14:31:00.000Z", price: "5070.25", rule: F-LMT-03, quantity: 3}
+    - {order: 4, ts: "2026-03-05T14:32:00.200Z", price: "5071.25", rule: F-MKT-02, quantity: 4}
+rules: [F-ACT-01, F-LMT-01, F-LMT-03, F-MKT-02, F-OCO-02, F-SIZ-03, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms; the run's capital is 50,000 USD, D-51):
+# at 14:30 equity is the capital, 50,000 USD, and 1 % of it is 500 USD; a stop of 12 ticks
+# loses 150 USD a lot, so the entry buys floor(500 / 150) = 3 lots, order 1, filled at 5000.25;
+# its target, order 3, at 5000.25 + 280 × 0.25 = 5070.25, which the trade at 14:31:00.000 goes
+# through: the 3 lots fill there, and the cash gains 70.00 × 50 × 3 = 10,500 USD;
+# at 14:32 equity is 60,500 USD, 1 % of it 605 USD: floor(605 / 150) = 4 lots, order 4, filled
+# at 5071.00 + 0.25 = 5071.25 (F-SIZ-03).

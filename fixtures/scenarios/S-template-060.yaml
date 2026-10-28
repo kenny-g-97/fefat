@@ -1,0 +1,37 @@
+id: S-template-060
+title: With profit_lock 100 a win of exactly 100 stops the day's entries
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 8}}]
+    limits: {profit_lock: 100}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "5002.50", size: 1}
+  - {ts: "2026-03-05T14:32:00.200Z", price: "5002.00", size: 1}
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5005.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 3, ts: "2026-03-05T14:31:00.200Z", price: "5002.25", rule: F-LMT-03}
+    - {order: 4, ts: "2026-03-06T14:30:00.200Z", price: "5005.25", rule: F-MKT-02}
+rules: [F-ACT-01, F-LIM-02, F-LMT-01, F-LMT-03, F-MKT-02, F-OCO-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# at 14:30 long_entry buys, order 1, filled at 5000.25; its target, order 3, at
+# 5000.25 + 8 × 0.25 = 5002.25, which the trade at 14:31:00.200, 5002.50, goes through: it fills
+# at 5002.25, and the trade made 2.00 × 50 = 100.00 USD;
+# at 14:32 the day's closed trades made 100.00, at or above profit_lock = 100: no entry
+# (F-LIM-02);
+# on 03-06 the counts start again: long_entry buys, order 4, at 5005.25.

@@ -1,0 +1,28 @@
+id: S-template-065
+title: A notional size of 600,000 USD buys the 2 lots of ES worth at most that at the mark
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    sizing: {kind: notional, amount: 600000}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:29:59.000Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, quantity: 2}
+rules: [F-ACT-01, F-MKT-02, F-MRK-01, F-SIZ-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms):
+# the trade at 14:29:59.000 marks the market at 5000.00 (F-MRK-01), the entry's price for a
+# market entry; one lot of ES is worth 5000.00 × 50 = 250,000 USD there, so 600,000 USD buys
+# floor(600,000 / 250,000) = 2 lots (F-SIZ-02);
+# at 14:30 long_entry buys 2 lots at the market, order 1, filled at 5000.00 + 0.25 = 5000.25.
