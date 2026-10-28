@@ -7,12 +7,11 @@ reason the log gives (F-SIZ-04). Money counts micro-units, exactly until the siz
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal
 from fractions import Fraction
 from typing import Any
 
 from fefat.market.calendar import utc_text
-from fefat.reference.exit_plan import ExitPlan, stop_level
+from fefat.reference.exit_plan import ExitPlan, exact, stop_level
 from fefat.reference.orders import Side
 from fefat.reference.template.limits import micro_units
 from fefat.reference.units import InstrumentParameters
@@ -45,10 +44,6 @@ class EntryPricing:
     equity: int
 
 
-def _exact(number: float) -> Decimal:
-    return Decimal(repr(number))
-
-
 # §28 Sizing
 def f_siz_01(lots: int, bar: Mapping[str, Any]) -> int:
     """A fixed size of `lots`, its units in whole lot steps, times the row's `size_mult`, which
@@ -56,8 +51,8 @@ def f_siz_01(lots: int, bar: Mapping[str, Any]) -> int:
     multiple = bar.get("size_mult")
     if multiple is None:
         return lots
-    multiplied = _exact(multiple) * lots
-    if multiplied != multiplied.to_integral_value() or multiplied < 1:
+    multiplied = exact(multiple) * lots
+    if multiplied.denominator != 1 or multiplied < 1:
         raise ValueError(
             f"Expected size_mult to make whole lots, at least one, got {multiple} times {lots} "
             f"lots on the bar closing at {utc_text(bar['ts_close'])}."
@@ -81,7 +76,7 @@ def f_siz_03(amount: int, price: int, stop: int, instrument: InstrumentParameter
 def f_siz_04(lots: int, bar: Mapping[str, Any]) -> int:
     """A computed size times the row's `size_mult`, rounded down to whole lots."""
     multiple = bar.get("size_mult")
-    return lots if multiple is None else math.floor(_exact(multiple) * lots)
+    return lots if multiple is None else math.floor(exact(multiple) * lots)
 
 
 def computed_lots(
@@ -111,7 +106,7 @@ def _risked(sizing: RiskAmountSize | RiskPercentSize, equity: int) -> int:
     """A risk size's amount in micro-units: its own, or `percent` % of equity rounded down."""
     if isinstance(sizing, RiskAmountSize):
         return micro_units(sizing.amount)
-    return math.floor(Fraction(_exact(sizing.percent)) * equity / 100)
+    return math.floor(exact(sizing.percent) * equity / 100)
 
 
 def _stop_for(pricing: EntryPricing, price: int, tick: int) -> int | None:

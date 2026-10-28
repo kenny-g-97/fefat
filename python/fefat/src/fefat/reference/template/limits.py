@@ -7,10 +7,9 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
-from fractions import Fraction
 from typing import Any
 
+from fefat.reference.exit_plan import exact
 from fefat.reference.orders import ClosedTrade
 from fefat.reference.units import MONEY_DECIMALS
 from fefat.strategy.exits import BarsCooldown, Limits
@@ -19,7 +18,7 @@ from fefat.strategy.exits import BarsCooldown, Limits
 def micro_units(amount: float) -> int:
     """An amount of a specification, as the decimal it prints as, in whole micro-units rounded
     down (F-RND-01)."""
-    return math.floor(Fraction(Decimal(repr(amount))) * 10**MONEY_DECIMALS)
+    return math.floor(exact(amount) * 10**MONEY_DECIMALS)
 
 
 @dataclass(slots=True)
