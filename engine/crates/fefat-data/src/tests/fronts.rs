@@ -145,7 +145,12 @@ fn a_run_maps_the_months_it_reads_and_not_a_month_of_another_layout() {
     // run of other months must not need to read.
     let folder = TemporaryFolder::new();
     write_month(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
-    write_month(folder.path(), SAMPLE_CONTRACT, vec![moved(&sample_tape()[0], 28)]).unwrap();
+    write_month(
+        folder.path(),
+        SAMPLE_CONTRACT,
+        vec![moved(&sample_tape()[0], 28)],
+    )
+    .unwrap();
     let contract_folder = folder.path().join(SAMPLE_CONTRACT);
     let april_folder = contract_folder.join("2026-04");
     let april = CacheMonthIndex::read(&april_folder).unwrap().unwrap();
