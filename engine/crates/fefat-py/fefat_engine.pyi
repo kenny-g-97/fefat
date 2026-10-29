@@ -18,16 +18,48 @@ class _BuildDetails(TypedDict):
     target_arch: str
     profile: str
 
+class _RunSummary(TypedDict):
+    position: int
+    cash: int
+    ambiguous_fills: int
+
+class _Run(TypedDict):
+    fills: _ArrowStream
+    orders: _ArrowStream
+    log: _ArrowStream
+    costs: _ArrowStream
+    trades: _ArrowStream
+    equity: _ArrowStream
+    summary: _RunSummary
+
 type _Int64Arrow = _ArrowArray | _ArrowStream
+type _Path = str | PathLike[str]
+type _Backtest = tuple[str, _ArrowStream, Sequence[_Path], str]
+
+ENGINE_VERSION: int
+FILL_MODEL_VERSION: int
+ARTIFACT_SCHEMA_VERSION: int
 
 def max_drawdown(values: list[int]) -> int: ...
 def max_drawdown_arrow(values: _Int64Arrow) -> int: ...
 def arrow_values_addresses(values: _Int64Arrow) -> list[int]: ...
 def build_details() -> _BuildDetails: ...
 def write_cache_month(
-    contract_folder: str | PathLike[str],
+    contract_folder: _Path,
     contract: str,
     month: str,
     sources: list[tuple[str, str]],
     trade_dates: Iterable[tuple[str, Sequence[tuple[str, _ArrowStream]]]],
 ) -> None: ...
+def run_signal_backtest(
+    spec_json: str,
+    signal_frame: _ArrowStream,
+    cache_paths: Sequence[_Path],
+    config_json: str,
+    replay: str = "skipping",
+) -> _Run: ...
+def run_batch(cases: Sequence[_Backtest], replay: str = "skipping") -> list[_Run]: ...
+def table_hash(table: _ArrowStream) -> str: ...
+def run_key(
+    spec_json: str, signal_frame_hash: str, partition_hashes: list[str], config_json: str
+) -> str: ...

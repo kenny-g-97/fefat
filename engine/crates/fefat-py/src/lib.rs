@@ -1,12 +1,22 @@
 //! PyO3 bindings: the Python module fefat_engine.
 
+mod backtests;
+mod hashing;
+
+use std::fmt::Display;
+
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+
+/// An error of the engine as Python's `ValueError`, its message the engine's.
+fn value_error(error: impl Display) -> PyErr {
+    PyValueError::new_err(error.to_string())
+}
 
 /// The FEFAT engine, compiled from Rust.
 #[pymodule]
 mod fefat_engine {
     use std::collections::BTreeMap;
-    use std::fmt::Display;
     use std::path::PathBuf;
 
     use arrow_array::cast::AsArray;
@@ -16,11 +26,29 @@ mod fefat_engine {
     use fefat_core::fidelity::Fidelity;
     use fefat_core::instants::TradeDate;
     use fefat_core::instrument::Contract;
+    use fefat_core::run_key::{ARTIFACT_SCHEMA_VERSION, ENGINE_VERSION, FILL_MODEL_VERSION};
     use fefat_data::{Month, SourceFile};
     use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
     use pyo3::prelude::*;
     use pyo3_arrow::PyTable;
     use pyo3_arrow::input::AnyArray;
+
+    use crate::value_error;
+
+    #[pymodule_export]
+    use crate::backtests::{run_batch, run_signal_backtest};
+    #[pymodule_export]
+    use crate::hashing::{run_key, table_hash};
+
+    /// The engine's versions, which a run key covers (`02` §4): `ENGINE_VERSION`,
+    /// `FILL_MODEL_VERSION`, and `ARTIFACT_SCHEMA_VERSION`.
+    #[pymodule_init]
+    fn add_versions(module: &Bound<'_, PyModule>) -> PyResult<()> {
+        module.add("ENGINE_VERSION", ENGINE_VERSION.0)?;
+        module.add("FILL_MODEL_VERSION", FILL_MODEL_VERSION.0)?;
+        module.add("ARTIFACT_SCHEMA_VERSION", ARTIFACT_SCHEMA_VERSION.0)?;
+        Ok(())
+    }
 
     /// Writes one contract-month of the engine cache (`fefat_data::CacheMonthWriter`): `contract`'s
     /// `month` (`2026-03`) in `contract_folder`, built from the store partitions `sources`, each
@@ -73,10 +101,6 @@ mod fefat_engine {
             writer.write_trade_date(day).map_err(value_error)?;
         }
         Ok(())
-    }
-
-    fn value_error(error: impl Display) -> PyErr {
-        PyValueError::new_err(error.to_string())
     }
 
     /// The largest fall of the cumulative sum of `values` below its highest point so far.
