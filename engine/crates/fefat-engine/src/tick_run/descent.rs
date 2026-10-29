@@ -102,6 +102,15 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     /// Passes over the block that `first` opens, as a full replay of it would leave the run.
     pub(super) fn skip(&mut self, first: Unit, block: Block) -> Result<Stepped, RunError> {
         self.check_order(first.ts())?;
+        let traded = self.trades.is_open();
+        let reached = self.day.as_ref().and_then(|day| {
+            traded
+                .then(|| day.records.range(self.next_record, block.end))
+                .flatten()
+        });
+        if let Some((low, high)) = reached {
+            self.trades.reached(low, high)?;
+        }
         self.last_record = Some(block.last.ts());
         let units = block.end - self.next_record;
         self.next_record = block.end;
@@ -112,7 +121,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
                 .ok_or(RunError::UnknownOrder { order: id.0 })?;
         }
         // F-MRK-01: the finest record's price, which its bar's close, a vendor's, need not be.
-        self.ledger.mark_at(block.last.last_price());
+        self.mark_at(block.last.last_price())?;
         Ok(Stepped::Skipped { units })
     }
 }

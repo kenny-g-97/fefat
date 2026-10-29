@@ -140,6 +140,19 @@ impl<'run> DayRecords<'run> {
     pub(super) const fn are_bars(&self) -> bool {
         matches!(self, Self::Bars(..))
     }
+
+    /// The lowest and the highest price the records from `start` to just before `end` reach:
+    /// each tick's trade, each bar's low and high; none for no records.
+    pub(super) fn range(&self, start: usize, end: usize) -> Option<(Price, Price)> {
+        let (prices, highs) = match self {
+            Self::Trades(trades) => (trades.price.get(start..end)?, None),
+            Self::Tbbo(tbbo) => (tbbo.price.get(start..end)?, None),
+            Self::Bars(bars, _) => (bars.low.get(start..end)?, bars.high.get(start..end)),
+        };
+        let low = prices.iter().min()?;
+        let high = highs.unwrap_or(prices).iter().max()?;
+        Some((*low, *high))
+    }
 }
 
 /// Bar `index` of `bars`, or none past the last.

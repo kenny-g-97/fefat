@@ -18,6 +18,8 @@ use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::event_log::EventKind;
 use crate::settings::{RollHandling, RunCosts};
 use crate::strategy::{ScenarioOrder, ScenarioOrders};
+use crate::template::{SignalRow, TemplateStrategy};
+use fefat_core::strategy_spec::StrategySpec;
 
 const SECOND: i64 = 1_000_000_000;
 const MARCH_5: TradeDate = TradeDate(20_517);
@@ -593,4 +595,122 @@ fn funding_times_or_rolls_out_of_order_or_repeated_are_refused() {
             next: at(ROLL_OPEN, 0),
         })
     );
+}
+
+#[test]
+fn a_trade_across_a_roll_counts_its_legs_money_and_the_gap_in_its_excursions() {
+    // Step 2.10 (BACKLOG's trades across a roll, §20): S-fill-058's long is one trade from its
+    // entry on ESH2026 to its stop on ESM2026, through the roll's two legs; its profit and loss
+    // is what all four fills moved the cash by less their fees, the ledger's 560.00 loss. Its
+    // marks reach 1 tick against it and, the reference moved by the gap of 20.00, 19 for it at
+    // the new front's 5025.00, which is 5005.00 of the old contract.
+    let reader = across_the_roll();
+    let rolls = (vec![march_roll()], RollHandling::Transfer);
+    let outputs = run_on_trades(
+        &reader,
+        capital(),
+        &mut bracketed_long(1),
+        futures_fee(250),
+        rolls,
+    )
+    .unwrap();
+
+    let [trade] = outputs.trades.as_slice() else {
+        panic!("Expected one trade, got {:?}", outputs.trades);
+    };
+    assert_eq!((trade.exits, trade.rolls), (1, 1));
+    assert_eq!(
+        (trade.entry_contract.clone(), trade.exit_contract.clone()),
+        (esh(), esm())
+    );
+    assert_eq!(trade.exit_reason, OrderRole::Stop);
+    assert_eq!(trade.exit_price, Some(price(500_975).0 as f64));
+    assert_eq!(trade.fees, cents(1_000));
+    assert_eq!(trade.gross_pnl, Money(-550 * MONEY_UNITS));
+    assert_eq!(trade.pnl, Money(-560 * MONEY_UNITS));
+    assert_eq!(
+        outputs.ledger.cash(),
+        Money(50_000 * MONEY_UNITS).checked_add(trade.pnl).unwrap()
+    );
+    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (1, 19));
+    assert_eq!(trade.initial_risk_ticks, Some(41));
+    let dates: Vec<TradeDate> = outputs
+        .fills
+        .iter()
+        .map(|booked| booked.trade_date)
+        .collect();
+    assert_eq!(dates, [MARCH_6, MARCH_9, MARCH_9, MARCH_9]);
+}
+
+#[test]
+fn funding_paid_while_a_trade_is_open_counts_in_its_profit_and_loss() {
+    // F-FND-01 and §20: the long pays 0.0001 of 5000.00 × 50 at 15:30, 25.00, and its target's
+    // fill at 5030.00 makes 1,487.50 before it.
+    let reader = trades(
+        esh(),
+        &[(
+            MARCH_6,
+            &[
+                (at(MARCH_6_14_30, 200), 500_000, 3),
+                (at(MARCH_6_20_00, 0), 503_100, 2),
+            ],
+        )],
+    );
+    let funding = vec![FundingRate {
+        ts: at(MARCH_6_14_30 + 3_600, 0),
+        rate: Rate(100_000),
+    }];
+    let costs = RunCosts {
+        fees: None,
+        funding,
+    };
+    let rolls = (Vec::new(), RollHandling::Transfer);
+
+    let outputs = run_on_trades(&reader, capital(), &mut bracketed_long(1), costs, rolls).unwrap();
+
+    let [trade] = outputs.trades.as_slice() else {
+        panic!("Expected one trade, got {:?}", outputs.trades);
+    };
+    assert_eq!(trade.exit_reason.to_string(), "target_1");
+    assert_eq!(trade.funding, Money(-25 * MONEY_UNITS));
+    assert_eq!(trade.gross_pnl, Money(1_487_500_000));
+    assert_eq!(trade.pnl, Money(1_462_500_000));
+}
+
+#[test]
+fn equity_at_a_decision_before_a_rolls_legs_values_the_position_at_its_own_contract() {
+    // F-ROL-03: a decision after the roll and before the new front's first trade finds the
+    // legs on their way, so the long is valued at the mark less the gap, 5004.00 of ESH2026, not
+    // at the moved mark of 5024.00.
+    let spec: StrategySpec = serde_json::from_value(serde_json::json!({
+        "spec_version": 1,
+        "instrument": "ES",
+        "timeframe": "5m",
+        "execution": {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}}
+    }))
+    .unwrap();
+    let rows = vec![
+        SignalRow {
+            long_entry: true,
+            ..SignalRow::at(at(MARCH_6_14_30, 0))
+        },
+        SignalRow::at(at(ROLL_OPEN, 200)),
+    ];
+    let mut template = TemplateStrategy::new(&spec, rows, &es()).unwrap();
+    let rolls = (vec![march_roll()], RollHandling::Transfer);
+
+    let outputs = run_on_trades(
+        &across_the_roll(),
+        capital(),
+        &mut template,
+        RunCosts::default(),
+        rolls,
+    )
+    .unwrap();
+
+    let at_the_roll = outputs.equity.get(1).unwrap();
+    assert_eq!(at_the_roll.ts, at(ROLL_OPEN, 200));
+    assert_eq!(at_the_roll.mark, Some(price(500_400)));
+    // 50,000 − 5000.25 × 50 + 5004.00 × 50 = 50,187.50.
+    assert_eq!(at_the_roll.equity, Some(Money(50_187_500_000)));
 }

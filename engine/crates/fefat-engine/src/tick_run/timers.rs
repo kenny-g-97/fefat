@@ -98,6 +98,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         };
         let change = self.ledger.pay_funding(rate.rate)?;
         self.trade_cash = self.trade_cash.checked_add(change)?;
+        self.trades.funded(change)?;
         self.cost_lines.push(CostLine {
             ts: rate.ts,
             amount: Money(0).checked_sub(change)?,

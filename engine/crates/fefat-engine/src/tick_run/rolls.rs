@@ -33,6 +33,13 @@ pub(super) struct Transfer {
     rolled_from: Contract,
 }
 
+impl Transfer {
+    /// The roll's gap, by which every price the run holds moved (F-ROL-03).
+    pub(super) const fn gap(&self) -> Price {
+        self.gap
+    }
+}
+
 impl<R: MarketDataReader> TickRun<'_, R> {
     /// F-ROL-01 to F-ROL-04: the next roll, at `at`, the `index`th event: the front passes to
     /// its contract, every price the run holds moves by its gap, and an open position's legs are
@@ -66,6 +73,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         self.log
             .extend(shifts.iter().map(|shift| LogEntry::shifted(at, shift)));
         self.ledger.shift_mark(roll.gap)?;
+        self.trades.shifted(roll.gap)?;
         self.front = roll.contract;
         let Some((closing, lots)) = closing else {
             return Ok(());

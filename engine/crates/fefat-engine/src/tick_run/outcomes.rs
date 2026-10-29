@@ -7,10 +7,10 @@ use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::instrument::Contract;
 use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::market_data::{BarRow, MarketDataError};
-use fefat_core::units::{Money, Overflow};
+use fefat_core::units::{Money, Overflow, Price, Qty};
 use thiserror::Error;
 
-use super::TickRecord;
+use super::{TickRecord, Trade};
 use crate::book::WorkingOrder;
 use crate::event_log::LogEntry;
 use crate::exit_plan::PlanError;
@@ -45,8 +45,9 @@ impl Stepped {
     }
 }
 
-/// A fill with what its value moved the cash by, the reference engine's `Fill.cash`, and the
-/// contract it is of (F-TAG-01, F-ROL-01).
+/// A fill with what its value moved the cash by, the reference engine's `Fill.cash`, the
+/// contract it is of (F-TAG-01, F-ROL-01), and the trade date of the record or bar that priced it,
+/// which priced its fee (F-FEE-01, F-BAR-06).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BookedFill {
     /// The fill, as F-TAG-01 records it.
@@ -55,12 +56,32 @@ pub struct BookedFill {
     pub cash: Money,
     /// The contract it is of: the run's front, or a roll's close leg's contract rolled from.
     pub contract: Contract,
+    /// The trade date it belongs to.
+    pub trade_date: TradeDate,
+}
+
+/// The account at a decision, once the decision is made: its cash, the lots held, positive long,
+/// the price the position is valued at, the mark, or the mark less the gap while a roll's legs
+/// are on their way (F-ROL-03), and the equity, cash plus the position's value there (F-MRK-01);
+/// none of either for an open position before its first mark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EquityPoint {
+    /// The decision's instant.
+    pub ts: Ts,
+    /// The cash, in micro-units.
+    pub cash: Money,
+    /// The lots held, positive long.
+    pub position: Qty,
+    /// The price the position is valued at.
+    pub mark: Option<Price>,
+    /// The equity, in micro-units.
+    pub equity: Option<Money>,
 }
 
 /// What a run produces: every order in its last state, the fills, the event log, the ledger it
-/// ends with, and its cost lines, each fee of a run that names a fee table and each funding
-/// payment, in the order they were paid.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// ends with, its cost lines, each fee of a run that names a fee table and each funding payment,
+/// in the order they were paid, the trades it closed, and the account at each decision.
+#[derive(Debug, Clone, PartialEq)]
 pub struct RunOutputs {
     /// Every order, by id.
     pub orders: Vec<WorkingOrder>,
@@ -72,6 +93,10 @@ pub struct RunOutputs {
     pub ledger: Ledger,
     /// The cost lines, in the order they were paid.
     pub cost_lines: Vec<CostLine>,
+    /// The trades closed, in the order they closed (§20).
+    pub trades: Vec<Trade>,
+    /// The account at each decision, in their order.
+    pub equity: Vec<EquityPoint>,
 }
 
 impl RunOutputs {

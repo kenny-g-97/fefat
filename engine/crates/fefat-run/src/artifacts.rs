@@ -1,16 +1,21 @@
 //! The tables of runs' outputs, each row tagged with its run's `case`, the place of the run in its
-//! batch: the fills, each with the contract it is of; the orders in their last state; the event
-//! log; and the cost lines. `fefat-cli run` writes them for a batch, and `fefat_engine` gives a
+//! batch: the fills, each with the contract it is of and its trade date; the orders in their last
+//! state; the event log; the cost lines; and the trades and the accounts at each decision
+//! (`crate::trade_tables`). `fefat-cli run` writes them for a batch, and `fefat_engine` gives a
 //! single run's without the tag.
 
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, BooleanArray, Int64Array, RecordBatch, StringArray, UInt64Array};
+use arrow_array::{
+    ArrayRef, BooleanArray, Date32Array, Int64Array, RecordBatch, StringArray, UInt64Array,
+};
 use arrow_schema::{ArrowError, Field, Schema};
 use fefat_core::costs::{CostLine, CostReason};
 use fefat_engine::book::WorkingOrder;
 use fefat_engine::event_log::LogEntry;
 use fefat_engine::tick_run::{BookedFill, RunOutputs};
+
+use crate::trade_tables::{equity_table, trades_table};
 
 type FillRow<'run> = (i64, &'run BookedFill);
 type OrderRow<'run> = (i64, &'run WorkingOrder);
@@ -20,7 +25,7 @@ type CostRow<'run> = (i64, &'run CostLine);
 /// The name of the column that tags each row with its run's place in a batch.
 pub const CASE_COLUMN: &str = "case";
 
-/// Each table of `runs`, by name: `fills`, `orders`, `log`, and `costs`.
+/// Each table of `runs`, by name: `fills`, `orders`, `log`, `costs`, `trades`, and `equity`.
 pub fn run_tables(
     runs: &[(i64, RunOutputs)],
 ) -> Result<Vec<(&'static str, RecordBatch)>, ArrowError> {
@@ -29,6 +34,8 @@ pub fn run_tables(
         ("orders", orders_table(runs)?),
         ("log", log_table(runs)?),
         ("costs", costs_table(runs)?),
+        ("trades", trades_table(runs)?),
+        ("equity", equity_table(runs)?),
     ])
 }
 
@@ -88,6 +95,12 @@ pub fn fills_table(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError
         ("fee", int(|(_, booked)| booked.fill.fee.0)),
         ("cash", int(|(_, booked)| booked.cash.0)),
         ("contract", text(|(_, booked)| booked.contract.0.clone())),
+        (
+            "trade_date",
+            Arc::new(Date32Array::from_iter_values(
+                rows.iter().map(|(_, booked)| booked.trade_date.0),
+            )),
+        ),
     ])
 }
 

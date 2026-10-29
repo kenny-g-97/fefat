@@ -309,6 +309,66 @@ fn hash_outputs(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
     }
     let held = outputs.ledger.position().signed_lots();
     hash_numbers(hasher, [outputs.ledger.cash().0, held.0].into_iter());
+    hash_trades_and_equity(hasher, outputs);
+}
+
+/// Step 2.10's outputs: each fill's trade date, each trade closed, and the account at each
+/// decision, a missing value hashed as -1 after the counts.
+fn hash_trades_and_equity(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
+    let counts = [outputs.trades.len(), outputs.equity.len()].map(|count| count as i64);
+    hash_numbers(hasher, counts.into_iter());
+    let dates = outputs
+        .fills
+        .iter()
+        .map(|booked| i64::from(booked.trade_date.0));
+    hash_numbers(hasher, dates);
+    for trade in &outputs.trades {
+        let exit_price = trade.exit_price.map_or(-1, |price| price.to_bits() as i64);
+        let risk = trade.initial_risk_ticks.unwrap_or(-1);
+        let entry = [
+            trade.entry_decision.0,
+            trade.entry_ts.0,
+            trade.entry_price.0,
+        ];
+        hash_numbers(hasher, entry.into_iter());
+        let exit = [
+            trade.exit_ts.0,
+            exit_price,
+            i64::from(trade.exits),
+            i64::from(trade.rolls),
+        ];
+        hash_numbers(hasher, exit.into_iter());
+        let money = [
+            trade.gross_pnl.0,
+            trade.fees.0,
+            trade.funding.0,
+            trade.pnl.0,
+        ];
+        hash_numbers(hasher, money.into_iter());
+        let excursions = [
+            risk,
+            trade.mae_ticks,
+            trade.mfe_ticks,
+            trade.mae.0,
+            trade.mfe.0,
+        ];
+        hash_numbers(hasher, excursions.into_iter());
+        hash_words(
+            hasher,
+            [
+                trade.side.to_string(),
+                trade.exit_reason.to_string(),
+                trade.entry_contract.0.clone(),
+                trade.exit_contract.0.clone(),
+            ],
+        );
+    }
+    for point in &outputs.equity {
+        let mark = point.mark.map_or(-1, |mark| mark.0);
+        let equity = point.equity.map_or(-1, |equity| equity.0);
+        let account = [point.ts.0, point.cash.0, point.position.0, mark, equity];
+        hash_numbers(hasher, account.into_iter());
+    }
 }
 
 /// Each word framed by its length, so that two lists of words never share their bytes.

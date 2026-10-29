@@ -877,3 +877,94 @@ fn skipping_passes_over_records_no_order_can_act_on_and_ends_as_a_full_replay() 
 fn minute() -> Fidelity {
     Fidelity::Bars(Timeframe::ONE_MINUTE)
 }
+
+#[test]
+fn a_trade_closed_in_parts_is_one_trade_at_its_exits_average_and_its_last_reason() {
+    // Step 2.10 (BACKLOG's trades closed in parts, §20): a long of 2 lots whose first target
+    // closes 1 and whose stop closes the other is one trade; its exit price is the two exits'
+    // average and its exit reason the stop's. The marks after the entry reach 1 tick against it
+    // and 5 for it; the stop's record closes the trade before it marks.
+    let spec: StrategySpec = serde_json::from_value(serde_json::json!({
+        "spec_version": 1,
+        "instrument": "ES",
+        "timeframe": "5m",
+        "execution": {
+            "entry": {"kind": "market"},
+            "stop": {"kind": "ticks", "ticks": 4},
+            "targets": [{"price": {"kind": "ticks", "ticks": 4}, "fraction": 0.5}],
+            "sizing": {"kind": "fixed", "units": 2}
+        }
+    }))
+    .unwrap();
+    let rows = vec![
+        SignalRow {
+            long_entry: true,
+            ..SignalRow::at(at(300_000))
+        },
+        SignalRow::at(at(301_500)),
+    ];
+    let mut template = TemplateStrategy::new(&spec, rows, &es()).unwrap();
+    let reader = trades(&[
+        (300_200, 500_000, 5),
+        (301_000, 500_150, 1),
+        (302_000, 499_900, 4),
+    ]);
+
+    let outputs = run(&reader, Fidelity::Trades, flat(), &mut template);
+
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 300_200, 500_025, PricingRule::MarketAtTrade),
+            (3, 301_000, 500_125, PricingRule::LimitAtItsPrice),
+            (2, 302_000, 499_900, PricingRule::StopOnTrades),
+        ]
+    );
+    let [trade] = outputs.trades.as_slice() else {
+        panic!("Expected one trade, got {:?}", outputs.trades);
+    };
+    assert_eq!(
+        (trade.side, trade.lots, trade.exits),
+        (Side::Buy, Qty(2), 2)
+    );
+    assert_eq!(
+        (trade.entry_decision, trade.entry_ts, trade.exit_ts),
+        (at(300_000), at(300_200), at(302_000))
+    );
+    // (5001.25 + 4999.00) / 2 = 5000.125, in 1e-9 units.
+    assert_eq!(trade.exit_price, Some(5_000_125_000_000.0));
+    assert_eq!(trade.exit_reason.to_string(), "stop");
+    assert_eq!((trade.initial_risk_ticks, trade.rolls), (Some(4), 0));
+    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (1, 5));
+    assert_eq!(
+        (trade.mae, trade.mfe),
+        (Money(25 * MONEY_UNITS), Money(125 * MONEY_UNITS))
+    );
+    // 50 a point × (5001.25 + 4999.00 − 2 × 5000.25) = −12.50.
+    assert_eq!(trade.gross_pnl, Money(-12_500_000));
+    assert_eq!(
+        (trade.fees, trade.funding, trade.pnl),
+        (Money(0), Money(0), Money(-12_500_000))
+    );
+    assert_eq!(trade.entry_contract.0, "ESH2026");
+    // The account at each decision: flat at the first, then 1 lot after the target's fill, its
+    // value at the mark of 5001.50 on top of the cash: 50,112.50 of equity.
+    let accounts: Vec<(Ts, i64, Option<Money>)> = outputs
+        .equity
+        .iter()
+        .map(|point| (point.ts, point.position.0, point.equity))
+        .collect();
+    assert_eq!(
+        accounts,
+        [
+            (at(300_000), 0, Some(Money(50_000 * MONEY_UNITS))),
+            (at(301_500), 1, Some(Money(50_112_500_000))),
+        ]
+    );
+    assert!(
+        outputs
+            .fills
+            .iter()
+            .all(|booked| booked.trade_date == TRADE_DATE)
+    );
+}

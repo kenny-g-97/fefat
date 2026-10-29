@@ -16,6 +16,7 @@ use fefat_core::orders::{OrderId, OrderKind, OrderState};
 use fefat_core::units::{Money, Price};
 
 use super::execution::{Execution, FillPoint, execute};
+use super::trades::TradedFill;
 use super::{BookedFill, RunError, TickRecord, TickRun};
 use crate::event_log::LogEntry;
 use crate::exit_plan::Move;
@@ -36,7 +37,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         if self.book.has_live() {
             self.work_orders(record, index)?;
         }
-        self.ledger.mark_at(record.price);
+        self.mark_at(record.price)?;
         let moves = self.book.marked(record.price, self.tick())?;
         self.log_moves(record.ts, &moves);
         Ok(())
@@ -278,6 +279,19 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             flat_after,
         } = execution;
         self.count_costs(&fill, cash, flat_after)?;
+        let placed_at = self
+            .book
+            .order(fill.order)
+            .map_or(fill.ts, |order| order.order.placed_at);
+        let traded = TradedFill {
+            fill: &fill,
+            placed_at,
+            cash,
+            contract: &contract,
+            flat_after,
+            legs: &legs,
+        };
+        self.trades.filled(&traded, &self.ledger.instrument())?;
         if schedule == ScheduleUse::BeforeItsDate && !self.warned {
             self.warned = true;
             self.log.push(LogEntry::fee_table_extended(&fill));
@@ -297,6 +311,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             fill,
             cash,
             contract,
+            trade_date: self.trade_date,
         });
         Ok(())
     }
