@@ -1,0 +1,36 @@
+id: S-fill-059
+title: On 1-minute bars a roll's legs fill at the open of the new front's first bar, before the bar is replayed
+fidelity: 1m
+instrument: ES
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1, bracket: {stop: {id: 2, price: "4990.00"}, target: {id: 3, price: "5030.00"}}}
+tape:
+  - {ts_open: "2026-03-06T14:30:00Z", ts_close: "2026-03-06T14:31:00Z", open: "5000.00", high: "5001.00", low: "4999.50", close: "5000.50", volume: 100}
+  - {ts_open: "2026-03-08T22:00:00Z", ts_close: "2026-03-08T22:01:00Z", open: "5026.00", high: "5027.00", low: "5025.00", close: "5026.50", volume: 80}
+  - {ts_open: "2026-03-09T14:00:00Z", ts_close: "2026-03-09T14:01:00Z", open: "5012.00", high: "5013.00", low: "5009.00", close: "5010.00", volume: 50}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:31:00Z", price: "5000.25", rule: F-MKT-03, contract: ESH2026}
+    - {order: 4, ts: "2026-03-08T22:01:00Z", price: "5005.75", rule: F-ROL-02, contract: ESH2026}
+    - {order: 5, ts: "2026-03-08T22:01:00Z", price: "5026.25", rule: F-ROL-02, contract: ESM2026}
+    - {order: 2, ts: "2026-03-09T14:01:00Z", price: "5009.75", rule: F-STP-04, contract: ESM2026}
+rules: [F-ACT-02, F-BAR-02, F-BAR-06, F-MKT-03, F-OCO-02, F-ROL-02, F-ROL-03, F-SLP-01, F-STP-01, F-STP-04]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on bars: F-SLP-01; latency 100 ms):
+# decided at 14:30:00 and active at 14:30:00.100, the buy sees the bar from 14:30 to 14:31
+# (F-ACT-02) and fills at its open plus a tick, 5000.00 + 0.25 = 5000.25, at its close (F-MKT-03,
+# F-BAR-06), on ESH2026; its bracket, stop 4990.00 and target 5030.00 (F-OCO-02), is reached by no
+# point of the bar's path;
+# at the roll, 22:00:00 on 03-08, the stop moves by the gap of 20.00 to 5010.00 and the target to
+# 5050.00 (F-ROL-03), and the long's legs are sent, orders 4 and 5 (F-ROL-02);
+# the new front's first bar, 22:00 to 22:01, fills them at its open before it is replayed, both at
+# its close, 22:01: the close leg at 5026.00 - 20.00 - 0.25 = 5005.75, the open leg at
+# 5026.00 + 0.25 = 5026.25 (F-ROL-02, F-SLP-01); the bar's path, 5026.00, 5025.00, 5027.00,
+# 5026.50, reaches neither the stop nor the target;
+# the bar of 14:00 on 03-09 opens at 5012.00 above the stop and, the long held, goes to its low
+# first (F-BAR-02): the path from 5012.00 to 5009.00 reaches the stop at 5010.00 (F-STP-01):
+# fill = 5010.00 - 0.25 = 5009.75 (F-STP-04), at 14:01, on ESM2026; with the extremes swapped the
+# stop still fills there, so the bar is not ambiguous. Without the roll the stop at 4990.00 would
+# still work.

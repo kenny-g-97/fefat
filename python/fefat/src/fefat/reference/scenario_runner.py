@@ -36,6 +36,7 @@ from fefat.reference.scenarios import (
     specified_rules,
 )
 from fefat.reference.strategy import Decision, DecisionContext, OnBar, decisions_of
+from fefat.reference.tape import trade_dates_of
 from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import (
@@ -82,16 +83,49 @@ def run_scenario(
 ) -> ScenarioOutcome:
     """`scenario` through the reference engine, open during `hours`: an order scenario's orders
     placed at their decisions, or a template scenario's strategy run from its signal rows on
-    `sessions`, its instrument's session table."""
+    `sessions`, its instrument's session table, which also dates its records (F-FEE-01)."""
+    if sessions is not None:
+        _rolls_at_their_opens(scenario, sessions)
     parameters = instrument_parameters(scenario.instrument)
-    engine = ReferenceEngine(scenario.settings, parameters, scenario.fidelity, hours, scenario.fees)
+    fees = scenario.run_fees()
+    engine = ReferenceEngine(scenario.settings, parameters, scenario.fidelity, hours, fees)
     if isinstance(scenario, TemplateScenario):
         decisions, on_bar = _template_decisions(scenario, parameters, sessions)
     else:
         decisions, on_bar = _order_decisions(scenario)
     held, cash = held_lots(scenario), opening_cash(scenario)
-    result = engine.run(scenario.tape, decisions, on_bar, scenario.funding, held, cash)
+    result = engine.run(
+        scenario.tape,
+        decisions,
+        on_bar,
+        scenario.funding,
+        held,
+        cash,
+        contract=scenario.opening_contract(),
+        rolls=scenario.rolls,
+        trade_dates=trade_dates_of(scenario.tape, sessions),
+        first_id=first_own_id(scenario),
+    )
     return ScenarioOutcome(scenario, result, differences(scenario, result))
+
+
+def _rolls_at_their_opens(scenario: AnyScenario, sessions: SessionTable) -> None:
+    """Each roll comes at the open of its trade date's session, as the roll calendar gives it
+    (F-ROL-01): a scenario that names another instant is refused."""
+    for roll in scenario.rolls:
+        opens = sessions.session(roll.trade_date).open
+        if roll.session_open != opens:
+            raise ValueError(
+                f"Expected the roll on {roll.trade_date} at its session's open, "
+                f"{instant_text(opens)}, got {instant_text(roll.session_open)} in {scenario.id} "
+                "(F-ROL-01)."
+            )
+
+
+def first_own_id(scenario: AnyScenario) -> int:
+    """The first id the engine gives an order of its own, such as a roll's leg (F-ROL-02): after
+    every id an order scenario names; from 1 under a template, which the engine numbers."""
+    return scenario.highest_id() + 1 if isinstance(scenario, Scenario) else 1
 
 
 def _order_decisions(scenario: Scenario) -> tuple[list[Decision], OnBar]:
@@ -173,8 +207,8 @@ def scenario_hours(
 
 class FillSummary(NamedTuple):
     """What the runner compares of a fill: its order, time, price, rule, and flags, its fee in a
-    scenario with fees, its lots in a scenario that states its fills' quantities, and its role in
-    one that states their roles."""
+    scenario with fees, its lots in a scenario that states its fills' quantities, its role in
+    one that states their roles, and its contract in one that states their contracts."""
 
     order: int
     ts: int
@@ -184,24 +218,28 @@ class FillSummary(NamedTuple):
     fee: int | None
     lots: int | None
     role: str | None
+    contract: str | None
 
     def text(self) -> str:
         flags = "".join(f", {flag}" for flag in self.flags)
         fee = "" if self.fee is None else f", fee {money_text(self.fee)}"
         role = "" if self.role is None else f", as {self.role}"
+        on = "" if self.contract is None else f", on {self.contract}"
         lots = "" if self.lots is None else f" x {self.lots}"
         at = f"{price_text(self.price)}{lots} at {instant_text(self.ts)}"
-        return f"order {self.order} at {at} ({self.rule}{flags}{fee}{role})"
+        return f"order {self.order} at {at} ({self.rule}{flags}{fee}{role}{on})"
 
 
 def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
     """How the run differs from what the scenario expects: each fill's order, time, price,
-    rule, flags, fee where the scenario has fees, lots where it states quantities, and role where
-    it states roles, its fidelity tag (F-TAG-01), the marks, and the funding payments."""
+    rule, flags, fee where the scenario has fees, lots where it states quantities, role where it
+    states roles, and contract where it states contracts, its fidelity tag (F-TAG-01), the marks,
+    and the funding payments."""
     with_fees = scenario.fees is not None
     lot_step = scenario.instrument.lot_step
     with_lots = any(f.quantity is not None for f in scenario.expected.fills)
     with_roles = any(f.role is not None for f in scenario.expected.fills)
+    with_contracts = any(f.contract is not None for f in scenario.expected.fills)
     expected = [
         FillSummary(
             f.order,
@@ -212,6 +250,7 @@ def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
             f.fee,
             None if f.quantity is None else lots_of(f.quantity, lot_step),
             f.role,
+            f.contract,
         )
         for f in scenario.expected.fills
     ]
@@ -225,6 +264,7 @@ def differences(scenario: AnyScenario, result: RunResult) -> tuple[str, ...]:
             f.fee if with_fees else None,
             f.lots if with_lots else None,
             f.role if with_roles else None,
+            f.contract if with_contracts else None,
         )
         for f in result.fills
     ]

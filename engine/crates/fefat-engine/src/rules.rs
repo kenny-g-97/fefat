@@ -276,14 +276,16 @@ pub(crate) fn f_qty_01(lots: Qty, shown_size: Option<Qty>) -> FillFlags {
     }
 }
 
-/// F-TAG-01: a fill records its fidelity, the rule that priced it, its liquidity, its flags, and
-/// its slippage, the ticks it is worse than its reference by. Its fee is costs' (step 2.9).
+/// F-TAG-01: a fill records its fidelity, the rule that priced it, its liquidity, its flags, its
+/// slippage, the ticks it is worse than its reference by, and its fee (F-FEE-01, F-FEE-02); the
+/// loop records the contract it is of beside it.
 pub(crate) fn f_tag_01(
     order: &WorkingOrder,
     priced: &Priced,
     ts: Ts,
     fidelity: Fidelity,
     tick: Price,
+    fee: Money,
 ) -> Result<Fill, Overflow> {
     let order_side = order.order.side;
     let worse_by = priced.price.checked_sub(priced.reference)?.0;
@@ -304,6 +306,27 @@ pub(crate) fn f_tag_01(
         liquidity: f_lmt_04(order),
         slippage_ticks: slippage.div_euclid(tick.0),
         flags: f_qty_01(order.order.lots, priced.shown_size),
-        fee: Money(0),
+        fee,
+    })
+}
+
+/// F-ROL-02: a roll's leg fills at `price`, the price a market order of its side takes on the
+/// first record after the roll, or that bar's open, less `gap` for the close leg, the old
+/// contract's price, moved by the market slippage ticks against the trader; flagged against
+/// `shown`, the size its record shows (F-QTY-01).
+pub(crate) fn f_rol_02(
+    side: Side,
+    price: Price,
+    shown: Option<Qty>,
+    gap: Price,
+    ticks: u32,
+    tick: Price,
+) -> Result<Priced, Overflow> {
+    let reference = price.checked_sub(gap)?;
+    Ok(Priced {
+        price: side.moved(reference, ticks, tick)?,
+        rule: PricingRule::RollLeg,
+        reference,
+        shown_size: shown,
     })
 }

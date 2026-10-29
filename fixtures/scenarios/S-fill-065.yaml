@@ -1,0 +1,29 @@
+id: S-fill-065
+title: With a negative funding rate a short pays, its amount rounded against the trader
+fidelity: trades
+instrument: BTCUSDT-PERP
+position: {side: short, quantity: "0.020", price: "65000.0"}
+funding:
+  - {ts: "2026-03-07T16:00:00.000Z", rate: "-0.0002"}
+orders:
+  - {id: 1, placed_at: "2026-03-07T16:30:00.000Z", side: buy, kind: market, quantity: "0.020"}
+tape:
+  - {ts: "2026-03-07T15:59:59.500Z", price: "65123.7", size: 7}
+  - {ts: "2026-03-07T16:00:00.000Z", price: "65130.0", size: 3}
+  - {ts: "2026-03-07T16:30:00.200Z", price: "65150.0", size: 30}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-07T16:30:00.200Z", price: "65150.1", rule: F-MKT-02}
+  funding:
+    - {ts: "2026-03-07T16:00:00.000Z", amount: "-0.260495"}
+rules: [F-CLK-02, F-FEE-03, F-FND-01, F-MKT-02, F-MRK-01, F-SLP-01]
+
+# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC on a lot step of 0.001;
+# one tick of slippage on trades: F-SLP-01):
+# funding at 16:00:00.000 comes before the trade received at that instant (F-CLK-02), so the short
+# of 0.020 BTC is marked at the trade before it, 65123.7 (F-MRK-01): it pays signed quantity x mark
+# x point value x rate = -0.020 x 65123.7 x 1 x (-0.0002) = 0.2604948, positive, so with a
+# negative rate the short pays (F-FND-01); the cash change, -0.2604948, rounds toward minus
+# infinity to -0.260495 (F-FEE-03);
+# the buy market order, active at 16:30:00.100, fills at the first trade plus a tick,
+# 65150.0 + 0.1 = 65150.1 (F-MKT-02); its 20 lots stay within the trade's 30.

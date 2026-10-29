@@ -2,24 +2,30 @@
 //! TBBO records, its 1-second bars, and its 1-minute bars run in full through `TickRun` with
 //! seeded orders, its TBBO records again skipping by its bars, and its 1-minute bars under a
 //! seeded execution template whose exit plan has two targets, breakeven, a trailing stop, and max
-//! bars; and every order, fill, and entry of the event log, with the final cash and position,
-//! hashed in order.
+//! bars; each run paying a futures fee table whose first schedule starts after the tape's date,
+//! funding at two times, and rolling once, a gap of 5.00, inside the tape (step 2.9); and every
+//! order, fill with its contract, entry of the event log, and cost line, with the final cash and
+//! position, hashed in order.
 
+use fefat_core::costs::{CostReason, FeeRate, FeeSchedule, FeeTable, FundingRate, Rate};
 use fefat_core::fidelity::{Fidelity, Timeframe};
+use fefat_core::instants::{NANOSECONDS_PER_SECOND, TradeDate, Ts};
+use fefat_core::instrument::Contract;
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::{OrderId, OrderKind, Side};
+use fefat_core::rolls::{Roll, RollReason};
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{MONEY_UNITS, Money, Price, Qty};
 use fefat_engine::book::{Bracket, BracketLeg, LegPrice};
 use fefat_engine::hours::TradingHours;
-use fefat_engine::settings::RunSettings;
+use fefat_engine::settings::{RollHandling, RunCosts, RunSettings};
 use fefat_engine::strategy::{ScenarioOrder, ScenarioOrders, Strategy};
 use fefat_engine::template::{SignalRow, TemplateStrategy};
 use fefat_engine::tick_run::{Replay, RunOutputs, TickRun};
 
 use super::{DeterminismError, es, hash_numbers};
-use crate::seeded_tape::{SEEDED_TRADE_DATE, SplitMix64, TICK};
+use crate::seeded_tape::{FIRST_SECOND, SEEDED_CONTRACT, SEEDED_TRADE_DATE, SplitMix64, TICK};
 
 /// The seeded template of the digest's sixth run (step 2.8): a market entry of two lots, a stop
 /// of 8 ticks, two targets each closing half, breakeven after the first, an intrabar trailing
@@ -86,7 +92,7 @@ pub(super) fn loop_runs(
 }
 
 /// `strategy` run on the seeded tape at `fidelity`, replayed as `replay`, from the run's capital
-/// with the specification's default settings.
+/// with the specification's default settings, paying the seeded costs and rolling once.
 fn seeded_run(
     reader: &impl MarketDataReader,
     fidelity: Fidelity,
@@ -97,7 +103,47 @@ fn seeded_run(
     let ledger = Ledger::new(es()?, Money(50_000 * MONEY_UNITS));
     let settings = RunSettings::defaults_for(fidelity);
     let run = TickRun::new(reader, fidelity, replay, &hours, settings, ledger, strategy)?;
+    let run = run.with_costs(seeded_costs()?)?;
+    let run = run.with_rolls(vec![seeded_roll()], RollHandling::Transfer)?;
     Ok(run.run()?)
+}
+
+/// A fee of 2.50 per contract per side from 2026-03-06, the day after the tape's, so that the run
+/// warns that the first schedule prices its fills (F-FEE-01), and funding at 14:35 and 14:40, at
+/// 0.0001 and -0.0002.
+fn seeded_costs() -> Result<RunCosts, DeterminismError> {
+    let fees = FeeTable::new(vec![FeeSchedule {
+        effective_from: TradeDate(SEEDED_TRADE_DATE.0 + 1),
+        fee: FeeRate::Futures {
+            per_contract_side: Money(2_500_000),
+        },
+    }])?;
+    let at = |minutes: i64| Ts(FIRST_SECOND + minutes * 60 * NANOSECONDS_PER_SECOND);
+    let funding = vec![
+        FundingRate {
+            ts: at(5),
+            rate: Rate(100_000),
+        },
+        FundingRate {
+            ts: at(10),
+            rate: Rate(-200_000),
+        },
+    ];
+    Ok(RunCosts {
+        fees: Some(fees),
+        funding,
+    })
+}
+
+/// A roll at 14:38, from the seeded contract to ESM2026, a gap of 5.00, on volume.
+fn seeded_roll() -> Roll {
+    Roll {
+        session_open: Ts(FIRST_SECOND + 8 * 60 * NANOSECONDS_PER_SECOND),
+        rolled_from: Contract(SEEDED_CONTRACT.to_owned()),
+        contract: Contract("ESM2026".to_owned()),
+        gap: Price(20 * TICK),
+        reason: RollReason::Volume,
+    }
 }
 
 /// The seeded template over a signal row at each 1-minute bar's close of the seeded tape, each
@@ -235,7 +281,18 @@ fn hash_outputs(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
                 fill.fidelity.to_string(),
                 fill.liquidity.to_string(),
                 fill.role.to_string(),
+                booked.contract.0.clone(),
             ],
+        );
+    }
+    for line in &outputs.cost_lines {
+        let (reason, detail) = match line.reason {
+            CostReason::Fee { order } => (1, order.0 as i64),
+            CostReason::Funding { rate } => (2, rate.0),
+        };
+        hash_numbers(
+            hasher,
+            [line.ts.0, line.amount.0, reason, detail].into_iter(),
         );
     }
     for entry in &outputs.log {

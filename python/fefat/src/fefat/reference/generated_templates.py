@@ -21,6 +21,7 @@ from fefat.reference.generated_cases import (
     OFFSETS_MS,
     DrawnInstrument,
     DrawnTapes,
+    drawn_costs_and_rolls,
     drawn_hours,
     drawn_settings,
     fidelity_and_tape,
@@ -48,11 +49,16 @@ LIMITS = (
     {"daily_loss_stop": 25.0},
     {"profit_lock": 0.0001},
     {"profit_lock": 0.0001},
+    {"profit_lock": 0.0001},
     {"cooldown_after_loss": {"kind": "bars", "bars": 2}},
     {"cooldown_after_loss": {"kind": "minutes", "minutes": 1}},
     {"fresh_signal": True},
 )
-"""The entry limits a template draws, one at most, those that need a loss first more often."""
+"""The entry limits a template draws, one at most, those that need a loss first more often, and
+the profit lock, which needs a win net of the drawn fees (step 2.9), as often."""
+BARS_WALK = (20, 60)
+"""The fewest and the most trades a template's bars are made of, more than an order case's 1 to
+25, so that on bars a template trades more than once a day, as its entry limits need."""
 CLOCKS = ("00:00", "14:00", "14:30", "14:31", "15:00", "23:00")
 """Local times, in UTC, that the drawn tapes' records fall around (from 14:30 on 2026-03-06)."""
 
@@ -78,7 +84,8 @@ def full_template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
     @st.composite
     def drawn_template(draw: "DrawFn") -> EngineCase:
         drawn = draw(st.sampled_from(INSTRUMENTS))
-        fidelity, tape = fidelity_and_tape(draw, drawn, tapes)
+        fidelity, tape = fidelity_and_tape(draw, drawn, tapes, bars_walk=BARS_WALK)
+        hours = drawn_hours(draw, tape)
         spec, needs = _spec(draw, drawn)
         scenario = TemplateScenario.model_construct(
             id="a drawn full template",
@@ -86,17 +93,16 @@ def full_template_cases(tapes: DrawnTapes) -> "SearchStrategy[EngineCase]":
             fidelity=fidelity,
             instrument=drawn.instrument,
             settings=drawn_settings(draw),
-            fees=None,
             position=None,
             tape=tape,
-            funding=(),
             expected=Expected.model_construct(fills=(), marks=(), funding=()),
             rules=("F-CLK-01",),
             strategy=spec,
             signals=_rows(draw, drawn, tape, needs),
+            **drawn_costs_and_rolls(draw, drawn, tape, hours),
         )
         replay = draw(st.sampled_from(tuple(Replay)))
-        return EngineCase(scenario, drawn_hours(draw, tape), replay=replay)
+        return EngineCase(scenario, hours, replay=replay)
 
     return drawn_template()
 
@@ -106,7 +112,8 @@ def _spec(draw: "DrawFn", drawn: DrawnInstrument) -> tuple[StrategySpec, RowNeed
 
     entry = _entry(draw)
     stop = draw(st.sampled_from(("ticks", "percent", "atr", "column", None)))
-    drawn_targets = [_target(draw, stop is not None) for _ in range(draw(st.integers(0, 3)))]
+    count = draw(st.sampled_from((0, 1, 2, 3, 3)))
+    drawn_targets = [_target(draw, stop is not None) for _ in range(count)]
     targets = [target for _, target in drawn_targets]
     execution: dict[str, object] = {
         "entry": entry,
@@ -252,9 +259,11 @@ def _sizing(draw: "DrawFn", drawn: DrawnInstrument, stopped: bool) -> dict[str, 
     )
     kind = draw(st.sampled_from(kinds))
     if kind == "fixed":
-        return {"kind": "fixed", "units": float(drawn.quantity(draw(st.integers(1, 3))))}
+        return {"kind": "fixed", "units": float(drawn.quantity(draw(st.integers(1, 4))))}
     if kind == "notional":
-        one_lot = drawn.opening * drawn.instrument.point_value * drawn.instrument.lot_step / 10**9
+        one_lot = (
+            abs(drawn.opening) * drawn.instrument.point_value * drawn.instrument.lot_step / 10**9
+        )
         return {"kind": "notional", "amount": float(one_lot * draw(st.sampled_from((1, 2, 3))))}
     if kind == "risk_amount":
         return {"kind": "risk_amount", "amount": draw(st.sampled_from((5.0, 50.0, 500.0, 5000.0)))}

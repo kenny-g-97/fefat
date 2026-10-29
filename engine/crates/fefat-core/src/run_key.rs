@@ -14,9 +14,9 @@ use crate::strategy_spec::StrategySpec;
 pub struct Version(pub u32);
 
 /// Bumped for any change of what a run produces that changes neither its fills nor the layout of
-/// its artifacts: 4 since step 2.8, whose exit plans, time rules, entries, limits, and sizes join
-/// the determinism digest through a seeded template, and whose roles name targets and exit reasons.
-pub const ENGINE_VERSION: Version = Version(4);
+/// its artifacts: 5 since step 2.9, whose fee tables, funding times, and rolls join the
+/// determinism digest through every seeded run, with each fill's contract and the cost lines.
+pub const ENGINE_VERSION: Version = Version(5);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
 /// Bumped when the layout of a run's artifacts changes.

@@ -60,4 +60,11 @@ impl Strategy for ScenarioOrders {
         }
         Ok(())
     }
+
+    fn highest_order_id(&self) -> Option<OrderId> {
+        let legs = self.orders.iter().filter_map(|order| order.bracket);
+        let leg_ids = legs.flat_map(|bracket| [bracket.stop.id, bracket.target.id]);
+        let order_ids = self.orders.iter().map(|order| Some(order.id));
+        order_ids.chain(leg_ids).flatten().max()
+    }
 }

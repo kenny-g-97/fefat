@@ -1,0 +1,39 @@
+id: S-template-077
+title: A trade flat before costs loses its two fees, which meet daily_loss_stop and stop the day's entries
+fidelity: trades
+instrument: ES
+settings: {slippage_ticks: {market: 0, stop: 0}}
+fees: {kind: futures, per_contract_side: "2.50"}
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    limits: {daily_loss_stop: 5}
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_exit: true}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:32:00.200Z", price: "5001.00", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.00", rule: F-MKT-02, fee: "2.50", role: entry}
+    - {order: 2, ts: "2026-03-05T14:31:00.200Z", price: "5000.00", rule: F-MKT-02, fee: "2.50", role: signal_exit}
+rules: [F-ACT-01, F-ENT-04, F-FEE-01, F-LIM-02, F-MKT-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25, 50 USD a point; no slippage ticks, set for the scenario: F-SLP-01; a
+# fee of 2.50 per contract per side; latency 100 ms):
+# at 14:30 long_entry buys 1 lot, order 1, filled at the trade of 14:30:00.200, 5000.00 (F-MKT-02),
+# paying 2.50 (F-FEE-01);
+# at 14:31 long_exit closes the long, order 2 (F-ENT-04), filled at 5000.00 and paying 2.50: the
+# trade's fills moved the cash by (5000.00 - 5000.00) x 50 = 0.00, less their fees, 5.00: a loss of
+# 5.00 (§20);
+# at 14:32 the day's closed trades lost 5.00, at or below minus daily_loss_stop = -5 (F-LIM-02):
+# no entry. A run that left the fees out of the trade's profit and loss would see 0.00 and buy at
+# 14:32.

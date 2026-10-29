@@ -25,8 +25,9 @@ jobs:
   ci:
     name: ${{ matrix.system }}
     runs-on: ${{ matrix.runner }}
-    # Guards against a hung run; with warm caches a run takes well under 15 minutes.
-    timeout-minutes: 20
+    # Guards against a hung run. With warm caches a Windows run took from 12 to
+    # over 20 minutes in October 2026, its runners varying twofold in speed.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -2,8 +2,8 @@
 repository until the Python bindings of step 2.10: cases, each a scenario of `fixtures/scenarios/`
 or one Hypothesis draws (`fefat.reference.generated_cases`), run as one batch in one process
 (`fefat.reference.rust_batch`), in full or skipping, and through the reference engine, and
-compared value for value (D-10, ADR-0008): each fill, the event log, the position and cash each
-case ends with, and its count of ambiguous fills.
+compared value for value (D-10, ADR-0008): each fill with its fee and contract, the event log,
+the position and cash each case ends with, its count of ambiguous fills, and its cost lines.
 
     engine = RustEngine(default_binary())
     cases = engine_cases(scenarios, cache_folder, Replay.SKIPPING)
@@ -21,17 +21,18 @@ from functools import partial
 from itertools import zip_longest
 from pathlib import Path
 
-from fefat.reference.event_log import EventKind
 from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import Order, PricedOrder
 from fefat.reference.rust_batch import (
     CacheCase,
+    CostView,
     EngineCase,
     FillView,
     LogView,
     Replay,
     RustOutcome,
+    rate_units,
     read_outcomes,
     write_batch,
     write_cache_batch,
@@ -130,18 +131,13 @@ class CaseComparison:
         return tuple(FillView.of(fill) for fill in self.reference.fills)
 
     def differences(self) -> tuple[str, ...]:
-        """How the Rust engine's fills, event log, ledger at its end, and count of ambiguous
-        fills differ from the reference engine's: nothing when they agree. Fees and funding,
-        which costs bring in step 2.9, are left out, so the reference's cash is its capital moved
-        by the opening position's value and by its fills' values."""
+        """How the Rust engine's fills, event log, ledger at its end, count of ambiguous fills,
+        and cost lines differ from the reference engine's: nothing when they agree."""
         found = []
         if self.reference_fills() != self.rust.fills:
             reference, rust = _listed(self.reference_fills()), _listed(self.rust.fills)
             found.append(f"the reference fills {reference}; Rust fills {rust}")
-        kept = (
-            entry for entry in self.reference.log.entries if entry.kind is not EventKind.FUNDING
-        )
-        reference_log = tuple(LogView.of(entry) for entry in kept)
+        reference_log = tuple(LogView.of(entry) for entry in self.reference.log.entries)
         if reference_log != self.rust.log:
             pairs = enumerate(zip_longest(reference_log, self.rust.log), start=1)
             number, (expected, got) = next(item for item in pairs if item[1][0] != item[1][1])
@@ -157,6 +153,11 @@ class CaseComparison:
             found.append(
                 f"the reference counts {flagged} ambiguous fills, Rust {self.rust.ambiguous_fills}"
             )
+        for reason in ("fee", "funding"):
+            expected = _reference_costs(self.case.scenario, self.reference, reason)
+            paid = tuple(line for line in self.rust.costs if line.reason == reason)
+            if expected != paid:
+                found.append(f"the reference's {reason} lines are {expected}, Rust's {paid}")
         return tuple(found)
 
 
@@ -170,9 +171,24 @@ def compare_engines(engine: RustEngine, cases: Sequence[EngineCase]) -> list[Cas
 
 
 def _reference_cash(scenario: AnyScenario, result: RunResult) -> int:
-    """The capital, moved by the opening position's value at its price and by each fill's value,
-    each floored once as the ledger books them (F-FEE-03), fees left out."""
-    return opening_cash(scenario) + sum(fill.cash for fill in result.fills)
+    """The capital, moved by the opening position's value at its price, by each fill's value less
+    its fee, and by each funding payment, each floored once as the ledger books them
+    (F-FEE-03)."""
+    fills = sum(fill.cash - fill.fee for fill in result.fills)
+    return opening_cash(scenario) + fills + sum(payment.amount for payment in result.funding)
+
+
+def _reference_costs(scenario: AnyScenario, result: RunResult, reason: str) -> tuple[CostView, ...]:
+    """The reference's cost lines of `reason`: each fill's fee where the scenario has fees, in
+    the order of the fills, or each funding payment, what the trader paid at its rate."""
+    if reason == "fee":
+        if scenario.fees is None:
+            return ()
+        return tuple(CostView(fill.ts, "fee", fill.order, None, fill.fee) for fill in result.fills)
+    rates = {rate.ts: rate_units(rate.rate) for rate in scenario.funding}
+    return tuple(
+        CostView(paid.ts, "funding", None, rates[paid.ts], -paid.amount) for paid in result.funding
+    )
 
 
 def explained(comparison: CaseComparison) -> str:
@@ -184,8 +200,16 @@ def explained(comparison: CaseComparison) -> str:
     lines = [
         f"{scenario.id}: {scenario.fidelity}, replayed {comparison.case.replay}, latency "
         f"{settings.latency_ms} ms, slippage ticks {ticks.market} market and {ticks.stop} stop, "
-        f"limits filled {settings.limit_fill}"
+        f"limits filled {settings.limit_fill}, rolls {settings.roll_handling}"
     ]
+    if scenario.fees is not None:
+        lines.append(f"fees: {scenario.fees.model_dump_json()}")
+    for roll in scenario.rolls:
+        lines.append(
+            f"roll: {roll.rolled_from} to {roll.contract} at {instant_text(roll.session_open)}, "
+            f"a gap of {price_text(roll.gap)} ({roll.reason})"
+        )
+    lines += [f"funding: {rate.rate} at {instant_text(rate.ts)}" for rate in scenario.funding]
     if scenario.position is not None:
         position = scenario.position
         lines.append(

@@ -1,0 +1,28 @@
+id: S-fill-060
+title: With roll_handling flatten a roll closes the long by its close leg alone and cancels its bracket
+fidelity: trades
+instrument: ES
+settings: {roll_handling: flatten}
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 2, bracket: {stop: {id: 2, price: "4990.00"}, target: {id: 3, price: "5030.00"}}}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00", size: 1}
+  - {ts: "2026-03-09T14:00:00.000Z", price: "5009.75", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry, contract: ESH2026}
+    - {order: 4, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, flags: [size_exceeded], role: roll_volume, contract: ESH2026}
+rules: [F-MKT-02, F-OCO-02, F-QTY-01, F-ROL-02, F-ROL-04, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; roll_handling flatten):
+# the buy market order for 2 lots fills at 5000.00 + 0.25 = 5000.25 (F-MKT-02) on ESH2026, and its
+# bracket is placed: stop 4990.00, target 5030.00 (F-OCO-02);
+# at the roll, 22:00:00 on 03-08, flatten cancels the bracket, whose work the close leg does, and
+# sends the close leg alone, order 4, selling the 2 lots of ESH2026 (F-ROL-04);
+# the first trade after the roll, 5025.00, fills it at 5025.00 - 20.00 - 0.25 = 5004.75
+# (F-ROL-02), flagged size_exceeded, its 2 lots above the trade's 1 (F-QTY-01); the long is flat;
+# the trade at 5009.75 on 03-09 finds nothing working. With transfer, the default, order 5 would
+# buy 2 lots of ESM2026 at 5025.25 and the moved stop at 5010.00 would fill at 5009.75.

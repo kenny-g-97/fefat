@@ -1,14 +1,19 @@
 """The tape the reference engine reads: trade prints, TBBO records, or stored bars, as its
 fidelity says, in the order the engine reads them (`docs/spec/fill-semantics.md`, F-CLK-01),
 and a perpetual's funding rates. A scenario writes its tape (`fefat.reference.scenarios`);
-`tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2)."""
+`tape_of_bars` and `tape_of_trades` build one from the store's frames (step 2.2), `stored_bars`
+the tape of a series spliced across rolls, which `fefat.reference.rolls.tape_across_rolls` gives
+with its rolls, and `funding_rates_of` the funding rates (step 2.9)."""
 
 import itertools
+from collections.abc import Sequence
+from decimal import Decimal
 from typing import Annotated, Self
 
 import polars as pl
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
+from fefat.market.calendar import SessionTable
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
 from fefat.reference.orders import Side
@@ -164,28 +169,55 @@ class FundingRate(FrozenModel):
     rate: QuotedDecimal
 
 
+NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
+
+
+def trade_dates_of(records: Sequence[Record], sessions: SessionTable | None) -> list[int]:
+    """Each record's trade date in days since 1970-01-01, which prices its fills' fees
+    (F-FEE-01): that of the session it falls in, or of the last one opened before it, by the
+    instant it starts at (`SessionTable.assign_trade_dates_or_previous`, as `load` dates them);
+    the UTC day without a session table."""
+    starts = [record.starts_at() for record in records]
+    if sessions is None or not starts:
+        return [start // NANOSECONDS_PER_DAY for start in starts]
+    frame = pl.DataFrame(
+        {"ts": starts, "order": range(len(starts))}, schema_overrides={"ts": pl.Int64}
+    )
+    dated = sessions.assign_trade_dates_or_previous(frame, "ts").sort("order")
+    return dated.get_column("trade_date").cast(pl.Int32).cast(pl.Int64).to_list()
+
+
 _RAW_PRICES = ("open", "high", "low", "close")
 
 
 def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
+    """The stored bars of one contract in a frame `load` returned (`SIGNAL_BAR_COLUMNS`), as the
+    engine replays them (`stored_bars`). The bars of more than one contract are refused: a series
+    spliced across rolls needs its rolls, which `fefat.reference.rolls.tape_across_rolls` gives
+    with its bars (F-ROL-01)."""
+    tape = stored_bars(frame)
+    contracts = sorted(frame.get_column("contract").unique().to_list())
+    if len(contracts) > 1:
+        raise ValueError(
+            f"Expected the bars of one contract, got {', '.join(contracts)}: a series spliced "
+            "across rolls needs its rolls, which fefat.reference.rolls.tape_across_rolls gives "
+            "with its bars (F-ROL-01)."
+        )
+    return tape
+
+
+def stored_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
     """The stored bars of a frame `load` returned (`SIGNAL_BAR_COLUMNS`), as the engine replays
-    them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at the
+    them: without the rows of empty buckets, which have no stored bar (F-BAR-07), at each
     contract's raw prices, a spliced bar's open, high, low, and close less its `adj_offset`
     (D-09), and in the order of their closes. A back-adjusted import, without raw prices
-    (D-49), the bars of more than one contract, and a window without trades are refused.
-    The store checked each row when it was written (ADR-0019), so the records are built
-    without parsing it again."""
-    contracts = sorted(frame.get_column("contract").unique().to_list())
+    (D-49), and a window without trades are refused. The store checked each row when it was
+    written (ADR-0019), so the records are built without parsing it again."""
     if frame.get_column("close_raw").null_count() > 0:
+        contracts = sorted(frame.get_column("contract").unique().to_list())
         raise ValueError(
             f"Expected a series with raw prices, got a back-adjusted import of {', '.join(contracts)}, "
             "whose prices no order traded at (D-49)."
-        )
-    if len(contracts) > 1:
-        raise ValueError(
-            f"Expected the bars of one contract, got {', '.join(contracts)}: positions and "
-            "working orders across a roll arrive in step 2.9, so choose a window inside one "
-            "contract."
         )
     stored = frame.filter(~pl.col("zero_volume")).sort("ts_close")
     if stored.is_empty():
@@ -200,6 +232,24 @@ def tape_of_bars(frame: pl.DataFrame) -> tuple[BarRecord, ...]:
         "volume",
     )
     return tuple(BarRecord.model_construct(**bar) for bar in raw.iter_rows(named=True))
+
+
+def funding_rates_of(frame: pl.DataFrame) -> tuple[FundingRate, ...]:
+    """A perpetual's funding rates from the store's funding rows (`fefat.market.schema`), as the
+    engines pay them (F-FND-01): each at its `ts_recv`, when the rate was fixed (ADR-0019), its
+    rate read from 1e-9 units, in the order of their times. The rows of more than one instrument
+    are refused."""
+    instruments = sorted(frame.get_column("instrument_id").unique().to_list())
+    if len(instruments) > 1:
+        raise ValueError(
+            f"Expected the funding of one perpetual, got instruments {instruments}: choose its "
+            "rows first."
+        )
+    ordered = frame.sort("ts_recv").select("ts_recv", "funding_rate")
+    return tuple(
+        FundingRate.model_construct(ts=ts, rate=Decimal(rate).scaleb(-9))
+        for ts, rate in ordered.iter_rows()
+    )
 
 
 def tape_of_trades(frame: pl.DataFrame) -> tuple[TradeRecord, ...]:

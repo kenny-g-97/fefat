@@ -2,8 +2,9 @@
 `docs/spec/fill-semantics.md`, which the Rust engine must match integer for integer.
 
 `ReferenceEngine.run` reads one tape (trades, TBBO records, or stored bars) with a perpetual's
-funding times and a strategy's decisions, in the order of F-CLK-02. At each decision it calls
-the strategy (`fefat.reference.strategy`). It fills orders by the rules of the specification,
+funding times, a future's rolls (`fefat.reference.rolls`), and a strategy's decisions, in the
+order of F-CLK-02. At each decision it calls the strategy (`fefat.reference.strategy`), and it
+books each fill's money and fee and each funding payment (`fefat.reference.booking`). It fills orders by the rules of the specification,
 each a small function below named after its identifier (`f_stp_03` is F-STP-03), and logs each
 placement, activation, trigger, fill, and cancellation with its rule, so that a fill can be
 followed from the tape to the log. Prices count 1e-9 units, money micro-units, quantities lots,
@@ -16,20 +17,26 @@ and instants nanoseconds since the Unix epoch, UTC (`fefat.reference.units`):
 
 from collections.abc import Sequence
 from dataclasses import replace
-from fractions import Fraction
 
-from fefat.market.fees import CryptoFee, FuturesFee
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe
+from fefat.reference.booking import book_fill, pay_funding
+from fefat.reference.costs import RunFees, funding_in_order
 from fefat.reference.event_log import EventKind, EventLog
 from fefat.reference.exit_plan import Move, f_pln_02, f_pln_04, place_exit_plan
 from fefat.reference.hours import TradingHours
 from fefat.reference.ledger import Fill, FillFlag, FundingPayment, Liquidity, Mark
-from fefat.reference.money import f_fee_01, f_fee_02, f_fee_03, f_fnd_01
 from fefat.reference.orders import Book, OrderKind, OrderState, Side, WorkingOrder
+from fefat.reference.rolls import RollRow, Transfer, f_rol_01, fill_legs, on_roll
 from fefat.reference.settings import LimitFill, RunSettings
 from fefat.reference.strategy import Decision, DecisionContext, OnBar
-from fefat.reference.tape import BarRecord, FundingRate, Record, TbboRecord, TradeRecord
+from fefat.reference.tape import (
+    BarRecord,
+    FundingRate,
+    Record,
+    TbboRecord,
+    TradeRecord,
+)
 from fefat.reference.timeline import Event, Execution, Extreme, Moment, Phase, Priced, RunResult
 from fefat.reference.units import CAPITAL, InstrumentParameters, instant_text
 
@@ -226,40 +233,17 @@ def f_oco_02(
     return place_exit_plan(book, entry, price, market, at.ts, at.index, tick)
 
 
-# §12 to §16 Slippage, quantities, marks, and what a fill records; money in `fefat.reference.money`
+# §12 and §15 Slippage and marks; quantities, money, and what a fill records in
+# `fefat.reference.booking` and `fefat.reference.money`
 def f_slp_01(settings: RunSettings, kind: OrderKind) -> int:
     """Slippage is whole ticks per order class, market or stop-market, set for the run."""
     return settings.slippage_ticks.market if kind is MARKET else settings.slippage_ticks.stop
-
-
-def f_qty_01(lots: int, shown_size: int | None) -> tuple[FillFlag, ...]:
-    """Orders fill whole; on trades and TBBO a fill larger than its record shows is flagged."""
-    return (FillFlag.SIZE_EXCEEDED,) if shown_size is not None and lots > shown_size else ()
 
 
 def f_mrk_01(book: Book, price: int) -> None:
     """A position is marked at the last trade seen, on bar days the last pseudo-tick; a fill
     does not move the mark, and records that are not tradeable set none."""
     book.mark = price
-
-
-def f_tag_01(execution: Execution, ts: int, fidelity: TickFidelity | Timeframe, tick: int) -> Fill:
-    """Every fill records its fidelity, the rule that priced it, its liquidity, its flags, and
-    its slippage, the ticks it is worse than its reference by; its money is booked after."""
-    order = execution.order
-    return Fill(
-        order=order.id,
-        role=order.role,
-        side=order.side,
-        lots=order.lots,
-        ts=ts,
-        price=execution.price,
-        rule=execution.rule,
-        fidelity=fidelity,
-        liquidity=execution.liquidity,
-        slippage_ticks=order.side.sign() * (execution.price - execution.reference) // tick,
-        flags=f_qty_01(order.lots, execution.shown_size),
-    )
 
 
 class ReferenceEngine:
@@ -271,7 +255,7 @@ class ReferenceEngine:
         instrument: InstrumentParameters,
         fidelity: TickFidelity | Timeframe,
         hours: TradingHours,
-        fees: FuturesFee | CryptoFee | None = None,
+        fees: RunFees | None = None,
     ) -> None:
         self.settings, self.fidelity, self.hours, self.fees = settings, fidelity, hours, fees
         self.instrument, self.tick = instrument, instrument.tick
@@ -285,27 +269,50 @@ class ReferenceEngine:
         funding_rates: Sequence[FundingRate] = (),
         position: int = 0,
         cash: int = CAPITAL,
+        *,
+        contract: str = "",
+        rolls: Sequence[RollRow] = (),
+        trade_dates: Sequence[int] | None = None,
+        first_id: int = 1,
     ) -> RunResult:
-        """Runs `tape` with the funding times and the decisions, calling `on_bar` at each, from
-        `position` lots held when it starts (positive long) and `cash` in micro-units."""
+        """Runs `tape` with the funding times, the rolls, and the decisions, calling `on_bar` at
+        each, from `position` lots held when it starts (positive long) of `contract`, and `cash`
+        in micro-units. `trade_dates` gives each record's, which price its fees (F-FEE-01), and
+        without them each takes the one its trading hours give the instant it starts at; the
+        engine's own orders take ids from `first_id`."""
         if decisions and on_bar is None:
             raise ValueError("Expected an on_bar strategy for the decisions, got none.")
-        self.book, self.log = Book(position=position, cash=cash), EventLog()
-        self.in_break = False
+        f_rol_01(rolls, contract)
+        funding_in_order(funding_rates)
+        self.book = Book(position=position, cash=cash, next_id=first_id)
+        self.log, self.in_break, self.front = EventLog(), False, contract
+        self.transfer: Transfer | None = None
+        self.trade_date, self.warned = 0, False
         self.fills: list[Fill] = []
         self.funding: list[FundingPayment] = []
         self.marks: list[Mark] = []
-        events = self._events(tape, decisions, funding_rates)
+        dates = (
+            [self.hours.trade_date_of(record.starts_at()) for record in tape]
+            if trade_dates is None
+            else trade_dates
+        )
+        events = self._events(tape, decisions, funding_rates, rolls, dates)
         for index, event in enumerate(events):
             self._on_event(Moment(event.ts, index), event, on_bar)
             last_of_instant = index + 1 == len(events) or events[index + 1].ts != event.ts
             if last_of_instant and self.book.position != 0 and self.book.mark is not None:
-                self.marks.append(Mark(ts=event.ts, price=self.book.mark))
+                pending = 0 if self.transfer is None else self.transfer.gap  # F-ROL-03
+                self.marks.append(Mark(ts=event.ts, price=self.book.mark - pending))
         fills, funding, marks = tuple(self.fills), tuple(self.funding), tuple(self.marks)
         return RunResult(fills, funding, marks, self.log, self.book.position)
 
     def _events(
-        self, tape: Sequence[Record], decisions: Sequence[Decision], rates: Sequence[FundingRate]
+        self,
+        tape: Sequence[Record],
+        decisions: Sequence[Decision],
+        rates: Sequence[FundingRate],
+        rolls: Sequence[RollRow],
+        dates: Sequence[int],
     ) -> list[Event]:
         expected = TradeRecord if self.fidelity is TickFidelity.TRADES else TbboRecord
         expected = BarRecord if isinstance(self.fidelity, Timeframe) else expected
@@ -315,21 +322,27 @@ class ReferenceEngine:
             got = f"a {type(tape[wrong[0]]).__name__} as record {wrong[0] + 1}"
             raise ValueError(f"Expected a tape of {named}, got {got}.")
         phase = Phase.BARS if expected is BarRecord else Phase.RECORDS
-        events = [Event(f_clk_01(record), phase, record) for record in tape]
+        dated = zip(tape, dates, strict=True)
+        events = [Event(f_clk_01(record), phase, record, day) for record, day in dated]
+        events += [Event(roll.session_open, Phase.TIMERS, roll) for roll in rolls]
         events += [Event(rate.ts, Phase.TIMERS, rate) for rate in rates]
         events += [Event(decision.ts, Phase.DECISIONS, decision) for decision in decisions]
         return f_clk_03(events)
 
     def _on_event(self, at: Moment, event: Event, on_bar: OnBar | None) -> None:
         subject = event.subject
+        if event.trade_date is not None:
+            self.trade_date = event.trade_date
         if isinstance(subject, Decision) and on_bar is not None:
             latency = self.settings.latency_nanoseconds()
             context = DecisionContext(
                 self.book, at.ts, at.index, latency, self.instrument, self.log
             )
             on_bar(subject.bar, context)
+        elif isinstance(subject, RollRow):
+            on_roll(self, at, subject)
         elif isinstance(subject, FundingRate):
-            self._on_funding(subject)
+            pay_funding(self, subject)
         elif isinstance(subject, BarRecord):
             self._on_bar(at, subject)
         elif isinstance(subject, TradeRecord):
@@ -358,12 +371,11 @@ class ReferenceEngine:
         beats a limit of its group (F-OCO-01); then the mark."""
         if not self._tradeable(at.ts):
             return
+        if self.transfer is not None:
+            fill_legs(self, at, lambda side: _price_for(record, side), record.price, record)
         for order in self.book.each(TRIGGERED):
             if isinstance(record, TbboRecord):
-                price = f_stp_02(order.side, order.level(), record, self.ticks(STOP), self.tick)
-                shown = record.quote(order.side)[1]
-                priced = Priced(price, "F-STP-02", order.level(), shown)
-                self._fill(at, order, priced, record.price)
+                self._fill(at, order, self.triggered_priced(order, record), record.price)
         for order in self.book.each(WAITING):
             if f_act_01(order, at.ts, at.index):
                 self._first_record(at, order, record)
@@ -412,8 +424,19 @@ class ReferenceEngine:
         priced = Priced(f_lmt_03(order), "F-LMT-03", order.level(), shown)
         self._fill(at, order, priced, record.price)
 
+    def triggered_priced(self, order: WorkingOrder, record: Record | None) -> Priced:
+        """F-STP-02: what a stop triggered on TBBO fills at on `record`, its quote bounded by the
+        stop and its ticks; a record without a quote is refused."""
+        if not isinstance(record, TbboRecord):
+            raise ValueError(
+                f"Expected a TBBO record to fill the stop triggered on TBBO, order {order.id}, "
+                f"got {type(record).__name__} (F-STP-02)."
+            )
+        price = f_stp_02(order.side, order.level(), record, self.ticks(STOP), self.tick)
+        return Priced(price, "F-STP-02", order.level(), record.quote(order.side)[1])
+
     def _fill(self, at: Moment, order: WorkingOrder, priced: Priced, market: int) -> None:
-        self._book(at.ts, self.execute(self.book, order, priced, at, market))
+        book_fill(self, at.ts, self.execute(self.book, order, priced, at, market))
 
     def _moved(self, ts: int, move: Move) -> None:
         self.log.moved(ts, move.order, move.before, move.after, move.rule)
@@ -425,6 +448,8 @@ class ReferenceEngine:
         if not self._tradeable(bar.ts_open):
             return
         at = Moment(f_bar_06(bar), moment.index)
+        if self.transfer is not None:
+            fill_legs(self, at, lambda side: (bar.open, None), bar.open)
         for order in self.book.live(WAITING):
             if f_act_02(order, bar):
                 self.log.active(at.ts, order.id, "bar", "F-ACT-02")
@@ -438,7 +463,7 @@ class ReferenceEngine:
             self.log.ambiguous(at.ts)
         for event in events:
             if isinstance(event, Execution):
-                self._book(at.ts, event, flags)
+                book_fill(self, at.ts, event, flags)
             else:
                 self._moved(at.ts, event)
 
@@ -458,39 +483,13 @@ class ReferenceEngine:
         execution = Execution(order, price, rule, reference, liquidity, shown, cancelled, legs)
         return replace(execution, reduced=settled.reduced, flat_after=book.position == 0)
 
-    def _book(self, ts: int, execution: Execution, flags: tuple[FillFlag, ...] = ()) -> None:
-        """Books a fill: its value moves the cash and it pays its fee, each rounded once
-        (F-FEE-01 to F-FEE-03), and the fill goes to the log."""
-        order = execution.order
-        value = self.instrument.value(execution.price, order.lots)
-        booked = f"the money of order {order.id}'s fill at {instant_text(ts)}"
-        cash = f_fee_03(-order.side.sign() * value, booked)
-        fee = -f_fee_03(-self._fee(value, execution), booked)
-        fill = f_tag_01(execution, ts, self.fidelity, self.tick)
-        fill = fill.model_copy(update={"flags": (*flags, *fill.flags), "fee": fee, "cash": cash})
-        self.fills.append(fill)
-        self.book.booked(cash - fee, ts, execution.flat_after)
-        self.log.filled(fill, execution.cancelled, execution.bracket, execution.reduced)
 
-    def _fee(self, value: Fraction, execution: Execution) -> Fraction:
-        if isinstance(self.fees, FuturesFee):
-            return f_fee_01(self.fees, execution.order.lots * self.instrument.lot_step)
-        if isinstance(self.fees, CryptoFee):
-            return f_fee_02(self.fees, value, execution.liquidity)
-        return Fraction(0)
-
-    def _on_funding(self, rate: FundingRate) -> None:
-        """A funding time: an open position pays or receives at the mark (F-FND-01)."""
-        mark = self.book.mark
-        if self.book.position == 0:
-            return
-        if mark is None:
-            raise ValueError(f"Expected a mark at the funding {instant_text(rate.ts)}, got none.")
-        owed = f_fnd_01(self.book.position, mark, self.instrument, rate.rate)
-        change = f_fee_03(owed, f"the funding at {instant_text(rate.ts)}")
-        self.funding.append(FundingPayment(ts=rate.ts, amount=change))
-        self.book.cash += change
-        self.log.funded(rate.ts, change, mark)
+def _price_for(record: TradeRecord, side: Side) -> tuple[int, int | None]:
+    """The price a market order of `side` takes on `record`, and the size it shows: on TBBO the
+    quote, read no better than the trade (F-SLP-01), on trades the trade (F-MKT-01, F-MKT-02)."""
+    if isinstance(record, TbboRecord):
+        return record.quote(side)
+    return record.price, record.size
 
 
 class BarReplay:

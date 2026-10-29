@@ -2,8 +2,8 @@
 its expected fills, marks, and funding say (Done means 1); the runner prints how the scenarios
 cover the rules; and `engine.py` stays under 600 lines, every rule of
 `docs/spec/fill-semantics.md` having one function, in the engine or beside it in the reference's
-modules of money, exit plans, time rules, and the template (step 2.8), so that one fill can be
-followed from the tape to the log (Done means 2)."""
+modules of money, exit plans, time rules, and the template (step 2.8), and of booking and rolls
+(step 2.9), so that one fill can be followed from the tape to the log (Done means 2)."""
 
 from pathlib import Path
 
@@ -19,8 +19,10 @@ REFERENCE = ROOT / "python" / "fefat" / "src" / "fefat" / "reference"
 ENGINE = REFERENCE / "engine.py"
 RULE_MODULES = (
     ENGINE,
+    REFERENCE / "booking.py",
     REFERENCE / "money.py",
     REFERENCE / "exit_plan.py",
+    REFERENCE / "rolls.py",
     REFERENCE / "time_rules.py",
     *sorted((REFERENCE / "template").glob("*.py")),
 )

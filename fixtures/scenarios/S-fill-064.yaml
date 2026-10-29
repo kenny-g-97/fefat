@@ -1,0 +1,36 @@
+id: S-fill-064
+title: Funding inside a daily bar is paid on the position as it stood before the bar, at the mark the bar before left
+fidelity: 1d
+instrument: BTCUSDT-PERP
+position: {side: long, quantity: "0.010", price: "65000.0"}
+funding:
+  - {ts: "2026-03-07T08:00:00.000Z", rate: "0.0001"}
+  - {ts: "2026-03-07T16:00:00.000Z", rate: "0.0003"}
+  - {ts: "2026-03-08T00:00:00.000Z", rate: "0.0001"}
+orders:
+  - {id: 1, placed_at: "2026-03-07T00:00:00.000Z", side: sell, kind: market, quantity: "0.010"}
+tape:
+  - {ts_open: "2026-03-06T00:00:00Z", ts_close: "2026-03-07T00:00:00Z", open: "64800.0", high: "65400.0", low: "64500.0", close: "65231.7", volume: 9000}
+  - {ts_open: "2026-03-07T00:00:00Z", ts_close: "2026-03-08T00:00:00Z", open: "65230.0", high: "66000.0", low: "64900.0", close: "65800.0", volume: 8000}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-08T00:00:00Z", price: "65229.9", rule: F-MKT-03}
+  funding:
+    - {ts: "2026-03-07T08:00:00.000Z", amount: "-0.065232"}
+    - {ts: "2026-03-07T16:00:00.000Z", amount: "-0.195696"}
+rules: [F-ACT-02, F-BAR-06, F-CLK-02, F-FEE-03, F-FND-01, F-MKT-03, F-MRK-01, F-SLP-01]
+
+# Arithmetic (BTCUSDT-PERP: tick 0.10, point value 1, quantities in BTC on a lot step of 0.001;
+# daily bars are the UTC days; one tick of slippage on bars: F-SLP-01):
+# the long of 0.010 BTC held when the tape starts is marked at the close of the bar of 03-06,
+# 65231.7 (F-MRK-01); the sell decided at that close, 00:00 on 03-07, is active at 00:00:00.100
+# and sees the bar of 03-07 (F-ACT-02), whose fills happen at its close, 00:00 on 03-08
+# (F-BAR-06);
+# the funding times of 08:00 and 16:00 fall inside that bar, so they see the long as it stood
+# before it, at the mark the bar of 03-06 left (F-FND-01): at 08:00 the long pays
+# 0.010 x 65231.7 x 1 x 0.0001 = 0.0652317, a cash change of -0.0652317 rounded toward minus
+# infinity to -0.065232 (F-FEE-03); at 16:00 0.010 x 65231.7 x 0.0003 = 0.1956951, rounded to
+# -0.195696;
+# at 00:00 on 03-08 the bar of 03-07 closes first (F-CLK-02): the sell fills at its open less a
+# tick, 65230.0 - 0.1 = 65229.9 (F-MKT-03), and the funding of that instant finds the run flat,
+# so it pays nothing.

@@ -1,0 +1,42 @@
+id: S-fill-067
+title: Two rolls in one run move the bracket by each gap in turn, each sending its legs on the next front
+fidelity: trades
+instrument: ES
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+  - {trade_date: "2026-03-10", session_open: "2026-03-09T22:00:00Z", rolled_from: ESM2026, contract: ESU2026, gap: "18.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T20:00:00.000Z", side: buy, kind: market, quantity: 1, bracket: {stop: {id: 2, price: "4990.00"}, target: {id: 3, price: "5100.00"}}}
+tape:
+  - {ts: "2026-03-06T20:00:00.200Z", price: "5001.00", size: 3}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00", size: 3}
+  - {ts: "2026-03-09T22:00:00.500Z", price: "5050.00", size: 3}
+  - {ts: "2026-03-10T14:00:00.000Z", price: "5027.75", size: 3}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T20:00:00.200Z", price: "5001.25", rule: F-MKT-02, role: entry, contract: ESH2026}
+    - {order: 4, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, role: roll_volume, contract: ESH2026}
+    - {order: 5, ts: "2026-03-08T22:00:00.500Z", price: "5025.25", rule: F-ROL-02, role: roll_volume, contract: ESM2026}
+    - {order: 6, ts: "2026-03-09T22:00:00.500Z", price: "5031.75", rule: F-ROL-02, role: roll_volume, contract: ESM2026}
+    - {order: 7, ts: "2026-03-09T22:00:00.500Z", price: "5050.25", rule: F-ROL-02, role: roll_volume, contract: ESU2026}
+    - {order: 2, ts: "2026-03-10T14:00:00.000Z", price: "5027.75", rule: F-STP-03, role: stop, contract: ESU2026}
+rules: [F-ACT-01, F-MKT-02, F-OCO-01, F-OCO-02, F-ROL-01, F-ROL-02, F-ROL-03, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; the sessions of 2026-03-09
+# and 03-10 open at 22:00Z the day before, 17:00 Chicago):
+# decided at 20:00:00.000 and active at 20:00:00.100 (F-ACT-01), the buy fills at the trade at
+# 20:00:00.200 plus a tick, 5001.00 + 0.25 = 5001.25 (F-MKT-02), on ESH2026; its bracket, stop
+# 4990.00 and target 5100.00, is placed (F-OCO-02);
+# at the first roll, 22:00:00 on 03-08 (F-ROL-01), the stop moves by its gap of 20.00 to 5010.00
+# and the target to 5120.00 (F-ROL-03), and orders 4 and 5 are sent (F-ROL-02); the trade at
+# 5025.00 fills them: the close leg at 5025.00 - 20.00 - 0.25 = 5004.75 on ESH2026, the open leg
+# at 5025.00 + 0.25 = 5025.25 on ESM2026;
+# at the second roll, 22:00:00 on 03-09, rolling from ESM2026, the front the first left, the stop
+# moves by 18.00 to 5028.00 and the target to 5138.00 (F-ROL-03), and orders 6 and 7 are sent; the
+# trade at 5050.00 fills them: the close leg at 5050.00 - 18.00 - 0.25 = 5031.75 on ESM2026, the
+# open leg at 5050.00 + 0.25 = 5050.25 on ESU2026; neither 5025.00 nor 5050.00 reaches the stop or
+# the target as they then stood;
+# the trade at 5027.75 on 03-10 reaches the stop at 5028.00 (F-STP-01): fill = lower of
+# 5028.00 - 0.25 and 5027.75 = 5027.75 (F-STP-03), on ESU2026, and the target is cancelled
+# (F-OCO-01). Without the second roll the stop would stand at 5010.00, and the trade would not
+# reach it.

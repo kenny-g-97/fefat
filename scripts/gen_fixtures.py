@@ -50,6 +50,12 @@ for ES, lots of 0.001 BTC for BTC), `side` (the aggressor: `B` buys, `A` sells,
 the generator, the seed, its size, and its SHA-256, and each Parquet file's row
 count.
 
+The BTC perpetual also holds its funding rates (step 2.9), the store's first funding data, as
+Binance fixes them every eight hours from 00:00 UTC: one row per funding time of its day in
+`funding/root=BTCUSDT-PERP/contract=BTCUSDT-PERP/part.parquet`, `ts_recv` and `ts_event` both
+the funding time, and the rate in 1e-9 units with eight decimals, as Binance publishes it, drawn
+from its own `random.Random` seeded with "<seed>/<contract>/funding" (ADR-0019).
+
 Beside the provider folders, `databento-batch/<job>/` holds a Databento batch download as the
 importer of step 1.6 reads one: the ES 1-minute bars as a DBN file (`ESH6`, instrument_id
 1001), with a calendar spread `ESH6-ESM6` (1002) trading now and then, which the importer
@@ -166,6 +172,11 @@ def arrow_schema(schema_name: str) -> pa.Schema:
 
 TRADES_SCHEMA = arrow_schema("trades")
 BARS_SCHEMA = arrow_schema("ohlcv-1m")
+FUNDING_SCHEMA = arrow_schema("funding")
+FUNDING_TIMES = (time(0, 0), time(8, 0), time(16, 0))
+"""When Binance fixes a USD-M perpetual's funding, UTC."""
+FUNDING_RATE_STEPS = (-5_000, 15_000)
+"""A funding rate's range in steps of 1e-8, Binance's eight decimals: -0.00005 to 0.00015."""
 
 
 @dataclass(frozen=True)
@@ -644,6 +655,27 @@ def written_product(
     return entries
 
 
+def written_funding(product: FixtureProduct, out: Path, seed: int) -> list[dict[str, str | int]]:
+    """Write a perpetual's funding rates, one at each funding time of each of its trade dates, and
+    their `dataset.json`, and return their manifest entries."""
+    random_source = random.Random(f"{seed}/{product.contract}/funding")
+    columns: dict[str, list[int]] = {name: [] for name in FUNDING_SCHEMA.names}
+    for trade_date in product.trade_dates:
+        for clock in FUNDING_TIMES:
+            instant = datetime.combine(trade_date, clock, tzinfo=ZoneInfo("UTC"))
+            ts = int(instant.timestamp()) * NANOSECONDS_PER_SECOND
+            columns["ts_recv"].append(ts)
+            columns["ts_event"].append(ts)
+            columns["instrument_id"].append(product.instrument_id)
+            columns["funding_rate"].append(random_source.randint(*FUNDING_RATE_STEPS) * 10)
+    path = (
+        out / "funding" / f"root={product.root}" / f"contract={product.contract}" / "part.parquet"
+    )
+    table = pa.table(columns, schema=FUNDING_SCHEMA)
+    partition = written_partition(table, path, out, seed)
+    return [partition, written_dataset_metadata(product, "funding", out, seed)]
+
+
 @dataclass
 class DatabentoInterval:
     """A symbology interval as the DBN encoder takes it: the symbol is the instrument_id."""
@@ -997,6 +1029,7 @@ def main(argv: Sequence[str]) -> int:
         for schema in ("trades", "ohlcv-1s", "ohlcv-1m")
     )
     if arguments.dates is None and arguments.contracts is None:
+        entries.extend(written_funding(BTC, arguments.out, arguments.seed))
         entries.extend(written_databento_batch(arguments.out, arguments.seed))
         entries.extend(written_preset_samples(arguments.out, arguments.seed))
     write_manifest(arguments.out, entries)

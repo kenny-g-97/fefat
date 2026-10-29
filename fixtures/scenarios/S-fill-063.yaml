@@ -1,0 +1,31 @@
+id: S-fill-063
+title: A CL long is stopped below zero, as on 2020-04-20, its sell at a negative price paying cash out
+fidelity: trades
+instrument: CL
+fees: {kind: futures, per_contract_side: "1.50"}
+position: {side: long, quantity: 1, price: "1.50"}
+orders:
+  - {id: 1, placed_at: "2020-04-20T17:00:00.000Z", side: sell, kind: stop, price: "-12.50", quantity: 1}
+tape:
+  - {ts: "2020-04-20T17:00:00.500Z", price: "0.50", size: 4}
+  - {ts: "2020-04-20T18:10:00.000Z", price: "-5.00", size: 3}
+  - {ts: "2020-04-20T18:20:00.000Z", price: "-12.40", size: 2}
+  - {ts: "2020-04-20T18:25:00.000Z", price: "-12.55", size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2020-04-20T18:25:00.000Z", price: "-12.55", rule: F-STP-03, fee: "1.50"}
+  marks:
+    - {ts: "2020-04-20T17:00:00.500Z", price: "0.50"}
+    - {ts: "2020-04-20T18:10:00.000Z", price: "-5.00"}
+    - {ts: "2020-04-20T18:20:00.000Z", price: "-12.40"}
+rules: [F-FEE-01, F-MRK-01, F-STP-01, F-STP-03, F-STP-05]
+
+# Arithmetic (CL, tick 0.01, 1,000 USD a point; one tick of slippage on trades: F-SLP-01; a fee of
+# 1.50 per contract per side; the session of 2020-04-20 runs from 22:00 on 04-19 to 21:00 on 04-20):
+# the long of 1 lot bought at 1.50 is marked at each trade (F-MRK-01): 0.50, -5.00, and -12.40,
+# prices below zero as CL's were on 2020-04-20; the sell stop at -12.50, active at 17:00:00.100,
+# sees no price before it, so it is on the right side of the market (F-STP-05), and waits;
+# the trade at -12.55 is at or below -12.50 (F-STP-01): fill = lower of -12.50 - 0.01 = -12.51 and
+# -12.55 = -12.55 (F-STP-03), a gap; fee = 1 x 1.50 = 1.50 (F-FEE-01);
+# selling at a negative price pays cash out: the cash moves by 1 x (-12.55) x 1,000 = -12,550.00,
+# and the trade lost (-12.55 - 1.50) x 1,000 = -14,050.00 and its fee.

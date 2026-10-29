@@ -2,11 +2,13 @@
 //! the trades a trade date has counted lost `daily_loss_stop` or more, the template places no entry
 //! for the rest of that date (F-LIM-02). The property reads the run's outputs alone: each entry
 //! order's decision, and the trades closed before it that a decision of the same trade date
-//! counted, each at the first decision at or after its closing fill.
+//! counted, each at the first decision at or after its closing fill. From step 2.9 each fill pays a
+//! drawn fee per contract per side, so the trades the stop counts are net of their fees (§20).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use fefat_core::costs::{FeeRate, FeeTable};
 use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
@@ -21,7 +23,7 @@ use serde_json::json;
 
 use super::{Replay, TickRun};
 use crate::hours::TradingHours;
-use crate::settings::{LimitFill, RunSettings, SlippageTicks};
+use crate::settings::{LimitFill, RunCosts, RunSettings, SlippageTicks};
 use crate::template::{SignalRow, TemplateStrategy};
 
 const SEED: u64 = 20_261_029;
@@ -47,6 +49,8 @@ struct DrawnCase {
     target_ticks: u32,
     loss_stop: u32,
     signal_exit: bool,
+    /// The fee per contract per side, in cents.
+    fee_cents: i64,
 }
 
 fn drawn_day() -> impl Strategy<Value = DrawnDay> {
@@ -58,15 +62,25 @@ fn drawn_day() -> impl Strategy<Value = DrawnDay> {
 
 fn drawn_case() -> impl Strategy<Value = DrawnCase> {
     let days = prop::collection::vec(drawn_day(), 2..4);
-    (days, 1_u32..=6, 1_u32..=12, 10_u32..=150, any::<bool>()).prop_map(
-        |(days, stop_ticks, target_ticks, loss_stop, signal_exit)| DrawnCase {
-            days,
-            stop_ticks,
-            target_ticks,
-            loss_stop,
-            signal_exit,
-        },
+    let fee = prop_oneof![1 => Just(0_i64), 3 => 1_i64..=500];
+    (
+        days,
+        1_u32..=6,
+        1_u32..=12,
+        10_u32..=150,
+        any::<bool>(),
+        fee,
     )
+        .prop_map(
+            |(days, stop_ticks, target_ticks, loss_stop, signal_exit, fee_cents)| DrawnCase {
+                days,
+                stop_ticks,
+                target_ticks,
+                loss_stop,
+                signal_exit,
+                fee_cents,
+            },
+        )
 }
 
 /// Each drawn day's trades, from 14:30 UTC of its date, and the signal rows at their instants.
@@ -148,6 +162,13 @@ fn no_entry_after_the_stop(case: &DrawnCase, seen: &mut Coverage) -> Result<(), 
         ledger,
         &mut template,
     )
+    .unwrap()
+    .with_costs(RunCosts {
+        fees: Some(FeeTable::always(FeeRate::Futures {
+            per_contract_side: Money(case.fee_cents * 10_000),
+        })),
+        funding: Vec::new(),
+    })
     .unwrap();
     while run.step().unwrap().is_some() {}
     let closed_trades = run.closed_trades.clone();

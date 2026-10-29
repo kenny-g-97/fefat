@@ -1,7 +1,8 @@
 //! Hierarchical replay (`02` §4): the coarsest bar first, then finer bars, then the finest records,
 //! descending only where a bar's range can reach a working order's level, an order can become
 //! active, or an exit plan could move (F-PLN-05). A block of the finest records inside a bar that
-//! nothing can act on is passed over
+//! nothing can act on, and that ends before the next decision and the next roll or funding time
+//! (F-CLK-02), is passed over
 //! whole, with what a full replay of it would leave: every working limit resting (F-LMT-04), the
 //! market open (F-SES-02), and the position marked at the block's last record (F-MRK-01). The
 //! bar's range bounds the prices of the records it holds, which every reader checks where the
@@ -13,7 +14,7 @@ use fefat_core::orders::{OrderKind, OrderState, Side};
 
 use super::fills::is_limit;
 use super::records::{Unit, bar_row};
-use super::{RunError, Stepped, TickRun};
+use super::{RunError, Stepped, TickRun, Timer};
 use crate::book::WorkingOrder;
 use crate::exit_plan::LivePlan;
 
@@ -62,9 +63,12 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let start = self.next_record;
         let instants = day.records.instants();
         let decision = self.decisions.get(self.next_decision).copied();
+        let timer = self.next_timer().map(Timer::at);
+        let of_bars = day.records.are_bars();
         day.levels.iter().find_map(|level| {
             let (bar, end) = level.holding(start)?;
-            let end = decision.map_or(end, |decision| before(instants, start, end, decision));
+            let end = decision.map_or(end, |decision| before(instants, start, end, decision, true));
+            let end = timer.map_or(end, |at| before(instants, start, end, at, of_bars));
             let last = day.records.get(end.checked_sub(1)?)?;
             let nothing_acts = end > start && self.untouched_by(&bar, last.ts());
             nothing_acts.then_some(Block { end, last })
@@ -113,12 +117,14 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     }
 }
 
-/// The end of the records from `start` before `end` that come before the decision at `decision`:
-/// those available at or before it (F-CLK-02).
-fn before(instants: &[Ts], start: usize, end: usize, decision: Ts) -> usize {
+/// The end of the records from `start` before `end` that come before an event at `at`
+/// (F-CLK-02): those available before it, and those available at it when `at_too`, as for a
+/// decision, which comes after every record of its instant, or for a roll or a funding time, which
+/// comes after the bars closing then but before the ticks received then.
+fn before(instants: &[Ts], start: usize, end: usize, at: Ts, at_too: bool) -> usize {
     let held = instants.get(start..end);
     held.map_or(start, |held| {
-        start + held.partition_point(|instant| *instant <= decision)
+        start + held.partition_point(|instant| *instant < at || (at_too && *instant == at))
     })
 }
 

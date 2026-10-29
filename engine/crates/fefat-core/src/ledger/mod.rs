@@ -2,13 +2,15 @@
 //! is valued at. Equity is worked out from them, cash plus the position's value at the mark, and
 //! never stored. A fill moves the cash by its value, the other way, and by its fee, each booked
 //! once and rounded toward minus infinity of the trader's cash, as `fefat.reference.engine` books
-//! them; the mark moves when the loop marks it, never at a fill.
+//! them, and a funding time by its payment (F-FND-01); the mark moves when the loop marks it,
+//! never at a fill, and with a roll's gap (F-ROL-03).
 
 use std::cmp::Ordering;
 use std::fmt;
 
 use thiserror::Error;
 
+use crate::costs::{Rate, funding_change};
 use crate::fills::Fill;
 use crate::instants::Ts;
 use crate::instrument::InstrumentParameters;
@@ -180,9 +182,42 @@ impl Ledger {
         Ok((position, cash, cash_moved))
     }
 
+    /// Books a roll's two legs, `close` on the contract rolled from and then `open` on the new
+    /// front, as fills are booked, the position's open staying the fill that opened it (F-ROL-02,
+    /// F-TIM-02). Returns what each leg's value moved the cash by; a leg the ledger refuses leaves
+    /// it as it was.
+    pub fn transfer(&mut self, close: &Fill, open: &Fill) -> Result<[Money; 2], LedgerError> {
+        let mut after = self.clone();
+        let moved = [after.book(close)?, after.book(open)?];
+        after.opened_at = self.opened_at;
+        *self = after;
+        Ok(moved)
+    }
+
+    /// F-FND-01: a funding time at `rate`. An open position pays its signed lots × the mark ×
+    /// point value × the rate, which moves the cash the other way, rounded toward minus infinity
+    /// (F-FEE-03). Returns that change to the cash, none when flat.
+    pub fn pay_funding(&mut self, rate: Rate) -> Result<Money, LedgerError> {
+        let change = match (self.position, self.mark) {
+            (Position::Flat, _) => return Ok(Money(0)),
+            (position, Some(mark)) => {
+                funding_change(&self.instrument, position.signed_lots(), mark, rate)?
+            }
+            (position, None) => return Err(LedgerError::UnmarkedPosition { position }),
+        };
+        self.cash = self.cash.checked_add(change)?;
+        Ok(change)
+    }
+
     /// Marks the position at `price`, the last tradeable price seen (F-MRK-01).
     pub fn mark_at(&mut self, price: Price) {
         self.mark = Some(price);
+    }
+
+    /// F-ROL-03: a roll moved the market by `gap`, and the mark moves with it.
+    pub fn shift_mark(&mut self, gap: Price) -> Result<(), Overflow> {
+        self.mark = self.mark.map(|mark| mark.checked_add(gap)).transpose()?;
+        Ok(())
     }
 
     /// The instrument whose lots the ledger holds.

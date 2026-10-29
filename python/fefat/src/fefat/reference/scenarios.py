@@ -33,12 +33,14 @@ from pydantic import (
 )
 
 from fefat.market import instruments
-from fefat.market.fees import Fee, FuturesFee
+from fefat.market.fees import Fee
 from fefat.market.fidelity import Fidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.schema import FrozenModel
+from fefat.reference.costs import DatedFees, RunFees
 from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import OpenPosition, Order, OrderId, OrderRole, oco_groups
+from fefat.reference.rolls import RollRow, f_rol_01
 from fefat.reference.settings import RunSettings, default_slippage_ticks
 from fefat.reference.signal_rows import SignalRow, signal_frame
 from fefat.reference.tape import FundingRate, Tape, check_tape, parse_tape
@@ -72,8 +74,9 @@ ScenarioInstrument = Annotated[Instrument | InlineInstrument, BeforeValidator(_i
 class ExpectedFill(FrozenModel):
     """A fill the rules give: the order it fills, when, at what price, the rule that priced it
     (F-TAG-01), its flags, in a scenario with fees its fee, and, where the scenario states them,
-    its quantity in the instrument's units, which a template's targets and sizes decide, and its
-    role, which records a template's exit reason (F-TAG-01)."""
+    its quantity in the instrument's units, which a template's targets and sizes decide, its
+    role, which records a template's exit reason or a roll's (F-TAG-01), and the contract it is
+    of, which a roll changes (F-ROL-01)."""
 
     order: OrderId
     ts: Instant
@@ -83,6 +86,7 @@ class ExpectedFill(FrozenModel):
     fee: Money | None = None
     quantity: Quantity | None = None
     role: OrderRole | None = None
+    contract: str | None = None
 
 
 class ExpectedMark(FrozenModel):
@@ -109,18 +113,20 @@ class Expected(FrozenModel):
 
 class ScenarioBase(FrozenModel):
     """What every scenario holds, as `fixtures/scenarios/README.md` describes it: its tape, the
-    instrument, settings, and costs it runs with, the position held when the tape starts, and
-    what the rules give; each kind adds what decides its orders."""
+    instrument, settings, and costs it runs with, the position held when the tape starts, the
+    rolls of a future's front, and what the rules give; each kind adds what decides its
+    orders."""
 
     id: Annotated[str, Field(pattern=r"^S-[a-z]+-[0-9]{3}$")]
     title: str = Field(min_length=1)
     fidelity: Fidelity
     instrument: ScenarioInstrument
     settings: RunSettings
-    fees: Fee | None = None
+    fees: Fee | DatedFees | None = None
     position: OpenPosition | None = None
     tape: Tape
     funding: tuple[FundingRate, ...] = ()
+    rolls: tuple[RollRow, ...] = ()
     expected: Expected
     rules: tuple[RuleId, ...] = Field(min_length=1)
 
@@ -150,12 +156,26 @@ class ScenarioBase(FrozenModel):
     @model_validator(mode="after")
     def _consistent(self) -> Self:
         check_tape(self.fidelity, self.tape)
+        f_rol_01(self.rolls, self.opening_contract())
         self._check_prices_on_the_tick()
         self._check_quantities_on_the_lot_step()
         self._check_costs_fit_the_instrument()
         self._check_expected()
         self._check_its_own()
         return self
+
+    def opening_contract(self) -> str:
+        """The contract the run starts on: the first roll's contract rolled from, and without
+        rolls the scenario's id, the label the engines give its one contract."""
+        return self.rolls[0].rolled_from if self.rolls else self.id
+
+    def contracts(self) -> tuple[str, ...]:
+        """The contracts the run trades, in order (F-ROL-01)."""
+        return (self.opening_contract(), *(roll.contract for roll in self.rolls))
+
+    def run_fees(self) -> RunFees | None:
+        """The fee table the run prices its fills with (F-FEE-01), none without fees."""
+        return None if self.fees is None else RunFees.of(self.fees)
 
     def _own_prices(self) -> Iterator[int]:
         """The prices that what decides this kind of scenario's orders names."""
@@ -168,6 +188,21 @@ class ScenarioBase(FrozenModel):
     def _check_its_own(self) -> None:
         """The checks of this kind of scenario."""
 
+    def _check_contracts(self) -> None:
+        """A contract on every fill or on none, each one the run trades (F-ROL-01)."""
+        stated = [fill.contract for fill in self.expected.fills if fill.contract is not None]
+        if stated and len(stated) != len(self.expected.fills):
+            raise ValueError(
+                f"Expected a contract on every fill of {self.id} or on none, got one on "
+                f"{len(stated)} of {len(self.expected.fills)}."
+            )
+        unknown = sorted(set(stated) - set(self.contracts()))
+        if unknown:
+            raise ValueError(
+                f"Expected each fill of {self.id} on one of its contracts "
+                f"{list(self.contracts())}, got {unknown}."
+            )
+
     def _prices(self) -> Iterator[int]:
         for record in self.tape:
             yield from record.prices()
@@ -176,6 +211,7 @@ class ScenarioBase(FrozenModel):
             yield self.position.price
         yield from (fill.price for fill in self.expected.fills)
         yield from (mark.price for mark in self.expected.marks)
+        yield from (roll.gap for roll in self.rolls)
 
     def _check_prices_on_the_tick(self) -> None:
         tick = self.instrument.tick_size.scaleb(PRICE_DECIMALS)
@@ -204,10 +240,14 @@ class ScenarioBase(FrozenModel):
             return
         root, kind = self.instrument.root, self.instrument.kind
         futures = kind is InstrumentKind.FUTURES
-        if self.fees is not None and isinstance(self.fees, FuturesFee) != futures:
+        if self.fees is not None and (self.fees.kind == "futures") != futures:
             raise ValueError(
                 f"Expected {'futures' if futures else 'crypto'} fees for {root}, a {kind} "
                 f"instrument, got {self.fees.kind} fees."
+            )
+        if self.rolls and not futures:
+            raise ValueError(
+                f"Expected rolls on a future only, got them on {root}, a {kind} instrument."
             )
         if self.funding and kind is not InstrumentKind.PERPETUAL:
             raise ValueError(
@@ -240,6 +280,7 @@ class ScenarioBase(FrozenModel):
                 f"Expected a role on every fill of {self.id} or on none, got one on "
                 f"{sum(roles)} of {len(roles)}."
             )
+        self._check_contracts()
         filled = Counter(fill.order for fill in self.expected.fills)
         again = sorted(order for order, fills in filled.items() if fills > 1)
         if again:
@@ -286,10 +327,17 @@ class Scenario(ScenarioBase):
                 f"Expected two orders or more in each OCO group of {self.id}, got one in {alone}."
             )
 
+    def highest_id(self) -> int:
+        """The highest id the scenario names, after which the engine gives its own orders, a
+        roll's legs, theirs (F-ROL-02)."""
+        return max(order_id for order in self.orders for order_id in order.ids())
+
     def _check_fills_are_of_its_orders(self) -> None:
+        """Each fill of one of its orders, or with rolls of a leg the engine gives an id after
+        theirs (F-ROL-02)."""
         ids = sorted(order_id for order in self.orders for order_id in order.ids())
         for fill in self.expected.fills:
-            if fill.order not in ids:
+            if fill.order not in ids and not (self.rolls and fill.order > self.highest_id()):
                 raise ValueError(
                     f"Expected each fill of {self.id} to fill one of its orders {ids}, "
                     f"got order {fill.order}."

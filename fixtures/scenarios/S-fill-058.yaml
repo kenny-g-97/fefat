@@ -1,0 +1,47 @@
+id: S-fill-058
+title: A long held across a roll is transferred by two legs on two contracts, its bracket moved by the gap
+fidelity: trades
+instrument: ES
+fees: {kind: futures, per_contract_side: "2.50"}
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: market, quantity: 1, bracket: {stop: {id: 2, price: "4990.00"}, target: {id: 3, price: "5030.00"}}}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-06T20:00:00.000Z", price: "5004.00", size: 2}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00", size: 4}
+  - {ts: "2026-03-09T14:00:00.000Z", price: "5009.75", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, fee: "2.50", role: entry, contract: ESH2026}
+    - {order: 4, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, fee: "2.50", role: roll_volume, contract: ESH2026}
+    - {order: 5, ts: "2026-03-08T22:00:00.500Z", price: "5025.25", rule: F-ROL-02, fee: "2.50", role: roll_volume, contract: ESM2026}
+    - {order: 2, ts: "2026-03-09T14:00:00.000Z", price: "5009.75", rule: F-STP-03, fee: "2.50", role: stop, contract: ESM2026}
+  marks:
+    - {ts: "2026-03-06T20:00:00.000Z", price: "5004.00"}
+    - {ts: "2026-03-08T22:00:00.000Z", price: "5004.00"}
+    - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00"}
+rules: [F-FEE-01, F-MKT-02, F-MRK-01, F-OCO-01, F-OCO-02, F-ROL-01, F-ROL-02, F-ROL-03, F-SLP-01, F-STP-01, F-STP-03, F-TAG-01]
+
+# Arithmetic (ES, tick 0.25, 50 USD a point; one tick of slippage on trades: F-SLP-01; a fee of
+# 2.50 per contract per side; the session of 2026-03-09 opens at 2026-03-08T22:00Z, 17:00 Chicago):
+# the buy market order fills at the first trade plus a tick, 5000.00 + 0.25 = 5000.25 (F-MKT-02),
+# on ESH2026, the run's first front, the roll's contract rolled from (F-ROL-01); its bracket is
+# placed: stop 4990.00, target 5030.00 (F-OCO-02); the trade at 20:00 marks the long at 5004.00;
+# at the roll, 22:00:00 on 03-08 (F-ROL-01), the front becomes ESM2026 and every price moves by the
+# gap of 20.00 (F-ROL-03): the stop to 4990.00 + 20.00 = 5010.00, the target to
+# 5030.00 + 20.00 = 5050.00, and the mark the run judges stops by to 5004.00 + 20.00 = 5024.00;
+# the long's legs are sent, order 4 selling ESH2026 and order 5 buying ESM2026, the next ids after
+# the scenario's 1 to 3 (F-ROL-02); until they fill, the long, still on ESH2026, is valued at
+# 5024.00 - 20.00 = 5004.00, its own contract's price, the mark recorded at 22:00 (F-ROL-03);
+# the first trade after the roll, 5025.00, fills them before anything else, the close leg at
+# 5025.00 - 20.00 - 0.25 = 5004.75 and the open leg at 5025.00 + 0.25 = 5025.25, each a market
+# order's tick against the trader (F-ROL-02, F-SLP-01) and each paying 2.50 (F-FEE-01); the moved
+# stop and target stay working, and the trade marks the long at 5025.00 (F-MRK-01);
+# the trade at 5009.75 on 03-09 reaches the stop at 5010.00 (F-STP-01): fill = lower of
+# 5010.00 - 0.25 and 5009.75 = 5009.75 (F-STP-03), on ESM2026, and the target is cancelled
+# (F-OCO-01). Without the roll the stop at 4990.00 would still work, and the long stay open.
+# The long made (5004.75 - 5000.25) x 50 = 225.00 on ESH2026 and (5009.75 - 5025.25) x 50 =
+# -775.00 on ESM2026, less four fees of 2.50: -560.00; the roll itself cost its two ticks of
+# slippage, (5025.25 - 5004.75 - 20.00) x 50 = 25.00, and its two fees, 5.00.

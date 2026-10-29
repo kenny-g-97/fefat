@@ -131,6 +131,18 @@ class ExitPlan:
         the bracket of a strategy protocol's `market` order."""
         return cls(PlannedLeg(TicksAway(stop_ticks)), (PlannedLeg(TicksAway(target_ticks)),))
 
+    def shifted_by(self, gap: int) -> "ExitPlan":
+        """The plan with the prices it names moved by a roll's gap; legs placed from the fill
+        move with it (F-ROL-03)."""
+        stop = None if self.stop is None else _shifted(self.stop, gap)
+        return replace(self, stop=stop, targets=tuple(_shifted(leg, gap) for leg in self.targets))
+
+
+def _shifted(leg: PlannedLeg, gap: int) -> PlannedLeg:
+    if isinstance(leg.price, AtPrice):
+        return replace(leg, price=AtPrice(leg.price.price + gap))
+    return leg
+
 
 @dataclass(frozen=True, slots=True)
 class Move:
@@ -341,6 +353,12 @@ class LivePlan:
 
     def copied(self) -> "LivePlan":
         return replace(self, targets=dict(self.targets), filled_targets=set(self.filled_targets))
+
+    def shifted_by(self, gap: int) -> None:
+        """A roll moved the market by `gap`: the fill price and the best price move with it, and
+        with them every level the plan works out (F-ROL-03)."""
+        self.fill += gap
+        self.best += gap
 
     def trigger_level(self, trigger: Trigger, tick: int) -> int | None:
         """The price a profit trigger fires at, rounded away from the fill (F-RND-01); none for

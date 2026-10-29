@@ -1,0 +1,24 @@
+id: S-fill-061
+title: A buy limit resting across a roll moves by the gap and fills on the new front
+fidelity: trades
+instrument: ES
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T14:30:00.000Z", side: buy, kind: limit, price: "4995.00", quantity: 1}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5016.00", size: 2}
+  - {ts: "2026-03-08T22:01:00.000Z", price: "5014.75", size: 2}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-08T22:01:00.000Z", price: "5015.00", rule: F-LMT-03, contract: ESM2026}
+rules: [F-LMT-01, F-LMT-03, F-LMT-04, F-ROL-01, F-ROL-03]
+
+# Arithmetic (ES, tick 0.25; limits fill when a trade goes through them: F-LMT-01):
+# the buy limit at 4995.00, active at 14:30:00.100, sees 5000.00 and rests (F-LMT-04);
+# at the roll, 22:00:00 on 03-08, the front becomes ESM2026 (F-ROL-01) and the resting limit moves
+# by the gap, to 4995.00 + 20.00 = 5015.00 (F-ROL-03); the run is flat, so no leg is sent;
+# the trade at 5016.00 does not go through it; the trade at 5014.75, below 5015.00, does
+# (F-LMT-01): fill = the limit = 5015.00 (F-LMT-03), a maker, on ESM2026. Left at 4995.00, the
+# limit would not fill on these trades.

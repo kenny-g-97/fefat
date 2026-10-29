@@ -9,28 +9,61 @@ from typing import Any
 
 import polars as pl
 import pytest
+from pydantic import ValidationError
 
 from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS
-from fefat.market.calendar import sessions_of
+from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.continuous import volume_rolls
 from fefat.market.fidelity import TickFidelity
-from fefat.market.schema import Timeframe
+from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.roll_decisions import RollReason
+from fefat.market.schema import Timeframe, parse_schema_name
+from fefat.market.store import Store
+from fefat.reference.costs import DatedFees, DatedFuturesFee, RunFees
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.event_log import EventKind
 from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.ledger import Trade, trades_of
 from fefat.reference.orders import OrderRole, PositionSide, Side
-from fefat.reference.scenario_runner import run_scenario
-from fefat.reference.scenarios import Scenario
+from fefat.reference.rolls import RollRow, rolls_within, tape_across_rolls
+from fefat.reference.scenario_runner import run_scenario, scenario_hours
+from fefat.reference.scenarios import Scenario, load_scenario
 from fefat.reference.settings import RunSettings
 from fefat.reference.strategy import Decision, DecisionContext
-from fefat.reference.tape import BarRecord, TbboRecord, TradeRecord, tape_of_bars, tape_of_trades
+from fefat.reference.tape import (
+    BarRecord,
+    FundingRate,
+    TbboRecord,
+    TradeRecord,
+    funding_rates_of,
+    tape_of_bars,
+    tape_of_trades,
+)
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_nanoseconds, instrument_parameters, lots_of, price_units
 
 ONE_MINUTE = Timeframe.parse("1m")
 MES = instrument_parameters(instruments.get("MES"))
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
+BTC_FUNDING = Dataset(
+    provider="synthetic", schema_name=parse_schema_name("funding"), root="BTCUSDT-PERP"
+)
+QUIET = ("5000.00", "5000.00", "5000.00", "5000.00")
+FRIDAY, MONDAY = "2026-03-06T14:30:00", "2026-03-09T14:30:00"
+END = instant_nanoseconds("2026-03-09T21:00:00Z")
+
+
+def fixture_minutes() -> pl.DataFrame:
+    """The fixtures' 1-minute bars of ES, each with its contract (`Store.scan_contracts`)."""
+    es_minutes = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
+    request = PartitionRequest(dataset=es_minutes, start=date(2026, 3, 5), end=date(2026, 3, 9))
+    return Store(FIXTURES).scan_contracts(request).collect()
+
+
+def sessions_of_es(cache: Path) -> SessionTable:
+    return sessions_of(instruments.get("ES").session_calendar(), cache)
 
 
 def bar(ts_open: str, ts_close: str, *prices: str, day: str = "2026-03-06") -> BarRecord:
@@ -268,6 +301,98 @@ def test_a_tape_of_bars_refuses_a_back_adjusted_series_and_a_roll() -> None:
         tape_of_bars(signal_bars(contract=["MESH2026", "MESM2026"]))
 
 
+def spliced_across_the_roll(**columns: list[Any]) -> pl.DataFrame:
+    """A bar of ESH2026 on 2026-03-06 and one of ESM2026 on 2026-03-09, after the fixtures' roll,
+    the second the new front's first, as `load` splices them, 20.00 above the first's prices."""
+    friday, monday = instant_nanoseconds(f"{FRIDAY}Z"), instant_nanoseconds(f"{MONDAY}Z")
+    spliced = {
+        "ts_open": [friday, monday],
+        "ts_close": [friday + 60 * 10**9, monday + 60 * 10**9],
+        "trade_date": [date(2026, 3, 6), date(2026, 3, 9)],
+        "contract": ["ESH2026", "ESM2026"],
+        "adj_offset": [0, -20_000_000_000],
+        "roll_flag": [False, True],
+        "volume": [7, 5],
+        "zero_volume": [False, False],
+    }
+    return signal_bars(**{**spliced, **columns})
+
+
+def test_a_tape_across_a_roll_gives_each_front_at_its_own_prices_and_the_roll(
+    tmp_path: Path,
+) -> None:
+    # Step 2.9 (F-ROL-01): a series load spliced is replayed at each front's raw prices, its
+    # prices less its adj_offset, which the roll's gap separates (D-09), with the roll between
+    # them, which a run across it must be given.
+    calendar = volume_rolls(fixture_minutes(), sessions_of_es(tmp_path), instruments.get("ES"), END)
+
+    (first, second), (roll,) = tape_across_rolls(spliced_across_the_roll(), calendar)
+
+    assert (first.open, first.close) == (price_units("5010.00"), price_units("5011.00"))
+    assert (second.open, second.close) == (price_units("5031.00"), price_units("5031.00"))
+    assert (roll.rolled_from, roll.contract) == ("ESH2026", "ESM2026")
+
+
+def test_a_tape_across_rolls_refuses_bars_of_another_front_than_its_calendars(
+    tmp_path: Path,
+) -> None:
+    # Step 2.9 (F-ROL-01): the bars of every contract, which a load without splicing returns, and
+    # a series another provider's calendar spliced, rolling on another day, hold bars of contracts
+    # that the calendar makes no front of their session, which a run would replay without a roll.
+    calendar = volume_rolls(fixture_minutes(), sessions_of_es(tmp_path), instruments.get("ES"), END)
+    friday = instant_nanoseconds(f"{FRIDAY}Z")
+    both_on_friday = spliced_across_the_roll(
+        ts_open=[friday, friday],
+        ts_close=[friday + 60 * 10**9] * 2,
+        trade_date=[date(2026, 3, 6)] * 2,
+    )
+
+    with pytest.raises(ValueError, match="got ESM2026 on 2026-03-06, where it gives ESH2026"):
+        tape_across_rolls(both_on_friday, calendar)
+    with pytest.raises(ValueError, match="got ESU2026 on 2026-03-09, where it gives ESM2026"):
+        tape_across_rolls(spliced_across_the_roll(contract=["ESH2026", "ESU2026"]), calendar)
+
+
+def test_the_rolls_a_tape_crosses_are_those_of_the_roll_calendar_inside_it(
+    tmp_path: Path,
+) -> None:
+    # Step 2.9 (F-ROL-01): the fixtures' roll at the open of 2026-03-09 lies inside a tape from
+    # 2026-03-06 to 03-09, and outside one of 03-09 alone, which starts after it.
+    calendar = volume_rolls(fixture_minutes(), sessions_of_es(tmp_path), instruments.get("ES"), END)
+    across = (
+        bar("14:30:00", "14:31:00", *QUIET),
+        bar("14:30:00", "14:31:00", *QUIET, day="2026-03-09"),
+    )
+    after = (bar("14:30:00", "14:31:00", *QUIET, day="2026-03-09"),)
+    up_to_the_open = (
+        bar("14:30:00", "14:31:00", *QUIET),
+        bar("21:59:00", "22:00:00", *QUIET, day="2026-03-08"),
+    )
+
+    (roll,) = rolls_within(calendar, across)
+
+    assert (roll.rolled_from, roll.contract, str(roll.reason)) == ("ESH2026", "ESM2026", "volume")
+    assert roll.session_open == instant_nanoseconds("2026-03-08T22:00:00Z")
+    assert rolls_within(calendar, after) == ()
+    # A bar that closes at the roll's open comes before the roll, so no bar follows it (F-CLK-02).
+    assert rolls_within(calendar, up_to_the_open) == ()
+
+
+def test_the_fixtures_funding_rows_read_as_the_engines_funding_rates() -> None:
+    # Step 2.9 (F-FND-01): a rate at each funding time of the BTC day, read from 1e-9 units.
+    request = PartitionRequest(dataset=BTC_FUNDING, start=date(2026, 3, 7), end=date(2026, 3, 7))
+    rates = funding_rates_of(Store(FIXTURES).scan(request).collect())
+
+    assert [rate.ts for rate in rates] == [
+        instant_nanoseconds(f"2026-03-07T{hour}:00:00Z") for hour in ("00", "08", "16")
+    ]
+    assert [rate.rate for rate in rates] == [
+        Decimal("0.000082070"),
+        Decimal("0.000146280"),
+        Decimal("-0.000005730"),
+    ]
+
+
 def test_a_tape_of_trades_reads_the_receive_clock_in_the_vendors_order() -> None:
     trades = pl.DataFrame(
         {
@@ -394,6 +519,96 @@ def test_a_position_is_marked_once_an_instant_at_its_last_trade() -> None:
         (100, price_units("5000.25")),
         (200, price_units("5000.50")),
     ]
+
+
+def test_a_run_given_no_trade_dates_prices_fees_by_the_trade_dates_its_hours_give(
+    tmp_path: Path,
+) -> None:
+    # Step 2.9 (F-FEE-01): a buy at 23:30 UTC on Sunday 2026-03-08 trades in the session of
+    # 2026-03-09, whose schedule prices it, not the one of its UTC day.
+    trades = TickFidelity.TRADES
+    sunday = instant_nanoseconds("2026-03-08T23:30:00Z")
+    tape = (
+        TradeRecord.model_construct(
+            ts=sunday + 200_000_000, ts_event=None, price=price_units("5000.00"), size=1
+        ),
+    )
+    schedules = (
+        DatedFuturesFee(per_contract_side=Decimal("2.00"), effective_from=date(2026, 3, 6)),
+        DatedFuturesFee(per_contract_side=Decimal("2.50"), effective_from=date(2026, 3, 9)),
+    )
+    fees = RunFees.of(DatedFees(kind="futures", schedules=schedules))
+    hours = CalendarHours.around(sessions_of_es(tmp_path), sunday, sunday)
+    engine = ReferenceEngine(RunSettings.for_fidelity(trades), MES, trades, hours, fees)
+
+    result = engine.run(
+        tape, [Decision(ts=sunday, bar={"ts_close": sunday})], buy_with_a_bracket_then_flatten
+    )
+
+    assert [fill.fee for fill in result.fills] == [2_500_000]
+
+
+def test_a_scenario_roll_off_its_sessions_open_is_refused(tmp_path: Path) -> None:
+    # Step 2.9 (F-ROL-01): a roll comes at the open of its trade date's session, 22:00 UTC on
+    # 2026-03-08 for ES's session of 03-09, so a scenario that names another instant is refused.
+    scenario = load_scenario(FIXTURES / "scenarios" / "S-fill-058.yaml")
+    (roll,) = scenario.rolls
+    an_hour_late = roll.model_copy(update={"session_open": roll.session_open + 3_600 * 10**9})
+    late = scenario.model_copy(update={"rolls": (an_hour_late,)})
+    sessions = sessions_of_es(tmp_path)
+
+    with pytest.raises(ValueError, match="Expected the roll on 2026-03-09 at its session's open"):
+        run_scenario(late, scenario_hours(late, sessions), sessions)
+
+
+def test_funding_times_out_of_order_or_repeated_are_refused() -> None:
+    # Step 2.9 (F-FND-01): as the Rust engine does, rather than sorting them or paying twice.
+    trades = TickFidelity.TRADES
+    tape = (
+        TradeRecord.model_construct(ts=100, ts_event=None, price=price_units("5000.00"), size=1),
+    )
+    engine = ReferenceEngine(RunSettings.for_fidelity(trades), MES, trades, AlwaysOpen())
+    later, earlier = (
+        FundingRate.model_construct(ts=300, rate=Decimal("0.0001")),
+        FundingRate.model_construct(ts=200, rate=Decimal("0.0001")),
+    )
+
+    for rates in ((later, earlier), (earlier, earlier)):
+        with pytest.raises(ValueError, match="Expected the funding times in order, each once"):
+            engine.run(tape, funding_rates=rates, position=1)
+
+
+def test_a_roll_before_the_legs_of_the_roll_before_it_have_filled_is_refused() -> None:
+    # Step 2.9 (F-ROL-01): with no record between two rolls, the first's legs would still be on
+    # their way at the second, which would lose them.
+    trades = TickFidelity.TRADES
+    tape = (
+        TradeRecord.model_construct(ts=100, ts_event=None, price=price_units("5000.00"), size=1),
+    )
+    roll = {
+        "trade_date": date(2026, 3, 9),
+        "gap": price_units("20.00"),
+        "reason": RollReason.VOLUME,
+    }
+    first = RollRow.model_construct(
+        **roll, session_open=200, rolled_from="ESH2026", contract="ESM2026"
+    )
+    second = RollRow.model_construct(
+        **roll, session_open=300, rolled_from="ESM2026", contract="ESU2026"
+    )
+    engine = ReferenceEngine(RunSettings.for_fidelity(trades), MES, trades, AlwaysOpen())
+
+    with pytest.raises(ValueError, match="Expected the legs of the roll before"):
+        engine.run(tape, position=1, contract="ESH2026", rolls=(first, second))
+
+
+def test_fee_schedules_out_of_the_order_of_their_dates_are_refused() -> None:
+    # Step 2.9 (F-FEE-01): each schedule is in force from its date until the next one's.
+    later = DatedFuturesFee(per_contract_side=Decimal("2.50"), effective_from=date(2026, 3, 7))
+    earlier = DatedFuturesFee(per_contract_side=Decimal("2.00"), effective_from=date(2026, 3, 6))
+
+    with pytest.raises(ValidationError, match="Expected the schedules in the order of their dates"):
+        DatedFees(kind="futures", schedules=(later, earlier))
 
 
 def test_an_empty_tape_is_refused() -> None:

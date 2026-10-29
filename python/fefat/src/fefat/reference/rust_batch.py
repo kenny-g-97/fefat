@@ -1,8 +1,9 @@
 """The batch `fefat-cli run` reads and writes (steps 2.6 and 2.7), a development tool of the
 repository until the Python bindings of step 2.10: cases, each a scenario, the hours its market
 trades in, and how the Rust engine replays it, as `run.json` and the Arrow files of their records
-and signal rows; and the outputs read back as each case's fills, event log, and ledger at its end,
-in the reference engine's terms. The formats are those `engine/crates/fefat-cli/src/run/` reads
+and signal rows, with each case's fee table, funding rates, and rolls (step 2.9); and the outputs
+read back as each case's fills, event log, ledger at its end, and cost lines, in the reference
+engine's terms. The formats are those `engine/crates/fefat-cli/src/run/` reads
 and writes. A case's records carry the trade date of the session they fall in, or of the last
 one opened before them (`SessionTable.assign_trade_dates_or_previous`, as `load` dates them),
 and, for an instrument without a calendar, the UTC day they start on. A case that skips also
@@ -14,6 +15,7 @@ import itertools
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -21,16 +23,19 @@ from typing import Any, NamedTuple
 import polars as pl
 
 from fefat.market.calendar import SessionTable
+from fefat.market.fees import FuturesFee
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe, TimeUnit
+from fefat.reference.costs import RunFees
 from fefat.reference.event_log import LogEntry
 from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.ledger import Fill
 from fefat.reference.orders import Order, PricedOrder
+from fefat.reference.rolls import RollRow
 from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
 from fefat.reference.settings import RunSettings
-from fefat.reference.tape import BarRecord, Record, TbboRecord
+from fefat.reference.tape import BarRecord, Record, TbboRecord, trade_dates_of
 from fefat.reference.time_rules import with_time_rules
 from fefat.reference.units import (
     CAPITAL,
@@ -43,7 +48,6 @@ from fefat.strategy import exits as rules
 from fefat.strategy.signal_frame import OPTIONAL_SIGNAL_COLUMNS
 from fefat.strategy.spec import StrategySpec
 
-NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
 _TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")
@@ -88,10 +92,9 @@ class EngineCase:
 
 
 class FillView(NamedTuple):
-    """What the engines compare of a fill (F-TAG-01), but its fee, which costs bring in step 2.9:
-    the order, when, at what price, the rule that priced it, its flags, its liquidity, its
-    slippage in ticks, its lots, side, and role, its fidelity, and what its value moved the cash
-    by (F-FEE-03)."""
+    """What the engines compare of a fill (F-TAG-01): the order, when, at what price, the rule
+    that priced it, its flags, its liquidity, its slippage in ticks, its lots, side, and role, its
+    fidelity, what its value moved the cash by, its fee (F-FEE-03), and its contract (F-ROL-01)."""
 
     order: int
     ts: int
@@ -105,6 +108,8 @@ class FillView(NamedTuple):
     role: str
     fidelity: str
     cash: int
+    fee: int
+    contract: str
 
     @classmethod
     def of(cls, fill: Fill) -> "FillView":
@@ -122,6 +127,8 @@ class FillView(NamedTuple):
             str(fill.role),
             str(fill.fidelity),
             fill.cash,
+            fill.fee,
+            fill.contract,
         )
 
     @classmethod
@@ -141,6 +148,8 @@ class FillView(NamedTuple):
             row["role"],
             row["fidelity"],
             row["cash"],
+            row["fee"],
+            row["contract"],
         )
 
 
@@ -159,17 +168,29 @@ class LogView(NamedTuple):
         return cls(entry.ts, str(entry.kind), entry.order, entry.rule)
 
 
+class CostView(NamedTuple):
+    """A cost line as the engines compare it: when, why, `fee` of an order or `funding` at a
+    rate in 1e-9 units, and what the trader paid, in micro-units."""
+
+    ts: int
+    reason: str
+    order: int | None
+    rate: int | None
+    amount: int
+
+
 @dataclass(frozen=True, slots=True)
 class RustOutcome:
     """A case's outputs from `fefat-cli run`: its fills, its event log, its ledger at its end,
-    the lots held, positive long, and the cash in micro-units, and the fills it flagged
-    ambiguous, which the run counts (F-BAR-05)."""
+    the lots held, positive long, and the cash in micro-units, the fills it flagged ambiguous,
+    which the run counts (F-BAR-05), and its cost lines."""
 
     fills: tuple[FillView, ...]
     log: tuple[LogView, ...]
     position: int
     cash: int
     ambiguous_fills: int
+    costs: tuple[CostView, ...]
 
 
 def write_batch(cases: Sequence[EngineCase], folder: Path) -> None:
@@ -186,14 +207,17 @@ def write_batch(cases: Sequence[EngineCase], folder: Path) -> None:
 
 
 def read_outcomes(folder: Path, cases: int) -> list[RustOutcome]:
-    """Each case's fills, event log, and ledger from the outputs of `fefat-cli run`."""
-    fills, log, ledgers = (_read(folder / f"{name}.arrow") for name in ("fills", "log", "ledger"))
+    """Each case's fills, event log, ledger, and cost lines from the outputs of `fefat-cli
+    run`."""
+    names = ("fills", "log", "ledger", "costs")
+    fills, log, ledgers, costs = (_read(folder / f"{name}.arrow") for name in names)
     outcomes = []
     for case in range(cases):
         of_case = pl.col("case") == case
         rows = fills.filter(of_case).iter_rows(named=True)
         entries = log.filter(of_case).iter_rows(named=True)
         ledger = ledgers.filter(of_case).row(0, named=True)
+        lines = costs.filter(of_case).drop("case").iter_rows()
         outcomes.append(
             RustOutcome(
                 fills=tuple(FillView.of_row(row) for row in rows),
@@ -204,6 +228,7 @@ def read_outcomes(folder: Path, cases: int) -> list[RustOutcome]:
                 position=ledger["position"],
                 cash=ledger["cash"],
                 ambiguous_fills=ledger["ambiguous_fills"],
+                costs=tuple(CostView(*line) for line in lines),
             )
         )
     return outcomes
@@ -263,7 +288,7 @@ def _case_document(case: EngineCase) -> dict[str, object]:
         "id": scenario.id,
         "fidelity": str(scenario.fidelity),
         "replay": str(case.replay),
-        "contract": scenario.id,
+        "contract": scenario.opening_contract(),
         "instrument": _instrument_document(parameters),
         "settings": _settings_document(scenario.settings),
         "hours": _hours_document(case.hours),
@@ -271,6 +296,50 @@ def _case_document(case: EngineCase) -> dict[str, object]:
         "position": _position_document(scenario),
         "market_data": {"kind": "tape", "levels": levels},
         "decisions": _decisions_document(scenario, parameters),
+        "fees": _fees_document(scenario.run_fees()),
+        "funding": [{"ts": rate.ts, "rate": rate_units(rate.rate)} for rate in scenario.funding],
+        "rolls": [_roll_document(roll) for roll in scenario.rolls],
+    }
+
+
+def rate_units(rate: Decimal) -> int:
+    """A rate as a count of 1e-9 units, as the store holds a funding rate: 0.0001 is 100_000."""
+    return _whole_units(rate, PRICE_DECIMALS, "a rate")
+
+
+def _whole_units(value: Decimal, decimals: int, what: str) -> int:
+    """`value` as a count of 10**-decimals, refused where it is finer than that."""
+    units = value.scaleb(decimals)
+    if units != units.to_integral_value():
+        raise ValueError(f"Expected {what} in whole units of 1e-{decimals}, got {value}.")
+    return int(units)
+
+
+def _fees_document(fees: RunFees | None) -> dict[str, object] | None:
+    """The fee table, each schedule from its trade date in days since 1970-01-01: per contract
+    per side in micro-units, or maker and taker rates in 1e-9 units."""
+    if fees is None:
+        return None
+    schedules: list[dict[str, int]] = []
+    for day, fee in fees.schedules:
+        if isinstance(fee, FuturesFee):
+            charge = _whole_units(fee.per_contract_side, 6, "a fee per contract per side")
+            schedules.append({"effective_from": day, "per_contract_side": charge})
+            continue
+        rates = (rate_units(bps.scaleb(-4)) for bps in (fee.maker_bps, fee.taker_bps))
+        maker, taker = rates
+        schedules.append({"effective_from": day, "maker_rate": maker, "taker_rate": taker})
+    kind = "futures" if isinstance(fees.schedules[0][1], FuturesFee) else "crypto"
+    return {"kind": kind, "schedules": schedules}
+
+
+def _roll_document(roll: RollRow) -> dict[str, object]:
+    return {
+        "session_open": roll.session_open,
+        "rolled_from": roll.rolled_from,
+        "contract": roll.contract,
+        "gap": roll.gap,
+        "reason": str(roll.reason),
     }
 
 
@@ -290,6 +359,7 @@ def _settings_document(settings: RunSettings) -> dict[str, object]:
             "stop": settings.slippage_ticks.stop,
         },
         "limit_fill": str(settings.limit_fill),
+        "roll_handling": str(settings.roll_handling),
     }
 
 
@@ -359,7 +429,7 @@ def _tapes(cases: Sequence[EngineCase]) -> dict[str, pl.DataFrame]:
         levels += [(level, coarser_bars(tape, level)) for level in case.coarser_levels()]
         for level, records in levels:
             table = columns.setdefault(str(level), {})
-            dates = _trade_dates(records, case.sessions)
+            dates = trade_dates_of(records, case.sessions)
             for record, trade_date in zip(records, dates, strict=True):
                 for name, value in _record_values(number, trade_date, record).items():
                     table.setdefault(name, []).append(value)
@@ -397,20 +467,6 @@ def _ohlcv(record: Record) -> tuple[int, int, int, int, int]:
     if isinstance(record, BarRecord):
         return (record.open, record.high, record.low, record.close, record.volume)
     return (record.price, record.price, record.price, record.price, record.size)
-
-
-def _trade_dates(records: Sequence[Record], sessions: SessionTable | None) -> list[int]:
-    """Each record's trade date in days since 1970-01-01: that of the session it falls in, or of
-    the last one opened before it, by the instant it starts at; the UTC day without a session
-    table."""
-    starts = [record.starts_at() for record in records]
-    if sessions is None:
-        return [start // NANOSECONDS_PER_DAY for start in starts]
-    frame = pl.DataFrame(
-        {"ts": starts, "order": range(len(starts))}, schema_overrides={"ts": pl.Int64}
-    )
-    dated = sessions.assign_trade_dates_or_previous(frame, "ts").sort("order")
-    return dated.get_column("trade_date").cast(pl.Int32).cast(pl.Int64).to_list()
 
 
 def _record_values(case: int, trade_date: int, record: Record) -> dict[str, int]:

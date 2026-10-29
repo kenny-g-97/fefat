@@ -10,7 +10,7 @@ from fractions import Fraction
 
 from fefat.market.fidelity import Fidelity
 from fefat.market.schema import FrozenModel
-from fefat.reference.orders import OrderRole, PositionSide, Side
+from fefat.reference.orders import ROLL_ROLES, OrderRole, PositionSide, Side
 
 
 class Liquidity(StrEnum):
@@ -31,8 +31,8 @@ class FillFlag(StrEnum):
 class Fill(FrozenModel):
     """One fill, as F-TAG-01 has it recorded: the order, when, at what price, the rule that
     priced it, the fidelity of the data it filled on, its liquidity, how many ticks worse
-    than its reference it is, its flags, the fee it paid, and what its value moved the cash by,
-    both in micro-units (F-FEE-03)."""
+    than its reference it is, the contract it is of (F-ROL-01), its flags, the fee it paid, and
+    what its value moved the cash by, both in micro-units (F-FEE-03)."""
 
     order: int
     role: OrderRole
@@ -44,6 +44,7 @@ class Fill(FrozenModel):
     fidelity: Fidelity
     liquidity: Liquidity
     slippage_ticks: int
+    contract: str
     flags: tuple[FillFlag, ...] = ()
     fee: int = 0
     cash: int = 0
@@ -90,6 +91,11 @@ def trades_of(fills: Iterable[Fill]) -> tuple[Trade, ...]:
     entry: Fill | None = None
     open_lots = 0
     for fill in fills:
+        if fill.role in ROLL_ROLES:
+            raise ValueError(
+                f"Expected fills without a roll's legs, which the trades of step 2.10 pair, got "
+                f"order {fill.order}'s {fill.role}."
+            )
         if entry is None:
             entry, open_lots = fill, fill.lots
             continue

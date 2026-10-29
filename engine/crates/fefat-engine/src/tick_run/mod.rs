@@ -11,11 +11,16 @@
 //! (F-STP-01), on trades filling at once (F-STP-03); limits fill (F-LMT-01 to F-LMT-04); and the
 //! position is marked (F-MRK-01). A bar is replayed as its pseudo-ticks (F-BAR-01 to F-BAR-07,
 //! F-ACT-02, F-MKT-03, F-STP-04). Each fill cancels its OCO group (F-OCO-01), places its bracket
-//! (F-OCO-02), and is booked in the [`Ledger`]. With [`Replay::Skipping`] the loop passes over
-//! blocks of records that no order can act on, by the bars above them (`02` §4).
+//! (F-OCO-02), and is booked in the [`Ledger`] with its fee (§14). A perpetual's funding times
+//! and a future's rolls are session and timer events (F-CLK-02, F-FND-01, §29). With
+//! [`Replay::Skipping`] the loop passes over blocks of records that no order can act on, by the
+//! bars above them (`02` §4).
 
 mod bars;
+#[cfg(test)]
+mod cost_properties;
 mod descent;
+mod execution;
 mod fills;
 #[cfg(test)]
 mod limit_properties;
@@ -26,31 +31,40 @@ mod plan_properties;
 mod properties;
 mod records;
 #[cfg(test)]
+mod roll_tests;
+mod rolls;
+#[cfg(test)]
 mod skip_equals_full;
 #[cfg(test)]
 mod tests;
+mod timers;
 
 pub use descent::Replay;
 pub use outcomes::{BookedFill, RunError, RunOutputs, Stepped};
 pub use records::{Quote, TickRecord};
 
+use fefat_core::costs::CostLine;
 use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
+use fefat_core::instrument::Contract;
 use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::OrderId;
+use fefat_core::rolls::Roll;
 use fefat_core::units::Money;
 
 use descent::BarLevel;
 use records::{DayRecords, Unit};
+use rolls::Transfer;
+use timers::Timer;
 
 use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::hours::TradingHours;
-use crate::settings::RunSettings;
+use crate::settings::{RollHandling, RunCosts, RunSettings};
 use crate::strategy::{ClosedTrade, DecisionContext, Strategy};
 
-/// One run of a strategy over one contract's trade dates.
+/// One run of a strategy over a future's fronts' or another instrument's trade dates.
 pub struct TickRun<'run, R: MarketDataReader> {
     reader: &'run R,
     cap: Fidelity,
@@ -70,9 +84,37 @@ pub struct TickRun<'run, R: MarketDataReader> {
     next_day: usize,
     day: Option<Day<'run>>,
     fidelity: Fidelity,
+    trade_date: TradeDate,
     next_record: usize,
     last_record: Option<Ts>,
     timeline: usize,
+    costs: RunCosts,
+    next_funding: usize,
+    cost_lines: Vec<CostLine>,
+    warned: bool,
+    rolls: Vec<Roll>,
+    roll_handling: RollHandling,
+    next_roll: usize,
+    front: Contract,
+    transfer: Option<Transfer>,
+}
+
+/// What comes next in the order of F-CLK-02.
+enum Next {
+    Unit(Unit),
+    Timer(Timer),
+    Decision(Ts),
+    Done,
+}
+
+/// The order of events at one instant (F-CLK-02): the bars closing then, the session events and
+/// timers, the records received then, and the decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Phase {
+    Bars,
+    Timers,
+    Records,
+    Decisions,
 }
 
 /// The trade date the run reads: its records of the level it fills on and, when it skips, the
@@ -102,6 +144,8 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         {
             return Err(RunError::DecisionsOutOfOrder { previous, next });
         }
+        let mut book = Book::default();
+        book.reserve_through(strategy.highest_order_id());
         Ok(Self {
             reader,
             cap: fidelity,
@@ -109,7 +153,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             hours,
             settings,
             strategy,
-            book: Book::default(),
+            book,
             ledger,
             fills: Vec::new(),
             log: Vec::new(),
@@ -121,41 +165,77 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             next_day: 0,
             day: None,
             fidelity,
+            trade_date: TradeDate(0),
             next_record: 0,
             last_record: None,
             timeline: 0,
+            costs: RunCosts::default(),
+            next_funding: 0,
+            cost_lines: Vec::new(),
+            warned: false,
+            rolls: Vec::new(),
+            roll_handling: RollHandling::Transfer,
+            next_roll: 0,
+            front: reader.contract().clone(),
+            transfer: None,
         })
     }
 
-    /// Runs to the end of the records and the decisions.
+    /// Runs to the end of the records, the timers, and the decisions.
     pub fn run(mut self) -> Result<RunOutputs, RunError> {
         while self.step()?.is_some() {}
+        self.value_before_the_legs()?;
         Ok(RunOutputs {
             orders: self.book.into_orders(),
             fills: self.fills,
             log: self.log,
             ledger: self.ledger,
+            cost_lines: self.cost_lines,
         })
     }
 
-    /// Handles the next event, a record, a bar, a block of records skipped whole, or a decision,
-    /// and says which; none once the records and the decisions have run out. At one instant the
-    /// records and the bars come before the decision (F-CLK-02).
+    /// Handles the next event, a record, a bar, a block of records skipped whole, a roll or a
+    /// funding time, or a decision, and says which; none once they have all run out. At one
+    /// instant the bars closing then come first, then the timers, then the records received
+    /// then, and last the decision (F-CLK-02).
     pub fn step(&mut self) -> Result<Option<Stepped>, RunError> {
         let unit = self.peek_unit()?;
-        let decision = self.decisions.get(self.next_decision).copied();
         let index = self.timeline;
-        let stepped = match (unit, decision) {
-            (Some(unit), Some(now)) if now < unit.ts() => self.decide(now, index)?,
-            (Some(unit), _) => match self.skippable() {
+        let stepped = match self.next_event(unit) {
+            Next::Unit(unit) => match self.skippable() {
                 Some(block) => self.skip(unit, block)?,
                 None => self.receive(unit, index)?,
             },
-            (None, Some(now)) => self.decide(now, index)?,
-            (None, None) => return Ok(None),
+            Next::Timer(timer) => self.on_timer(timer, index)?,
+            Next::Decision(now) => self.decide(now, index)?,
+            Next::Done => return Ok(None),
         };
         self.timeline += stepped.events();
         Ok(Some(stepped))
+    }
+
+    /// The cost lines so far.
+    pub fn cost_lines(&self) -> &[CostLine] {
+        &self.cost_lines
+    }
+
+    /// What comes next of `unit`, the next record or bar, the next timer, and the next decision.
+    fn next_event(&self, unit: Option<Unit>) -> Next {
+        let unit = unit.map(|unit| {
+            let phase = match unit {
+                Unit::Bar(_) => Phase::Bars,
+                Unit::Tick(_) => Phase::Records,
+            };
+            ((unit.ts(), phase), Next::Unit(unit))
+        });
+        let timer = self
+            .next_timer()
+            .map(|timer| ((timer.at(), Phase::Timers), Next::Timer(timer)));
+        let decision = self.decisions.get(self.next_decision).copied();
+        let decision = decision.map(|now| ((now, Phase::Decisions), Next::Decision(now)));
+        let next = [unit, timer, decision].into_iter().flatten();
+        next.min_by_key(|(key, _)| *key)
+            .map_or(Next::Done, |(_, next)| next)
     }
 
     /// The ledger as the run stands.
@@ -187,6 +267,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             };
             let day = self.day_of(trade_date)?;
             self.fidelity = day.records.fidelity();
+            self.trade_date = trade_date;
             self.day = Some(day);
             self.next_day += 1;
             self.next_record = 0;

@@ -8,9 +8,9 @@ from polars.testing import assert_frame_equal
 
 import fefat
 from fefat.market import instruments
-from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load
+from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load, roll_calendar
 from fefat.market.calendar import sessions_of
-from fefat.market.catalog import CATALOG
+from fefat.market.catalog import CATALOG, RollRule
 from fefat.market.continuous import volume_rolls
 from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.quality import assess_quality
@@ -128,6 +128,40 @@ def test_a_contract_loads_alone_and_a_perpetual_as_one_series() -> None:
 def test_a_continuous_load_of_what_no_roll_calendar_splices_is_refused(symbol: str) -> None:
     with pytest.raises(ValueError, match="Expected continuous=False or no continuous"):
         load(symbol, "1m", "2026-03-06", "2026-03-06", continuous=True)
+
+
+@pytest.mark.usefixtures("fixtures_as_data")
+def test_the_roll_calendar_is_the_one_load_splices_with(tmp_path: Path) -> None:
+    # Step 2.9: a backtest across a roll takes its rolls from this calendar (F-ROL-01): the
+    # fixtures' ES rolls once, at the open of 2026-03-09, where the spliced bars flag the front.
+    calendar = roll_calendar("ES")
+    ((trade_date, session_open, rolled_from, contract, gap, reason),) = calendar.rolls().rows()
+    bars = load("ES", "1m", "2026-03-06", "2026-03-09").collect()
+    flagged = bars.filter(pl.col("roll_flag"))
+
+    assert (trade_date, rolled_from, contract, reason) == (MARCH_9, "ESH2026", "ESM2026", "volume")
+    assert session_open == utc(2026, 3, 8, 22)
+    assert gap == fixture_gap(tmp_path)
+    assert flagged.get_column("contract").to_list() == ["ESM2026"]
+    assert flagged.item(0, "ts_open") >= session_open
+
+
+@pytest.mark.usefixtures("fixtures_as_data")
+def test_a_continuous_load_of_a_product_whose_roll_rule_load_does_not_apply_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 2.9 (D-51): load rolls by volume alone, so a catalog that names open interest for ES
+    # refuses the continuous load rather than rolling it by volume.
+    by_open_interest = CATALOG.products[0].model_copy(
+        update={"root": "ES", "roll_rule": RollRule.OPEN_INTEREST}
+    )
+    products = (*CATALOG.products, by_open_interest)
+    monkeypatch.setattr(
+        "fefat.market.api.CATALOG", CATALOG.model_copy(update={"products": products})
+    )
+
+    with pytest.raises(ValueError, match="Expected the roll rule volume for ES"):
+        load("ES", "1m", "2026-03-06", "2026-03-09")
 
 
 @pytest.mark.usefixtures("fixtures_as_data")

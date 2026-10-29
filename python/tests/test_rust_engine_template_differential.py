@@ -7,7 +7,8 @@ reason they can (all but flat-by, no overnight, and no weekend, which need a ses
 targets that close part of a position, stops moved by breakeven and by trailing, reduced stops,
 expired entries, entries skipped for want of a mark or of lots, entries of every size, and each
 entry limit keeping out an order that the same case without it places, so that agreement never
-means that nothing happened."""
+means that nothing happened. From step 2.9 the templates also pay fees and funding and roll, and
+the engines agree on each fill's fee and contract and on the cost lines."""
 
 import time
 from collections import Counter
@@ -30,6 +31,8 @@ from fefat.reference.rust_run import (
 from fefat.reference.scenario_runner import run_scenario
 from fefat.reference.scenarios import TemplateScenario
 from fefat.strategy.exits import Limits
+
+pytestmark = pytest.mark.usefixtures("draws_of_the_seed_alone")
 
 DIFFERENTIAL_SEED = 20_261_026
 """The run's seed, recorded in the pull request, as the other differential tests'."""
@@ -57,6 +60,9 @@ LOG_RULES = frozenset(
         ("cancelled", "F-ENT-03"),
         ("skipped", "F-ENT-02"),
         ("skipped", "F-SIZ-04"),
+        ("funding", "F-FND-01"),
+        ("rolled", "F-ROL-01"),
+        ("warning", "F-FEE-01"),
     }
 )
 """The log entries of the exit plans and the entries that the drawn templates must reach."""
@@ -95,6 +101,8 @@ class Coverage:
         self.partial_targets = 0
         self.entries_by_size: Counter[str] = Counter()
         self.blocked: Counter[str] = Counter()
+        self.with_fees = 0
+        self.exits_as_close_legs = 0
 
     def count(self, comparison: CaseComparison) -> None:
         scenario = comparison.case.scenario
@@ -104,6 +112,11 @@ class Coverage:
         self.cases += 1
         self.roles.update(fill.role for fill in fills)
         self.log.update((entry.kind, entry.rule) for entry in comparison.rust.log)
+        costs = comparison.rust.costs
+        self.with_fees += any(line.reason == "fee" and line.amount != 0 for line in costs)
+        self.exits_as_close_legs += any(
+            fill.rule == "F-ROL-02" and not fill.role.startswith("roll_") for fill in fills
+        )
         entries = [fill for fill in fills if fill.role == "entry"]
         largest = max((fill.lots for fill in entries), default=0)
         targets = (fill for fill in fills if fill.role.startswith("target"))
@@ -155,6 +168,8 @@ def test_the_rust_engine_runs_5000_generated_templates_as_the_reference_does(
         print(f"targets closing part of a position: {coverage.partial_targets}")
         print("entries by size:", dict(coverage.entries_by_size))
         print("entries blocked by each limit:", dict(coverage.blocked))
+        print(f"templates that paid fees: {coverage.with_fees}")
+        print(f"exits doing a roll's close leg's work: {coverage.exits_as_close_legs}")
     assert coverage.cases >= EXAMPLES * CASES_PER_EXAMPLE
     assert set(coverage.roles) >= ROLES, f"Expected fills of every role, got {coverage.roles}"
     assert set(coverage.log) >= LOG_RULES, f"Expected every log rule, got {coverage.log}"
@@ -163,3 +178,6 @@ def test_the_rust_engine_runs_5000_generated_templates_as_the_reference_does(
     assert min(coverage.entries_by_size.values()) > 0
     reached = set(coverage.blocked)
     assert reached >= set(Limits.model_fields), f"Expected every limit to block, got {reached}"
+    assert coverage.with_fees > 0
+    assert any(role.startswith("roll_") for role in coverage.roles), coverage.roles
+    assert coverage.exits_as_close_legs > 0

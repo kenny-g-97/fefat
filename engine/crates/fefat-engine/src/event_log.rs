@@ -1,16 +1,19 @@
 //! The run's event log, as `fefat.reference.event_log` keeps it: every placement, activation,
 //! trigger, fill, and cancellation, each break the working orders stay through, each ambiguous
-//! bar, and each stop its exit plan moved or reduced, in the order they happen and with the rule
-//! behind them, so that a fill can be followed from the record that priced it back to the decision
-//! that placed its order.
+//! bar, each stop its exit plan moved or reduced, each funding payment, each roll and the prices
+//! it moved, and each default the run took, in the order they happen and with the rule behind
+//! them, so that a fill can be followed from the record that priced it back to the decision that
+//! placed its order.
 
 use std::fmt;
 
 use fefat_core::fills::Fill;
 use fefat_core::instants::Ts;
 use fefat_core::orders::{Order, OrderId, OrderKind};
-use fefat_core::units::{Price, Qty};
+use fefat_core::rolls::Roll;
+use fefat_core::units::{Money, Price, Qty};
 
+use crate::book::Shift;
 use crate::exit_plan::Move;
 
 /// What happened.
@@ -36,6 +39,12 @@ pub enum EventKind {
     Reduced,
     /// An entry signal the template could not act on (F-ENT-02, F-SIZ-04).
     Skipped,
+    /// A funding payment (F-FND-01).
+    Funding,
+    /// A roll of the front (F-ROL-01).
+    Rolled,
+    /// A default the run took, which its record shows (F-FEE-01).
+    Warning,
 }
 
 impl fmt::Display for EventKind {
@@ -51,6 +60,9 @@ impl fmt::Display for EventKind {
             Self::Moved => "moved",
             Self::Reduced => "reduced",
             Self::Skipped => "skipped",
+            Self::Funding => "funding",
+            Self::Rolled => "rolled",
+            Self::Warning => "warning",
         })
     }
 }
@@ -216,6 +228,80 @@ impl LogEntry {
             rule: None,
             text: format!("order {}: cancelled by the strategy", order.0),
         }
+    }
+
+    /// A funding payment at `ts`, `change` to the cash, at the mark (F-FND-01).
+    pub(crate) fn funding(ts: Ts, change: Money, mark: Price) -> Self {
+        Self {
+            ts,
+            kind: EventKind::Funding,
+            order: None,
+            rule: Some("F-FND-01"),
+            text: format!("{change} at the mark {mark}"),
+        }
+    }
+
+    /// A roll at `ts`: the front passes from one contract to the next, its prices by the gap
+    /// (F-ROL-01).
+    pub(crate) fn rolled(ts: Ts, roll: &Roll) -> Self {
+        Self {
+            ts,
+            kind: EventKind::Rolled,
+            order: None,
+            rule: Some("F-ROL-01"),
+            text: format!(
+                "the front passes from {} to {}, a gap of {} ({})",
+                roll.rolled_from,
+                roll.contract,
+                roll.gap,
+                roll.reason.word()
+            ),
+        }
+    }
+
+    /// An order a roll moved by its gap (F-ROL-03).
+    pub(crate) fn shifted(ts: Ts, shift: &Shift) -> Self {
+        let text = format!(
+            "order {}: moved by the roll's gap from {} to {}",
+            shift.order.0, shift.before, shift.after
+        );
+        Self::of(ts, EventKind::Moved, Some(shift.order), "F-ROL-03", text)
+    }
+
+    /// A leg of a roll, a market order already sent (F-ROL-02).
+    pub(crate) fn roll_leg(order: &Order) -> Self {
+        let text = format!(
+            "order {}: {}, a leg of the roll",
+            order.id.0,
+            described(order)
+        );
+        let (ts, id) = (order.placed_at, Some(order.id));
+        Self::of(ts, EventKind::Placed, id, "F-ROL-02", text)
+    }
+
+    /// An order of the position's exit plan, or an exit, that a flattening roll cancelled
+    /// (F-ROL-04).
+    pub(crate) fn cancelled_by_roll(ts: Ts, order: OrderId) -> Self {
+        let text = format!(
+            "order {}: the roll's close leg closes the position",
+            order.0
+        );
+        Self::of(ts, EventKind::Cancelled, Some(order), "F-ROL-04", text)
+    }
+
+    /// The first fill the fee table's first schedule prices before its date (F-FEE-01).
+    pub(crate) fn fee_table_extended(fill: &Fill) -> Self {
+        let text = format!(
+            "order {}: the fee table's first schedule prices a fill of a trade date before it",
+            fill.order.0
+        );
+        Self::of(
+            fill.ts,
+            EventKind::Warning,
+            Some(fill.order),
+            "F-FEE-01",
+            text,
+        )
     }
 
     /// The market closed while `working` orders worked, which stay (F-SES-01).

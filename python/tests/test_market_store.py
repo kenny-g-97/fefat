@@ -61,7 +61,11 @@ MINUTE_BARS_OF_MARCH = Partition.from_relative_path(
 FIVE_MINUTE_BARS = Partition.from_relative_path(
     PurePosixPath("synthetic/ohlcv-5m/root=ES/contract=ESH2026/part.parquet")
 )
-ORDER_BY_KIND = {SchemaKind.TRADES: ["ts_recv", "sequence"], SchemaKind.OHLCV: ["ts_open"]}
+ORDER_BY_KIND = {
+    SchemaKind.TRADES: ["ts_recv", "sequence"],
+    SchemaKind.OHLCV: ["ts_open"],
+    SchemaKind.FUNDING: ["ts_recv"],
+}
 RAW_PATH = PurePosixPath("vendor/job-1/bars.dbn")
 RAW_BYTES = b"vendor bytes"
 JOB = BatchJob(job_id="job-1", published_sha256=hashlib.sha256(RAW_BYTES).hexdigest())
@@ -136,7 +140,7 @@ def test_the_fixture_store_lists_each_synthetic_partition_with_its_size() -> Non
         path: entry["bytes"] for path, entry in MANIFEST_ENTRIES.items()
     }
     assert paths == sorted(paths)
-    assert len(paths) == 17
+    assert len(paths) == 18
 
 
 def test_a_store_whose_folder_does_not_exist_yet_lists_nothing_and_creates_nothing(
@@ -153,6 +157,7 @@ def test_the_fixture_store_lists_its_datasets_from_their_folders() -> None:
     folders = [dataset.relative_folder().as_posix() for dataset in FIXTURE_STORE.list_datasets()]
 
     assert folders == [
+        "synthetic/funding/root=BTCUSDT-PERP",
         "synthetic/ohlcv-1m/root=BTCUSDT-PERP",
         "synthetic/ohlcv-1m/root=ES",
         "synthetic/ohlcv-1s/root=BTCUSDT-PERP",

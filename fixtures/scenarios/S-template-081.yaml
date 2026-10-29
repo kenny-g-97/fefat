@@ -1,0 +1,42 @@
+id: S-template-081
+title: An exit still waiting for its activation at a roll does not do the close leg's work, and fills after the legs on the new front
+fidelity: trades
+instrument: {tick_size: "0.25", point_value: "50", lot_step: "1"}
+rolls:
+  - {trade_date: "2026-03-06", session_open: "2026-03-06T14:31:00.050Z", rolled_from: DRAWN-H, contract: DRAWN-M, gap: "20.00", reason: volume}
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-06T14:30:00Z", trade_date: "2026-03-06", contract: DRAWN-H, long_entry: true}
+  - {ts_close: "2026-03-06T14:31:00Z", trade_date: "2026-03-06", contract: DRAWN-H, long_exit: true}
+tape:
+  - {ts: "2026-03-06T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-06T14:31:00.060Z", price: "5021.00", size: 3}
+  - {ts: "2026-03-06T14:31:00.200Z", price: "5022.00", size: 3}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry, contract: DRAWN-H}
+    - {order: 3, ts: "2026-03-06T14:31:00.060Z", price: "5000.75", rule: F-ROL-02, role: roll_volume, contract: DRAWN-H}
+    - {order: 4, ts: "2026-03-06T14:31:00.060Z", price: "5021.25", rule: F-ROL-02, role: roll_volume, contract: DRAWN-M}
+    - {order: 2, ts: "2026-03-06T14:31:00.200Z", price: "5021.75", rule: F-MKT-02, role: signal_exit, contract: DRAWN-M}
+rules: [F-ACT-01, F-ENT-04, F-MKT-02, F-ROL-01, F-ROL-02, F-ROL-03, F-SLP-01]
+
+# Arithmetic (an inline future, tick 0.25, 50 USD a point, which trades around the clock, so a roll
+# may come inside an order's latency; one tick of slippage on trades: F-SLP-01):
+# the long entry decided at 14:30 is active at 14:30:00.100 (F-ACT-01) and buys at the trade at
+# 14:30:00.200 plus a tick, 5000.00 + 0.25 = 5000.25 (F-MKT-02), on DRAWN-H;
+# the signal exit decided at 14:31:00 sells the long, order 2, active only at 14:31:00.100
+# (F-ACT-01, F-ENT-04);
+# at the roll, 14:31:00.050, the exit is not yet active, so it is no order on its way that could
+# do the close leg's work: the roll sends the legs, orders 3 and 4 (F-ROL-02);
+# the trade at 14:31:00.060 fills them first: the close leg at 5021.00 - 20.00 - 0.25 = 5000.75 on
+# DRAWN-H, the open leg at 5021.00 + 0.25 = 5021.25 on DRAWN-M; the exit, active from
+# 14:31:00.100, sees only the trade after it (F-ACT-01);
+# the trade at 14:31:00.200 fills the exit at 5022.00 - 0.25 = 5021.75 (F-MKT-02), on the new front,
+# DRAWN-M, after the transfer (F-ROL-03).

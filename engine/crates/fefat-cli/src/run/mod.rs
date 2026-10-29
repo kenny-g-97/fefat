@@ -5,9 +5,10 @@
 //! `tbbo.arrow`, or `1m.arrow`, and `signals.arrow`, each row tagged with its case's place in that
 //! list ([`inputs`]). A case reads its records from those files, through the in-memory reader, or
 //! from an engine cache's contract folder (step 2.5), in full or skipping what no order can act
-//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, and `ledger.arrow`,
-//! tagged the same way ([`outputs`]).
+//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, `ledger.arrow`, and
+//! `costs.arrow`, tagged the same way ([`outputs`]).
 
+mod costs_and_rolls;
 mod inputs;
 mod manifest;
 mod outputs;
@@ -18,13 +19,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arrow_schema::ArrowError;
+use fefat_core::costs::FeeTableError;
 use fefat_core::fidelity::Fidelity;
 use fefat_core::instrument::{Contract, NonPositiveParameter};
 use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::market_data::{InMemoryMarketData, MarketDataReader, TapeError};
+use fefat_core::rolls::Roll;
 use fefat_data::{CacheError, MappedContract};
 use fefat_engine::hours::TradingHours;
-use fefat_engine::settings::RunSettings;
+use fefat_engine::settings::{RollHandling, RunCosts, RunSettings};
 use fefat_engine::strategy::{ScenarioOrders, Strategy};
 use fefat_engine::template::{TemplateError, TemplateStrategy};
 use fefat_engine::tick_run::{Replay, RunError, RunOutputs, TickRun};
@@ -97,6 +100,9 @@ pub enum CaseError {
     /// Its opening position.
     #[error(transparent)]
     Ledger(#[from] LedgerError),
+    /// Its fee table.
+    #[error(transparent)]
+    Fees(#[from] FeeTableError),
     /// An order of its scenario.
     #[error(transparent)]
     Order(#[from] MispricedOrder),
@@ -190,6 +196,9 @@ fn run_case(
         hours: &hours,
         settings,
         ledger,
+        costs: case.costs()?,
+        rolls: case.rolls(),
+        roll_handling: case.roll_handling(),
     };
     match &case.market_data {
         MarketDataManifest::Tape { levels } => {
@@ -212,6 +221,9 @@ struct Run<'case> {
     hours: &'case TradingHours,
     settings: RunSettings,
     ledger: Ledger,
+    costs: RunCosts,
+    rolls: Vec<Roll>,
+    roll_handling: RollHandling,
 }
 
 impl Run<'_> {
@@ -226,8 +238,12 @@ impl Run<'_> {
             hours,
             settings,
             ledger,
+            costs,
+            rolls,
+            roll_handling,
         } = self;
         let run = TickRun::new(reader, fidelity, replay, hours, settings, ledger, strategy)?;
+        let run = run.with_costs(costs)?.with_rolls(rolls, roll_handling)?;
         Ok(run.run()?)
     }
 }

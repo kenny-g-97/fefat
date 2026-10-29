@@ -1,0 +1,29 @@
+id: S-fill-062
+title: A dated fee table prices each fill by its trade date, the first schedule also before its date, with a warning
+fidelity: trades
+instrument: ES
+fees:
+  kind: futures
+  schedules:
+    - {effective_from: "2026-03-06", per_contract_side: "2.00"}
+    - {effective_from: "2026-03-07", per_contract_side: "2.50"}
+orders:
+  - {id: 1, placed_at: "2026-03-05T14:30:00.000Z", side: buy, kind: market, quantity: 2}
+  - {id: 2, placed_at: "2026-03-09T13:30:00.000Z", side: sell, kind: market, quantity: 2}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 3}
+  - {ts: "2026-03-09T13:30:00.150Z", price: "5010.00", size: 3}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, fee: "4.00"}
+    - {order: 2, ts: "2026-03-09T13:30:00.150Z", price: "5009.75", rule: F-MKT-02, fee: "5.00"}
+rules: [F-FEE-01, F-FEE-03, F-MKT-02, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; a fee table of two
+# schedules, 2.00 per contract per side from 2026-03-06 and 2.50 from 2026-03-07):
+# the buy of 2 lots fills at 5000.00 + 0.25 = 5000.25 (F-MKT-02) on trade date 2026-03-05, whose
+# session runs from 23:00 on 03-04 to 22:00 on 03-05: a date before the table's first schedule,
+# which prices it with a warning in the run (F-FEE-01): fee = 2 x 2.00 = 4.00;
+# the sell of 2 lots fills at 5010.00 - 0.25 = 5009.75 on trade date 2026-03-09, whose session
+# opened at 22:00 on 03-08: the schedule from 03-07 is in force: fee = 2 x 2.50 = 5.00
+# (F-FEE-01, F-FEE-03: whole micro-units, no rounding).

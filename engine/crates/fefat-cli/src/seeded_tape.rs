@@ -18,8 +18,8 @@ pub const SEEDED_TRADE_DATE: TradeDate = TradeDate(20_517);
 pub const TICK: i64 = 250_000_000;
 
 const TRADES: usize = 2_000;
-/// 2026-03-05T14:30:00Z.
-const FIRST_SECOND: i64 = 1_772_721_000 * NANOSECONDS_PER_SECOND;
+/// 2026-03-05T14:30:00Z, when the seeded tape starts.
+pub(crate) const FIRST_SECOND: i64 = 1_772_721_000 * NANOSECONDS_PER_SECOND;
 
 /// SplitMix64 (Steele, Lea, and Flood, 2014): a small generator whose sequence the seed alone
 /// decides, the same on every platform.
