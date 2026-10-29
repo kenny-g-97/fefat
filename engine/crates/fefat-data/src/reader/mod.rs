@@ -3,6 +3,7 @@
 //! share their pages.
 
 mod arrays;
+mod fronts;
 mod month;
 
 use std::collections::BTreeMap;
@@ -21,6 +22,8 @@ use fefat_core::market_data::{
 use crate::error::{CacheError, io_error};
 use arrays::{BarArrays, TbboArrays, TradeArrays};
 use month::{MappedDay, MappedMonth};
+
+pub use fronts::FrontSequence;
 
 use crate::layout::{Month, PARTIAL_SUFFIX};
 

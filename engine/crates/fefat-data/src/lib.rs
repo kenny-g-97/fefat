@@ -24,5 +24,5 @@ pub use layout::{
     CacheMonthIndex, CachedFile, CachedTradeDate, INDEX_FILE_NAME, LAYOUT_VERSION, Month,
     SourceFile, level_columns,
 };
-pub use reader::MappedContract;
+pub use reader::{FrontSequence, MappedContract};
 pub use writer::CacheMonthWriter;
