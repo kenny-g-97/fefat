@@ -256,40 +256,41 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     /// Logs a fill on the run's front, as [`Self::record_on`] does.
     pub(super) fn record(&mut self, execution: Execution) -> Result<(), RunError> {
         let front = self.front.clone();
-        self.record_on(execution, front)
+        self.record_on(execution, front, Price(0))
     }
 
     /// Logs a fill, after a warning the first time the fee table's first schedule prices a fill
     /// before its date (F-FEE-01), with the orders of its group or its plan it cancelled, the stop
     /// of its plan it reduced, and its exit plan's legs, as the reference's `EventLog.filled`
     /// does, and keeps it among the run's fills, on `contract`, its money counted in the trade
-    /// open (`Self::count_costs`).
+    /// open (`Self::count_costs`) and its price, less `gap` for a roll's close leg (F-ROL-02), in
+    /// the run's trades.
     pub(super) fn record_on(
         &mut self,
         execution: Execution,
         contract: Contract,
+        gap: Price,
     ) -> Result<(), RunError> {
         let Execution {
             fill,
+            placed_at,
             cash,
             schedule,
             cancelled,
             reduced,
             legs,
+            risk,
             flat_after,
         } = execution;
         self.count_costs(&fill, cash, flat_after)?;
-        let placed_at = self
-            .book
-            .order(fill.order)
-            .map_or(fill.ts, |order| order.order.placed_at);
         let traded = TradedFill {
             fill: &fill,
             placed_at,
             cash,
             contract: &contract,
             flat_after,
-            legs: &legs,
+            initial_risk_ticks: risk.map(i64::from),
+            marked: fill.price.checked_add(gap)?,
         };
         self.trades.filled(&traded, &self.ledger.instrument())?;
         if schedule == ScheduleUse::BeforeItsDate && !self.warned {

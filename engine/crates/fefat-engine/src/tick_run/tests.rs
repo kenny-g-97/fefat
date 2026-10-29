@@ -883,7 +883,7 @@ fn a_trade_closed_in_parts_is_one_trade_at_its_exits_average_and_its_last_reason
     // Step 2.10 (BACKLOG's trades closed in parts, §20): a long of 2 lots whose first target
     // closes 1 and whose stop closes the other is one trade; its exit price is the two exits'
     // average and its exit reason the stop's. The marks after the entry reach 1 tick against it
-    // and 5 for it; the stop's record closes the trade before it marks.
+    // and 5 for it, and the stop's fill at 4999.00, which closes it, 5 against it.
     let spec: StrategySpec = serde_json::from_value(serde_json::json!({
         "spec_version": 1,
         "instrument": "ES",
@@ -935,10 +935,10 @@ fn a_trade_closed_in_parts_is_one_trade_at_its_exits_average_and_its_last_reason
     assert_eq!(trade.exit_price, Some(5_000_125_000_000.0));
     assert_eq!(trade.exit_reason.to_string(), "stop");
     assert_eq!((trade.initial_risk_ticks, trade.rolls), (Some(4), 0));
-    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (1, 5));
+    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (5, 5));
     assert_eq!(
         (trade.mae, trade.mfe),
-        (Money(25 * MONEY_UNITS), Money(125 * MONEY_UNITS))
+        (Money(125 * MONEY_UNITS), Money(125 * MONEY_UNITS))
     );
     // 50 a point × (5001.25 + 4999.00 − 2 × 5000.25) = −12.50.
     assert_eq!(trade.gross_pnl, Money(-12_500_000));
@@ -967,4 +967,109 @@ fn a_trade_closed_in_parts_is_one_trade_at_its_exits_average_and_its_last_reason
             .iter()
             .all(|booked| booked.trade_date == TRADE_DATE)
     );
+}
+
+#[test]
+fn a_fill_that_reverses_a_long_closes_its_trade_and_opens_a_short_with_the_rest() {
+    // S-fill-042, §20: a sell of 2 lots against a long of 1 crosses flat, closing the long's
+    // trade with one lot and opening a short with the other, the sell's 2 × 5000.75 × 50 =
+    // 500,075.00 shared 250,037.50 each. The long's marks reach 5000.00, 1 tick against it, and
+    // its exit's 5000.75, 2 for it; the short's 5001.00 after its entry, 1 against it, and its
+    // exit's 4999.25, 6 for it.
+    let reader = trades(&[(200, 500_000, 5), (1_200, 500_100, 5), (2_200, 499_900, 5)]);
+    let orders = vec![
+        order(1, Side::Buy, OrderKind::Market),
+        ScenarioOrder {
+            placed_at: at(1_000),
+            lots: Qty(2),
+            ..order(2, Side::Sell, OrderKind::Market)
+        },
+        ScenarioOrder {
+            placed_at: at(2_000),
+            ..order(3, Side::Buy, OrderKind::Market)
+        },
+    ];
+
+    let outputs = run_orders(&reader, Fidelity::Trades, flat(), orders);
+
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 200, 500_025, PricingRule::MarketAtTrade),
+            (2, 1_200, 500_075, PricingRule::MarketAtTrade),
+            (3, 2_200, 499_925, PricingRule::MarketAtTrade),
+        ]
+    );
+    let [long, short] = outputs.trades.as_slice() else {
+        panic!("Expected two trades, got {:?}", outputs.trades);
+    };
+    let exit_at = |hundredths: i64| Some(price(hundredths).0 as f64);
+    assert_eq!(
+        (long.side, long.lots, long.entry_price, long.exit_price),
+        (Side::Buy, Qty(1), price(500_025), exit_at(500_075))
+    );
+    assert_eq!(
+        (short.side, short.lots, short.entry_price, short.exit_price),
+        (Side::Sell, Qty(1), price(500_075), exit_at(499_925))
+    );
+    assert_eq!(
+        (short.entry_order, short.entry_decision, short.entry_ts),
+        (OrderId(2), at(1_000), at(1_200))
+    );
+    // 50 a point: the long makes 0.50 points, 25.00, and the short 1.50, 75.00.
+    assert_eq!(
+        (long.gross_pnl, short.gross_pnl),
+        (Money(25 * MONEY_UNITS), Money(75 * MONEY_UNITS))
+    );
+    assert_eq!((long.mae_ticks, long.mfe_ticks), (1, 2));
+    assert_eq!((short.mae_ticks, short.mfe_ticks), (1, 6));
+    assert_eq!(outputs.ledger.cash(), Money(50_100 * MONEY_UNITS));
+}
+
+#[test]
+fn a_trades_initial_risk_is_its_plans_though_a_trailing_stop_raises_the_stop_at_the_fill() {
+    // F-RND-02, F-PLN-04: the plan's risk is the 8 ticks from the fill at 5000.25 to its stop's
+    // first level, 4998.25, though the trailing stop of 4 ticks raises the stop at once to
+    // 4999.00, 4 below the market at the fill, 5000.00. It trails to 4999.50 at 5000.50 and fills
+    // at 4999.00, 5 ticks against the trade.
+    let spec: StrategySpec = serde_json::from_value(serde_json::json!({
+        "spec_version": 1,
+        "instrument": "ES",
+        "timeframe": "5m",
+        "execution": {
+            "entry": {"kind": "market"},
+            "stop": {"kind": "ticks", "ticks": 8},
+            "trailing": {"by": {"kind": "ticks", "ticks": 4}},
+            "sizing": {"kind": "fixed", "units": 1}
+        }
+    }))
+    .unwrap();
+    let rows = vec![
+        SignalRow {
+            long_entry: true,
+            ..SignalRow::at(at(300_000))
+        },
+        SignalRow::at(at(301_500)),
+    ];
+    let mut template = TemplateStrategy::new(&spec, rows, &es()).unwrap();
+    let reader = trades(&[
+        (300_200, 500_000, 5),
+        (301_000, 500_050, 1),
+        (302_000, 499_900, 4),
+    ]);
+
+    let outputs = run(&reader, Fidelity::Trades, flat(), &mut template);
+
+    assert_eq!(
+        fills(&outputs),
+        [
+            (1, 300_200, 500_025, PricingRule::MarketAtTrade),
+            (2, 302_000, 499_900, PricingRule::StopOnTrades),
+        ]
+    );
+    let [trade] = outputs.trades.as_slice() else {
+        panic!("Expected one trade, got {:?}", outputs.trades);
+    };
+    assert_eq!(trade.initial_risk_ticks, Some(8));
+    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (5, 1));
 }

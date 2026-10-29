@@ -602,8 +602,9 @@ fn a_trade_across_a_roll_counts_its_legs_money_and_the_gap_in_its_excursions() {
     // Step 2.10 (BACKLOG's trades across a roll, §20): S-fill-058's long is one trade from its
     // entry on ESH2026 to its stop on ESM2026, through the roll's two legs; its profit and loss
     // is what all four fills moved the cash by less their fees, the ledger's 560.00 loss. Its
-    // marks reach 1 tick against it and, the reference moved by the gap of 20.00, 19 for it at
-    // the new front's 5025.00, which is 5005.00 of the old contract.
+    // marks reach, the reference of 5000.25 moved by the gap of 20.00 to 5020.25, 19 ticks for it
+    // at the new front's 5025.00, which is 5005.00 of the old contract, and its stop's fill at
+    // 5009.75, which closes it, 42 against it.
     let reader = across_the_roll();
     let rolls = (vec![march_roll()], RollHandling::Transfer);
     let outputs = run_on_trades(
@@ -632,7 +633,7 @@ fn a_trade_across_a_roll_counts_its_legs_money_and_the_gap_in_its_excursions() {
         outputs.ledger.cash(),
         Money(50_000 * MONEY_UNITS).checked_add(trade.pnl).unwrap()
     );
-    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (1, 19));
+    assert_eq!((trade.mae_ticks, trade.mfe_ticks), (42, 19));
     assert_eq!(trade.initial_risk_ticks, Some(41));
     let dates: Vec<TradeDate> = outputs
         .fills
@@ -713,4 +714,49 @@ fn equity_at_a_decision_before_a_rolls_legs_values_the_position_at_its_own_contr
     assert_eq!(at_the_roll.mark, Some(price(500_400)));
     // 50,000 − 5000.25 × 50 + 5004.00 × 50 = 50,187.50.
     assert_eq!(at_the_roll.equity, Some(Money(50_187_500_000)));
+}
+
+#[test]
+fn a_long_held_when_the_tape_starts_is_no_trade_though_a_roll_reopens_it() {
+    // §20: no fill opened the long, so the roll's open leg, which buys it again on ESM2026 after
+    // the close leg sold it on ESH2026, opens no trade, and the sell that closes it closes none.
+    let reader = across_the_roll();
+    let held = Ledger::holding(
+        es(),
+        Money(50_000 * MONEY_UNITS),
+        Side::Buy,
+        Qty(1),
+        price(500_000),
+    )
+    .unwrap();
+    let exit = ScenarioOrder {
+        placed_at: at(MARCH_9_14_00 - 60, 0),
+        id: OrderId(10),
+        side: Side::Sell,
+        lots: Qty(1),
+        kind: OrderKind::Market,
+        oco: None,
+        bracket: None,
+    };
+    let rolls = (vec![march_roll()], RollHandling::Transfer);
+
+    let outputs = run_on_trades(
+        &reader,
+        held,
+        &mut ScenarioOrders::new(vec![exit]),
+        futures_fee(250),
+        rolls,
+    )
+    .unwrap();
+
+    let roles: Vec<OrderRole> = fills(&outputs).into_iter().map(|fill| fill.1).collect();
+    assert_eq!(
+        roles,
+        [
+            OrderRole::Roll(RollReason::Volume),
+            OrderRole::Roll(RollReason::Volume),
+            OrderRole::Entry
+        ]
+    );
+    assert!(outputs.trades.is_empty(), "{:?}", outputs.trades);
 }
