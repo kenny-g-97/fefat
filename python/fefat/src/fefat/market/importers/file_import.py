@@ -27,6 +27,7 @@ from fefat.market.calendar import utc_text
 from fefat.market.calendar_check import CalendarReport, check_records
 from fefat.market.calendar_offset import TIMING_UNCHECKED, timing_checked
 from fefat.market.dataset_choice import dataset_warnings
+from fefat.market.engine_units import price_text
 from fefat.market.importers.canonical import partition_key, partition_of
 from fefat.market.importers.partition_buffers import PartitionBuffers
 from fefat.market.importers.profile_contracts import ImportFacts
@@ -50,7 +51,6 @@ DAILY_SESSION_ASSUMED = (
     "session, so compare one bar's open and close with the platform's session settings"
 )
 """The warning of every daily import: a daily bar names its session by its date alone."""
-_NANO = 1_000_000_000
 
 
 @dataclass(frozen=True)
@@ -357,20 +357,12 @@ def _shown(mapped: MappedRecords) -> list[str]:
     if mapped.schema_name.kind is SchemaKind.OHLCV:
         return [
             f"    {utc_text(row['ts_open'])} to {utc_text(row['ts_close'])}, {row['trade_date']}, "
-            f"{row['contract']}: open {_decimal(row['open'])}, high {_decimal(row['high'])}, "
-            f"low {_decimal(row['low'])}, close {_decimal(row['close'])}, volume {row['volume']}"
+            f"{row['contract']}: open {price_text(row['open'])}, high {price_text(row['high'])}, "
+            f"low {price_text(row['low'])}, close {price_text(row['close'])}, volume {row['volume']}"
             for row in first.iter_rows(named=True)
         ]
     return [
         f"    {utc_text(row['ts_recv'])}, {row['trade_date']}, {row['contract']}: price "
-        f"{_decimal(row['price'])}, size {row['size']}, side {row['side']}"
+        f"{price_text(row['price'])}, size {row['size']}, side {row['side']}"
         for row in first.iter_rows(named=True)
     ]
-
-
-def _decimal(nano: int) -> str:
-    whole, part = divmod(abs(nano), _NANO)
-    sign = "-" if nano < 0 else ""
-    if part == 0:
-        return f"{sign}{whole}"
-    return f"{sign}{whole}.{part:09d}".rstrip("0")

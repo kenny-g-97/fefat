@@ -28,6 +28,14 @@ def test_fefat_home_moves_the_default_data_folder_with_it(tmp_path: Path) -> Non
     assert paths == FefatPaths(home=tmp_path, data_dir=tmp_path / "data")
 
 
+def test_runs_are_kept_in_the_default_workspace_under_fefat_home(tmp_path: Path) -> None:
+    # Step 2.10 (`01-architecture.md` section 4): runs live with the workspace, not the data.
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path), "FEFAT_DATA_DIR": str(tmp_path / "d")})
+
+    assert paths.workspace_dir == tmp_path / "workspaces" / "default"
+    assert paths.runs_dir == tmp_path / "workspaces" / "default" / "artifacts" / "runs"
+
+
 def test_fefat_data_dir_points_the_market_data_at_another_folder(tmp_path: Path) -> None:
     market_data = tmp_path / "market-data"
 
