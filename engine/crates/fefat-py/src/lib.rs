@@ -5,12 +5,26 @@ mod hashing;
 
 use std::fmt::Display;
 
+use fefat_core::strategy_spec::StrategySpec;
+use fefat_run::config::RunConfig;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 /// An error of the engine as Python's `ValueError`, its message the engine's.
 fn value_error(error: impl Display) -> PyErr {
     PyValueError::new_err(error.to_string())
+}
+
+/// The strategy specification `spec_json` holds.
+fn spec_of(spec_json: &str) -> Result<StrategySpec, String> {
+    serde_json::from_str(spec_json)
+        .map_err(|error| format!("Expected a strategy specification as JSON, got: {error}"))
+}
+
+/// The run's config `config_json` holds.
+fn config_of(config_json: &str) -> Result<RunConfig, String> {
+    serde_json::from_str(config_json)
+        .map_err(|error| format!("Expected a run's config as JSON, got: {error}"))
 }
 
 /// The FEFAT engine, compiled from Rust.

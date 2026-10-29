@@ -46,16 +46,20 @@ impl MappedContract {
         Self::open_where(contract_folder, |_| true)
     }
 
-    /// The cache in `contract_folder` of the months from `first` to `last` alone, as
-    /// [`Self::open`] maps a whole folder: what a run of those months reads (step 2.10), so that
-    /// the folder's other months, built before or for another run, maybe at another layout, are
-    /// left unread.
+    /// The cache in `contract_folder` of the months `spans` cover alone, each span from its first
+    /// month to its last, as [`Self::open`] maps a whole folder: what the runs of those months
+    /// read (step 2.10), so that the folder's other months, built before or for another run,
+    /// maybe at another layout, are left unread.
     pub fn open_between(
         contract_folder: &Path,
-        first: Month,
-        last: Month,
+        spans: &[(Month, Month)],
     ) -> Result<Self, CacheError> {
-        Self::open_where(contract_folder, |month| first <= month && month <= last)
+        let covered = |month| {
+            spans
+                .iter()
+                .any(|&(first, last)| first <= month && month <= last)
+        };
+        Self::open_where(contract_folder, covered)
     }
 
     fn open_where(

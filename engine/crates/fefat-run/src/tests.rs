@@ -205,3 +205,25 @@ fn a_time_of_day_hashes_as_its_count_of_nanoseconds_under_its_own_type() {
 
     assert_ne!(time_hash, count_hash);
 }
+
+#[test]
+fn a_temporal_type_hashes_under_its_own_words_for_its_unit_and_zone() {
+    // Step 2.10's review: Arrow's display of a type may change between its versions, which would
+    // give every frame with a time feature, and its run, a new key.
+    use arrow_schema::{DataType, TimeUnit};
+    let word = |data_type: DataType| crate::table_hash::type_word("t", &data_type).unwrap();
+
+    assert_eq!(word(DataType::Time64(TimeUnit::Nanosecond)), "time64[ns]");
+    assert_eq!(word(DataType::Time32(TimeUnit::Millisecond)), "time32[ms]");
+    assert_eq!(
+        word(DataType::Duration(TimeUnit::Microsecond)),
+        "duration[us]"
+    );
+    assert_eq!(
+        word(DataType::Timestamp(TimeUnit::Second, None)),
+        "timestamp[s]"
+    );
+    let zoned = DataType::Timestamp(TimeUnit::Nanosecond, Some("America/Chicago".into()));
+    assert_eq!(word(zoned), "timestamp[ns, America/Chicago]");
+    assert_eq!(word(DataType::Date64), "date64");
+}

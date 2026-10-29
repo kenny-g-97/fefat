@@ -150,6 +150,22 @@ def test_a_batch_of_100_runs_shares_the_cache_and_uses_more_than_one_core(
         assert cpu > 1.3 * wall
 
 
+def test_a_case_of_a_batch_that_cannot_be_read_is_named_by_its_place(
+    cached_month: tuple[Path, pl.DataFrame],
+) -> None:
+    # Step 2.10's review: a sweep's bad case is found by its place, as a case that fails to run is.
+    folder, bars = cached_month
+    strategy = breakout(12)
+    frame = engine_frame(strategy, bars)
+    config = config_json(RunSettings.for_fidelity(TickFidelity.TRADES))
+    spec_json = strategy.to_spec().document_json()
+    case = (spec_json, frame, [str(folder)], config)
+    undated = (spec_json, frame.drop("trade_date"), [str(folder)], config)
+
+    with pytest.raises(ValueError, match="Expected case 1 of the batch to run, got: .*trade_date"):
+        fefat_engine.run_batch([case, undated])
+
+
 def test_a_setting_or_a_value_of_the_signal_frame_changes_the_run_key(
     cached_month: tuple[Path, pl.DataFrame],
 ) -> None:

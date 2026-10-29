@@ -152,19 +152,48 @@ fn a_run_maps_the_months_it_reads_and_not_a_month_of_another_layout() {
     )
     .unwrap();
     let contract_folder = folder.path().join(SAMPLE_CONTRACT);
-    let april_folder = contract_folder.join("2026-04");
-    let april = CacheMonthIndex::read(&april_folder).unwrap().unwrap();
-    CacheMonthIndex {
-        layout_version: 1,
-        ..april
-    }
-    .write(&april_folder)
-    .unwrap();
+    at_an_older_layout(&contract_folder.join("2026-04"));
     let march = Month::of(FIRST_DAY);
 
     let whole = MappedContract::open(&contract_folder);
-    let only_march = MappedContract::open_between(&contract_folder, march, march).unwrap();
+    let only_march = MappedContract::open_between(&contract_folder, &[(march, march)]).unwrap();
 
     assert!(whole.unwrap_err().to_string().contains("layout"));
     assert_eq!(only_march.trade_dates(), [FIRST_DAY, SECOND_DAY]);
+}
+
+#[test]
+fn a_batch_maps_the_months_of_its_runs_and_not_a_month_between_them() {
+    // Step 2.10's review: runs of one contract in March and in May map those months, not April's,
+    // built at an older layout, which a span from March to May would read.
+    let folder = TemporaryFolder::new();
+    write_month(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
+    for days in [28, 70] {
+        let day = moved(&sample_tape()[0], days);
+        write_month(folder.path(), SAMPLE_CONTRACT, vec![day]).unwrap();
+    }
+    let contract_folder = folder.path().join(SAMPLE_CONTRACT);
+    at_an_older_layout(&contract_folder.join("2026-04"));
+    let may_day = TradeDate(FIRST_DAY.0 + 70);
+    let (march, may) = (Month::of(FIRST_DAY), Month::of(may_day));
+
+    let spanning = MappedContract::open_between(&contract_folder, &[(march, may)]);
+    let both = MappedContract::open_between(&contract_folder, &[(march, march), (may, may)]);
+
+    assert!(spanning.unwrap_err().to_string().contains("layout"));
+    assert_eq!(
+        both.unwrap().trade_dates(),
+        [FIRST_DAY, SECOND_DAY, may_day]
+    );
+}
+
+/// The month cached in `month_folder` marked as built at layout 1, before the reader's.
+fn at_an_older_layout(month_folder: &std::path::Path) {
+    let index = CacheMonthIndex::read(month_folder).unwrap().unwrap();
+    CacheMonthIndex {
+        layout_version: 1,
+        ..index
+    }
+    .write(month_folder)
+    .unwrap();
 }

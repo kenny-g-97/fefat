@@ -97,7 +97,7 @@ fn require_columns(schema: &Schema, batch: &RecordBatch) -> Result<(), TableHash
 
 /// The word a column's type is hashed as: text alike in each of Arrow's three layouts, and a
 /// time, an instant, or a duration as Arrow writes its type, its unit and zone with it.
-fn type_word(column: &str, data_type: &DataType) -> Result<String, TableHashError> {
+pub(crate) fn type_word(column: &str, data_type: &DataType) -> Result<String, TableHashError> {
     let word = match data_type {
         DataType::Boolean => "boolean",
         DataType::Int8 => "int8",
@@ -111,15 +111,29 @@ fn type_word(column: &str, data_type: &DataType) -> Result<String, TableHashErro
         DataType::Float32 => "float32",
         DataType::Float64 => "float64",
         DataType::Date32 => "date32",
+        DataType::Date64 => "date64",
         DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => "utf8",
-        DataType::Date64
-        | DataType::Time32(_)
-        | DataType::Time64(_)
-        | DataType::Timestamp(..)
-        | DataType::Duration(_) => return Ok(data_type.to_string()),
+        DataType::Time32(unit) => return Ok(format!("time32[{}]", unit_word(*unit))),
+        DataType::Time64(unit) => return Ok(format!("time64[{}]", unit_word(*unit))),
+        DataType::Duration(unit) => return Ok(format!("duration[{}]", unit_word(*unit))),
+        DataType::Timestamp(unit, None) => return Ok(format!("timestamp[{}]", unit_word(*unit))),
+        DataType::Timestamp(unit, Some(zone)) => {
+            return Ok(format!("timestamp[{}, {zone}]", unit_word(*unit)));
+        }
         other => return Err(unsupported(column, other)),
     };
     Ok(word.to_owned())
+}
+
+/// A unit of time as the hash writes it, its own word rather than Arrow's display of it, which
+/// may change between Arrow's versions and change every key with it.
+const fn unit_word(unit: TimeUnit) -> &'static str {
+    match unit {
+        TimeUnit::Second => "s",
+        TimeUnit::Millisecond => "ms",
+        TimeUnit::Microsecond => "us",
+        TimeUnit::Nanosecond => "ns",
+    }
 }
 
 fn unsupported(column: &str, data_type: &DataType) -> TableHashError {

@@ -23,7 +23,7 @@ use pyo3::types::PyDict;
 use pyo3_arrow::PyTable;
 use rayon::prelude::*;
 
-use crate::value_error;
+use crate::{config_of, spec_of, value_error};
 
 /// A backtest's inputs as Python gives them: its specification as JSON, its signal frame as
 /// Arrow, the folders of its fronts' caches in the order it trades them, and its config as JSON.
@@ -44,7 +44,8 @@ pub fn run_signal_backtest<'py>(
     replay: &str,
 ) -> PyResult<Bound<'py, PyDict>> {
     let replay = replay_of(replay)?;
-    let backtest = Backtest::read(spec_json, signal_frame, cache_paths, config_json)?;
+    let backtest = Backtest::read(spec_json, signal_frame, cache_paths, config_json)
+        .map_err(PyValueError::new_err)?;
     let caches = mapped(backtest.spans())?;
     let outputs = py.detach(|| backtest.run(&caches, replay));
     run_of(py, outputs.map_err(PyValueError::new_err)?)
@@ -64,7 +65,10 @@ pub fn run_batch<'py>(
     let replay = replay_of(replay)?;
     let backtests = cases
         .into_iter()
-        .map(|(spec, frame, folders, config)| Backtest::read(&spec, frame, folders, &config))
+        .enumerate()
+        .map(|(case, (spec, frame, folders, config))| {
+            Backtest::read(&spec, frame, folders, &config).map_err(|error| failed(case, &error))
+        })
         .collect::<PyResult<Vec<_>>>()?;
     let caches = mapped(backtests.iter().flat_map(Backtest::spans))?;
     let runs: Vec<Result<RunOutputs, String>> = py.detach(|| {
@@ -73,15 +77,15 @@ pub fn run_batch<'py>(
     });
     runs.into_iter()
         .enumerate()
-        .map(|(case, run)| {
-            let outputs = run.map_err(|error| {
-                PyValueError::new_err(format!(
-                    "Expected case {case} of the batch to run, got: {error}"
-                ))
-            })?;
-            run_of(py, outputs)
-        })
+        .map(|(case, run)| run_of(py, run.map_err(|error| failed(case, &error))?))
         .collect()
+}
+
+/// The case at `case` of a batch, which `error` stops.
+fn failed(case: usize, error: &str) -> PyErr {
+    PyValueError::new_err(format!(
+        "Expected case {case} of the batch to run, got: {error}"
+    ))
 }
 
 /// A backtest read from Python, before it runs: its trade dates from `first` to `last`, those
@@ -101,28 +105,22 @@ impl Backtest {
         signal_frame: PyTable,
         folders: Vec<PathBuf>,
         config_json: &str,
-    ) -> PyResult<Self> {
-        let spec: StrategySpec = serde_json::from_str(spec_json).map_err(|error| {
-            value_error(format!(
-                "Expected a strategy specification as JSON, got: {error}"
-            ))
-        })?;
-        let config: RunConfig = serde_json::from_str(config_json).map_err(|error| {
-            value_error(format!("Expected a run's config as JSON, got: {error}"))
-        })?;
+    ) -> Result<Self, String> {
+        let spec = spec_of(spec_json)?;
+        let config = config_of(config_json)?;
         let (batches, _) = signal_frame.into_inner();
         let mut rows = Vec::new();
         for batch in &batches {
-            rows.extend(signal_rows_of(batch).map_err(value_error)?);
+            rows.extend(signal_rows_of(batch).map_err(|error| error.to_string())?);
         }
         let fronts = config.fronts_from().len() + 1;
         if folders.len() != fronts {
-            return Err(value_error(format!(
+            return Err(format!(
                 "Expected a cache folder of the first front and one per roll, {fronts}, got {}",
                 folders.len()
-            )));
+            ));
         }
-        let (first, last) = window(&rows).map_err(value_error)?;
+        let (first, last) = window(&rows)?;
         Ok(Self {
             spec,
             rows,
@@ -191,20 +189,19 @@ fn window(rows: &[SignalRow]) -> Result<(TradeDate, TradeDate), String> {
     }
 }
 
-/// Each folder of `spans` mapped once, over the months from the earliest first to the latest last
-/// its spans name, so that a run maps the months it reads alone.
+/// Each folder of `spans` mapped once, over the months its spans name alone, so that a run, or a
+/// batch of runs, maps the months it reads and none between them.
 fn mapped(
     spans: impl IntoIterator<Item = (PathBuf, Month, Month)>,
 ) -> PyResult<BTreeMap<PathBuf, MappedContract>> {
-    let mut months: BTreeMap<PathBuf, (Month, Month)> = BTreeMap::new();
+    let mut months: BTreeMap<PathBuf, Vec<(Month, Month)>> = BTreeMap::new();
     for (folder, first, last) in spans {
-        let span = months.entry(folder).or_insert((first, last));
-        *span = (span.0.min(first), span.1.max(last));
+        months.entry(folder).or_default().push((first, last));
     }
     months
         .into_iter()
-        .map(|(folder, (first, last))| {
-            let cache = MappedContract::open_between(&folder, first, last).map_err(value_error)?;
+        .map(|(folder, spans)| {
+            let cache = MappedContract::open_between(&folder, &spans).map_err(value_error)?;
             Ok((folder, cache))
         })
         .collect()
