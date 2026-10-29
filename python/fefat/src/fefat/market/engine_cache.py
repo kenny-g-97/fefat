@@ -19,11 +19,12 @@ partitions that changed. What a month holds, and the status of the cache, are
 
 import shutil
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 import polars as pl
 from fefat_engine import write_cache_month
@@ -130,9 +131,40 @@ def build_engine_cache(
     whose partitions changed since it was cached, is written again, and a month the store no
     longer holds is removed. A month the engine cannot read is refused, and the other
     months still built."""
+    months = [YearMonth(year=year, month=number) for number in range(1, 13)]
+    built = build_cache_months(store, cache_folder, root, months, provider)
+    return EngineCacheBuild(
+        provider=built.provider,
+        root=root,
+        year=year,
+        months=built.months,
+        removed=built.removed,
+        refused=built.refused,
+    )
+
+
+class CachedMonths(NamedTuple):
+    """What `build_cache_months` did: the provider it chose, the contract-months built or up to
+    date, those removed, and those refused, each with its reason."""
+
+    provider: str
+    months: tuple[CachedMonthBuild, ...]
+    removed: tuple[str, ...]
+    refused: tuple[str, ...]
+
+
+def build_cache_months(
+    store: Store,
+    cache_folder: Path,
+    root: str,
+    months: Sequence[YearMonth],
+    provider: str | None = None,
+) -> CachedMonths:
+    """Build the engine cache of `root`'s trade dates of `months`, as `build_engine_cache`
+    builds a year's, so that a backtest builds the months it reads alone (step 2.10)."""
     datasets = tuple(provider_datasets(store, root, provider, origin=None).values())
     chosen = datasets[0].provider
-    levels = {dataset: _level_of(dataset) for dataset in datasets}
+    levels = {dataset: level_of(dataset) for dataset in datasets}
     listed = {
         dataset: tuple(file.partition for file in store.list_partitions(dataset))
         for dataset in datasets
@@ -141,23 +173,16 @@ def build_engine_cache(
     built: list[CachedMonthBuild] = []
     removed: list[str] = []
     refused: list[str] = []
-    for number in range(1, 13):
-        month = YearMonth(year=year, month=number)
+    for month in months:
         month_built, month_refused, held = _build_month(store, root_folder, levels, listed, month)
         built += month_built
         refused += month_refused
         removed += _remove_months_left_behind(root_folder, month, held)
-    return EngineCacheBuild(
-        provider=chosen,
-        root=root,
-        year=year,
-        months=tuple(built),
-        removed=tuple(removed),
-        refused=tuple(refused),
-    )
+    return CachedMonths(chosen, tuple(built), tuple(removed), tuple(refused))
 
 
-def _level_of(dataset: Dataset) -> Level:
+def level_of(dataset: Dataset) -> Level:
+    """The level of the engine cache a dataset of trades, TBBO, or bars feeds."""
     schema_name = dataset.schema_name
     if isinstance(schema_name, BarSchemaName):
         return schema_name.timeframe

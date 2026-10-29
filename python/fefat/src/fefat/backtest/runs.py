@@ -1,0 +1,208 @@
+"""`ff.backtest.run` (step 2.10, `02` §5): a signal strategy's backtest in one call. It reads
+what `fefat.backtest.run_inputs` gathers, keys the run on its specification, its config, its
+signal frame, its data's snapshots, and the engine's versions (`02` §4), and returns the run of
+that key when its folder holds one; otherwise it runs the engine (`fefat_engine`) and writes the
+run's artifacts and record under `FEFAT_HOME/workspaces/default/artifacts/runs/<run key>/`.
+
+    run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
+    run.trades, run.fills, run.equity("1d"), run.config, run.hash
+"""
+
+import os
+import warnings
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+import fefat_engine
+import polars as pl
+
+from fefat.backtest.artifacts import (
+    ENGINE_TABLES,
+    RECORD_FILE,
+    artifacts_of,
+    read_artifact,
+    read_record,
+    write_run,
+)
+from fefat.backtest.record import (
+    EngineVersions,
+    InstrumentRecord,
+    RunRecord,
+    RunSummary,
+    StrategyRecord,
+)
+from fefat.backtest.run_config import RunConfig
+from fefat.backtest.run_inputs import RunInputs, run_inputs
+from fefat.config import resolve_paths
+from fefat.market.engine_units import micro_units, money_text
+from fefat.strategy.signal_strategy import SignalStrategy
+
+DAILY = "1d"
+
+
+@dataclass(frozen=True)
+class Run:
+    """A saved run: its folder and its record, `run.json`, each artifact read when asked for."""
+
+    folder: Path
+    record: RunRecord
+
+    @classmethod
+    def open(cls, folder: Path) -> "Run":
+        """The run saved in `folder`."""
+        return cls(folder=folder, record=read_record(folder))
+
+    @property
+    def id(self) -> str:
+        return self.record.run_id
+
+    @property
+    def hash(self) -> str:
+        """The run key (`02` §4), the name of the run's folder."""
+        return self.record.run_key
+
+    @property
+    def config(self) -> RunConfig:
+        """The settings the run ran under, every default applied."""
+        return self.record.config
+
+    @property
+    def trades(self) -> pl.DataFrame:
+        return read_artifact(self.folder, "trades")
+
+    @property
+    def fills(self) -> pl.DataFrame:
+        return read_artifact(self.folder, "fills")
+
+    @property
+    def orders(self) -> pl.DataFrame:
+        return read_artifact(self.folder, "orders")
+
+    @property
+    def costs(self) -> pl.DataFrame:
+        return read_artifact(self.folder, "costs")
+
+    @property
+    def log(self) -> pl.DataFrame:
+        return read_artifact(self.folder, "log")
+
+    @property
+    def signals(self) -> pl.DataFrame:
+        return read_artifact(self.folder, "signals")
+
+    def equity(self, timeframe: str) -> pl.DataFrame:
+        """The account at each trade date's last decision for `1d`, or after each decision for
+        the strategy's own timeframe."""
+        bars = str(self.record.strategy.spec["timeframe"])
+        if timeframe == DAILY:
+            return read_artifact(self.folder, "equity_daily")
+        if timeframe == bars:
+            return read_artifact(self.folder, "equity")
+        raise ValueError(
+            f"Expected the timeframe {DAILY} or the strategy's, {bars}, got {timeframe!r}."
+        )
+
+
+def run(
+    strategy: SignalStrategy,
+    start: str | date,
+    end: str | date,
+    config: RunConfig | None = None,
+) -> Run:
+    """The backtest of `strategy` on the trade dates from `start` to `end` under `config`, the
+    defaults where it is left out: read back when a run of its key is saved, else run and
+    saved. The warnings its record holds are raised on every call, as `load` raises its own."""
+    paths = resolve_paths(os.environ)
+    inputs = run_inputs(strategy, start, end, RunConfig() if config is None else config, paths)
+    frame_hash = fefat_engine.table_hash(inputs.signals)
+    partitions = list(inputs.partition_hashes)
+    key = fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
+    folder = paths.runs_dir / key
+    if (folder / RECORD_FILE).is_file():
+        saved = Run.open(folder)
+    else:
+        saved = _ran(inputs, tuple(strategy.features), folder, key, frame_hash)
+    for warning in saved.record.warnings:
+        warnings.warn(warning, UserWarning, stacklevel=2)
+    return saved
+
+
+def _ran(
+    inputs: RunInputs, features: tuple[str, ...], folder: Path, key: str, frame_hash: str
+) -> Run:
+    """The run of `inputs` through the engine, its artifacts and record written to `folder`."""
+    cache_paths = [str(path) for path in inputs.cache_paths]
+    replay = str(inputs.config.replay)
+    outputs = fefat_engine.run_signal_backtest(
+        inputs.spec_json(), inputs.signals, cache_paths, inputs.config_json(), replay
+    )
+    engine = {name: pl.DataFrame(outputs[name]) for name in ENGINE_TABLES}
+    capital = micro_units(inputs.config.capital)
+    artifacts = artifacts_of(engine, inputs.signals, features, inputs.parameters, capital)
+    summary = outputs["summary"]
+    record = RunRecord(
+        run_id=key,
+        run_key=key,
+        versions=EngineVersions(
+            engine=fefat_engine.ENGINE_VERSION,
+            fill_model=fefat_engine.FILL_MODEL_VERSION,
+            artifact_schema=fefat_engine.ARTIFACT_SCHEMA_VERSION,
+        ),
+        strategy=StrategyRecord(spec=inputs.spec.document(), features=features),
+        window=inputs.window,
+        instrument=_instrument_record(inputs),
+        datasets=inputs.datasets,
+        signal_frame_hash=frame_hash,
+        config=inputs.config,
+        fee_table=inputs.fee_table,
+        rolls=inputs.rolls,
+        engine_config=inputs.engine_config,
+        fidelity_summary=_fills_by_fidelity(engine["fills"]),
+        warnings=(*inputs.warnings, *_engine_warnings(engine["log"], inputs)),
+        summary=RunSummary(
+            fills=engine["fills"].height,
+            ambiguous_fills=summary["ambiguous_fills"],
+            trades=artifacts["trades"].height,
+            position=summary["position"],
+            cash=Decimal(money_text(summary["cash"])),
+            pnl=Decimal(money_text(int(artifacts["trades"].get_column("pnl").sum()))),
+        ),
+    )
+    write_run(folder, artifacts, record)
+    return Run(folder=folder, record=record)
+
+
+def _instrument_record(inputs: RunInputs) -> InstrumentRecord:
+    instrument = inputs.instrument
+    return InstrumentRecord(
+        root=instrument.root,
+        kind=instrument.kind,
+        currency=str(instrument.currency),
+        tick_size=instrument.tick_size,
+        point_value=instrument.point_value,
+        lot_step=instrument.lot_step,
+    )
+
+
+def _fills_by_fidelity(fills: pl.DataFrame) -> dict[str, int]:
+    counted = fills.group_by("fidelity").len().sort("fidelity")
+    return {fidelity: count for fidelity, count in counted.iter_rows()}
+
+
+def _engine_warnings(log: pl.DataFrame, inputs: RunInputs) -> tuple[str, ...]:
+    """The warnings of the engine's log, the fee table's first schedule pricing a fill before
+    its date named with the table (F-FEE-01)."""
+    warned = log.filter(pl.col("kind") == "warning")
+    table = inputs.fee_table
+    first = table.schedules[0][0]
+    messages = []
+    for text, rule in warned.select("text", "rule").iter_rows():
+        if rule == "F-FEE-01":
+            text = (
+                f"the fee table {table.name} has no schedule before {first}, so its first "
+                "schedule priced the fills of earlier trade dates"
+            )
+        messages.append(f"{text} ({rule})")
+    return tuple(messages)

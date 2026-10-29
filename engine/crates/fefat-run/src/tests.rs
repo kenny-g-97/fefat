@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use arrow_array::{
     ArrayRef, BooleanArray, Date32Array, Float64Array, Int32Array, Int64Array, LargeStringArray,
-    RecordBatch, StringArray, StringViewArray, StructArray,
+    RecordBatch, StringArray, StringViewArray, StructArray, Time64NanosecondArray,
 };
 use arrow_schema::{DataType, Field, Fields, Schema};
 use fefat_core::instants::{TradeDate, Ts};
@@ -191,4 +191,17 @@ fn a_config_writes_the_json_it_reads() {
     assert_eq!(fronts.len(), 1);
     assert_eq!(fronts[0].0, TradeDate(20_521));
     assert_eq!(fronts[0].1.0, "ESM2026");
+}
+
+#[test]
+fn a_time_of_day_hashes_as_its_count_of_nanoseconds_under_its_own_type() {
+    // A feature such as the bar's local close is a time of day, Arrow's Time64(ns).
+    let nanoseconds = vec![30_600_000_000_000, 54_000_000_000_000];
+    let times: ArrayRef = Arc::new(Time64NanosecondArray::from(nanoseconds.clone()));
+    let counts: ArrayRef = Arc::new(Int64Array::from(nanoseconds));
+
+    let time_hash = hashed(&[table(vec![("local_close", times)])]);
+    let count_hash = hashed(&[table(vec![("local_close", counts)])]);
+
+    assert_ne!(time_hash, count_hash);
 }

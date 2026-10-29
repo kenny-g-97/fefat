@@ -4,15 +4,19 @@
 //! however its rows are split into batches, and on every system, so that the signal frame's hash,
 //! a part of the run key (`02` §4), and the artifact hashes of the backtest golden can be compared
 //! between Windows and Linux. Text hashes alike whether Arrow holds it as `Utf8`, `LargeUtf8`, or
-//! `Utf8View`, any of which Polars may export.
+//! `Utf8View`, any of which Polars may export; times of day, instants, and durations, such as a
+//! feature's local time, hash as counts of their unit, their type's unit and zone among the type.
 
 use arrow_array::cast::AsArray;
 use arrow_array::types::{
-    Date32Type, Float32Type, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
-    UInt16Type, UInt32Type, UInt64Type,
+    Date32Type, Date64Type, DurationMicrosecondType, DurationMillisecondType,
+    DurationNanosecondType, DurationSecondType, Float32Type, Float64Type, Int8Type, Int16Type,
+    Int32Type, Int64Type, Time32MillisecondType, Time32SecondType, Time64MicrosecondType,
+    Time64NanosecondType, TimestampMicrosecondType, TimestampMillisecondType,
+    TimestampNanosecondType, TimestampSecondType, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
 };
 use arrow_array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, RecordBatch};
-use arrow_schema::{DataType, Schema};
+use arrow_schema::{DataType, Schema, TimeUnit};
 use thiserror::Error;
 
 const DOMAIN: &[u8] = b"fefat table hash 1\n";
@@ -91,9 +95,10 @@ fn require_columns(schema: &Schema, batch: &RecordBatch) -> Result<(), TableHash
     })
 }
 
-/// The word a column's type is hashed as: text alike in each of Arrow's three layouts.
-fn type_word(column: &str, data_type: &DataType) -> Result<&'static str, TableHashError> {
-    Ok(match data_type {
+/// The word a column's type is hashed as: text alike in each of Arrow's three layouts, and a
+/// time, an instant, or a duration as Arrow writes its type, its unit and zone with it.
+fn type_word(column: &str, data_type: &DataType) -> Result<String, TableHashError> {
+    let word = match data_type {
         DataType::Boolean => "boolean",
         DataType::Int8 => "int8",
         DataType::Int16 => "int16",
@@ -107,8 +112,14 @@ fn type_word(column: &str, data_type: &DataType) -> Result<&'static str, TableHa
         DataType::Float64 => "float64",
         DataType::Date32 => "date32",
         DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => "utf8",
+        DataType::Date64
+        | DataType::Time32(_)
+        | DataType::Time64(_)
+        | DataType::Timestamp(..)
+        | DataType::Duration(_) => return Ok(data_type.to_string()),
         other => return Err(unsupported(column, other)),
-    })
+    };
+    Ok(word.to_owned())
 }
 
 fn unsupported(column: &str, data_type: &DataType) -> TableHashError {
@@ -155,7 +166,55 @@ fn hash_column(
             }
             Ok(())
         }
-        other => Err(unsupported(name, other)),
+        _ => temporal(hasher, column, wrong),
+    }
+}
+
+/// A column of times, instants, or durations, each written as its count of its unit.
+fn temporal(
+    hasher: &mut blake3::Hasher,
+    column: &ArrayRef,
+    wrong: impl Fn() -> TableHashError,
+) -> Result<(), TableHashError> {
+    use TimeUnit::{Microsecond, Millisecond, Nanosecond, Second};
+    let (four, eight) = (i32::to_le_bytes, i64::to_le_bytes);
+    match column.data_type() {
+        DataType::Date64 => primitive::<Date64Type, 8>(hasher, column, eight, wrong),
+        DataType::Time32(Second) => primitive::<Time32SecondType, 4>(hasher, column, four, wrong),
+        DataType::Time32(Millisecond) => {
+            primitive::<Time32MillisecondType, 4>(hasher, column, four, wrong)
+        }
+        DataType::Time64(Microsecond) => {
+            primitive::<Time64MicrosecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Time64(Nanosecond) => {
+            primitive::<Time64NanosecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Timestamp(Second, _) => {
+            primitive::<TimestampSecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Timestamp(Millisecond, _) => {
+            primitive::<TimestampMillisecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Timestamp(Microsecond, _) => {
+            primitive::<TimestampMicrosecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Timestamp(Nanosecond, _) => {
+            primitive::<TimestampNanosecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Duration(Second) => {
+            primitive::<DurationSecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Duration(Millisecond) => {
+            primitive::<DurationMillisecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Duration(Microsecond) => {
+            primitive::<DurationMicrosecondType, 8>(hasher, column, eight, wrong)
+        }
+        DataType::Duration(Nanosecond) => {
+            primitive::<DurationNanosecondType, 8>(hasher, column, eight, wrong)
+        }
+        _ => Err(wrong()),
     }
 }
 

@@ -186,10 +186,9 @@ def _blackout(spec: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
     return [pl.col(blackout).cast(pl.Boolean).alias("blackout")]
 
 
-def _feature_columns(spec: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
-    """The features the exit plan's rules name, as float64 columns under the names of their
-    rules. A feature the frame lacks stays out, and the Rust template refuses an entry that needs
-    it, as the reference's does."""
+def exit_features(spec: StrategySpec) -> dict[str, str]:
+    """The features the exit plan's rules read, each under the name of its rule's column:
+    `stop_feature`, `target_feature_1` to `target_feature_3`, and `trail_feature`."""
     execution = spec.execution
     named: dict[str, str] = {}
     if isinstance(execution.stop, rules.AtrStop):
@@ -200,8 +199,15 @@ def _feature_columns(spec: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
     trailing = execution.trailing
     if trailing is not None and isinstance(trailing.by, rules.AtrTrail):
         named["trail_feature"] = trailing.by.feature
+    return named
+
+
+def _feature_columns(spec: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
+    """The features the exit plan's rules name, as float64 columns under the names of their
+    rules. A feature the frame lacks stays out, and the Rust template refuses an entry that needs
+    it, as the reference's does."""
     return [
         pl.col(feature).cast(pl.Float64).alias(column)
-        for column, feature in named.items()
+        for column, feature in exit_features(spec).items()
         if feature in frame.columns
     ]
