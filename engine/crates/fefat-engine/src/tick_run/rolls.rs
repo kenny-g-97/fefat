@@ -2,7 +2,8 @@
 //! works them: a roll is a session event at its open, which passes the run to the new front,
 //! moves every price the run holds by the gap (F-ROL-03), and sends an open position's legs,
 //! market orders already sent that fill before any other order on the first tradeable record or
-//! bar after it (F-ROL-02), or the close leg alone with `roll_handling: flatten` (F-ROL-04).
+//! bar after it (F-ROL-02), or the close leg alone with `roll_handling: flatten` (F-ROL-04), or
+//! none when an order on its way out of all the position's lots does the close leg's work.
 
 use fefat_core::costs::ScheduleUse;
 use fefat_core::fills::Fill;
@@ -14,15 +15,16 @@ use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, Side, TimeInForce
 use fefat_core::rolls::RollReason;
 use fefat_core::units::{Price, Qty};
 
-use super::execution::{Execution, FillPoint, closed_and_tagged};
+use super::execution::{Execution, FillPoint, closed_and_tagged, execute};
 use super::{RunError, TickRecord, TickRun};
 use crate::book::WorkingOrder;
 use crate::event_log::LogEntry;
-use crate::rules;
+use crate::rules::{self, Priced};
 use crate::settings::RollHandling;
 
-/// A roll's legs on their way (F-ROL-02): the close leg, the open leg, none when the roll
-/// flattens (F-ROL-04), the gap, and the contract rolled from.
+/// A roll's legs on their way (F-ROL-02): the close leg, or the order on its way out of the
+/// position doing its work, the open leg, none when the roll flattens (F-ROL-04) or an order on
+/// its way closes the position, the gap, and the contract rolled from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Transfer {
     close: OrderId,
@@ -34,7 +36,8 @@ pub(super) struct Transfer {
 impl<R: MarketDataReader> TickRun<'_, R> {
     /// F-ROL-01 to F-ROL-04: the next roll, at `at`, the `index`th event: the front passes to
     /// its contract, every price the run holds moves by its gap, and an open position's legs are
-    /// sent, both to transfer it, the close leg alone to flatten it.
+    /// sent, both to transfer it, the close leg alone to flatten it, or none when an order on its
+    /// way out of all its lots does the close leg's work.
     pub(super) fn roll(&mut self, at: Ts, index: usize) -> Result<(), RunError> {
         let Some(roll) = self.rolls.get(self.next_roll).cloned() else {
             return Ok(());
@@ -46,8 +49,14 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         self.log.push(LogEntry::rolled(at, &roll));
         let held = self.ledger.position();
         let flattens = self.roll_handling == RollHandling::Flatten;
+        let closing = match held {
+            Position::Flat => None,
+            Position::Long(held) => Some((Side::Sell, held.lots())),
+            Position::Short(held) => Some((Side::Buy, held.lots())),
+        };
+        let exiting = closing.and_then(|(side, lots)| self.book.on_its_way_out(side, lots));
         if flattens && held != Position::Flat {
-            let cancelled = self.book.cancel_for_roll();
+            let cancelled = self.book.cancel_for_roll(exiting);
             let entries = cancelled
                 .into_iter()
                 .map(|id| LogEntry::cancelled_by_roll(at, id));
@@ -58,11 +67,18 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             .extend(shifts.iter().map(|shift| LogEntry::shifted(at, shift)));
         self.ledger.shift_mark(roll.gap)?;
         self.front = roll.contract;
-        let (closing, lots) = match held {
-            Position::Flat => return Ok(()),
-            Position::Long(held) => (Side::Sell, held.lots()),
-            Position::Short(held) => (Side::Buy, held.lots()),
+        let Some((closing, lots)) = closing else {
+            return Ok(());
         };
+        if let Some(close) = exiting {
+            self.transfer = Some(Transfer {
+                close,
+                open: None,
+                gap: roll.gap,
+                rolled_from: roll.rolled_from,
+            });
+            return Ok(());
+        }
         let close = self.send_leg(closing, lots, roll.reason, at, index);
         let opening = closing.opposite();
         let open = (!flattens).then(|| self.send_leg(opening, lots, roll.reason, at, index));
@@ -117,7 +133,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             let (price, shown) = record.quoted(side).unwrap_or((record.price, record.size));
             (price, Some(shown))
         };
-        self.fill_legs(transfer, at, priced)
+        self.fill_legs(transfer, at, record.price, priced)
     }
 
     /// The roll's legs at the open of the first tradeable bar after it, filled at its close
@@ -126,16 +142,18 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let Some(transfer) = self.transfer.take() else {
             return Ok(());
         };
-        self.fill_legs(transfer, at, |_| (bar.open, None))
+        self.fill_legs(transfer, at, bar.open, |_| (bar.open, None))
     }
 
     /// Fills the legs, the close leg first, each priced by `priced` for its side, the close leg's
-    /// less the gap: a transfer's two leave the trade open and the position's open where it was
-    /// (§20, F-TIM-02), and the close leg alone leaves the position flat (F-ROL-04).
+    /// less the gap, the market at `market`: a transfer's two leave the trade open and the
+    /// position's open where it was (§20, F-TIM-02); the close leg alone, or the order on its way
+    /// doing its work with its group and its plan, leaves the position flat (F-ROL-04).
     fn fill_legs(
         &mut self,
         transfer: Transfer,
         at: FillPoint,
+        market: Price,
         priced: impl Fn(Side) -> (Price, Option<Qty>),
     ) -> Result<(), RunError> {
         let Transfer {
@@ -144,41 +162,68 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             gap,
             rolled_from,
         } = transfer;
-        let (close_fill, close_schedule) = self.leg(close, gap, at, &priced)?;
+        let close_priced = self.leg_priced(close, gap, &priced)?;
         let Some(open) = open else {
-            let cash = self.ledger.book(&close_fill)?;
-            let flat = self.ledger.position() == Position::Flat;
-            let closed = Execution::alone(close_fill, cash, close_schedule, flat);
+            let (book, ledger, costs) = (&mut self.book, &mut self.ledger, &self.costs);
+            let closed = execute(book, ledger, costs, close, &close_priced, at, market)?;
             return self.record_on(closed, rolled_from);
         };
-        let (open_fill, open_schedule) = self.leg(open, Price(0), at, &priced)?;
+        let (close_fill, close_schedule) = self.leg(close, &close_priced, at)?;
+        let open_priced = self.leg_priced(open, Price(0), &priced)?;
+        let (open_fill, open_schedule) = self.leg(open, &open_priced, at)?;
         let [closed, opened] = self.ledger.transfer(&close_fill, &open_fill)?;
         let close_leg = Execution::alone(close_fill, closed, close_schedule, false);
         self.record_on(close_leg, rolled_from)?;
-        let front = self.front.clone();
         let open_leg = Execution::alone(open_fill, opened, open_schedule, false);
-        self.record_on(open_leg, front)
+        self.record(open_leg)
     }
 
-    /// The leg `id`, less `gap` for the close leg, closed in the book and tagged as F-ROL-02
-    /// prices it, with its fee: the fill, and how the fee table's schedule that priced it was used
-    /// (F-FEE-01).
-    fn leg(
-        &mut self,
+    /// How F-ROL-02 prices the leg `id`, less `gap` for the close leg: at the price `priced` gives
+    /// its side, moved by the market slippage ticks.
+    fn leg_priced(
+        &self,
         id: OrderId,
         gap: Price,
-        at: FillPoint,
         priced: &impl Fn(Side) -> (Price, Option<Qty>),
-    ) -> Result<(Fill, ScheduleUse), RunError> {
-        let order = self.book.order(id);
-        let side = order
+    ) -> Result<Priced, RunError> {
+        let side = self
+            .book
+            .order(id)
             .map(|order| order.order.side)
             .ok_or(RunError::UnknownOrder { order: id.0 })?;
         let (price, shown) = priced(side);
         let ticks = self.settings.slippage.market;
-        let leg = rules::f_rol_02(side, price, shown, gap, ticks, self.tick())?;
+        Ok(rules::f_rol_02(
+            side,
+            price,
+            shown,
+            gap,
+            ticks,
+            self.tick(),
+        )?)
+    }
+
+    /// The leg `id` closed in the book and tagged as `leg` prices it, with its fee: the fill, and
+    /// how the fee table's schedule that priced it was used (F-FEE-01).
+    fn leg(
+        &mut self,
+        id: OrderId,
+        leg: &Priced,
+        at: FillPoint,
+    ) -> Result<(Fill, ScheduleUse), RunError> {
         let (book, ledger, costs) = (&mut self.book, &self.ledger, &self.costs);
-        let (_, fill, schedule) = closed_and_tagged(book, ledger, costs, id, &leg, at)?;
+        let (_, fill, schedule) = closed_and_tagged(book, ledger, costs, id, leg, at)?;
         Ok((fill, schedule))
+    }
+
+    /// F-ROL-03: a run that ends before its roll's legs fill leaves the position on the old
+    /// contract, valued at its own price, the mark less the gap.
+    pub(super) fn value_before_the_legs(&mut self) -> Result<(), RunError> {
+        let Some(transfer) = &self.transfer else {
+            return Ok(());
+        };
+        let back = Price(0).checked_sub(transfer.gap)?;
+        self.ledger.shift_mark(back)?;
+        Ok(())
     }
 }

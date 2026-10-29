@@ -48,7 +48,6 @@ from fefat.strategy import exits as rules
 from fefat.strategy.signal_frame import OPTIONAL_SIGNAL_COLUMNS
 from fefat.strategy.spec import StrategySpec
 
-NANOSECONDS_PER_DAY = 86_400 * 1_000_000_000
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
 _TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")

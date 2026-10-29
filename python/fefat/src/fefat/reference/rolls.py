@@ -7,7 +7,6 @@ order on the first record or bar after it. Each rule is a small function named a
 identifier, as in `fefat.reference.engine`, which calls `on_roll` at each roll and `fill_legs`
 at the first tradeable record or bar after it."""
 
-import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -94,30 +93,26 @@ def tape_across_rolls(
 ) -> tuple[tuple[BarRecord, ...], tuple[RollRow, ...]]:
     """A series `load` spliced with `calendar` (`SIGNAL_BAR_COLUMNS`), as the engines replay it:
     its stored bars, each session's front at its own raw prices (`stored_bars`), and the rolls
-    between them (`rolls_within`), which a run across them must be given (F-ROL-01). A frame
-    whose contract changes other than at a new front's first bar (`roll_flag`), as the bars of
-    every contract a load without splicing returns, or whose contracts are not those the rolls
-    pass between, is refused."""
-    changes = frame.sort("ts_close").filter(pl.col("contract") != pl.col("contract").shift(1))
-    unspliced = changes.filter(~pl.col("roll_flag"))
-    if not unspliced.is_empty():
+    between them (`rolls_within`), which a run across them must be given (F-ROL-01). A bar of
+    another contract than the front `calendar` gives its session is refused: the bars of every
+    contract, which a load without splicing returns, or a series another provider's calendar
+    spliced, whose rolls fall on other days."""
+    fronts = calendar.rows.select("trade_date", front=pl.col("contract"))
+    others = (
+        frame.join(fronts, on="trade_date", how="left")
+        .filter(pl.col("front").is_null() | (pl.col("contract") != pl.col("front")))
+        .sort("ts_close")
+    )
+    if not others.is_empty():
+        other = others.row(0, named=True)
+        front = "none" if other["front"] is None else other["front"]
         raise ValueError(
-            f"Expected a series spliced by the roll calendar of {calendar.root}, whose contract "
-            "changes only at a new front's first bar (roll_flag), got a change to "
-            f"{unspliced.item(0, 'contract')} at {instant_text(unspliced.item(0, 'ts_open'))}: "
-            "load the root with its splice (D-44)."
+            f"Expected the bars of the front the roll calendar of {calendar.root} gives each "
+            f"session, got {other['contract']} on {other['trade_date']}, where it gives {front}: "
+            "load the series from the calendar's own datasets (D-44)."
         )
     tape = stored_bars(frame)
-    rolls = rolls_within(calendar, tape)
-    stored = frame.filter(~pl.col("zero_volume")).sort("ts_close").get_column("contract")
-    passed = [contract for contract, _ in itertools.groupby(stored)]
-    between = [rolls[0].rolled_from, *(roll.contract for roll in rolls)] if rolls else passed[:1]
-    if passed != between:
-        raise ValueError(
-            f"Expected the bars of {', '.join(between)}, the contracts the rolls of "
-            f"{calendar.root} pass between, got {', '.join(passed)}."
-        )
-    return tape, rolls
+    return tape, rolls_within(calendar, tape)
 
 
 def f_rol_01(rolls: Sequence[RollRow], contract: str) -> None:
@@ -164,10 +159,13 @@ def f_rol_03(book: Book, gap: int, log: EventLog, ts: int) -> None:
         book.mark += gap
 
 
-def f_rol_04(book: Book, log: EventLog, ts: int) -> None:
-    """With `roll_handling: flatten`, the position's exit plan and any exit on its way out of it
-    are cancelled, the close leg doing their work."""
+def f_rol_04(book: Book, log: EventLog, ts: int, exiting: WorkingOrder | None) -> None:
+    """With `roll_handling: flatten`, the position's exit plan and any exit on its way out of part
+    of it are cancelled, the close leg doing their work; `exiting`, an order on its way out of all
+    its lots, does the close leg's work instead (F-ROL-02)."""
     for order in book.live():
+        if order is exiting:
+            continue
         if order.leg_of is not None or order.role in EXIT_ROLES:
             book.close(order, OrderState.CANCELLED)
             text = f"order {order.id}: the roll's close leg closes the position"
@@ -177,7 +175,8 @@ def f_rol_04(book: Book, log: EventLog, ts: int) -> None:
 def on_roll(engine: "ReferenceEngine", at: Moment, roll: RollRow) -> None:
     """A roll (§29): the front passes to the new contract, every price the run holds moves by the
     gap, and an open position's legs are sent, both to transfer it, the close leg alone to flatten
-    it (F-ROL-01 to F-ROL-04)."""
+    it, or none when an order on its way out of all its lots does the close leg's work (F-ROL-01
+    to F-ROL-04)."""
     book, log = engine.book, engine.log
     if engine.transfer is not None:
         raise ValueError(
@@ -186,16 +185,37 @@ def on_roll(engine: "ReferenceEngine", at: Moment, roll: RollRow) -> None:
         )
     log.rolled(at.ts, roll.rolled_from, roll.contract, roll.gap, roll.reason)
     held, flattens = book.position, engine.settings.roll_handling is RollHandling.FLATTEN
+    exiting = _on_its_way_out(book)
     if held and flattens:
-        f_rol_04(book, log, at.ts)
+        f_rol_04(book, log, at.ts, exiting)
     f_rol_03(book, roll.gap, log, at.ts)
     engine.front = roll.contract
     if not held:
+        return
+    if exiting is not None:
+        engine.transfer = Transfer(exiting, None, roll.gap, roll.rolled_from, book.opened_at)
         return
     closing = Side.SELL if held > 0 else Side.BUY
     close = _sent(book, log, closing, abs(held), roll, at)
     opening = None if flattens else _sent(book, log, closing.opposite(), abs(held), roll, at)
     engine.transfer = Transfer(close, opening, roll.gap, roll.rolled_from, book.opened_at)
+
+
+def _on_its_way_out(book: Book) -> WorkingOrder | None:
+    """A market order already on its way out of all the position's lots, an exit the strategy
+    placed or a stop triggered on TBBO, which does a roll's close leg's work (F-ROL-02); none
+    while flat."""
+    if not book.position:
+        return None
+    closing = Side.SELL if book.position > 0 else Side.BUY
+    on_its_way = [
+        order
+        for order in book.live()
+        if order.side is closing
+        and order.lots == abs(book.position)
+        and (order.role in EXIT_ROLES or (order.state is OrderState.TRIGGERED and order.leg_of))
+    ]
+    return min(on_its_way, key=lambda order: order.id, default=None)
 
 
 def _sent(

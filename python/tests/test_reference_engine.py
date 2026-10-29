@@ -9,6 +9,7 @@ from typing import Any
 
 import polars as pl
 import pytest
+from pydantic import ValidationError
 
 from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS
@@ -16,6 +17,7 @@ from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.continuous import volume_rolls
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.roll_decisions import RollReason
 from fefat.market.schema import Timeframe, parse_schema_name
 from fefat.market.store import Store
 from fefat.reference.costs import DatedFees, DatedFuturesFee, RunFees
@@ -25,7 +27,7 @@ from fefat.reference.exit_plan import ExitPlan
 from fefat.reference.hours import AlwaysOpen, CalendarHours, TradingHours
 from fefat.reference.ledger import Trade, trades_of
 from fefat.reference.orders import OrderRole, PositionSide, Side
-from fefat.reference.rolls import rolls_within, tape_across_rolls
+from fefat.reference.rolls import RollRow, rolls_within, tape_across_rolls
 from fefat.reference.scenario_runner import run_scenario, scenario_hours
 from fefat.reference.scenarios import Scenario, load_scenario
 from fefat.reference.settings import RunSettings
@@ -306,6 +308,7 @@ def spliced_across_the_roll(**columns: list[Any]) -> pl.DataFrame:
     spliced = {
         "ts_open": [friday, monday],
         "ts_close": [friday + 60 * 10**9, monday + 60 * 10**9],
+        "trade_date": [date(2026, 3, 6), date(2026, 3, 9)],
         "contract": ["ESH2026", "ESM2026"],
         "adj_offset": [0, -20_000_000_000],
         "roll_flag": [False, True],
@@ -330,15 +333,23 @@ def test_a_tape_across_a_roll_gives_each_front_at_its_own_prices_and_the_roll(
     assert (roll.rolled_from, roll.contract) == ("ESH2026", "ESM2026")
 
 
-def test_a_tape_across_rolls_refuses_bars_its_calendar_did_not_splice(tmp_path: Path) -> None:
-    # Step 2.9 (F-ROL-01): the bars of every contract, which a load without splicing returns,
-    # change contract without a new front's first bar, and contracts the calendar's rolls do not
-    # pass between would be replayed without their roll.
+def test_a_tape_across_rolls_refuses_bars_of_another_front_than_its_calendars(
+    tmp_path: Path,
+) -> None:
+    # Step 2.9 (F-ROL-01): the bars of every contract, which a load without splicing returns, and
+    # a series another provider's calendar spliced, rolling on another day, hold bars of contracts
+    # that the calendar makes no front of their session, which a run would replay without a roll.
     calendar = volume_rolls(fixture_minutes(), sessions_of_es(tmp_path), instruments.get("ES"), END)
+    friday = instant_nanoseconds(f"{FRIDAY}Z")
+    both_on_friday = spliced_across_the_roll(
+        ts_open=[friday, friday],
+        ts_close=[friday + 60 * 10**9] * 2,
+        trade_date=[date(2026, 3, 6)] * 2,
+    )
 
-    with pytest.raises(ValueError, match="Expected a series spliced by the roll calendar of ES"):
-        tape_across_rolls(spliced_across_the_roll(roll_flag=[False, False]), calendar)
-    with pytest.raises(ValueError, match="Expected the bars of ESH2026, ESM2026"):
+    with pytest.raises(ValueError, match="got ESM2026 on 2026-03-06, where it gives ESH2026"):
+        tape_across_rolls(both_on_friday, calendar)
+    with pytest.raises(ValueError, match="got ESU2026 on 2026-03-09, where it gives ESM2026"):
         tape_across_rolls(spliced_across_the_roll(contract=["ESH2026", "ESU2026"]), calendar)
 
 
@@ -565,6 +576,39 @@ def test_funding_times_out_of_order_or_repeated_are_refused() -> None:
     for rates in ((later, earlier), (earlier, earlier)):
         with pytest.raises(ValueError, match="Expected the funding times in order, each once"):
             engine.run(tape, funding_rates=rates, position=1)
+
+
+def test_a_roll_before_the_legs_of_the_roll_before_it_have_filled_is_refused() -> None:
+    # Step 2.9 (F-ROL-01): with no record between two rolls, the first's legs would still be on
+    # their way at the second, which would lose them.
+    trades = TickFidelity.TRADES
+    tape = (
+        TradeRecord.model_construct(ts=100, ts_event=None, price=price_units("5000.00"), size=1),
+    )
+    roll = {
+        "trade_date": date(2026, 3, 9),
+        "gap": price_units("20.00"),
+        "reason": RollReason.VOLUME,
+    }
+    first = RollRow.model_construct(
+        **roll, session_open=200, rolled_from="ESH2026", contract="ESM2026"
+    )
+    second = RollRow.model_construct(
+        **roll, session_open=300, rolled_from="ESM2026", contract="ESU2026"
+    )
+    engine = ReferenceEngine(RunSettings.for_fidelity(trades), MES, trades, AlwaysOpen())
+
+    with pytest.raises(ValueError, match="Expected the legs of the roll before"):
+        engine.run(tape, position=1, contract="ESH2026", rolls=(first, second))
+
+
+def test_fee_schedules_out_of_the_order_of_their_dates_are_refused() -> None:
+    # Step 2.9 (F-FEE-01): each schedule is in force from its date until the next one's.
+    later = DatedFuturesFee(per_contract_side=Decimal("2.50"), effective_from=date(2026, 3, 7))
+    earlier = DatedFuturesFee(per_contract_side=Decimal("2.00"), effective_from=date(2026, 3, 6))
+
+    with pytest.raises(ValidationError, match="Expected the schedules in the order of their dates"):
+        DatedFees(kind="futures", schedules=(later, earlier))
 
 
 def test_an_empty_tape_is_refused() -> None:

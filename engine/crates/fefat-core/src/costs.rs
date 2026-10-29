@@ -365,4 +365,33 @@ mod tests {
         );
         assert_eq!(FeeTable::new(Vec::new()), Err(FeeTableError::Empty));
     }
+
+    #[test]
+    fn an_amount_beyond_64_bits_is_refused_and_a_table_prices_one_kind_of_fill() {
+        // F-FEE-03: a fee or a funding change that fits no i64 is an error, never wrapped; a fee
+        // table prices futures or crypto fills, not both (F-FEE-01).
+        let futures = FeeRate::Futures {
+            per_contract_side: Money(i64::MAX),
+        };
+        let crypto = FeeRate::Crypto {
+            maker: Rate(0),
+            taker: Rate(0),
+        };
+        let dated = |day: i32, fee: FeeRate| FeeSchedule {
+            effective_from: TradeDate(day),
+            fee,
+        };
+        let huge = Qty(1_000_000_000_000);
+
+        assert!(
+            futures
+                .fee(&es(), price(5_000, 0), Qty(2), Liquidity::Taker)
+                .is_err()
+        );
+        assert!(funding_change(&btc(), huge, price(65_000, 0), Rate(1_000_000_000)).is_err());
+        assert_eq!(
+            FeeTable::new(vec![dated(20_518, futures), dated(20_519, crypto)]),
+            Err(FeeTableError::MixedKinds)
+        );
+    }
 }

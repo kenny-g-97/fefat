@@ -200,8 +200,16 @@ def explained(comparison: CaseComparison) -> str:
     lines = [
         f"{scenario.id}: {scenario.fidelity}, replayed {comparison.case.replay}, latency "
         f"{settings.latency_ms} ms, slippage ticks {ticks.market} market and {ticks.stop} stop, "
-        f"limits filled {settings.limit_fill}"
+        f"limits filled {settings.limit_fill}, rolls {settings.roll_handling}"
     ]
+    if scenario.fees is not None:
+        lines.append(f"fees: {scenario.fees.model_dump_json()}")
+    for roll in scenario.rolls:
+        lines.append(
+            f"roll: {roll.rolled_from} to {roll.contract} at {instant_text(roll.session_open)}, "
+            f"a gap of {price_text(roll.gap)} ({roll.reason})"
+        )
+    lines += [f"funding: {rate.rate} at {instant_text(rate.ts)}" for rate in scenario.funding]
     if scenario.position is not None:
         position = scenario.position
         lines.append(

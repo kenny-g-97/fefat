@@ -184,6 +184,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
     /// Runs to the end of the records, the timers, and the decisions.
     pub fn run(mut self) -> Result<RunOutputs, RunError> {
         while self.step()?.is_some() {}
+        self.value_before_the_legs()?;
         Ok(RunOutputs {
             orders: self.book.into_orders(),
             fills: self.fills,

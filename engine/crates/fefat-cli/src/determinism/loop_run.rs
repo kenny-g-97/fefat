@@ -25,10 +25,7 @@ use fefat_engine::template::{SignalRow, TemplateStrategy};
 use fefat_engine::tick_run::{Replay, RunOutputs, TickRun};
 
 use super::{DeterminismError, es, hash_numbers};
-use crate::seeded_tape::{SEEDED_CONTRACT, SEEDED_TRADE_DATE, SplitMix64, TICK};
-
-/// 2026-03-05T14:30:00Z, when the seeded tape starts.
-const TAPE_STARTS: i64 = 1_772_721_000 * NANOSECONDS_PER_SECOND;
+use crate::seeded_tape::{FIRST_SECOND, SEEDED_CONTRACT, SEEDED_TRADE_DATE, SplitMix64, TICK};
 
 /// The seeded template of the digest's sixth run (step 2.8): a market entry of two lots, a stop
 /// of 8 ticks, two targets each closing half, breakeven after the first, an intrabar trailing
@@ -121,7 +118,7 @@ fn seeded_costs() -> Result<RunCosts, DeterminismError> {
             per_contract_side: Money(2_500_000),
         },
     }])?;
-    let at = |minutes: i64| Ts(TAPE_STARTS + minutes * 60 * NANOSECONDS_PER_SECOND);
+    let at = |minutes: i64| Ts(FIRST_SECOND + minutes * 60 * NANOSECONDS_PER_SECOND);
     let funding = vec![
         FundingRate {
             ts: at(5),
@@ -141,7 +138,7 @@ fn seeded_costs() -> Result<RunCosts, DeterminismError> {
 /// A roll at 14:38, from the seeded contract to ESM2026, a gap of 5.00, on volume.
 fn seeded_roll() -> Roll {
     Roll {
-        session_open: Ts(TAPE_STARTS + 8 * 60 * NANOSECONDS_PER_SECOND),
+        session_open: Ts(FIRST_SECOND + 8 * 60 * NANOSECONDS_PER_SECOND),
         rolled_from: Contract(SEEDED_CONTRACT.to_owned()),
         contract: Contract("ESM2026".to_owned()),
         gap: Price(20 * TICK),

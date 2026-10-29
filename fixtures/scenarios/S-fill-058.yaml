@@ -20,7 +20,7 @@ expected:
     - {order: 2, ts: "2026-03-09T14:00:00.000Z", price: "5009.75", rule: F-STP-03, fee: "2.50", role: stop, contract: ESM2026}
   marks:
     - {ts: "2026-03-06T20:00:00.000Z", price: "5004.00"}
-    - {ts: "2026-03-08T22:00:00.000Z", price: "5024.00"}
+    - {ts: "2026-03-08T22:00:00.000Z", price: "5004.00"}
     - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00"}
 rules: [F-FEE-01, F-MKT-02, F-MRK-01, F-OCO-01, F-OCO-02, F-ROL-01, F-ROL-02, F-ROL-03, F-SLP-01, F-STP-01, F-STP-03, F-TAG-01]
 
@@ -31,9 +31,10 @@ rules: [F-FEE-01, F-MKT-02, F-MRK-01, F-OCO-01, F-OCO-02, F-ROL-01, F-ROL-02, F-
 # placed: stop 4990.00, target 5030.00 (F-OCO-02); the trade at 20:00 marks the long at 5004.00;
 # at the roll, 22:00:00 on 03-08 (F-ROL-01), the front becomes ESM2026 and every price moves by the
 # gap of 20.00 (F-ROL-03): the stop to 4990.00 + 20.00 = 5010.00, the target to
-# 5030.00 + 20.00 = 5050.00, and the mark to 5004.00 + 20.00 = 5024.00; the long's legs are sent,
-# order 4 selling ESH2026 and order 5 buying ESM2026, the next ids after the scenario's 1 to 3
-# (F-ROL-02);
+# 5030.00 + 20.00 = 5050.00, and the mark the run judges stops by to 5004.00 + 20.00 = 5024.00;
+# the long's legs are sent, order 4 selling ESH2026 and order 5 buying ESM2026, the next ids after
+# the scenario's 1 to 3 (F-ROL-02); until they fill, the long, still on ESH2026, is valued at
+# 5024.00 - 20.00 = 5004.00, its own contract's price, the mark recorded at 22:00 (F-ROL-03);
 # the first trade after the roll, 5025.00, fills them before anything else, the close leg at
 # 5025.00 - 20.00 - 0.25 = 5004.75 and the open leg at 5025.00 + 0.25 = 5025.25, each a market
 # order's tick against the trader (F-ROL-02, F-SLP-01) and each paying 2.50 (F-FEE-01); the moved

@@ -148,6 +148,7 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-fill-065](S-fill-065.yaml) | trades | With a negative funding rate a short pays, its amount rounded against the trader |
 | [S-fill-066](S-fill-066.yaml) | tbbo | On TBBO a roll's legs fill at the new front's quote, read no better than its trade, flagged by the size it shows |
 | [S-fill-067](S-fill-067.yaml) | trades | Two rolls in one run move the bracket by each gap in turn, each sending its legs on the next front |
+| [S-fill-068](S-fill-068.yaml) | tbbo | With flatten, a stop triggered on TBBO before a roll does the close leg's work, and the roll cancels the rest of its plan |
 | [S-template-001](S-template-001.yaml) | 1m | A template's long entry fills at the next bar's open and its bracket's target closes the trade |
 | [S-template-002](S-template-002.yaml) | trades | A template's short takes its size from size_mult and its bracket from the stop_price and target_price columns |
 | [S-template-003](S-template-003.yaml) | 1m | A template closes its position at its flat-by time and enters nothing after it that trade date |
@@ -227,3 +228,4 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-077](S-template-077.yaml) | trades | A trade flat before costs loses its two fees, which meet daily_loss_stop and stop the day's entries |
 | [S-template-078](S-template-078.yaml) | trades | Funding paid while a trade is open counts in its loss, which meets daily_loss_stop |
 | [S-template-079](S-template-079.yaml) | trades | Across a roll a template's exit plan keeps its fill price in the new front's prices, so breakeven moves its stop where it would |
+| [S-template-080](S-template-080.yaml) | trades | A signal exit on its way across a roll does the close leg's work on the old contract, and the roll sends no legs |

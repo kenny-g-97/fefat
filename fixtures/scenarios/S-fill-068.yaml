@@ -1,0 +1,34 @@
+id: S-fill-068
+title: With flatten, a stop triggered on TBBO before a roll does the close leg's work, and the roll cancels the rest of its plan
+fidelity: tbbo
+instrument: ES
+settings: {roll_handling: flatten}
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+orders:
+  - {id: 1, placed_at: "2026-03-06T20:00:00.000Z", side: buy, kind: market, quantity: 1, bracket: {stop: {id: 2, price: "4995.00"}, target: {id: 3, price: "5100.00"}}}
+tape:
+  - {ts: "2026-03-06T20:00:00.200Z", price: "5001.00", size: 3, bid: "5000.75", ask: "5001.25", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-06T21:59:59.000Z", price: "4994.75", size: 2, bid: "4994.50", ask: "4995.00", bid_size: 5, ask_size: 5}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00", size: 2, bid: "5024.75", ask: "5025.25", bid_size: 5, ask_size: 5}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T20:00:00.200Z", price: "5001.25", rule: F-MKT-01, role: entry, contract: ESH2026}
+    - {order: 2, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, role: stop, contract: ESH2026}
+rules: [F-ACT-01, F-MKT-01, F-OCO-02, F-ROL-01, F-ROL-02, F-ROL-03, F-ROL-04, F-SLP-01, F-STP-01, F-STP-02]
+
+# Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01; the
+# session of 2026-03-06 closes at 22:00Z, and that of 2026-03-09 opens at 2026-03-08T22:00Z):
+# decided at 20:00:00.000 and active at 20:00:00.100 (F-ACT-01), the buy fills at the ask of the
+# record at 20:00:00.200, 5001.25 (F-MKT-01), on ESH2026; its bracket, stop 4995.00 and target
+# 5100.00, is placed (F-OCO-02);
+# the trade at 4994.75 at 21:59:59 reaches the stop at 4995.00 (F-STP-01): on TBBO the stop is
+# then a market order already sent, which fills at the next tradeable record's quote (F-STP-02),
+# but the session closes at 22:00 and the next record comes after the weekend;
+# at the roll, 22:00:00 on 03-08 (F-ROL-01), the triggered stop is on its way out of all the
+# long's lots, so it does the close leg's work and no close leg is sent; with flatten the roll
+# cancels the rest of the position's exit plan, the target (F-ROL-04); the stop moves by the gap
+# to 5015.00 (F-ROL-03);
+# the new front's first record, at 22:00:00.500, fills the stop first, at the close leg's price:
+# the bid, 5024.75, no better than the trade, 5025.00, less the gap: 5024.75 - 20.00 = 5004.75
+# (F-ROL-02), on ESH2026, with its own role, stop; the long is flat.

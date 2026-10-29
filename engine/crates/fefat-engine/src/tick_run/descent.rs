@@ -67,8 +67,8 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let of_bars = day.records.are_bars();
         day.levels.iter().find_map(|level| {
             let (bar, end) = level.holding(start)?;
-            let end = decision.map_or(end, |decision| before(instants, start, end, decision));
-            let end = timer.map_or(end, |at| before_timer(instants, start, end, at, of_bars));
+            let end = decision.map_or(end, |decision| before(instants, start, end, decision, true));
+            let end = timer.map_or(end, |at| before(instants, start, end, at, of_bars));
             let last = day.records.get(end.checked_sub(1)?)?;
             let nothing_acts = end > start && self.untouched_by(&bar, last.ts());
             nothing_acts.then_some(Block { end, last })
@@ -117,21 +117,14 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     }
 }
 
-/// The end of the records from `start` before `end` that come before the decision at `decision`:
-/// those available at or before it (F-CLK-02).
-fn before(instants: &[Ts], start: usize, end: usize, decision: Ts) -> usize {
+/// The end of the records from `start` before `end` that come before an event at `at`
+/// (F-CLK-02): those available before it, and those available at it when `at_too`, as for a
+/// decision, which comes after every record of its instant, or for a roll or a funding time, which
+/// comes after the bars closing then but before the ticks received then.
+fn before(instants: &[Ts], start: usize, end: usize, at: Ts, at_too: bool) -> usize {
     let held = instants.get(start..end);
     held.map_or(start, |held| {
-        start + held.partition_point(|instant| *instant <= decision)
-    })
-}
-
-/// The end of the records from `start` before `end` that come before a roll or a funding time
-/// at `at` (F-CLK-02): the bars closing at or before it, the ticks received before it.
-fn before_timer(instants: &[Ts], start: usize, end: usize, at: Ts, of_bars: bool) -> usize {
-    let held = instants.get(start..end);
-    held.map_or(start, |held| {
-        start + held.partition_point(|instant| *instant < at || (of_bars && *instant == at))
+        start + held.partition_point(|instant| *instant < at || (at_too && *instant == at))
     })
 }
 

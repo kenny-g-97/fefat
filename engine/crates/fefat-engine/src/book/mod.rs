@@ -6,8 +6,8 @@
 
 use std::collections::BTreeMap;
 
-use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState};
-use fefat_core::units::{Overflow, Price};
+use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState, Side};
+use fefat_core::units::{Overflow, Price, Qty};
 
 use crate::exit_plan::{ExitPlan, LivePlan};
 
@@ -174,11 +174,34 @@ impl Book {
         self.issued = self.issued.max(highest.map_or(0, |id| id.0));
     }
 
+    /// F-ROL-02: the market order already on its way out of all the position's `lots` by `side`,
+    /// an exit flatten placed or a stop of its plan triggered on TBBO, which does a roll's close
+    /// leg's work; the lowest id should there be more.
+    pub(crate) fn on_its_way_out(&self, side: Side, lots: Qty) -> Option<OrderId> {
+        let on_its_way = |order: &&WorkingOrder| match order.order.role {
+            OrderRole::Exit(_) => true,
+            OrderRole::Entry | OrderRole::Roll(_) => false,
+            OrderRole::Stop | OrderRole::Target(_) => {
+                order.state == OrderState::Triggered && order.link.leg_of().is_some()
+            }
+        };
+        self.live
+            .iter()
+            .filter(|order| order.order.side == side && order.order.lots == lots)
+            .filter(on_its_way)
+            .map(|order| order.order.id)
+            .min()
+    }
+
     /// F-ROL-04: with `roll_handling: flatten`, the position's exit plans and any exit on its way
-    /// out of it are cancelled, the roll's close leg doing their work; their ids, lowest first.
-    pub(crate) fn cancel_for_roll(&mut self) -> Vec<OrderId> {
+    /// out of part of it are cancelled, the roll's close leg doing their work, but for `exiting`,
+    /// an order on its way out of all its lots, which does the close leg's work instead
+    /// (F-ROL-02); their ids, lowest first.
+    pub(crate) fn cancel_for_roll(&mut self, exiting: Option<OrderId>) -> Vec<OrderId> {
         let closes = |order: &WorkingOrder| {
-            order.link.leg_of().is_some() || matches!(order.order.role, OrderRole::Exit(_))
+            let plan_or_exit =
+                order.link.leg_of().is_some() || matches!(order.order.role, OrderRole::Exit(_));
+            plan_or_exit && Some(order.order.id) != exiting
         };
         let mut ids: Vec<OrderId> = self
             .live
@@ -198,36 +221,27 @@ impl Book {
     /// plans, and the live plans' fill and best prices, move with it.
     pub(crate) fn shift_by(&mut self, gap: Price) -> Result<Vec<Shift>, Overflow> {
         let mut shifts = Vec::new();
-        for id in self.live_ids() {
-            let Some(order) = self.live.iter_mut().find(|order| order.order.id == id) else {
-                continue;
-            };
+        for order in &mut self.live {
             if let BracketLink::Entry(plan) = &mut order.link {
                 plan.shift_by(gap)?;
             }
-            let (before, kind) = match order.order.kind {
-                OrderKind::Market => continue,
-                OrderKind::StopMarket { stop } => (
-                    stop,
-                    OrderKind::StopMarket {
-                        stop: stop.checked_add(gap)?,
-                    },
-                ),
-                OrderKind::Limit { limit } => (
-                    limit,
-                    OrderKind::Limit {
-                        limit: limit.checked_add(gap)?,
-                    },
-                ),
+            let Some(before) = order.level() else {
+                continue;
             };
-            order.order.kind = kind;
             let after = before.checked_add(gap)?;
+            order.order.kind = match order.order.kind {
+                OrderKind::StopMarket { .. } => OrderKind::StopMarket { stop: after },
+                OrderKind::Limit { .. } => OrderKind::Limit { limit: after },
+                OrderKind::Market => OrderKind::Market,
+            };
+            let id = order.order.id;
             shifts.push(Shift {
                 order: id,
                 before,
                 after,
             });
         }
+        shifts.sort_unstable_by_key(|shift| shift.order);
         for plan in self.plans.values_mut() {
             plan.shift_by(gap)?;
         }

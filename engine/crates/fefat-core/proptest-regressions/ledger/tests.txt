@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ddfc3f50b191c396c14c46c7dde055f78a278b0f186a70777922a6eed5060f54 # shrinks to instrument = InstrumentParameters { tick_size: Price(250000000), money_per_point: Money(50000000), lot_step: LotStep(1000000000) }, fee = Futures { per_contract_side: Money(0) }, steps = [Step { side: Sell, lots: 1, price_ticks: 0, fee: 0, mark_ticks: -1 }], rates = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11587, -487462, 45170, 974781, 431736, -505698, -855399, 674403, 130160, 37570, -783003, -755486, 81253, 931287, -357318]

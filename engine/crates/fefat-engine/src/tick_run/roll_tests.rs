@@ -516,3 +516,81 @@ fn a_roll_before_the_legs_of_the_roll_before_it_have_filled_is_refused() {
         })
     );
 }
+
+#[test]
+fn a_run_that_ends_before_the_legs_fill_values_the_long_at_its_own_contracts_price() {
+    // F-ROL-03, your choice of 2026-10-29: the tape ends before the new front trades, so the
+    // long is still on ESH2026 at the end, valued at its last trade, 5004.00, not at the mark
+    // moved by the gap, 5024.00, which the run judges stops by.
+    let reader = trades(
+        esh(),
+        &[(
+            MARCH_6,
+            &[
+                (at(MARCH_6_14_30, 200), 500_000, 3),
+                (at(MARCH_6_20_00, 0), 500_400, 2),
+            ],
+        )],
+    );
+    let rolls = (vec![march_roll()], RollHandling::Transfer);
+    let outputs = run_on_trades(
+        &reader,
+        capital(),
+        &mut bracketed_long(1),
+        RunCosts::default(),
+        rolls,
+    )
+    .unwrap();
+
+    let placed = logged(&outputs, EventKind::Placed);
+    let legs = placed.iter().filter(|(_, rule)| *rule == Some("F-ROL-02"));
+
+    assert_eq!(outputs.ledger.mark(), Some(price(500_400)));
+    assert_eq!(legs.count(), 2);
+    assert_eq!(fills(&outputs).len(), 1);
+}
+
+#[test]
+fn funding_times_or_rolls_out_of_order_or_repeated_are_refused() {
+    // The loop takes its timers in order, each once, as the reference does (F-FND-01, F-ROL-01).
+    let reader = across_the_roll();
+    let rate = |seconds: i64| FundingRate {
+        ts: at(seconds, 0),
+        rate: Rate(100_000),
+    };
+    let backwards = RunCosts {
+        fees: None,
+        funding: vec![rate(MARCH_7_16_00), rate(MARCH_6_20_00)],
+    };
+    let no_rolls = (Vec::new(), RollHandling::Transfer);
+    let to_esu = Roll {
+        rolled_from: esm(),
+        contract: Contract("ESU2026".to_owned()),
+        ..march_roll()
+    };
+    let at_one_open = (vec![march_roll(), to_esu], RollHandling::Transfer);
+    let mut nothing = ScenarioOrders::new(Vec::new());
+
+    assert_eq!(
+        run_on_trades(&reader, capital(), &mut nothing, backwards, no_rolls),
+        Err(RunError::TimersOutOfOrder {
+            what: "funding times",
+            previous: at(MARCH_7_16_00, 0),
+            next: at(MARCH_6_20_00, 0),
+        })
+    );
+    assert_eq!(
+        run_on_trades(
+            &reader,
+            capital(),
+            &mut nothing,
+            RunCosts::default(),
+            at_one_open
+        ),
+        Err(RunError::TimersOutOfOrder {
+            what: "rolls",
+            previous: at(ROLL_OPEN, 0),
+            next: at(ROLL_OPEN, 0),
+        })
+    );
+}

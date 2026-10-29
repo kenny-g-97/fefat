@@ -1,0 +1,42 @@
+id: S-template-080
+title: A signal exit on its way across a roll does the close leg's work on the old contract, and the roll sends no legs
+fidelity: trades
+instrument: ES
+fees: {kind: futures, per_contract_side: "2.50"}
+rolls:
+  - {trade_date: "2026-03-09", session_open: "2026-03-08T22:00:00Z", rolled_from: ESH2026, contract: ESM2026, gap: "20.00", reason: volume}
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    sizing: {kind: fixed, units: 1}
+    signal_exit: true
+signals:
+  - {ts_close: "2026-03-06T21:58:00Z", trade_date: "2026-03-06", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-06T22:00:00Z", trade_date: "2026-03-06", contract: ESH2026, long_exit: true}
+tape:
+  - {ts: "2026-03-06T21:58:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-06T21:59:30.000Z", price: "5004.00", size: 2}
+  - {ts: "2026-03-08T22:00:00.500Z", price: "5025.00", size: 4}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-06T21:58:00.200Z", price: "5000.25", rule: F-MKT-02, fee: "2.50", role: entry, contract: ESH2026}
+    - {order: 2, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, fee: "2.50", role: signal_exit, contract: ESH2026}
+rules: [F-ACT-01, F-ENT-01, F-ENT-04, F-FEE-01, F-MKT-02, F-ROL-01, F-ROL-02, F-SES-01, F-SLP-01]
+
+# Arithmetic (ES, tick 0.25, 50 USD a point; one tick of slippage on trades: F-SLP-01; a fee of
+# 2.50 per contract per side; the session of 2026-03-06 closes at 22:00Z, and that of 2026-03-09
+# opens at 2026-03-08T22:00Z, 17:00 Chicago):
+# the long entry decided at 21:58 is active at 21:58:00.100 (F-ACT-01) and buys at the trade at
+# 21:58:00.200 plus a tick, 5000.00 + 0.25 = 5000.25 (F-MKT-02), paying 2.50, on ESH2026;
+# the signal exit decided at Friday's close, 22:00:00, closes the long with a market sell, order 2
+# (F-ENT-04), active at 22:00:00.100, when the market is closed, so it waits through the weekend
+# (F-SES-01) and the template decides nothing more while it is on its way (F-ENT-01);
+# at the roll, 22:00:00 on 03-08 (F-ROL-01), the sell is on its way out of all the long's lots, so
+# it does the close leg's work and the roll sends no legs (F-ROL-02); the trade at 5025.00 fills it
+# first, at the close leg's price, 5025.00 - 20.00 - 0.25 = 5004.75, on ESH2026, with its own role,
+# signal_exit, paying 2.50 (F-FEE-01); the long is flat and its trade closes.
+# The trade made (5004.75 - 5000.25) x 50 - 2 x 2.50 = 220.00, where legs and then the exit on
+# ESM2026 would have taken two more fees and two more ticks of slippage.
