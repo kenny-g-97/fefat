@@ -38,10 +38,12 @@ mod skip_equals_full;
 #[cfg(test)]
 mod tests;
 mod timers;
+mod trades;
 
 pub use descent::Replay;
-pub use outcomes::{BookedFill, RunError, RunOutputs, Stepped};
+pub use outcomes::{BookedFill, EquityPoint, RunError, RunOutputs, Stepped};
 pub use records::{Quote, TickRecord};
+pub use trades::Trade;
 
 use fefat_core::costs::CostLine;
 use fefat_core::fidelity::Fidelity;
@@ -51,12 +53,13 @@ use fefat_core::ledger::Ledger;
 use fefat_core::market_data::MarketDataReader;
 use fefat_core::orders::OrderId;
 use fefat_core::rolls::Roll;
-use fefat_core::units::Money;
+use fefat_core::units::{Money, Price};
 
 use descent::BarLevel;
 use records::{DayRecords, Unit};
 use rolls::Transfer;
 use timers::Timer;
+use trades::TradeBook;
 
 use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
@@ -97,6 +100,8 @@ pub struct TickRun<'run, R: MarketDataReader> {
     next_roll: usize,
     front: Contract,
     transfer: Option<Transfer>,
+    trades: TradeBook,
+    equity: Vec<EquityPoint>,
 }
 
 /// What comes next in the order of F-CLK-02.
@@ -146,6 +151,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         }
         let mut book = Book::default();
         book.reserve_through(strategy.highest_order_id());
+        let trades = TradeBook::holding(ledger.position().signed_lots().0);
         Ok(Self {
             reader,
             cap: fidelity,
@@ -178,6 +184,8 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             next_roll: 0,
             front: reader.contract().clone(),
             transfer: None,
+            trades,
+            equity: Vec::new(),
         })
     }
 
@@ -191,6 +199,8 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             log: self.log,
             ledger: self.ledger,
             cost_lines: self.cost_lines,
+            trades: self.trades.into_closed(),
+            equity: self.equity,
         })
     }
 
@@ -320,7 +330,42 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         let trades = &self.closed_trades;
         let mut context = DecisionContext::new(book, log, ledger, trades, now, index, latency);
         self.strategy.on_decision(now, &mut context)?;
+        let point = self.equity_at(now)?;
+        self.equity.push(point);
         Ok(Stepped::Decision(now))
+    }
+
+    /// The account at the decision `now`: the position valued at the mark, or, while a roll's
+    /// legs are on their way, at the mark less the gap, its own contract's price (F-ROL-03).
+    fn equity_at(&self, now: Ts) -> Result<EquityPoint, RunError> {
+        let (cash, position) = (self.ledger.cash(), self.ledger.position().signed_lots());
+        let gap = self.transfer.as_ref().map_or(Price(0), Transfer::gap);
+        let mark = self
+            .ledger
+            .mark()
+            .map(|mark| mark.checked_sub(gap))
+            .transpose()?;
+        let equity = match (position.0, mark) {
+            (0, _) => Some(cash),
+            (_, Some(mark)) => {
+                let value = self.ledger.instrument().value(mark, position)?;
+                Some(cash.checked_add(value)?)
+            }
+            (_, None) => None,
+        };
+        Ok(EquityPoint {
+            ts: now,
+            cash,
+            position,
+            mark,
+            equity,
+        })
+    }
+
+    /// Marks the position at `price` (F-MRK-01), which the open trade's excursions follow.
+    pub(super) fn mark_at(&mut self, price: Price) -> Result<(), RunError> {
+        self.ledger.mark_at(price);
+        Ok(self.trades.marked(price)?)
     }
 
     fn receive(&mut self, unit: Unit, index: usize) -> Result<Stepped, RunError> {

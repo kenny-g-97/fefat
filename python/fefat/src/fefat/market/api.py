@@ -1,5 +1,5 @@
 """The SDK's data API (steps 1.8 and 1.9): `load` gives the signal bars of a product or a
-contract in one call, `catalog` lists what the store holds, and `roll_calendar` gives the roll
+contract in one call, `datasets` lists what the store holds, and `roll_calendar` gives the roll
 calendar `load` splices a future with (step 2.9).
 
     import fefat as ff
@@ -8,7 +8,7 @@ calendar `load` splices a future with (step 2.9).
     march = ff.market.load("MESH2024", "1m", "2024-03-01", "2024-03-15").collect()
     ticks = ff.market.load("ES", "1m", "2026-03-06", "2026-03-06", fidelity="trades")
     from_databento = ff.market.load("MES", "5m", "2024-01-01", "2024-03-31", provider="databento")
-    ff.market.catalog()
+    ff.market.datasets()
 
 Both read the store in `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`), and the session tables
 cached in `FEFAT_HOME`.
@@ -100,9 +100,10 @@ from fefat.market.store import Store
 SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean})
 """The columns `load` returns, whatever the mode: a bar's, its contract, its raw close, the
 offset of its prices, whether it is a new front's first, and whether its bucket is empty."""
-CATALOG_COLUMNS = pl.Schema({**DATASET_COLUMNS, "catalog_version": pl.UInt32})
-"""The catalog's row per dataset of trades, TBBO, or bars: the columns of `DATASET_COLUMNS`
-(`fefat.market.status`) and the version of the product catalog (`fefat.market.catalog`)."""
+DATASETS_COLUMNS = pl.Schema({**DATASET_COLUMNS, "catalog_version": pl.UInt32})
+"""The row per dataset of trades, TBBO, or bars that `datasets` gives: the columns of
+`DATASET_COLUMNS` (`fefat.market.status`) and the version of the product catalog
+(`fefat.market.catalog`)."""
 
 
 def load(
@@ -169,13 +170,13 @@ def roll_calendar(
     return _roll_calendar(store, datasets, instrument, sessions)
 
 
-def catalog() -> pl.DataFrame:
+def datasets() -> pl.DataFrame:
     """Every dataset of trades, TBBO, or bars the store holds, with the columns of
-    `CATALOG_COLUMNS`, sorted by provider, root, and schema; an empty store gives no rows, and
+    `DATASETS_COLUMNS`, sorted by provider, root, and schema; an empty store gives no rows, and
     `ff.market.CATALOG.version` the catalog's version whatever the store holds."""
     paths = resolve_paths(os.environ)
-    datasets = dataset_status(Store(paths.data_dir), paths.reports_dir)
-    return datasets.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))
+    listed = dataset_status(Store(paths.data_dir), paths.reports_dir)
+    return listed.with_columns(catalog_version=pl.lit(CATALOG.version, dtype=pl.UInt32))
 
 
 def _root_and_contract(symbol: str, table: InstrumentTable) -> tuple[str, str | None]:

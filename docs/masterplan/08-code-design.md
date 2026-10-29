@@ -51,9 +51,11 @@ web  →  fefat_app.http  →  fefat_app.services  →  fefat (SDK)  →  fefat_
                  adapters implement ports           fefat.market.importers are the
                  (fefat_app.ports)                  SDK's only network and vendor edge
 
-engine crates:  fefat-py, fefat-cli  →  fefat-engine, fefat-prop, fefat-metrics, fefat-data  →  fefat-core
+engine crates:  fefat-py, fefat-cli  →  fefat-run  →  fefat-engine, fefat-prop, fefat-metrics  →  fefat-core
+                fefat-py, fefat-cli  →  fefat-data  →  fefat-core
                 fefat-core defines the MarketDataReader trait; fefat-data implements it over mmap,
-                tests implement it in memory; no engine crate but fefat-data touches the file system
+                tests implement it in memory; no engine crate but fefat-data touches the file system;
+                fefat-run assembles a run and its tables, shared by fefat-py and fefat-cli (step 2.10)
 ```
 
 - `fefat` never imports `fefat_app`; `fefat_app.services` never imports FastAPI or SQLAlchemy; routers in `fefat_app.http` hold no business logic; the web client recomputes no number the API provides.

@@ -21,7 +21,6 @@ print of a trade date is received before the next session opens, so its bars are
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, get_args
@@ -31,6 +30,7 @@ from pydantic import Field
 
 from fefat.market.bars import build_bars, resample_bars
 from fefat.market.calendar import SessionTable, utc_text
+from fefat.market.engine_units import price_text
 from fefat.market.layout import FolderName, Partition, PartitionRequest
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import (
@@ -367,7 +367,7 @@ def _written(column: str, value: Any) -> str:
     if value is None:
         return "none"
     if column in _PRICE_COLUMNS:
-        return format(Decimal(value).scaleb(-9).normalize(), "f")
+        return price_text(value)
     if column == "ts_close":
         return utc_text(value)
     return str(value)

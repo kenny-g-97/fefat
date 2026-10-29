@@ -3,6 +3,7 @@
 
 mod columns;
 mod conformance;
+mod fronts;
 mod offsets;
 mod refusals;
 mod rules;

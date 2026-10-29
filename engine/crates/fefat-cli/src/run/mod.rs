@@ -5,10 +5,10 @@
 //! `tbbo.arrow`, or `1m.arrow`, and `signals.arrow`, each row tagged with its case's place in that
 //! list ([`inputs`]). A case reads its records from those files, through the in-memory reader, or
 //! from an engine cache's contract folder (step 2.5), in full or skipping what no order can act
-//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, `ledger.arrow`, and
-//! `costs.arrow`, tagged the same way ([`outputs`]).
+//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, `costs.arrow`, and
+//! `ledger.arrow`, tagged the same way ([`outputs`]). The run itself is `fefat_run`'s, which the
+//! Python module `fefat_engine` shares (step 2.10).
 
-mod costs_and_rolls;
 mod inputs;
 mod manifest;
 mod outputs;
@@ -19,18 +19,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use arrow_schema::ArrowError;
-use fefat_core::costs::FeeTableError;
-use fefat_core::fidelity::Fidelity;
-use fefat_core::instrument::{Contract, NonPositiveParameter};
-use fefat_core::ledger::{Ledger, LedgerError};
-use fefat_core::market_data::{InMemoryMarketData, MarketDataReader, TapeError};
-use fefat_core::rolls::Roll;
+use fefat_core::instrument::Contract;
+use fefat_core::market_data::{InMemoryMarketData, TapeError};
 use fefat_data::{CacheError, MappedContract};
-use fefat_engine::hours::TradingHours;
-use fefat_engine::settings::{RollHandling, RunCosts, RunSettings};
 use fefat_engine::strategy::{ScenarioOrders, Strategy};
-use fefat_engine::template::{TemplateError, TemplateStrategy};
-use fefat_engine::tick_run::{Replay, RunError, RunOutputs, TickRun};
+use fefat_engine::template::TemplateStrategy;
+use fefat_engine::tick_run::RunOutputs;
+use fefat_run::backtest::{BacktestError, run_strategy};
 use thiserror::Error;
 
 use inputs::BatchTables;
@@ -94,33 +89,21 @@ pub enum BatchError {
 /// Why a case did not run.
 #[derive(Debug, Error)]
 pub enum CaseError {
-    /// Its instrument's parameters.
-    #[error(transparent)]
-    Instrument(#[from] NonPositiveParameter),
-    /// Its opening position.
-    #[error(transparent)]
-    Ledger(#[from] LedgerError),
-    /// Its fee table.
-    #[error(transparent)]
-    Fees(#[from] FeeTableError),
     /// An order of its scenario.
     #[error(transparent)]
     Order(#[from] MispricedOrder),
     /// Two of its orders under one id.
     #[error(transparent)]
     RepeatedOrder(#[from] RepeatedOrderId),
-    /// Its specification or its signal rows.
-    #[error(transparent)]
-    Template(#[from] TemplateError),
     /// Its tape.
     #[error(transparent)]
     Tape(#[from] TapeError),
     /// Its records, from the batch's files or from a cache.
     #[error(transparent)]
     Records(#[from] Box<BatchError>),
-    /// The run.
+    /// Its instrument, its opening position, its fee table, its template, or the run.
     #[error(transparent)]
-    Run(#[from] RunError),
+    Backtest(#[from] BacktestError),
 }
 
 /// What a batch ran.
@@ -176,9 +159,8 @@ fn run_case(
     index: i64,
     tables: &BatchTables,
 ) -> Result<RunOutputs, CaseError> {
-    let instrument = case.instrument()?;
-    let ledger = case.ledger(instrument)?;
-    let (hours, settings) = (case.hours(), case.settings());
+    let config = &case.run;
+    let instrument = config.instrument().map_err(BacktestError::from)?;
     let mut strategy: Box<dyn Strategy> = match &case.decisions {
         DecisionsManifest::Orders { orders } => {
             let placed = orders.iter().map(|order| order.scenario_order());
@@ -187,64 +169,22 @@ fn run_case(
         }
         DecisionsManifest::Template { strategy } => {
             let rows = tables.signal_rows(index);
-            Box::new(TemplateStrategy::new(strategy, rows, &instrument)?)
+            let template = TemplateStrategy::new(strategy, rows, &instrument);
+            Box::new(template.map_err(BacktestError::from)?)
         }
     };
-    let run = Run {
-        fidelity: case.fidelity,
-        replay: case.replay(),
-        hours: &hours,
-        settings,
-        ledger,
-        costs: case.costs()?,
-        rolls: case.rolls(),
-        roll_handling: case.roll_handling(),
-    };
+    let replay = case.replay();
     match &case.market_data {
         MarketDataManifest::Tape { levels } => {
             let days = tables.tape_days(index, levels).map_err(Box::new)?;
             let reader = InMemoryMarketData::new(Contract(case.contract.clone()), days)?;
-            run.on(&reader, strategy.as_mut())
+            Ok(run_strategy(config, replay, &reader, strategy.as_mut())?)
         }
         MarketDataManifest::Cache { folder } => {
             let reader = MappedContract::open(folder)
                 .map_err(|error| Box::new(BatchError::Records(error)))?;
-            run.on(&reader, strategy.as_mut())
+            Ok(run_strategy(config, replay, &reader, strategy.as_mut())?)
         }
-    }
-}
-
-/// A case's run but for its records and its strategy.
-struct Run<'case> {
-    fidelity: Fidelity,
-    replay: Replay,
-    hours: &'case TradingHours,
-    settings: RunSettings,
-    ledger: Ledger,
-    costs: RunCosts,
-    rolls: Vec<Roll>,
-    roll_handling: RollHandling,
-}
-
-impl Run<'_> {
-    fn on(
-        self,
-        reader: &impl MarketDataReader,
-        strategy: &mut dyn Strategy,
-    ) -> Result<RunOutputs, CaseError> {
-        let Self {
-            fidelity,
-            replay,
-            hours,
-            settings,
-            ledger,
-            costs,
-            rolls,
-            roll_handling,
-        } = self;
-        let run = TickRun::new(reader, fidelity, replay, hours, settings, ledger, strategy)?;
-        let run = run.with_costs(costs)?.with_rolls(rolls, roll_handling)?;
-        Ok(run.run()?)
     }
 }
 

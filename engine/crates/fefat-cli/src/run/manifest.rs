@@ -1,32 +1,24 @@
-//! `run.json`, the cases of a batch: each case's instrument in the engines' integers (D-55), its
-//! run settings as `fefat.reference.settings.RunSettings` writes them, its trading hours, its
-//! capital and the position held when its tape starts, where its records come from and how they
-//! are replayed, what decides its orders, an order scenario's orders or a `StrategySpec` over its
-//! signal rows, and what it pays and rolls across (step 2.9): its fee table, its funding rates, and
-//! its rolls, each left out where it has none.
+//! `run.json`, the cases of a batch: each case's id, the contract its records are of, where they
+//! come from and how they are replayed, what decides its orders, an order scenario's orders or a
+//! `StrategySpec` over its signal rows, and the run's config, which `fefat_run::config` reads
+//! (its fidelity, instrument, settings, hours, capital and opening position, fee table, funding
+//! rates, and rolls, step 2.10).
 
 use std::collections::BTreeSet;
 use std::iter;
 use std::path::PathBuf;
 
-use fefat_core::costs::FeeTableError;
 use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::Ts;
-use fefat_core::instrument::{InstrumentParameters, LotStep, NonPositiveParameter};
-use fefat_core::ledger::{Ledger, LedgerError};
 use fefat_core::orders::{OcoGroupId, OrderId, OrderKind, Side};
-use fefat_core::rolls::Roll;
 use fefat_core::strategy_spec::StrategySpec;
-use fefat_core::units::{Money, Price, Qty};
+use fefat_core::units::{Price, Qty};
 use fefat_engine::book::{Bracket, BracketLeg, LegPrice};
-use fefat_engine::hours::{Halt, Session, TradingHours};
-use fefat_engine::settings::{LimitFill, RollHandling, RunCosts, RunSettings, SlippageTicks};
 use fefat_engine::strategy::ScenarioOrder;
 use fefat_engine::tick_run::Replay;
+use fefat_run::config::RunConfig;
 use serde::Deserialize;
 use thiserror::Error;
-
-use super::costs_and_rolls::{FeesManifest, FundingManifest, RollManifest};
 
 /// The cases of a batch, in the order their rows' `case` column counts them, from 0.
 #[derive(Debug, Deserialize)]
@@ -41,69 +33,13 @@ pub(super) struct RunManifest {
 pub(super) struct CaseManifest {
     /// A name for the case in errors, such as a scenario's id.
     pub(super) id: String,
-    /// The finest data it fills on, `tbbo`, `trades`, or a bar timeframe: each trade date fills
-    /// on its finest level at or coarser than this.
-    pub(super) fidelity: Fidelity,
     replay: ReplayWord,
     /// The contract its records are of.
     pub(super) contract: String,
-    instrument: InstrumentManifest,
-    settings: SettingsManifest,
-    hours: HoursManifest,
-    /// The run's capital, the ledger's starting cash, in micro-units.
-    capital: i64,
-    position: Option<PositionManifest>,
     pub(super) market_data: MarketDataManifest,
     pub(super) decisions: DecisionsManifest,
-    /// The fee table, none where the run names none.
-    #[serde(default)]
-    fees: Option<FeesManifest>,
-    /// A perpetual's funding rates, in the order of their times.
-    #[serde(default)]
-    funding: Vec<FundingManifest>,
-    /// A future's rolls, in the order of their opens.
-    #[serde(default)]
-    rolls: Vec<RollManifest>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct InstrumentManifest {
-    tick_size: i64,
-    money_per_point: i64,
-    lot_step: i64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SettingsManifest {
-    latency_ms: u32,
-    slippage_ticks: SlippageManifest,
-    limit_fill: LimitFillWord,
-    #[serde(default)]
-    roll_handling: RollHandlingWord,
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum RollHandlingWord {
-    #[default]
-    Transfer,
-    Flatten,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SlippageManifest {
-    market: u32,
-    stop: u32,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum LimitFillWord {
-    Through,
-    Touch,
+    /// What the run reads beside its decisions and its records.
+    pub(super) run: RunConfig,
 }
 
 /// How the case's records are replayed: skipping what no order can act on, or in full.
@@ -112,43 +48,6 @@ enum LimitFillWord {
 enum ReplayWord {
     Skipping,
     Full,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum HoursManifest {
-    Always,
-    Sessions { sessions: Vec<SessionManifest> },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SessionManifest {
-    open: i64,
-    close: i64,
-    halts: Vec<HaltManifest>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HaltManifest {
-    start: i64,
-    end: i64,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum PositionSide {
-    Long,
-    Short,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PositionManifest {
-    side: PositionSide,
-    lots: i64,
-    price: i64,
 }
 
 /// Where a case's records come from: the batch's own files of the levels it names, or an engine
@@ -235,83 +134,6 @@ impl CaseManifest {
             MarketDataManifest::Tape { levels } => levels,
             MarketDataManifest::Cache { .. } => &[],
         }
-    }
-
-    pub(super) fn instrument(&self) -> Result<InstrumentParameters, NonPositiveParameter> {
-        let instrument = &self.instrument;
-        InstrumentParameters::new(
-            Price(instrument.tick_size),
-            Money(instrument.money_per_point),
-            LotStep(instrument.lot_step),
-        )
-    }
-
-    pub(super) const fn settings(&self) -> RunSettings {
-        let settings = &self.settings;
-        RunSettings {
-            latency_milliseconds: settings.latency_ms,
-            slippage: SlippageTicks {
-                market: settings.slippage_ticks.market,
-                stop: settings.slippage_ticks.stop,
-            },
-            limit_fill: match settings.limit_fill {
-                LimitFillWord::Through => LimitFill::Through,
-                LimitFillWord::Touch => LimitFill::Touch,
-            },
-        }
-    }
-
-    /// What a roll does with an open position (F-ROL-02, F-ROL-04).
-    pub(super) const fn roll_handling(&self) -> RollHandling {
-        match self.settings.roll_handling {
-            RollHandlingWord::Transfer => RollHandling::Transfer,
-            RollHandlingWord::Flatten => RollHandling::Flatten,
-        }
-    }
-
-    /// What the case pays: its fee table and its funding rates (§14).
-    pub(super) fn costs(&self) -> Result<RunCosts, FeeTableError> {
-        let fees = self.fees.as_ref().map(FeesManifest::table).transpose()?;
-        let funding = self.funding.iter().map(FundingManifest::rate).collect();
-        Ok(RunCosts { fees, funding })
-    }
-
-    /// The case's rolls, in the order of their opens (F-ROL-01).
-    pub(super) fn rolls(&self) -> Vec<Roll> {
-        self.rolls.iter().map(RollManifest::roll).collect()
-    }
-
-    pub(super) fn hours(&self) -> TradingHours {
-        let HoursManifest::Sessions { sessions } = &self.hours else {
-            return TradingHours::always();
-        };
-        let sessions = sessions.iter().map(|session| Session {
-            open: Ts(session.open),
-            close: Ts(session.close),
-            halts: session
-                .halts
-                .iter()
-                .map(|halt| Halt {
-                    start: Ts(halt.start),
-                    end: Ts(halt.end),
-                })
-                .collect(),
-        });
-        TradingHours::of_sessions(sessions.collect())
-    }
-
-    /// The ledger the case starts from: its capital, and the position held when its tape starts.
-    pub(super) fn ledger(&self, instrument: InstrumentParameters) -> Result<Ledger, LedgerError> {
-        let capital = Money(self.capital);
-        let Some(position) = &self.position else {
-            return Ok(Ledger::new(instrument, capital));
-        };
-        let side = match position.side {
-            PositionSide::Long => Side::Buy,
-            PositionSide::Short => Side::Sell,
-        };
-        let (lots, price) = (Qty(position.lots), Price(position.price));
-        Ledger::holding(instrument, capital, side, lots, price)
     }
 }
 

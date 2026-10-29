@@ -80,6 +80,7 @@ fefat/
     crates/fefat-prop           account state machine, backtest-file replay, prop strategies, Monte Carlo
     crates/fefat-metrics        performance metrics and the robustness summary
     crates/fefat-data           Arrow IPC cache builder and mmap reader implementing MarketDataReader (the only `unsafe`)
+    crates/fefat-run            a run's config, signal rows, assembly, and artifact tables, shared by the two below (step 2.10)
     crates/fefat-py             PyO3 bindings → Python module `fefat_engine` (maturin); wires fefat-data into the engine
     crates/fefat-cli            spec in, artifacts out; drives golden tests and benchmarks
   python/

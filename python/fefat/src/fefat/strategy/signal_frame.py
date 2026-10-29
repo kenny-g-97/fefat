@@ -4,11 +4,13 @@ engine beside its specification, one row per close of its signal bars. It carrie
 signals, and the optional columns the execution template reads. Its prices are int64 raw prices
 of each row's contract in 1e-9 units, so that the engine never sees an adjusted price (D-09)."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 import polars as pl
 
 from fefat.market.calendar import counted, utc_text
+from fefat.strategy.exits import ColumnStop, ColumnTarget, ColumnTrail
+from fefat.strategy.spec import Execution, LimitEntryAtColumn, StopEntryAtColumn
 
 REQUIRED_SIGNAL_COLUMNS = pl.Schema(
     {
@@ -67,6 +69,38 @@ def require_column_types(
         if actual != dtype:
             got = "none" if actual is None else actual
             raise ValueError(f"Expected {owner} {name} as {dtype}, got {got}.")
+
+
+def require_named_columns(execution: Execution, columns: Collection[str]) -> None:
+    """Refuse a signal frame, whose column names are `columns`, without a column a rule of
+    `execution` reads (D-60): an entry at the column's `entry_price`, a stop at `stop_price`, a
+    target at `target_price`, a trailing stop by `trail_ref`, and the blackout column its limits
+    name. Without its column a trailing stop would never move and a blackout never hold, while
+    the Rust template would read the column as null on every row, so both engines refuse it
+    first (step 2.10)."""
+    trailing, blackout = execution.trailing, execution.limits.blackout
+    needed = {
+        "entry_price": (
+            "an entry at the column",
+            isinstance(execution.entry, LimitEntryAtColumn | StopEntryAtColumn),
+        ),
+        "stop_price": ("a stop at the column", isinstance(execution.stop, ColumnStop)),
+        "target_price": (
+            "a target at the column",
+            any(isinstance(target.price, ColumnTarget) for target in execution.targets),
+        ),
+        "trail_ref": (
+            "a trailing stop by the column",
+            trailing is not None and isinstance(trailing.by, ColumnTrail),
+        ),
+    }
+    if blackout is not None:
+        needed[blackout] = ("the blackout", True)
+    for column, (rule, needs) in needed.items():
+        if needs and column not in columns:
+            raise ValueError(
+                f"Expected the signal frame's {column} for {rule}, got no such column."
+            )
 
 
 def require_one_entry_per_bar(frame: pl.DataFrame) -> None:

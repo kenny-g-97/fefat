@@ -15,53 +15,33 @@ import itertools
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import Decimal
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
 
 import polars as pl
 
 from fefat.market.calendar import SessionTable
-from fefat.market.fees import FuturesFee
 from fefat.market.fidelity import TickFidelity
 from fefat.market.schema import Timeframe, TimeUnit
-from fefat.reference.costs import RunFees
 from fefat.reference.event_log import LogEntry
 from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.ledger import Fill
 from fefat.reference.orders import Order, PricedOrder
-from fefat.reference.rolls import RollRow
+from fefat.reference.run_documents import ENGINE_COLUMNS, run_document, with_engine_columns
 from fefat.reference.scenario_runner import held_lots
 from fefat.reference.scenarios import AnyScenario, TemplateScenario
+from fefat.reference.settings import Replay as Replay
 from fefat.reference.settings import RunSettings
 from fefat.reference.tape import BarRecord, Record, TbboRecord, trade_dates_of
-from fefat.reference.time_rules import with_time_rules
-from fefat.reference.units import (
-    CAPITAL,
-    PRICE_DECIMALS,
-    InstrumentParameters,
-    instrument_parameters,
-    lots_of,
-)
-from fefat.strategy import exits as rules
+from fefat.reference.units import CAPITAL, InstrumentParameters, instrument_parameters, lots_of
 from fefat.strategy.signal_frame import OPTIONAL_SIGNAL_COLUMNS
 from fefat.strategy.spec import StrategySpec
 
 _SIGNALS = ("ts_close", "long_entry", "short_entry", "long_exit", "short_exit")
-_TIME_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
 _FLAGS = ("ambiguous", "size_exceeded")
 _SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
 _MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
 _FIVE_MINUTES = Timeframe(count=5, unit=TimeUnit.MINUTE)
-
-
-class Replay(StrEnum):
-    """How the Rust engine replays a case: every record in turn, or skipping the blocks of
-    records that no order can act on, by the coarser bars above them (`02` §4)."""
-
-    FULL = "full"
-    SKIPPING = "skipping"
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,18 +245,24 @@ def write_cache_batch(cases: Sequence[CacheCase], folder: Path) -> None:
 
 
 def _cache_case_document(case: CacheCase) -> dict[str, object]:
+    run = run_document(
+        fidelity=case.fidelity,
+        instrument=case.instrument,
+        settings=case.settings,
+        hours=AlwaysOpen(),
+        capital=CAPITAL,
+        position=None,
+        fees=None,
+        funding=(),
+        rolls=(),
+    )
     return {
         "id": case.id,
-        "fidelity": str(case.fidelity),
         "replay": str(case.replay),
         "contract": case.folder.name,
-        "instrument": _instrument_document(case.instrument),
-        "settings": _settings_document(case.settings),
-        "hours": {"kind": "always"},
-        "capital": CAPITAL,
-        "position": None,
         "market_data": {"kind": "cache", "folder": str(case.folder)},
         "decisions": {"kind": "template", "strategy": case.strategy.document()},
+        "run": run,
     }
 
 
@@ -284,97 +270,25 @@ def _case_document(case: EngineCase) -> dict[str, object]:
     scenario = case.scenario
     parameters = instrument_parameters(scenario.instrument)
     levels = [str(scenario.fidelity), *(str(level) for level in case.coarser_levels())]
+    run = run_document(
+        fidelity=scenario.fidelity,
+        instrument=parameters,
+        settings=scenario.settings,
+        hours=case.hours,
+        capital=CAPITAL,
+        position=_position_document(scenario),
+        fees=scenario.run_fees(),
+        funding=scenario.funding,
+        rolls=scenario.rolls,
+    )
     return {
         "id": scenario.id,
-        "fidelity": str(scenario.fidelity),
         "replay": str(case.replay),
         "contract": scenario.opening_contract(),
-        "instrument": _instrument_document(parameters),
-        "settings": _settings_document(scenario.settings),
-        "hours": _hours_document(case.hours),
-        "capital": CAPITAL,
-        "position": _position_document(scenario),
         "market_data": {"kind": "tape", "levels": levels},
         "decisions": _decisions_document(scenario, parameters),
-        "fees": _fees_document(scenario.run_fees()),
-        "funding": [{"ts": rate.ts, "rate": rate_units(rate.rate)} for rate in scenario.funding],
-        "rolls": [_roll_document(roll) for roll in scenario.rolls],
+        "run": run,
     }
-
-
-def rate_units(rate: Decimal) -> int:
-    """A rate as a count of 1e-9 units, as the store holds a funding rate: 0.0001 is 100_000."""
-    return _whole_units(rate, PRICE_DECIMALS, "a rate")
-
-
-def _whole_units(value: Decimal, decimals: int, what: str) -> int:
-    """`value` as a count of 10**-decimals, refused where it is finer than that."""
-    units = value.scaleb(decimals)
-    if units != units.to_integral_value():
-        raise ValueError(f"Expected {what} in whole units of 1e-{decimals}, got {value}.")
-    return int(units)
-
-
-def _fees_document(fees: RunFees | None) -> dict[str, object] | None:
-    """The fee table, each schedule from its trade date in days since 1970-01-01: per contract
-    per side in micro-units, or maker and taker rates in 1e-9 units."""
-    if fees is None:
-        return None
-    schedules: list[dict[str, int]] = []
-    for day, fee in fees.schedules:
-        if isinstance(fee, FuturesFee):
-            charge = _whole_units(fee.per_contract_side, 6, "a fee per contract per side")
-            schedules.append({"effective_from": day, "per_contract_side": charge})
-            continue
-        rates = (rate_units(bps.scaleb(-4)) for bps in (fee.maker_bps, fee.taker_bps))
-        maker, taker = rates
-        schedules.append({"effective_from": day, "maker_rate": maker, "taker_rate": taker})
-    kind = "futures" if isinstance(fees.schedules[0][1], FuturesFee) else "crypto"
-    return {"kind": kind, "schedules": schedules}
-
-
-def _roll_document(roll: RollRow) -> dict[str, object]:
-    return {
-        "session_open": roll.session_open,
-        "rolled_from": roll.rolled_from,
-        "contract": roll.contract,
-        "gap": roll.gap,
-        "reason": str(roll.reason),
-    }
-
-
-def _instrument_document(parameters: InstrumentParameters) -> dict[str, object]:
-    return {
-        "tick_size": parameters.tick,
-        "money_per_point": parameters.money_per_point,
-        "lot_step": int(parameters.lot_step.scaleb(PRICE_DECIMALS)),
-    }
-
-
-def _settings_document(settings: RunSettings) -> dict[str, object]:
-    return {
-        "latency_ms": settings.latency_ms,
-        "slippage_ticks": {
-            "market": settings.slippage_ticks.market,
-            "stop": settings.slippage_ticks.stop,
-        },
-        "limit_fill": str(settings.limit_fill),
-        "roll_handling": str(settings.roll_handling),
-    }
-
-
-def _hours_document(hours: AlwaysOpen | CalendarHours) -> dict[str, object]:
-    if isinstance(hours, AlwaysOpen):
-        return {"kind": "always"}
-    sessions = [
-        {
-            "open": session.open,
-            "close": session.close,
-            "halts": [{"start": halt.start, "end": halt.end} for halt in session.halts],
-        }
-        for session in hours.sessions()
-    ]
-    return {"kind": "sessions", "sessions": sessions}
 
 
 def _position_document(scenario: AnyScenario) -> dict[str, object] | None:
@@ -499,45 +413,14 @@ def _template_rows(
     number: int, strategy: StrategySpec, frame: pl.DataFrame, sessions: SessionTable | None
 ) -> pl.DataFrame:
     """The rows of one template case, tagged with its number: the four signals, the optional
-    columns the template reads, absent ones null (D-53), the columns of its time rules, as the
-    reference's template works them out (`with_time_rules`), and the features its exit plan
-    names."""
-    timed = with_time_rules(strategy, frame.sort("ts_close"), sessions)
+    columns the template reads, absent ones null (D-53), and the columns the Rust template reads
+    beside them (`fefat.reference.run_documents.with_engine_columns`)."""
+    engine = with_engine_columns(strategy, frame, sessions)
     kept = [*_SIGNALS, *(name for name in OPTIONAL_SIGNAL_COLUMNS if name in frame.columns)]
-    times = [name for name in _TIME_COLUMNS if name in timed.columns]
-    features = _feature_columns(strategy, frame)
+    added = [name for name in ENGINE_COLUMNS if name in engine.columns]
     case = pl.lit(number, dtype=pl.Int64).alias("case")
     days = [pl.col("trade_date").cast(pl.Int32).cast(pl.Int64)] if "trade_date" in frame else []
-    blackout, flags = strategy.execution.limits.blackout, []
-    if blackout is not None:
-        if blackout not in frame.columns:
-            raise ValueError(
-                f"Expected the signal frame's {blackout} for the blackout, got no such column."
-            )
-        flags.append(pl.col(blackout).cast(pl.Boolean).alias("blackout"))
-    return timed.select(case, *days, *kept, *times, *features, *flags)
-
-
-def _feature_columns(strategy: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
-    """The features the exit plan's rules name, as float64 columns under the names of their
-    rules, which `fefat-cli run` reads: `stop_feature`, `target_feature_1` to `target_feature_3`,
-    and `trail_feature`. A feature the frame lacks stays out, and the Rust template refuses an
-    entry that needs it, as the reference's does."""
-    execution = strategy.execution
-    named: dict[str, str] = {}
-    if isinstance(execution.stop, rules.AtrStop):
-        named["stop_feature"] = execution.stop.feature
-    for number, target in enumerate(execution.targets, start=1):
-        if isinstance(target.price, rules.AtrTarget):
-            named[f"target_feature_{number}"] = target.price.feature
-    trailing = execution.trailing
-    if trailing is not None and isinstance(trailing.by, rules.AtrTrail):
-        named["trail_feature"] = trailing.by.feature
-    return [
-        pl.col(feature).cast(pl.Float64).alias(column)
-        for column, feature in named.items()
-        if feature in frame.columns
-    ]
+    return engine.select(case, *days, *kept, *added)
 
 
 def _read(path: Path) -> pl.DataFrame:

@@ -7,7 +7,7 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import fefat as ff
-from fefat.market.api import catalog, load
+from fefat.market.api import datasets, load
 from fefat.market.fidelity import TickFidelity, parse_fidelity
 from fefat.market.schema import Timeframe, TimeUnit
 
@@ -66,6 +66,6 @@ def test_load_says_it_builds_no_bars_from_tbbo_yet() -> None:
 
 @pytest.mark.usefixtures("fixtures_as_data")
 def test_the_catalog_names_the_fidelity_of_trades_as_the_scenarios_do() -> None:
-    trades = catalog().filter(schema="trades")
+    trades = datasets().filter(schema="trades")
 
     assert trades.get_column("fidelity").unique().to_list() == ["trades"]

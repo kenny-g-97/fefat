@@ -31,6 +31,15 @@ class RollHandling(StrEnum):
     FLATTEN = "flatten"
 
 
+class Replay(StrEnum):
+    """How the Rust engine replays a run: every record in turn, or skipping the blocks of
+    records that no order can act on, by the coarser bars above them (`02` §4). Both give the
+    same fills, so a run's key leaves it out."""
+
+    FULL = "full"
+    SKIPPING = "skipping"
+
+
 class SlippageTicks(FrozenModel):
     """Ticks by which market and stop-market fills are worse than their reference (F-SLP-01)."""
 

@@ -30,6 +30,7 @@ from fefat.market.bars import in_buckets
 from fefat.market.calendar import SessionTable, sessions_of, utc_text
 from fefat.market.calendar_definition import Calendar, CalendarId
 from fefat.market.contracts import parse_contract_name
+from fefat.market.engine_units import PRICE_SCALE
 from fefat.market.importers.profile_contracts import ImportFacts, with_contracts
 from fefat.market.importers.profile_values import (
     ProblemKind,
@@ -43,7 +44,7 @@ from fefat.market.layout import SeriesKind
 from fefat.market.schema import SchemaName, Timeframe, TimeUnit, parse_schema_name, polars_schema
 
 NEW_INSTRUMENT_SOURCE = "entered by the trader in an import profile"
-_NANO = 1_000_000_000
+_NANOSECONDS_PER_SECOND = 1_000_000_000
 _UNDATED_INSTRUMENT_ID = 1
 _SPACING_PAIRS = 10
 """Pairs of neighbouring bars a file needs before their spacing is checked."""
@@ -241,7 +242,7 @@ def _on_the_tick(
     rows: pl.DataFrame, instrument: Instrument
 ) -> tuple[pl.DataFrame, RecordProblem | None]:
     """The rows whose prices lie on the instrument's tick; the others are a problem."""
-    tick = instrument.tick_size * _NANO
+    tick = instrument.tick_size * PRICE_SCALE
     prices = [name for name in ("open", "high", "low", "close", "price") if name in rows.columns]
     on_the_tick = pl.all_horizontal(pl.col(name) % int(tick) == 0 for name in prices)
     problem = problem_of(
@@ -382,7 +383,7 @@ def _spacing_problem(bars: pl.DataFrame, timeframe: Timeframe) -> RecordProblem 
     return problem_of(
         bars,
         ProblemKind.OTHER_TIMEFRAME,
-        f"no two bars {timeframe.in_words()} apart, the closest {closest // _NANO} seconds "
+        f"no two bars {timeframe.in_words()} apart, the closest {closest // _NANOSECONDS_PER_SECOND} seconds "
         "apart: set the profile's timeframe to the file's",
     )
 

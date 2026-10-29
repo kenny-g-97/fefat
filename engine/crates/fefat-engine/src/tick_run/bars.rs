@@ -23,11 +23,13 @@ use crate::exit_plan::Move;
 use crate::rules::{self, Priced};
 use crate::settings::{RunCosts, RunSettings};
 
-/// What a bar's replay did, in the order it did it: a fill, or a stop its plan moved.
+/// What a bar's replay did, in the order it did it: a fill, a stop its plan moved, or a point of
+/// the path marked (F-MRK-01), which the open trade's excursions follow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BarEvent {
     Filled(Execution),
     Moved(Move),
+    Marked(Price),
 }
 
 impl<R: MarketDataReader> TickRun<'_, R> {
@@ -51,8 +53,8 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             });
         }
         if !self.book.has_live() {
-            self.ledger.mark_at(bar.close);
-            return Ok(());
+            self.trades.reached(bar.low, bar.high)?;
+            return self.mark_at(bar.close);
         }
         for id in self.book.ids_in(OrderState::Waiting, |_| true) {
             let waiting = self.book.live_in(id, OrderState::Waiting);
@@ -80,6 +82,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             match event {
                 BarEvent::Filled(execution) => self.record(execution)?,
                 BarEvent::Moved(moved) => self.log_moves(at.ts, &[moved]),
+                BarEvent::Marked(price) => self.trades.marked(price)?,
             }
         }
         Ok(())
@@ -90,7 +93,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
 fn fills_of(events: &[BarEvent]) -> impl Iterator<Item = (OrderId, Price)> + '_ {
     events.iter().filter_map(|event| match event {
         BarEvent::Filled(execution) => Some((execution.fill.order, execution.fill.price)),
-        BarEvent::Moved(_) => None,
+        BarEvent::Moved(_) | BarEvent::Marked(_) => None,
     })
 }
 
@@ -157,6 +160,7 @@ impl<'replay> BarReplay<'replay> {
     /// A point of the path marked (F-MRK-01), and each exit plan's turn at it (F-PLN-04).
     fn marked(&mut self, price: Price) -> Result<(), RunError> {
         self.ledger.mark_at(price);
+        self.events.push(BarEvent::Marked(price));
         let moves = self.book.marked(price, self.tick())?;
         self.events.extend(moves.into_iter().map(BarEvent::Moved));
         Ok(())

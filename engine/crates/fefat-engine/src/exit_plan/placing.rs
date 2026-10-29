@@ -26,7 +26,7 @@ pub(crate) struct FilledAt {
 /// `market`: its stop for all its lots, raised at once by a trailing stop that works from the fill
 /// (F-PLN-04), then its targets in order, each with its share of the lots, a target of no lots not
 /// placed. The legs work from the fill, without latency, and the book follows the plan while a
-/// leg of it lives. Returns the legs placed.
+/// leg of it lives. Returns the legs placed and the plan's initial risk in ticks (F-RND-02).
 pub(crate) fn place(
     book: &mut Book,
     entry: &WorkingOrder,
@@ -34,9 +34,9 @@ pub(crate) fn place(
     market: Price,
     at: FilledAt,
     tick: Price,
-) -> Result<Vec<Order>, PlanError> {
+) -> Result<(Vec<Order>, Option<u32>), PlanError> {
     let BracketLink::Entry(plan) = &entry.link else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     };
     let side = entry.order.side;
     let leg = |id, kind, lots, role| Order {
@@ -74,7 +74,7 @@ pub(crate) fn place(
         targets.push((id, number));
     }
     if legs.is_empty() {
-        return Ok(legs);
+        return Ok((legs, risk));
     }
     for order in &legs {
         let link = BracketLink::LegOf(entry.order.id);
@@ -93,7 +93,7 @@ pub(crate) fn place(
         entry.order.id,
         LivePlan::placed(ExitPlan::clone(plan), placement),
     );
-    Ok(legs)
+    Ok((legs, risk))
 }
 
 /// A stop below a long's fill: at a price, in ticks, or a percentage of the fill price rounded

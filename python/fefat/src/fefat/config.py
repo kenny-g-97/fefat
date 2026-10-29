@@ -21,6 +21,8 @@ DATA_DIR_VARIABLE = "FEFAT_DATA_DIR"
 DATA_FOLDER_NAME = "data"
 CACHE_FOLDER_NAME = "cache"
 REPORTS_FOLDER_NAME = "reports"
+WORKSPACE_FOLDER = Path("workspaces") / "default"
+RUNS_FOLDER = Path("artifacts") / "runs"
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,18 @@ class FefatPaths:
         """`<FEFAT_HOME>/cache`: what FEFAT can rebuild, such as the session tables, so the
         folder may be deleted at any time (`01-architecture.md` section 4)."""
         return self.home / CACHE_FOLDER_NAME
+
+    @property
+    def workspace_dir(self) -> Path:
+        """`<FEFAT_HOME>/workspaces/default`: the one workspace of the first release, which holds
+        the features, strategies, and runs (`01-architecture.md` section 4)."""
+        return self.home / WORKSPACE_FOLDER
+
+    @property
+    def runs_dir(self) -> Path:
+        """`<workspace>/artifacts/runs`: each saved run's artifacts in a folder of its own, named
+        by its run key (`fefat.backtest`, step 2.10)."""
+        return self.workspace_dir / RUNS_FOLDER
 
     @property
     def reports_dir(self) -> Path:

@@ -28,15 +28,16 @@ from fefat.reference.template.limits import EntryLimits, f_lim_04
 from fefat.reference.template.sizing import EntryPricing, NoEntry, computed_lots, f_siz_01
 from fefat.reference.time_rules import f_tim_02, with_time_rules
 from fefat.reference.units import InstrumentParameters, lots_of
-from fefat.strategy.exits import ColumnStop, ColumnTarget, ColumnTrail
-from fefat.strategy.signal_frame import require_one_entry_per_bar, validated_signal_frame
+from fefat.strategy.signal_frame import (
+    require_named_columns,
+    require_one_entry_per_bar,
+    validated_signal_frame,
+)
 from fefat.strategy.spec import (
     FixedSize,
-    LimitEntryAtColumn,
     MarketEntry,
     OppositeSignal,
     RiskPercentSize,
-    StopEntryAtColumn,
     StrategySpec,
 )
 
@@ -73,7 +74,7 @@ class TemplateStrategy:
         sizing = execution.sizing
         units = Decimal(repr(sizing.units)) if isinstance(sizing, FixedSize) else None
         self._fixed_lots = None if units is None else lots_of(units, instrument.lot_step)
-        self._require_columns(signals)
+        require_named_columns(execution, signals.columns)
         ordered = signals.sort("ts_close")
         timed = with_time_rules(spec, ordered, sessions)
         self._timed = {row["ts_close"]: row for row in timed.iter_rows(named=True)}
@@ -183,34 +184,6 @@ class TemplateStrategy:
         if not self._execution.signal_exit or position == 0:
             return False
         return bool(bar["long_exit"] if position > 0 else bar["short_exit"])
-
-    def _require_columns(self, signals: pl.DataFrame) -> None:
-        """Each column a rule reads, which a frame without it would leave the rule without: a
-        trailing stop by the column would never move, and a blackout would never hold."""
-        execution = self._execution
-        trailing, blackout = execution.trailing, execution.limits.blackout
-        needed = {
-            "entry_price": (
-                "an entry at the column",
-                isinstance(execution.entry, LimitEntryAtColumn | StopEntryAtColumn),
-            ),
-            "stop_price": ("a stop at the column", isinstance(execution.stop, ColumnStop)),
-            "target_price": (
-                "a target at the column",
-                any(isinstance(target.price, ColumnTarget) for target in execution.targets),
-            ),
-            "trail_ref": (
-                "a trailing stop by the column",
-                trailing is not None and isinstance(trailing.by, ColumnTrail),
-            ),
-        }
-        if blackout is not None:
-            needed[blackout] = ("the blackout", True)
-        for column, (rule, needs) in needed.items():
-            if needs and column not in signals.columns:
-                raise ValueError(
-                    f"Expected the signal frame's {column} for {rule}, got no such column."
-                )
 
 
 def _stop_exit(timed: Mapping[str, Any]) -> OrderRole | None:

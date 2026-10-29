@@ -10,14 +10,14 @@ use std::fs::File;
 use std::path::Path;
 
 use arrow_array::cast::AsArray;
-use arrow_array::types::{Float64Type, Int64Type};
-use arrow_array::{Array, ArrayRef, BooleanArray, Float64Array, Int64Array, RecordBatch};
+use arrow_array::types::Int64Type;
+use arrow_array::{Array, ArrayRef, Int64Array, RecordBatch};
 use arrow_ipc::reader::FileReader;
 use fefat_core::fidelity::Fidelity;
-use fefat_core::instants::{TradeDate, Ts};
+use fefat_core::instants::TradeDate;
 use fefat_core::market_data::TapeDay;
-use fefat_core::units::Price;
-use fefat_engine::template::{RowFeatures, SignalRow};
+use fefat_engine::template::SignalRow;
+use fefat_run::signal_rows::signal_rows_of;
 
 use super::manifest::RunManifest;
 use super::{BatchError, arrow_error};
@@ -90,146 +90,22 @@ impl BatchTables {
     }
 }
 
-/// The signal rows of the file at `path`, grouped by their case; no file, no rows.
+/// The signal rows of the file at `path`, grouped by their case; no file, no rows. Each row is
+/// read as `fefat_run::signal_rows` reads it.
 fn signal_rows_by_case(path: &Path) -> Result<BTreeMap<i64, Vec<SignalRow>>, BatchError> {
     let mut grouped: BTreeMap<i64, Vec<SignalRow>> = BTreeMap::new();
     for batch in read_batches(path)? {
-        for (case, row) in signal_rows_of(path, &batch)? {
+        let cases = int64s(path, &batch, "case")?.values();
+        let rows = signal_rows_of(&batch).map_err(|error| BatchError::Table {
+            path: path.to_path_buf(),
+            expected: error.expected,
+            actual: error.actual,
+        })?;
+        for (&case, row) in cases.iter().zip(rows) {
             grouped.entry(case).or_default().push(row);
         }
     }
     Ok(grouped)
-}
-
-/// Each row of `batch` as its case and its signal row (D-53: a null signal reads as false, a
-/// null or absent `wake` as true, and a null or absent price, feature, or `flat_by` as none).
-fn signal_rows_of(path: &Path, batch: &RecordBatch) -> Result<Vec<(i64, SignalRow)>, BatchError> {
-    let cases = int64s(path, batch, "case")?.values();
-    let ts_close = int64s(path, batch, "ts_close")?.values();
-    let columns = SignalColumns::of(path, batch)?;
-    let rows = cases.iter().zip(ts_close).enumerate();
-    Ok(rows
-        .map(|(row, (&case, &ts))| (case, columns.row(row, Ts(ts))))
-        .collect())
-}
-
-/// The columns of the signal rows but their case and close: the four signals; the prices the
-/// exit plan reads; the features its rules name, which `fefat.reference.rust_batch` writes
-/// under the names of their rules (`stop_feature`, `target_feature_1` to `target_feature_3`,
-/// `trail_feature`); and the size's multiple, `wake`, and `flat_by`, each absent where the frame
-/// leaves it out.
-struct SignalColumns<'batch> {
-    signals: [&'batch BooleanArray; 4],
-    prices: [Option<&'batch Int64Array>; 4],
-    features: [Option<&'batch Float64Array>; 5],
-    size_mult: Option<&'batch Float64Array>,
-    wake: Option<&'batch BooleanArray>,
-    flat_by: Option<&'batch Int64Array>,
-    times: [Option<&'batch BooleanArray>; 3],
-    trade_date: Option<&'batch Int64Array>,
-    blackout: Option<&'batch BooleanArray>,
-}
-
-impl<'batch> SignalColumns<'batch> {
-    fn of(path: &Path, batch: &'batch RecordBatch) -> Result<Self, BatchError> {
-        let signal = |name| booleans(path, batch, name);
-        let ints = |name| {
-            optional(path, batch, name, "int64", |column| {
-                column.as_primitive_opt::<Int64Type>()
-            })
-        };
-        let floats = |name| {
-            optional(path, batch, name, "float64", |column| {
-                column.as_primitive_opt::<Float64Type>()
-            })
-        };
-        let flags = |name| {
-            optional(path, batch, name, "boolean", |column| {
-                column.as_boolean_opt()
-            })
-        };
-        Ok(Self {
-            signals: [
-                signal("long_entry")?,
-                signal("short_entry")?,
-                signal("long_exit")?,
-                signal("short_exit")?,
-            ],
-            prices: [
-                ints("entry_price")?,
-                ints("stop_price")?,
-                ints("target_price")?,
-                ints("trail_ref")?,
-            ],
-            features: [
-                floats("stop_feature")?,
-                floats("target_feature_1")?,
-                floats("target_feature_2")?,
-                floats("target_feature_3")?,
-                floats("trail_feature")?,
-            ],
-            size_mult: floats("size_mult")?,
-            wake: flags("wake")?,
-            flat_by: ints("flat_by")?,
-            times: [
-                flags("session_end")?,
-                flags("week_end")?,
-                flags("in_window")?,
-            ],
-            trade_date: ints("trade_date")?,
-            blackout: flags("blackout")?,
-        })
-    }
-
-    fn row(&self, row: usize, ts_close: Ts) -> SignalRow {
-        let signal = |column: &BooleanArray| column.is_valid(row) && column.value(row);
-        let [long_entry, short_entry, long_exit, short_exit] = self.signals.map(signal);
-        let [entry_price, stop_price, target_price, trail_ref] = self.prices.map(|column| {
-            let price = column.filter(|column| column.is_valid(row));
-            price.map(|column| Price(column.value(row)))
-        });
-        let [stop, first, second, third, trailing] = self.features.map(|column| {
-            let value = column.filter(|column| column.is_valid(row));
-            value.map(|column| column.value(row))
-        });
-        let flat_by = self.flat_by.filter(|column| column.is_valid(row));
-        let trade_date = self.trade_date.filter(|column| column.is_valid(row));
-        let trade_date = trade_date.and_then(|column| i32::try_from(column.value(row)).ok());
-        let blackout = self.blackout.filter(|column| column.is_valid(row));
-        let [session_end, week_end, in_window] = self.times.map(|column| {
-            let flag = column.filter(|column| column.is_valid(row));
-            flag.map(|column| column.value(row))
-        });
-        SignalRow {
-            ts_close,
-            trade_date: trade_date.map(TradeDate),
-            long_entry,
-            short_entry,
-            long_exit,
-            short_exit,
-            entry_price,
-            stop_price,
-            target_price,
-            trail_ref,
-            features: RowFeatures {
-                stop,
-                targets: [first, second, third],
-                trailing,
-            },
-            size_mult: self
-                .size_mult
-                .filter(|column| column.is_valid(row))
-                .map(|column| column.value(row)),
-            wake: self
-                .wake
-                .is_none_or(|wake| wake.is_null(row) || wake.value(row)),
-            flat_by: flat_by.map(|column| Ts(column.value(row))),
-            session_end,
-            week_end,
-            in_window,
-            blackout: blackout.map(|column| column.value(row)),
-        }
-    }
 }
 
 /// The records of a level's file grouped by case and trade date, each run of rows a slice of its
@@ -307,18 +183,6 @@ fn int64s<'batch>(
         .ok_or_else(|| wrong_type(path, name, "int64", column))
 }
 
-/// A column of booleans, whose nulls the caller reads.
-fn booleans<'batch>(
-    path: &Path,
-    batch: &'batch RecordBatch,
-    name: &str,
-) -> Result<&'batch BooleanArray, BatchError> {
-    let column = required(path, batch, name)?;
-    column
-        .as_boolean_opt()
-        .ok_or_else(|| wrong_type(path, name, "boolean", column))
-}
-
 fn required<'batch>(
     path: &Path,
     batch: &'batch RecordBatch,
@@ -329,22 +193,6 @@ fn required<'batch>(
         expected: format!("a column {name}"),
         actual: "none".to_owned(),
     })
-}
-
-/// A column the frame may leave out, as `cast` reads it; a column of another type is refused.
-fn optional<'batch, T: 'batch>(
-    path: &Path,
-    batch: &'batch RecordBatch,
-    name: &str,
-    expected: &str,
-    cast: impl Fn(&'batch ArrayRef) -> Option<&'batch T>,
-) -> Result<Option<&'batch T>, BatchError> {
-    let Some(column) = batch.column_by_name(name) else {
-        return Ok(None);
-    };
-    cast(column)
-        .map(Some)
-        .ok_or_else(|| wrong_type(path, name, expected, column))
 }
 
 fn wrong_type(path: &Path, name: &str, expected: &str, column: &ArrayRef) -> BatchError {

@@ -28,37 +28,42 @@ pub(super) struct FillPoint {
     pub(super) trade_date: TradeDate,
 }
 
-/// A fill as the book and the ledger took it, before the log records it: the fill, the cash its
-/// value moved, how the fee table's schedule that priced it was used (F-FEE-01), the
-/// orders of its OCO group or its exit plan it cancelled, the stop of its plan it reduced with the
-/// lots left (F-PLN-02), its exit plan's legs, and whether it left the position flat, closing a
-/// trade (§20).
+/// A fill as the book and the ledger took it, before the log records it: the fill, when its order
+/// was placed, the cash its value moved, how the fee table's schedule that priced it was used
+/// (F-FEE-01), the orders of its OCO group or its exit plan it cancelled, the stop of its plan it
+/// reduced with the lots left (F-PLN-02), its exit plan's legs and initial risk in ticks
+/// (F-RND-02), and whether it left the position flat, closing a trade (§20).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Execution {
     pub(super) fill: Fill,
+    pub(super) placed_at: Ts,
     pub(super) cash: Money,
     pub(super) schedule: ScheduleUse,
     pub(super) cancelled: Vec<OrderId>,
     pub(super) reduced: Option<(OrderId, Qty)>,
     pub(super) legs: Vec<Order>,
+    pub(super) risk: Option<u32>,
     pub(super) flat_after: bool,
 }
 
 impl Execution {
-    /// A fill that set nothing off, a roll's leg (F-ROL-02).
+    /// A fill that set nothing off, a roll's leg placed at `placed_at` (F-ROL-02).
     pub(super) const fn alone(
         fill: Fill,
+        placed_at: Ts,
         cash: Money,
         schedule: ScheduleUse,
         flat_after: bool,
     ) -> Self {
         Self {
             fill,
+            placed_at,
             cash,
             schedule,
             cancelled: Vec::new(),
             reduced: None,
             legs: Vec::new(),
+            risk: None,
             flat_after,
         }
     }
@@ -111,14 +116,16 @@ pub(super) fn execute(
         ts: at.ts,
         index: at.index,
     };
-    let legs = exit_plan::place(book, &filled, priced.price, market, filled_at, tick)?;
+    let (legs, risk) = exit_plan::place(book, &filled, priced.price, market, filled_at, tick)?;
     Ok(Execution {
         fill,
+        placed_at: filled.order.placed_at,
         cash,
         schedule,
         cancelled,
         reduced: settled.reduced,
         legs,
+        risk,
         flat_after: ledger.position() == Position::Flat,
     })
 }

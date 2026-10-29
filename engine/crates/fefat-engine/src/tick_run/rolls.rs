@@ -33,6 +33,13 @@ pub(super) struct Transfer {
     rolled_from: Contract,
 }
 
+impl Transfer {
+    /// The roll's gap, by which every price the run holds moved (F-ROL-03).
+    pub(super) const fn gap(&self) -> Price {
+        self.gap
+    }
+}
+
 impl<R: MarketDataReader> TickRun<'_, R> {
     /// F-ROL-01 to F-ROL-04: the next roll, at `at`, the `index`th event: the front passes to
     /// its contract, every price the run holds moves by its gap, and an open position's legs are
@@ -66,6 +73,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         self.log
             .extend(shifts.iter().map(|shift| LogEntry::shifted(at, shift)));
         self.ledger.shift_mark(roll.gap)?;
+        self.trades.shifted(roll.gap)?;
         self.front = roll.contract;
         let Some((closing, lots)) = closing else {
             return Ok(());
@@ -169,15 +177,15 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let Some(open) = open else {
             let (book, ledger, costs) = (&mut self.book, &mut self.ledger, &self.costs);
             let closed = execute(book, ledger, costs, close, &close_priced, at, market)?;
-            return self.record_on(closed, rolled_from);
+            return self.record_on(closed, rolled_from, gap);
         };
-        let (close_fill, close_schedule) = self.leg(close, &close_priced, at)?;
+        let (close_fill, close_schedule, close_placed) = self.leg(close, &close_priced, at)?;
         let open_priced = self.leg_priced(open, Price(0), at, &priced, &quoted)?;
-        let (open_fill, open_schedule) = self.leg(open, &open_priced, at)?;
+        let (open_fill, open_schedule, open_placed) = self.leg(open, &open_priced, at)?;
         let [closed, opened] = self.ledger.transfer(&close_fill, &open_fill)?;
-        let close_leg = Execution::alone(close_fill, closed, close_schedule, false);
-        self.record_on(close_leg, rolled_from)?;
-        let open_leg = Execution::alone(open_fill, opened, open_schedule, false);
+        let close_leg = Execution::alone(close_fill, close_placed, closed, close_schedule, false);
+        self.record_on(close_leg, rolled_from, gap)?;
+        let open_leg = Execution::alone(open_fill, open_placed, opened, open_schedule, false);
         self.record(open_leg)
     }
 
@@ -242,17 +250,17 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         })
     }
 
-    /// The leg `id` closed in the book and tagged as `leg` prices it, with its fee: the fill, and
-    /// how the fee table's schedule that priced it was used (F-FEE-01).
+    /// The leg `id` closed in the book and tagged as `leg` prices it, with its fee: the fill, how
+    /// the fee table's schedule that priced it was used (F-FEE-01), and when the leg was placed.
     fn leg(
         &mut self,
         id: OrderId,
         leg: &Priced,
         at: FillPoint,
-    ) -> Result<(Fill, ScheduleUse), RunError> {
+    ) -> Result<(Fill, ScheduleUse, Ts), RunError> {
         let (book, ledger, costs) = (&mut self.book, &self.ledger, &self.costs);
-        let (_, fill, schedule) = closed_and_tagged(book, ledger, costs, id, leg, at)?;
-        Ok((fill, schedule))
+        let (filled, fill, schedule) = closed_and_tagged(book, ledger, costs, id, leg, at)?;
+        Ok((fill, schedule, filled.order.placed_at))
     }
 
     /// F-ROL-03: a run that ends before its roll's legs fill leaves the position on the old

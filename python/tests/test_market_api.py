@@ -8,7 +8,7 @@ from polars.testing import assert_frame_equal
 
 import fefat
 from fefat.market import instruments
-from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load, roll_calendar
+from fefat.market.api import DATASETS_COLUMNS, SIGNAL_BAR_COLUMNS, datasets, load, roll_calendar
 from fefat.market.calendar import sessions_of
 from fefat.market.catalog import CATALOG, RollRule
 from fefat.market.continuous import volume_rolls
@@ -304,13 +304,13 @@ def test_a_provider_without_the_root_is_refused_with_the_providers_that_hold_it(
 
 
 @pytest.mark.usefixtures("fixtures_as_data")
-def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_quality() -> None:
-    listed = catalog()
+def test_datasets_lists_each_dataset_with_its_trade_dates_fidelity_and_quality() -> None:
+    listed = datasets()
 
     march_7 = date(2026, 3, 7)
     btc, es = ("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES")
     imported = ("import", "Synthetic data of scripts/gen_fixtures.py; no licence applies", None, 1)
-    assert listed.schema == CATALOG_COLUMNS
+    assert listed.schema == DATASETS_COLUMNS
     assert listed.rows() == [
         (*btc, "ohlcv-1m", "1m", 1, march_7, march_7, "unchecked", None, *imported),
         (*btc, "ohlcv-1s", "1s", 1, march_7, march_7, "unchecked", None, *imported),
@@ -322,18 +322,18 @@ def test_the_catalog_lists_each_dataset_with_its_trade_dates_fidelity_and_qualit
 
 
 @pytest.mark.usefixtures("fixtures_as_data")
-def test_the_catalog_shows_the_version_of_the_product_catalog() -> None:
-    assert catalog().get_column("catalog_version").unique().to_list() == [CATALOG.version]
+def test_datasets_shows_the_version_of_the_product_catalog() -> None:
+    assert datasets().get_column("catalog_version").unique().to_list() == [CATALOG.version]
 
 
-def test_the_catalog_shows_the_status_of_a_written_quality_report(
+def test_datasets_shows_the_status_of_a_written_quality_report(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     store_folder = data_folder_with(monkeypatch, tmp_path / "store", "ohlcv-1m")
     report = assess_quality(Store(store_folder), "synthetic", "ES", tmp_path / "cache")
     write_quality_report(report, store_folder / "reports")
 
-    listed = catalog().filter(pl.col("root") == "ES")
+    listed = datasets().filter(pl.col("root") == "ES")
 
     assert listed.select("schema", "fidelity", "quality", "checked_through").rows() == [
         ("ohlcv-1m", "1m", "clean", MARCH_9)
@@ -342,7 +342,7 @@ def test_the_catalog_shows_the_status_of_a_written_quality_report(
 
 def test_the_sdk_offers_the_data_api_as_ff_market() -> None:
     assert fefat.market.load is load
-    assert fefat.market.catalog is catalog
+    assert fefat.market.datasets is datasets
 
 
 def test_bars_of_sessions_no_one_minute_bars_decide_the_front_of_are_refused(

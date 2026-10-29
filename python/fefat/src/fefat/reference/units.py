@@ -15,13 +15,13 @@ from typing import Annotated, Self
 
 from pydantic import BeforeValidator, Field, model_validator
 
-from fefat.market.instruments import Instrument
+from fefat.market.engine_units import MONEY_DECIMALS as MONEY_DECIMALS
+from fefat.market.engine_units import PRICE_DECIMALS as PRICE_DECIMALS
+from fefat.market.engine_units import InstrumentParameters as InstrumentParameters
+from fefat.market.engine_units import instrument_parameters as instrument_parameters
+from fefat.market.engine_units import money_text as money_text
+from fefat.market.engine_units import price_text as price_text
 from fefat.market.schema import FrozenModel
-
-PRICE_DECIMALS = 9
-"""Prices count 1e-9 units of the quote currency."""
-MONEY_DECIMALS = 6
-"""Money counts micro-units of its currency."""
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 """The Unix epoch; adding to it works for every instant, where Windows' fromtimestamp refuses
@@ -74,11 +74,6 @@ def instant_nanoseconds(text: object) -> int:
     return seconds * 1_000_000_000 + int((found[2] or "").ljust(9, "0"))
 
 
-def price_text(units: int) -> str:
-    """A price in 1e-9 units as the decimal it is written as, such as 4990.25."""
-    return format(Decimal(units).scaleb(-PRICE_DECIMALS).normalize(), "f")
-
-
 def instant_text(nanoseconds: int) -> str:
     """An instant in nanoseconds as the UTC time it is written as, such as 2026-03-06T14:30:00.1Z."""
     seconds, fraction = divmod(nanoseconds, 1_000_000_000)
@@ -94,11 +89,6 @@ def utc_date(nanoseconds: int) -> date:
 def day_number(day: date) -> int:
     """A date as the days since 1970-01-01, as the store and the Rust engine count trade dates."""
     return (day - _EPOCH.date()).days
-
-
-def money_text(units: int) -> str:
-    """An amount in micro-units as the decimal it is written as, such as -0.084514."""
-    return format(Decimal(units).scaleb(-MONEY_DECIMALS), "f")
 
 
 CAPITAL = 50_000_000_000
@@ -166,34 +156,3 @@ class InlineInstrument(FrozenModel):
                 f"got {self.tick_size}."
             )
         return self
-
-
-class InstrumentParameters(FrozenModel):
-    """An instrument's specification in the units both engines count in (D-51): its tick in
-    1e-9 units of price, the money one lot gains or loses per point in micro-units, and its lot
-    step, the dataset's size unit."""
-
-    tick: int = Field(gt=0)
-    money_per_point: int = Field(gt=0)
-    lot_step: Decimal = Field(gt=0)
-
-    def value(self, price: int, lots: int) -> Fraction:
-        """What `lots` are worth at `price`, exactly, in micro-units: negative for a short."""
-        return Fraction(price * lots * self.money_per_point, 10**PRICE_DECIMALS)
-
-
-def instrument_parameters(instrument: Instrument | InlineInstrument) -> InstrumentParameters:
-    """The instrument's decimal tick size and point value as the engines' integers, converted
-    once, here (D-51): ES's tick of 0.25 is 250_000_000 and its 50 USD a point 50_000_000
-    micro-units; a perpetual's 1 USD a point on lots of 0.001 BTC is 1_000 a lot."""
-    tick = instrument.tick_size.scaleb(PRICE_DECIMALS)
-    money = (instrument.point_value * instrument.lot_step).scaleb(MONEY_DECIMALS)
-    if tick % 1 != 0 or money % 1 != 0:
-        raise ValueError(
-            "Expected a tick in whole 1e-9 units and a point value in whole micro-units a lot, "
-            f"got a tick of {instrument.tick_size} and {instrument.point_value} a point on lots "
-            f"of {instrument.lot_step}."
-        )
-    return InstrumentParameters(
-        tick=int(tick), money_per_point=int(money), lot_step=instrument.lot_step
-    )
