@@ -37,7 +37,9 @@ pub struct Trade {
     pub entry_contract: Contract,
     /// How many fills closed its lots, a roll's legs left out.
     pub exits: u32,
-    /// The prices of the fills that closed its lots, averaged by their lots, in 1e-9 units.
+    /// The prices of the fills that closed its lots, averaged by their lots, in 1e-9 units of
+    /// its entry contract's prices, each roll's gap taken off a price after it, so that the exit
+    /// less the entry is the trade's move.
     pub exit_price: Option<f64>,
     /// When the fill that left it flat filled.
     pub exit_ts: Ts,
@@ -289,9 +291,11 @@ impl OpenTrade {
             return Ok(());
         }
         if against {
+            let crossed = self.reference.checked_sub(self.entry.price)?;
+            let price = traded.marked.checked_sub(crossed)?;
             self.exits += 1;
             self.exit_lots += i128::from(fill.lots.0);
-            self.exit_value += i128::from(fill.price.0) * i128::from(fill.lots.0);
+            self.exit_value += i128::from(price.0) * i128::from(fill.lots.0);
         }
         Ok(())
     }

@@ -61,7 +61,9 @@ def test_a_second_identical_run_is_the_first_read_back(monkeypatch: pytest.Monke
         raise AssertionError("Expected the run already written, got the engine run again")
 
     monkeypatch.setattr(fefat_engine, "run_signal_backtest", refused)
-    again = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    # The engine's warning of the fee table's first schedule can come from the record alone.
+    with pytest.warns(UserWarning, match="F-FEE-01"):
+        again = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
 
     assert again.hash == first.hash
     assert again.folder == first.folder

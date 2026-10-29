@@ -625,7 +625,8 @@ fn a_trade_across_a_roll_counts_its_legs_money_and_the_gap_in_its_excursions() {
         (esh(), esm())
     );
     assert_eq!(trade.exit_reason, OrderRole::Stop);
-    assert_eq!(trade.exit_price, Some(price(500_975).0 as f64));
+    // The stop's fill at 5009.75 on ESM2026 is 4989.75 in ESH2026's prices, the gap taken off.
+    assert_eq!(trade.exit_price, Some(price(498_975).0 as f64));
     assert_eq!(trade.fees, cents(1_000));
     assert_eq!(trade.gross_pnl, Money(-550 * MONEY_UNITS));
     assert_eq!(trade.pnl, Money(-560 * MONEY_UNITS));
