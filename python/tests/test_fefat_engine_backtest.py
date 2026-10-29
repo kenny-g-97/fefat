@@ -128,7 +128,9 @@ def test_the_bindings_return_the_tables_fefat_cli_writes_for_the_same_case(
 def test_a_batch_of_100_runs_shares_the_cache_and_uses_more_than_one_core(
     cached_month: tuple[Path, pl.DataFrame],
 ) -> None:
-    # Done means 3: CPU time well above wall time, printed for the pull request.
+    # Done means 3: CPU time well above wall time, printed for the pull request. The runs replay
+    # in full, so that each takes long enough to measure: Windows charges CPU time in ticks.
+    # The tables are the same as skipping gives (the skip-equals-full property).
     folder, bars = cached_month
     config = config_json(RunSettings.for_fidelity(TickFidelity.TRADES))
     cases = []
@@ -138,7 +140,7 @@ def test_a_batch_of_100_runs_shares_the_cache_and_uses_more_than_one_core(
         cases.append((strategy.to_spec().document_json(), frame, [str(folder)], config))
 
     cpu, wall = time.process_time(), time.perf_counter()
-    runs = fefat_engine.run_batch(cases, "skipping")
+    runs = fefat_engine.run_batch(cases, "full")
     cpu, wall = time.process_time() - cpu, time.perf_counter() - wall
 
     print(f"run_batch of {CASES} runs: {cpu:.2f} s of CPU time in {wall:.2f} s of wall time")

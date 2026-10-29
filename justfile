@@ -77,8 +77,9 @@ gen-schema:
 
 # Rewrite the goldens under fixtures/goldens/ from the engine's output: only with the builder's approval, after the version bump, and with a changelog entry (the engine-golden skill)
 [working-directory("engine")]
-regenerate-goldens:
+regenerate-goldens: build-engine
     cargo run -p fefat-cli -- determinism 20260308 --write ../fixtures/goldens/determinism/MANIFEST.json
+    uv run python ../scripts/golden_backtest.py --write ../fixtures/goldens/backtest/MANIFEST.json
 
 # Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
 strip-notebooks:
