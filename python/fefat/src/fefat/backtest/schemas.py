@@ -105,9 +105,9 @@ TRADES = pl.Schema(
         "mfe_r": pl.Float64,
     }
 )
-"""The trades artifact's columns but the features at entry: the engine's, the entry's trade date,
-the initial risk over the entry's lots in micro-units, and the profit and loss and the
-excursions over it, in R; the last four null for a trade without a stop."""
+"""The trades artifact's columns but the features at entry: the engine's, the trade date of the
+entry's fill, the initial risk over the entry's lots in micro-units, and the profit and loss and
+the excursions over it, in R; the last four null for a trade without a stop."""
 ENGINE_EQUITY = pl.Schema(
     {"ts": pl.Int64, "cash": pl.Int64, "position": pl.Int64, "mark": pl.Int64, "equity": pl.Int64}
 )

@@ -8,7 +8,7 @@ in, so that a run's record names every value it ran under:
 """
 
 from decimal import Decimal
-from typing import Annotated, Self
+from typing import Annotated
 
 from pydantic import BeforeValidator, Field, PlainSerializer, field_validator
 
@@ -74,7 +74,7 @@ class RunConfig(FrozenModel):
 
     def applied(
         self, finest: TickFidelity | Timeframe, kind: InstrumentKind, provider: str
-    ) -> Self:
+    ) -> "AppliedRunConfig":
         """The config with every setting left out given its default: the finest data the store
         holds, its slippage ticks, the fee table of the instrument's kind, and the provider the
         run reads."""
@@ -82,19 +82,35 @@ class RunConfig(FrozenModel):
         slippage = self.slippage_ticks
         if slippage is None:
             slippage = default_slippage_ticks(fidelity)
-        fee_table = DEFAULT_FEE_TABLES[kind] if self.fee_table is None else self.fee_table
-        update = {
-            "fidelity": fidelity,
-            "slippage_ticks": slippage,
-            "fee_table": fee_table,
-            "provider": provider,
-        }
-        return self.model_validate({**self.model_dump(), **update})
+        return AppliedRunConfig(
+            fidelity=fidelity,
+            latency_ms=self.latency_ms,
+            slippage_ticks=slippage,
+            limit_fill=self.limit_fill,
+            roll_handling=self.roll_handling,
+            fee_table=DEFAULT_FEE_TABLES[kind] if self.fee_table is None else self.fee_table,
+            capital=self.capital,
+            replay=self.replay,
+            provider=provider,
+        )
+
+
+class AppliedRunConfig(FrozenModel):
+    """A run's settings with every default applied (D-51), as its record keeps them: those of
+    `RunConfig`, each given."""
+
+    fidelity: FidelityText
+    latency_ms: int = Field(ge=0)
+    slippage_ticks: SlippageTicks
+    limit_fill: LimitFill
+    roll_handling: RollHandling
+    fee_table: str
+    capital: Decimal = Field(gt=0)
+    replay: Replay
+    provider: str
 
     def run_settings(self) -> RunSettings:
-        """The settings the engines fill under, from a config `applied` gave."""
-        if self.slippage_ticks is None:
-            raise ValueError("Expected a config with its defaults applied, got no slippage ticks.")
+        """The settings the engines fill under."""
         return RunSettings(
             latency_ms=self.latency_ms,
             slippage_ticks=self.slippage_ticks,

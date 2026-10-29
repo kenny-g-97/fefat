@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from fefat.backtest.run_config import RunConfig
+from fefat.backtest.run_config import AppliedRunConfig
 from fefat.market.instruments import InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
@@ -110,7 +110,7 @@ class RunRecord(FrozenModel):
     instrument: InstrumentRecord
     datasets: tuple[DatasetRecord, ...] = Field(min_length=1)
     signal_frame_hash: Hash
-    config: RunConfig
+    config: AppliedRunConfig
     fee_table: FeeTableRecord
     rolls: tuple[RollRecord, ...]
     engine_config: dict[str, Any]

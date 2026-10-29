@@ -28,7 +28,7 @@ from fefat.reference.strategy import decisions_of
 from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instrument_parameters
-from notebook_runs import store_with
+from notebook_runs import breakout, store_with
 
 START, END = "2026-03-06", "2026-03-09"
 ONE_MINUTE = Timeframe.parse("1m")
@@ -59,24 +59,6 @@ def first_backtest() -> ff.SignalStrategy:
         long_entry=cross_up & in_hours,
         short_entry=pl.lit(False),
         long_exit=pl.col("local_close") >= clock(15, 5),
-        execution=ff.Execution(
-            entry=ff.Market(),
-            stop=ff.Stop(ticks=12),
-            targets=[ff.Target(ticks=24)],
-            sizing=ff.Fixed(1),
-        ),
-    )
-
-
-def breakout() -> ff.SignalStrategy:
-    """A long on a close above the highest of the 12 closes before it, a stop of 12 ticks and a
-    target of 24, which holds a position across the roll."""
-    return ff.SignalStrategy(
-        instrument="ES",
-        timeframe="5m",
-        features={"highest": pl.col("close").rolling_max(12).shift(1)},
-        long_entry=pl.col("close") > pl.col("highest"),
-        short_entry=pl.lit(False),
         execution=ff.Execution(
             entry=ff.Market(),
             stop=ff.Stop(ticks=12),

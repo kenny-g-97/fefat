@@ -27,7 +27,7 @@ from fefat.reference.rust_batch import CacheCase, Replay, write_cache_batch
 from fefat.reference.rust_run import default_binary
 from fefat.reference.settings import RunSettings, SlippageTicks
 from fefat.reference.units import CAPITAL, instrument_parameters
-from notebook_runs import store_with
+from notebook_runs import breakout, store_with
 
 TABLES = ("fills", "orders", "log", "costs", "trades", "equity")
 CASES = 100
@@ -42,24 +42,6 @@ def fixture_cached_month() -> tuple[Path, pl.DataFrame]:
     folder = paths.cache_dir / "engine" / "synthetic" / "ES" / "ESH2026"
     bars = ff.market.load("ESH2026", "5m", "2026-03-05", "2026-03-09").collect()
     return folder, bars
-
-
-def breakout(stop_ticks: int) -> ff.SignalStrategy:
-    """A long on a close above the highest of the 12 closes before it, with a stop of
-    `stop_ticks` and a target twice as far."""
-    return ff.SignalStrategy(
-        instrument="ES",
-        timeframe="5m",
-        features={"highest": pl.col("close").rolling_max(12).shift(1)},
-        long_entry=pl.col("close") > pl.col("highest"),
-        short_entry=pl.lit(False),
-        execution=ff.Execution(
-            entry=ff.Market(),
-            stop=ff.Stop(ticks=stop_ticks),
-            targets=[ff.Target(ticks=2 * stop_ticks)],
-            sizing=ff.Fixed(1),
-        ),
-    )
 
 
 def config_json(settings: RunSettings) -> str:
@@ -162,7 +144,7 @@ def test_a_case_of_a_batch_that_cannot_be_read_is_named_by_its_place(
     case = (spec_json, frame, [str(folder)], config)
     undated = (spec_json, frame.drop("trade_date"), [str(folder)], config)
 
-    with pytest.raises(ValueError, match="Expected case 1 of the batch to run, got: .*trade_date"):
+    with pytest.raises(ValueError, match=r"Expected case 1 of the batch to run, got: .*trade_date"):
         fefat_engine.run_batch([case, undated])
 
 

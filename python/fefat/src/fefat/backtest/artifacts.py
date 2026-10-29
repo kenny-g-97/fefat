@@ -6,6 +6,7 @@ key, which is written whole or not at all, and read back."""
 
 import math
 import shutil
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -39,7 +40,7 @@ def artifacts_of(
         "orders": engine["orders"],
         "log": engine["log"],
         "costs": engine["costs"],
-        "trades": _trades(engine["trades"], signals, features, parameters),
+        "trades": _trades(engine["trades"], engine["fills"], signals, features, parameters),
         "equity": equity,
         "equity_daily": _equity_daily(equity, capital),
         "signals": signals,
@@ -48,20 +49,26 @@ def artifacts_of(
 
 def _trades(
     trades: pl.DataFrame,
+    fills: pl.DataFrame,
     signals: pl.DataFrame,
     features: Sequence[str],
     parameters: InstrumentParameters,
 ) -> pl.DataFrame:
-    """The trades with their entry's trade date and the value of each feature on the entry row,
-    `<feature>_at_entry`; the initial risk of their entry's lots, rounded against the trader as
-    an amount is (F-FEE-03); and their profit and loss and excursions in R."""
+    """The trades with the trade date of their entry's fill, which an entry decided at a
+    session's last close takes from the next session's open (F-SES-01), and the value of each
+    feature on the entry row, `<feature>_at_entry`; the initial risk of their entry's lots,
+    rounded against the trader as an amount is (F-FEE-03); and their profit and loss and
+    excursions in R."""
     require_column_types(trades, ENGINE_TRADES, "the engine's trades")
+    entry_fills = fills.select(
+        pl.col("order").alias("entry_order"), pl.col("trade_date").alias("entry_trade_date")
+    ).unique("entry_order", keep="first", maintain_order=True)
     entry_rows = signals.select(
         pl.col("ts_close").alias("entry_decision"),
-        pl.col("trade_date").alias("entry_trade_date"),
         *(pl.col(feature).alias(f"{feature}_at_entry") for feature in features),
     )
-    joined = trades.join(entry_rows, on="entry_decision", how="left", maintain_order="left")
+    dated = trades.join(entry_fills, on="entry_order", how="left", maintain_order="left")
+    joined = dated.join(entry_rows, on="entry_decision", how="left", maintain_order="left")
     risks = joined.select("initial_risk_ticks", "lots").iter_rows()
     risk = [_risk(ticks, lots, parameters) for ticks, lots in risks]
     ticks = pl.col("initial_risk_ticks")
@@ -100,23 +107,22 @@ def _equity_daily(equity: pl.DataFrame, capital: int) -> pl.DataFrame:
 
 
 def write_run(folder: Path, artifacts: Mapping[str, pl.DataFrame], record: RunRecord) -> None:
-    """The run's artifacts and record in `folder`, written beside it and renamed into place once
-    whole, so that a folder holds a whole run or none; a run another process wrote first is kept."""
-    partial = folder.with_name(folder.name + _PARTIAL)
-    if partial.exists():
-        shutil.rmtree(partial)
-    partial.mkdir(parents=True)
-    for name, frame in artifacts.items():
-        require_column_types(frame, ARTIFACT_SCHEMAS[name], f"the {name} artifact's")
-        frame.write_parquet(partial / f"{name}.parquet", compression="zstd")
-    content = record.model_dump_json(indent=2).encode() + b"\n"
-    (partial / RECORD_FILE).write_bytes(content)
+    """The run's artifacts and record in `folder`, written into a folder of this writer's own
+    beside it and renamed into place once whole, so that a folder holds a whole run or none, a
+    writer never touches another's folder, and a run another process saved first is kept."""
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    partial = Path(tempfile.mkdtemp(prefix=f"{folder.name}.", suffix=_PARTIAL, dir=folder.parent))
     try:
+        for name, frame in artifacts.items():
+            require_column_types(frame, ARTIFACT_SCHEMAS[name], f"the {name} artifact's")
+            frame.write_parquet(partial / f"{name}.parquet", compression="zstd")
+        content = record.model_dump_json(indent=2).encode() + b"\n"
+        (partial / RECORD_FILE).write_bytes(content)
         partial.rename(folder)
-    except OSError:
-        if not (folder / RECORD_FILE).is_file():
+    except BaseException as error:
+        shutil.rmtree(partial, ignore_errors=True)
+        if not isinstance(error, OSError) or not (folder / RECORD_FILE).is_file():
             raise
-        shutil.rmtree(partial)
 
 
 def read_record(folder: Path) -> RunRecord:

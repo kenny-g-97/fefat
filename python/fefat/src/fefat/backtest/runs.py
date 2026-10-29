@@ -33,7 +33,7 @@ from fefat.backtest.record import (
     RunSummary,
     StrategyRecord,
 )
-from fefat.backtest.run_config import RunConfig
+from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
 from fefat.market.engine_units import micro_units, money_text
@@ -64,7 +64,7 @@ class Run:
         return self.record.run_key
 
     @property
-    def config(self) -> RunConfig:
+    def config(self) -> AppliedRunConfig:
         """The settings the run ran under, every default applied."""
         return self.record.config
 
@@ -123,20 +123,27 @@ def run(
     if (folder / RECORD_FILE).is_file():
         saved = Run.open(folder)
     else:
-        saved = _ran(inputs, tuple(strategy.features), folder, key, frame_hash)
+        cache_paths = inputs.cache_paths(paths)
+        saved = _ran(inputs, cache_paths, tuple(strategy.features), folder, key, frame_hash)
     for warning in saved.record.warnings:
         warnings.warn(warning, UserWarning, stacklevel=2)
     return saved
 
 
 def _ran(
-    inputs: RunInputs, features: tuple[str, ...], folder: Path, key: str, frame_hash: str
+    inputs: RunInputs,
+    cache_paths: tuple[Path, ...],
+    features: tuple[str, ...],
+    folder: Path,
+    key: str,
+    frame_hash: str,
 ) -> Run:
-    """The run of `inputs` through the engine, its artifacts and record written to `folder`."""
-    cache_paths = [str(path) for path in inputs.cache_paths]
+    """The run of `inputs` through the engine over its fronts' caches in `cache_paths`, its
+    artifacts and record written to `folder`."""
+    caches = [str(path) for path in cache_paths]
     replay = str(inputs.config.replay)
     outputs = fefat_engine.run_signal_backtest(
-        inputs.spec_json(), inputs.signals, cache_paths, inputs.config_json(), replay
+        inputs.spec_json(), inputs.signals, caches, inputs.config_json(), replay
     )
     engine = {name: pl.DataFrame(outputs[name]) for name in ENGINE_TABLES}
     capital = micro_units(inputs.config.capital)

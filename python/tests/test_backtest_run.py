@@ -4,39 +4,26 @@ engine over the engine cache, writes every artifact with its schema and `run.jso
 identical call returns the run already written without running the engine again (Done means 2)."""
 
 import os
+import shutil
+import warnings
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 import fefat_engine
 import polars as pl
 import pytest
 
 import fefat as ff
+import fefat.backtest.run_inputs as run_inputs
 from fefat.backtest import ARTIFACT_SCHEMAS, RunConfig, RunRecord
+from fefat.backtest.artifacts import read_artifact, write_run
 from fefat.config import resolve_paths
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import DatasetOrigin
 from fefat.reference.settings import SlippageTicks
 from fefat.strategy.signal_frame import require_column_types
-from notebook_runs import store_with
-
-
-def breakout(stop_ticks: int = 12) -> ff.SignalStrategy:
-    """A long on a close above the highest of the 12 closes before it, with a stop of
-    `stop_ticks` and a target twice as far."""
-    return ff.SignalStrategy(
-        instrument="ES",
-        timeframe="5m",
-        features={"highest": pl.col("close").rolling_max(12).shift(1)},
-        long_entry=pl.col("close") > pl.col("highest"),
-        short_entry=pl.lit(False),
-        execution=ff.Execution(
-            entry=ff.Market(),
-            stop=ff.Stop(ticks=stop_ticks),
-            targets=[ff.Target(ticks=2 * stop_ticks)],
-            sizing=ff.Fixed(1),
-        ),
-    )
+from notebook_runs import breakout, store_with
 
 
 @pytest.fixture(name="fixture_store")
@@ -140,13 +127,11 @@ def test_equity_is_at_each_signal_bar_or_each_trade_date() -> None:
         run.equity("1h")
 
 
-@pytest.mark.usefixtures("fixture_store")
-def test_a_perpetual_pays_the_funding_rates_the_store_holds() -> None:
-    # BACKLOG's perpetual's funding from the store (F-FND-01): a long of 0.1 BTC held from 01:00
-    # to 23:00 UTC pays at the fixtures' funding times of 08:00 and 16:00, which its trade counts.
+def long_btc() -> ff.SignalStrategy:
+    """A long of 0.1 BTC from 01:00 to 23:00 UTC, without a stop."""
     utc = pl.from_epoch("ts_close", time_unit="ns")
     at = lambda hour: (utc.dt.hour() == hour) & (utc.dt.minute() == 0)  # noqa: E731
-    strategy = ff.SignalStrategy(
+    return ff.SignalStrategy(
         instrument="BTCUSDT-PERP",
         timeframe="5m",
         long_entry=at(1),
@@ -155,8 +140,13 @@ def test_a_perpetual_pays_the_funding_rates_the_store_holds() -> None:
         execution=ff.Execution(entry=ff.Market(), sizing=ff.Fixed(0.1)),
     )
 
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_perpetual_pays_the_funding_rates_the_store_holds() -> None:
+    # BACKLOG's perpetual's funding from the store (F-FND-01): a long of 0.1 BTC held from 01:00
+    # to 23:00 UTC pays at the fixtures' funding times of 08:00 and 16:00, which its trade counts.
     with pytest.warns(UserWarning, match="binance-default"):
-        run = ff.backtest.run(strategy, "2026-03-07", "2026-03-07")
+        run = ff.backtest.run(long_btc(), "2026-03-07", "2026-03-07")
 
     funding = run.costs.filter(pl.col("reason") == "funding")
     assert funding.height == 2
@@ -165,6 +155,20 @@ def test_a_perpetual_pays_the_funding_rates_the_store_holds() -> None:
     assert trade["pnl"] == trade["gross_pnl"] - trade["fees"] + trade["funding"]
     assert "funding" in {dataset.schema_name for dataset in run.record.datasets}
     assert run.record.config.fee_table == "binance-default"
+    # Without a stop the trade has no initial risk, so no R.
+    assert (trade["initial_risk"], trade["r_multiple"], trade["mae_r"]) == (None, None, None)
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_perpetual_without_funding_rates_in_its_window_is_refused() -> None:
+    # Step 2.10's review (F-FND-01): a funding dataset that holds no rate for the window would
+    # let the run pay none.
+    funding = resolve_paths(os.environ).data_dir / "synthetic" / "funding" / "root=BTCUSDT-PERP"
+    (funding / "contract=BTCUSDT-PERP" / "part.parquet").unlink()
+
+    expected = "Expected the funding rates of the perpetual BTCUSDT-PERP received from 2026-03-07"
+    with pytest.raises(ValueError, match=expected):
+        ff.backtest.run(long_btc(), "2026-03-07", "2026-03-07")
 
 
 @pytest.mark.usefixtures("fixture_store")
@@ -197,3 +201,99 @@ def test_a_feature_an_exit_rule_reads_below_one_tick_warns() -> None:
 
     with pytest.warns(UserWarning, match="the feature atr, which stop_feature reads, lies below"):
         ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_the_warnings_load_raises_are_in_the_record_and_raised_on_every_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The Phase 2 kickoff's amendment (BACKLOG): run.json keeps what `load` warned of.
+    def warning_load(*arguments: Any, **keywords: Any) -> pl.LazyFrame:
+        warnings.warn("a warning of load", UserWarning, stacklevel=2)
+        return ff.market.load(*arguments, **keywords)
+
+    monkeypatch.setattr(run_inputs, "load", warning_load)
+
+    with pytest.warns(UserWarning, match="a warning of load"):
+        run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+
+    assert "a warning of load" in run.record.warnings
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_trades_risk_r_and_values_at_entry_are_those_of_its_stop_and_its_entry_row() -> None:
+    # Step 2.10's review: a stop of 12 ticks risks 12 times 12.50 USD on ES's lot, which the R
+    # columns divide by, and the features at entry are the entry row's.
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+
+    trades = run.trades.join(
+        run.signals.select(pl.col("ts_close").alias("entry_decision"), "highest"),
+        on="entry_decision",
+    )
+    assert not trades.is_empty()
+    assert (trades.get_column("initial_risk_ticks") == 12).all()
+    assert (trades.get_column("initial_risk") == 12 * 12_500_000).all()
+    r_multiple = trades.get_column("pnl") / trades.get_column("initial_risk")
+    assert (trades.get_column("r_multiple") == r_multiple).all()
+    assert (trades.get_column("mae_r") == trades.get_column("mae_ticks") / 12).all()
+    assert (trades.get_column("highest_at_entry") == trades.get_column("highest")).all()
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_trade_entered_at_a_sessions_open_has_the_trade_date_of_its_entry_fill() -> None:
+    # Step 2.10's review: an entry decided at a session's last close, 16:00 in Chicago, fills at
+    # the next session's open (F-SES-01), so the trade's entry trade date is its fill's.
+    chicago = pl.from_epoch("ts_close", time_unit="ns").dt.replace_time_zone("UTC")
+    chicago = chicago.dt.convert_time_zone("America/Chicago")
+    last_close = (chicago.dt.hour() == 16) & (chicago.dt.minute() == 0)
+    strategy = breakout().model_copy(update={"long_entry": last_close})
+
+    run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
+
+    filled = run.fills.select(
+        pl.col("order").alias("entry_order"), pl.col("trade_date").alias("filled_on")
+    )
+    decided = run.signals.select(
+        pl.col("ts_close").alias("entry_decision"), pl.col("trade_date").alias("decided_on")
+    )
+    trades = run.trades.join(filled, on="entry_order").join(decided, on="entry_decision")
+    assert (trades.get_column("decided_on") < trades.get_column("filled_on")).any()
+    assert (trades.get_column("entry_trade_date") == trades.get_column("filled_on")).all()
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_saved_run_opens_without_its_engine_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Step 2.10's review: the cache may be deleted at any time, and a saved run reads none of it.
+    first = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    engine_cache = resolve_paths(os.environ).cache_dir / "engine"
+    shutil.rmtree(engine_cache)
+
+    def refused(*_: object) -> object:
+        raise AssertionError("Expected the saved run, got its cache built again")
+
+    monkeypatch.setattr(run_inputs, "build_cache_months", refused)
+    again = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+
+    assert again.hash == first.hash
+    assert not engine_cache.exists()
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_saving_a_run_leaves_another_writers_folder_and_keeps_the_run_saved_first() -> None:
+    # Step 2.10's review: two processes saving one run each write into a folder of their own, so
+    # that neither deletes the other's files, and the second keeps the run the first saved.
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    artifacts = {name: read_artifact(run.folder, name) for name in ARTIFACT_SCHEMAS}
+    folder = run.folder.with_name("copy")
+    other = folder.with_name("copy.partial")
+    other.mkdir()
+    (other / "fills.parquet").write_bytes(b"another writer's")
+
+    write_run(folder, artifacts, run.record)
+    write_run(folder, artifacts, run.record)
+
+    assert (other / "fills.parquet").read_bytes() == b"another writer's"
+    written = sorted(path.name for path in folder.iterdir())
+    assert written == sorted([f"{name}.parquet" for name in ARTIFACT_SCHEMAS] + ["run.json"])
+    partials = [path.name for path in folder.parent.iterdir() if path.suffix == ".partial"]
+    assert partials == ["copy.partial"]

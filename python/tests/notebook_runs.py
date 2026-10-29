@@ -1,4 +1,5 @@
-"""Running a notebook in a test as Run All does, on a store of the synthetic fixtures."""
+"""Running a notebook in a test as Run All does, on a store of the synthetic fixtures, and the
+strategy the backtest tests run there."""
 
 import json
 import os
@@ -7,11 +8,32 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+import polars as pl
+
+import fefat as ff
 from fefat.config import resolve_paths
 
 SYNTHETIC = Path(__file__).resolve().parents[2] / "fixtures" / "synthetic"
 SCENARIOS = Path(__file__).resolve().parents[2] / "fixtures" / "scenarios"
 TICK_FIDELITIES = frozenset({"trades", "tbbo"})
+
+
+def breakout(stop_ticks: int = 12) -> ff.SignalStrategy:
+    """A long on ES's close above the highest of the 12 closes before it, with a stop of
+    `stop_ticks` and a target twice as far, which holds a position across the fixtures' roll."""
+    return ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"highest": pl.col("close").rolling_max(12).shift(1)},
+        long_entry=pl.col("close") > pl.col("highest"),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(
+            entry=ff.Market(),
+            stop=ff.Stop(ticks=stop_ticks),
+            targets=[ff.Target(ticks=2 * stop_ticks)],
+            sizing=ff.Fixed(1),
+        ),
+    )
 
 
 def scenario_fidelities() -> list[str]:

@@ -13,7 +13,7 @@ run of the same key instead of running it again:
 """
 
 from fefat.backtest.record import RunRecord
-from fefat.backtest.run_config import RunConfig
+from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.runs import Run, run
 from fefat.backtest.schemas import (
     ARTIFACT_SCHEMAS,
@@ -37,6 +37,7 @@ __all__ = [
     "ORDERS",
     "SIGNALS",
     "TRADES",
+    "AppliedRunConfig",
     "Run",
     "RunConfig",
     "RunRecord",

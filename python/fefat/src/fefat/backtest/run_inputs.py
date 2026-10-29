@@ -17,7 +17,7 @@ from pathlib import Path
 import polars as pl
 
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
-from fefat.backtest.run_config import RunConfig
+from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.config import FefatPaths
 from fefat.market.api import load, roll_calendar
 from fefat.market.calendar import SessionTable, counted
@@ -51,15 +51,17 @@ from fefat.strategy.spec import StrategySpec
 
 @dataclass(frozen=True)
 class RunInputs:
-    """What the engine reads of a run, and what its record says it read."""
+    """What the engine reads of a run, and what its record says it read; its fronts' engine
+    caches are built only when it runs (`cache_paths`), since a saved run reads none of them."""
 
     spec: StrategySpec
     signals: pl.DataFrame
-    cache_paths: tuple[Path, ...]
+    store: Store
+    fronts: tuple[str, ...]
     engine_config: dict[str, object]
     partition_hashes: tuple[str, ...]
     datasets: tuple[DatasetRecord, ...]
-    config: RunConfig
+    config: AppliedRunConfig
     instrument: Instrument
     parameters: InstrumentParameters
     fee_table: FeeTableRecord
@@ -72,6 +74,26 @@ class RunInputs:
 
     def config_json(self) -> str:
         return json.dumps(self.engine_config)
+
+    def cache_paths(self, paths: FefatPaths) -> tuple[Path, ...]:
+        """The engine cache's folder of each front, its months of the window built from the store
+        (`build_cache_months`); a month the cache refuses refuses the run."""
+        root, provider = self.instrument.root, self.config.provider
+        months = _months(self.window)
+        built = build_cache_months(self.store, paths.cache_dir, root, months, provider)
+        if built.refused:
+            raise ValueError(
+                f"Expected the engine cache of {root} from {self.window.start} to "
+                f"{self.window.end}, got: {'; '.join(built.refused)}"
+            )
+        folder = paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / provider / root
+        folders = tuple(folder / contract for contract in self.fronts)
+        missing = [str(path) for path in folders if not path.is_dir()]
+        if missing:
+            raise ValueError(
+                f"Expected the engine cache of each front, got none in {', '.join(missing)}."
+            )
+        return folders
 
 
 @dataclass(frozen=True)
@@ -110,14 +132,15 @@ def run_inputs(
     return RunInputs(
         spec=spec,
         signals=with_engine_columns(spec, signals, market.sessions),
-        cache_paths=_cache(market, paths, window, fronts),
+        store=market.store,
+        fronts=fronts,
         engine_config=engine_config,
         partition_hashes=tuple(sorted(snapshot.sha256 for snapshot in snapshots)),
         datasets=tuple(_dataset_record(market.store, snapshot) for snapshot in snapshots),
         config=applied,
         instrument=market.instrument,
         parameters=parameters,
-        fee_table=_fee_table_record(_named(applied.fee_table), market.instrument.root),
+        fee_table=_fee_table_record(applied.fee_table, market.instrument.root),
         rolls=tuple(_roll_record(roll) for roll in rolls),
         window=window,
         warnings=(*loaded, *_features_below_a_tick(spec, signals, parameters.tick)),
@@ -126,7 +149,7 @@ def run_inputs(
 
 def _engine_config(
     market: _Market,
-    applied: RunConfig,
+    applied: AppliedRunConfig,
     signals: pl.DataFrame,
     snapshots: tuple[Snapshot, ...],
     window: Window,
@@ -140,13 +163,13 @@ def _engine_config(
     ).row(0)
     root = market.instrument.root
     return run_document(
-        fidelity=_fidelity(applied),
+        fidelity=applied.fidelity,
         instrument=instrument_parameters(market.instrument),
         settings=applied.run_settings(),
         hours=CalendarHours.around(market.sessions, first, last),
         capital=micro_units(applied.capital),
         position=None,
-        fees=RunFees.of_table(TABLES[_named(applied.fee_table)], root),
+        fees=RunFees.of_table(TABLES[applied.fee_table], root),
         funding=_funding(market, snapshots, window),
         rolls=rolls,
     )
@@ -173,18 +196,6 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
         return (0 if level is TickFidelity.TBBO else 1, 0)
 
     return min((level_of(dataset) for dataset in datasets), key=rank)
-
-
-def _named(fee_table: str | None) -> str:
-    if fee_table is None:
-        raise ValueError("Expected a config with its defaults applied, got no fee table.")
-    return fee_table
-
-
-def _fidelity(config: RunConfig) -> TickFidelity | Timeframe:
-    if config.fidelity is None:
-        raise ValueError("Expected a config with its defaults applied, got no fidelity.")
-    return config.fidelity
 
 
 def _bars(
@@ -242,21 +253,27 @@ def _funding(
     market: _Market, snapshots: tuple[Snapshot, ...], window: Window
 ) -> tuple[FundingRate, ...]:
     """A perpetual's funding rates received from its first session's open until the open of the
-    session after its last, where `load`'s range ends (`02` §1.1)."""
+    session after its last, where `load`'s range ends (`02` §1.1); a window the store's funding
+    rates leave out is refused, as a perpetual without them is (`_funding_dataset`)."""
     if market.instrument.kind is not InstrumentKind.PERPETUAL:
         return ()
-    funding = [
-        snapshot
+    received = [
+        market.store.read(snapshot)
         for snapshot in snapshots
         if snapshot.request.dataset.schema_name.kind is SchemaKind.FUNDING
     ]
     opens = market.sessions.session(window.start).open
     until = market.sessions.following(window.end).open
-    rows = pl.concat([market.store.read(snapshot) for snapshot in funding])
-    within = rows.filter(pl.col("ts_recv") >= opens, pl.col("ts_recv") < until)
-    if within.is_empty():
-        return ()
-    return funding_rates_of(within)
+    within = [
+        rows.filter(pl.col("ts_recv") >= opens, pl.col("ts_recv") < until) for rows in received
+    ]
+    if not any(rows.height for rows in within):
+        raise ValueError(
+            f"Expected the funding rates of the perpetual {market.instrument.root} received from "
+            f"{window.start} to {window.end} in the store, got none: a run without them would "
+            "leave out what the position pays and receives (F-FND-01)."
+        )
+    return funding_rates_of(pl.concat(within))
 
 
 def _fronts_and_rolls(
@@ -282,29 +299,6 @@ def _fronts_and_rolls(
             f"gives, {', '.join(fronts)}, got {', '.join(contracts)}."
         )
     return fronts, rolls
-
-
-def _cache(
-    market: _Market, paths: FefatPaths, window: Window, fronts: tuple[str, ...]
-) -> tuple[Path, ...]:
-    """The engine cache's folder of each front, its months of the window built from the store
-    (`build_cache_months`); a month the cache refuses refuses the run."""
-    months = _months(window)
-    root = market.instrument.root
-    built = build_cache_months(market.store, paths.cache_dir, root, months, market.provider)
-    if built.refused:
-        raise ValueError(
-            f"Expected the engine cache of {root} from {window.start} to {window.end}, got: "
-            f"{'; '.join(built.refused)}"
-        )
-    folder = paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / market.provider / root
-    folders = tuple(folder / contract for contract in fronts)
-    missing = [str(path) for path in folders if not path.is_dir()]
-    if missing:
-        raise ValueError(
-            f"Expected the engine cache of each front, got none in {', '.join(missing)}."
-        )
-    return folders
 
 
 def _months(window: Window) -> list[YearMonth]:
