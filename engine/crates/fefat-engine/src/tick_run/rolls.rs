@@ -6,7 +6,7 @@
 //! none when an order on its way out of all the position's lots does the close leg's work.
 
 use fefat_core::costs::ScheduleUse;
-use fefat_core::fills::Fill;
+use fefat_core::fills::{Fill, PricingRule};
 use fefat_core::instants::Ts;
 use fefat_core::instrument::Contract;
 use fefat_core::ledger::Position;
@@ -54,7 +54,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             Position::Long(held) => Some((Side::Sell, held.lots())),
             Position::Short(held) => Some((Side::Buy, held.lots())),
         };
-        let exiting = closing.and_then(|(side, lots)| self.book.on_its_way_out(side, lots));
+        let exiting = closing.and_then(|(side, lots)| self.book.on_its_way_out(side, lots, at));
         if flattens && held != Position::Flat {
             let cancelled = self.book.cancel_for_roll(exiting);
             let entries = cancelled
@@ -133,7 +133,9 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             let (price, shown) = record.quoted(side).unwrap_or((record.price, record.size));
             (price, Some(shown))
         };
-        self.fill_legs(transfer, at, record.price, priced)
+        self.fill_legs(transfer, at, record.price, priced, |side| {
+            record.quoted(side)
+        })
     }
 
     /// The roll's legs at the open of the first tradeable bar after it, filled at its close
@@ -142,7 +144,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let Some(transfer) = self.transfer.take() else {
             return Ok(());
         };
-        self.fill_legs(transfer, at, bar.open, |_| (bar.open, None))
+        self.fill_legs(transfer, at, bar.open, |_| (bar.open, None), |_| None)
     }
 
     /// Fills the legs, the close leg first, each priced by `priced` for its side, the close leg's
@@ -155,6 +157,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         at: FillPoint,
         market: Price,
         priced: impl Fn(Side) -> (Price, Option<Qty>),
+        quoted: impl Fn(Side) -> Option<(Price, Qty)>,
     ) -> Result<(), RunError> {
         let Transfer {
             close,
@@ -162,14 +165,14 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             gap,
             rolled_from,
         } = transfer;
-        let close_priced = self.leg_priced(close, gap, &priced)?;
+        let close_priced = self.leg_priced(close, gap, at, &priced, &quoted)?;
         let Some(open) = open else {
             let (book, ledger, costs) = (&mut self.book, &mut self.ledger, &self.costs);
             let closed = execute(book, ledger, costs, close, &close_priced, at, market)?;
             return self.record_on(closed, rolled_from);
         };
         let (close_fill, close_schedule) = self.leg(close, &close_priced, at)?;
-        let open_priced = self.leg_priced(open, Price(0), &priced)?;
+        let open_priced = self.leg_priced(open, Price(0), at, &priced, &quoted)?;
         let (open_fill, open_schedule) = self.leg(open, &open_priced, at)?;
         let [closed, opened] = self.ledger.transfer(&close_fill, &open_fill)?;
         let close_leg = Execution::alone(close_fill, closed, close_schedule, false);
@@ -179,18 +182,24 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     }
 
     /// How F-ROL-02 prices the leg `id`, less `gap` for the close leg: at the price `priced` gives
-    /// its side, moved by the market slippage ticks.
+    /// its side, moved by the market slippage ticks; a stop triggered on TBBO doing the close leg's
+    /// work at its own F-STP-02 price on the quote `quoted` gives, less the gap.
     fn leg_priced(
         &self,
         id: OrderId,
         gap: Price,
+        at: FillPoint,
         priced: &impl Fn(Side) -> (Price, Option<Qty>),
+        quoted: &impl Fn(Side) -> Option<(Price, Qty)>,
     ) -> Result<Priced, RunError> {
-        let side = self
+        let order = self
             .book
             .order(id)
-            .map(|order| order.order.side)
             .ok_or(RunError::UnknownOrder { order: id.0 })?;
+        let side = order.order.side;
+        if let OrderKind::StopMarket { stop } = order.order.kind {
+            return self.stop_doing_the_close_leg(id, side, stop, gap, at, quoted);
+        }
         let (price, shown) = priced(side);
         let ticks = self.settings.slippage.market;
         Ok(rules::f_rol_02(
@@ -201,6 +210,36 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             ticks,
             self.tick(),
         )?)
+    }
+
+    /// F-ROL-02, your choice of 2026-10-29: a stop triggered on TBBO doing the close leg's work
+    /// fills at the price F-STP-02 gives it on the record, its quote bounded by its moved `stop`
+    /// and the stop slippage ticks, less the gap, never better than its stop; a record without a
+    /// quote is refused, as without the roll.
+    fn stop_doing_the_close_leg(
+        &self,
+        id: OrderId,
+        side: Side,
+        stop: Price,
+        gap: Price,
+        at: FillPoint,
+        quoted: &impl Fn(Side) -> Option<(Price, Qty)>,
+    ) -> Result<Priced, RunError> {
+        let Some((quote, shown_size)) = quoted(side) else {
+            return Err(RunError::TriggeredWithoutQuotes {
+                order: id.0,
+                at: at.ts,
+                fidelity: at.fidelity,
+            });
+        };
+        let ticks = self.settings.slippage.stop;
+        let price = rules::f_stp_02(side, stop, quote, ticks, self.tick())?;
+        Ok(Priced {
+            price: price.checked_sub(gap)?,
+            rule: PricingRule::StopAtNextQuote,
+            reference: stop.checked_sub(gap)?,
+            shown_size: Some(shown_size),
+        })
     }
 
     /// The leg `id` closed in the book and tagged as `leg` prices it, with its fee: the fill, and

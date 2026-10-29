@@ -14,7 +14,7 @@ tape:
 expected:
   fills:
     - {order: 1, ts: "2026-03-06T20:00:00.200Z", price: "5001.25", rule: F-MKT-01, role: entry, contract: ESH2026}
-    - {order: 2, ts: "2026-03-08T22:00:00.500Z", price: "5004.75", rule: F-ROL-02, role: stop, contract: ESH2026}
+    - {order: 2, ts: "2026-03-08T22:00:00.500Z", price: "4995.00", rule: F-STP-02, role: stop, contract: ESH2026}
 rules: [F-ACT-01, F-MKT-01, F-OCO-02, F-ROL-01, F-ROL-02, F-ROL-03, F-ROL-04, F-SLP-01, F-STP-01, F-STP-02]
 
 # Arithmetic (ES, tick 0.25; TBBO fills at the quote, with no slippage ticks: F-SLP-01; the
@@ -29,6 +29,8 @@ rules: [F-ACT-01, F-MKT-01, F-OCO-02, F-ROL-01, F-ROL-02, F-ROL-03, F-ROL-04, F-
 # long's lots, so it does the close leg's work and no close leg is sent; with flatten the roll
 # cancels the rest of the position's exit plan, the target (F-ROL-04); the stop moves by the gap
 # to 5015.00 (F-ROL-03);
-# the new front's first record, at 22:00:00.500, fills the stop first, at the close leg's price:
-# the bid, 5024.75, no better than the trade, 5025.00, less the gap: 5024.75 - 20.00 = 5004.75
-# (F-ROL-02), on ESH2026, with its own role, stop; the long is flat.
+# the new front's first record, at 22:00:00.500, fills the stop first, at the price F-STP-02 gives
+# it there, less the gap: the bid, 5024.75, no better than the trade, 5025.00, but never above the
+# moved stop less its ticks, 5015.00 - 0 = 5015.00, so 5015.00, less the gap: 5015.00 - 20.00 =
+# 4995.00, its own stop, never better (F-STP-02, F-ROL-02), on ESH2026, with its own role, stop;
+# the long is flat.

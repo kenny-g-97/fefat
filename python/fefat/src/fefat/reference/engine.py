@@ -372,13 +372,10 @@ class ReferenceEngine:
         if not self._tradeable(at.ts):
             return
         if self.transfer is not None:
-            fill_legs(self, at, lambda side: _price_for(record, side), record.price)
+            fill_legs(self, at, lambda side: _price_for(record, side), record.price, record)
         for order in self.book.each(TRIGGERED):
             if isinstance(record, TbboRecord):
-                price = f_stp_02(order.side, order.level(), record, self.ticks(STOP), self.tick)
-                shown = record.quote(order.side)[1]
-                priced = Priced(price, "F-STP-02", order.level(), shown)
-                self._fill(at, order, priced, record.price)
+                self._fill(at, order, self.triggered_priced(order, record), record.price)
         for order in self.book.each(WAITING):
             if f_act_01(order, at.ts, at.index):
                 self._first_record(at, order, record)
@@ -426,6 +423,17 @@ class ReferenceEngine:
             return
         priced = Priced(f_lmt_03(order), "F-LMT-03", order.level(), shown)
         self._fill(at, order, priced, record.price)
+
+    def triggered_priced(self, order: WorkingOrder, record: Record | None) -> Priced:
+        """F-STP-02: what a stop triggered on TBBO fills at on `record`, its quote bounded by the
+        stop and its ticks; a record without a quote is refused."""
+        if not isinstance(record, TbboRecord):
+            raise ValueError(
+                f"Expected a TBBO record to fill the stop triggered on TBBO, order {order.id}, "
+                f"got {type(record).__name__} (F-STP-02)."
+            )
+        price = f_stp_02(order.side, order.level(), record, self.ticks(STOP), self.tick)
+        return Priced(price, "F-STP-02", order.level(), record.quote(order.side)[1])
 
     def _fill(self, at: Moment, order: WorkingOrder, priced: Priced, market: int) -> None:
         book_fill(self, at.ts, self.execute(self.book, order, priced, at, market))

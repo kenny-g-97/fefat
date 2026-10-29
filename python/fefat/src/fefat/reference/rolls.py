@@ -185,7 +185,7 @@ def on_roll(engine: "ReferenceEngine", at: Moment, roll: RollRow) -> None:
         )
     log.rolled(at.ts, roll.rolled_from, roll.contract, roll.gap, roll.reason)
     held, flattens = book.position, engine.settings.roll_handling is RollHandling.FLATTEN
-    exiting = _on_its_way_out(book)
+    exiting = _on_its_way_out(book, at.ts)
     if held and flattens:
         f_rol_04(book, log, at.ts, exiting)
     f_rol_03(book, roll.gap, log, at.ts)
@@ -201,10 +201,10 @@ def on_roll(engine: "ReferenceEngine", at: Moment, roll: RollRow) -> None:
     engine.transfer = Transfer(close, opening, roll.gap, roll.rolled_from, book.opened_at)
 
 
-def _on_its_way_out(book: Book) -> WorkingOrder | None:
-    """A market order already on its way out of all the position's lots, an exit the strategy
-    placed or a stop triggered on TBBO, which does a roll's close leg's work (F-ROL-02); none
-    while flat."""
+def _on_its_way_out(book: Book, ts: int) -> WorkingOrder | None:
+    """A market order already on its way out of all the position's lots and active by the roll at
+    `ts` (F-ACT-01), an exit the strategy placed or a stop triggered on TBBO, which does a roll's
+    close leg's work (F-ROL-02); none while flat."""
     if not book.position:
         return None
     closing = Side.SELL if book.position > 0 else Side.BUY
@@ -213,6 +213,7 @@ def _on_its_way_out(book: Book) -> WorkingOrder | None:
         for order in book.live()
         if order.side is closing
         and order.lots == abs(book.position)
+        and order.activation <= ts
         and (order.role in EXIT_ROLES or (order.state is OrderState.TRIGGERED and order.leg_of))
     ]
     return min(on_its_way, key=lambda order: order.id, default=None)
@@ -245,11 +246,13 @@ def fill_legs(
     at: Moment,
     priced: Callable[[Side], tuple[int, int | None]],
     market: int,
+    record: Record | None = None,
 ) -> None:
     """The roll's legs fill on the first tradeable record or bar after it, before any other
     order's turn, the close leg first, each at the price a market order of its side takes there,
-    `priced` giving it with the size its record shows (F-ROL-02); a transfer leaves the trade open
-    and its open where it was (§20, F-TIM-02)."""
+    `priced` giving it with the size its record shows (F-ROL-02), and a stop triggered on TBBO
+    doing the close leg's work at its own F-STP-02 price on `record`, less the gap; a transfer
+    leaves the trade open and its open where it was (§20, F-TIM-02)."""
     transfer = engine.transfer
     if transfer is None:
         return
@@ -259,8 +262,12 @@ def fill_legs(
         legs.append((transfer.open, 0, engine.front))
     ticks = engine.ticks(OrderKind.MARKET)
     for order, gap, contract in legs:
-        price, shown = priced(order.side)
-        filled = f_rol_02(order.side, price, shown, gap, ticks, engine.tick)
+        if order.kind is OrderKind.STOP:
+            stopped = engine.triggered_priced(order, record)
+            filled = stopped._replace(price=stopped.price - gap, reference=stopped.reference - gap)
+        else:
+            price, shown = priced(order.side)
+            filled = f_rol_02(order.side, price, shown, gap, ticks, engine.tick)
         execution = engine.execute(engine.book, order, filled, at, market)
         if order is transfer.close and transfer.open is not None:
             execution = replace(execution, flat_after=False)

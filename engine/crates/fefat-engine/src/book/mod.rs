@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use fefat_core::instants::Ts;
 use fefat_core::orders::{Order, OrderId, OrderKind, OrderRole, OrderState, Side};
 use fefat_core::units::{Overflow, Price, Qty};
 
@@ -174,10 +175,10 @@ impl Book {
         self.issued = self.issued.max(highest.map_or(0, |id| id.0));
     }
 
-    /// F-ROL-02: the market order already on its way out of all the position's `lots` by `side`,
-    /// an exit flatten placed or a stop of its plan triggered on TBBO, which does a roll's close
-    /// leg's work; the lowest id should there be more.
-    pub(crate) fn on_its_way_out(&self, side: Side, lots: Qty) -> Option<OrderId> {
+    /// F-ROL-02: the market order already on its way out of all the position's `lots` by `side`
+    /// and active by the roll at `at` (F-ACT-01), an exit flatten placed or a stop of its plan
+    /// triggered on TBBO, which does a roll's close leg's work; the lowest id should there be more.
+    pub(crate) fn on_its_way_out(&self, side: Side, lots: Qty, at: Ts) -> Option<OrderId> {
         let on_its_way = |order: &&WorkingOrder| match order.order.role {
             OrderRole::Exit(_) => true,
             OrderRole::Entry | OrderRole::Roll(_) => false,
@@ -188,6 +189,7 @@ impl Book {
         self.live
             .iter()
             .filter(|order| order.order.side == side && order.order.lots == lots)
+            .filter(|order| order.order.activation <= at)
             .filter(on_its_way)
             .map(|order| order.order.id)
             .min()
