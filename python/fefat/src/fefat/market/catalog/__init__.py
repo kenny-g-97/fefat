@@ -10,9 +10,8 @@ The catalog is `catalog.yaml` beside this module, and its `version` grows with e
     from fefat.market.catalog import CATALOG
     CATALOG.roots()
 
-The data API's `catalog()`, `ff.market.catalog()`, lists the datasets in the store; import this
-package's names with `from fefat.market.catalog import ...`, since `import fefat.market.catalog
-as ...` gives that function.
+The data API's `datasets()`, `ff.market.datasets()`, lists the datasets in the store, and
+`ff.market.catalog` is this package (step 2.10).
 """
 
 from datetime import date

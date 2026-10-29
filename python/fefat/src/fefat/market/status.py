@@ -5,7 +5,7 @@
 fidelity, its contracts and trade dates, the quality verdict of its root's report from its
 provider, stale when the report's last trade date is before the dataset's, the origin and
 licence scope of its `dataset.json`, and the last day a file of its provider that fed its root
-was imported, from the raw manifest; `ff.market.catalog()` lists it. `product_status` gives
+was imported, from the raw manifest; `ff.market.datasets()` lists it. `product_status` gives
 each product of the catalog, in catalog order, its datasets, complete at their fidelity when
 they start by the first trade date of the product's history and partial when after it, or one
 row that says it is missing, with its first recommended source; then the datasets of roots the

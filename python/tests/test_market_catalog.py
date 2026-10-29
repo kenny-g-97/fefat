@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 import fefat.market
-from fefat.market.api import catalog
+import fefat.market.api
+import fefat.market.catalog
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.catalog import CATALOG, RollRule, load_catalog, parse_catalog
 from fefat.market.instruments import STATIC_TABLE
@@ -130,8 +131,8 @@ def test_a_catalog_written_as_its_schema_is_read() -> None:
     assert read.roots() == ("MES",)
 
 
-def test_the_catalog_package_leaves_ff_market_catalog_the_function() -> None:
-    # `fefat.market.catalog` names both the package of catalog.yaml and the data API's
-    # function; import the package's names with `from fefat.market.catalog import ...`.
-    assert fefat.market.catalog is catalog
-    assert sys.modules["fefat.market.catalog"].CATALOG is CATALOG
+def test_ff_market_catalog_is_the_package_and_datasets_the_function() -> None:
+    # Step 2.10: the data API's function is `datasets`, so that no function hides the package.
+    assert fefat.market.catalog is sys.modules["fefat.market.catalog"]
+    assert fefat.market.catalog.CATALOG is CATALOG
+    assert fefat.market.datasets is fefat.market.api.datasets

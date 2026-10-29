@@ -16,7 +16,7 @@ The first imports a Databento batch download, or a single DBN file, into the sto
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
 rebuilds a trade date's bars from the finer data in the store and prints how they compare with
 the stored ones (`fefat.market.bars_check`); the third prints each dataset in the store with
-its trade dates, contracts, fidelity, and quality (`fefat.market.api.catalog`); the fourth
+its trade dates, contracts, fidelity, and quality (`fefat.market.api.datasets`); the fourth
 writes the quality report of a product, or of every product, under `FEFAT_DATA_DIR/reports/`
 and prints its summary (`fefat.market.quality`); the fifth prints the source guide, each
 known source with what it offers, its cost and terms, and the presets that read its files
@@ -52,7 +52,7 @@ from pathlib import Path
 from typing import Any
 
 from fefat.config import FefatPaths, resolve_paths
-from fefat.market.api import catalog
+from fefat.market.api import datasets
 from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.coverage import session_datasets
@@ -273,7 +273,7 @@ def verify_bars_of_a_trade_date(arguments: argparse.Namespace) -> int:
 
 
 def print_the_catalog(arguments: argparse.Namespace) -> int:
-    lines = [_catalog_line(row) for row in catalog().iter_rows(named=True)]
+    lines = [_catalog_line(row) for row in datasets().iter_rows(named=True)]
     if not lines:
         lines = [f"No datasets in {resolve_paths(os.environ).data_dir}."]
     print("\n".join(lines))

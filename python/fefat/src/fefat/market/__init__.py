@@ -1,11 +1,11 @@
 """Market data: the canonical store, its schemas, and its layout (ADR-0019); instrument
 specifications, contract identity, and fee tables; session calendars and trade dates; the
-quality report of each dataset; the data API, `load`, `catalog`, and `roll_calendar`
+quality report of each dataset; the data API, `load`, `datasets`, and `roll_calendar`
 (`fefat.market.api`); and
 the know-how FEFAT ships instead of data (D-37), the product catalog (`CATALOG`,
 `fefat.market.catalog`) and the source guide (`SOURCE_GUIDE`, `fefat.market.sources`)."""
 
-from fefat.market.api import CATALOG_COLUMNS, SIGNAL_BAR_COLUMNS, catalog, load, roll_calendar
+from fefat.market.api import DATASETS_COLUMNS, SIGNAL_BAR_COLUMNS, datasets, load, roll_calendar
 from fefat.market.calendar import Session, SessionTable, sessions_of
 from fefat.market.calendar_check import CalendarReport, validate_calendar
 from fefat.market.calendar_definition import (
@@ -43,7 +43,7 @@ from fefat.market.store import Store
 
 __all__ = [
     "CATALOG",
-    "CATALOG_COLUMNS",
+    "DATASETS_COLUMNS",
     "SIGNAL_BAR_COLUMNS",
     "SOURCE_GUIDE",
     "BatchJob",
@@ -84,8 +84,8 @@ __all__ = [
     "Weekday",
     "YearMonth",
     "assess_quality",
-    "catalog",
     "dataset_status",
+    "datasets",
     "is_outright",
     "load",
     "parse_fidelity",

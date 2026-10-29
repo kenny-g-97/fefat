@@ -207,7 +207,7 @@ MES databento ohlcv-1m: 2019-05-06 to 2026-09-23, complete at 1-minute fidelity,
 
 **Checking bars against finer data.** `fefat data verify-bars <root> <trade date>` rebuilds the trade date's bars from the finer data the store holds and compares them with the stored ones, provider by provider. Each line gives the bars compared and `no differences`, or lists each difference; `pending` where stored bars wait for finer data to rebuild them from, as the comparisons with ticks do until a trades file is imported; or `no ... stored to compare with`. One comparison always runs on the finest data present: resampled to 5-minute and then daily bars, it must give the daily bars made from it at once. The command exits with 0 when a comparison ran and found no differences.
 
-**In a notebook,** `ff.market.catalog()` and `ff.market.product_status(ff.market.Store(paths.data_dir), paths.reports_dir)`, with `paths = resolve_paths(os.environ)` from `fefat.config`, return the same tables as Polars frames, and `notebooks/01-market-data.ipynb` runs each check of this guide on your data.
+**In a notebook,** `ff.market.datasets()` and `ff.market.product_status(ff.market.Store(paths.data_dir), paths.reports_dir)`, with `paths = resolve_paths(os.environ)` from `fefat.config`, return the same tables as Polars frames, and `notebooks/01-market-data.ipynb` runs each check of this guide on your data.
 
 ## The engine's cache
 
