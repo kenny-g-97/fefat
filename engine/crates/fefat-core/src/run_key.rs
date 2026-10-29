@@ -1,9 +1,11 @@
 //! The engine's versions and the run key (`02` §4, ADR-0009): BLAKE3 over everything a run's
-//! output depends on, the strategy specification, the signal frame's hash, the hashes of the data
-//! partitions it reads, and the engine, fill-model, and artifact-schema versions, so that a change
-//! to what a run produces changes its key (D-11). The versions are bumped by hand and never taken
-//! from the crate's version (Phase 2's conventions, the `engine-golden` skill).
+//! output depends on, the strategy specification, the run's settings with every default applied
+//! (step 2.10), the signal frame's hash, the hashes of the data it reads, and the engine,
+//! fill-model, and artifact-schema versions, so that a change to what a run produces changes its
+//! key (D-11). The versions are bumped by hand and never taken from the crate's version (Phase 2's
+//! conventions, the `engine-golden` skill).
 
+use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -14,9 +16,9 @@ use crate::strategy_spec::StrategySpec;
 pub struct Version(pub u32);
 
 /// Bumped for any change of what a run produces that changes neither its fills nor the layout of
-/// its artifacts: 5 since step 2.9, whose fee tables, funding times, and rolls join the
-/// determinism digest through every seeded run, with each fill's contract and the cost lines.
-pub const ENGINE_VERSION: Version = Version(5);
+/// its artifacts: 6 since step 2.10, whose run key covers the run's settings and whose runs
+/// record their trades, their equity at each decision, and each fill's trade date.
+pub const ENGINE_VERSION: Version = Version(6);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
 /// Bumped when the layout of a run's artifacts changes.
@@ -25,7 +27,7 @@ pub const ARTIFACT_SCHEMA_VERSION: Version = Version(1);
 /// The versions a run key covers, in the order it hashes them.
 pub const VERSIONS: [Version; 3] = [ENGINE_VERSION, FILL_MODEL_VERSION, ARTIFACT_SCHEMA_VERSION];
 
-const DOMAIN: &[u8] = b"fefat run key 1\n";
+const DOMAIN: &[u8] = b"fefat run key 2\n";
 
 /// A run key: BLAKE3 as 64 lower-case hexadecimal digits (`01-architecture.md`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -41,8 +43,8 @@ impl RunKey {
 /// Why a run key could not be worked out.
 #[derive(Debug, Error)]
 pub enum RunKeyError {
-    /// Serde could not write the specification as JSON.
-    #[error("Expected a strategy specification that serde writes as JSON, got: {0}")]
+    /// Serde could not write the specification or the settings as JSON.
+    #[error("Expected a strategy specification and settings that serde writes as JSON, got: {0}")]
     Json(#[from] serde_json::Error),
     /// A number JSON cannot hold, NaN or an infinity, which serde writes as null, so that two
     /// specifications would share one key.
@@ -55,12 +57,15 @@ pub enum RunKeyError {
     },
 }
 
-/// The key of a run of `spec` on the signal frame hashed `signal_frame_hash`, reading the data
-/// partitions hashed `partition_hashes`, in any order, by this build's [`VERSIONS`]. The spec is
-/// hashed as the JSON serde writes for it, so that the layout of a document someone typed never
-/// changes the key; a spec with NaN or an infinity, which that JSON cannot hold, is refused.
+/// The key of a run of `spec` under `settings` on the signal frame hashed `signal_frame_hash`,
+/// reading the data hashed `partition_hashes`, in any order, by this build's [`VERSIONS`]. The
+/// spec and the settings are hashed as the JSON serde writes for them, so that the layout of a
+/// document someone typed never changes the key; a spec with NaN or an infinity, which that JSON
+/// cannot hold, is refused. The settings are a run's config (`fefat_run::config::RunConfig`),
+/// integers and words alone.
 pub fn run_key(
     spec: &StrategySpec,
+    settings: &impl Serialize,
     signal_frame_hash: &str,
     partition_hashes: &[String],
 ) -> Result<RunKey, RunKeyError> {
@@ -68,8 +73,10 @@ pub fn run_key(
         return Err(RunKeyError::NonFiniteNumber { path });
     }
     let spec_json = serde_json::to_vec(spec)?;
+    let settings_json = serde_json::to_vec(settings)?;
     Ok(key_of(
         &spec_json,
+        &settings_json,
         signal_frame_hash,
         partition_hashes,
         VERSIONS,
@@ -93,10 +100,11 @@ fn null_at(value: &Value, path: &str) -> Option<String> {
 }
 
 /// BLAKE3 over a domain tag and the parts, each framed by its length so that no two inputs give
-/// the same bytes: the specification's JSON, the signal frame's hash, the partition hashes
-/// sorted, and the versions.
+/// the same bytes: the specification's JSON, the settings' JSON, the signal frame's hash, the
+/// partition hashes sorted, and the versions.
 fn key_of(
     spec_json: &[u8],
+    settings_json: &[u8],
     signal_frame_hash: &str,
     partition_hashes: &[String],
     versions: [Version; 3],
@@ -106,6 +114,7 @@ fn key_of(
     let mut hasher = blake3::Hasher::new();
     hasher.update(DOMAIN);
     framed(&mut hasher, spec_json);
+    framed(&mut hasher, settings_json);
     framed(&mut hasher, signal_frame_hash.as_bytes());
     hasher.update(&(partitions.len() as u64).to_le_bytes());
     for partition in partitions {
@@ -124,9 +133,12 @@ fn framed(hasher: &mut blake3::Hasher, part: &[u8]) {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     const FRAME: &str = "signal frame hash";
+    const SETTINGS: &[u8] = br#"{"latency_ms":100}"#;
 
     fn spec(timeframe: &str) -> StrategySpec {
         let document = format!(
@@ -136,55 +148,82 @@ mod tests {
         serde_json::from_str(&document).unwrap()
     }
 
+    fn settings(market_ticks: u32) -> Value {
+        json!({"latency_ms": 100, "slippage_ticks": {"market": market_ticks, "stop": 1}})
+    }
+
     fn partitions() -> Vec<String> {
         vec!["a".repeat(64), "b".repeat(64)]
     }
 
     #[test]
     fn a_run_key_is_64_lower_case_hexadecimal_digits_and_the_same_for_the_same_inputs() {
-        let key = run_key(&spec("5m"), FRAME, &partitions()).unwrap();
+        let key = run_key(&spec("5m"), &settings(1), FRAME, &partitions()).unwrap();
         assert_eq!(key.as_str().len(), 64);
         assert!(
             key.as_str()
                 .chars()
                 .all(|digit| matches!(digit, '0'..='9' | 'a'..='f'))
         );
-        assert_eq!(run_key(&spec("5m"), FRAME, &partitions()).unwrap(), key);
+        assert_eq!(
+            run_key(&spec("5m"), &settings(1), FRAME, &partitions()).unwrap(),
+            key
+        );
+    }
+
+    #[test]
+    fn a_setting_changes_the_key() {
+        // Step 2.10 (BACKLOG's run settings in the run key): one slippage tick is another run.
+        let one_tick = run_key(&spec("5m"), &settings(1), FRAME, &partitions()).unwrap();
+        let two_ticks = run_key(&spec("5m"), &settings(2), FRAME, &partitions()).unwrap();
+        assert_ne!(one_tick, two_ticks);
     }
 
     #[test]
     fn every_input_and_every_version_changes_the_key() {
         let spec_json = serde_json::to_vec(&spec("5m")).unwrap();
-        let base = key_of(&spec_json, FRAME, &partitions(), VERSIONS);
+        let base = key_of(&spec_json, SETTINGS, FRAME, &partitions(), VERSIONS);
         let [engine, fill_model, artifact_schema] = VERSIONS;
         let changed = [
             key_of(
                 &serde_json::to_vec(&spec("1m")).unwrap(),
+                SETTINGS,
                 FRAME,
                 &partitions(),
                 VERSIONS,
             ),
             key_of(
                 &spec_json,
+                br#"{"latency_ms":0}"#,
+                FRAME,
+                &partitions(),
+                VERSIONS,
+            ),
+            key_of(
+                &spec_json,
+                SETTINGS,
                 "another signal frame hash",
                 &partitions(),
                 VERSIONS,
             ),
-            key_of(&spec_json, FRAME, &partitions()[..1], VERSIONS),
+            key_of(&spec_json, SETTINGS, FRAME, &partitions()[..1], VERSIONS),
             key_of(
                 &spec_json,
+                SETTINGS,
                 FRAME,
                 &partitions(),
                 [Version(engine.0 + 1), fill_model, artifact_schema],
             ),
             key_of(
                 &spec_json,
+                SETTINGS,
                 FRAME,
                 &partitions(),
                 [engine, Version(fill_model.0 + 1), artifact_schema],
             ),
             key_of(
                 &spec_json,
+                SETTINGS,
                 FRAME,
                 &partitions(),
                 [engine, fill_model, Version(artifact_schema.0 + 1)],
@@ -200,16 +239,18 @@ mod tests {
         let mut reversed = partitions();
         reversed.reverse();
         assert_eq!(
-            run_key(&spec("5m"), FRAME, &reversed).unwrap(),
-            run_key(&spec("5m"), FRAME, &partitions()).unwrap()
+            run_key(&spec("5m"), &settings(1), FRAME, &reversed).unwrap(),
+            run_key(&spec("5m"), &settings(1), FRAME, &partitions()).unwrap()
         );
     }
 
     #[test]
     fn framing_keeps_the_parts_apart() {
-        let joined = key_of(b"{}", "ab", &["c".to_owned()], VERSIONS);
-        let split_elsewhere = key_of(b"{}", "a", &["bc".to_owned()], VERSIONS);
+        let joined = key_of(b"{}", b"{}", "ab", &["c".to_owned()], VERSIONS);
+        let split_elsewhere = key_of(b"{}", b"{}", "a", &["bc".to_owned()], VERSIONS);
+        let moved_between_documents = key_of(b"{}{", b"}", "ab", &["c".to_owned()], VERSIONS);
         assert_ne!(joined, split_elsewhere);
+        assert_ne!(joined, moved_between_documents);
     }
 
     #[test]
@@ -218,8 +259,8 @@ mod tests {
             "execution": { "sizing": { "units": 1, "kind": "fixed" }, "entry": { "kind": "market" } } }"#;
         let typed: StrategySpec = serde_json::from_str(typed).unwrap();
         assert_eq!(
-            run_key(&typed, FRAME, &partitions()).unwrap(),
-            run_key(&spec("5m"), FRAME, &partitions()).unwrap()
+            run_key(&typed, &settings(1), FRAME, &partitions()).unwrap(),
+            run_key(&spec("5m"), &settings(1), FRAME, &partitions()).unwrap()
         );
     }
 
@@ -230,12 +271,11 @@ mod tests {
             spec.execution.sizing = crate::strategy_spec::Sizing::Fixed { units };
             spec
         };
-        assert!(run_key(&sized(f64::NAN), FRAME, &partitions()).is_err());
-        assert!(run_key(&sized(f64::INFINITY), FRAME, &partitions()).is_err());
+        let key = |units: f64| run_key(&sized(units), &settings(1), FRAME, &partitions());
+        assert!(key(f64::NAN).is_err());
+        assert!(key(f64::INFINITY).is_err());
         assert_eq!(
-            run_key(&sized(f64::NEG_INFINITY), FRAME, &partitions())
-                .unwrap_err()
-                .to_string(),
+            key(f64::NEG_INFINITY).unwrap_err().to_string(),
             "Expected finite numbers in the strategy specification, got NaN or an infinity at \
              spec.execution.sizing.units"
         );

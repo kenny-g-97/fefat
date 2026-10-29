@@ -13,7 +13,7 @@ from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
-from fefat.market.fees import CryptoFee, FuturesFee
+from fefat.market.fees import CryptoFee, FeeTable, FuturesFee
 from fefat.market.schema import FrozenModel
 from fefat.reference.ledger import Liquidity
 from fefat.reference.money import f_fee_01, f_fee_02
@@ -71,6 +71,27 @@ class RunFees:
             dated = ((day_number(schedule.effective_from), schedule) for schedule in fees.schedules)
             return cls(tuple(dated))
         return cls(((day_number(date.min), fees),))
+
+    @classmethod
+    def of_table(cls, table: FeeTable, root: str) -> "RunFees":
+        """The schedules of a named fee table (`fefat.market.fees`) for `root`, each from its
+        date, as a run prices its fills with them (F-FEE-01); a schedule without `root` is
+        refused, since no default would price its dates."""
+        unpriced = [
+            str(schedule.effective_from)
+            for schedule in table.schedules
+            if root not in schedule.fees
+        ]
+        if unpriced:
+            raise ValueError(
+                f"Expected {table.name} to price {root} in every schedule, got none from "
+                f"{', '.join(unpriced)}."
+            )
+        dated = (
+            (day_number(schedule.effective_from), schedule.fees[root])
+            for schedule in table.schedules
+        )
+        return cls(tuple(dated))
 
     def in_force(self, trade_date: int) -> tuple[FuturesFee | CryptoFee, bool]:
         """The fee in force on `trade_date`, in days since 1970-01-01, and whether it is the

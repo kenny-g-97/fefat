@@ -22,6 +22,7 @@ use fefat_core::strategy_spec::StrategySpec;
 use fefat_core::units::{MONEY_UNITS, Money, Overflow, PRICE_UNITS, Price, Qty};
 use fefat_engine::template::TemplateError;
 use fefat_engine::tick_run::RunError;
+use fefat_run::config::RunConfig;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -30,10 +31,17 @@ use loop_run::loop_run_hash;
 
 mod loop_run;
 
-const DOMAIN: &[u8] = b"fefat determinism 5\n";
+const DOMAIN: &[u8] = b"fefat determinism 6\n";
 /// The example specification of `02-engine-and-data.md` §2.1, the run key's spec.
 const EXAMPLE_SPEC: &str = r#"{"spec_version": 1, "instrument": "ES", "timeframe": "5m",
     "execution": {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}}}"#;
+/// The run key's settings: a run of the seeded tape's trades of ES under the specification's
+/// defaults, open around the clock, from the default capital (`fefat_run::config::RunConfig`).
+const EXAMPLE_CONFIG: &str = r#"{"fidelity": "trades",
+    "instrument": {"tick_size": 250000000, "money_per_point": 50000000, "lot_step": 1000000000},
+    "settings": {"latency_ms": 100, "slippage_ticks": {"market": 1, "stop": 1},
+        "limit_fill": "through", "roll_handling": "transfer"},
+    "hours": {"kind": "always"}, "capital": 50000000000, "position": null}"#;
 /// Every tenth trade of the seeded tape is a fill.
 const TRADES_PER_FILL: usize = 10;
 
@@ -81,8 +89,9 @@ pub fn digest(seed: u64) -> Result<String, DeterminismError> {
     let ledger_run_digest = ledger_run_hash(&reader, &mut generator)?;
     let loop_run_digest = loop_run_hash(&reader, &mut generator)?;
     let spec: StrategySpec = serde_json::from_str(EXAMPLE_SPEC)?;
+    let config: RunConfig = serde_json::from_str(EXAMPLE_CONFIG)?;
     let partitions = [records_digest.to_hex().to_string()];
-    let key = run_key(&spec, &ledger_run_digest.to_hex(), &partitions)?;
+    let key = run_key(&spec, &config, &ledger_run_digest.to_hex(), &partitions)?;
     let mut hasher = blake3::Hasher::new();
     hasher.update(DOMAIN);
     hasher.update(records_digest.as_bytes());

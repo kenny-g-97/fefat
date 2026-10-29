@@ -24,6 +24,7 @@ from pathlib import Path
 from fefat.reference.hours import AlwaysOpen, CalendarHours
 from fefat.reference.ledger import FillFlag
 from fefat.reference.orders import Order, PricedOrder
+from fefat.reference.run_documents import rate_units
 from fefat.reference.rust_batch import (
     CacheCase,
     CostView,
@@ -32,7 +33,6 @@ from fefat.reference.rust_batch import (
     LogView,
     Replay,
     RustOutcome,
-    rate_units,
     read_outcomes,
     write_batch,
     write_cache_batch,

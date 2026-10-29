@@ -1,0 +1,22 @@
+[package]
+name = "fefat-run"
+description = "A run's config, signal rows, assembly, and artifact tables: spec and Arrow in, artifacts out, shared by fefat-cli and fefat-py."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arrow-array = "59.3.1"
+arrow-schema = "59.3.1"
+blake3.workspace = true
+fefat-core = { path = "../fefat-core" }
+fefat-engine = { path = "../fefat-engine" }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

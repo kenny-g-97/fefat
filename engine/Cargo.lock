@@ -336,6 +336,7 @@ dependencies = [
  "fefat-core",
  "fefat-data",
  "fefat-engine",
+ "fefat-run",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -397,6 +398,20 @@ dependencies = [
  "fefat-data",
  "pyo3",
  "pyo3-arrow",
+]
+
+[[package]]
+name = "fefat-run"
+version = "0.0.1"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "blake3",
+ "fefat-core",
+ "fefat-engine",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

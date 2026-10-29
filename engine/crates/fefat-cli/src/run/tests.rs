@@ -213,20 +213,22 @@ fn case(
     let ticks = u32::from(fidelity != "tbbo");
     json!({
         "id": id,
-        "fidelity": fidelity,
         "replay": "full",
         "contract": "ESH2026",
-        "instrument": {"tick_size": 250_000_000, "money_per_point": 50_000_000, "lot_step": 1_000_000_000},
-        "settings": {
-            "latency_ms": 100,
-            "slippage_ticks": {"market": ticks, "stop": ticks},
-            "limit_fill": "through"
-        },
-        "hours": {"kind": "always"},
-        "capital": 50_000_000_000_i64,
-        "position": position,
         "market_data": market_data,
         "decisions": decisions,
+        "run": {
+            "fidelity": fidelity,
+            "instrument": {"tick_size": 250_000_000, "money_per_point": 50_000_000, "lot_step": 1_000_000_000},
+            "settings": {
+                "latency_ms": 100,
+                "slippage_ticks": {"market": ticks, "stop": ticks},
+                "limit_fill": "through"
+            },
+            "hours": {"kind": "always"},
+            "capital": 50_000_000_000_i64,
+            "position": position,
+        },
     })
 }
 
