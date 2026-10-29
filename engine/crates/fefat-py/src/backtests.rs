@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use fefat_core::instants::TradeDate;
 use fefat_core::strategy_spec::StrategySpec;
-use fefat_data::{FrontSequence, MappedContract};
+use fefat_data::{FrontSequence, MappedContract, Month};
 use fefat_engine::template::SignalRow;
 use fefat_engine::tick_run::{Replay, RunOutputs};
 use fefat_run::artifacts::{run_tables, untagged};
@@ -45,7 +45,7 @@ pub fn run_signal_backtest<'py>(
 ) -> PyResult<Bound<'py, PyDict>> {
     let replay = replay_of(replay)?;
     let backtest = Backtest::read(spec_json, signal_frame, cache_paths, config_json)?;
-    let caches = mapped(backtest.folders.iter())?;
+    let caches = mapped(backtest.spans())?;
     let outputs = py.detach(|| backtest.run(&caches, replay));
     run_of(py, outputs.map_err(PyValueError::new_err)?)
 }
@@ -66,11 +66,7 @@ pub fn run_batch<'py>(
         .into_iter()
         .map(|(spec, frame, folders, config)| Backtest::read(&spec, frame, folders, &config))
         .collect::<PyResult<Vec<_>>>()?;
-    let caches = mapped(
-        backtests
-            .iter()
-            .flat_map(|backtest| backtest.folders.iter()),
-    )?;
+    let caches = mapped(backtests.iter().flat_map(Backtest::spans))?;
     let runs: Vec<Result<RunOutputs, String>> = py.detach(|| {
         let runs = backtests.into_par_iter();
         runs.map(|backtest| backtest.run(&caches, replay)).collect()
@@ -88,12 +84,15 @@ pub fn run_batch<'py>(
         .collect()
 }
 
-/// A backtest read from Python, before it runs.
+/// A backtest read from Python, before it runs: its trade dates from `first` to `last`, those
+/// of its signal rows, and its fronts' folders in the order it trades them.
 struct Backtest {
     spec: StrategySpec,
     rows: Vec<SignalRow>,
     folders: Vec<PathBuf>,
     config: RunConfig,
+    first: TradeDate,
+    last: TradeDate,
 }
 
 impl Backtest {
@@ -116,12 +115,46 @@ impl Backtest {
         for batch in &batches {
             rows.extend(signal_rows_of(batch).map_err(value_error)?);
         }
+        let fronts = config.fronts_from().len() + 1;
+        if folders.len() != fronts {
+            return Err(value_error(format!(
+                "Expected a cache folder of the first front and one per roll, {fronts}, got {}",
+                folders.len()
+            )));
+        }
+        let (first, last) = window(&rows).map_err(value_error)?;
         Ok(Self {
             spec,
             rows,
             folders,
             config,
+            first,
+            last,
         })
+    }
+
+    /// Each front's folder and the first and last month of the trade dates it serves: the first
+    /// front's from the window's start, each later one's from its roll's trade date, to the day
+    /// before the next roll's or the window's end.
+    fn spans(&self) -> Vec<(PathBuf, Month, Month)> {
+        let rolls: Vec<TradeDate> = self
+            .config
+            .fronts_from()
+            .into_iter()
+            .map(|(on, _)| on)
+            .collect();
+        let starts = std::iter::once(self.first).chain(rolls.iter().copied());
+        let ends = rolls
+            .iter()
+            .map(|on| TradeDate(on.0 - 1))
+            .chain([self.last]);
+        let spans = self.folders.iter().zip(starts.zip(ends));
+        spans
+            .map(|(folder, (from, until))| {
+                let (from, until) = (from.max(self.first), until.min(self.last));
+                (folder.clone(), Month::of(from), Month::of(until.max(from)))
+            })
+            .collect()
     }
 
     /// The run over the fronts' caches, `caches` holding each folder mapped.
@@ -139,9 +172,9 @@ impl Backtest {
                     .ok_or_else(|| format!("Expected the cache of {} mapped", folder.display()))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let (first, last) = window(&self.rows)?;
         let rolls = self.config.fronts_from();
-        let reader = FrontSequence::new(&fronts, &rolls, first, last).map_err(|e| e.to_string())?;
+        let reader = FrontSequence::new(&fronts, &rolls, self.first, self.last);
+        let reader = reader.map_err(|error| error.to_string())?;
         run_template(&self.config, replay, &self.spec, self.rows, &reader)
             .map_err(|error| error.to_string())
     }
@@ -158,19 +191,23 @@ fn window(rows: &[SignalRow]) -> Result<(TradeDate, TradeDate), String> {
     }
 }
 
-/// Each folder of `folders` mapped once.
-fn mapped<'folder>(
-    folders: impl Iterator<Item = &'folder PathBuf>,
+/// Each folder of `spans` mapped once, over the months from the earliest first to the latest last
+/// its spans name, so that a run maps the months it reads alone.
+fn mapped(
+    spans: impl IntoIterator<Item = (PathBuf, Month, Month)>,
 ) -> PyResult<BTreeMap<PathBuf, MappedContract>> {
-    let mut caches = BTreeMap::new();
-    for folder in folders {
-        if caches.contains_key(folder) {
-            continue;
-        }
-        let cache = MappedContract::open(folder).map_err(value_error)?;
-        caches.insert(folder.clone(), cache);
+    let mut months: BTreeMap<PathBuf, (Month, Month)> = BTreeMap::new();
+    for (folder, first, last) in spans {
+        let span = months.entry(folder).or_insert((first, last));
+        *span = (span.0.min(first), span.1.max(last));
     }
-    Ok(caches)
+    months
+        .into_iter()
+        .map(|(folder, (first, last))| {
+            let cache = MappedContract::open_between(&folder, first, last).map_err(value_error)?;
+            Ok((folder, cache))
+        })
+        .collect()
 }
 
 fn replay_of(replay: &str) -> PyResult<Replay> {

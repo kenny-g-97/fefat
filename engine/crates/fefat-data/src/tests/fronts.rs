@@ -11,8 +11,8 @@ use fefat_core::market_data::conformance::{
 use fefat_core::market_data::{MarketDataError, MarketDataReader, TapeDay};
 use fefat_core::units::Price;
 
-use super::{TemporaryFolder, cached};
-use crate::{CacheError, FrontSequence, MappedContract};
+use super::{TemporaryFolder, cached, moved, write_month};
+use crate::{CacheError, CacheMonthIndex, FrontSequence, MappedContract, Month};
 
 const NEW_FRONT: &str = "ESM2026";
 /// 20.00 in 1e-9 units, by which the new front trades above the old.
@@ -137,4 +137,29 @@ fn the_fronts_can_be_shared_by_the_threads_of_a_batch() {
     let fronts = FrontSequence::new(&[&old, &new], &roll_on(SECOND_DAY), FIRST_DAY, SECOND_DAY);
 
     shared(&fronts.unwrap());
+}
+
+#[test]
+fn a_run_maps_the_months_it_reads_and_not_a_month_of_another_layout() {
+    // Step 2.10: a contract's folder keeps months built before, maybe at an older layout, which a
+    // run of other months must not need to read.
+    let folder = TemporaryFolder::new();
+    write_month(folder.path(), SAMPLE_CONTRACT, sample_tape()).unwrap();
+    write_month(folder.path(), SAMPLE_CONTRACT, vec![moved(&sample_tape()[0], 28)]).unwrap();
+    let contract_folder = folder.path().join(SAMPLE_CONTRACT);
+    let april_folder = contract_folder.join("2026-04");
+    let april = CacheMonthIndex::read(&april_folder).unwrap().unwrap();
+    CacheMonthIndex {
+        layout_version: 1,
+        ..april
+    }
+    .write(&april_folder)
+    .unwrap();
+    let march = Month::of(FIRST_DAY);
+
+    let whole = MappedContract::open(&contract_folder);
+    let only_march = MappedContract::open_between(&contract_folder, march, march).unwrap();
+
+    assert!(whole.unwrap_err().to_string().contains("layout"));
+    assert_eq!(only_march.trade_dates(), [FIRST_DAY, SECOND_DAY]);
 }

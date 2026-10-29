@@ -43,6 +43,25 @@ impl MappedContract {
     /// one a file manager leaves, is no month: both are passed over, and any other folder is
     /// refused.
     pub fn open(contract_folder: &Path) -> Result<Self, CacheError> {
+        Self::open_where(contract_folder, |_| true)
+    }
+
+    /// The cache in `contract_folder` of the months from `first` to `last` alone, as
+    /// [`Self::open`] maps a whole folder: what a run of those months reads (step 2.10), so that
+    /// the folder's other months, built before or for another run, maybe at another layout, are
+    /// left unread.
+    pub fn open_between(
+        contract_folder: &Path,
+        first: Month,
+        last: Month,
+    ) -> Result<Self, CacheError> {
+        Self::open_where(contract_folder, |month| first <= month && month <= last)
+    }
+
+    fn open_where(
+        contract_folder: &Path,
+        keep: impl Fn(Month) -> bool,
+    ) -> Result<Self, CacheError> {
         let context = contract_folder.display().to_string();
         let name = contract_folder.file_name().and_then(|name| name.to_str());
         let contract = Contract(
@@ -51,6 +70,9 @@ impl MappedContract {
         );
         let mut months = Vec::new();
         for (folder_month, folder) in month_folders(contract_folder)? {
+            if !keep(folder_month) {
+                continue;
+            }
             let month = MappedMonth::open(&folder, &contract)?;
             if month.month != folder_month {
                 let (expected, actual) = (folder_month.to_string(), month.month.to_string());
