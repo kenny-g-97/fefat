@@ -129,9 +129,11 @@ class Breakdowns(FrozenModel):
 
 class ScriptInputs(FrozenModel):
     """What the skill's script reads of a run, under its own names: the trades, the win rate in
-    percent, the average win and loss and the maximum drawdown in percent of the capital, the
-    years the window spans rounded to the nearest, the parameters (the numbers the execution
-    template sets), and whether the run paid fees or slippage."""
+    percent, the average win, the average loss over the trades that did not win (the script takes
+    every trade that is not a win as a loss, so it differs from `TradeStatistics.average_loss`
+    when a trade breaks even), and the maximum drawdown, in percent of the capital, the years the
+    window spans rounded to the nearest, the parameters (the numbers the execution template sets
+    apart from their defaults), and whether the run paid slippage or fees."""
 
     total_trades: int = Field(ge=0)
     win_rate: float

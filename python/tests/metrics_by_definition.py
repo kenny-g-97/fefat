@@ -219,8 +219,9 @@ def expected_maximum(trials: int) -> float:
 
 def sharpe_ratios(days: Sequence[tuple[str, int]], trials: int) -> Json:
     """The annualised Sharpe ratio of the daily profit and loss, mean over sample deviation; the
-    Sortino ratio over the root mean square of the losing days; the probabilistic Sharpe ratio;
-    and the deflated one, at the Sharpe ratio the best of the trials reaches by luck."""
+    Sortino ratio over the root mean square of each day's loss, zero without one; the
+    probabilistic Sharpe ratio; and the deflated one, at the Sharpe ratio the best of the trials
+    reaches by luck."""
     ratios: Json = dict.fromkeys(("sharpe", "sortino", "probabilistic_sharpe", "deflated_sharpe"))
     if len(days) < 2:
         return ratios

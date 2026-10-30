@@ -44,7 +44,7 @@ pub struct DailyStatistics {
     pub large_daily_loss_threshold: Money,
     /// The annualised Sharpe ratio of the daily profit and loss.
     pub sharpe: Option<f64>,
-    /// The annualised Sortino ratio, over the losing days' deviation below zero.
+    /// The annualised Sortino ratio, the mean over the deviation of the days' losses below zero.
     pub sortino: Option<f64>,
     /// The probability that the daily Sharpe ratio is above zero.
     pub probabilistic_sharpe: Option<f64>,
@@ -188,7 +188,8 @@ impl SharpeRatios {
     }
 }
 
-/// The root of the mean square of the losing days below zero, none without a losing day.
+/// The root mean square of each day's loss below zero, a day without a loss counting zero;
+/// none without a losing day.
 fn downside_deviation(pnls: &[i64]) -> Option<f64> {
     let losses = pnls.iter().map(|pnl| (*pnl).min(0) as f64);
     let squares = compensated_sum(losses.map(|loss| loss * loss));
