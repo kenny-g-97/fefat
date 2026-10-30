@@ -8,9 +8,11 @@ import json
 import os
 import shutil
 import warnings
-from datetime import date
+from collections import Counter
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import fefat_engine
 import polars as pl
@@ -340,3 +342,43 @@ def test_the_pnl_at_one_more_tick_is_that_of_the_run_at_one_more_tick() -> None:
 
     assert run.metrics.pnl_at_plus_one_tick == slipped.record.summary.pnl
     assert run.metrics.pnl_at_plus_one_tick < run.metrics.pnl
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_record_another_engine_version_wrote_is_refused_by_name() -> None:
+    # The code review: a run saved at version 6, before its record held metrics, says so.
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    older = run.folder.with_name("older")
+    shutil.copytree(run.folder, older)
+    record = json.loads((older / "run.json").read_bytes())
+    record["versions"]["engine"] = 6
+    del record["metrics"]
+    (older / "run.json").write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError, match="Expected a run of engine version 7, got one of version 6"
+    ):
+        Run.open(older)
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_the_breakdowns_label_each_trade_by_its_entry_in_the_exchanges_time_zone() -> None:
+    # Step 2.11's engine review: the labels the metrics' inputs carry, against values worked out
+    # apart from them, the hour of each entry's fill in Chicago, CME's zone, among them.
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    chicago = ZoneInfo("America/Chicago")
+    entries = run.trades.select("entry_ts", "entry_trade_date", "exit_reason").rows()
+
+    breakdowns = run.metrics.breakdowns
+
+    hours = Counter(datetime.fromtimestamp(ts // 10**9, tz=chicago).hour for ts, _, _ in entries)
+    assert {hour: group.trades for hour, group in breakdowns.hour.items()} == hours
+    weekdays = Counter(day.strftime("%A").lower() for _, day, _ in entries)
+    assert {str(day): group.trades for day, group in breakdowns.weekday.items()} == weekdays
+    reasons = Counter(reason for _, _, reason in entries)
+    assert {str(role): group.trades for role, group in breakdowns.exit_reason.items()} == reasons
+    every = run.trades.height
+    assert {str(level): group.trades for level, group in breakdowns.fidelity.items()} == {
+        "trades": every
+    }
+    assert {year: group.trades for year, group in breakdowns.year.items()} == {2026: every}

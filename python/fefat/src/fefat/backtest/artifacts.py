@@ -10,9 +10,11 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import fefat_engine
 import polars as pl
+from pydantic import BaseModel, ConfigDict
 
-from fefat.backtest.record import RunRecord
+from fefat.backtest.record import EngineVersions, RunRecord
 from fefat.backtest.schemas import ARTIFACT_SCHEMAS, ENGINE_EQUITY, ENGINE_TRADES, EQUITY
 from fefat.market.engine_units import InstrumentParameters
 from fefat.market.store_files import parsed_json
@@ -125,10 +127,26 @@ def write_run(folder: Path, artifacts: Mapping[str, pl.DataFrame], record: RunRe
             raise
 
 
+class _WrittenBy(BaseModel):
+    """The versions of the engine that wrote a record, read before the record itself."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    versions: EngineVersions
+
+
 def read_record(folder: Path) -> RunRecord:
-    """The record of the run in `folder`."""
+    """The record of the run in `folder`, refused by name when another version of the engine
+    wrote it, since a record holds what its own version's runs produce."""
     path = folder / RECORD_FILE
-    return parsed_json(RunRecord, path.read_bytes(), str(path))
+    content = path.read_bytes()
+    written = parsed_json(_WrittenBy, content, str(path)).versions.engine
+    if written != fefat_engine.ENGINE_VERSION:
+        raise ValueError(
+            f"Expected a run of engine version {fefat_engine.ENGINE_VERSION}, got one of version "
+            f"{written} in {folder}: run it again with this engine."
+        )
+    return parsed_json(RunRecord, content, str(path))
 
 
 def read_artifact(folder: Path, name: str) -> pl.DataFrame:
