@@ -77,7 +77,7 @@ def metrics_inputs(draw: st.DrawFn) -> Json:
         FIRST_TRADE_DATE + timedelta(days=sum(gaps[:index])) for index in range(len(gaps))
     ]
     texts = [day.isoformat() for day in trade_dates] or [FIRST_TRADE_DATE.isoformat()]
-    swing = capital // draw(st.sampled_from([5, 50, 5_000]))
+    swing = capital // draw(st.sampled_from([2, 5, 50, 5_000]))
     steady = draw(st.none() | st.integers(-swing // 60, swing // 60))
     equity = [
         {
@@ -154,7 +154,7 @@ def coverage_of(inputs: Json, expected: Json) -> Counter[str]:
     ) < len(inputs["trades"])
     robustness = expected["robustness"]
     reached[f"the verdict {robustness['verdict']}"] += 1
-    reached["a red flag"] += bool(robustness["red_flags"])
+    reached.update(f"the red flag {flag['id']}" for flag in robustness["red_flags"])
     reached["a run fragile to slippage"] += robustness["fragile_to_slippage"]
     return reached
 
@@ -190,5 +190,7 @@ def test_the_engines_metrics_are_their_definitions_on_1000_random_runs(
         print(f"\n{EXAMPLES} runs' metrics through both in {elapsed:.1f} s, seed {PARITY_SEED}")
         print("reached:", ", ".join(f"{kind} {count}" for kind, count in sorted(reached.items())))
     missing = [kind for kind, count in reached.items() if count == 0]
-    assert len(reached) == 17
+    verdicts = sum(count for kind, count in reached.items() if kind.startswith("the verdict"))
+    assert verdicts == EXAMPLES
+    assert len(reached) == 23
     assert not missing, f"Expected each kind of run at least once, got none of: {missing}"

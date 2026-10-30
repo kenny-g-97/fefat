@@ -186,6 +186,14 @@ impl MetricsInputs {
     /// excursion below zero, the account's points out of the order of their trade dates, and a
     /// window that ends before it starts.
     pub fn check(&self) -> Result<(), MetricsError> {
+        self.check_amounts()?;
+        self.check_excursions()?;
+        self.check_order()
+    }
+
+    /// The capital, the tick, the point value, the share, and each trade's lots and initial risk
+    /// above zero.
+    fn check_amounts(&self) -> Result<(), MetricsError> {
         let units = self.instrument;
         let settings = [
             ("the capital", self.capital.0),
@@ -199,22 +207,29 @@ impl MetricsInputs {
                 .map(|risk| ("a trade's initial risk", risk.0));
             std::iter::once(("a trade's lots", trade.lots.0)).chain(risk)
         });
-        if let Some((what, value)) = settings
-            .into_iter()
-            .chain(trades)
-            .find(|(_, value)| *value <= 0)
-        {
-            return Err(MetricsError::NotAboveZero { what, value });
+        let mut amounts = settings.into_iter().chain(trades);
+        match amounts.find(|(_, value)| *value <= 0) {
+            Some((what, value)) => Err(MetricsError::NotAboveZero { what, value }),
+            None => Ok(()),
         }
+    }
+
+    /// Each trade's excursions at or above zero.
+    fn check_excursions(&self) -> Result<(), MetricsError> {
         let mut excursions = self.trades.iter().flat_map(|trade| {
             [
                 ("a trade's adverse excursion", trade.mae_ticks),
                 ("a trade's favourable excursion", trade.mfe_ticks),
             ]
         });
-        if let Some((what, value)) = excursions.find(|(_, value)| *value < 0) {
-            return Err(MetricsError::BelowZero { what, value });
+        match excursions.find(|(_, value)| *value < 0) {
+            Some((what, value)) => Err(MetricsError::BelowZero { what, value }),
+            None => Ok(()),
         }
+    }
+
+    /// The account's points in the order of their trade dates, and the window forward.
+    fn check_order(&self) -> Result<(), MetricsError> {
         let out_of_order = self.equity.windows(2).find_map(|pair| match pair {
             [earlier, later] if later.trade_date < earlier.trade_date => {
                 Some((earlier.trade_date, later.trade_date))

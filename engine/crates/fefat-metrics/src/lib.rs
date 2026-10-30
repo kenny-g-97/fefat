@@ -10,6 +10,7 @@ pub mod drawdown;
 pub mod inputs;
 mod json_units;
 mod normal;
+mod python_float;
 pub mod robustness;
 mod summation;
 mod trade_statistics;
