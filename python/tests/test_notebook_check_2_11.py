@@ -26,6 +26,6 @@ def test_the_check_notebook_prints_the_metrics_and_explains_a_losing_trade(
     assert "red flags: " in printed and "short_test_period" in printed
     explanation = check["EXPLANATION"]
     assert explanation.trade_id == check["TRADE"]
-    assert explanation.reference_fills == explanation.rust_fills
+    assert len(explanation.fills) == 2
     assert "(F-STP-04, taker, 1 ticks)" in printed
     assert "reached the stop at" in printed

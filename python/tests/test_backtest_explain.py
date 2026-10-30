@@ -10,7 +10,9 @@ refused."""
 import json
 import os
 import shutil
+from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 import polars as pl
 import pytest
@@ -20,6 +22,7 @@ from fefat.backtest import Run, RunConfig
 from fefat.backtest.explain import EnginesDisagreementError
 from fefat.config import resolve_paths
 from fefat.market.schema import Timeframe
+from fefat.reference.settings import RollHandling
 from fefat.strategy.spec import OppositeSignal
 from notebook_runs import breakout, store_with
 
@@ -47,9 +50,9 @@ def test_a_losing_trade_shows_its_stops_trigger_and_its_fill_with_rule_and_slipp
 
     printed = capsys.readouterr().out
     assert printed.strip() == explanation.text()
-    assert explanation.reference_fills == explanation.rust_fills
-    assert len(explanation.rust_fills) == 2
-    stop = explanation.rust_fills[1]
+    assert len(explanation.fills) == 2
+    assert repr(explanation) == f"Explanation of trade {trade['entry_order']}, 2 fills alike"
+    stop = explanation.fills[1]
     triggered = [line for line in explanation.lines if " triggered " in line]
     assert len(triggered) == 1
     assert f"order {stop.order}: the trade at" in triggered[0]
@@ -65,8 +68,7 @@ def test_every_trade_on_bars_agrees_the_one_across_the_roll_too() -> None:
 
     explained = [run.explain(order) for order in run.trades.get_column("entry_order")]
 
-    assert all(each.reference_fills == each.rust_fills for each in explained)
-    assert sum(len(each.rust_fills) for each in explained) == run.fills.height
+    assert sum(len(each.fills) for each in explained) == run.fills.height
     across = run.trades.filter(pl.col("rolls") == 1).item(0, "entry_order")
     lines = next(each.lines for each in explained if each.trade_id == across)
     assert any(" rolled " in line and "[F-ROL-01]" in line for line in lines)
@@ -103,7 +105,7 @@ def test_a_trade_of_prints_across_the_roll_waits_for_its_replay() -> None:
     run = backtest()
     across = run.trades.filter(pl.col("rolls") == 1).item(0, "entry_order")
 
-    with pytest.raises(ValueError, match="trade prints on one contract, got one decided on"):
+    with pytest.raises(ValueError, match="within one front, got an episode that crosses the roll"):
         run.explain(across)
 
 
@@ -130,7 +132,7 @@ def test_a_run_on_bars_is_explained_on_its_stored_bars_not_bars_built_from_print
 
     explained = [run.explain(order) for order in on_the_day.get_column("entry_order")]
 
-    assert all(each.reference_fills == each.rust_fills for each in explained)
+    assert all(each.fills for each in explained)
 
 
 def test_a_perpetuals_trade_is_replayed_with_the_funding_it_paid() -> None:
@@ -151,7 +153,6 @@ def test_a_perpetuals_trade_is_replayed_with_the_funding_it_paid() -> None:
 
     explanation = run.explain(run.trades.item(0, "entry_order"))
 
-    assert explanation.reference_fills == explanation.rust_fills
     paid = [line for line in explanation.lines if " funding " in line]
     assert len(paid) == 2
     assert all(line.endswith("[F-FND-01]") for line in paid)
@@ -163,7 +164,7 @@ def test_a_perpetuals_trade_is_replayed_with_the_funding_it_paid() -> None:
     record["engine_config"]["funding"] = [{"ts": 1, "rate": 0}, {"ts": 2, "rate": 500}, *funding]
     (copy / "run.json").write_text(json.dumps(record), encoding="utf-8")
     again = Run.open(copy).explain(run.trades.item(0, "entry_order"))
-    assert again.reference_fills == explanation.reference_fills
+    assert again.fills == explanation.fills
 
 
 def test_a_trade_reversed_by_an_opposite_signal_ends_at_its_own_exit() -> None:
@@ -190,8 +191,7 @@ def test_a_trade_reversed_by_an_opposite_signal_ends_at_its_own_exit() -> None:
 
     explanation = run.explain(first["entry_order"])
 
-    assert [fill.role for fill in explanation.rust_fills] == ["entry", "opposite_signal"]
-    assert explanation.reference_fills == explanation.rust_fills
+    assert [fill.role for fill in explanation.fills] == ["entry", "opposite_signal"]
     reversed_into = run.trades.row(1, named=True)
     with pytest.raises(ValueError, match="entered by reversing a position of 1 lots"):
         run.explain(reversed_into["entry_order"])
@@ -219,8 +219,7 @@ def test_a_short_entered_by_the_second_order_of_a_pair_is_numbered_from_the_firs
 
     explained = [run.explain(order) for order in shorts.head(5)]
 
-    assert all(each.reference_fills == each.rust_fills for each in explained)
-    assert all(each.rust_fills[0].order == each.trade_id for each in explained)
+    assert all(each.fills[0].order == each.trade_id for each in explained)
 
 
 def test_a_trade_entered_at_the_instant_the_one_before_closed_is_numbered_from_its_entry() -> None:
@@ -247,4 +246,42 @@ def test_a_trade_entered_at_the_instant_the_one_before_closed_is_numbered_from_i
 
     explained = [run.explain(order) for order in reentered.get_column("entry_order").head(3)]
 
-    assert all(each.reference_fills == each.rust_fills for each in explained)
+    assert all(each.fills for each in explained)
+
+
+def test_a_trade_of_prints_a_flattening_roll_closes_waits_for_its_replay_too() -> None:
+    # The ponytail review: under flatten the roll's close leg ends the trade on its own contract
+    # and counts no roll, so the replay of prints, which has no rolls, refuses it by the roll.
+    run = backtest(RunConfig(roll_handling=RollHandling.FLATTEN))
+    closed = run.trades.filter(pl.col("exit_reason").str.starts_with("roll_"))
+    assert closed.height == 1
+
+    with pytest.raises(ValueError, match="crosses the roll of 2026-03-09"):
+        run.explain(closed.item(0, "entry_order"))
+
+
+def edited_copy(run: Run, name: str, edit: Callable[[dict[str, Any]], None]) -> Run:
+    """The run saved again as `name`, its record's engine config changed by `edit`."""
+    copy = run.folder.with_name(name)
+    shutil.copytree(run.folder, copy)
+    record = json.loads((copy / "run.json").read_bytes())
+    edit(record["engine_config"])
+    (copy / "run.json").write_text(json.dumps(record), encoding="utf-8")
+    return Run.open(copy)
+
+
+def test_a_fee_table_or_a_calendar_changed_since_the_run_is_refused_by_name() -> None:
+    # The ponytail review: explain prices fills with today's fee table and calendar.
+    run = backtest()
+
+    def dearer(config: dict[str, Any]) -> None:
+        config["fees"]["schedules"][0]["per_contract_side"] += 10_000
+
+    def shorter(config: dict[str, Any]) -> None:
+        for session in config["hours"]["sessions"]:
+            session["close"] -= 60_000_000_000
+
+    with pytest.raises(ValueError, match="the fee table retail-default changed since the run"):
+        edited_copy(run, "dearer", dearer).explain(1)
+    with pytest.raises(ValueError, match="the calendar of ES changed since the run"):
+        edited_copy(run, "shorter", shorter).explain(1)

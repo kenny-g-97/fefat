@@ -12,7 +12,8 @@ decision that placed the entry, flat, with the cash the run held then, on the re
 last one before that decision, which set the price the decision reads, to the fill that left the
 trade flat. The template reads the signal frame from that decision to the end of the exit's trade
 date, so that its time rules see whole sessions. The store's data is first checked against the
-snapshots the run's record pins. Bars and trade prints replay; an episode on TBBO or on two
+snapshots the run's record pins, and its fee table and calendar against those the run's config
+gave the engine. Bars and trade prints replay; an episode on TBBO or on two
 fidelities, a trade of trade prints across a roll, and a trade entered by reversing a position
 are refused (`BACKLOG.md`)."""
 
@@ -27,7 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-from fefat.backtest.record import DatasetRecord, RunRecord
+from fefat.backtest.record import DatasetRecord, RollRecord, RunRecord
 from fefat.config import resolve_paths
 from fefat.market.api import load, roll_calendar
 from fefat.market.calendar import SessionTable
@@ -42,6 +43,7 @@ from fefat.reference.costs import RunFees
 from fefat.reference.engine import ReferenceEngine
 from fefat.reference.hours import CalendarHours
 from fefat.reference.rolls import RollRow, rolls_within, tape_across_rolls
+from fefat.reference.run_documents import fees_document, hours_document
 from fefat.reference.rust_batch import FillView
 from fefat.reference.rust_run import fill_text
 from fefat.reference.strategy import Decision, decisions_of
@@ -57,17 +59,20 @@ if TYPE_CHECKING:
 type Trade = dict[str, Any]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Explanation:
-    """A trade explained: its id, the lines printed, and each engine's fills of its episode."""
+    """A trade explained: its id, the lines printed, and the fills of its episode, the reference
+    engine's and the Rust engine's alike."""
 
     trade_id: int
     lines: tuple[str, ...]
-    reference_fills: tuple[FillView, ...]
-    rust_fills: tuple[FillView, ...]
+    fills: tuple[FillView, ...]
 
     def text(self) -> str:
         return "\n".join(self.lines)
+
+    def __repr__(self) -> str:
+        return f"Explanation of trade {self.trade_id}, {len(self.fills)} fills alike"
 
 
 class EnginesDisagreementError(AssertionError):
@@ -109,9 +114,10 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     snapshots = _the_runs_data(store, record)
     root = record.instrument.root
     sessions = instrument_table(paths.data_dir).sessions_of(root, paths.cache_dir)
+    fees = _the_runs_fees_and_calendar(run, sessions)
     episode = _episode(run, trade, fidelity, exit_date, store, snapshots)
     first_id = _first_order(run.orders, trade)
-    replayed = _replayed(record, episode, fidelity, first_id, sessions)
+    replayed = _replayed(record, episode, (fidelity, fees), first_id, sessions)
     reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
     if reference != rust:
         raise EnginesDisagreementError(
@@ -127,7 +133,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
         "Fills, the reference engine's and the Rust engine's alike:",
         *_fill_lines(reference, episode.tape, run.orders),
     )
-    return Explanation(trade_id, lines, reference, rust)
+    return Explanation(trade_id, lines, rust)
 
 
 def _first_order(orders: pl.DataFrame, trade: Trade) -> int:
@@ -207,6 +213,30 @@ def _the_runs_data(store: Store, record: RunRecord) -> dict[str, Snapshot]:
     return snapshots
 
 
+def _the_runs_fees_and_calendar(run: "Run", sessions: SessionTable) -> RunFees:
+    """The fee table the run paid, refused by name, as the calendar is, unless today's is the
+    one the run's config gave the engine: a fill's fee and a session's hours would differ."""
+    record = run.record
+    root, name = record.instrument.root, record.fee_table.name
+    fees = RunFees.of_table(TABLES[name], root) if name in TABLES else None
+    if fees is None or fees_document(fees) != record.engine_config["fees"]:
+        raise ValueError(
+            f"Expected the fee table {name} as the run paid it, got another: the fee table "
+            f"{name} changed since the run, so run it again before explaining its trades."
+        )
+    first, last = run.signals.select(
+        pl.col("ts_close").min().alias("first"), pl.col("ts_close").max().alias("last")
+    ).row(0)
+    hours = hours_document(CalendarHours.around(sessions, first, last))
+    if hours != record.engine_config["hours"]:
+        raise ValueError(
+            f"Expected the calendar of {root} as the run traded it, got other sessions: the "
+            f"calendar of {root} changed since the run, so run it again before explaining its "
+            "trades."
+        )
+    return fees
+
+
 def _request(dataset: DatasetRecord) -> PartitionRequest:
     named = Dataset(
         provider=dataset.provider,
@@ -240,8 +270,8 @@ def _episode(
         tape, rolls, contract = _bars(run.record, fidelity, (first, exit_date), (entered, left))
     else:
         snapshot = snapshots[str(TickFidelity.TRADES)]
-        tape = _trades(trade, decided, (first, exit_date), store, snapshot)
-        tape, rolls, contract = _cut(tape, entered, left), (), decided["contract"]
+        prints = _prints(trade, decided, (first, exit_date), run.record.rolls, (store, snapshot))
+        tape, rolls, contract = _cut(prints, entered, left), (), decided["contract"]
     frame = run.signals.filter(pl.col("ts_close") >= entered, pl.col("trade_date") <= exit_date)
     return _Episode(
         tape=tape,
@@ -274,25 +304,36 @@ def _bars(
     return tape, rolls_within(calendar, tape), first.get_column("contract").item()
 
 
-def _trades(
+def _prints(
     trade: Trade,
     decided: dict[str, Any],
     dates: tuple[date, date],
-    store: Store,
-    snapshot: Snapshot,
+    rolls: Sequence[RollRecord],
+    pinned: tuple[Store, Snapshot],
 ) -> tuple[Record, ...]:
-    """The trade prints of the episode's contract on its trade dates, from the run's snapshot:
-    refused for a trade whose decision, entry, or exit lies on another contract."""
+    """The trade prints of the episode's contract from the run's snapshot, from the last one at
+    or before the entry's decision to the exit, cut before they become records: refused for an
+    episode that crosses one of the run's rolls, which transfers or, under flatten, closes the
+    trade (F-ROL-02, F-ROL-04), since the replay of prints takes one contract's."""
     contract = trade["entry_contract"]
-    if trade["rolls"] or {decided["contract"], trade["exit_contract"]} != {contract}:
-        raise ValueError(
-            f"Expected trade {trade['entry_order']} of trade prints on one contract, got one "
-            f"decided on {decided['contract']} and held from {contract} to "
-            f"{trade['exit_contract']}: a replay of prints across a roll waits (BACKLOG.md)."
+    crossed = [roll for roll in rolls if dates[0] < roll.trade_date <= dates[1]]
+    if crossed or {decided["contract"], trade["exit_contract"]} != {contract}:
+        across = (
+            f"crosses the roll of {crossed[0].trade_date} to {crossed[0].contract}"
+            if crossed
+            else f"runs from {decided['contract']} to {trade['exit_contract']}"
         )
+        raise ValueError(
+            f"Expected trade {trade['entry_order']} of trade prints within one front, got an "
+            f"episode that {across}: a replay of prints across a roll waits (BACKLOG.md)."
+        )
+    store, snapshot = pinned
     held = [digest for digest in snapshot.partitions if _holds(digest, contract, dates)]
     frame = pl.concat([store.read_pinned_partition(snapshot, digest) for digest in held])
-    return tape_of_trades(frame)
+    entered, left = trade["entry_decision"], trade["exit_ts"]
+    before = frame.filter(pl.col("ts_recv") <= entered).get_column("ts_recv").max()
+    start = before if isinstance(before, int) else entered
+    return tape_of_trades(frame.filter(pl.col("ts_recv").is_between(start, left)))
 
 
 def _holds(digest: FileDigest, contract: str, dates: tuple[date, date]) -> bool:
@@ -327,16 +368,16 @@ def _funding(record: RunRecord, first: int, last: int) -> tuple[FundingRate, ...
 def _replayed(
     record: RunRecord,
     episode: _Episode,
-    fidelity: TickFidelity | Timeframe,
+    priced: tuple[TickFidelity | Timeframe, RunFees],
     first_id: int,
     sessions: SessionTable,
 ) -> RunResult:
-    """The episode through the reference engine, under the run's settings and fee table, from
-    flat with the run's cash, its orders numbered from `first_id`."""
+    """The episode through the reference engine, on its fidelity and under the run's settings
+    and fee table, from flat with the run's cash, its orders numbered from `first_id`."""
+    fidelity, fees = priced
     instrument = instrument_parameters(record.instrument)
     tape = episode.tape
     hours = CalendarHours.around(sessions, tape[0].starts_at(), tape[-1].available_at())
-    fees = RunFees.of_table(TABLES[record.fee_table.name], record.instrument.root)
     engine = ReferenceEngine(record.config.run_settings(), instrument, fidelity, hours, fees=fees)
     spec = StrategySpec.model_validate(record.strategy.spec)
     template = TemplateStrategy(spec, episode.frame, instrument, sessions)
