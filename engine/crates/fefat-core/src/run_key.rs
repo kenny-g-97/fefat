@@ -16,9 +16,10 @@ use crate::strategy_spec::StrategySpec;
 pub struct Version(pub u32);
 
 /// Bumped for any change of what a run produces that changes neither its fills nor the layout of
-/// its artifacts: 6 since step 2.10, whose run key covers the run's settings and whose runs
-/// record their trades, their equity at each decision, and each fill's trade date.
-pub const ENGINE_VERSION: Version = Version(6);
+/// its artifacts: 7 since step 2.11, whose runs record their metrics in `run.json`, after 6 of
+/// step 2.10, whose run key covers the run's settings and whose runs record their trades, their
+/// equity at each decision, and each fill's trade date.
+pub const ENGINE_VERSION: Version = Version(7);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
 /// Bumped when the layout of a run's artifacts changes.

@@ -1,8 +1,10 @@
 """`ff.backtest.run` (step 2.10) on the fixtures' store: a run evaluates its signals, runs the
 engine over the engine cache, writes every artifact with its schema and `run.json` under
 `FEFAT_HOME/workspaces/default/artifacts/runs/<run key>/` (Done means 1), and a second
-identical call returns the run already written without running the engine again (Done means 2)."""
+identical call returns the run already written without running the engine again (Done means 2);
+from step 2.11, its record holds its metrics (Done means 3 of 2.11)."""
 
+import json
 import os
 import shutil
 import warnings
@@ -16,8 +18,9 @@ import pytest
 
 import fefat as ff
 import fefat.backtest.run_inputs as run_inputs
-from fefat.backtest import ARTIFACT_SCHEMAS, RunConfig, RunRecord
+from fefat.backtest import ARTIFACT_SCHEMAS, Run, RunConfig, RunRecord
 from fefat.backtest.artifacts import read_artifact, write_run
+from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import DatasetOrigin
@@ -299,3 +302,41 @@ def test_saving_a_run_leaves_another_writers_folder_and_keeps_the_run_saved_firs
     assert written == sorted([f"{name}.parquet" for name in ARTIFACT_SCHEMAS] + ["run.json"])
     partials = [path.name for path in folder.parent.iterdir() if path.suffix == ".partial"]
     assert partials == ["copy.partial"]
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_runs_metrics_are_stored_in_its_record_and_read_back() -> None:
+    # Done means 3 of step 2.11: the metrics serialise to JSON, run.json holds them, and a saved
+    # run reads them back; they count the run's own trades, days, and account.
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+
+    metrics = run.metrics
+    stored = json.loads((run.folder / "run.json").read_bytes())
+    assert Metrics.model_validate(stored["metrics"]) == metrics
+    assert Metrics.model_validate_json(metrics.model_dump_json()) == metrics
+    assert Run.open(run.folder).metrics == metrics
+    assert metrics.trades.trades == run.trades.height > 0
+    assert metrics.pnl == run.record.summary.pnl
+    assert metrics.daily.days == run.equity("1d").height
+    capital = pl.Series("equity", [50_000_000_000], dtype=pl.Int64)
+    account = capital.append(run.equity("5m").get_column("equity").drop_nulls())
+    deepest = ff.backtest.running_drawdown(account).max()
+    assert isinstance(deepest, int)
+    assert metrics.drawdown.max_drawdown == Decimal(deepest).scaleb(-6)
+    assert metrics.robustness.inputs.num_parameters == 3
+    assert metrics.robustness.inputs.slippage_tested
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_the_pnl_at_one_more_tick_is_that_of_the_run_at_one_more_tick() -> None:
+    # 02 section 7 and F-SLP-01: the rerun adds one tick to market and stop orders' slippage.
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    ticks = run.config.slippage_ticks
+    more = SlippageTicks(market=ticks.market + 1, stop=ticks.stop + 1)
+
+    slipped = ff.backtest.run(
+        breakout(), "2026-03-05", "2026-03-09", RunConfig(slippage_ticks=more)
+    )
+
+    assert run.metrics.pnl_at_plus_one_tick == slipped.record.summary.pnl
+    assert run.metrics.pnl_at_plus_one_tick < run.metrics.pnl

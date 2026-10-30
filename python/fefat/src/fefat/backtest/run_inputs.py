@@ -4,7 +4,9 @@ its provider over its window (ADR-0019), whose hashes key the run; the engine ca
 it replays, built from the same files (D-56); the fronts it trades and the rolls between them, as
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
 perpetual's funding rates from the store (F-FND-01); its fee table (F-FEE-01); and the config the
-engine reads, every setting applied (D-51)."""
+engine reads, every setting applied (D-51), with the config of its rerun at one more tick of
+slippage, whether it pays slippage or fees, and its exchange's time zone, which its metrics read
+(step 2.11)."""
 
 import json
 import warnings
@@ -42,7 +44,12 @@ from fefat.market.store import Store
 from fefat.reference.costs import RunFees
 from fefat.reference.hours import CalendarHours
 from fefat.reference.rolls import RollRow
-from fefat.reference.run_documents import exit_features, run_document, with_engine_columns
+from fefat.reference.run_documents import (
+    exit_features,
+    run_document,
+    settings_document,
+    with_engine_columns,
+)
 from fefat.reference.tape import FundingRate, funding_rates_of
 from fefat.strategy.signal_frame import require_named_columns
 from fefat.strategy.signal_strategy import SignalStrategy
@@ -68,12 +75,28 @@ class RunInputs:
     rolls: tuple[RollRecord, ...]
     window: Window
     warnings: tuple[str, ...]
+    time_zone: str
 
     def spec_json(self) -> str:
         return json.dumps(self.spec.document())
 
     def config_json(self) -> str:
         return json.dumps(self.engine_config)
+
+    def config_json_at_one_more_tick(self) -> str:
+        """The config of the rerun at one more tick of slippage on market and stop orders, whose
+        profit and loss the metrics report (`02` §7, F-SLP-01)."""
+        settings = self.config.at_one_more_tick().run_settings()
+        return json.dumps({**self.engine_config, "settings": settings_document(settings)})
+
+    def pays_friction(self) -> bool:
+        """Whether the run pays slippage or fees: a tick of slippage on market or stop orders,
+        or a fee of its fee table above zero, which the robustness summary counts as friction
+        tested."""
+        ticks = self.config.slippage_ticks
+        fees = RunFees.of_table(TABLES[self.config.fee_table], self.instrument.root)
+        charged = any(_charges(fee) for _, fee in fees.schedules)
+        return ticks.market > 0 or ticks.stop > 0 or charged
 
     def cache_paths(self, paths: FefatPaths) -> tuple[Path, ...]:
         """The engine cache's folder of each front, its months of the window built from the store
@@ -144,6 +167,7 @@ def run_inputs(
         rolls=tuple(_roll_record(roll) for roll in rolls),
         window=window,
         warnings=(*loaded, *_features_below_a_tick(spec, signals, parameters.tick)),
+        time_zone=market.sessions.time_zone(),
     )
 
 
@@ -334,6 +358,13 @@ def _fee_table_record(name: str, root: str) -> FeeTableRecord:
             for schedule in table.schedules
         ),
     )
+
+
+def _charges(fee: FuturesFee | CryptoFee) -> bool:
+    """Whether `fee` charges a fill anything."""
+    if isinstance(fee, FuturesFee):
+        return fee.per_contract_side > 0
+    return fee.maker_bps > 0 or fee.taker_bps > 0
 
 
 def _fee_text(fee: FuturesFee | CryptoFee) -> str:

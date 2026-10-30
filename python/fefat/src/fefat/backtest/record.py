@@ -2,7 +2,7 @@
 versions, its strategy, its window, its instrument, each dataset it read with the terms it came
 under and the hash of its snapshot, the signal frame's hash, its settings with every default
 applied, its fee table, the rolls it crossed, the config the engine read, the fills by fidelity,
-the warnings, and a summary of its end."""
+the warnings, a summary of its end, and, from step 2.11, its metrics."""
 
 from datetime import date
 from decimal import Decimal
@@ -10,6 +10,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
+from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.market.instruments import InstrumentKind
 from fefat.market.layout import DatasetOrigin
@@ -100,7 +101,7 @@ class RunSummary(FrozenModel):
 
 
 class RunRecord(FrozenModel):
-    """`run.json`: what a run is, what it read, how it ran, and how it ended."""
+    """`run.json`: what a run is, what it read, how it ran, how it ended, and its metrics."""
 
     run_id: Hash
     run_key: Hash
@@ -117,3 +118,4 @@ class RunRecord(FrozenModel):
     fidelity_summary: dict[str, int]
     warnings: tuple[str, ...]
     summary: RunSummary
+    metrics: Metrics
