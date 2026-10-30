@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::TradeDate;
 use fefat_core::orders::OrderRole;
+use fefat_core::strategy_spec::Weekday;
 use fefat_core::units::{Money, Overflow};
 use serde::Serialize;
 
@@ -51,38 +52,16 @@ impl Outcome {
     };
 }
 
-/// A day of the week.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Weekday {
-    /// Monday.
-    Monday,
-    /// Tuesday.
-    Tuesday,
-    /// Wednesday.
-    Wednesday,
-    /// Thursday.
-    Thursday,
-    /// Friday.
-    Friday,
-    /// Saturday.
-    Saturday,
-    /// Sunday.
-    Sunday,
-}
-
-impl Weekday {
-    /// The weekday of `date`: 1970-01-01, day zero, was a Thursday.
-    const fn of(date: TradeDate) -> Self {
-        match (date.0 as i64 + 3).rem_euclid(7) {
-            0 => Self::Monday,
-            1 => Self::Tuesday,
-            2 => Self::Wednesday,
-            3 => Self::Thursday,
-            4 => Self::Friday,
-            5 => Self::Saturday,
-            _ => Self::Sunday,
-        }
+/// The weekday of `date`: 1970-01-01, day zero, was a Thursday.
+const fn weekday_of(date: TradeDate) -> Weekday {
+    match (date.0 as i64 + 3).rem_euclid(7) {
+        0 => Weekday::Monday,
+        1 => Weekday::Tuesday,
+        2 => Weekday::Wednesday,
+        3 => Weekday::Thursday,
+        4 => Weekday::Friday,
+        5 => Weekday::Saturday,
+        _ => Weekday::Sunday,
     }
 }
 
@@ -95,7 +74,7 @@ pub fn breakdowns(trades: &[TradeOutcome]) -> Result<Breakdowns, Overflow> {
     Ok(Breakdowns {
         exit_reason: grouped(trades, |trade| trade.exit_reason)?,
         hour: grouped(trades, |trade| trade.entry_hour)?,
-        weekday: grouped(trades, |trade| Weekday::of(trade.entry_trade_date))?,
+        weekday: grouped(trades, |trade| weekday_of(trade.entry_trade_date))?,
         year: grouped(trades, |trade| trade.entry_trade_date.year_month_day().0)?,
         fidelity: grouped(trades, |trade| trade.fidelity)?,
     })
@@ -138,10 +117,10 @@ mod tests {
 
     #[test]
     fn the_weekday_of_a_trade_date() {
-        assert_eq!(Weekday::of(TradeDate(0)), Weekday::Thursday);
-        assert_eq!(Weekday::of("2026-03-09".parse().unwrap()), Weekday::Monday);
-        assert_eq!(Weekday::of("2026-03-08".parse().unwrap()), Weekday::Sunday);
-        assert_eq!(Weekday::of(TradeDate(-1)), Weekday::Wednesday);
+        assert_eq!(weekday_of(TradeDate(0)), Weekday::Thursday);
+        assert_eq!(weekday_of("2026-03-09".parse().unwrap()), Weekday::Monday);
+        assert_eq!(weekday_of("2026-03-08".parse().unwrap()), Weekday::Sunday);
+        assert_eq!(weekday_of(TradeDate(-1)), Weekday::Wednesday);
     }
 
     #[test]

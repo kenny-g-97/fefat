@@ -160,12 +160,9 @@ struct SharpeRatios {
 
 impl SharpeRatios {
     fn of(days: &[DayPnl], trials: NonZeroU32) -> Self {
-        let (Some(first), Some(last)) = (days.first(), days.last()) else {
+        let [first, .., last] = days else {
             return Self::default();
         };
-        if days.len() < 2 {
-            return Self::default();
-        }
         let count = days.len() as f64;
         let span = f64::from(last.trade_date.0) - f64::from(first.trade_date.0) + 1.0;
         let annual = (count * DAYS_PER_YEAR / span).sqrt();
@@ -322,5 +319,10 @@ mod tests {
         assert_eq!(deflated, Some(probabilistic));
         let deflated = statistics(&[(1, 100), (2, 50), (3, 250), (7, 150)], 100).deflated_sharpe;
         assert!(deflated.unwrap() < probabilistic);
+        // The same bits on every system (D-63), which CI checks on Windows and on Ubuntu.
+        assert_eq!(days.sharpe, Some(3.934_660_615_621_834));
+        assert_eq!(days.sortino, Some(9.691_306_855_704_681));
+        assert_eq!(days.probabilistic_sharpe, Some(0.685_215_303_634_332));
+        assert_eq!(deflated, Some(0.020_266_781_713_810_047));
     }
 }

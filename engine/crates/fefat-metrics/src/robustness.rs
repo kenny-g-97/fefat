@@ -16,7 +16,6 @@ use serde::Serialize;
 
 use crate::inputs::MetricsInputs;
 use crate::json_units;
-use crate::python_float::python_float_text;
 
 /// What the script reads, under its own names.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -358,9 +357,11 @@ fn red_flags(inputs: &ScriptInputs) -> Vec<RedFlag> {
         (inputs.max_drawdown_pct > 50.0).then(|| RedFlag {
             id: RedFlagId::ExcessiveDrawdown,
             severity: Severity::High,
+            // shortcut: `{:?}` writes a float as Python's repr does below 1e16 %, a drawdown
+            // a capital under 0.1 USD would need; the parity test holds the message to the script's.
             message: format!(
-                "Max drawdown {}% exceeds 50% threshold — catastrophic risk.",
-                python_float_text(inputs.max_drawdown_pct)
+                "Max drawdown {:?}% exceeds 50% threshold — catastrophic risk.",
+                inputs.max_drawdown_pct
             ),
         }),
         (inputs.num_parameters >= 7).then(|| RedFlag {
@@ -450,6 +451,19 @@ mod tests {
             flags.first().map(|flag| flag.message.as_str()),
             Some("Max drawdown 61.5% exceeds 50% threshold — catastrophic risk.")
         );
+        let round = red_flags(&inputs(150, 62.0, 60.0, 8));
+        assert_eq!(
+            round.first().map(|flag| flag.message.as_str()),
+            Some("Max drawdown 60.0% exceeds 50% threshold — catastrophic risk.")
+        );
+    }
+
+    #[test]
+    fn three_places_round_a_tie_to_the_even_digit_as_python_does() {
+        assert_eq!(format!("{:.3}", -0.0625_f64), "-0.062");
+        assert_eq!(format!("{:.3}", -0.1875_f64), "-0.188");
+        assert_eq!(format!("{:.3}", -0.0005_f64), "-0.001");
+        assert_eq!(format!("{:.3}", -1.0005_f64), "-1.000");
     }
 
     #[test]

@@ -71,10 +71,11 @@ mod tests {
     fn the_quantile_is_pythons_statistics_normal_dist_inv_cdf() {
         assert_eq!(quantile_from_median(0.5), 0.0);
         assert!(close(quantile_from_median(0.975), 1.959_963_984_540_053_6));
-        assert!(close(
-            quantile_from_median(1.0 - 1e-9),
-            5.997_807_019_601_638
-        ));
+        assert_eq!(quantile_from_median(1.0 - 1e-9), 5.997_807_019_601_638);
+        assert_eq!(
+            NonZeroU32::new(100).map(expected_maximum),
+            Some(2.530_602_893_201_684_6)
+        );
         for probability in [0.6, 0.9, 0.99, 0.999_999] {
             assert!(close(
                 cumulative(quantile_from_median(probability)),
