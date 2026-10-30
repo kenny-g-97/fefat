@@ -233,19 +233,24 @@ def test_trades_entered_at_one_decision_on_one_side_match_one_by_one() -> None:
 
 @pytest.mark.usefixtures("fixture_store")
 def test_signal_bars_come_from_the_level_that_covers_the_most_of_the_window() -> None:
-    # The code review: 1-minute bars that cover less of the window than the ticks would cut the
-    # window to them, so the coarsest level of those covering the most is the source.
+    # The code review: a level that covers less of the window than another would cut the window
+    # to it, so the level covering the most is the source, and among equals the finest, as `load`
+    # chooses, whose trades give the vwap an import's bars lack (the engine review; your choice
+    # of 2026-10-30).
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     held = provider_datasets(store, "ES", None, None)
     window, five_minutes = (date(2026, 3, 5), date(2026, 3, 9)), Timeframe.parse("5m")
-    assert signal_source(store, held, five_minutes, window) == ONE_MINUTE
+    synthetic = paths.data_dir / "synthetic"
+    assert signal_source(store, held, five_minutes, window) == TickFidelity.TRADES
 
-    for part in (paths.data_dir / "synthetic" / "ohlcv-1m" / "root=ES").rglob("*.parquet"):
-        bars = pl.read_parquet(part)
-        bars.filter(pl.col("trade_date") < date(2026, 3, 9)).write_parquet(part)
-
+    for monday in (synthetic / "trades" / "root=ES").glob("contract=*/date=2026-03-09"):
+        shutil.rmtree(monday)
     assert signal_source(store, held, five_minutes, window) == ONE_SECOND
+
+    for monday in (synthetic / "ohlcv-1s" / "root=ES").glob("contract=*/date=2026-03-09"):
+        shutil.rmtree(monday)
+    assert signal_source(store, held, five_minutes, window) == ONE_MINUTE
     # The step review: a store without trades or bars names what it lacks, at once.
     with pytest.raises(ValueError, match="Expected trades or bars to build signal bars from"):
         signal_source(store, {}, five_minutes, window)

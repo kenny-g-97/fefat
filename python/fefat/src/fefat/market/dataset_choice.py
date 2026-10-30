@@ -156,25 +156,26 @@ _SIGNAL_SOURCES: tuple[TickFidelity | Timeframe, ...] = (
     ONE_SECOND,
     TickFidelity.TRADES,
 )
-"""The data a backtest's signal bars may be built from, coarsest first."""
+"""The data a backtest's signal bars may be built from."""
 
 
 def signal_source(
     store: Store, datasets: dict[str, Dataset], timeframe: Timeframe, dates: tuple[date, date]
 ) -> TickFidelity | Timeframe:
     """The data a backtest builds its signal bars of `timeframe` from (step 2.12): of the
-    1-minute bars, 1-second bars, and trades held that build them, the coarsest of those whose
+    1-minute bars, 1-second bars, and trades held that build them, the finest of those whose
     trade dates cover the most of the window from `dates`' first to its last, since ticks may
-    cover a part of the window that bars cover, or bars a part the ticks cover; else what `load`
-    reads, the finest data held, an import's coarser bars, which it refuses when they are
-    coarser than `timeframe`."""
+    cover a part of the window that bars cover, or bars a part the ticks cover, and among equals
+    `load`'s own choice, whose trades give the vwap and trade count an import's bars lack (your
+    choice of 2026-10-30); else what `load` reads, the finest data held, an import's coarser
+    bars, which it refuses when they are coarser than `timeframe`."""
     held = _finest_first(datasets)
     if not held:
         named = ", ".join(sorted(datasets)) or "none"
         raise ValueError(f"Expected trades or bars to build signal bars from, got {named}.")
     building = [
         (level, dataset)
-        for level, dataset in reversed(held)
+        for level, dataset in held
         if level in _SIGNAL_SOURCES and _builds(level, timeframe)
     ]
     if not building:

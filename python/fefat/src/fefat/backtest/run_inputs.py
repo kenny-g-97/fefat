@@ -1,5 +1,5 @@
 """What a backtest reads (step 2.10): its signal bars, as `load` gives them from the 1-minute
-bars, 1-second bars, or trades that cover the most of its window, the coarsest of equals, so
+bars, 1-second bars, or trades that cover the most of its window, the finest of equals, so
 that they cover the window where finer data covers part of it (step 2.12), with the warnings
 `load` raises, and its signal frame, checked as both engines read it; a snapshot of each dataset of
 its provider over its window (ADR-0019), whose hashes key the run; the engine cache of the months
