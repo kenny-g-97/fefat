@@ -8,6 +8,7 @@ the run's metrics (step 2.11), which a rerun at one more tick of slippage and th
 
     run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
     run.trades, run.fills, run.equity("1d"), run.config, run.hash, run.metrics
+    run.explain(trade_id=4)
 """
 
 import os
@@ -29,6 +30,7 @@ from fefat.backtest.artifacts import (
     read_record,
     write_run,
 )
+from fefat.backtest.explain import Explanation, explain
 from fefat.backtest.metrics import Metrics
 from fefat.backtest.metrics_inputs import metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
@@ -77,6 +79,15 @@ class Run:
     def metrics(self) -> Metrics:
         """The run's metrics (`02` §7), as its record holds them."""
         return self.record.metrics
+
+    def explain(self, trade_id: int) -> Explanation:
+        """Trade `trade_id`, the id of its entry order, replayed through the reference engine on
+        the run's own records (`fefat.backtest.explain`): prints each event with its rule and
+        each fill with its rule and slippage, and raises `EnginesDisagreementError` when the
+        reference's fills are not the Rust engine's."""
+        explanation = explain(self, trade_id)
+        print(explanation.text())
+        return explanation
 
     @property
     def trades(self) -> pl.DataFrame:
