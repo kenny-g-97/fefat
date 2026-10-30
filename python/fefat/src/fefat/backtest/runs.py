@@ -4,11 +4,13 @@ signal frame, its data's snapshots, and the engine's versions (`02` §4), and re
 that key when its folder holds one; otherwise it runs the engine (`fefat_engine`) and writes the
 run's artifacts and record under `FEFAT_HOME/workspaces/default/artifacts/runs/<run key>/`, with
 the run's metrics (step 2.11), which a rerun at one more tick of slippage and the engine's
-`fefat-metrics` work out.
+`fefat-metrics` work out, the fidelity era of each trade date, and the fidelity check of its
+days finer than a minute (step 2.12), which reruns them coarser.
 
     run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
     run.trades, run.fills, run.equity("1d"), run.config, run.hash, run.metrics
     run.explain(trade_id=4)
+    run.report()
 """
 
 import os
@@ -31,7 +33,8 @@ from fefat.backtest.artifacts import (
     write_run,
 )
 from fefat.backtest.explain import Explanation, explain
-from fefat.backtest.metrics import Metrics
+from fefat.backtest.fidelity import CheckedRun, PeriodRun, fidelity_check_of
+from fefat.backtest.metrics import FidelityEra, Metrics
 from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
     EngineVersions,
@@ -40,6 +43,7 @@ from fefat.backtest.record import (
     RunSummary,
     StrategyRecord,
 )
+from fefat.backtest.report import report_text
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
@@ -88,6 +92,11 @@ class Run:
         explanation = explain(self, trade_id)
         print(explanation.text())
         return explanation
+
+    def report(self) -> None:
+        """Prints the run's report (`fefat.backtest.report.report_text`): its fidelity eras, its
+        metrics with its trades split by the fidelity of their entry, and its fidelity check."""
+        print(report_text(self.record))
 
     @property
     def trades(self) -> pl.DataFrame:
@@ -169,8 +178,11 @@ def _ran(
     engine = {name: pl.DataFrame(outputs[name]) for name in ENGINE_TABLES}
     capital = micro_units(inputs.config.capital)
     artifacts = artifacts_of(engine, inputs.signals, features, inputs.parameters, capital)
-    metrics = _metrics(inputs, artifacts, caches)
     summary = outputs["summary"]
+    eras = tuple(FidelityEra.model_validate(era) for era in summary["eras"])
+    itself = PeriodRun(inputs.config.fidelity, engine["trades"], engine["equity"], eras)
+    check = fidelity_check_of(_checked(inputs, cache_paths, itself))
+    metrics = _metrics(inputs, artifacts, caches).model_copy(update={"fidelity_check": check})
     record = RunRecord(
         run_id=key,
         run_key=key,
@@ -184,11 +196,12 @@ def _ran(
         instrument=_instrument_record(inputs),
         datasets=inputs.datasets,
         signal_frame_hash=frame_hash,
+        signal_source=inputs.signal_source,
         config=inputs.config,
         fee_table=inputs.fee_table,
         rolls=inputs.rolls,
         engine_config=inputs.engine_config,
-        fidelity_summary=_fills_by_fidelity(engine["fills"]),
+        fidelity_eras=eras,
         warnings=(*inputs.warnings, *_engine_warnings(engine["log"], inputs)),
         summary=RunSummary(
             fills=engine["fills"].height,
@@ -232,6 +245,21 @@ def _metrics(
     return Metrics.model_validate_json(fefat_engine.metrics(document))
 
 
+def _checked(inputs: RunInputs, cache_paths: tuple[Path, ...], itself: PeriodRun) -> CheckedRun:
+    """What the fidelity check reads of the run of `inputs`, `itself`, whose fronts' caches lie
+    in one folder of the root's contracts."""
+    return CheckedRun(
+        spec_json=inputs.spec_json(),
+        signals=inputs.signals,
+        engine_config=inputs.engine_config,
+        cache_folder=cache_paths[0].parent,
+        replay=str(inputs.config.replay),
+        capital=micro_units(inputs.config.capital),
+        window=inputs.window,
+        run=itself,
+    )
+
+
 def _instrument_record(inputs: RunInputs) -> InstrumentRecord:
     instrument = inputs.instrument
     return InstrumentRecord(
@@ -242,11 +270,6 @@ def _instrument_record(inputs: RunInputs) -> InstrumentRecord:
         point_value=instrument.point_value,
         lot_step=instrument.lot_step,
     )
-
-
-def _fills_by_fidelity(fills: pl.DataFrame) -> dict[str, int]:
-    counted = fills.group_by("fidelity").len().sort("fidelity")
-    return {fidelity: count for fidelity, count in counted.iter_rows()}
 
 
 def _engine_warnings(log: pl.DataFrame, inputs: RunInputs) -> tuple[str, ...]:

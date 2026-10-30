@@ -1,5 +1,7 @@
-"""What a backtest reads (step 2.10): its signal bars, as `load` gives them, with the warnings
-`load` raises, and its signal frame, checked as both engines read it; a snapshot of each dataset of
+"""What a backtest reads (step 2.10): its signal bars, as `load` gives them from 1-minute bars,
+else 1-second bars, else trades, the first stored that builds them, so that they cover the
+window where finer data covers part of it (step 2.12), with the warnings `load` raises, and its
+signal frame, checked as both engines read it; a snapshot of each dataset of
 its provider over its window (ADR-0019), whose hashes key the run; the engine cache of the months
 it replays, built from the same files (D-56); the fronts it trades and the rolls between them, as
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
@@ -37,7 +39,7 @@ from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest, YearMonth
 from fefat.market.roll_decisions import RollReason
 from fefat.market.saved_instruments import instrument_table
-from fefat.market.schema import SchemaKind, Timeframe, parse_schema_name
+from fefat.market.schema import SchemaKind, Timeframe, TimeUnit, parse_schema_name
 from fefat.market.snapshot import Snapshot
 from fefat.market.store import Store
 from fefat.reference.costs import RunFees
@@ -75,6 +77,7 @@ class RunInputs:
     window: Window
     warnings: tuple[str, ...]
     time_zone: str
+    signal_source: TickFidelity | Timeframe
 
     def spec_json(self) -> str:
         return json.dumps(self.spec.document())
@@ -90,16 +93,9 @@ class RunInputs:
 
     def cache_paths(self, paths: FefatPaths) -> tuple[Path, ...]:
         """The engine cache's folder of each front, its months of the window built from the store
-        (`build_cache_months`); a month the cache refuses refuses the run."""
+        (`engine_cache_folder`)."""
         root, provider = self.instrument.root, self.config.provider
-        months = _months(self.window)
-        built = build_cache_months(self.store, paths.cache_dir, root, months, provider)
-        if built.refused:
-            raise ValueError(
-                f"Expected the engine cache of {root} from {self.window.start} to "
-                f"{self.window.end}, got: {'; '.join(built.refused)}"
-            )
-        folder = paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / provider / root
+        folder = engine_cache_folder(self.store, paths, (root, provider), self.window)
         folders = tuple(folder / contract for contract in self.fronts)
         missing = [str(path) for path in folders if not path.is_dir()]
         if missing:
@@ -107,6 +103,22 @@ class RunInputs:
                 f"Expected the engine cache of each front, got none in {', '.join(missing)}."
             )
         return folders
+
+
+def engine_cache_folder(
+    store: Store, paths: FefatPaths, root_and_provider: tuple[str, str], window: Window
+) -> Path:
+    """The folder of the engine caches of a root's contracts from a provider, their months of
+    the window built from the store (`build_cache_months`); a month the cache refuses refuses
+    the run."""
+    root, provider = root_and_provider
+    built = build_cache_months(store, paths.cache_dir, root, _months(window), provider)
+    if built.refused:
+        raise ValueError(
+            f"Expected the engine cache of {root} from {window.start} to {window.end}, got: "
+            f"{'; '.join(built.refused)}"
+        )
+    return paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / provider / root
 
 
 @dataclass(frozen=True)
@@ -133,7 +145,8 @@ def run_inputs(
     """Everything a run of `strategy` on the trade dates from `start` to `end` reads."""
     market = _market(strategy.instrument, config.provider, paths)
     applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
-    bars, loaded = _bars(strategy, start, end, market.provider)
+    source = _signal_source(market.datasets, Timeframe.parse(strategy.timeframe))
+    bars, loaded = _bars(strategy, (start, end), market.provider, source)
     spec = strategy.to_spec()
     signals = strategy.signals(bars).collect()
     require_named_columns(spec.execution, signals.columns)
@@ -158,6 +171,7 @@ def run_inputs(
         window=window,
         warnings=(*loaded, *_features_below_a_tick(spec, signals, parameters.tick)),
         time_zone=market.sessions.time_zone(),
+        signal_source=source,
     )
 
 
@@ -212,14 +226,46 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
     return min((level_of(dataset) for dataset in datasets), key=rank)
 
 
+_SIGNAL_SOURCES: tuple[TickFidelity | Timeframe, ...] = (
+    Timeframe(count=1, unit=TimeUnit.MINUTE),
+    Timeframe(count=1, unit=TimeUnit.SECOND),
+    TickFidelity.TRADES,
+)
+
+
+def _signal_source(datasets: Iterable[Dataset], timeframe: Timeframe) -> TickFidelity | Timeframe:
+    """The data the signal bars are built from (step 2.12): 1-minute bars, else 1-second bars,
+    else trades, the first stored that builds bars of `timeframe`, since bars cover a window that
+    ticks may cover in part; else the finest bars stored, an import's coarser bars, which `load`
+    refuses when they are coarser than `timeframe`."""
+    held = [level_of(dataset) for dataset in datasets]
+    for level in _SIGNAL_SOURCES:
+        if level in held and _builds(level, timeframe):
+            return level
+    bars = [level for level in held if isinstance(level, Timeframe)]
+    return min(bars, key=Timeframe.nominal_seconds, default=TickFidelity.TRADES)
+
+
+def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
+    """Whether `level` builds bars of `timeframe`: trades always, and bars whose length divides
+    its length, bucketed alike from the session's open (`02` §1.4)."""
+    if not isinstance(level, Timeframe):
+        return True
+    return timeframe.nominal_seconds() % level.nominal_seconds() == 0
+
+
 def _bars(
-    strategy: SignalStrategy, start: str | date, end: str | date, provider: str
+    strategy: SignalStrategy,
+    dates: tuple[str | date, str | date],
+    provider: str,
+    source: TickFidelity | Timeframe,
 ) -> tuple[pl.DataFrame, tuple[str, ...]]:
-    """The strategy's signal bars, as `load` gives them, and the warnings it raised, which the
-    run's record keeps."""
+    """The strategy's signal bars from `dates`' start to its end, as `load` gives them from
+    `source`, and the warnings it raised, which the run's record keeps."""
+    root, timeframe = strategy.instrument, strategy.timeframe
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        bars = load(strategy.instrument, strategy.timeframe, start, end, provider=provider)
+        bars = load(root, timeframe, *dates, fidelity=source, provider=provider)
         frame = bars.collect()
     return frame, tuple(str(warning.message) for warning in caught)
 

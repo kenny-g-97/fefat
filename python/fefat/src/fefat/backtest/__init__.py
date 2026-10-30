@@ -7,12 +7,24 @@ run of the same key instead of running it again:
 
     run = ff.backtest.run(strategy, start="2026-03-05", end="2026-03-09")
     run.trades; run.fills; run.equity("1d"); run.config; run.hash
+    run.metrics.fidelity_check; run.report()
 
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
-`fefat.backtest.schemas`, and the record is `fefat.backtest.record`.
+`fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
+saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
+waits for fill exports.
 """
 
-from fefat.backtest.metrics import running_drawdown
+from fefat.backtest.fidelity import fidelity_check
+from fefat.backtest.metrics import (
+    FidelityCheck,
+    FidelityEra,
+    FidelityRerun,
+    PeriodOutcome,
+    RefusedCheck,
+    running_drawdown,
+)
+from fefat.backtest.reconcile import reconcile
 from fefat.backtest.record import RunRecord
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.runs import Run, run
@@ -39,9 +51,16 @@ __all__ = [
     "SIGNALS",
     "TRADES",
     "AppliedRunConfig",
+    "FidelityCheck",
+    "FidelityEra",
+    "FidelityRerun",
+    "PeriodOutcome",
+    "RefusedCheck",
     "Run",
     "RunConfig",
     "RunRecord",
+    "fidelity_check",
+    "reconcile",
     "run",
     "running_drawdown",
 ]

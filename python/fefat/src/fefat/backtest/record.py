@@ -1,8 +1,9 @@
 """A run's record, `run.json` (step 2.10, `02` §7, D-47, D-51): its id and key, the engine's
 versions, its strategy, its window, its instrument, each dataset it read with the terms it came
 under and the hash of its snapshot, the signal frame's hash, its settings with every default
-applied, its fee table, the rolls it crossed, the config the engine read, the fills by fidelity,
-the warnings, a summary of its end, and, from step 2.11, its metrics."""
+applied, its fee table, the rolls it crossed, the config the engine read, the warnings, a summary
+of its end, and, from step 2.11, its metrics; from step 2.12, the fidelity era of each trade
+date, in place of the fills by fidelity, and the data its signal bars were built from."""
 
 from datetime import date
 from decimal import Decimal
@@ -10,8 +11,8 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from fefat.backtest.metrics import Metrics
-from fefat.backtest.run_config import AppliedRunConfig
+from fefat.backtest.metrics import FidelityEra, Metrics
+from fefat.backtest.run_config import AppliedRunConfig, FidelityText
 from fefat.market.instruments import InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
@@ -101,7 +102,8 @@ class RunSummary(FrozenModel):
 
 
 class RunRecord(FrozenModel):
-    """`run.json`: what a run is, what it read, how it ran, how it ended, and its metrics."""
+    """`run.json`: what a run is, what it read, how it ran, the fidelity eras of its trade dates,
+    how it ended, and its metrics."""
 
     run_id: Hash
     run_key: Hash
@@ -111,11 +113,12 @@ class RunRecord(FrozenModel):
     instrument: InstrumentRecord
     datasets: tuple[DatasetRecord, ...] = Field(min_length=1)
     signal_frame_hash: Hash
+    signal_source: FidelityText
     config: AppliedRunConfig
     fee_table: FeeTableRecord
     rolls: tuple[RollRecord, ...]
     engine_config: dict[str, Any]
-    fidelity_summary: dict[str, int]
+    fidelity_eras: tuple[FidelityEra, ...] = Field(min_length=1)
     warnings: tuple[str, ...]
     summary: RunSummary
     metrics: Metrics

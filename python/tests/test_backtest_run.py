@@ -109,7 +109,10 @@ def test_the_record_names_every_dataset_its_terms_each_default_and_each_warning(
     assert record.fee_table.schedules[0][0] == date(2026, 7, 20)
     assert [warning for warning in record.warnings if "F-FEE-01" in warning]
     assert record.engine_config["fidelity"] == "trades"
-    assert record.fidelity_summary == {"trades": record.summary.fills}
+    assert run.fills.get_column("fidelity").unique().to_list() == ["trades"]
+    # Step 2.12: the fidelity era of every trade date replaces the fills by fidelity.
+    eras = [(era.first, era.last, str(era.fidelity)) for era in record.fidelity_eras]
+    assert eras == [(record.window.start, record.window.end, "trades")]
     assert (
         run.fills.get_column("trade_date").is_between(record.window.start, record.window.end).all()
     )
