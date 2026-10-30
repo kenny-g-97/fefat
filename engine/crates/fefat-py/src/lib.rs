@@ -133,6 +133,18 @@ mod fefat_engine {
         Ok(depths.into_iter().map(|depth| depth.0).collect())
     }
 
+    /// The memory address of each chunk's first value where the engine reads it, the witness for
+    /// tests that the import copied nothing: for an unsliced array it equals the buffer address
+    /// that PyArrow reports.
+    #[pyfunction]
+    fn arrow_values_addresses(values: AnyArray) -> PyResult<Vec<usize>> {
+        let chunks = int64_chunks(values)?;
+        Ok(chunks
+            .iter()
+            .map(|chunk| chunk.values().as_ptr().addr())
+            .collect())
+    }
+
     /// The metrics of a run (`fefat_metrics::compute`) from `inputs_json`, what they read of its
     /// trades and its account as `fefat.backtest.metrics_inputs` writes it, as JSON.
     #[pyfunction]

@@ -1,7 +1,8 @@
 """`fefat_engine.running_drawdown` and `ff.backtest.running_drawdown` (step 2.11, replacing step
 0.8's `max_drawdown`): how far an account's equity lies below the highest value before it, read
-from an int64 Arrow array or stream through its own slice, without the values around it, and
-prefix-invariant (the amendment of step 2.11, from the leakage review of the Phase 0 exit)."""
+in place from an int64 Arrow array or stream, which `arrow_values_addresses` witnesses, through its
+own slice, without the values around it, and prefix-invariant (the amendment of step 2.11, from
+the leakage review of the Phase 0 exit)."""
 
 import array
 
@@ -60,10 +61,28 @@ def test_a_sliced_series_is_read_without_the_values_around_it() -> None:
     assert drawdown.to_list() == DRAWDOWN
 
 
-def test_a_chunked_array_carries_its_peak_from_chunk_to_chunk() -> None:
+def test_a_pyarrow_array_is_read_in_place() -> None:
+    values = int64_array(EQUITY)
+
+    assert fefat_engine.arrow_values_addresses(values) == [values.buffers()[1].address]
+    assert fefat_engine.running_drawdown(values) == DRAWDOWN
+
+
+def test_a_chunked_array_is_read_in_place_and_carries_its_peak_from_chunk_to_chunk() -> None:
     chunked = pa.chunked_array([EQUITY[:3], EQUITY[3:]], type=pa.int64())
 
+    addresses = [chunk.buffers()[1].address for chunk in chunked.chunks]
+    assert fefat_engine.arrow_values_addresses(chunked) == addresses
     assert fefat_engine.running_drawdown(chunked) == DRAWDOWN
+
+
+def test_a_polars_series_is_read_in_place() -> None:
+    series = pl.Series(EQUITY, dtype=pl.Int64)
+    # Held while the engine reads: two copies freed in turn could share one address.
+    exported = series.to_arrow()
+
+    assert fefat_engine.arrow_values_addresses(series) == [exported.buffers()[1].address]
+    assert ff.backtest.running_drawdown(series).to_list() == DRAWDOWN
 
 
 def test_no_values_give_no_drawdown() -> None:
