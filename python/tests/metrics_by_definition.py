@@ -79,7 +79,8 @@ def metrics_by_definition(inputs: Json) -> Json:
 
 def robustness_by_definition(inputs: Json, fall: Json) -> Json:
     """The robustness summary but the script's own scores: the script's inputs, the trades and
-    the win rate in percent, the average win and loss and the drawdown in percent of the capital,
+    the win rate in percent, the average win, the average loss over the trades that did not win,
+    and the drawdown in percent of the capital,
     the window's years rounded to the nearest, the parameters, and the friction; the sample size
     against 30, 100, and 200 trades; and the profit at one more tick of slippage."""
     capital = inputs["capital"]
@@ -94,7 +95,7 @@ def robustness_by_definition(inputs: Json, fall: Json) -> Json:
             "total_trades": len(pnls),
             "win_rate": percent(len(wins), len(pnls)),
             "avg_win_pct": percent(sum(wins), len(wins) * capital),
-            "avg_loss_pct": percent(-sum(losses), len(losses) * capital),
+            "avg_loss_pct": percent(-sum(losses), (len(pnls) - len(wins)) * capital),
             "max_drawdown_pct": float(Fraction(100 * depth, capital)),
             "years_tested": floor(
                 (days_between(window["start"], window["end"]) + 1) / 365.25 + 0.5

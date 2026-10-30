@@ -4,7 +4,7 @@ excursions, the trade date of its entry's fill, that fill's hour in the exchange
 its fidelity, and the role of the fill that left it flat; the account after each decision with
 its trade date; the capital, the instrument's tick and point value, the window, one trial, the
 share of the capital a large daily loss loses, the profit and loss of the rerun at one more tick,
-the strategy's parameters, and whether the run pays friction. Money is in micro-units and prices
+the strategy's parameters, and whether the run paid slippage or fees. Money is in micro-units and prices
 in 1e-9 units, as the artifacts hold them."""
 
 import json
@@ -16,6 +16,7 @@ import polars as pl
 from fefat.backtest.record import Window
 from fefat.market.engine_units import InstrumentParameters
 from fefat.reference.run_documents import rate_units
+from fefat.reference.settings import SlippageTicks
 from fefat.strategy.spec import Execution
 
 LARGE_DAILY_LOSS = Decimal("0.02")
@@ -87,6 +88,12 @@ def _equity(equity: pl.DataFrame) -> list[dict[str, object]]:
     """The account after each decision that values it, with the decision's trade date."""
     valued = equity.filter(pl.col("equity").is_not_null())
     return valued.select(pl.col("trade_date").dt.to_string("%Y-%m-%d"), "equity").to_dicts()
+
+
+def friction_tested(ticks: SlippageTicks, fills: pl.DataFrame) -> bool:
+    """Whether the run paid friction, which the robustness summary counts as tested: a tick of
+    slippage on its market or stop orders, or a fee its fills paid."""
+    return ticks.market > 0 or ticks.stop > 0 or bool(fills.get_column("fee").gt(0).any())
 
 
 def parameters_of(execution: Execution) -> int:

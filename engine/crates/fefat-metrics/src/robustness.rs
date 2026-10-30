@@ -27,7 +27,9 @@ pub struct ScriptInputs {
     pub win_rate: f64,
     /// The average win over the capital, in percent.
     pub avg_win_pct: f64,
-    /// The average loss over the capital, in percent, above zero.
+    /// The losses over the trades that did not win, over the capital, in percent, at or
+    /// above zero: the script takes every trade that is not a win as a loss, so that a
+    /// trade that broke even counts as a loss of nothing.
     pub avg_loss_pct: f64,
     /// The maximum drawdown over the capital, in percent.
     pub max_drawdown_pct: f64,
@@ -42,18 +44,19 @@ pub struct ScriptInputs {
 impl ScriptInputs {
     /// What the script reads of the run `inputs` describe, whose deepest fall is
     /// `max_drawdown`, each percentage one division of exact integers: a run without trades wins
-    /// none of them, and one without wins or losses averages none.
+    /// none of them, and one without wins or losses averages none; a trade that did not win
+    /// counts in the average loss, as the script's expectancy takes it.
     pub fn of(inputs: &MetricsInputs, max_drawdown: Money) -> Self {
         let pnls = || inputs.trades.iter().map(|trade| i128::from(trade.pnl.0));
         let counted = |(count, sum): (i128, i128), pnl: i128| (count + 1, sum + pnl);
         let (wins, profit) = pnls().filter(|pnl| *pnl > 0).fold((0, 0), counted);
-        let (losses, loss) = pnls().filter(|pnl| *pnl < 0).fold((0, 0), counted);
+        let (_, loss) = pnls().filter(|pnl| *pnl < 0).fold((0, 0), counted);
         let (trades, capital) = (pnls().count(), i128::from(inputs.capital.0));
         Self {
             total_trades: trades,
             win_rate: percent(wins, trades as i128),
             avg_win_pct: percent(profit, wins * capital),
-            avg_loss_pct: percent(-loss, losses * capital),
+            avg_loss_pct: percent(-loss, (trades as i128 - wins) * capital),
             max_drawdown_pct: percent(i128::from(max_drawdown.0), capital),
             years_tested: inputs.window.years(),
             num_parameters: inputs.parameters,

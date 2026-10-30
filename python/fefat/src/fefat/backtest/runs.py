@@ -32,7 +32,7 @@ from fefat.backtest.artifacts import (
 )
 from fefat.backtest.explain import Explanation, explain
 from fefat.backtest.metrics import Metrics
-from fefat.backtest.metrics_inputs import metrics_inputs_json, parameters_of
+from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
     EngineVersions,
     InstrumentRecord,
@@ -227,7 +227,7 @@ def _metrics(
         time_zone=inputs.time_zone,
         pnl_at_plus_one_tick=int(pl.DataFrame(slipped["trades"]).get_column("pnl").sum()),
         parameters=parameters_of(inputs.spec.execution),
-        friction_tested=inputs.pays_friction(),
+        friction_tested=friction_tested(inputs.config.slippage_ticks, artifacts["fills"]),
     )
     return Metrics.model_validate_json(fefat_engine.metrics(document))
 

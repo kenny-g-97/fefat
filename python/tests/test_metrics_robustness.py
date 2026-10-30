@@ -11,8 +11,12 @@ from datetime import date, timedelta
 from typing import Any
 
 import fefat_engine
+import polars as pl
+import pytest
 
 from fefat.backtest.metrics import Metrics, RedFlagId, Robustness, SampleSize, Verdict
+from fefat.backtest.metrics_inputs import friction_tested
+from fefat.reference.settings import SlippageTicks
 from metrics_by_definition import scripts_summary
 
 USD = 1_000_000
@@ -141,3 +145,26 @@ def test_a_fall_past_half_the_capital_scores_no_risk_and_is_flagged_as_the_scrip
         )
     }
     assert summary.dimensions[2].score == 0
+
+
+def test_friction_is_tested_when_the_run_slips_a_tick_or_its_fills_pay_a_fee() -> None:
+    # The code review: a fee table's schedule outside the window charges the run nothing.
+    unpaid = pl.DataFrame({"fee": [0, 0]}, schema={"fee": pl.Int64})
+    paid = pl.DataFrame({"fee": [0, 1_290_000]}, schema={"fee": pl.Int64})
+    still = SlippageTicks(market=0, stop=0)
+
+    assert not friction_tested(still, unpaid)
+    assert friction_tested(still, paid)
+    assert friction_tested(SlippageTicks(market=0, stop=1), unpaid)
+
+
+def test_trades_that_break_even_count_in_the_scripts_average_loss() -> None:
+    # Step 2.11's engine review: the script takes every trade that is not a win as a loss, so its
+    # average loss is over the trades that did not win, and its expectancy is the run's mean.
+    summary = summary_of(planted_run([500] * 4 + [-500] * 2 + [0] * 4, years=8, plus_one=500))
+
+    assert_the_scripts(summary)
+    assert summary.inputs.avg_loss_pct == 100 * 1_000 / (6 * 50_000)
+    assert summary.expectancy == pytest.approx(100 * 1_000 / 10 / 50_000)
+    assert summary.profit_factor == pytest.approx(2.0)
+    assert RedFlagId.NEGATIVE_EXPECTANCY not in {flag.id for flag in summary.red_flags}

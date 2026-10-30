@@ -5,8 +5,7 @@ it replays, built from the same files (D-56); the fronts it trades and the rolls
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
 perpetual's funding rates from the store (F-FND-01); its fee table (F-FEE-01); and the config the
 engine reads, every setting applied (D-51), with the config of its rerun at one more tick of
-slippage, whether it pays slippage or fees, and its exchange's time zone, which its metrics read
-(step 2.11)."""
+slippage and its exchange's time zone, which its metrics read (step 2.11)."""
 
 import json
 import warnings
@@ -88,15 +87,6 @@ class RunInputs:
         profit and loss the metrics report (`02` §7, F-SLP-01)."""
         settings = self.config.at_one_more_tick().run_settings()
         return json.dumps({**self.engine_config, "settings": settings_document(settings)})
-
-    def pays_friction(self) -> bool:
-        """Whether the run pays slippage or fees: a tick of slippage on market or stop orders,
-        or a fee of its fee table above zero, which the robustness summary counts as friction
-        tested."""
-        ticks = self.config.slippage_ticks
-        fees = RunFees.of_table(TABLES[self.config.fee_table], self.instrument.root)
-        charged = any(_charges(fee) for _, fee in fees.schedules)
-        return ticks.market > 0 or ticks.stop > 0 or charged
 
     def cache_paths(self, paths: FefatPaths) -> tuple[Path, ...]:
         """The engine cache's folder of each front, its months of the window built from the store
@@ -358,13 +348,6 @@ def _fee_table_record(name: str, root: str) -> FeeTableRecord:
             for schedule in table.schedules
         ),
     )
-
-
-def _charges(fee: FuturesFee | CryptoFee) -> bool:
-    """Whether `fee` charges a fill anything."""
-    if isinstance(fee, FuturesFee):
-        return fee.per_contract_side > 0
-    return fee.maker_bps > 0 or fee.taker_bps > 0
 
 
 def _fee_text(fee: FuturesFee | CryptoFee) -> str:
