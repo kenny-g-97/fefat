@@ -643,6 +643,139 @@ fn a_trade_date_without_a_level_at_or_coarser_than_the_runs_fidelity_is_refused(
 }
 
 #[test]
+fn a_day_holding_tbbo_and_trades_fills_on_tbbo_and_counts_in_a_tbbo_era() {
+    // Step 2.12, Done means 3 (`02` §1.6, D-58): TBBO over trades, so the market buy fills at
+    // the ask, 5000.25, with no slippage tick (F-MKT-01), where trades would fill it at the
+    // print and one tick, 5000.00 (F-MKT-02), as a run capped at trades does.
+    let both = day(
+        vec![TbboRow {
+            ts_recv: at(200),
+            price: price(499_975),
+            size: Qty(2),
+            bid: price(499_975),
+            ask: price(500_025),
+            bid_size: Qty(6),
+            ask_size: Qty(5),
+        }],
+        vec![TradeRow {
+            ts_recv: at(200),
+            price: price(499_975),
+            size: Qty(2),
+        }],
+    );
+    let buy = || vec![order(1, Side::Buy, OrderKind::Market)];
+
+    let on_tbbo = run_orders(&both, Fidelity::Tbbo, flat(), buy());
+    let capped_at_trades = run_orders(&both, Fidelity::Trades, flat(), buy());
+
+    assert_eq!(
+        fills(&on_tbbo),
+        [(1, 200, 500_025, PricingRule::MarketAtQuote)]
+    );
+    assert_eq!(on_tbbo.fills[0].fill.fidelity, Fidelity::Tbbo);
+    assert_eq!(
+        on_tbbo.eras,
+        [FidelityEra {
+            first: TRADE_DATE,
+            last: TRADE_DATE,
+            trade_dates: 1,
+            fidelity: Fidelity::Tbbo,
+        }]
+    );
+    assert_eq!(
+        fills(&capped_at_trades),
+        [(1, 200, 500_000, PricingRule::MarketAtTrade)]
+    );
+    assert_eq!(capped_at_trades.eras[0].fidelity, Fidelity::Trades);
+}
+
+#[test]
+fn a_run_counts_each_stretch_of_trade_dates_on_one_level_as_an_era() {
+    // Step 2.12 (`02` §1.6): each date on its finest level at or coarser than the cap (D-58), so
+    // a cap of trades falls to the bars of a date of TBBO and bars (BACKLOG.md).
+    const DAY: i64 = 86_400_000;
+    let dated = |offset: i32| TradeDate(TRADE_DATE.0 + offset);
+    let quote = |offset: i64| TbboRow {
+        ts_recv: at(offset * DAY + 200),
+        price: price(500_000),
+        size: Qty(1),
+        bid: price(499_975),
+        ask: price(500_000),
+        bid_size: Qty(1),
+        ask_size: Qty(1),
+    };
+    let print = |offset: i64| TradeRow {
+        ts_recv: at(offset * DAY + 200),
+        price: price(500_000),
+        size: Qty(1),
+    };
+    let minute = |offset: i64| {
+        let bar = BarRow {
+            ts_open: at(offset * DAY),
+            ts_close: at(offset * DAY + 60_000),
+            open: price(500_000),
+            high: price(500_000),
+            low: price(500_000),
+            close: price(500_000),
+            volume: Qty(1),
+        };
+        BTreeMap::from([(Timeframe::ONE_MINUTE, vec![bar])])
+    };
+    let tape = |offset: i32, tbbo: bool, trades: bool| {
+        let at_offset = i64::from(offset);
+        TapeDay {
+            trade_date: dated(offset),
+            tbbo: if tbbo {
+                vec![quote(at_offset)]
+            } else {
+                Vec::new()
+            },
+            trades: if trades {
+                vec![print(at_offset)]
+            } else {
+                Vec::new()
+            },
+            bars: minute(at_offset),
+        }
+    };
+    let days = vec![
+        tape(0, true, true),
+        tape(1, true, false),
+        tape(2, false, true),
+        tape(3, false, false),
+    ];
+    let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), days).unwrap();
+    let era = |first: i32, last: i32, fidelity: Fidelity| FidelityEra {
+        first: dated(first),
+        last: dated(last),
+        trade_dates: usize::try_from(last - first + 1).unwrap(),
+        fidelity,
+    };
+    let (minutes, trades) = (Fidelity::Bars(Timeframe::ONE_MINUTE), Fidelity::Trades);
+
+    let eras = |cap: Fidelity| run_orders(&reader, cap, flat(), Vec::new()).eras;
+
+    assert_eq!(
+        eras(Fidelity::Tbbo),
+        [
+            era(0, 1, Fidelity::Tbbo),
+            era(2, 2, trades),
+            era(3, 3, minutes)
+        ]
+    );
+    assert_eq!(
+        eras(trades),
+        [
+            era(0, 0, trades),
+            era(1, 1, minutes),
+            era(2, 2, trades),
+            era(3, 3, minutes)
+        ]
+    );
+    assert_eq!(eras(minutes), [era(0, 3, minutes)]);
+}
+
+#[test]
 fn a_longs_stop_and_target_inside_one_bar_resolve_to_the_stop_flagged_ambiguous() {
     // S-fill-022
     let reader = minutes(&[

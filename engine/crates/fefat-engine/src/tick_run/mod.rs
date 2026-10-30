@@ -1,7 +1,8 @@
 //! The event loop over one instrument's records (steps 2.6 and 2.7), as
 //! `fefat.reference.engine.ReferenceEngine` runs them. Each trade date is filled on the finest
 //! level it holds at or coarser than the run's fidelity: trades, TBBO records, or stored bars of a
-//! timeframe, 1-second, 1-minute, or an import's coarser bars. Events come in the order of
+//! timeframe, 1-second, 1-minute, or an import's coarser bars, and the run counts it in the
+//! fidelity era of that level (`02` §1.6). Events come in the order of
 //! F-CLK-02: at one instant the bars that close then and the records received then, in the order
 //! the data holds them (F-CLK-03), and then the decision. A record received, or a bar opening,
 //! while the market is closed is not tradeable (F-SES-02), and the working orders stay
@@ -41,7 +42,7 @@ mod timers;
 mod trades;
 
 pub use descent::Replay;
-pub use outcomes::{BookedFill, EquityPoint, RunError, RunOutputs, Stepped};
+pub use outcomes::{BookedFill, EquityPoint, FidelityEra, RunError, RunOutputs, Stepped};
 pub use records::{Quote, TickRecord};
 pub use trades::Trade;
 
@@ -102,6 +103,7 @@ pub struct TickRun<'run, R: MarketDataReader> {
     transfer: Option<Transfer>,
     trades: TradeBook,
     equity: Vec<EquityPoint>,
+    eras: Vec<FidelityEra>,
 }
 
 /// What comes next in the order of F-CLK-02.
@@ -186,6 +188,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             transfer: None,
             trades,
             equity: Vec::new(),
+            eras: Vec::new(),
         })
     }
 
@@ -201,6 +204,7 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             cost_lines: self.cost_lines,
             trades: self.trades.into_closed(),
             equity: self.equity,
+            eras: self.eras,
         })
     }
 
@@ -278,9 +282,27 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             let day = self.day_of(trade_date)?;
             self.fidelity = day.records.fidelity();
             self.trade_date = trade_date;
+            self.count_in_its_era(trade_date);
             self.day = Some(day);
             self.next_day += 1;
             self.next_record = 0;
+        }
+    }
+
+    /// Counts `trade_date`, which fills on `self.fidelity`, in the era of the dates before it on
+    /// that level, or in a new era.
+    fn count_in_its_era(&mut self, trade_date: TradeDate) {
+        match self.eras.last_mut() {
+            Some(era) if era.fidelity == self.fidelity => {
+                era.last = trade_date;
+                era.trade_dates += 1;
+            }
+            Some(_) | None => self.eras.push(FidelityEra {
+                first: trade_date,
+                last: trade_date,
+                trade_dates: 1,
+                fidelity: self.fidelity,
+            }),
         }
     }
 

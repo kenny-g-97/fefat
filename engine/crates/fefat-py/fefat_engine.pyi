@@ -18,10 +18,17 @@ class _BuildDetails(TypedDict):
     target_arch: str
     profile: str
 
+class _FidelityEra(TypedDict):
+    first: str
+    last: str
+    trade_dates: int
+    fidelity: str
+
 class _RunSummary(TypedDict):
     position: int
     cash: int
     ambiguous_fills: int
+    eras: list[_FidelityEra]
 
 class _Run(TypedDict):
     fills: _ArrowStream

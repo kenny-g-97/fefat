@@ -12,7 +12,7 @@ use fefat_core::instants::TradeDate;
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_data::{FrontSequence, MappedContract, Month};
 use fefat_engine::template::SignalRow;
-use fefat_engine::tick_run::{Replay, RunOutputs};
+use fefat_engine::tick_run::{FidelityEra, Replay, RunOutputs};
 use fefat_run::artifacts::{run_tables, untagged};
 use fefat_run::backtest::run_template;
 use fefat_run::config::RunConfig;
@@ -32,7 +32,8 @@ type BacktestArguments = (String, PyTable, Vec<PathBuf>, String);
 /// Runs the execution template of `spec_json` over `signal_frame` on the caches in `cache_paths`,
 /// one per front in the order the run trades them, as `config_json` says, replayed as `replay`
 /// says, `skipping` or `full`: its tables, `fills`, `orders`, `log`, `costs`, `trades`, and
-/// `equity`, and its `summary`, the lots held at the end, the cash, and the ambiguous fills.
+/// `equity`, and its `summary`, the lots held at the end, the cash, the ambiguous fills, and the
+/// fidelity eras of its trade dates (`02` §1.6).
 #[pyfunction]
 #[pyo3(signature = (spec_json, signal_frame, cache_paths, config_json, replay = "skipping"))]
 pub fn run_signal_backtest<'py>(
@@ -223,6 +224,7 @@ fn run_of(py: Python<'_>, outputs: RunOutputs) -> PyResult<Bound<'_, PyDict>> {
     summary.set_item("position", outputs.ledger.position().signed_lots().0)?;
     summary.set_item("cash", outputs.ledger.cash().0)?;
     summary.set_item("ambiguous_fills", outputs.ambiguous_fills())?;
+    summary.set_item("eras", eras_of(py, &outputs.eras)?)?;
     let run = PyDict::new(py);
     for (name, table) in run_tables(&[(0, outputs)]).map_err(value_error)? {
         let table = untagged(table).map_err(value_error)?;
@@ -234,4 +236,19 @@ fn run_of(py: Python<'_>, outputs: RunOutputs) -> PyResult<Bound<'_, PyDict>> {
     }
     run.set_item("summary", summary)?;
     Ok(run)
+}
+
+/// Each fidelity era as a dict of its first and last trade date (`2026-03-05`), its count of
+/// trade dates, and its level as the fidelity type spells it (`trades`, `1m`).
+fn eras_of<'py>(py: Python<'py>, eras: &[FidelityEra]) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    eras.iter()
+        .map(|era| {
+            let dict = PyDict::new(py);
+            dict.set_item("first", era.first.to_string())?;
+            dict.set_item("last", era.last.to_string())?;
+            dict.set_item("trade_dates", era.trade_dates)?;
+            dict.set_item("fidelity", era.fidelity.to_string())?;
+            Ok(dict)
+        })
+        .collect()
 }

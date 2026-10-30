@@ -78,9 +78,24 @@ pub struct EquityPoint {
     pub equity: Option<Money>,
 }
 
+/// A fidelity era (`02` §1.6): trade dates in a row that the run filled on one level, the finest
+/// each held at or coarser than the run's fidelity (D-58).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FidelityEra {
+    /// Its first trade date.
+    pub first: TradeDate,
+    /// Its last trade date.
+    pub last: TradeDate,
+    /// How many trade dates it holds.
+    pub trade_dates: usize,
+    /// The level they filled on.
+    pub fidelity: Fidelity,
+}
+
 /// What a run produces: every order in its last state, the fills, the event log, the ledger it
 /// ends with, its cost lines, each fee of a run that names a fee table and each funding payment,
-/// in the order they were paid, the trades it closed, and the account at each decision.
+/// in the order they were paid, the trades it closed, the account at each decision, and the
+/// fidelity eras of its trade dates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunOutputs {
     /// Every order, by id.
@@ -97,6 +112,8 @@ pub struct RunOutputs {
     pub trades: Vec<Trade>,
     /// The account at each decision, in their order.
     pub equity: Vec<EquityPoint>,
+    /// The fidelity eras of the trade dates it read, in their order.
+    pub eras: Vec<FidelityEra>,
 }
 
 impl RunOutputs {

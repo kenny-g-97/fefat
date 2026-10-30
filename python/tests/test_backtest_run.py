@@ -355,8 +355,9 @@ def test_a_record_another_engine_version_wrote_is_refused_by_name() -> None:
     del record["metrics"]
     (older / "run.json").write_text(json.dumps(record), encoding="utf-8")
 
+    current = fefat_engine.ENGINE_VERSION
     with pytest.raises(
-        ValueError, match="Expected a run of engine version 7, got one of version 6"
+        ValueError, match=f"Expected a run of engine version {current}, got one of version 6"
     ):
         Run.open(older)
 

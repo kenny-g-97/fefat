@@ -31,7 +31,7 @@ use loop_run::loop_run_hash;
 
 mod loop_run;
 
-const DOMAIN: &[u8] = b"fefat determinism 7\n";
+const DOMAIN: &[u8] = b"fefat determinism 8\n";
 /// The example specification of `02-engine-and-data.md` §2.1, the run key's spec.
 const EXAMPLE_SPEC: &str = r#"{"spec_version": 1, "instrument": "ES", "timeframe": "5m",
     "execution": {"entry": {"kind": "market"}, "sizing": {"kind": "fixed", "units": 1}}}"#;
