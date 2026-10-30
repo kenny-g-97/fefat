@@ -12,6 +12,7 @@ run of the same key instead of running it again:
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`.
 """
 
+from fefat.backtest.metrics import running_drawdown
 from fefat.backtest.record import RunRecord
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.runs import Run, run
@@ -42,4 +43,5 @@ __all__ = [
     "RunConfig",
     "RunRecord",
     "run",
+    "running_drawdown",
 ]

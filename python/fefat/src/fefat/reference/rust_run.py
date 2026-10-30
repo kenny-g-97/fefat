@@ -230,10 +230,10 @@ def explained(comparison: CaseComparison) -> str:
 
 
 def _listed(fills: Sequence[FillView]) -> str:
-    return "; ".join(_fill_text(fill) for fill in fills) if fills else "none"
+    return "; ".join(fill_text(fill) for fill in fills) if fills else "none"
 
 
-def _fill_text(fill: FillView) -> str:
+def fill_text(fill: FillView) -> str:
     """Such as `order 1 sell 1 at 4990.25 at 2026-03-06T14:30:01.25Z (F-STP-03, taker, 19 ticks)`."""
     flags = "".join(f", {flag}" for flag in fill.flags)
     details = f"{fill.rule}, {fill.liquidity}, {fill.slippage_ticks} ticks{flags}"

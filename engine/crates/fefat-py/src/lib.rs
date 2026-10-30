@@ -36,12 +36,13 @@ mod fefat_engine {
     use arrow_array::cast::AsArray;
     use arrow_array::types::{ArrowPrimitiveType, Int64Type};
     use arrow_array::{Array, PrimitiveArray};
-    use fefat_core::drawdown::{self, DrawdownOverflow};
     use fefat_core::fidelity::Fidelity;
     use fefat_core::instants::TradeDate;
     use fefat_core::instrument::Contract;
     use fefat_core::run_key::{ARTIFACT_SCHEMA_VERSION, ENGINE_VERSION, FILL_MODEL_VERSION};
+    use fefat_core::units::Money;
     use fefat_data::{Month, SourceFile};
+    use fefat_metrics::drawdown;
     use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
     use pyo3::prelude::*;
     use pyo3_arrow::PyTable;
@@ -117,28 +118,24 @@ mod fefat_engine {
         Ok(())
     }
 
-    /// The largest fall of the cumulative sum of `values` below its highest point so far.
+    /// How far each value of `values`, an account's equity in order, lies below the highest value
+    /// before it or at it (`fefat_metrics::drawdown`): an int64 Arrow array or stream, such as a
+    /// PyArrow array or a Polars series, read in place through the Arrow PyCapsule interface, a
+    /// slice without the values around it.
     #[pyfunction]
-    fn max_drawdown(values: Vec<i64>) -> PyResult<i64> {
-        drawdown::max_drawdown(values).map_err(overflow_error)
-    }
-
-    /// `max_drawdown` over an int64 Arrow array or stream, such as a PyArrow array or a
-    /// Polars series, read in place through the Arrow PyCapsule interface.
-    #[pyfunction]
-    fn max_drawdown_arrow(values: AnyArray) -> PyResult<i64> {
+    fn running_drawdown(values: AnyArray) -> PyResult<Vec<i64>> {
         let chunks = int64_chunks(values)?;
-        drawdown::max_drawdown(
-            chunks
-                .iter()
-                .flat_map(|chunk| chunk.values().iter().copied()),
-        )
-        .map_err(overflow_error)
+        let equity = chunks
+            .iter()
+            .flat_map(|chunk| chunk.values().iter().map(|value| Money(*value)));
+        let depths = drawdown::running_drawdown(equity)
+            .map_err(|overflow| PyOverflowError::new_err(overflow.to_string()))?;
+        Ok(depths.into_iter().map(|depth| depth.0).collect())
     }
 
-    /// The memory address of each chunk's first value where the engine reads it, the
-    /// witness for tests that the import copied nothing: for an unsliced array it equals
-    /// the buffer address that PyArrow reports.
+    /// The memory address of each chunk's first value where the engine reads it, the witness for
+    /// tests that the import copied nothing: for an unsliced array it equals the buffer address
+    /// that PyArrow reports.
     #[pyfunction]
     fn arrow_values_addresses(values: AnyArray) -> PyResult<Vec<usize>> {
         let chunks = int64_chunks(values)?;
@@ -146,6 +143,20 @@ mod fefat_engine {
             .iter()
             .map(|chunk| chunk.values().as_ptr().addr())
             .collect())
+    }
+
+    /// The metrics of a run (`fefat_metrics::compute`) from `inputs_json`, what they read of its
+    /// trades and its account as `fefat.backtest.metrics_inputs` writes it, as JSON.
+    #[pyfunction]
+    fn metrics(inputs_json: &str) -> PyResult<String> {
+        let inputs: fefat_metrics::inputs::MetricsInputs = serde_json::from_str(inputs_json)
+            .map_err(|error| {
+                value_error(format!(
+                    "Expected the inputs of a run's metrics as JSON, got: {error}"
+                ))
+            })?;
+        let metrics = fefat_metrics::compute(&inputs).map_err(value_error)?;
+        serde_json::to_string(&metrics).map_err(value_error)
     }
 
     /// The engine's version, the system it was compiled for, and its build profile.
@@ -193,9 +204,5 @@ mod fefat_engine {
             )));
         }
         Ok(chunks)
-    }
-
-    fn overflow_error(overflow: DrawdownOverflow) -> PyErr {
-        PyOverflowError::new_err(overflow.to_string())
     }
 }

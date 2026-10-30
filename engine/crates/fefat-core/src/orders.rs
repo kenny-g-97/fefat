@@ -5,6 +5,10 @@
 
 use std::fmt;
 use std::num::NonZeroU32;
+use std::str::FromStr;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
 use crate::instants::Ts;
 use crate::rolls::RollReason;
@@ -97,8 +101,9 @@ pub enum OrderKind {
 
 /// What an order does for a position, which its fill records (F-TAG-01): open it, protect it (an
 /// exit plan's stop), take its profit (one of the plan's targets), close it at the market on the
-/// strategy's word, for a reason, or carry it across a roll, a leg of the roll (F-ROL-02).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// strategy's word, for a reason, or carry it across a roll, a leg of the roll (F-ROL-02). Roles
+/// order as they are declared, which is the order a run's breakdowns list them in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OrderRole {
     /// Opens or adds to a position.
     Entry,
@@ -124,6 +129,63 @@ pub enum TargetNumber {
     Third,
 }
 
+impl OrderRole {
+    /// Every role, in their order.
+    pub const ALL: [Self; 17] = [
+        Self::Entry,
+        Self::Stop,
+        Self::Target(TargetNumber::First),
+        Self::Target(TargetNumber::Second),
+        Self::Target(TargetNumber::Third),
+        Self::Exit(ExitReason::Strategy),
+        Self::Exit(ExitReason::FlatBy),
+        Self::Exit(ExitReason::NoOvernight),
+        Self::Exit(ExitReason::NoWeekend),
+        Self::Exit(ExitReason::MaxBars),
+        Self::Exit(ExitReason::MaxMinutes),
+        Self::Exit(ExitReason::OppositeSignal),
+        Self::Exit(ExitReason::SignalExit),
+        Self::Roll(RollReason::Volume),
+        Self::Roll(RollReason::OpenInterest),
+        Self::Roll(RollReason::Calendar),
+        Self::Roll(RollReason::Expiry),
+    ];
+}
+
+/// Text that spells no order role.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("Expected an order role as a fill records it, such as stop or target_1, got {text:?}")]
+pub struct UnreadableOrderRole {
+    /// The text given.
+    pub text: String,
+}
+
+/// A role as it displays, `stop` or `roll_open_interest`, the inverse of its `Display`.
+impl FromStr for OrderRole {
+    type Err = UnreadableOrderRole;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let known = Self::ALL.into_iter().find(|role| role.to_string() == text);
+        known.ok_or_else(|| UnreadableOrderRole {
+            text: text.to_owned(),
+        })
+    }
+}
+
+/// A role serializes as its text, as the fills and the trades artifacts write it.
+impl Serialize for OrderRole {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderRole {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 impl TargetNumber {
     /// The targets in order.
     pub const ALL: [Self; 3] = [Self::First, Self::Second, Self::Third];
@@ -140,7 +202,7 @@ impl TargetNumber {
 
 /// Why a market order closes the position (`docs/spec/fill-semantics.md` §20): the strategy's own
 /// word, outside an execution template, or one of the template's time rules or signals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExitReason {
     /// A strategy's own exit, outside the template.
     Strategy,
@@ -289,6 +351,23 @@ mod tests {
         assert_eq!(Side::Sell.moved(price, 0, TICK), Ok(price));
         assert_eq!(Side::Buy.worse(price, Price(1)), price);
         assert_eq!(Side::Sell.worse(price, Price(1)), Price(1));
+    }
+
+    #[test]
+    fn every_role_reads_back_from_its_text() {
+        for role in OrderRole::ALL {
+            assert_eq!(role.to_string().parse(), Ok(role));
+        }
+        let texts: Vec<String> = OrderRole::ALL.iter().map(ToString::to_string).collect();
+        assert_eq!(texts.first().map(String::as_str), Some("entry"));
+        assert_eq!(texts.get(4).map(String::as_str), Some("target_3"));
+        assert_eq!(texts.last().map(String::as_str), Some("roll_expiry"));
+        assert!(OrderRole::ALL.windows(2).all(|pair| pair[0] < pair[1]));
+        let unknown = "take_profit".parse::<OrderRole>().unwrap_err();
+        assert_eq!(
+            unknown.to_string(),
+            "Expected an order role as a fill records it, such as stop or target_1, got \"take_profit\""
+        );
     }
 
     #[test]

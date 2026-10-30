@@ -2,14 +2,18 @@
 what `fefat.backtest.run_inputs` gathers, keys the run on its specification, its config, its
 signal frame, its data's snapshots, and the engine's versions (`02` §4), and returns the run of
 that key when its folder holds one; otherwise it runs the engine (`fefat_engine`) and writes the
-run's artifacts and record under `FEFAT_HOME/workspaces/default/artifacts/runs/<run key>/`.
+run's artifacts and record under `FEFAT_HOME/workspaces/default/artifacts/runs/<run key>/`, with
+the run's metrics (step 2.11), which a rerun at one more tick of slippage and the engine's
+`fefat-metrics` work out.
 
     run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
-    run.trades, run.fills, run.equity("1d"), run.config, run.hash
+    run.trades, run.fills, run.equity("1d"), run.config, run.hash, run.metrics
+    run.explain(trade_id=4)
 """
 
 import os
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -26,6 +30,9 @@ from fefat.backtest.artifacts import (
     read_record,
     write_run,
 )
+from fefat.backtest.explain import Explanation, explain
+from fefat.backtest.metrics import Metrics
+from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
     EngineVersions,
     InstrumentRecord,
@@ -67,6 +74,20 @@ class Run:
     def config(self) -> AppliedRunConfig:
         """The settings the run ran under, every default applied."""
         return self.record.config
+
+    @property
+    def metrics(self) -> Metrics:
+        """The run's metrics (`02` §7), as its record holds them."""
+        return self.record.metrics
+
+    def explain(self, trade_id: int) -> Explanation:
+        """Trade `trade_id`, the id of its entry order, replayed through the reference engine on
+        the run's own records (`fefat.backtest.explain`): prints each event with its rule and
+        each fill with its rule and slippage, and raises `EnginesDisagreementError` when the
+        reference's fills are not the Rust engine's."""
+        explanation = explain(self, trade_id)
+        print(explanation.text())
+        return explanation
 
     @property
     def trades(self) -> pl.DataFrame:
@@ -148,6 +169,7 @@ def _ran(
     engine = {name: pl.DataFrame(outputs[name]) for name in ENGINE_TABLES}
     capital = micro_units(inputs.config.capital)
     artifacts = artifacts_of(engine, inputs.signals, features, inputs.parameters, capital)
+    metrics = _metrics(inputs, artifacts, caches)
     summary = outputs["summary"]
     record = RunRecord(
         run_id=key,
@@ -176,9 +198,38 @@ def _ran(
             cash=Decimal(money_text(summary["cash"])),
             pnl=Decimal(money_text(int(artifacts["trades"].get_column("pnl").sum()))),
         ),
+        metrics=metrics,
     )
     write_run(folder, artifacts, record)
     return Run(folder=folder, record=record)
+
+
+def _metrics(
+    inputs: RunInputs, artifacts: Mapping[str, pl.DataFrame], caches: list[str]
+) -> Metrics:
+    """The run's metrics, with the profit and loss of its trades rerun at one more tick of
+    slippage on market and stop orders (`02` §7, F-SLP-01); a rerun the engine refuses refuses
+    the run."""
+    replay, config = str(inputs.config.replay), inputs.config_json_at_one_more_tick()
+    try:
+        slipped = fefat_engine.run_signal_backtest(
+            inputs.spec_json(), inputs.signals, caches, config, replay
+        )
+    except ValueError as error:
+        raise ValueError(
+            f"Expected the rerun at one more tick of slippage to run, got: {error}"
+        ) from error
+    document = metrics_inputs_json(
+        artifacts,
+        capital=micro_units(inputs.config.capital),
+        instrument=inputs.parameters,
+        window=inputs.window,
+        time_zone=inputs.time_zone,
+        pnl_at_plus_one_tick=int(pl.DataFrame(slipped["trades"]).get_column("pnl").sum()),
+        parameters=parameters_of(inputs.spec.execution),
+        friction_tested=friction_tested(inputs.config.slippage_ticks, artifacts["fills"]),
+    )
+    return Metrics.model_validate_json(fefat_engine.metrics(document))
 
 
 def _instrument_record(inputs: RunInputs) -> InstrumentRecord:

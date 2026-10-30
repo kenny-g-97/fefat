@@ -1,7 +1,6 @@
 //! Shared vocabulary of the engine: newtypes, orders, fills, errors, calendar, and the MarketDataReader trait.
 
 pub mod costs;
-pub mod drawdown;
 pub mod fidelity;
 pub mod fills;
 pub mod instants;

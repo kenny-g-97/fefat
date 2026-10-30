@@ -415,6 +415,14 @@ dependencies = [
 [[package]]
 name = "fefat-metrics"
 version = "0.0.1"
+dependencies = [
+ "fefat-core",
+ "libm",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "fefat-prop"
@@ -429,6 +437,7 @@ dependencies = [
  "fefat-core",
  "fefat-data",
  "fefat-engine",
+ "fefat-metrics",
  "fefat-run",
  "pyo3",
  "pyo3-arrow",

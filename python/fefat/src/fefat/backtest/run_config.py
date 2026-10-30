@@ -117,3 +117,10 @@ class AppliedRunConfig(FrozenModel):
             limit_fill=self.limit_fill,
             roll_handling=self.roll_handling,
         )
+
+    def at_one_more_tick(self) -> "AppliedRunConfig":
+        """These settings with one more tick of slippage on market and stop orders, the rerun
+        whose profit and loss the metrics report (`02` §7, F-SLP-01)."""
+        ticks = self.slippage_ticks
+        more = SlippageTicks(market=ticks.market + 1, stop=ticks.stop + 1)
+        return self.model_copy(update={"slippage_ticks": more})
