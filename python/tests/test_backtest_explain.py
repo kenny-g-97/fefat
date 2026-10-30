@@ -2,12 +2,14 @@
 reference engine on the run's own records prints each event with its rule and each fill with its
 rule and slippage, and the reference's fills are the Rust engine's. On trade prints, a losing
 trade shows its stop's trigger and its fill; on 1-minute bars every trade of the breakout agrees,
-the one held across the fixtures' roll of 2026-03-09 among them; an id that is no trade's, fills
+the one held across the fixtures' roll of 2026-03-09 among them, on the store's own bars when its
+prints disagree; an id that is no trade's, fills
 the engines do not share, a trade of prints across the roll, and data changed since the run are
 refused."""
 
 import os
 import shutil
+from datetime import date
 
 import polars as pl
 import pytest
@@ -111,3 +113,43 @@ def test_data_changed_since_the_run_is_refused() -> None:
 
     with pytest.raises(ValueError, match="the data changed since the run"):
         run.explain(1)
+
+
+def test_a_run_on_bars_is_explained_on_its_stored_bars_not_bars_built_from_prints() -> None:
+    # The engine fills a 1-minute run on the store's 1-minute bars; `load` without a fidelity
+    # would build them from the trade prints, which here lie four ticks above them on 03-06.
+    trades = resolve_paths(os.environ).data_dir / "synthetic" / "trades" / "root=ES"
+    part = trades / "contract=ESH2026" / "date=2026-03-06" / "part.parquet"
+    prints = pl.read_parquet(part)
+    prints.with_columns(price=pl.col("price") + 4 * 250_000_000).write_parquet(part)
+    run = backtest(RunConfig(fidelity=Timeframe.parse("1m")))
+    on_the_day = run.trades.filter(pl.col("entry_trade_date") == date(2026, 3, 6))
+    assert not on_the_day.is_empty()
+
+    explained = [run.explain(order) for order in on_the_day.get_column("entry_order")]
+
+    assert all(each.reference_fills == each.rust_fills for each in explained)
+
+
+def test_a_perpetuals_trade_is_replayed_with_the_funding_it_paid() -> None:
+    # The funding rates come back from the run's record through the reference's own model.
+    store_with("funding")
+    utc = pl.from_epoch("ts_close", time_unit="ns")
+    at = lambda hour: (utc.dt.hour() == hour) & (utc.dt.minute() == 0)  # noqa: E731
+    long_btc = ff.SignalStrategy(
+        instrument="BTCUSDT-PERP",
+        timeframe="5m",
+        long_entry=at(1),
+        short_entry=pl.lit(False),
+        long_exit=at(23),
+        execution=ff.Execution(entry=ff.Market(), sizing=ff.Fixed(0.1)),
+    )
+    with pytest.warns(UserWarning, match="binance-default"):
+        run = ff.backtest.run(long_btc, "2026-03-07", "2026-03-07")
+
+    explanation = run.explain(run.trades.item(0, "entry_order"))
+
+    assert explanation.reference_fills == explanation.rust_fills
+    paid = [line for line in explanation.lines if " funding " in line]
+    assert len(paid) == 2
+    assert all(line.endswith("[F-FND-01]") for line in paid)

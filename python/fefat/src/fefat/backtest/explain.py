@@ -225,12 +225,13 @@ def _bars(
     dates: tuple[date, date],
     instants: tuple[int, int],
 ) -> tuple[tuple[Record, ...], tuple[RollRow, ...], str]:
-    """The stored bars of the episode as `load` splices them, cut to it, the rolls they cross,
-    and the front of the first; `load`'s warnings are the run's record's."""
+    """The episode's stored bars of `timeframe`, which the engine replayed, not bars `load`
+    would build from finer data, spliced as `load` splices them and cut to the episode; the
+    rolls they cross; and the front of the first. `load`'s warnings are the run's record's."""
     root, provider = record.instrument.root, record.config.provider
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        frame = load(root, str(timeframe), *dates, provider=provider).collect()
+        frame = load(root, str(timeframe), *dates, fidelity=timeframe, provider=provider).collect()
     calendar = roll_calendar(root, provider=provider)
     bars, _ = tape_across_rolls(frame, calendar)
     tape = _cut(bars, *instants)
@@ -276,13 +277,15 @@ def _cut(records: Sequence[Record], entered: int, left: int) -> tuple[Record, ..
 
 
 def _funding(record: RunRecord, first: int, last: int) -> tuple[FundingRate, ...]:
-    """The funding rates the run paid from `first` to `last`, as its config gave the engine."""
-    rates = record.engine_config["funding"]
-    return tuple(
-        FundingRate.model_construct(ts=rate["ts"], rate=Decimal(rate["rate"]).scaleb(-9))
-        for rate in rates
-        if first <= rate["ts"] <= last
+    """The funding rates the run paid from `first` to `last`, as its config gave the engine,
+    each read back through the reference's own model, which refuses a malformed one."""
+    rates = (
+        FundingRate.model_validate(
+            {"ts": instant_text(rate["ts"]), "rate": str(Decimal(rate["rate"]).scaleb(-9))}
+        )
+        for rate in record.engine_config["funding"]
     )
+    return tuple(rate for rate in rates if first <= rate.ts <= last)
 
 
 def _replayed(
