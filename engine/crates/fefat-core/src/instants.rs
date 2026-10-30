@@ -12,6 +12,8 @@ use crate::units::Overflow;
 
 /// Nanoseconds in a second.
 pub const NANOSECONDS_PER_SECOND: i64 = 1_000_000_000;
+/// Nanoseconds in a minute, the spacing of the marks a trade path keeps (`03` §4.2).
+pub const NANOSECONDS_PER_MINUTE: i64 = 60 * NANOSECONDS_PER_SECOND;
 /// Seconds in a UTC day.
 pub const SECONDS_PER_DAY: i64 = 86_400;
 
@@ -31,6 +33,15 @@ impl Ts {
             left: self.0.into(),
             right: nanoseconds.into(),
         })
+    }
+
+    /// The first whole minute of the UTC clock at or after this instant, itself when it is one,
+    /// or [`Overflow`] when it leaves 64 bits: the minute boundaries every time zone shares.
+    pub fn minute_at_or_after(self) -> Result<Self, Overflow> {
+        match self.0.rem_euclid(NANOSECONDS_PER_MINUTE) {
+            0 => Ok(self),
+            into => self.checked_add_nanoseconds(NANOSECONDS_PER_MINUTE - into),
+        }
     }
 }
 
@@ -183,6 +194,25 @@ mod tests {
         );
         assert_eq!(Ts(0).checked_add_nanoseconds(-1), Ok(Ts(-1)));
         assert!(Ts(i64::MAX).checked_add_nanoseconds(1).is_err());
+    }
+
+    #[test]
+    fn the_minute_at_or_after_an_instant_is_itself_on_a_whole_minute_and_the_next_one_inside() {
+        let minute = NANOSECONDS_PER_MINUTE;
+        // 2026-03-05T14:30:00Z, a whole minute.
+        let whole = Ts(1_772_721_000 * NANOSECONDS_PER_SECOND);
+        assert_eq!(whole.minute_at_or_after(), Ok(whole));
+        assert_eq!(
+            Ts(whole.0 + 1).minute_at_or_after(),
+            Ok(Ts(whole.0 + minute))
+        );
+        assert_eq!(
+            Ts(whole.0 + minute - 1).minute_at_or_after(),
+            Ok(Ts(whole.0 + minute))
+        );
+        assert_eq!(Ts(-1).minute_at_or_after(), Ok(Ts(0)));
+        assert_eq!(Ts(-minute - 1).minute_at_or_after(), Ok(Ts(-minute)));
+        assert!(Ts(i64::MAX).minute_at_or_after().is_err());
     }
 
     #[test]

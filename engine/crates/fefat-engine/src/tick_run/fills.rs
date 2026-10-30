@@ -37,7 +37,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         if self.book.has_live() {
             self.work_orders(record, index)?;
         }
-        self.mark_at(record.price)?;
+        self.mark_at(record.ts, record.price)?;
         let moves = self.book.marked(record.price, self.tick())?;
         self.log_moves(record.ts, &moves);
         Ok(())

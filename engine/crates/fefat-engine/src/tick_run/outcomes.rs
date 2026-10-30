@@ -10,7 +10,7 @@ use fefat_core::market_data::{BarRow, MarketDataError};
 use fefat_core::units::{Money, Overflow, Price, Qty};
 use thiserror::Error;
 
-use super::{TickRecord, Trade};
+use super::{TickRecord, Trade, TradePath};
 use crate::book::WorkingOrder;
 use crate::event_log::LogEntry;
 use crate::exit_plan::PlanError;
@@ -115,8 +115,8 @@ pub(super) fn count_in_its_era(
 
 /// What a run produces: every order in its last state, the fills, the event log, the ledger it
 /// ends with, its cost lines, each fee of a run that names a fee table and each funding payment,
-/// in the order they were paid, the trades it closed, the account at each decision, and the
-/// fidelity eras of its trade dates.
+/// in the order they were paid, the trades it closed and their paths, the account at each
+/// decision, and the fidelity eras of its trade dates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunOutputs {
     /// Every order, by id.
@@ -131,6 +131,8 @@ pub struct RunOutputs {
     pub cost_lines: Vec<CostLine>,
     /// The trades closed, in the order they closed (§20).
     pub trades: Vec<Trade>,
+    /// Each trade's path, in the trades' order, none when the run records none (`Recording`).
+    pub trade_paths: Vec<TradePath>,
     /// The account at each decision, in their order.
     pub equity: Vec<EquityPoint>,
     /// The fidelity eras of the trade dates it read, in their order.

@@ -24,8 +24,10 @@ pub struct Version(pub u32);
 pub const ENGINE_VERSION: Version = Version(8);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
-/// Bumped when the layout of a run's artifacts changes.
-pub const ARTIFACT_SCHEMA_VERSION: Version = Version(1);
+/// Bumped when the layout of a run's artifacts changes: 2 since step 2.13, whose runs store each
+/// trade's path as `trade_paths` and its fall from its peak and its path's fidelity in `trades`,
+/// after 1, the artifacts' first layout of step 2.10.
+pub const ARTIFACT_SCHEMA_VERSION: Version = Version(2);
 
 /// The versions a run key covers, in the order it hashes them.
 pub const VERSIONS: [Version; 3] = [ENGINE_VERSION, FILL_MODEL_VERSION, ARTIFACT_SCHEMA_VERSION];
