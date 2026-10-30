@@ -7,6 +7,7 @@ prints disagree; an id that is no trade's, fills
 the engines do not share, a trade of prints across the roll, and data changed since the run are
 refused."""
 
+import json
 import os
 import shutil
 from datetime import date
@@ -154,6 +155,15 @@ def test_a_perpetuals_trade_is_replayed_with_the_funding_it_paid() -> None:
     paid = [line for line in explanation.lines if " funding " in line]
     assert len(paid) == 2
     assert all(line.endswith("[F-FND-01]") for line in paid)
+    # The step review: a rate of zero, or below a millionth, reads back too, outside the episode.
+    copy = run.folder.with_name("small-rates")
+    shutil.copytree(run.folder, copy)
+    record = json.loads((copy / "run.json").read_bytes())
+    funding = record["engine_config"]["funding"]
+    record["engine_config"]["funding"] = [{"ts": 1, "rate": 0}, {"ts": 2, "rate": 500}, *funding]
+    (copy / "run.json").write_text(json.dumps(record), encoding="utf-8")
+    again = Run.open(copy).explain(run.trades.item(0, "entry_order"))
+    assert again.reference_fills == explanation.reference_fills
 
 
 def test_a_trade_reversed_by_an_opposite_signal_ends_at_its_own_exit() -> None:
@@ -211,3 +221,30 @@ def test_a_short_entered_by_the_second_order_of_a_pair_is_numbered_from_the_firs
 
     assert all(each.reference_fills == each.rust_fills for each in explained)
     assert all(each.rust_fills[0].order == each.trade_id for each in explained)
+
+
+def test_a_trade_entered_at_the_instant_the_one_before_closed_is_numbered_from_its_entry() -> None:
+    # Step 2.11's second engine review: on 1-minute signals filling on 1-minute bars, a trade
+    # opened and closed in one bar places its stop and target at the bar's close (F-BAR-06,
+    # F-OCO-02), the instant the next decision enters again; only entries number the replay.
+    scalper = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="1m",
+        long_entry=pl.lit(True),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(
+            entry=ff.Market(),
+            stop=ff.Stop(ticks=1),
+            targets=[ff.Target(ticks=8)],
+            sizing=ff.Fixed(1),
+        ),
+    )
+    with pytest.warns(UserWarning, match="F-FEE-01"):
+        run = ff.backtest.run(scalper, START, END, RunConfig(fidelity=Timeframe.parse("1m")))
+    trades = run.trades.with_columns(closed_before=pl.col("exit_ts").shift(1))
+    reentered = trades.filter(pl.col("entry_decision") == pl.col("closed_before"))
+    assert not reentered.is_empty()
+
+    explained = [run.explain(order) for order in reentered.get_column("entry_order").head(3)]
+
+    assert all(each.reference_fills == each.rust_fills for each in explained)

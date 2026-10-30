@@ -131,10 +131,14 @@ def explain(run: "Run", trade_id: int) -> Explanation:
 
 
 def _first_order(orders: pl.DataFrame, trade: Trade) -> int:
-    """The id the replay numbers its orders from: the first order the entry's decision placed,
-    which is the buy of a pair whose sell opened a short (F-ENT-01), else the entry itself."""
+    """The id the replay numbers its orders from: the first entry the trade's decision placed,
+    which is the buy of a pair whose sell opened a short (F-ENT-01), else the entry itself; the
+    stop and target of a trade closed inside the bar before can carry the same instant (F-BAR-06,
+    F-OCO-02), so only entries count."""
     placed = orders.filter(
-        pl.col("placed_at") == trade["entry_decision"], pl.col("id") <= trade["entry_order"]
+        pl.col("placed_at") == trade["entry_decision"],
+        pl.col("role") == "entry",
+        pl.col("id") <= trade["entry_order"],
     )
     first = placed.get_column("id").min()
     if not isinstance(first, int):
@@ -309,10 +313,11 @@ def _cut(records: Sequence[Record], entered: int, left: int) -> tuple[Record, ..
 
 def _funding(record: RunRecord, first: int, last: int) -> tuple[FundingRate, ...]:
     """The funding rates the run paid from `first` to `last`, as its config gave the engine,
-    each read back through the reference's own model, which refuses a malformed one."""
+    each read back through the reference's own model, which refuses a malformed one, and
+    written for it in fixed notation, since `str` writes a rate of zero as `0E-9`."""
     rates = (
         FundingRate.model_validate(
-            {"ts": instant_text(rate["ts"]), "rate": str(Decimal(rate["rate"]).scaleb(-9))}
+            {"ts": instant_text(rate["ts"]), "rate": format(Decimal(rate["rate"]).scaleb(-9), "f")}
         )
         for rate in record.engine_config["funding"]
     )
