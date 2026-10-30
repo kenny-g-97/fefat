@@ -24,8 +24,7 @@ from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.config import FefatPaths
 from fefat.market.api import load, parse_trade_date, roll_calendar
 from fefat.market.calendar import SessionTable, counted
-from fefat.market.coverage import dataset_coverage
-from fefat.market.dataset_choice import provider_datasets
+from fefat.market.dataset_choice import provider_datasets, signal_source
 from fefat.market.engine_cache import build_cache_months, level_of
 from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
 from fefat.market.engine_units import (
@@ -35,7 +34,7 @@ from fefat.market.engine_units import (
     price_text,
 )
 from fefat.market.fees import TABLES, CryptoFee, FuturesFee
-from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
+from fefat.market.fidelity import TickFidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest, YearMonth
 from fefat.market.roll_decisions import RollReason
@@ -147,7 +146,8 @@ def run_inputs(
     market = _market(strategy.instrument, config.provider, paths)
     applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
-    source = _signal_source(market, Timeframe.parse(strategy.timeframe), dates)
+    held = {str(dataset.schema_name): dataset for dataset in market.datasets}
+    source = signal_source(market.store, held, Timeframe.parse(strategy.timeframe), dates)
     bars, loaded = _bars(strategy, dates, market.provider, source)
     spec = strategy.to_spec()
     signals = strategy.signals(bars).collect()
@@ -226,56 +226,6 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
         return (0 if level is TickFidelity.TBBO else 1, 0)
 
     return min((level_of(dataset) for dataset in datasets), key=rank)
-
-
-_SIGNAL_SOURCES: tuple[TickFidelity | Timeframe, ...] = (
-    ONE_MINUTE,
-    ONE_SECOND,
-    TickFidelity.TRADES,
-)
-"""The levels signal bars are built from, coarsest first."""
-
-
-def _signal_source(
-    market: _Market, timeframe: Timeframe, dates: tuple[date, date]
-) -> TickFidelity | Timeframe:
-    """The data the signal bars are built from (step 2.12): of the 1-minute bars, 1-second bars,
-    and trades stored that build bars of `timeframe`, those whose trade dates cover the most of
-    the window from `dates`' first to its last, the coarsest of them, since ticks may cover a
-    part of the window the bars cover, or bars a part the ticks cover; else the finest bars
-    stored, an import's coarser bars, which `load` refuses when they are coarser than
-    `timeframe`."""
-    held = [
-        (level, dataset)
-        for level in _SIGNAL_SOURCES
-        for dataset in market.datasets
-        if level_of(dataset) == level and _builds(level, timeframe)
-    ]
-    if not held:
-        bars = [level_of(dataset) for dataset in market.datasets]
-        timeframes = [level for level in bars if isinstance(level, Timeframe)]
-        return min(timeframes, key=Timeframe.nominal_seconds, default=TickFidelity.TRADES)
-    covered = [_days_covered(market.store, dataset, dates) for _, dataset in held]
-    return held[covered.index(max(covered))][0]
-
-
-def _days_covered(store: Store, dataset: Dataset, dates: tuple[date, date]) -> int:
-    """How many days of the window from `dates`' first to its last lie between the dataset's
-    first and last trade dates."""
-    coverage = dataset_coverage(store, dataset)
-    if coverage is None:
-        return 0
-    first = max(dates[0], coverage.first_trade_date)
-    last = min(dates[1], coverage.last_trade_date)
-    return max(0, (last - first).days + 1)
-
-
-def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
-    """Whether `level` builds bars of `timeframe`: trades always, and bars whose length divides
-    its length, bucketed alike from the session's open (`02` §1.4)."""
-    if not isinstance(level, Timeframe):
-        return True
-    return timeframe.nominal_seconds() % level.nominal_seconds() == 0
 
 
 def _bars(

@@ -92,6 +92,27 @@ pub struct FidelityEra {
     pub fidelity: Fidelity,
 }
 
+/// Counts `trade_date`, which fills on `fidelity`, in the last of `eras` when it is of that
+/// level, or in a new era.
+pub(super) fn count_in_its_era(
+    eras: &mut Vec<FidelityEra>,
+    trade_date: TradeDate,
+    fidelity: Fidelity,
+) {
+    match eras.last_mut() {
+        Some(era) if era.fidelity == fidelity => {
+            era.last = trade_date;
+            era.trade_dates += 1;
+        }
+        Some(_) | None => eras.push(FidelityEra {
+            first: trade_date,
+            last: trade_date,
+            trade_dates: 1,
+            fidelity,
+        }),
+    }
+}
+
 /// What a run produces: every order in its last state, the fills, the event log, the ledger it
 /// ends with, its cost lines, each fee of a run that names a fee table and each funding payment,
 /// in the order they were paid, the trades it closed, the account at each decision, and the

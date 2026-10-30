@@ -14,7 +14,6 @@ import pytest
 
 import fefat as ff
 import fefat.backtest.fidelity as fidelity
-import fefat.backtest.run_inputs as run_inputs
 import gen_fixtures
 from fefat.backtest import (
     FidelityCheck,
@@ -26,8 +25,10 @@ from fefat.backtest import (
     fidelity_check,
 )
 from fefat.config import resolve_paths
+from fefat.market.dataset_choice import provider_datasets, signal_source
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
 from fefat.market.schema import Timeframe
+from fefat.market.store import Store
 from notebook_runs import breakout, store_with
 
 ES_TICK = 250_000_000
@@ -118,17 +119,25 @@ def test_with_ticks_throughout_the_baseline_is_the_run_and_each_rerun_the_run_at
     assert found == differences
     assert check.at_one_minute.unmatched_trades == run.trades.height - both.height
     assert minutes.metrics.fidelity_check is None
+    # Its baseline read back from the saved run's artifacts is the one the run worked out.
+    assert fidelity_check(run) == check
 
 
 @pytest.mark.usefixtures("fixture_store")
-def test_a_rerun_the_engine_refuses_refuses_the_check_and_not_the_run() -> None:
+def test_a_rerun_the_engine_refuses_refuses_the_check_and_not_the_run(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     # BTC's trades without bars: no level at or coarser than 1 second to rerun its day at.
     synthetic = resolve_paths(os.environ).data_dir / "synthetic"
     for bars in ("ohlcv-1s", "ohlcv-1m"):
         shutil.rmtree(synthetic / bars / "root=BTCUSDT-PERP")
 
     run = ff.backtest.run(long_btc(), "2026-03-07", "2026-03-07")
+    capsys.readouterr()
+    run.report()
 
+    refused = "Fidelity check from 2026-03-07 to 2026-03-07 refused at 1s: Expected a level"
+    assert any(line.startswith(refused) for line in capsys.readouterr().out.splitlines())
     check = run.metrics.fidelity_check
     assert isinstance(check, RefusedCheck)
     assert (check.first, check.last, check.fidelity) == (
@@ -201,15 +210,19 @@ def test_signal_bars_come_from_the_level_that_covers_the_most_of_the_window() ->
     # The code review: 1-minute bars that cover less of the window than the ticks would cut the
     # window to them, so the coarsest level of those covering the most is the source.
     paths = resolve_paths(os.environ)
-    market = run_inputs._market("ES", None, paths)
+    store = Store(paths.data_dir)
+    held = provider_datasets(store, "ES", None, None)
     window, five_minutes = (date(2026, 3, 5), date(2026, 3, 9)), Timeframe.parse("5m")
-    assert run_inputs._signal_source(market, five_minutes, window) == ONE_MINUTE
+    assert signal_source(store, held, five_minutes, window) == ONE_MINUTE
 
     for part in (paths.data_dir / "synthetic" / "ohlcv-1m" / "root=ES").rglob("*.parquet"):
         bars = pl.read_parquet(part)
         bars.filter(pl.col("trade_date") < date(2026, 3, 9)).write_parquet(part)
 
-    assert run_inputs._signal_source(market, five_minutes, window) == ONE_SECOND
+    assert signal_source(store, held, five_minutes, window) == ONE_SECOND
+    # The step review: a store without trades or bars names what it lacks, at once.
+    with pytest.raises(ValueError, match="Expected trades or bars to build signal bars from"):
+        signal_source(store, {}, five_minutes, window)
 
 
 def outcome_of(run: Run) -> PeriodOutcome:

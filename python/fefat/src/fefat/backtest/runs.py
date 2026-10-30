@@ -253,7 +253,7 @@ def _checked(inputs: RunInputs, cache_paths: tuple[Path, ...], itself: PeriodRun
         signals=inputs.signals,
         engine_config=inputs.engine_config,
         cache_folder=cache_paths[0].parent,
-        replay=str(inputs.config.replay),
+        replay=inputs.config.replay,
         capital=micro_units(inputs.config.capital),
         window=inputs.window,
         run=itself,

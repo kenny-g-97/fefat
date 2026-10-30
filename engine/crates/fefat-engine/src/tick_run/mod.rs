@@ -282,27 +282,10 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
             let day = self.day_of(trade_date)?;
             self.fidelity = day.records.fidelity();
             self.trade_date = trade_date;
-            self.count_in_its_era(trade_date);
+            outcomes::count_in_its_era(&mut self.eras, trade_date, self.fidelity);
             self.day = Some(day);
             self.next_day += 1;
             self.next_record = 0;
-        }
-    }
-
-    /// Counts `trade_date`, which fills on `self.fidelity`, in the era of the dates before it on
-    /// that level, or in a new era.
-    fn count_in_its_era(&mut self, trade_date: TradeDate) {
-        match self.eras.last_mut() {
-            Some(era) if era.fidelity == self.fidelity => {
-                era.last = trade_date;
-                era.trade_dates += 1;
-            }
-            Some(_) | None => self.eras.push(FidelityEra {
-                first: trade_date,
-                last: trade_date,
-                trade_dates: 1,
-                fidelity: self.fidelity,
-            }),
         }
     }
 

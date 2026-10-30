@@ -23,7 +23,7 @@ counted, such as the profit factor of a run without a losing trade.
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 import fefat_engine
 import polars as pl
@@ -277,10 +277,11 @@ class FidelityRerun(FrozenModel):
 
 
 class FidelityCheck(FrozenModel):
-    """The error bar of a run's days at lower fidelity (`02` §1.6, step 2.12): the period its
-    trade dates finer than a minute span, from `first` to `last`, run from flat at the run's own
-    fidelity, the baseline, and again at 1-second and at 1-minute fidelity."""
+    """The error bar of a run's days at lower fidelity (`02` §1.6, step 2.12), `kind` checked:
+    the period its trade dates finer than a minute span, from `first` to `last`, run from flat
+    at the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity."""
 
+    kind: Literal["checked"] = "checked"
     first: date
     last: date
     baseline: PeriodOutcome
@@ -289,9 +290,11 @@ class FidelityCheck(FrozenModel):
 
 
 class RefusedCheck(FrozenModel):
-    """A fidelity check whose rerun at `fidelity` the engine refused, with its message, as when a
-    trade date of the period holds no level at or coarser than it, ticks without bars."""
+    """A fidelity check, `kind` refused, whose rerun at `fidelity` the engine refused, with its
+    message, as when a trade date of the period holds no level at or coarser than it, ticks
+    without bars."""
 
+    kind: Literal["refused"] = "refused"
     first: date
     last: date
     fidelity: FidelityText
@@ -300,7 +303,7 @@ class RefusedCheck(FrozenModel):
 
 class Metrics(FrozenModel):
     """A run's metrics (`02` §7), as `fefat_engine.metrics` works them out, and its fidelity
-    check, which `fefat.backtest.fidelity_check` adds."""
+    check, which `fefat.backtest.fidelity_check` adds, told apart by its `kind`."""
 
     trades: TradeStatistics
     daily: DailyStatistics
@@ -309,4 +312,6 @@ class Metrics(FrozenModel):
     pnl_at_plus_one_tick: Decimal
     breakdowns: Breakdowns
     robustness: Robustness
-    fidelity_check: FidelityCheck | RefusedCheck | None = None
+    fidelity_check: Annotated[FidelityCheck | RefusedCheck, Field(discriminator="kind")] | None = (
+        None
+    )

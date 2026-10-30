@@ -9,7 +9,9 @@ import pytest
 
 import fefat as ff
 import gen_fixtures
+from fefat.backtest import RunConfig
 from fefat.config import resolve_paths
+from fefat.market.fidelity import ONE_MINUTE
 from notebook_runs import breakout, store_with
 
 
@@ -40,9 +42,10 @@ def test_the_report_prints_the_metrics_split_by_era_and_the_fidelity_checks_delt
     split = lines.index("Trades by the fidelity of their entry")
     groups = run.metrics.breakdowns.fidelity
     assert len(groups) == 2
+    days = {"1m": 5, "trades": 4}
     for line, (level, group) in zip(lines[split + 1 : split + 3], groups.items(), strict=True):
         assert line.startswith(f"  {level!s:<7} {group.trades} trades, {group.wins} wins")
-        assert f"P&L {group.pnl:,.2f}" in line
+        assert line.endswith(f"P&L {group.pnl:,.2f}, over {days[str(level)]} trade dates")
     check = run.metrics.fidelity_check
     assert isinstance(check, ff.backtest.FidelityCheck)
     assert "Fidelity check from 2026-03-10 to 2026-03-13, each run from flat" in lines
@@ -58,18 +61,24 @@ def test_the_report_prints_the_metrics_split_by_era_and_the_fidelity_checks_delt
 def test_a_report_of_a_run_at_one_minute_fidelity_says_why_it_has_no_check(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # The amendment of 2026-10-21: a run on 1-minute bars alone, as on your MES, says so.
+    # The amendment of 2026-10-21: a run on 1-minute bars alone, as on your MES, says so, and
+    # so does a run whose fidelity setting keeps it on 1-minute bars where ticks are stored.
+    no_check = (
+        "No fidelity check: every trade date ran at 1-minute fidelity, so nothing finer measures "
+        "the error of the coarser days; it needs a trades or 1-second file in the store and a run "
+        "whose fidelity setting reaches it, as a run without one does."
+    )
     store_with("ohlcv-1m")
-    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    on_bars = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    store_with("trades", "ohlcv-1s")
+    capped = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09", RunConfig(fidelity=ONE_MINUTE))
     capsys.readouterr()
 
-    run.report()
+    for run in (on_bars, capped):
+        run.report()
 
-    assert run.metrics.fidelity_check is None
-    assert (
-        "No fidelity check: every trade date ran at 1-minute fidelity, so nothing finer measures "
-        "the error of the coarser days; it needs a trades or 1-second file in the store."
-    ) in capsys.readouterr().out.splitlines()
+        assert run.metrics.fidelity_check is None
+        assert no_check in capsys.readouterr().out.splitlines()
 
 
 def test_reconcile_stops_until_fill_exports_exist() -> None:

@@ -42,6 +42,7 @@ from fefat.market.engine_units import micro_units, money_text
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
 from fefat.market.schema import Timeframe
 from fefat.market.store import Store
+from fefat.reference.settings import Replay
 from fefat.reference.units import day_number
 
 if TYPE_CHECKING:
@@ -79,7 +80,7 @@ class CheckedRun:
     signals: pl.DataFrame
     engine_config: Mapping[str, Any]
     cache_folder: Path
-    replay: str
+    replay: Replay
     capital: int
     window: Window
     run: PeriodRun
@@ -134,7 +135,7 @@ def fidelity_check(run: "Run") -> FidelityCheck | RefusedCheck | None:
         signals=run.signals,
         engine_config=record.engine_config,
         cache_folder=engine_cache_folder(store, paths, root_and_provider, record.window),
-        replay=str(record.config.replay),
+        replay=record.config.replay,
         capital=micro_units(record.config.capital),
         window=record.window,
         run=itself,
@@ -177,7 +178,7 @@ def _rerun(
     within = [roll for roll in rolls if after < roll["trade_date"] <= through]
     config = {**checked.engine_config, "fidelity": str(fidelity), "rolls": within}
     folders = [str(checked.cache_folder / front) for front in fronts]
-    spec, replay = checked.spec_json, checked.replay
+    spec, replay = checked.spec_json, str(checked.replay)
     try:
         ran = fefat_engine.run_signal_backtest(spec, rows, folders, json.dumps(config), replay)
     except ValueError as error:

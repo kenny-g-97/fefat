@@ -20,8 +20,9 @@ from fefat.market.calendar import counted
 from fefat.market.fidelity import fidelity_in_words
 
 _NO_CHECK = (
-    "No fidelity check: {why}, so nothing finer measures the error of the coarser days; "
-    "it needs a trades or 1-second file in the store."
+    "No fidelity check: {why}, so nothing finer measures the error of the coarser days; it "
+    "needs a trades or 1-second file in the store and a run whose fidelity setting reaches it, "
+    "as a run without one does."
 )
 
 
