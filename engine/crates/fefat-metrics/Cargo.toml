@@ -10,3 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+fefat-core = { path = "../fefat-core" }
+
+[dev-dependencies]
+proptest.workspace = true

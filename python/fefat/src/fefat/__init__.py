@@ -5,7 +5,7 @@ from enum import StrEnum
 
 import fefat_engine
 
-from fefat import backtest, market, stats, strategy
+from fefat import backtest, market, strategy
 from fefat.market import fees, instruments
 from fefat.strategy import (
     Breakeven,
@@ -50,7 +50,6 @@ __all__ = [
     "fees",
     "instruments",
     "market",
-    "stats",
     "strategy",
 ]
 
