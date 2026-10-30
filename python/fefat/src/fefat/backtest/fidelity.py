@@ -6,7 +6,9 @@ run's, so that the data alone differs (F-SLP-01). Each rerun reports its trades,
 and loss, and its maximum drawdown, the capital first (D-63), the differences from the baseline,
 and how far the fill prices of the trades both entered at one decision on one side lie from the
 baseline's, in ticks. The baseline of a period that is the run's whole window is the run itself.
-A run without trade dates finer than a minute has no check; a rerun the engine refuses, as on a
+A period without 1-second bars has no rerun at 1 second, whose trade dates would all fill on the
+1-minute bars, as the rerun at 1 minute does. A run without trade dates finer than a minute has
+no check; a rerun the engine refuses, as on a
 trade date of ticks without bars, refuses the check with the engine's message, not the run.
 
     run.metrics.fidelity_check         # worked out by every ff.backtest.run
@@ -109,11 +111,12 @@ def fidelity_check_of(checked: CheckedRun) -> FidelityCheck | RefusedCheck | Non
     except _RerunRefusedError as refused:
         return RefusedCheck(first=first, last=last, fidelity=refused.fidelity, refused=str(refused))
     capital, tick = checked.capital, int(checked.engine_config["instrument"]["tick_size"])
+    on_seconds = any(era.fidelity == ONE_SECOND for era in seconds.eras)
     return FidelityCheck(
         first=first,
         last=last,
         baseline=baseline.outcome(capital),
-        at_one_second=_against(seconds, baseline, capital, tick),
+        at_one_second=_against(seconds, baseline, capital, tick) if on_seconds else None,
         at_one_minute=_against(minutes, baseline, capital, tick),
     )
 

@@ -279,13 +279,15 @@ class FidelityRerun(FrozenModel):
 class FidelityCheck(FrozenModel):
     """The error bar of a run's days at lower fidelity (`02` §1.6, step 2.12), `kind` checked:
     the period its trade dates finer than a minute span, from `first` to `last`, run from flat
-    at the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity."""
+    at the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity, the
+    rerun at 1 second none where the period holds no 1-second bars, its dates filling on the
+    1-minute bars as the rerun at 1 minute does."""
 
     kind: Literal["checked"] = "checked"
     first: date
     last: date
     baseline: PeriodOutcome
-    at_one_second: FidelityRerun
+    at_one_second: FidelityRerun | None
     at_one_minute: FidelityRerun
 
 

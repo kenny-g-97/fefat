@@ -49,13 +49,16 @@ def test_the_report_prints_the_metrics_split_by_era_and_the_fidelity_checks_delt
     check = run.metrics.fidelity_check
     assert isinstance(check, ff.backtest.FidelityCheck)
     assert "Fidelity check from 2026-03-10 to 2026-03-13, each run from flat" in lines
+    assert "  baseline at trades, filled on trades for 4 trade dates" in lines
     for rerun, level in ((check.at_one_second, "1s"), (check.at_one_minute, "1m")):
+        assert rerun is not None
         outcome = rerun.outcome
-        assert (
-            f"  at {level}: {outcome.trades} trades ({rerun.trades_delta:+d}), "
+        filled = lines.index(f"  at {level}, filled on {level} for 4 trade dates")
+        assert lines[filled + 1] == (
+            f"    {outcome.trades} trades ({rerun.trades_delta:+d}), "
             f"P&L {outcome.pnl:,.2f} ({rerun.pnl_delta:+,.2f}), maximum drawdown "
             f"{outcome.max_drawdown:,.2f} ({rerun.max_drawdown_delta:+,.2f})"
-        ) in lines
+        )
 
 
 def test_a_report_of_a_run_at_one_minute_fidelity_says_why_it_has_no_check(

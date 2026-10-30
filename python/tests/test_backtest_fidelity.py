@@ -78,6 +78,7 @@ def test_a_run_records_its_fidelity_eras_and_checks_the_period_its_ticks_cover()
     assert check.baseline.eras == (ticks,)
     assert check.baseline.trades > 0
     for rerun, level in ((check.at_one_second, ONE_SECOND), (check.at_one_minute, ONE_MINUTE)):
+        assert rerun is not None
         outcome = rerun.outcome
         assert outcome.eras == (ticks.model_copy(update={"fidelity": level}),)
         assert rerun.trades_delta == outcome.trades - check.baseline.trades
@@ -108,6 +109,7 @@ def test_with_ticks_throughout_the_baseline_is_the_run_and_each_rerun_the_run_at
 
     assert isinstance(check, FidelityCheck)
     assert check.baseline == outcome_of(run)
+    assert check.at_one_second is not None
     assert check.at_one_second.outcome == outcome_of(seconds)
     assert check.at_one_minute.outcome == outcome_of(minutes)
     keys = ["entry_decision", "side"]
@@ -173,10 +175,34 @@ def test_a_run_capped_at_one_second_reruns_its_period_at_one_minute_alone(
     check = run.metrics.fidelity_check
     assert isinstance(check, FidelityCheck)
     assert check.baseline == outcome_of(run)
-    assert check.at_one_second.outcome == check.baseline
     seconds = check.at_one_second
+    assert seconds is not None
+    assert seconds.outcome == check.baseline
     assert (seconds.trades_delta, seconds.pnl_delta, seconds.unmatched_trades) == (0, 0, 0)
     assert check.at_one_minute.outcome.eras[0].fidelity == ONE_MINUTE
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_period_without_one_second_bars_has_no_rerun_at_one_second(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The engine-accuracy review: on trades and 1-minute bars alone, as Binance's archive and a
+    # Databento import of trades hold them, a rerun capped at 1 second fills on 1-minute bars, so
+    # it would show the 1-minute error under the name of the 1-second one.
+    shutil.rmtree(resolve_paths(os.environ).data_dir / "synthetic" / "ohlcv-1s")
+
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    capsys.readouterr()
+    run.report()
+
+    check = run.metrics.fidelity_check
+    assert isinstance(check, FidelityCheck)
+    assert check.at_one_second is None
+    assert [era.fidelity for era in check.at_one_minute.outcome.eras] == [ONE_MINUTE]
+    no_seconds = (
+        "  at 1s: none, since the period holds no 1-second bars and would fill on 1-minute bars"
+    )
+    assert no_seconds in capsys.readouterr().out.splitlines()
 
 
 def test_trades_entered_at_one_decision_on_one_side_match_one_by_one() -> None:

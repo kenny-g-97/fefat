@@ -34,8 +34,9 @@ def test_the_check_notebook_prints_the_eras_and_the_fidelity_check(
         "",
     ]
     assert "Fidelity check from 2026-03-17 to 2026-03-19, each run from flat" in lines
-    assert any(line.startswith("  at 1s: ") for line in lines)
-    assert any(line.startswith("  at 1m: ") for line in lines)
+    assert "  baseline at trades, filled on trades for 3 trade dates" in lines
+    assert "  at 1s, filled on 1s for 3 trade dates" in lines
+    assert "  at 1m, filled on 1m for 3 trade dates" in lines
     assert "fidelity_check(run) gives the check run.metrics holds: True" in lines
     assert any(line.startswith("The stop lies 12 ticks from the entry") for line in lines)
     assert "No MES 1-minute bars in your store" in printed

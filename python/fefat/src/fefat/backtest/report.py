@@ -24,6 +24,9 @@ _NO_CHECK = (
     "needs a trades or 1-second file in the store and a run whose fidelity setting reaches it, "
     "as a run without one does."
 )
+_NO_SECONDS = (
+    "  at 1s: none, since the period holds no 1-second bars and would fill on 1-minute bars"
+)
 
 
 def report_text(record: RunRecord) -> str:
@@ -102,21 +105,26 @@ def _check(check: FidelityCheck | RefusedCheck | None, eras: tuple[FidelityEra, 
             f"Fidelity check from {check.first} to {check.last} refused at {check.fidelity}: "
             f"{check.refused}"
         )
+    baseline, seconds = check.baseline, check.at_one_second
     return "\n".join(
         [
             f"Fidelity check from {check.first} to {check.last}, each run from flat",
-            f"  {check.baseline.fidelity} (baseline): {_outcome(check.baseline)}",
-            *_rerun_lines(check.at_one_second),
+            f"  baseline at {baseline.fidelity}, {_filled_on(baseline)}",
+            f"    {counted(baseline.trades, 'trade')}, P&L {_money(baseline.pnl)}, maximum "
+            f"drawdown {_money(baseline.max_drawdown)}",
+            *(_rerun_lines(seconds) if seconds is not None else [_NO_SECONDS]),
             *_rerun_lines(check.at_one_minute),
         ]
     )
 
 
-def _outcome(outcome: PeriodOutcome) -> str:
-    return (
-        f"{counted(outcome.trades, 'trade')}, P&L {_money(outcome.pnl)}, maximum drawdown "
-        f"{_money(outcome.max_drawdown)}"
-    )
+def _filled_on(outcome: PeriodOutcome) -> str:
+    """The levels the outcome's trade dates filled on, each with its count of trade dates."""
+    days: dict[str, int] = {}
+    for era in outcome.eras:
+        days[str(era.fidelity)] = days.get(str(era.fidelity), 0) + era.trade_dates
+    filled = (f"{level} for {counted(count, 'trade date')}" for level, count in days.items())
+    return "filled on " + ", ".join(filled)
 
 
 def _rerun_lines(rerun: FidelityRerun) -> list[str]:
@@ -124,8 +132,9 @@ def _rerun_lines(rerun: FidelityRerun) -> list[str]:
     entries = [abs(price.entry_ticks) for price in rerun.fill_prices]
     exits = [abs(price.exit_ticks) for price in rerun.fill_prices if price.exit_ticks is not None]
     return [
-        f"  at {outcome.fidelity}: {counted(outcome.trades, 'trade')} ({rerun.trades_delta:+d}), "
-        f"P&L {_money(outcome.pnl)} ({_money(rerun.pnl_delta, signed=True)}), maximum drawdown "
+        f"  at {outcome.fidelity}, {_filled_on(outcome)}",
+        f"    {counted(outcome.trades, 'trade')} ({rerun.trades_delta:+d}), P&L "
+        f"{_money(outcome.pnl)} ({_money(rerun.pnl_delta, signed=True)}), maximum drawdown "
         f"{_money(outcome.max_drawdown)} ({_money(rerun.max_drawdown_delta, signed=True)})",
         f"    {counted(len(entries), 'trade')} matched, {rerun.unmatched_trades} of the "
         f"baseline's and {rerun.extra_trades} of the rerun's alone",
