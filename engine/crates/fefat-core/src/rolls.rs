@@ -9,7 +9,7 @@ use crate::instrument::Contract;
 use crate::units::Price;
 
 /// Why the front passed to a new contract (D-44): its rule's leader, or its last trade date.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RollReason {
     /// The contract with the most volume in the session before.
     Volume,

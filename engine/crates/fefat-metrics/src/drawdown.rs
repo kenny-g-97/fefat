@@ -7,13 +7,18 @@
 
 use fefat_core::instants::TradeDate;
 use fefat_core::units::{Money, Overflow};
+use serde::{Deserialize, Serialize};
+
+use crate::json_units;
 
 /// The account's equity after a decision, and the trade date of that decision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DatedEquity {
     /// The trade date of the decision (`02` §1.3).
     pub trade_date: TradeDate,
     /// The equity, in micro-units (F-MRK-01).
+    #[serde(deserialize_with = "json_units::money")]
     pub equity: Money,
 }
 
@@ -79,6 +84,50 @@ pub fn account_drawdown(points: &[DatedEquity]) -> Result<AccountDrawdown, Overf
     Ok(AccountDrawdown {
         deepest,
         longest_days: longest_days.unwrap_or(0),
+    })
+}
+
+/// The drawdown a run's metrics report: its deepest fall below a peak, in money and as a share of
+/// the capital, the trade dates of that fall's peak and trough, and the calendar days of its
+/// longest spell under a peak.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct DrawdownStatistics {
+    /// The deepest fall, zero when the account never fell below a peak.
+    #[serde(serialize_with = "json_units::money_text")]
+    pub max_drawdown: Money,
+    /// That fall over the capital.
+    pub max_drawdown_share: f64,
+    /// The trade date of its peak.
+    pub peak: Option<TradeDate>,
+    /// The trade date of its trough.
+    pub trough: Option<TradeDate>,
+    /// The longest spell under a peak, in calendar days.
+    pub longest_drawdown_days: i64,
+}
+
+/// The drawdown of an account that holds `capital` before its first decision, on the trade date
+/// of that decision, and `equity` after each.
+///
+/// # Errors
+///
+/// [`Overflow`] when a fall does not fit in 64 bits.
+pub fn drawdown_statistics(
+    capital: Money,
+    equity: &[DatedEquity],
+) -> Result<DrawdownStatistics, Overflow> {
+    let start = equity.first().map(|first| DatedEquity {
+        trade_date: first.trade_date,
+        equity: capital,
+    });
+    let points: Vec<DatedEquity> = start.into_iter().chain(equity.iter().copied()).collect();
+    let account = account_drawdown(&points)?;
+    let depth = account.deepest.map_or(Money(0), |fall| fall.depth);
+    Ok(DrawdownStatistics {
+        max_drawdown: depth,
+        max_drawdown_share: depth.0 as f64 / capital.0 as f64,
+        peak: account.deepest.map(|fall| fall.peak),
+        trough: account.deepest.map(|fall| fall.trough),
+        longest_drawdown_days: account.longest_days,
     })
 }
 

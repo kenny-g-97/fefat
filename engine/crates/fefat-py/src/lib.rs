@@ -133,6 +133,20 @@ mod fefat_engine {
         Ok(depths.into_iter().map(|depth| depth.0).collect())
     }
 
+    /// The metrics of a run (`fefat_metrics::compute`) from `inputs_json`, what they read of its
+    /// trades and its account as `fefat.backtest.metrics_inputs` writes it, as JSON.
+    #[pyfunction]
+    fn metrics(inputs_json: &str) -> PyResult<String> {
+        let inputs: fefat_metrics::inputs::MetricsInputs = serde_json::from_str(inputs_json)
+            .map_err(|error| {
+                value_error(format!(
+                    "Expected the inputs of a run's metrics as JSON, got: {error}"
+                ))
+            })?;
+        let metrics = fefat_metrics::compute(&inputs).map_err(value_error)?;
+        serde_json::to_string(&metrics).map_err(value_error)
+    }
+
     /// The engine's version, the system it was compiled for, and its build profile.
     #[pyfunction]
     fn build_details() -> BTreeMap<&'static str, &'static str> {

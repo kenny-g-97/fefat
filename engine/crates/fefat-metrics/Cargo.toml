@@ -11,6 +11,11 @@ workspace = true
 
 [dependencies]
 fefat-core = { path = "../fefat-core" }
+# The error function behind the probabilistic and deflated Sharpe ratios, the same on every system (D-63).
+libm = "0.2.16"
+serde.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+serde_json.workspace = true
