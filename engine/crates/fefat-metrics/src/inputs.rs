@@ -37,10 +37,35 @@ pub struct MetricsInputs {
     /// stop order (F-SLP-01).
     #[serde(deserialize_with = "json_units::money")]
     pub pnl_at_plus_one_tick: Money,
+    /// The trade dates the run's signal bars span.
+    pub window: Window,
+    /// The parameters of its strategy.
+    pub parameters: u32,
+    /// Whether it paid fees or slippage.
+    pub friction_tested: bool,
     /// The trades, in the order they closed.
     pub trades: Vec<TradeOutcome>,
     /// The account after each decision that values it, in their order.
     pub equity: Vec<DatedEquity>,
+}
+
+/// The trade dates a run's signal bars span, from `start` to `end`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Window {
+    /// The first.
+    pub start: TradeDate,
+    /// The last.
+    pub end: TradeDate,
+}
+
+impl Window {
+    /// The calendar years it spans, rounded to the nearest: its days, both ends counted, over
+    /// 365.25.
+    pub fn years(self) -> u32 {
+        let days = f64::from(self.end.0) - f64::from(self.start.0) + 1.0;
+        (days / 365.25 + 0.5).floor() as u32
+    }
 }
 
 /// An instrument's tick and the money one lot gains or loses when the price moves one point.
@@ -132,6 +157,14 @@ pub enum MetricsError {
         /// Its value, in ticks.
         value: i64,
     },
+    /// A window that ends before it starts.
+    #[error("Expected a window that ends on or after its start, {start}, got {end}")]
+    WindowBackwards {
+        /// Its first trade date.
+        start: TradeDate,
+        /// Its last.
+        end: TradeDate,
+    },
     /// The account's points out of the order of their trade dates.
     #[error(
         "Expected the account's points in the order of their trade dates, got {next} after {previous}"
@@ -150,7 +183,8 @@ pub enum MetricsError {
 impl MetricsInputs {
     /// Refuses inputs no metric can be worked out from: a capital, a tick, a point value, a
     /// large daily loss's share, or a trade's lots or initial risk at or below zero, a trade's
-    /// excursion below zero, and the account's points out of the order of their trade dates.
+    /// excursion below zero, the account's points out of the order of their trade dates, and a
+    /// window that ends before it starts.
     pub fn check(&self) -> Result<(), MetricsError> {
         let units = self.instrument;
         let settings = [
@@ -189,6 +223,10 @@ impl MetricsInputs {
         });
         if let Some((previous, next)) = out_of_order {
             return Err(MetricsError::EquityOutOfOrder { previous, next });
+        }
+        let Window { start, end } = self.window;
+        if end < start {
+            return Err(MetricsError::WindowBackwards { start, end });
         }
         Ok(())
     }

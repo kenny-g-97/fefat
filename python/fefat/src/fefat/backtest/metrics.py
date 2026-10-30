@@ -11,7 +11,11 @@ counted, such as the profit factor of a run without a losing trade.
 - `drawdown`: the deepest fall of the account after each decision below a peak, in money and as a
   share of the capital, its peak's and trough's trade dates, and the longest spell under a peak;
 - `pnl` and `pnl_at_plus_one_tick`, the run's and its rerun's at one more tick of slippage;
-- `breakdowns`: the trades by exit reason, entry hour, weekday, year, and fidelity.
+- `breakdowns`: the trades by exit reason, entry hour, weekday, year, and fidelity;
+- `robustness`: the backtest-expert skill's summary (`08` §4, D-29), its five scores of 20, their
+  total and verdict, and its red flags, as its `evaluate_backtest.py` gives them on the run's
+  trades, win rate, average win and loss and drawdown in percent of the capital, years, and
+  parameters, with the sample size the run reaches and its profit at one more tick of slippage.
 """
 
 from datetime import date
@@ -123,6 +127,104 @@ class Breakdowns(FrozenModel):
     fidelity: dict[FidelityText, Outcome]
 
 
+class ScriptInputs(FrozenModel):
+    """What the skill's script reads of a run, under its own names: the trades, the win rate in
+    percent, the average win and loss and the maximum drawdown in percent of the capital, the
+    years the window spans rounded to the nearest, the parameters (the numbers the execution
+    template sets), and whether the run paid fees or slippage."""
+
+    total_trades: int = Field(ge=0)
+    win_rate: float
+    avg_win_pct: float
+    avg_loss_pct: float
+    max_drawdown_pct: float
+    years_tested: int = Field(ge=0)
+    num_parameters: int = Field(ge=0)
+    slippage_tested: bool
+
+
+class DimensionName(StrEnum):
+    """A dimension of the robustness summary, in the script's order."""
+
+    SAMPLE_SIZE = "sample_size"
+    EXPECTANCY = "expectancy"
+    RISK_MANAGEMENT = "risk_management"
+    ROBUSTNESS = "robustness"
+    EXECUTION_REALISM = "execution_realism"
+
+
+class Dimension(FrozenModel):
+    """A dimension's score, out of 20."""
+
+    name: DimensionName
+    score: int = Field(ge=0, le=20)
+    max_score: int
+
+
+class Verdict(StrEnum):
+    """The plain verdict of the total: 70 points or more, 40 or more, or fewer."""
+
+    DEPLOY_GRADE_EVIDENCE = "deploy_grade_evidence"
+    REFINE = "refine"
+    ABANDON = "abandon"
+
+
+class RedFlagId(StrEnum):
+    """A red flag of the script's checklist."""
+
+    SMALL_SAMPLE = "small_sample"
+    NO_SLIPPAGE_TEST = "no_slippage_test"
+    EXCESSIVE_DRAWDOWN = "excessive_drawdown"
+    OVER_OPTIMIZED = "over_optimized"
+    SHORT_TEST_PERIOD = "short_test_period"
+    NEGATIVE_EXPECTANCY = "negative_expectancy"
+    TOO_GOOD = "too_good"
+
+
+class Severity(StrEnum):
+    """How serious a red flag is."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+
+
+class RedFlag(FrozenModel):
+    """A red flag that fires, with the script's message."""
+
+    id: RedFlagId
+    severity: Severity
+    message: str
+
+
+class SampleSize(StrEnum):
+    """Which of the skill's trade counts a run reaches: an absolute minimum of 30, 100
+    preferred, and 200 for high confidence."""
+
+    BELOW_MINIMUM = "below_minimum"
+    MINIMUM = "minimum"
+    PREFERRED = "preferred"
+    HIGH_CONFIDENCE = "high_confidence"
+
+
+class Robustness(FrozenModel):
+    """The robustness summary of a run: what the script read, its five scores, their total and
+    verdict, its red flags, the sample size the run reaches, the script's profit factor (none
+    where the script's is infinite) and expectancy in percent of the capital per trade, and the
+    profit and loss at one more tick of slippage, `fragile_to_slippage` when the run's profit is
+    gone at it. The regimes a run covers arrive with step 11.4 (D-51)."""
+
+    inputs: ScriptInputs
+    dimensions: tuple[Dimension, Dimension, Dimension, Dimension, Dimension]
+    total_score: int = Field(ge=0, le=100)
+    verdict: Verdict
+    red_flags: tuple[RedFlag, ...]
+    sample_size: SampleSize
+    profit_factor: float | None
+    expectancy: float
+    pnl_at_plus_one_tick: Decimal
+    fragile_to_slippage: bool
+
+
 class Metrics(FrozenModel):
     """A run's metrics (`02` §7), as `fefat_engine.metrics` works them out."""
 
@@ -132,3 +234,4 @@ class Metrics(FrozenModel):
     pnl: Decimal
     pnl_at_plus_one_tick: Decimal
     breakdowns: Breakdowns
+    robustness: Robustness

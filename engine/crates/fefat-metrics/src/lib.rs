@@ -10,6 +10,7 @@ pub mod drawdown;
 pub mod inputs;
 mod json_units;
 mod normal;
+pub mod robustness;
 mod summation;
 mod trade_statistics;
 
@@ -20,6 +21,7 @@ pub use crate::breakdowns::{Breakdowns, Outcome, Weekday};
 pub use crate::daily_statistics::{DailyStatistics, DayPnl};
 use crate::drawdown::{DrawdownStatistics, drawdown_statistics};
 use crate::inputs::{MetricsError, MetricsInputs};
+use crate::robustness::{Robustness, ScriptInputs, robustness};
 pub use crate::trade_statistics::TradeStatistics;
 
 /// A run's metrics.
@@ -40,6 +42,8 @@ pub struct Metrics {
     pub pnl_at_plus_one_tick: Money,
     /// Its trades broken down.
     pub breakdowns: Breakdowns,
+    /// Its robustness summary, the backtest-expert skill's.
+    pub robustness: Robustness,
 }
 
 /// The metrics of the run `inputs` describe.
@@ -53,18 +57,22 @@ pub fn compute(inputs: &MetricsInputs) -> Result<Metrics, MetricsError> {
         .trades
         .iter()
         .try_fold(Money(0), |total, trade| total.checked_add(trade.pnl))?;
+    let trades = trade_statistics::trade_statistics(&inputs.trades, inputs.instrument);
+    let drawdown = drawdown_statistics(inputs.capital, &inputs.equity)?;
+    let script = ScriptInputs::of(inputs, drawdown.max_drawdown);
     Ok(Metrics {
-        trades: trade_statistics::trade_statistics(&inputs.trades, inputs.instrument),
+        trades,
         daily: daily_statistics::daily_statistics(
             inputs.capital,
             &inputs.equity,
             inputs.large_daily_loss,
             inputs.trials,
         )?,
-        drawdown: drawdown_statistics(inputs.capital, &inputs.equity)?,
+        drawdown,
         pnl,
         pnl_at_plus_one_tick: inputs.pnl_at_plus_one_tick,
         breakdowns: breakdowns::breakdowns(&inputs.trades)?,
+        robustness: robustness(script, pnl, inputs.pnl_at_plus_one_tick),
     })
 }
 
@@ -81,6 +89,9 @@ mod tests {
             "trials": 1,
             "large_daily_loss": 20_000_000,
             "pnl_at_plus_one_tick": -12_500_000,
+            "window": {"start": "2018-03-06", "end": "2026-03-06"},
+            "parameters": 3,
+            "friction_tested": true,
             "trades": [{
                 "pnl": 25_000_000, "gross_pnl": 29_000_000, "lots": 1, "initial_risk": 150_000_000,
                 "mae_ticks": 3, "mfe_ticks": 5, "entry_trade_date": "2026-03-06", "entry_hour": 9,
@@ -116,6 +127,14 @@ mod tests {
         assert_eq!(breakdowns["weekday"]["friday"]["wins"], 1);
         assert_eq!(breakdowns["year"]["2026"]["trades"], 1);
         assert_eq!(breakdowns["fidelity"]["trades"]["trades"], 1);
+        let robustness = &metrics["robustness"];
+        assert_eq!(robustness["inputs"]["years_tested"], 8);
+        assert_eq!(robustness["inputs"]["avg_win_pct"], 0.05);
+        assert_eq!(robustness["dimensions"][0]["name"], "sample_size");
+        assert_eq!(robustness["sample_size"], "below_minimum");
+        assert_eq!(robustness["verdict"], "refine");
+        assert_eq!(robustness["red_flags"][0]["id"], "small_sample");
+        assert_eq!(robustness["fragile_to_slippage"], true);
     }
 
     #[test]

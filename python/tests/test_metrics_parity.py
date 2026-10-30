@@ -3,7 +3,9 @@
 perpetual's lots, with their excursions, their moves between them, their costs, and their stops,
 and its account after each decision over up to 60 trade dates. Counts, money, and trade dates
 must be equal; a float must lie within 1e-9 of the definition's, relative, or 1e-12 absolute,
-and a metric that cannot be worked out is none in both. Every example's output also reads as
+and a metric that cannot be worked out is none in both. The robustness summary's inputs to the
+skill's script are their definitions, and its scores, verdict, and red flags are the script's on
+the inputs it records. Every example's output also reads as
 `fefat.backtest.metrics.Metrics`, so the model holds every field the engine writes."""
 
 import json
@@ -22,7 +24,7 @@ from hypothesis import strategies as st
 
 from fefat.backtest.metrics import Metrics
 from fefat.reference.orders import OrderRole
-from metrics_by_definition import NANO_UNITS, metrics_by_definition
+from metrics_by_definition import NANO_UNITS, metrics_by_definition, scripts_summary
 
 PARITY_SEED = 20261030
 EXAMPLES = 1_000
@@ -93,7 +95,15 @@ def metrics_inputs(draw: st.DrawFn) -> Json:
         "trials": draw(st.sampled_from([1, 1, 2, 7, 100, 10_000])),
         "large_daily_loss": draw(st.sampled_from([20_000_000, 1_000_000, 100_000_000])),
         "pnl_at_plus_one_tick": draw(st.integers(-(10**10), 10**10)),
-        "trades": draw(st.lists(trade_outcomes(instrument, texts), max_size=150)),
+        "window": {
+            "start": (FIRST_TRADE_DATE - timedelta(days=draw(st.integers(0, 400)))).isoformat(),
+            "end": (
+                date.fromisoformat(texts[-1]) + timedelta(days=draw(st.integers(0, 4_400)))
+            ).isoformat(),
+        },
+        "parameters": draw(st.integers(min_value=0, max_value=12)),
+        "friction_tested": draw(st.booleans()),
+        "trades": draw(st.lists(trade_outcomes(instrument, texts), max_size=250)),
         "equity": equity,
     }
 
@@ -142,6 +152,10 @@ def coverage_of(inputs: Json, expected: Json) -> Counter[str]:
     reached["several trades a trade date"] += len(
         {trade["entry_trade_date"] for trade in inputs["trades"]}
     ) < len(inputs["trades"])
+    robustness = expected["robustness"]
+    reached[f"the verdict {robustness['verdict']}"] += 1
+    reached["a red flag"] += bool(robustness["red_flags"])
+    reached["a run fragile to slippage"] += robustness["fragile_to_slippage"]
     return reached
 
 
@@ -163,6 +177,7 @@ def test_the_engines_metrics_are_their_definitions_on_1000_random_runs(
         engine = json.loads(fefat_engine.metrics(json.dumps(inputs)))
         Metrics.model_validate(engine)
         expected = metrics_by_definition(inputs)
+        expected["robustness"] |= scripts_summary(engine["robustness"]["inputs"])
         found = differences(engine, expected)
         assert not found, f"Seed {PARITY_SEED}:\n" + "\n".join(found)
         reached.update(coverage_of(inputs, expected))
@@ -175,5 +190,5 @@ def test_the_engines_metrics_are_their_definitions_on_1000_random_runs(
         print(f"\n{EXAMPLES} runs' metrics through both in {elapsed:.1f} s, seed {PARITY_SEED}")
         print("reached:", ", ".join(f"{kind} {count}" for kind, count in sorted(reached.items())))
     missing = [kind for kind, count in reached.items() if count == 0]
-    assert len(reached) == 12
+    assert len(reached) == 17
     assert not missing, f"Expected each kind of run at least once, got none of: {missing}"

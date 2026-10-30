@@ -2,16 +2,22 @@
 from the engine's `fefat-metrics`, which `test_metrics_parity.py` compares with them. It reads the
 inputs `fefat_engine.metrics` reads, as the dictionary of their JSON, and gives the dictionary of
 the JSON it should write: money as decimals, trade dates as text, and every mean and ratio worked
-out in exact fractions before it becomes a float."""
+out in exact fractions before it becomes a float. The robustness summary's scores, verdict, and
+red flags are the backtest-expert skill's `evaluate_backtest.py`'s (`skill_script`) on the
+inputs the summary records, which `robustness_by_definition` gives from their definitions."""
 
+import importlib.util
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import date
 from decimal import Decimal
 from fractions import Fraction
+from functools import cache
 from itertools import groupby
-from math import ceil, e, sqrt
+from math import ceil, e, floor, isinf, sqrt
+from pathlib import Path
 from statistics import NormalDist
+from types import ModuleType
 from typing import Any
 
 MICRO_UNITS = 10**6
@@ -20,6 +26,22 @@ DAYS_PER_YEAR = 365.25
 EULER_MASCHERONI = 0.5772156649015329
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 NORMAL = NormalDist()
+SCRIPT = (
+    Path(__file__).resolve().parents[2]
+    / ".claude"
+    / "skills"
+    / "backtest-expert"
+    / "scripts"
+    / "evaluate_backtest.py"
+)
+DIMENSIONS = {
+    "Sample Size": "sample_size",
+    "Expectancy": "expectancy",
+    "Risk Management": "risk_management",
+    "Robustness": "robustness",
+    "Execution Realism": "execution_realism",
+}
+VERDICTS = {"Deploy": "deploy_grade_evidence", "Refine": "refine", "Abandon": "abandon"}
 
 type Json = dict[str, Any]
 
@@ -34,16 +56,85 @@ def ratio(part: int | Fraction, whole: int | Fraction) -> float | None:
     return float(Fraction(part) / whole) if whole else None
 
 
+def percent(part: int, whole: int) -> float:
+    """`part` over `whole` in percent, zero over nothing, as the script takes a run without
+    trades, wins, or losses."""
+    return float(Fraction(100 * part, whole)) if whole else 0.0
+
+
 def metrics_by_definition(inputs: Json) -> Json:
     """The metrics of the run `inputs` describe."""
     trades = inputs["trades"]
+    fall = drawdown(inputs["capital"], inputs["equity"])
     return {
         "trades": trade_statistics(trades, inputs["instrument"]),
         "daily": daily_statistics(inputs),
-        "drawdown": drawdown(inputs["capital"], inputs["equity"]),
+        "drawdown": fall,
         "pnl": money(sum(trade["pnl"] for trade in trades)),
         "pnl_at_plus_one_tick": money(inputs["pnl_at_plus_one_tick"]),
         "breakdowns": breakdowns(trades),
+        "robustness": robustness_by_definition(inputs, fall),
+    }
+
+
+def robustness_by_definition(inputs: Json, fall: Json) -> Json:
+    """The robustness summary but the script's own scores: the script's inputs, the trades and
+    the win rate in percent, the average win and loss and the drawdown in percent of the capital,
+    the window's years rounded to the nearest, the parameters, and the friction; the sample size
+    against 30, 100, and 200 trades; and the profit at one more tick of slippage."""
+    capital = inputs["capital"]
+    pnls = [trade["pnl"] for trade in inputs["trades"]]
+    wins, losses = [pnl for pnl in pnls if pnl > 0], [pnl for pnl in pnls if pnl < 0]
+    depth = int(fall["max_drawdown"].scaleb(6))
+    window = inputs["window"]
+    plus_one = inputs["pnl_at_plus_one_tick"]
+    tiers = ((200, "high_confidence"), (100, "preferred"), (30, "minimum"), (0, "below_minimum"))
+    return {
+        "inputs": {
+            "total_trades": len(pnls),
+            "win_rate": percent(len(wins), len(pnls)),
+            "avg_win_pct": percent(sum(wins), len(wins) * capital),
+            "avg_loss_pct": percent(-sum(losses), len(losses) * capital),
+            "max_drawdown_pct": float(Fraction(100 * depth, capital)),
+            "years_tested": floor(
+                (days_between(window["start"], window["end"]) + 1) / 365.25 + 0.5
+            ),
+            "num_parameters": inputs["parameters"],
+            "slippage_tested": inputs["friction_tested"],
+        },
+        "sample_size": next(tier for least, tier in tiers if len(pnls) >= least),
+        "pnl_at_plus_one_tick": money(plus_one),
+        "fragile_to_slippage": sum(pnls) > 0 and plus_one <= 0,
+    }
+
+
+@cache
+def skill_script() -> ModuleType:
+    """The backtest-expert skill's `evaluate_backtest.py`, imported from its file as its own
+    tests import it."""
+    spec = importlib.util.spec_from_file_location("evaluate_backtest", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def scripts_summary(script_inputs: Json) -> Json:
+    """What the script gives on `script_inputs`, in the summary's words: its five scores in
+    their order, its total and verdict, its red flags, and its profit factor, none where it is
+    infinite, and expectancy."""
+    result = skill_script().evaluate(**script_inputs)
+    factor = result["profit_factor"]
+    return {
+        "dimensions": [
+            {"name": DIMENSIONS[d["name"]], "score": d["score"], "max_score": d["max_score"]}
+            for d in result["dimensions"]
+        ],
+        "total_score": result["total_score"],
+        "verdict": VERDICTS[result["verdict"]],
+        "red_flags": result["red_flags"],
+        "profit_factor": None if isinf(factor) else factor,
+        "expectancy": result["expectancy"],
     }
 
 
