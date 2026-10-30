@@ -18,7 +18,7 @@ are refused (`BACKLOG.md`)."""
 
 import os
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -100,7 +100,9 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     exit_date = episode_fills.get_column("trade_date").max()
     if not isinstance(exit_date, date):
         raise ValueError(f"Expected the fills of trade {trade_id} among the run's, got none.")
-    rust = tuple(FillView.of_row(row) for row in episode_fills.iter_rows(named=True))
+    rust = _through_exit(
+        (FillView.of_row(row) for row in episode_fills.iter_rows(named=True)), trade
+    )
     fidelity = _fidelity(rust, trade_id)
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
@@ -108,8 +110,9 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     root = record.instrument.root
     sessions = instrument_table(paths.data_dir).sessions_of(root, paths.cache_dir)
     episode = _episode(run, trade, fidelity, exit_date, store, snapshots)
-    replayed = _replayed(record, episode, fidelity, trade_id, sessions)
-    reference = tuple(FillView.of(fill) for fill in replayed.fills)
+    first_id = _first_order(run.orders, trade)
+    replayed = _replayed(record, episode, fidelity, first_id, sessions)
+    reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
     if reference != rust:
         raise EnginesDisagreementError(
             f"Expected the reference engine's fills of trade {trade_id} to be the Rust "
@@ -127,6 +130,21 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     return Explanation(trade_id, lines, reference, rust)
 
 
+def _first_order(orders: pl.DataFrame, trade: Trade) -> int:
+    """The id the replay numbers its orders from: the first order the entry's decision placed,
+    which is the buy of a pair whose sell opened a short (F-ENT-01), else the entry itself."""
+    placed = orders.filter(
+        pl.col("placed_at") == trade["entry_decision"], pl.col("id") <= trade["entry_order"]
+    )
+    first = placed.get_column("id").min()
+    if not isinstance(first, int):
+        raise ValueError(
+            f"Expected the order of trade {trade['entry_order']} among the run's orders placed "
+            f"at its decision, got none."
+        )
+    return first
+
+
 def _trade(trades: pl.DataFrame, trade_id: int) -> Trade:
     """The trade whose entry order is `trade_id`."""
     found = trades.filter(pl.col("entry_order") == trade_id)
@@ -137,6 +155,19 @@ def _trade(trades: pl.DataFrame, trade_id: int) -> Trade:
             f"got {trade_id}."
         )
     return found.row(0, named=True)
+
+
+def _through_exit(fills: Iterable[FillView], trade: Trade) -> tuple[FillView, ...]:
+    """The fills from the trade's entry to the one that left it flat, the last at its exit's
+    instant with its exit's role, so that an entry reversing the position at that instant, the
+    next trade's (F-ENT-04), is left out; all of them when none is, which the comparison shows."""
+    listed = tuple(fills)
+    exits = [
+        index
+        for index, fill in enumerate(listed)
+        if fill.ts == trade["exit_ts"] and fill.role == trade["exit_reason"]
+    ]
+    return listed[: exits[-1] + 1] if exits else listed
 
 
 def _fidelity(fills: Sequence[FillView], trade_id: int) -> TickFidelity | Timeframe:
@@ -292,11 +323,11 @@ def _replayed(
     record: RunRecord,
     episode: _Episode,
     fidelity: TickFidelity | Timeframe,
-    trade_id: int,
+    first_id: int,
     sessions: SessionTable,
 ) -> RunResult:
     """The episode through the reference engine, under the run's settings and fee table, from
-    flat with the run's cash, its orders numbered from the trade's entry."""
+    flat with the run's cash, its orders numbered from `first_id`."""
     instrument = instrument_parameters(record.instrument)
     tape = episode.tape
     hours = CalendarHours.around(sessions, tape[0].starts_at(), tape[-1].available_at())
@@ -312,7 +343,7 @@ def _replayed(
         cash=episode.cash,
         contract=episode.contract,
         rolls=episode.rolls,
-        first_id=trade_id,
+        first_id=first_id,
     )
 
 

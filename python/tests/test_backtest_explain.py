@@ -19,6 +19,7 @@ from fefat.backtest import Run, RunConfig
 from fefat.backtest.explain import EnginesDisagreementError
 from fefat.config import resolve_paths
 from fefat.market.schema import Timeframe
+from fefat.strategy.spec import OppositeSignal
 from notebook_runs import breakout, store_with
 
 START, END = "2026-03-05", "2026-03-09"
@@ -153,3 +154,60 @@ def test_a_perpetuals_trade_is_replayed_with_the_funding_it_paid() -> None:
     paid = [line for line in explanation.lines if " funding " in line]
     assert len(paid) == 2
     assert all(line.endswith("[F-FND-01]") for line in paid)
+
+
+def test_a_trade_reversed_by_an_opposite_signal_ends_at_its_own_exit() -> None:
+    # F-ENT-04 under reverse: the decision that closes the trade also enters the other way, and
+    # both market orders fill at the next record, the next trade's entry at the exit's instant.
+    highest, lowest = (
+        pl.col("close").rolling_max(12).shift(1),
+        pl.col("close").rolling_min(12).shift(1),
+    )
+    reversing = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"highest": highest, "lowest": lowest},
+        long_entry=pl.col("close") > pl.col("highest"),
+        short_entry=pl.col("close") < pl.col("lowest"),
+        execution=ff.Execution(
+            entry=ff.Market(), on_opposite_signal=OppositeSignal.REVERSE, sizing=ff.Fixed(1)
+        ),
+    )
+    with pytest.warns(UserWarning, match="F-FEE-01"):
+        run = ff.backtest.run(reversing, START, END, RunConfig(fidelity=Timeframe.parse("1m")))
+    first = run.trades.row(0, named=True)
+    assert first["exit_reason"] == "opposite_signal"
+
+    explanation = run.explain(first["entry_order"])
+
+    assert [fill.role for fill in explanation.rust_fills] == ["entry", "opposite_signal"]
+    assert explanation.reference_fills == explanation.rust_fills
+    reversed_into = run.trades.row(1, named=True)
+    with pytest.raises(ValueError, match="entered by reversing a position of 1 lots"):
+        run.explain(reversed_into["entry_order"])
+
+
+def test_a_short_entered_by_the_second_order_of_a_pair_is_numbered_from_the_first() -> None:
+    # Step 2.11's engine review: a pair of stop entries takes two ids, the buy's first (F-ENT-01),
+    # so the replay of a short its sell opened numbers its orders from the buy's id.
+    straddle = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        long_entry=pl.lit(True),
+        short_entry=pl.lit(True),
+        execution=ff.Execution(
+            entry=ff.StopEntry(offset_ticks=2, time_to_live_bars=1),
+            stop=ff.Stop(ticks=8),
+            targets=[ff.Target(ticks=8)],
+            sizing=ff.Fixed(1),
+        ),
+    )
+    with pytest.warns(UserWarning, match="F-FEE-01"):
+        run = ff.backtest.run(straddle, START, END, RunConfig(fidelity=Timeframe.parse("1m")))
+    shorts = run.trades.filter(pl.col("side") == "short").get_column("entry_order")
+    assert not shorts.is_empty()
+
+    explained = [run.explain(order) for order in shorts.head(5)]
+
+    assert all(each.reference_fills == each.rust_fills for each in explained)
+    assert all(each.rust_fills[0].order == each.trade_id for each in explained)
