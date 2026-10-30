@@ -14,13 +14,11 @@ bars held. `dataset_warnings` names what every load of a dataset, and its import
 
 from fefat.market.catalog import CATALOG, Catalog
 from fefat.market.coverage import session_datasets
-from fefat.market.fidelity import TickFidelity
+from fefat.market.fidelity import ONE_MINUTE, TickFidelity
 from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind
-from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe, TimeUnit
+from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
-
-_ONE_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
 
 
 def provider_datasets(
@@ -93,7 +91,7 @@ def dataset_warnings(dataset: Dataset, series: SeriesKind) -> list[str]:
     found = []
     if (
         isinstance(schema_name, BarSchemaName)
-        and schema_name.timeframe.nominal_seconds() > _ONE_MINUTE.nominal_seconds()
+        and schema_name.timeframe.nominal_seconds() > ONE_MINUTE.nominal_seconds()
     ):
         found.append(
             f"{folder} holds {schema_name.timeframe.in_words()} bars, coarser than a minute: "

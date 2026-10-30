@@ -6,11 +6,15 @@ import json
 import os
 import shutil
 from datetime import date
+from typing import Any
 
+import fefat_engine
 import polars as pl
 import pytest
 
 import fefat as ff
+import fefat.backtest.fidelity as fidelity
+import fefat.backtest.run_inputs as run_inputs
 import gen_fixtures
 from fefat.backtest import (
     FidelityCheck,
@@ -22,13 +26,12 @@ from fefat.backtest import (
     fidelity_check,
 )
 from fefat.config import resolve_paths
-from fefat.market.fidelity import TickFidelity
+from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
 from fefat.market.schema import Timeframe
 from notebook_runs import breakout, store_with
 
 ES_TICK = 250_000_000
 FIRST, TICKS_FROM, LAST = "2026-03-02", "2026-03-10", "2026-03-13"
-ONE_SECOND, ONE_MINUTE = Timeframe.parse("1s"), Timeframe.parse("1m")
 
 
 @pytest.fixture(name="ticks_for_the_last_sessions")
@@ -137,6 +140,76 @@ def test_a_rerun_the_engine_refuses_refuses_the_check_and_not_the_run() -> None:
     day = date(2026, 3, 7)
     trades = FidelityEra(first=day, last=day, trade_dates=1, fidelity=TickFidelity.TRADES)
     assert run.record.fidelity_eras == (trades,)
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_run_capped_at_one_second_reruns_its_period_at_one_minute_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The code review: its baseline is its own 1-second fills, so a rerun at 1 second would
+    # replay them again for nothing.
+    capped = []
+    engine_run = fefat_engine.run_signal_backtest
+
+    def counted(*arguments: Any) -> Any:
+        capped.append(json.loads(arguments[3])["fidelity"])
+        return engine_run(*arguments)
+
+    monkeypatch.setattr(fefat_engine, "run_signal_backtest", counted)
+
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09", RunConfig(fidelity=ONE_SECOND))
+
+    # The run, its fidelity check's rerun at 1 minute, and its rerun at one more tick.
+    assert capped == ["1s", "1m", "1s"]
+    check = run.metrics.fidelity_check
+    assert isinstance(check, FidelityCheck)
+    assert check.baseline == outcome_of(run)
+    assert check.at_one_second.outcome == check.baseline
+    seconds = check.at_one_second
+    assert (seconds.trades_delta, seconds.pnl_delta, seconds.unmatched_trades) == (0, 0, 0)
+    assert check.at_one_minute.outcome.eras[0].fidelity == ONE_MINUTE
+
+
+def test_trades_entered_at_one_decision_on_one_side_match_one_by_one() -> None:
+    # The code review: two trades of one decision and side must not match two by two.
+    def trades(entries: list[int], exits: list[float]) -> pl.DataFrame:
+        return pl.DataFrame(
+            {
+                "entry_decision": [100, 100],
+                "side": ["long", "long"],
+                "entry_price": entries,
+                "exit_price": exits,
+                "pnl": [0, 0],
+            }
+        )
+
+    account = pl.DataFrame({"equity": [1_000_000]}, schema={"equity": pl.Int64})
+    baseline = fidelity.PeriodRun(
+        TickFidelity.TRADES, trades([1_000, 2_000], [1_500.0, 2_500.0]), account, ()
+    )
+    rerun = fidelity.PeriodRun(ONE_MINUTE, trades([1_250, 2_000], [1_500.0, 3_000.0]), account, ())
+
+    compared = fidelity._against(rerun, baseline, 1_000_000, 250)
+
+    ticks = [(price.entry_ticks, price.exit_ticks) for price in compared.fill_prices]
+    assert ticks == [(1.0, 0.0), (0.0, 2.0)]
+    assert (compared.unmatched_trades, compared.extra_trades) == (0, 0)
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_signal_bars_come_from_the_level_that_covers_the_most_of_the_window() -> None:
+    # The code review: 1-minute bars that cover less of the window than the ticks would cut the
+    # window to them, so the coarsest level of those covering the most is the source.
+    paths = resolve_paths(os.environ)
+    market = run_inputs._market("ES", None, paths)
+    window, five_minutes = (date(2026, 3, 5), date(2026, 3, 9)), Timeframe.parse("5m")
+    assert run_inputs._signal_source(market, five_minutes, window) == ONE_MINUTE
+
+    for part in (paths.data_dir / "synthetic" / "ohlcv-1m" / "root=ES").rglob("*.parquet"):
+        bars = pl.read_parquet(part)
+        bars.filter(pl.col("trade_date") < date(2026, 3, 9)).write_parquet(part)
+
+    assert run_inputs._signal_source(market, five_minutes, window) == ONE_SECOND
 
 
 def outcome_of(run: Run) -> PeriodOutcome:

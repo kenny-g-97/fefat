@@ -271,6 +271,17 @@ def test_ticks_from_a_date_need_a_date_range(
     assert "Expected --dates with --ticks-from" in capsys.readouterr().err
 
 
+def test_ticks_from_after_the_last_trade_date_of_the_range_are_refused(tmp_path: Path) -> None:
+    # The code review: 2026-03-21 is a Saturday after the range's last session, 03-20, so the
+    # trades and 1-second datasets would hold no partition.
+    dates = ["--dates", "2026-03-16..2026-03-22", "--contracts", "ESH2026"]
+
+    with pytest.raises(SystemExit, match="Expected a trade date of ESH2026 on or after"):
+        gen_fixtures.main(["--out", str(tmp_path), *dates, "--ticks-from", "2026-03-21"])
+
+    assert not (tmp_path / "trades").exists()
+
+
 def test_planted_gaps_leave_quiet_minutes_and_jumps_in_each_session(tmp_path: Path) -> None:
     def session(gaps: int) -> list[dict[str, int | str]]:
         out = tmp_path / f"gaps-{gaps}"

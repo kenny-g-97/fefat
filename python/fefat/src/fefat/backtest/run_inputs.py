@@ -1,7 +1,7 @@
-"""What a backtest reads (step 2.10): its signal bars, as `load` gives them from 1-minute bars,
-else 1-second bars, else trades, the first stored that builds them, so that they cover the
-window where finer data covers part of it (step 2.12), with the warnings `load` raises, and its
-signal frame, checked as both engines read it; a snapshot of each dataset of
+"""What a backtest reads (step 2.10): its signal bars, as `load` gives them from the 1-minute
+bars, 1-second bars, or trades that cover the most of its window, the coarsest of equals, so
+that they cover the window where finer data covers part of it (step 2.12), with the warnings
+`load` raises, and its signal frame, checked as both engines read it; a snapshot of each dataset of
 its provider over its window (ADR-0019), whose hashes key the run; the engine cache of the months
 it replays, built from the same files (D-56); the fronts it trades and the rolls between them, as
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
@@ -22,8 +22,9 @@ import polars as pl
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.config import FefatPaths
-from fefat.market.api import load, roll_calendar
+from fefat.market.api import load, parse_trade_date, roll_calendar
 from fefat.market.calendar import SessionTable, counted
+from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import provider_datasets
 from fefat.market.engine_cache import build_cache_months, level_of
 from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
@@ -34,12 +35,12 @@ from fefat.market.engine_units import (
     price_text,
 )
 from fefat.market.fees import TABLES, CryptoFee, FuturesFee
-from fefat.market.fidelity import TickFidelity
+from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest, YearMonth
 from fefat.market.roll_decisions import RollReason
 from fefat.market.saved_instruments import instrument_table
-from fefat.market.schema import SchemaKind, Timeframe, TimeUnit, parse_schema_name
+from fefat.market.schema import SchemaKind, Timeframe, parse_schema_name
 from fefat.market.snapshot import Snapshot
 from fefat.market.store import Store
 from fefat.reference.costs import RunFees
@@ -145,8 +146,9 @@ def run_inputs(
     """Everything a run of `strategy` on the trade dates from `start` to `end` reads."""
     market = _market(strategy.instrument, config.provider, paths)
     applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
-    source = _signal_source(market.datasets, Timeframe.parse(strategy.timeframe))
-    bars, loaded = _bars(strategy, (start, end), market.provider, source)
+    dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
+    source = _signal_source(market, Timeframe.parse(strategy.timeframe), dates)
+    bars, loaded = _bars(strategy, dates, market.provider, source)
     spec = strategy.to_spec()
     signals = strategy.signals(bars).collect()
     require_named_columns(spec.execution, signals.columns)
@@ -227,23 +229,45 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
 
 
 _SIGNAL_SOURCES: tuple[TickFidelity | Timeframe, ...] = (
-    Timeframe(count=1, unit=TimeUnit.MINUTE),
-    Timeframe(count=1, unit=TimeUnit.SECOND),
+    ONE_MINUTE,
+    ONE_SECOND,
     TickFidelity.TRADES,
 )
+"""The levels signal bars are built from, coarsest first."""
 
 
-def _signal_source(datasets: Iterable[Dataset], timeframe: Timeframe) -> TickFidelity | Timeframe:
-    """The data the signal bars are built from (step 2.12): 1-minute bars, else 1-second bars,
-    else trades, the first stored that builds bars of `timeframe`, since bars cover a window that
-    ticks may cover in part; else the finest bars stored, an import's coarser bars, which `load`
-    refuses when they are coarser than `timeframe`."""
-    held = [level_of(dataset) for dataset in datasets]
-    for level in _SIGNAL_SOURCES:
-        if level in held and _builds(level, timeframe):
-            return level
-    bars = [level for level in held if isinstance(level, Timeframe)]
-    return min(bars, key=Timeframe.nominal_seconds, default=TickFidelity.TRADES)
+def _signal_source(
+    market: _Market, timeframe: Timeframe, dates: tuple[date, date]
+) -> TickFidelity | Timeframe:
+    """The data the signal bars are built from (step 2.12): of the 1-minute bars, 1-second bars,
+    and trades stored that build bars of `timeframe`, those whose trade dates cover the most of
+    the window from `dates`' first to its last, the coarsest of them, since ticks may cover a
+    part of the window the bars cover, or bars a part the ticks cover; else the finest bars
+    stored, an import's coarser bars, which `load` refuses when they are coarser than
+    `timeframe`."""
+    held = [
+        (level, dataset)
+        for level in _SIGNAL_SOURCES
+        for dataset in market.datasets
+        if level_of(dataset) == level and _builds(level, timeframe)
+    ]
+    if not held:
+        bars = [level_of(dataset) for dataset in market.datasets]
+        timeframes = [level for level in bars if isinstance(level, Timeframe)]
+        return min(timeframes, key=Timeframe.nominal_seconds, default=TickFidelity.TRADES)
+    covered = [_days_covered(market.store, dataset, dates) for _, dataset in held]
+    return held[covered.index(max(covered))][0]
+
+
+def _days_covered(store: Store, dataset: Dataset, dates: tuple[date, date]) -> int:
+    """How many days of the window from `dates`' first to its last lie between the dataset's
+    first and last trade dates."""
+    coverage = dataset_coverage(store, dataset)
+    if coverage is None:
+        return 0
+    first = max(dates[0], coverage.first_trade_date)
+    last = min(dates[1], coverage.last_trade_date)
+    return max(0, (last - first).days + 1)
 
 
 def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
@@ -256,7 +280,7 @@ def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
 
 def _bars(
     strategy: SignalStrategy,
-    dates: tuple[str | date, str | date],
+    dates: tuple[date, date],
     provider: str,
     source: TickFidelity | Timeframe,
 ) -> tuple[pl.DataFrame, tuple[str, ...]]:

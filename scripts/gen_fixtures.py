@@ -1009,13 +1009,8 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
         help="with --dates, the first trade date to write trades and 1-second bars of",
     )
     arguments = parser.parse_args(argv)
-    if arguments.ticks_from is not None and (
-        arguments.dates is None or arguments.ticks_from > arguments.dates[1]
-    ):
-        parser.error(
-            "Expected --dates with --ticks-from, ending on or after it, got "
-            f"{arguments.dates} and {arguments.ticks_from}"
-        )
+    if arguments.ticks_from is not None and arguments.dates is None:
+        parser.error(f"Expected --dates with --ticks-from, got --ticks-from {arguments.ticks_from}")
     generated = arguments.dates is not None or arguments.contracts is not None
     if (generated or arguments.planted_gaps > 0) and arguments.out.resolve().is_relative_to(ROOT):
         parser.error(
@@ -1036,6 +1031,15 @@ def chosen_products(arguments: argparse.Namespace) -> tuple[FixtureProduct, ...]
         products = tuple(known[contract] for contract in arguments.contracts)
     if arguments.dates is not None:
         products = tuple(in_date_range(product, *arguments.dates) for product in products)
+    ticks_from = arguments.ticks_from
+    if ticks_from is None:
+        return products
+    late = [product.contract for product in products if product.trade_dates[-1] < ticks_from]
+    if late:
+        raise SystemExit(
+            f"Expected a trade date of {', '.join(late)} on or after --ticks-from {ticks_from}, "
+            "got none: its trades and 1-second bars would be empty."
+        )
     return products
 
 

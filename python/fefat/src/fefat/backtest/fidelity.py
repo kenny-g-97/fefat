@@ -39,16 +39,13 @@ from fefat.backtest.record import Window
 from fefat.backtest.run_inputs import engine_cache_folder
 from fefat.config import resolve_paths
 from fefat.market.engine_units import micro_units, money_text
-from fefat.market.fidelity import TickFidelity
-from fefat.market.schema import Timeframe, TimeUnit
+from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
+from fefat.market.schema import Timeframe
 from fefat.market.store import Store
 from fefat.reference.units import day_number
 
 if TYPE_CHECKING:
     from fefat.backtest.runs import Run
-
-ONE_SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
-ONE_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
 
 
 @dataclass(frozen=True)
@@ -104,7 +101,9 @@ def fidelity_check_of(checked: CheckedRun) -> FidelityCheck | RefusedCheck | Non
     first, last = period
     try:
         baseline = _baseline(checked, period)
-        seconds = _rerun(checked, period, ONE_SECOND)
+        seconds = baseline
+        if checked.run.fidelity != ONE_SECOND:
+            seconds = _rerun(checked, period, ONE_SECOND)
         minutes = _rerun(checked, period, ONE_MINUTE)
     except _RerunRefusedError as refused:
         return RefusedCheck(first=first, last=last, fidelity=refused.fidelity, refused=str(refused))
@@ -189,11 +188,14 @@ def _rerun(
 
 def _against(rerun: PeriodRun, baseline: PeriodRun, capital: int, tick: int) -> FidelityRerun:
     """`rerun` against `baseline`, the rerun's values less the baseline's, its trades matched
-    with the baseline's by the decision that entered them and their side."""
+    with the baseline's by the decision that entered them and their side, the n-th of each such
+    pair with the n-th."""
     ours, theirs = rerun.outcome(capital), baseline.outcome(capital)
-    keys = ["entry_decision", "side"]
-    columns = [*keys, "entry_price", "exit_price"]
-    base, other = baseline.trades.select(columns), rerun.trades.select(columns)
+    keys = ["entry_decision", "side", "nth"]
+    nth = pl.int_range(pl.len()).over("entry_decision", "side").alias("nth")
+    columns = ["entry_decision", "side", "entry_price", "exit_price"]
+    base = baseline.trades.select(columns).with_columns(nth)
+    other = rerun.trades.select(columns).with_columns(nth)
     matched = base.join(other, on=keys, suffix="_rerun", maintain_order="left")
     entries = (pl.col("entry_price_rerun") - pl.col("entry_price")) / tick
     exits = (pl.col("exit_price_rerun") - pl.col("exit_price")) / tick
