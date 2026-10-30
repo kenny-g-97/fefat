@@ -1,4 +1,6 @@
-"""What a backtest reads (step 2.10): its signal bars, as `load` gives them, with the warnings
+"""What a backtest reads (step 2.10): its signal bars, as `load` gives them from the 1-minute
+bars, 1-second bars, or trades that cover the most of its window, the finest of equals, so
+that they cover the window where finer data covers part of it (step 2.12), with the warnings
 `load` raises, and its signal frame, checked as both engines read it; a snapshot of each dataset of
 its provider over its window (ADR-0019), whose hashes key the run; the engine cache of the months
 it replays, built from the same files (D-56); the fronts it trades and the rolls between them, as
@@ -20,9 +22,9 @@ import polars as pl
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.config import FefatPaths
-from fefat.market.api import load, roll_calendar
+from fefat.market.api import load, parse_trade_date, roll_calendar
 from fefat.market.calendar import SessionTable, counted
-from fefat.market.dataset_choice import provider_datasets
+from fefat.market.dataset_choice import provider_datasets, signal_source
 from fefat.market.engine_cache import build_cache_months, level_of
 from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
 from fefat.market.engine_units import (
@@ -75,6 +77,7 @@ class RunInputs:
     window: Window
     warnings: tuple[str, ...]
     time_zone: str
+    signal_source: TickFidelity | Timeframe
 
     def spec_json(self) -> str:
         return json.dumps(self.spec.document())
@@ -90,16 +93,9 @@ class RunInputs:
 
     def cache_paths(self, paths: FefatPaths) -> tuple[Path, ...]:
         """The engine cache's folder of each front, its months of the window built from the store
-        (`build_cache_months`); a month the cache refuses refuses the run."""
+        (`engine_cache_folder`)."""
         root, provider = self.instrument.root, self.config.provider
-        months = _months(self.window)
-        built = build_cache_months(self.store, paths.cache_dir, root, months, provider)
-        if built.refused:
-            raise ValueError(
-                f"Expected the engine cache of {root} from {self.window.start} to "
-                f"{self.window.end}, got: {'; '.join(built.refused)}"
-            )
-        folder = paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / provider / root
+        folder = engine_cache_folder(self.store, paths, (root, provider), self.window)
         folders = tuple(folder / contract for contract in self.fronts)
         missing = [str(path) for path in folders if not path.is_dir()]
         if missing:
@@ -107,6 +103,22 @@ class RunInputs:
                 f"Expected the engine cache of each front, got none in {', '.join(missing)}."
             )
         return folders
+
+
+def engine_cache_folder(
+    store: Store, paths: FefatPaths, root_and_provider: tuple[str, str], window: Window
+) -> Path:
+    """The folder of the engine caches of a root's contracts from a provider, their months of
+    the window built from the store (`build_cache_months`); a month the cache refuses refuses
+    the run."""
+    root, provider = root_and_provider
+    built = build_cache_months(store, paths.cache_dir, root, _months(window), provider)
+    if built.refused:
+        raise ValueError(
+            f"Expected the engine cache of {root} from {window.start} to {window.end}, got: "
+            f"{'; '.join(built.refused)}"
+        )
+    return paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / provider / root
 
 
 @dataclass(frozen=True)
@@ -133,7 +145,10 @@ def run_inputs(
     """Everything a run of `strategy` on the trade dates from `start` to `end` reads."""
     market = _market(strategy.instrument, config.provider, paths)
     applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
-    bars, loaded = _bars(strategy, start, end, market.provider)
+    dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
+    held = {str(dataset.schema_name): dataset for dataset in market.datasets}
+    source = signal_source(market.store, held, Timeframe.parse(strategy.timeframe), dates)
+    bars, loaded = _bars(strategy, dates, market.provider, source)
     spec = strategy.to_spec()
     signals = strategy.signals(bars).collect()
     require_named_columns(spec.execution, signals.columns)
@@ -158,6 +173,7 @@ def run_inputs(
         window=window,
         warnings=(*loaded, *_features_below_a_tick(spec, signals, parameters.tick)),
         time_zone=market.sessions.time_zone(),
+        signal_source=source,
     )
 
 
@@ -213,13 +229,17 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
 
 
 def _bars(
-    strategy: SignalStrategy, start: str | date, end: str | date, provider: str
+    strategy: SignalStrategy,
+    dates: tuple[date, date],
+    provider: str,
+    source: TickFidelity | Timeframe,
 ) -> tuple[pl.DataFrame, tuple[str, ...]]:
-    """The strategy's signal bars, as `load` gives them, and the warnings it raised, which the
-    run's record keeps."""
+    """The strategy's signal bars from `dates`' start to its end, as `load` gives them from
+    `source`, and the warnings it raised, which the run's record keeps."""
+    root, timeframe = strategy.instrument, strategy.timeframe
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        bars = load(strategy.instrument, strategy.timeframe, start, end, provider=provider)
+        bars = load(root, timeframe, *dates, fidelity=source, provider=provider)
         frame = bars.collect()
     return frame, tuple(str(warning.message) for warning in caught)
 

@@ -17,7 +17,7 @@ Written in step 2.1 (2026-10-22) from [`02-engine-and-data.md`](../masterplan/02
 | Word | Meaning |
 | --- | --- |
 | Order class | Market, stop-market (a stop), or limit. Stop-limit orders wait for event strategies (`02` §2.1). |
-| Fidelity | The data an order fills on, for a day: `tbbo` (trades, each with the best bid and ask just before it), `trades` (trade prints alone), or bars of a timeframe, `1s`, `1m`, or an import's coarser `5m` or `1d`. The engine uses the finest the day has (`02` §1.6). |
+| Fidelity | The data an order fills on, for a day: `tbbo` (trades, each with the best bid and ask just before it), `trades` (trade prints alone), or bars of a timeframe, `1s`, `1m`, or an import's coarser `5m` or `1d`. The engine uses the finest the day has at or coarser than the run's fidelity, which is a cap (D-58), and a run records the level of each trade date as its fidelity eras (`02` §1.6, step 2.12). |
 | Record | One trade print, one TBBO record, or one stored bar. |
 | Quote | A TBBO record's best bid and ask from just before its trade, read no better than that trade (F-SLP-01). |
 | Tape | The records of a run or a scenario, in the order the engine reads them. |

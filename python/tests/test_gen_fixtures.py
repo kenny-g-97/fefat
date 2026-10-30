@@ -223,6 +223,65 @@ def test_a_date_range_writes_each_weekday_and_its_minutes_per_month(tmp_path: Pa
     assert not (tmp_path / "exports").exists()
 
 
+def test_a_date_range_writes_no_session_on_a_full_close_of_the_products_calendar(
+    tmp_path: Path,
+) -> None:
+    # Step 2.12: CME's equity index calendar closes on Christmas Day, 2025-12-25, so the
+    # session after Christmas Eve is 2025-12-26's.
+    arguments = ["--dates", "2025-12-24..2025-12-26", "--contracts", "ESH2026"]
+
+    assert gen_fixtures.main(["--out", str(tmp_path), *arguments]) == 0
+
+    trades = tmp_path / "trades" / "root=ES" / "contract=ESH2026"
+    assert sorted(path.name for path in trades.iterdir()) == ["date=2025-12-24", "date=2025-12-26"]
+    minutes = tmp_path / "ohlcv-1m" / "root=ES" / "contract=ESH2026" / "month=2025-12"
+    bar_dates = {str(bar["trade_date"]) for bar in rows(minutes / "part.parquet")}
+    assert bar_dates == {"2025-12-24", "2025-12-26"}
+
+
+def test_ticks_from_a_date_write_trades_and_seconds_from_it_and_minutes_throughout(
+    tmp_path: Path,
+) -> None:
+    # Step 2.12: a window whose ticks cover its last sessions alone; every session is simulated,
+    # so the tape is the one a range without --ticks-from writes.
+    arguments = ["--dates", "2026-03-02..2026-03-06", "--contracts", "ESH2026"]
+    partly, whole = tmp_path / "partly", tmp_path / "whole"
+
+    assert gen_fixtures.main(["--out", str(partly), *arguments, "--ticks-from", "2026-03-05"]) == 0
+    assert gen_fixtures.main(["--out", str(whole), *arguments]) == 0
+
+    contract = Path("root=ES") / "contract=ESH2026"
+    for schema in ("trades", "ohlcv-1s"):
+        dates = sorted(path.name for path in (partly / schema / contract).iterdir())
+        assert dates == ["date=2026-03-05", "date=2026-03-06"], schema
+    month = contract / "month=2026-03" / "part.parquet"
+    bar_dates = {str(bar["trade_date"]) for bar in rows(partly / "ohlcv-1m" / month)}
+    assert bar_dates == {"2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06"}
+    assert (partly / "ohlcv-1m" / month).read_bytes() == (whole / "ohlcv-1m" / month).read_bytes()
+    friday = contract / "date=2026-03-06" / "part.parquet"
+    assert (partly / "trades" / friday).read_bytes() == (whole / "trades" / friday).read_bytes()
+
+
+def test_ticks_from_a_date_need_a_date_range(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        gen_fixtures.main(["--out", str(tmp_path), "--ticks-from", "2026-03-05"])
+
+    assert "Expected --dates with --ticks-from" in capsys.readouterr().err
+
+
+def test_ticks_from_after_the_last_trade_date_of_the_range_are_refused(tmp_path: Path) -> None:
+    # The code review: 2026-03-21 is a Saturday after the range's last session, 03-20, so the
+    # trades and 1-second datasets would hold no partition.
+    dates = ["--dates", "2026-03-16..2026-03-22", "--contracts", "ESH2026"]
+
+    with pytest.raises(SystemExit, match="Expected a trade date of ESH2026 on or after"):
+        gen_fixtures.main(["--out", str(tmp_path), *dates, "--ticks-from", "2026-03-21"])
+
+    assert not (tmp_path / "trades").exists()
+
+
 def test_planted_gaps_leave_quiet_minutes_and_jumps_in_each_session(tmp_path: Path) -> None:
     def session(gaps: int) -> list[dict[str, int | str]]:
         out = tmp_path / f"gaps-{gaps}"

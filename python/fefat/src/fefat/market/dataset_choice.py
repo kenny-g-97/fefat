@@ -9,18 +9,19 @@ both. A load builds its bars from the finest data the provider holds, or the fid
 (`fefat.market.fidelity`): trades, then bars by their timeframe, finest first, none coarser
 than the bars asked for; bars coarser than a minute are an import's finest data, which fill
 backtests at their own fidelity. The roll calendar reads the 1-minute bars, or else the finest
-bars held. `dataset_warnings` names what every load of a dataset, and its import, warns of.
+bars held. `dataset_warnings` names what every load of a dataset, and its import, warns of. A
+backtest builds its signal bars from the data `signal_source` names (step 2.12).
 """
 
+from datetime import date
+
 from fefat.market.catalog import CATALOG, Catalog
-from fefat.market.coverage import session_datasets
-from fefat.market.fidelity import TickFidelity
+from fefat.market.coverage import dataset_coverage, session_datasets
+from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
 from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind
-from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe, TimeUnit
+from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
-
-_ONE_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
 
 
 def provider_datasets(
@@ -93,7 +94,7 @@ def dataset_warnings(dataset: Dataset, series: SeriesKind) -> list[str]:
     found = []
     if (
         isinstance(schema_name, BarSchemaName)
-        and schema_name.timeframe.nominal_seconds() > _ONE_MINUTE.nominal_seconds()
+        and schema_name.timeframe.nominal_seconds() > ONE_MINUTE.nominal_seconds()
     ):
         found.append(
             f"{folder} holds {schema_name.timeframe.in_words()} bars, coarser than a minute: "
@@ -148,6 +149,58 @@ def roll_dataset(datasets: dict[str, Dataset], root: str) -> Dataset:
     if not bars:
         raise ValueError(f"Expected bars of {root} to splice its contracts, got none.")
     return bars[0]
+
+
+_SIGNAL_SOURCES: tuple[TickFidelity | Timeframe, ...] = (
+    ONE_MINUTE,
+    ONE_SECOND,
+    TickFidelity.TRADES,
+)
+"""The data a backtest's signal bars may be built from."""
+
+
+def signal_source(
+    store: Store, datasets: dict[str, Dataset], timeframe: Timeframe, dates: tuple[date, date]
+) -> TickFidelity | Timeframe:
+    """The data a backtest builds its signal bars of `timeframe` from (step 2.12): of the
+    1-minute bars, 1-second bars, and trades held that build them, the finest of those whose
+    trade dates cover the most of the window from `dates`' first to its last, since ticks may
+    cover a part of the window that bars cover, or bars a part the ticks cover, and among equals
+    `load`'s own choice, whose trades give the vwap and trade count an import's bars lack (your
+    choice of 2026-10-30); else what `load` reads, the finest data held, an import's coarser
+    bars, which it refuses when they are coarser than `timeframe`."""
+    held = _finest_first(datasets)
+    if not held:
+        named = ", ".join(sorted(datasets)) or "none"
+        raise ValueError(f"Expected trades or bars to build signal bars from, got {named}.")
+    building = [
+        (level, dataset)
+        for level, dataset in held
+        if level in _SIGNAL_SOURCES and _builds(level, timeframe)
+    ]
+    if not building:
+        return held[0][0]
+    covered = [_days_covered(store, dataset, dates) for _, dataset in building]
+    return building[covered.index(max(covered))][0]
+
+
+def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
+    """Whether `level` builds bars of `timeframe`: trades always, and bars whose length divides
+    its length, bucketed alike from the session's open (`02` §1.4)."""
+    if not isinstance(level, Timeframe):
+        return True
+    return timeframe.nominal_seconds() % level.nominal_seconds() == 0
+
+
+def _days_covered(store: Store, dataset: Dataset, dates: tuple[date, date]) -> int:
+    """How many days of the window from `dates`' first to its last lie between the dataset's
+    first and last trade dates."""
+    coverage = dataset_coverage(store, dataset)
+    if coverage is None:
+        return 0
+    first = max(dates[0], coverage.first_trade_date)
+    last = min(dates[1], coverage.last_trade_date)
+    return max(0, (last - first).days + 1)
 
 
 def _finest_first(

@@ -13,7 +13,12 @@ from typing import Annotated
 
 from pydantic import BeforeValidator
 
-from fefat.market.schema import Timeframe
+from fefat.market.schema import Timeframe, TimeUnit
+
+ONE_SECOND = Timeframe(count=1, unit=TimeUnit.SECOND)
+"""1-second bars, the finest bars a store holds."""
+ONE_MINUTE = Timeframe(count=1, unit=TimeUnit.MINUTE)
+"""1-minute bars, the bars every product's history holds and its roll calendar reads."""
 
 
 class TickFidelity(StrEnum):

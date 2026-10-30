@@ -111,7 +111,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     fidelity = _fidelity(rust, trade_id)
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
-    snapshots = _the_runs_data(store, record)
+    snapshots = pinned_snapshots(store, record)
     root = record.instrument.root
     sessions = instrument_table(paths.data_dir).sessions_of(root, paths.cache_dir)
     fees = _the_runs_fees_and_calendar(run, sessions)
@@ -186,7 +186,7 @@ def _fidelity(fills: Sequence[FillView], trade_id: int) -> TickFidelity | Timefr
     if len(levels) != 1:
         raise ValueError(
             f"Expected the fills of trade {trade_id} on one fidelity, got {', '.join(levels)}: "
-            "an episode across fidelity eras waits for step 2.12 (BACKLOG.md)."
+            "an episode across fidelity eras waits for the Phase 2 exit (BACKLOG.md)."
         )
     fidelity = parse_fidelity(levels[0])
     if fidelity is TickFidelity.TBBO:
@@ -197,9 +197,10 @@ def _fidelity(fills: Sequence[FillView], trade_id: int) -> TickFidelity | Timefr
     return fidelity
 
 
-def _the_runs_data(store: Store, record: RunRecord) -> dict[str, Snapshot]:
+def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
     """A snapshot of each dataset the run read, by schema, refused unless it is the one the
-    run's record pins: the data changed since the run otherwise."""
+    run's record pins: the data changed since the run otherwise. `fidelity_check` reruns a saved
+    run on the data this guards too."""
     snapshots = {}
     for dataset in record.datasets:
         snapshot = store.snapshot(_request(dataset))
@@ -207,7 +208,7 @@ def _the_runs_data(store: Store, record: RunRecord) -> dict[str, Snapshot]:
             raise ValueError(
                 f"Expected the store's {dataset.schema_name} of {dataset.root} as the run read "
                 f"it, snapshot {dataset.snapshot[:12]}, got {snapshot.sha256[:12]}: the data "
-                "changed since the run, so run it again before explaining its trades."
+                "changed since the run, so run it again first."
             )
         snapshots[dataset.schema_name] = snapshot
     return snapshots

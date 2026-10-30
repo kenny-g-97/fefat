@@ -15,13 +15,15 @@ counted, such as the profit factor of a run without a losing trade.
 - `robustness`: the backtest-expert skill's summary (`08` §4, D-29), its five scores of 20, their
   total and verdict, and its red flags, as its `evaluate_backtest.py` gives them on the run's
   trades, win rate, average win and loss and drawdown in percent of the capital, years, and
-  parameters, with the sample size the run reaches and its profit at one more tick of slippage.
+  parameters, with the sample size the run reaches and its profit at one more tick of slippage;
+- `fidelity_check` (step 2.12): the error bar of the run's days at lower fidelity, worked out in
+  Python by `fefat.backtest.fidelity_check`, none for a run without days finer than a minute.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 import fefat_engine
 import polars as pl
@@ -29,7 +31,7 @@ from pydantic import Field
 
 from fefat.backtest.run_config import FidelityText
 from fefat.market.schema import FrozenModel
-from fefat.reference.orders import OrderRole
+from fefat.reference.orders import OrderRole, PositionSide
 
 
 def running_drawdown(equity: pl.Series) -> pl.Series:
@@ -227,8 +229,83 @@ class Robustness(FrozenModel):
     fragile_to_slippage: bool
 
 
+class FidelityEra(FrozenModel):
+    """Trade dates in a row that a run filled on one level (`02` §1.6): the finest each held at
+    or coarser than the run's fidelity (D-58)."""
+
+    first: date
+    last: date
+    trade_dates: int = Field(ge=1)
+    fidelity: FidelityText
+
+
+class PeriodOutcome(FrozenModel):
+    """The fidelity check's period run from flat at one fidelity: the eras its trade dates filled
+    on, its trades, their net profit and loss, and its maximum drawdown, the capital first."""
+
+    fidelity: FidelityText
+    eras: tuple[FidelityEra, ...]
+    trades: int = Field(ge=0)
+    pnl: Decimal
+    max_drawdown: Decimal
+
+
+class FillPriceDifference(FrozenModel):
+    """A trade entered at one decision on one side in the baseline and in a rerun: how far the
+    rerun's entry price and its exits' average price lie from the baseline's, in ticks, the
+    rerun's less the baseline's."""
+
+    entry_decision: datetime
+    side: PositionSide
+    entry_ticks: float
+    exit_ticks: float | None
+
+
+class FidelityRerun(FrozenModel):
+    """The period rerun at a coarser fidelity against the baseline: its outcome; the differences
+    in trades, net profit and loss, and maximum drawdown, the rerun's less the baseline's; the
+    fill prices of the trades both entered at one decision on one side; and the trades of the
+    baseline and of the rerun that the other did not enter."""
+
+    outcome: PeriodOutcome
+    trades_delta: int
+    pnl_delta: Decimal
+    max_drawdown_delta: Decimal
+    fill_prices: tuple[FillPriceDifference, ...]
+    unmatched_trades: int = Field(ge=0)
+    extra_trades: int = Field(ge=0)
+
+
+class FidelityCheck(FrozenModel):
+    """The error bar of a run's days at lower fidelity (`02` §1.6, step 2.12), `kind` checked:
+    the period its trade dates finer than a minute span, from `first` to `last`, run from flat
+    at the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity, the
+    rerun at 1 second none where the period holds no 1-second bars, its dates filling on the
+    1-minute bars as the rerun at 1 minute does."""
+
+    kind: Literal["checked"] = "checked"
+    first: date
+    last: date
+    baseline: PeriodOutcome
+    at_one_second: FidelityRerun | None
+    at_one_minute: FidelityRerun
+
+
+class RefusedCheck(FrozenModel):
+    """A fidelity check, `kind` refused, whose rerun at `fidelity` the engine refused, with its
+    message, as when a trade date of the period holds no level at or coarser than it, ticks
+    without bars."""
+
+    kind: Literal["refused"] = "refused"
+    first: date
+    last: date
+    fidelity: FidelityText
+    refused: str
+
+
 class Metrics(FrozenModel):
-    """A run's metrics (`02` §7), as `fefat_engine.metrics` works them out."""
+    """A run's metrics (`02` §7), as `fefat_engine.metrics` works them out, and its fidelity
+    check, which `fefat.backtest.fidelity_check` adds, told apart by its `kind`."""
 
     trades: TradeStatistics
     daily: DailyStatistics
@@ -237,3 +314,6 @@ class Metrics(FrozenModel):
     pnl_at_plus_one_tick: Decimal
     breakdowns: Breakdowns
     robustness: Robustness
+    fidelity_check: Annotated[FidelityCheck | RefusedCheck, Field(discriminator="kind")] | None = (
+        None
+    )

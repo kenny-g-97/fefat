@@ -109,7 +109,10 @@ def test_the_record_names_every_dataset_its_terms_each_default_and_each_warning(
     assert record.fee_table.schedules[0][0] == date(2026, 7, 20)
     assert [warning for warning in record.warnings if "F-FEE-01" in warning]
     assert record.engine_config["fidelity"] == "trades"
-    assert record.fidelity_summary == {"trades": record.summary.fills}
+    assert run.fills.get_column("fidelity").unique().to_list() == ["trades"]
+    # Step 2.12: the fidelity era of every trade date replaces the fills by fidelity.
+    eras = [(era.first, era.last, str(era.fidelity)) for era in record.fidelity_eras]
+    assert eras == [(record.window.start, record.window.end, "trades")]
     assert (
         run.fills.get_column("trade_date").is_between(record.window.start, record.window.end).all()
     )
@@ -355,8 +358,9 @@ def test_a_record_another_engine_version_wrote_is_refused_by_name() -> None:
     del record["metrics"]
     (older / "run.json").write_text(json.dumps(record), encoding="utf-8")
 
+    current = fefat_engine.ENGINE_VERSION
     with pytest.raises(
-        ValueError, match="Expected a run of engine version 7, got one of version 6"
+        ValueError, match=f"Expected a run of engine version {current}, got one of version 6"
     ):
         Run.open(older)
 

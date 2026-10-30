@@ -124,7 +124,7 @@ def load(
     table = instrument_table(paths.data_dir)
     root, contract = _root_and_contract(root_or_symbol, table)
     instrument = table.get(root)
-    first, last = _trade_date(start, "start"), _trade_date(end, "end")
+    first, last = parse_trade_date(start, "start"), parse_trade_date(end, "end")
     if last < first:
         raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
     bar_timeframe = Timeframe.parse(timeframe)
@@ -219,7 +219,9 @@ def _splices(
     return continuous
 
 
-def _trade_date(value: str | date, name: str) -> date:
+def parse_trade_date(value: str | date, name: str) -> date:
+    """`value`, the `name` of a window such as its `start`, as a trade date: a date, or its ISO
+    text; an instant is refused."""
     if isinstance(value, datetime):
         raise ValueError(
             f"Expected the {name} as a date such as 2024-01-31, got the instant {value!r}."

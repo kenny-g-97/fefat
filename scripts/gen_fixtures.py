@@ -7,12 +7,18 @@ databento-dbn, and takes its columns from the SDK's (`fefat.market.schema`):
     uv run python scripts/gen_fixtures.py --out <folder> --seed <number>
     uv run python scripts/gen_fixtures.py --out <folder outside the repository> \
         --dates 2026-01-02..2026-12-31 --contracts ESH2026 --planted-gaps 3
+    uv run python scripts/gen_fixtures.py --out <folder outside the repository> \
+        --dates 2025-03-24..2026-03-19 --contracts ESH2026 --ticks-from 2025-12-22
 
-The last form writes a contract's sessions of a date range (its weekdays, or every day for a
-product that trades at weekends), each with planted gaps: jumps of the price and quiet minutes
-without prints, as months and years generated at test time need (step 2.7, D-51). It writes the
-store's partitions, their `dataset.json`, and the manifest, but not the Databento batch or the
-export samples, which belong to the committed set; never commit what it writes.
+The last two forms write a contract's sessions of a date range, the trade dates of its
+product's calendar (`fefat.market.builtin_calendars`), so that no session falls on a full
+close, each with planted gaps: jumps of the price and quiet minutes without prints, as months
+and years generated at test time need (step 2.7, D-51). With `--ticks-from`, every session is
+simulated, but its trades and 1-second bars are written from that trade date alone, beside the
+1-minute bars of every session, as a store with ticks for a window's last quarter holds them
+(step 2.12). They write the store's partitions, their `dataset.json`, and the manifest, but not
+the Databento batch or the export samples, which belong to the committed set; never commit
+what they write.
 
 The files follow the canonical store of docs/masterplan/02-engine-and-data.md
 section 1.1, with this folder as the provider `synthetic`: Parquet with zstd,
@@ -102,6 +108,9 @@ import pyarrow.parquet as pq
 from databento_dbn import Metadata, OHLCVMsg, RType, Schema, SType
 from databento_dbn.metadata import MappingInterval
 
+from fefat.market.builtin_calendars import BUILT_IN
+from fefat.market.calendar import build_sessions
+from fefat.market.calendar_definition import CalendarId
 from fefat.market.schema import parse_schema_name, polars_schema
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -191,8 +200,8 @@ class ActivityWindow:
 @dataclass(frozen=True)
 class FixtureProduct:
     """An instrument in the fixture set: its specification, its trading day, and its sessions,
-    each with a factor on the trade chances of its activity windows (`activity_scale`), and
-    whether a date range gives it weekend sessions."""
+    each with a factor on the trade chances of its activity windows (`activity_scale`), and the
+    calendar whose trade dates a date range gives it."""
 
     root: str
     contract: str
@@ -211,7 +220,7 @@ class FixtureProduct:
     opening_gap_ticks: int
     trade_dates: tuple[date, ...]
     activity_scale: tuple[float, ...]
-    trades_on_weekends: bool = False
+    calendar: CalendarId
 
     def __post_init__(self) -> None:
         if len(self.activity_scale) != len(self.trade_dates):
@@ -258,6 +267,7 @@ ES = FixtureProduct(
     opening_gap_ticks=12,
     trade_dates=(date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)),
     activity_scale=(1.0, 1.0, 1.0),
+    calendar=CalendarId.CME_EQUITY_INDEX,
 )
 ES_JUNE = replace(
     ES,
@@ -298,18 +308,16 @@ BTC = FixtureProduct(
     opening_gap_ticks=0,
     trade_dates=(date(2026, 3, 7),),
     activity_scale=(1.0,),
-    trades_on_weekends=True,
+    calendar=CalendarId.CRYPTO_24X7,
 )
 PRODUCTS = (ES, ES_JUNE, BTC)
 
 
 def in_date_range(product: FixtureProduct, first: date, last: date) -> FixtureProduct:
-    """`product` trading every session from `first` to `last`, weekdays only unless it trades at
-    weekends, each at its full activity."""
-    days = (first + timedelta(days=offset) for offset in range((last - first).days + 1))
-    trade_dates = tuple(
-        day for day in days if product.trades_on_weekends or day.weekday() < SATURDAY
-    )
+    """`product` trading every session its calendar gives from `first` to `last`, so none on a
+    weekend or a full close of CME's, each at its full activity."""
+    sessions = build_sessions(BUILT_IN[product.calendar], first, last)
+    trade_dates = tuple(sessions.get_column("trade_date").to_list())
     if not trade_dates:
         raise ValueError(
             f"Expected a session of {product.contract} from {first} to {last}, got none."
@@ -623,10 +631,15 @@ def month_of(product: FixtureProduct) -> str:
 
 
 def written_product(
-    product: FixtureProduct, out: Path, seed: int, planted_gaps: int = 0
+    product: FixtureProduct,
+    out: Path,
+    seed: int,
+    planted_gaps: int = 0,
+    ticks_from: date | None = None,
 ) -> list[dict[str, str | int]]:
-    """Write a contract's trades and 1-second bars per trade date and its 1-minute bars per
-    month, each session with `planted_gaps` quiet stretches and jumps."""
+    """Write a contract's trades and 1-second bars per trade date, from `ticks_from` when it is
+    given, and its 1-minute bars per month, each session with `planted_gaps` quiet stretches and
+    jumps."""
     entries: list[dict[str, str | int]] = []
     minute_bars: dict[str, list[pa.Table]] = {}
     price_ticks = product.first_price_ticks
@@ -639,14 +652,14 @@ def written_product(
         trades = with_planted_gaps(with_planted_prints(tape, session), session, seed, planted_gaps)
         if planted_gaps:
             price_ticks = trades.column("price")[-1].as_py() // product.tick
-        day = f"date={trade_date.isoformat()}"
-        second_bars = bars_from_trades(trades, session, NANOSECONDS_PER_SECOND)
-        entries.append(
-            written_partition(trades, partition_path(out, "trades", product, day), out, seed)
-        )
-        entries.append(
-            written_partition(second_bars, partition_path(out, "ohlcv-1s", product, day), out, seed)
-        )
+        if ticks_from is None or trade_date >= ticks_from:
+            day = f"date={trade_date.isoformat()}"
+            second_bars = bars_from_trades(trades, session, NANOSECONDS_PER_SECOND)
+            entries.append(
+                written_partition(trades, partition_path(out, "trades", product, day), out, seed)
+            )
+            seconds_path = partition_path(out, "ohlcv-1s", product, day)
+            entries.append(written_partition(second_bars, seconds_path, out, seed))
         month_bars = minute_bars.setdefault(trade_date.strftime("%Y-%m"), [])
         month_bars.append(bars_from_trades(trades, session, NANOSECONDS_PER_MINUTE))
     for month, tables in minute_bars.items():
@@ -990,7 +1003,14 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
         default=0,
         help="quiet stretches and price jumps planted in each session (default: 0)",
     )
+    parser.add_argument(
+        "--ticks-from",
+        type=date.fromisoformat,
+        help="with --dates, the first trade date to write trades and 1-second bars of",
+    )
     arguments = parser.parse_args(argv)
+    if arguments.ticks_from is not None and arguments.dates is None:
+        parser.error(f"Expected --dates with --ticks-from, got --ticks-from {arguments.ticks_from}")
     generated = arguments.dates is not None or arguments.contracts is not None
     if (generated or arguments.planted_gaps > 0) and arguments.out.resolve().is_relative_to(ROOT):
         parser.error(
@@ -1011,16 +1031,26 @@ def chosen_products(arguments: argparse.Namespace) -> tuple[FixtureProduct, ...]
         products = tuple(known[contract] for contract in arguments.contracts)
     if arguments.dates is not None:
         products = tuple(in_date_range(product, *arguments.dates) for product in products)
+    ticks_from = arguments.ticks_from
+    if ticks_from is None:
+        return products
+    late = [product.contract for product in products if product.trade_dates[-1] < ticks_from]
+    if late:
+        raise SystemExit(
+            f"Expected a trade date of {', '.join(late)} on or after --ticks-from {ticks_from}, "
+            "got none: its trades and 1-second bars would be empty."
+        )
     return products
 
 
 def main(argv: Sequence[str]) -> int:
     arguments = parse_arguments(argv)
     products = chosen_products(arguments)
+    gaps, ticks_from = arguments.planted_gaps, arguments.ticks_from
     entries = [
         entry
         for product in products
-        for entry in written_product(product, arguments.out, arguments.seed, arguments.planted_gaps)
+        for entry in written_product(product, arguments.out, arguments.seed, gaps, ticks_from)
     ]
     one_product_a_root = {product.root: product for product in products}.values()
     entries.extend(

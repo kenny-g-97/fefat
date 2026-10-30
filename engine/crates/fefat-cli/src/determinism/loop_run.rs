@@ -5,7 +5,8 @@
 //! bars; each run paying a futures fee table whose first schedule starts after the tape's date,
 //! funding at two times, and rolling once, a gap of 5.00, inside the tape (step 2.9); and every
 //! order, fill with its contract, entry of the event log, and cost line, with the final cash and
-//! position, hashed in order.
+//! position, the trades and the account at each decision (step 2.10), and the fidelity eras of
+//! each run's trade dates (step 2.12), hashed in order.
 
 use fefat_core::costs::{CostReason, FeeRate, FeeSchedule, FeeTable, FundingRate, Rate};
 use fefat_core::fidelity::{Fidelity, Timeframe};
@@ -310,6 +311,22 @@ fn hash_outputs(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
     let held = outputs.ledger.position().signed_lots();
     hash_numbers(hasher, [outputs.ledger.cash().0, held.0].into_iter());
     hash_trades_and_equity(hasher, outputs);
+    hash_eras(hasher, outputs);
+}
+
+/// Step 2.12's fidelity eras: their count, then each era's first and last trade date, its count
+/// of trade dates, and its level.
+fn hash_eras(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
+    hash_numbers(hasher, [outputs.eras.len() as i64].into_iter());
+    for era in &outputs.eras {
+        let dates = [
+            i64::from(era.first.0),
+            i64::from(era.last.0),
+            era.trade_dates as i64,
+        ];
+        hash_numbers(hasher, dates.into_iter());
+        hash_words(hasher, [era.fidelity.to_string()]);
+    }
 }
 
 /// Step 2.10's outputs: each fill's trade date, each trade closed, and the account at each
