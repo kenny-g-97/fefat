@@ -46,6 +46,8 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 EXTERNAL_PROJECT = REPOSITORY / "python" / "tests" / "external"
 REPORT = REPOSITORY / "docs" / "validation" / "nautilus-comparison.md"
 XCHECK_FOLDER = "xcheck"
+EXPORT_FOLDER = "export"
+"""Where the builder saves NinjaTrader 8's exported trades, under the nt8 comparison."""
 CHUNK_BYTES = 8_000_000
 ENTRY_WINDOW = ("08:35", "14:30")
 FLAT_BY = "15:00"
@@ -176,14 +178,15 @@ def _entry_order(definition: CrossCheckStrategy) -> Any:
     )
 
 
-def compatibility_profile(provider: str) -> RunConfig:
-    """The fill specification's §19 profile on 1-minute bars."""
+def compatibility_profile(comparison: Comparison) -> RunConfig:
+    """The fill specification's §19 profile on 1-minute bars of the comparison's one contract."""
     return RunConfig(
         fidelity=Timeframe.parse("1m"),
         latency_ms=0,
         slippage_ticks=SlippageTicks(market=0, stop=0),
         limit_fill=LimitFill.TOUCH,
-        provider=provider,
+        provider=comparison.provider,
+        contract=comparison.contract,
     )
 
 
@@ -195,7 +198,7 @@ def export_fefat_side(comparison: Comparison, folder: Path) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     instrument = ff.instruments.get(comparison.root)
     tick = int(instrument.tick_size * UNITS_PER_POINT)
-    config = compatibility_profile(comparison.provider)
+    config = compatibility_profile(comparison)
     runs = {}
     for definition in comparison.strategies:
         strategy = signal_strategy(comparison.root, definition, tick)
@@ -386,6 +389,7 @@ def main() -> int:
         print(f"FEFAT's {comparison.name} side: {comparison.contract} on {comparison.provider}")
         record = export_fefat_side(comparison, xcheck / comparison.name)
         print(f"  {len(record['runs'])} runs under {xcheck / comparison.name / 'fefat'}")
+    (xcheck / NINJATRADER.name / EXPORT_FOLDER).mkdir(exist_ok=True)
     raw, raw_file = raw_batch_file(Store(paths.data_dir), NAUTILUS)
     cut = written_cut(xcheck / NAUTILUS.name, raw, raw_file, NAUTILUS)
     print(f"NautilusTrader's side on {cut.name}")

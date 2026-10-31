@@ -1,8 +1,9 @@
 """How a backtest runs (step 2.10, D-51, `docs/spec/fill-semantics.md` §18): the finest data it
 fills on, the latency, the slippage ticks per order class, when limits fill, what a roll does
-with an open position, the fee table, the capital, how the engine replays the records, and the
-provider whose datasets it reads. A setting left out takes its default, which `applied` writes
-in, so that a run's record names every value it ran under:
+with an open position, the fee table, the capital, how the engine replays the records, the
+provider whose datasets it reads, and the one contract it reads instead of the roll calendar's
+fronts (step 2.14). A setting left out takes its default, which `applied` writes in, so that a
+run's record names every value it ran under:
 
     config = RunConfig(fee_table="prop-topstep", slippage_ticks=SlippageTicks(market=2, stop=2))
 """
@@ -12,6 +13,7 @@ from typing import Annotated
 
 from pydantic import BeforeValidator, Field, PlainSerializer, field_validator
 
+from fefat.market.contracts import parse_contract_name
 from fefat.market.fees import TABLES
 from fefat.market.fidelity import TickFidelity, parse_fidelity
 from fefat.market.instruments import InstrumentKind
@@ -53,7 +55,10 @@ class RunConfig(FrozenModel):
     (F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of
     `fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;
     `capital`, in the instrument's currency; `replay`, skipping what no order can act on or in
-    full, which give the same fills (`02` §4); and `provider`, as `load` takes it."""
+    full, which give the same fills (`02` §4); `provider`, as `load` takes it; and `contract`,
+    one contract of the strategy's root read unspliced, as `load` reads a contract, so that the
+    run crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll
+    calendar's fronts."""
 
     fidelity: FidelityText | None = None
     latency_ms: int = Field(default=DEFAULT_LATENCY_MS, ge=0)
@@ -64,6 +69,14 @@ class RunConfig(FrozenModel):
     capital: Decimal = Field(default=DEFAULT_CAPITAL, gt=0)
     replay: Replay = Replay.SKIPPING
     provider: str | None = None
+    contract: str | None = None
+
+    @field_validator("contract")
+    @classmethod
+    def _a_contract_name(cls, contract: str | None) -> str | None:
+        if contract is not None:
+            parse_contract_name(contract)
+        return contract
 
     @field_validator("fee_table")
     @classmethod
@@ -92,6 +105,7 @@ class RunConfig(FrozenModel):
             capital=self.capital,
             replay=self.replay,
             provider=provider,
+            contract=self.contract,
         )
 
 
@@ -108,6 +122,7 @@ class AppliedRunConfig(FrozenModel):
     capital: Decimal = Field(gt=0)
     replay: Replay
     provider: str
+    contract: str | None = None
 
     def run_settings(self) -> RunSettings:
         """The settings the engines fill under."""
