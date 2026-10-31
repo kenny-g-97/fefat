@@ -58,11 +58,11 @@ impl PathPointKind {
             _ => None,
         }
     }
-}
 
-impl fmt::Display for PathPointKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
+    /// The kind as the `trade_paths` artifact writes it: `fill`, `minute`, `favourable`,
+    /// `adverse`, or `possible_adverse`.
+    pub const fn name(self) -> &'static str {
+        match self {
             Self::Fill(_) => "fill",
             Self::Minute => "minute",
             Self::Favourable => "favourable",
@@ -70,7 +70,13 @@ impl fmt::Display for PathPointKind {
             Self::PossibleAdverse => "possible_adverse",
             #[cfg(test)]
             Self::Mark => "mark",
-        })
+        }
+    }
+}
+
+impl fmt::Display for PathPointKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
     }
 }
 

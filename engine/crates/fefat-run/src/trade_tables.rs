@@ -111,7 +111,7 @@ pub fn trade_paths_table(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, Arro
     let int = |value: fn(&PathRow<'_>) -> i64| -> ArrayRef {
         Arc::new(Int64Array::from_iter_values(rows.iter().map(value)))
     };
-    let kinds = rows.iter().map(|(_, _, point)| point.kind.to_string());
+    let kinds = rows.iter().map(|(_, _, point)| point.kind.name());
     let orders = rows
         .iter()
         .map(|(_, _, point)| point.kind.order().map(|order| order.0));
