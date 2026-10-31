@@ -22,7 +22,7 @@ from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.orders import LimitOrder, MarketOrder, Order, OrderList, StopMarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
-from fefat_xcheck.units import NANOSECONDS_PER_SECOND
+from fefat_xcheck.units import NANOSECONDS_PER_SECOND, whole_second
 
 ENTRY_TAG, STOP_TAG, TARGET_TAG, FLAT_BY_TAG = "entry", "stop", "target", "flat_by"
 ENTRY_ORDER_TYPES = {
@@ -30,6 +30,7 @@ ENTRY_ORDER_TYPES = {
     "limit": OrderType.LIMIT,
     "stop": OrderType.STOP_MARKET,
 }
+ENTRY_KINDS = {order_type: kind for kind, order_type in ENTRY_ORDER_TYPES.items()}
 ONE_LOT = Quantity.from_int(1)
 
 
@@ -80,7 +81,7 @@ class CrossCheckStrategy(Strategy):
         self.subscribe_bars(self.bar_type)
 
     def on_bar(self, bar: Bar) -> None:
-        instant = bar.ts_init // NANOSECONDS_PER_SECOND * NANOSECONDS_PER_SECOND
+        instant = whole_second(bar.ts_init)
         close = bar.close.as_decimal()
         local = datetime.fromtimestamp(instant / NANOSECONDS_PER_SECOND, tz=self.zone)
         action = self._decide(local, close)

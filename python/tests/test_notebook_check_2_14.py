@@ -3,6 +3,7 @@ of hand-made tables under the test's FEFAT home: it counts each comparison's pai
 shows the differing pairs and NinjaTrader 8's trades beside FEFAT's, and says so when the folder
 is missing."""
 
+import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -79,6 +80,9 @@ def xcheck_folder() -> Path:
         folder / "nt8" / "classified" / "market_ninjatrader_8.parquet"
     )
     fefat_trades().write_parquet(folder / "nt8" / "fefat" / "trades_market.parquet")
+    (folder / "nt8" / "fefat" / "fefat.json").write_text(
+        json.dumps({"instrument": {"point_value": "2"}}), encoding="utf-8"
+    )
     (folder / "nt8" / "export").mkdir()
     (folder / "nt8" / "export" / "trades.csv").write_text(
         "\n".join((HEADER, *EXPORT_ROWS)) + "\n", encoding="utf-8"

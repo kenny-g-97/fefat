@@ -1,8 +1,8 @@
 """The comparison report, `docs/validation/nautilus-comparison.md` (step 2.14, Done means 1 to
 3): the versions of every engine and the data snapshot, the strategies and the profile, each
-strategy's match rates and difference classes, the classes with the rules behind them, and the
-NinjaTrader 8 section. It holds counts, rates, timestamps, and tick differences: never a price
-of the licensed data, nor a path of this PC."""
+engine's section with its settings, its data checks, each strategy's match rates and difference
+classes, and the classes with the rules behind them. It holds counts, rates, timestamps, and
+tick differences: never a price of the licensed data, nor a path of this PC."""
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -26,13 +26,12 @@ EXPLANATIONS = {
         "and exit levels are set from the signal close, so the bracket is unmoved by it."
     ),
     DifferenceClass.BAR_PATH: (
-        "One 1-minute bar reached both the stop and the target. FEFAT visits a bar's adverse "
-        "extreme first while holding a position, so the stop fills (F-BAR-02) and the fill is "
-        "flagged ambiguous (F-BAR-05). NautilusTrader visits the open, the high, the low, and "
-        "the close in that order, or with `bar_adaptive_high_low_ordering` the extreme nearer "
-        "the open first; NinjaTrader 8 the extreme nearer the open first, the high on a tie "
-        "(H2). The predicate checks the bar's range covers both levels and that the other "
-        "engine's order of extremes reaches the leg it took first."
+        "One later 1-minute bar reached both the stop and the target. FEFAT visits a bar's "
+        "adverse extreme first while holding a position, so the stop fills (F-BAR-02) and the "
+        "fill is flagged ambiguous (F-BAR-05). NautilusTrader visits the open, the high, the low, "
+        "and the close in that order, or with `bar_adaptive_high_low_ordering` the extreme nearer "
+        "the open first, the low on a tie; NinjaTrader 8 the extreme nearer the open first, the "
+        "high on a tie (H2). The replay of both paths gives each engine the leg it took."
     ),
     DifferenceClass.ENTRY_BAR_PATH: (
         "A limit or stop entry filled inside a 1-minute bar, and the two engines visit the rest "
@@ -43,8 +42,8 @@ EXPLANATIONS = {
         "fixed or adaptive order whatever the entry, so an extreme FEFAT visited before the "
         "fill can come after it there, or the reverse: one engine fills a leg on the rest of the "
         "bar while the other carries the position into the next bar, or they fill different "
-        "legs. The predicate replays both paths on the bar (`fefat_xcheck.entry_bar`) and "
-        "requires each engine's exit on the bar, or none, to be what its path gives."
+        "legs. The replay of both paths on the entry's bar (`fefat_xcheck.replay`) gives each "
+        "engine the exit it made."
     ),
     DifferenceClass.LEG_RELEASED_THROUGH: (
         "A limit or stop entry filled inside a 1-minute bar on a tick already past one of its "
@@ -53,8 +52,8 @@ EXPLANATIONS = {
         "on the low tick has its stop filled at the low, below the stop's level; a buy stop "
         "filled on the high tick has its target filled at the high, above the target's level. "
         "FEFAT works the legs on the rest of the path from the entry's point and fills a stop at "
-        "its level (F-STP-04) and a target at its price, never better (F-LMT-03). The predicate "
-        "replays both paths and requires both exits, at the same leg, to be what they give."
+        "its level (F-STP-04) and a target at its price, never better (F-LMT-03). The replay of "
+        "both paths gives each engine the price it filled at."
     ),
     DifferenceClass.GAP_LIMIT_CLAMPED: (
         "A bar opened past a resting limit's price in its favour and stayed past it. FEFAT "
@@ -63,13 +62,13 @@ EXPLANATIONS = {
         "clamped into the bar, the bar's high for a buy limit or its low for a sell limit, so "
         "the fill is better than the limit by the gap (the builder's spec, H4: a limit fills at "
         "its own price, also when the bar opens beyond it, clamped into the bar). NautilusTrader "
-        "fills a resting limit at its price, as FEFAT does. The predicate checks the bar lies "
-        "wholly past the level and that the other engine's price is the bar's nearest extreme."
+        "fills a resting limit at its price, as FEFAT does."
     ),
     DifferenceClass.CASCADE: (
-        "A trade one engine made while the other still held a position at that decision, after "
-        "an earlier difference on the same trade date left the two in different states; the "
-        "flat-by at 15:00 Chicago brings them back together each trade date."
+        "A trade one engine made, as its rules give it, while the other still held a position at "
+        "that decision, after an earlier difference on the same trade date left the two in "
+        "different states; the flat-by at 15:00 Chicago brings them back together each trade "
+        "date."
     ),
 }
 NOT_EXERCISED = (
@@ -87,8 +86,9 @@ NOT_EXERCISED = (
     ),
     (
         "Roll handling",
-        "MESU2026 is the front contract for the whole window and the FEFAT runs crossed no "
-        "roll (asserted by `scripts/xcheck.py`), so neither engine rolled.",
+        "MESU2026 and MNQU2026 are the front contracts for the whole window and the FEFAT runs "
+        "read one contract each and crossed no roll (asserted by `scripts/xcheck.py`), so no "
+        "engine rolled.",
     ),
 )
 
@@ -111,7 +111,7 @@ class StrategyReport:
 @dataclass(frozen=True)
 class EngineReport:
     """One engine's section: its name with its version, the settings it ran under, the checks
-    that both engines read the same data and decided alike, and its strategies."""
+    of what both engines read and decided on, and its strategies."""
 
     engine: str
     settings: tuple[str, ...]
@@ -145,7 +145,7 @@ def report_text(inputs: ReportInputs) -> str:
         _title(inputs),
         _versions_and_data(inputs),
         _strategies(inputs.fefat),
-        _engine_section("NautilusTrader", inputs.nautilus, inputs.fefat),
+        _engine_section("NautilusTrader", inputs.nautilus),
         _classes(inputs),
         _ninjatrader_section(inputs),
     ]
@@ -162,11 +162,15 @@ def _title(inputs: ReportInputs) -> str:
             "§8 item 5, D-51, D-59): the same strategies on "
             f"{facts['instrument']['contract']} from {facts['window']['first']} to "
             f"{facts['window']['last']}, deciding on 5-minute closes and filling on 1-minute bars, "
-            "FEFAT under the compatibility profile of the fill specification's §19. Every "
-            "differing fill falls into a class below, each checked against the bars; the "
-            "comparison matches trades by the decision that entered them and their side, a "
-            "market fill by its price alone, since its stamp is a convention of its own "
-            "(`bar_boundary`), and every other fill by its price and its bar.",
+            "FEFAT under the compatibility profile (touch fills, no slippage ticks, no latency, "
+            "FEFAT's own bar path), and the market strategy on MNQU2026 against NinjaTrader 8. "
+            "Trades are matched by the decision that entered them and their side. Each engine's "
+            "trade is held to a replay of its own documented rules on the 1-minute bars "
+            "(`fefat_xcheck.replay`), so a difference is explained only where both fills are what "
+            "the rules give, and every explained difference falls into a class below. A market "
+            "entry and a flat-by exit are compared by their prices, since their stamps are a "
+            "convention of their own (`bar_boundary`); every other fill by its price and its "
+            "bar. A pair is exact when both its fills match.",
             "",
         ]
     )
@@ -179,6 +183,7 @@ def _versions_and_data(inputs: ReportInputs) -> str:
     profile = facts["profile"]
     ticks = profile["slippage_ticks"]
     fees = _fee_in_force(facts)
+    vendor = cut["raw_file"]["vendor_sha256"]
     lines = [
         "## Versions and data",
         "",
@@ -190,13 +195,9 @@ def _versions_and_data(inputs: ReportInputs) -> str:
         f"dates {facts['window']['first']} to {facts['window']['last']}; the store snapshot of "
         f"the request {snapshot['first']} to {snapshot['last']} (ADR-0019), the one each run "
         f"pinned: `{snapshot['sha256']}`.",
-        f"- The raw Databento batch file `{cut['raw_file']['name']}` ({cut['raw_file']['vendor_version']}): "
-        f"SHA-256 `{cut['raw_file']['sha256']}`"
-        + (
-            f", the vendor's `{cut['raw_file']['vendor_sha256']}`"
-            if cut["raw_file"]["vendor_sha256"]
-            else ""
-        )
+        f"- The raw Databento batch file `{cut['raw_file']['name']}` "
+        f"({cut['raw_file']['vendor_version']}): SHA-256 `{cut['raw_file']['sha256']}`"
+        + (f", the vendor's `{vendor}`" if vendor else "")
         + f". The month cut NautilusTrader read, `{cut['cut']['name']}` ({cut['cut']['from']} to "
         f"{cut['cut']['to']}, the raw file's own metadata): SHA-256 `{cut['cut']['sha256']}`.",
         f"- Profile: fidelity {profile['fidelity']}, latency {profile['latency_ms']} ms, slippage "
@@ -205,7 +206,6 @@ def _versions_and_data(inputs: ReportInputs) -> str:
         "window), not compared: fills do not depend on fees with fixed sizing, and the gross "
         "profit and loss is compared.",
     ]
-    lines.extend(f"- {check}" for check in inputs.nautilus.data_checks)
     return "\n".join(lines) + "\n"
 
 
@@ -238,9 +238,10 @@ def _strategies(facts: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _engine_section(title: str, engine: EngineReport, facts: dict[str, Any]) -> str:
-    lines = [f"## {title}", ""]
+def _engine_section(title: str, engine: EngineReport) -> str:
+    lines = [f"## {title}", "", f"- {engine.engine}."]
     lines.extend(f"- {setting}" for setting in engine.settings)
+    lines.extend(f"- {check}" for check in engine.data_checks)
     lines += [
         "",
         "### Trades",
@@ -251,20 +252,19 @@ def _engine_section(title: str, engine: EngineReport, facts: dict[str, Any]) -> 
         "",
         _fills_table(engine),
     ]
-    lines += ["", "### Gross profit and loss", "", _pnl_table(engine, facts), ""]
-    lines += ["### Examples", ""]
+    lines += ["", "### Gross profit and loss", "", _pnl_table(engine), "", "### Examples", ""]
     lines.extend(_examples(engine))
     return "\n".join(lines) + "\n"
 
 
 def _trades_table(engine: EngineReport) -> str:
     header = (
-        "| Strategy | Bar path | FEFAT | Other | Matched | Exact | "
+        "| Strategy | Bar path | FEFAT | Other | Matched | Exact | Exact of matched | "
         + " | ".join(CLASS_COLUMNS)
         + " |"
     )
     rule = (
-        "| --- | --- | ---: | ---: | ---: | ---: | "
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | "
         + " | ".join("---:" for _ in CLASS_COLUMNS)
         + " |"
     )
@@ -274,28 +274,37 @@ def _trades_table(engine: EngineReport) -> str:
         counts = " | ".join(str(summary.trades_by_class.get(name, 0)) for name in CLASS_COLUMNS)
         rows.append(
             f"| {strategy.strategy} | {strategy.conventions.name} | {summary.fefat_trades} | "
-            f"{summary.other_trades} | {summary.matched} | {summary.exact} | {counts} |"
+            f"{summary.other_trades} | {summary.matched} | {summary.exact} | "
+            f"{_rate(summary.exact, summary.matched)} | {counts} |"
         )
     return "\n".join([header, rule, *rows])
 
 
 def _fills_table(engine: EngineReport) -> str:
-    header = "| Strategy | Bar path | Fills compared | Equal | " + " | ".join(CLASS_COLUMNS) + " |"
-    rule = "| --- | --- | ---: | ---: | " + " | ".join("---:" for _ in CLASS_COLUMNS) + " |"
+    header = (
+        "| Strategy | Bar path | Fills compared | Equal | Equal of compared | "
+        + " | ".join(CLASS_COLUMNS)
+        + " |"
+    )
+    rule = "| --- | --- | ---: | ---: | ---: | " + " | ".join("---:" for _ in CLASS_COLUMNS) + " |"
     rows = []
     for strategy in engine.strategies:
         summary = strategy.summary()
         counts = " | ".join(str(summary.fills_by_class.get(name, 0)) for name in CLASS_COLUMNS)
         rows.append(
             f"| {strategy.strategy} | {strategy.conventions.name} | {summary.fills_compared} | "
-            f"{summary.equal_fills} | {counts} |"
+            f"{summary.equal_fills} | {_rate(summary.equal_fills, summary.fills_compared)} | "
+            f"{counts} |"
         )
     return "\n".join([header, rule, *rows])
 
 
-def _pnl_table(engine: EngineReport, facts: dict[str, Any]) -> str:
-    currency = "USD"
-    header = f"| Strategy | Bar path | FEFAT ({currency}) | Other ({currency}) |"
+def _rate(part: int, whole: int) -> str:
+    return f"{part / whole:.1%}" if whole else "n/a"
+
+
+def _pnl_table(engine: EngineReport) -> str:
+    header = "| Strategy | Bar path | FEFAT (USD) | Other (USD) |"
     rows = [
         f"| {strategy.strategy} | {strategy.conventions.name} | {strategy.fefat_gross_pnl:,.2f} | "
         f"{strategy.other_gross_pnl:,.2f} |"
@@ -345,4 +354,4 @@ def _classes(inputs: ReportInputs) -> str:
 def _ninjatrader_section(inputs: ReportInputs) -> str:
     if inputs.ninjatrader is None:
         return "\n".join(["## NinjaTrader 8", "", inputs.ninjatrader_pending, ""])
-    return _engine_section("NinjaTrader 8", inputs.ninjatrader, inputs.fefat)
+    return _engine_section("NinjaTrader 8", inputs.ninjatrader)

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import polars as pl
 
-from fefat_xcheck.classify import MARKET
+from fefat_xcheck.replay import EntryKind
 from fefat_xcheck.units import MINUTE, NANOSECONDS_PER_SECOND, units_of
 
 PLATFORM_TIME_ZONE = "America/New_York"
@@ -30,6 +30,9 @@ REQUIRED_COLUMNS = (
     "Profit",
     "Commission",
 )
+DECISION_INTERVAL = 5 * MINUTE
+"""The strategy decides on 5-minute closes: a market entry stamped with the bar after its
+decision (the builder's spec, H1) was decided at the last 5-minute close before the stamp."""
 EXIT_REASONS = {"Stop loss": "stop", "Profit target": "target", "FlatBy": "flat_by"}
 """The Analyzer's exit names for the strategy's Set() orders, and the exit signal name
 `FefatCrossCheck.cs` gives its flat-by."""
@@ -55,9 +58,7 @@ EXPORT_COLUMNS = pl.Schema(
 signal frame holds, and with the commission NT8 charged."""
 
 
-def read_export(
-    path: Path, point_value: int | Decimal, time_zone: str = PLATFORM_TIME_ZONE
-) -> pl.DataFrame:
+def read_export(path: Path, point_value: int | Decimal) -> pl.DataFrame:
     """The export's trades with the columns of `EXPORT_COLUMNS`, prices in 1e-9 units and instants
     in nanoseconds UTC; `point_value` recovers the gross profit and loss from the prices, which
     the export rounds to cents."""
@@ -69,7 +70,7 @@ def read_export(
             f"got {rows[0] if rows else 'an empty file'}."
         )
     column = {name: rows[0].index(name) for name in REQUIRED_COLUMNS}
-    zone = ZoneInfo(time_zone)
+    zone = ZoneInfo(PLATFORM_TIME_ZONE)
     exported = [
         row for row in rows[1:] if len(row) > column["Profit"] and row[column["Profit"]].strip()
     ]
@@ -90,9 +91,9 @@ def _trade(
     quantity = int(parse_number(cell("Qty")))
     entry_ts = parse_platform_time(cell("Entry time"), zone, layout)
     return {
-        "entry_decision": entry_ts - MINUTE,
+        "entry_decision": (entry_ts - 1) // DECISION_INTERVAL * DECISION_INTERVAL,
         "side": side,
-        "entry_kind": MARKET,
+        "entry_kind": str(EntryKind.MARKET),
         "entry_ts": entry_ts,
         "entry_price": units_of(entry_price),
         "exit_ts": parse_platform_time(cell("Exit time"), zone, layout),

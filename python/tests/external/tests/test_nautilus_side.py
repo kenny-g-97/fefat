@@ -5,7 +5,9 @@ deterministically, and their trades come out in the comparison's columns."""
 
 import io
 import json
+from datetime import date, datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import polars as pl
 from databento_dbn import Compression, Encoding, Transcoder
@@ -127,3 +129,30 @@ def test_nautilus_runs_are_deterministic(tmp_path: Path) -> None:
         once = pl.read_parquet(first / "engine" / f"{name}.parquet")
         again = pl.read_parquet(second / "engine" / f"{name}.parquet")
         assert once.equals(again), name
+
+
+def test_nautilus_decides_and_brackets_as_the_strategy_says(tmp_path: Path) -> None:
+    """Every trade of the synthetic run was entered on a close above the previous close for a
+    long and below it for a short, inside the window on a trade date of the window, with its
+    stop and target 12 ticks from that close; every flat-by closed at 15:00 Chicago."""
+    folder = comparison_folder(tmp_path)
+    run_nautilus_side(folder)
+    chicago = ZoneInfo("America/Chicago")
+    decisions = pl.read_parquet(folder / "engine" / "decisions_market_ohlc.parquet")
+    trades = pl.read_parquet(folder / "engine" / "trades_market_ohlc.parquet")
+    with_previous = decisions.with_columns(previous=pl.col("close").shift(1))
+
+    entered = trades.join(with_previous, left_on="entry_decision", right_on="ts_close")
+
+    assert entered.height == trades.height > 0
+    for row in entered.iter_rows(named=True):
+        local = datetime.fromtimestamp(row["entry_decision"] / 1_000_000_000, tz=chicago)
+        sign = 1 if row["side"] == "long" else -1
+        assert date(2026, 3, 5) <= local.date() <= date(2026, 3, 6)
+        assert time(8, 35) <= local.time() < time(14, 30)
+        assert sign * (row["close"] - row["previous"]) > 0
+        assert row["action"] == row["side"]
+        assert row["stop_price"] == row["close"] - sign * 12 * TICK
+        assert row["target_price"] == row["close"] + sign * 12 * TICK
+    for exit_ts in trades.filter(pl.col("exit_reason") == "flat_by")["exit_ts"].to_list():
+        assert datetime.fromtimestamp(exit_ts / 1_000_000_000, tz=chicago).time() == time(15, 0)

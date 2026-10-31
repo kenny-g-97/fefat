@@ -21,15 +21,16 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.enums import AccountType, AssetClass, OmsType, OrderType
+from nautilus_trader.model.enums import AccountType, AssetClass, OmsType
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
 from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.objects import Money, Quantity
+from nautilus_trader.model.objects import Money, Price, Quantity
 from nautilus_trader.model.orders import Order
 
 from fefat_xcheck.classify import TRADE_COLUMNS
 from fefat_xcheck.strategies import (
+    ENTRY_KINDS,
     ENTRY_TAG,
     FLAT_BY_TAG,
     STOP_TAG,
@@ -127,7 +128,7 @@ def futures_contract(
         asset_class=AssetClass.INDEX,
         currency=USD,
         price_precision=precision,
-        price_increment=_price(tick, precision),
+        price_increment=Price(tick, precision),
         multiplier=Quantity.from_str(facts["instrument"]["point_value"]),
         lot_size=Quantity.from_int(1),
         underlying=facts["instrument"]["root"],
@@ -250,11 +251,7 @@ def _trade_row(
     return {
         "entry_decision": whole_second(entry.ts_init),
         "side": "long" if long else "short",
-        "entry_kind": {
-            OrderType.MARKET: "market",
-            OrderType.LIMIT: "limit",
-            OrderType.STOP_MARKET: "stop",
-        }[entry.order_type],
+        "entry_kind": ENTRY_KINDS[entry.order_type],
         "entry_ts": whole_second(entry_fill.ts_event),
         "entry_price": units_of(entry_price),
         "exit_ts": whole_second(exit_fill.ts_event),
@@ -295,9 +292,3 @@ def bars_frame(bars: list[Bar]) -> pl.DataFrame:
         },
         schema={name: pl.Int64 for name in BARS_COLUMNS},
     )
-
-
-def _price(value: Decimal, precision: int) -> Any:
-    from nautilus_trader.model.objects import Price
-
-    return Price(value, precision)

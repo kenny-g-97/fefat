@@ -29,7 +29,7 @@ uv run --directory python/tests/external pyright
 ## What the comparison does
 
 - Trades are matched on the decision that entered them and their side, as `fefat.backtest.fidelity` matches a rerun's trades. A market fill is compared by its price alone, since its stamp is a convention of its own; every other fill by its price and its bar.
-- Each class of difference has a predicate in `fefat_xcheck.classify` that checks the 1-minute bars support the explanation: `bar_boundary`, `bar_path`, `same_bar_bracket`, and `cascade`; a fill no predicate explains is `unknown`. The report explains each class with the rules behind it.
+- Each engine's trade is held to a replay of its own documented rules on the 1-minute bars (`fefat_xcheck.replay`: the entry's fill, the rest of the entry's bar, every later bar, the flat-by). A pair both replays give is explained by a class naming where the two sets of rules part: `bar_boundary`, `bar_path`, `entry_bar_path`, `leg_released_through`, `gap_limit_clamped`, and `cascade`; a fill the rules do not give, or a difference no class names, is `unknown`, and the report exits 1 with one. The report explains each class with the rules behind it.
 - The levels of the stop and the target come from the signal bar's close in every engine, so that an entry filled at another price leaves the exits comparable.
 - Nautilus runs every strategy twice: with its default path (open, high, low, close) and with `bar_adaptive_high_low_ordering` (the extreme nearer the open first).
 

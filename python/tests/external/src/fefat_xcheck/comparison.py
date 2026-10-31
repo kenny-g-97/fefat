@@ -3,10 +3,11 @@ both bar paths, and NinjaTrader 8's export when the builder has saved one, each 
 classified against FEFAT's over the 1-minute bars both filled on."""
 
 import json
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import polars as pl
 
@@ -18,6 +19,7 @@ from fefat_xcheck.conventions import (
     EngineConventions,
 )
 from fefat_xcheck.nt8_export import read_export
+from fefat_xcheck.replay import Rules
 from fefat_xcheck.report import (
     EngineReport,
     ReportInputs,
@@ -168,7 +170,14 @@ def _strategy_report(
 ) -> StrategyReport:
     """One strategy classified against one engine, its table saved under `classified_folder`
     for the check notebook."""
-    classified = classify(ours, theirs, bars, conventions, tick)
+    rules = Rules(
+        conventions,
+        tick,
+        strategy["offset_ticks"],
+        time.fromisoformat(strategy["flat_by"]),
+        ZoneInfo(strategy["tz"]),
+    )
+    classified = classify(ours, theirs, bars, rules)
     classified_folder.mkdir(exist_ok=True)
     name = conventions.name.lower().replace(" ", "_").replace(",", "").replace("-", "_")
     classified.write_parquet(classified_folder / f"{strategy['name']}_{name}.parquet")

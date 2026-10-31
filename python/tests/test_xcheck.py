@@ -17,15 +17,11 @@ from xcheck import (
     cut_month,
     export_fefat_side,
     instrument_id_of,
+    utc_day,
 )
 
 BATCH = SYNTHETIC / "databento-batch" / "GLBX-20260310-SYNTHETIC0"
 RAW = BATCH / "glbx-mdp3-20260304-20260309.ohlcv-1m.dbn"
-NANOSECONDS_PER_DAY = 86_400_000_000_000
-
-
-def utc_day(day: date) -> int:
-    return (day - date(1970, 1, 1)).days * NANOSECONDS_PER_DAY
 
 
 STRATEGIES = (

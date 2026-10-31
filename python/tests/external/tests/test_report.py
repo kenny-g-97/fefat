@@ -1,13 +1,15 @@
 """The comparison report (step 2.14, Done means 1 and 3): match rates and difference classes per
-strategy, the versions of both engines and the data snapshot hash in its header, and a refusal
-to pass while any difference is `unknown`."""
+strategy, the versions of both engines and the data snapshot hash in its header, each engine's
+provenance in its section, and a refusal to pass while any difference is `unknown`."""
 
-from datetime import date
+from datetime import date, time
+from zoneinfo import ZoneInfo
 
 import polars as pl
 
 from fefat_xcheck.classify import TRADE_COLUMNS, classify
-from fefat_xcheck.conventions import NAUTILUS_OHLC
+from fefat_xcheck.conventions import NAUTILUS_OHLC, NINJATRADER, EngineConventions
+from fefat_xcheck.replay import Rules
 from fefat_xcheck.report import (
     EngineReport,
     ReportInputs,
@@ -96,11 +98,14 @@ BARS = pl.DataFrame(
 )
 
 
-def strategy_report(other_entry: float) -> StrategyReport:
+def strategy_report(
+    other_entry: float, other_minutes: int = 0, conventions: EngineConventions = NAUTILUS_OHLC
+) -> StrategyReport:
     fefat = pl.DataFrame([trade(1, 100.25)], schema=TRADE_COLUMNS)
-    other = pl.DataFrame([trade(0, other_entry)], schema=TRADE_COLUMNS)
-    classified = classify(fefat, other, BARS, NAUTILUS_OHLC, TICK)
-    return StrategyReport("market", NAUTILUS_OHLC, classified, 13.75, 15.0)
+    other = pl.DataFrame([trade(other_minutes, other_entry)], schema=TRADE_COLUMNS)
+    rules = Rules(conventions, TICK, 0, time(23, 59), ZoneInfo("UTC"))
+    classified = classify(fefat, other, BARS, rules)
+    return StrategyReport("market", conventions, classified, 13.75, 15.0)
 
 
 def inputs(other_entry: float, ninjatrader: EngineReport | None = None) -> ReportInputs:
@@ -133,15 +138,37 @@ def test_the_report_states_both_engines_versions_and_the_snapshot_hash() -> None
     assert "1-minute bars identical: 28,980 of 28,980" in text
 
 
-def test_the_report_counts_matches_and_classes_per_strategy() -> None:
+def test_the_report_counts_matches_rates_and_classes_per_strategy() -> None:
     text = report_text(inputs(100.0))
 
     assert (
-        "| market | NautilusTrader, open-high-low-close | 1 | 1 | 1 | 0 | 1 | 0 | 0 | 0 | 0 |"
-        in text
-    )
+        "| market | NautilusTrader, open-high-low-close | 1 | 1 | 1 | 0 | 0.0% | "
+        "1 | 0 | 0 | 0 | 0 | 0 | 0 |"
+    ) in text
+    assert (
+        "| market | NautilusTrader, open-high-low-close | 2 | 1 | 50.0% | 1 | 0 | 0 | 0 | 0 | 0 | 0 |"
+    ) in text
+    assert "A pair is exact when both its fills match" in text
     assert "bar_boundary" in text
     assert "No export under xcheck/nt8/export" in text
+
+
+def test_the_ninjatrader_section_states_its_export_and_snapshot() -> None:
+    ninjatrader = EngineReport(
+        engine="NinjaTrader 8 (the builder's installed platform)",
+        settings=("Strategy Analyzer on MNQ 09-26",),
+        data_checks=(
+            "NinjaTrader 8's trades read from `trades.csv`: 1 trades",
+            "snapshot `" + "d" * 64 + "`",
+        ),
+        strategies=(strategy_report(100.25, other_minutes=1, conventions=NINJATRADER),),
+    )
+
+    text = report_text(inputs(100.0, ninjatrader))
+
+    assert "trades read from `trades.csv`" in text
+    assert "d" * 64 in text
+    assert "| market | NinjaTrader 8 | 1 | 1 | 1 | 1 | 100.0% | 0 | 0 | 0 | 0 | 0 | 0 | 0 |" in text
 
 
 def test_an_unknown_difference_is_counted_and_refuses_the_report() -> None:

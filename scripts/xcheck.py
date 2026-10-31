@@ -36,9 +36,10 @@ from databento_dbn import Compression, DBNDecoder, Encoding, Metadata, Transcode
 import fefat as ff
 from fefat.backtest import RunConfig
 from fefat.config import resolve_paths
-from fefat.market.importers.dbn import read_dbn
+from fefat.market.importers.dbn import CHUNK_BYTES, read_dbn
 from fefat.market.raw_manifest import RawFile
 from fefat.market.schema import Timeframe
+from fefat.market.status import dataset_status
 from fefat.market.store import Store
 from fefat.market.store_files import hashed
 from fefat.reference.settings import LimitFill, SlippageTicks
@@ -49,8 +50,7 @@ REPORT = REPOSITORY / "docs" / "validation" / "nautilus-comparison.md"
 XCHECK_FOLDER = "xcheck"
 EXPORT_FOLDER = "export"
 """Where the builder saves NinjaTrader 8's exported trades, under the nt8 comparison."""
-CHUNK_BYTES = 8_000_000
-ENTRY_WINDOW = ("08:35", "14:30")
+ENTRY_WINDOW = ff.EntryWindow(start="08:35", end="14:30")
 FLAT_BY = "15:00"
 TIME_ZONE = "America/Chicago"
 ONE_LOT = 1
@@ -83,8 +83,7 @@ class CrossCheckStrategy:
         """The parameters the other engines' sides read, from `fefat.json`."""
         return {
             **asdict(self),
-            "entry": str(self.entry),
-            "window": list(ENTRY_WINDOW),
+            "window": [ENTRY_WINDOW.start, ENTRY_WINDOW.end],
             "flat_by": FLAT_BY,
             "tz": TIME_ZONE,
         }
@@ -155,15 +154,10 @@ def signal_strategy(root: str, definition: CrossCheckStrategy, tick: int) -> ff.
             entry=_entry_order(definition),
             stop=ff.Stop(column=True),
             targets=[ff.Target(column=True)],
-            time=ff.TimeRules(tz=TIME_ZONE, windows=[_entry_window()], flat_by=FLAT_BY),
+            time=ff.TimeRules(tz=TIME_ZONE, windows=[ENTRY_WINDOW], flat_by=FLAT_BY),
             sizing=ff.Fixed(ONE_LOT),
         ),
     )
-
-
-def _entry_window() -> ff.EntryWindow:
-    start, end = ENTRY_WINDOW
-    return ff.EntryWindow(start=start, end=end)
 
 
 def _entry_order(definition: CrossCheckStrategy) -> Any:
@@ -381,10 +375,27 @@ def external(*arguments: str) -> None:
     subprocess.run([*command, *arguments], cwd=REPOSITORY, env=environment, check=True)
 
 
+def _comparisons_in_the_store(store: Store) -> list[Comparison]:
+    """The Nautilus comparison, and the NinjaTrader 8 one where the store holds the provider's
+    dataset of its root; a store without the NinjaTrader import skips it and says so."""
+    listed = dataset_status(store, resolve_paths(os.environ).reports_dir)
+    comparisons = [NAUTILUS]
+    held = listed.filter(
+        (pl.col("provider") == NINJATRADER.provider) & (pl.col("root") == NINJATRADER.root)
+    )
+    if held.is_empty():
+        print(
+            f"No {NINJATRADER.provider} dataset of {NINJATRADER.root} in the store: the "
+            "NinjaTrader 8 comparison is skipped."
+        )
+        return comparisons
+    return [*comparisons, NINJATRADER]
+
+
 def main() -> int:
     paths = resolve_paths(os.environ)
     xcheck = paths.workspace_dir / XCHECK_FOLDER
-    for comparison in (NAUTILUS, NINJATRADER):
+    for comparison in _comparisons_in_the_store(Store(paths.data_dir)):
         print(f"FEFAT's {comparison.name} side: {comparison.contract} on {comparison.provider}")
         record = export_fefat_side(comparison, xcheck / comparison.name)
         print(f"  {len(record['runs'])} runs under {xcheck / comparison.name / 'fefat'}")

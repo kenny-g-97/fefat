@@ -47,7 +47,7 @@ from fefat.reference.run_documents import fees_document, hours_document
 from fefat.reference.rust_batch import FillView
 from fefat.reference.rust_run import fill_text
 from fefat.reference.strategy import Decision, decisions_of
-from fefat.reference.tape import BarRecord, FundingRate, Record, tape_of_trades
+from fefat.reference.tape import BarRecord, FundingRate, Record, stored_bars, tape_of_trades
 from fefat.reference.template import TemplateStrategy
 from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_text, instrument_parameters, money_text, price_text
@@ -292,12 +292,18 @@ def _bars(
     instants: tuple[int, int],
 ) -> tuple[tuple[Record, ...], tuple[RollRow, ...], str]:
     """The episode's stored bars of `timeframe`, which the engine replayed, not bars `load`
-    would build from finer data, spliced as `load` splices them and cut to the episode; the
-    rolls they cross; and the front of the first. `load`'s warnings are the run's record's."""
+    would build from finer data, spliced as `load` splices them, or of the run's one contract
+    unspliced (`RunConfig.contract`), and cut to the episode; the rolls they cross, none on one
+    contract; and the front of the first. `load`'s warnings are the run's record's."""
     root, provider = record.instrument.root, record.config.provider
+    contract = record.config.contract
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        frame = load(root, str(timeframe), *dates, fidelity=timeframe, provider=provider).collect()
+        frame = load(
+            contract or root, str(timeframe), *dates, fidelity=timeframe, provider=provider
+        ).collect()
+    if contract is not None:
+        return _cut(stored_bars(frame), *instants), (), contract
     calendar = roll_calendar(root, provider=provider)
     bars, _ = tape_across_rolls(frame, calendar)
     tape = _cut(bars, *instants)
