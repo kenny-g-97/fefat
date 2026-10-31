@@ -1,6 +1,7 @@
 """A run's report as text (step 2.12, `02` §7), which `Run.report()` prints: the run, the
-fidelity era of its trade dates, its trades split by the fidelity of their entry, its main
-metrics, and its fidelity check, the error bar of its days at lower fidelity, or why it has none.
+fidelity era of its trade dates, its trades split by the fidelity of their entry and, from step
+2.13, by the fidelity of their paths, its main metrics, and its fidelity check, the error bar of
+its days at lower fidelity, or why it has none.
 
     run.report()
 """
@@ -37,6 +38,7 @@ def report_text(record: RunRecord) -> str:
             _heading(record),
             "Fidelity eras\n" + "\n".join(_era_line(era) for era in eras),
             _split_by_fidelity(metrics, eras),
+            _paths_by_fidelity(record),
             _metrics(metrics),
             _check(metrics.fidelity_check, eras),
         ]
@@ -66,6 +68,17 @@ def _split_by_fidelity(metrics: Metrics, eras: tuple[FidelityEra, ...]) -> str:
             f"  {fidelity!s:<7} {counted(group.trades, 'trade')}, {counted(group.wins, 'win')}, "
             f"P&L {_money(group.pnl)}, over {counted(days, 'trade date')}"
         )
+    if len(lines) == 1:
+        lines.append("  none")
+    return "\n".join(lines)
+
+
+def _paths_by_fidelity(record: RunRecord) -> str:
+    """The trades' path fidelities, the coarsest data each trade's path came from."""
+    lines = ["Trade paths by their fidelity, the coarsest data each path came from"]
+    lines.extend(
+        f"  {path.fidelity!s:<7} {counted(path.trades, 'trade')}" for path in record.path_fidelities
+    )
     if len(lines) == 1:
         lines.append("  none")
     return "\n".join(lines)

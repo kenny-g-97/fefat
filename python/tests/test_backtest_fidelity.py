@@ -162,9 +162,9 @@ def test_a_run_capped_at_one_second_reruns_its_period_at_one_minute_alone(
     capped = []
     engine_run = fefat_engine.run_signal_backtest
 
-    def counted(*arguments: Any) -> Any:
+    def counted(*arguments: Any, **keywords: Any) -> Any:
         capped.append(json.loads(arguments[3])["fidelity"])
-        return engine_run(*arguments)
+        return engine_run(*arguments, **keywords)
 
     monkeypatch.setattr(fefat_engine, "run_signal_backtest", counted)
 

@@ -5,9 +5,10 @@
 //! `tbbo.arrow`, or `1m.arrow`, and `signals.arrow`, each row tagged with its case's place in that
 //! list ([`inputs`]). A case reads its records from those files, through the in-memory reader, or
 //! from an engine cache's contract folder (step 2.5), in full or skipping what no order can act
-//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, `costs.arrow`, and
-//! `ledger.arrow`, tagged the same way ([`outputs`]). The run itself is `fefat_run`'s, which the
-//! Python module `fefat_engine` shares (step 2.10).
+//! on. The output folder receives `fills.arrow`, `orders.arrow`, `log.arrow`, `costs.arrow`,
+//! `trades.arrow`, `trade_paths.arrow`, `equity.arrow`, and `ledger.arrow`, tagged the same way
+//! ([`outputs`]). The run itself is `fefat_run`'s, which the Python module `fefat_engine` shares
+//! (step 2.10), and records its trades' paths (step 2.13).
 
 mod inputs;
 mod manifest;
@@ -24,7 +25,7 @@ use fefat_core::market_data::{InMemoryMarketData, TapeError};
 use fefat_data::{CacheError, MappedContract};
 use fefat_engine::strategy::{ScenarioOrders, Strategy};
 use fefat_engine::template::TemplateStrategy;
-use fefat_engine::tick_run::RunOutputs;
+use fefat_engine::tick_run::{Recording, RunOutputs};
 use fefat_run::backtest::{BacktestError, run_strategy};
 use thiserror::Error;
 
@@ -173,7 +174,7 @@ fn run_case(
             Box::new(template.map_err(BacktestError::from)?)
         }
     };
-    let replay = case.replay();
+    let replay = (case.replay(), Recording::Paths);
     match &case.market_data {
         MarketDataManifest::Tape { levels } => {
             let days = tables.tape_days(index, levels).map_err(Box::new)?;

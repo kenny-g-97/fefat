@@ -1,19 +1,22 @@
-//! The tables of runs' trades and of their accounts at each decision (step 2.10), each row tagged
-//! with its run's `case`, as `crate::artifacts` tags the others: a trade per flat-to-flat episode
-//! (`docs/spec/fill-semantics.md` §20) with its entry, its exits, the rolls it crossed, its money
-//! in micro-units, its initial risk, and its excursions; and the cash, the lots, the price the
-//! position is valued at, and the equity after each decision.
+//! The tables of runs' trades, of their paths, and of their accounts at each decision (steps 2.10
+//! and 2.13), each row tagged with its run's `case`, as `crate::artifacts` tags the others: a
+//! trade per flat-to-flat episode (`docs/spec/fill-semantics.md` §20) with its entry, its exits,
+//! the rolls it crossed, its money in micro-units, its initial risk, its excursions, its fall from
+//! its peak, and its path's fidelity; each point of each trade's path (`03-prop-simulator.md`
+//! §4.2); and the cash, the lots, the price the position is valued at, and the equity after each
+//! decision.
 
 use std::sync::Arc;
 
 use arrow_array::{ArrayRef, Float64Array, Int64Array, RecordBatch, StringArray, UInt64Array};
 use arrow_schema::ArrowError;
 use fefat_core::orders::Side;
-use fefat_engine::tick_run::{EquityPoint, RunOutputs, Trade};
+use fefat_engine::tick_run::{EquityPoint, PathPoint, RunOutputs, Trade};
 
 use crate::artifacts::{CASE_COLUMN, batch};
 
 type TradeRow<'run> = (i64, &'run Trade);
+type PathRow<'run> = (i64, usize, &'run PathPoint);
 type EquityRow<'run> = (i64, &'run EquityPoint);
 
 /// Each run's trades, in the order they closed: `side`, `long` or `short`, and `lots` of the
@@ -21,7 +24,8 @@ type EquityRow<'run> = (i64, &'run EquityPoint);
 /// contract; the exits, their count and the average of their prices, a float of 1e-9 units, the
 /// closing fill's instant, its role as the exit reason, and its contract; the rolls crossed; the
 /// gross profit and loss, the fees, the funding received, and the net, `pnl`; the initial risk
-/// in ticks; and the excursions in ticks and over the entry's lots in micro-units.
+/// in ticks; the excursions and the deepest fall from the peak, in ticks and over the entry's lots
+/// in micro-units; and the fidelity of its path.
 pub fn trades_table(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
     let rows: Vec<TradeRow<'_>> = runs
         .iter()
@@ -78,6 +82,49 @@ pub fn trades_table(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowErro
         ("mfe_ticks", int(|(_, trade)| trade.mfe_ticks)),
         ("mae", int(|(_, trade)| trade.mae.0)),
         ("mfe", int(|(_, trade)| trade.mfe.0)),
+        (
+            "max_drawdown_ticks",
+            int(|(_, trade)| trade.max_drawdown_ticks),
+        ),
+        ("max_drawdown", int(|(_, trade)| trade.max_drawdown.0)),
+        (
+            "path_fidelity",
+            text(|(_, trade)| trade.path_fidelity.to_string()),
+        ),
+    ])
+}
+
+/// Each run's trade paths, a row for each point in the order they happened: `trade`, the trade's
+/// place among its run's trades from 0; the point's instant, its price in 1e-9 units of the
+/// trade's entry contract, and its kind, `fill`, `minute`, `favourable`, `adverse`, or
+/// `possible_adverse`; and a fill's order, null for any other point.
+pub fn trade_paths_table(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, ArrowError> {
+    let rows: Vec<PathRow<'_>> = runs
+        .iter()
+        .flat_map(|(case, run)| {
+            let paths = run.trade_paths.iter().enumerate();
+            paths.flat_map(move |(trade, path)| {
+                path.points.iter().map(move |point| (*case, trade, point))
+            })
+        })
+        .collect();
+    let int = |value: fn(&PathRow<'_>) -> i64| -> ArrayRef {
+        Arc::new(Int64Array::from_iter_values(rows.iter().map(value)))
+    };
+    let kinds = rows.iter().map(|(_, _, point)| point.kind.to_string());
+    let orders = rows
+        .iter()
+        .map(|(_, _, point)| point.kind.order().map(|order| order.0));
+    batch(vec![
+        (CASE_COLUMN, int(|(case, _, _)| *case)),
+        ("trade", int(|(_, trade, _)| *trade as i64)),
+        ("ts", int(|(_, _, point)| point.ts.0)),
+        ("price", int(|(_, _, point)| point.price.0)),
+        ("kind", Arc::new(StringArray::from_iter_values(kinds))),
+        (
+            "order",
+            Arc::new(UInt64Array::from(orders.collect::<Vec<_>>())),
+        ),
     ])
 }
 

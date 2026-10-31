@@ -183,7 +183,9 @@ def _rerun(
     folders = [str(checked.cache_folder / front) for front in fronts]
     spec, replay = checked.spec_json, str(checked.replay)
     try:
-        ran = fefat_engine.run_signal_backtest(spec, rows, folders, json.dumps(config), replay)
+        ran = fefat_engine.run_signal_backtest(
+            spec, rows, folders, json.dumps(config), replay, trade_paths=False
+        )
     except ValueError as error:
         raise _RerunRefusedError(fidelity, str(error)) from error
     eras = tuple(FidelityEra.model_validate(era) for era in ran["summary"]["eras"])

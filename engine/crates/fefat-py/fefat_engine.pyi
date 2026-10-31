@@ -36,6 +36,7 @@ class _Run(TypedDict):
     log: _ArrowStream
     costs: _ArrowStream
     trades: _ArrowStream
+    trade_paths: _ArrowStream
     equity: _ArrowStream
     summary: _RunSummary
 
@@ -64,8 +65,11 @@ def run_signal_backtest(
     cache_paths: Sequence[_Path],
     config_json: str,
     replay: str = "skipping",
+    trade_paths: bool = True,
 ) -> _Run: ...
-def run_batch(cases: Sequence[_Backtest], replay: str = "skipping") -> list[_Run]: ...
+def run_batch(
+    cases: Sequence[_Backtest], replay: str = "skipping", trade_paths: bool = True
+) -> list[_Run]: ...
 def table_hash(table: _ArrowStream) -> str: ...
 def run_key(
     spec_json: str, signal_frame_hash: str, partition_hashes: list[str], config_json: str

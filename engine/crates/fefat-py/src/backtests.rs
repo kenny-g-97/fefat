@@ -12,7 +12,7 @@ use fefat_core::instants::TradeDate;
 use fefat_core::strategy_spec::StrategySpec;
 use fefat_data::{FrontSequence, MappedContract, Month};
 use fefat_engine::template::SignalRow;
-use fefat_engine::tick_run::{FidelityEra, Replay, RunOutputs};
+use fefat_engine::tick_run::{FidelityEra, Recording, Replay, RunOutputs};
 use fefat_run::artifacts::{run_tables, untagged};
 use fefat_run::backtest::run_template;
 use fefat_run::config::RunConfig;
@@ -31,11 +31,14 @@ type BacktestArguments = (String, PyTable, Vec<PathBuf>, String);
 
 /// Runs the execution template of `spec_json` over `signal_frame` on the caches in `cache_paths`,
 /// one per front in the order the run trades them, as `config_json` says, replayed as `replay`
-/// says, `skipping` or `full`: its tables, `fills`, `orders`, `log`, `costs`, `trades`, and
-/// `equity`, and its `summary`, the lots held at the end, the cash, the ambiguous fills, and the
-/// fidelity eras of its trade dates (`02` §1.6).
+/// says, `skipping` or `full`, with each trade's path unless `trade_paths` is false (step 2.13):
+/// its tables, `fills`, `orders`, `log`, `costs`, `trades`, `trade_paths`, empty without paths,
+/// and `equity`, and its `summary`, the lots held at the end, the cash, the ambiguous fills, and
+/// the fidelity eras of its trade dates (`02` §1.6).
 #[pyfunction]
-#[pyo3(signature = (spec_json, signal_frame, cache_paths, config_json, replay = "skipping"))]
+#[pyo3(signature = (
+    spec_json, signal_frame, cache_paths, config_json, replay = "skipping", trade_paths = true
+))]
 pub fn run_signal_backtest<'py>(
     py: Python<'py>,
     spec_json: &str,
@@ -43,27 +46,30 @@ pub fn run_signal_backtest<'py>(
     cache_paths: Vec<PathBuf>,
     config_json: &str,
     replay: &str,
+    trade_paths: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let replay = replay_of(replay)?;
+    let replayed = (replay_of(replay)?, recording_of(trade_paths));
     let backtest = Backtest::read(spec_json, signal_frame, cache_paths, config_json)
         .map_err(PyValueError::new_err)?;
     let caches = mapped(backtest.spans())?;
-    let outputs = py.detach(|| backtest.run(&caches, replay));
+    let outputs = py.detach(|| backtest.run(&caches, replayed));
     run_of(py, outputs.map_err(PyValueError::new_err)?)
 }
 
 /// Runs each case of `cases`, `(spec_json, signal_frame, cache_paths, config_json)` as
 /// `run_signal_backtest` takes them, on Rayon's threads, each cache mapped once and shared, with
 /// the interpreter released: each run as `run_signal_backtest` gives it, in the order of
-/// `cases`; a case that does not run stops the batch with its place.
+/// `cases`, with its trades' paths unless `trade_paths` is false, as a sweep's trials may run
+/// (`02` §7); a case that does not run stops the batch with its place.
 #[pyfunction]
-#[pyo3(signature = (cases, replay = "skipping"))]
+#[pyo3(signature = (cases, replay = "skipping", trade_paths = true))]
 pub fn run_batch<'py>(
     py: Python<'py>,
     cases: Vec<BacktestArguments>,
     replay: &str,
+    trade_paths: bool,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-    let replay = replay_of(replay)?;
+    let replay = (replay_of(replay)?, recording_of(trade_paths));
     let backtests = cases
         .into_iter()
         .enumerate()
@@ -156,11 +162,12 @@ impl Backtest {
             .collect()
     }
 
-    /// The run over the fronts' caches, `caches` holding each folder mapped.
+    /// The run over the fronts' caches, `caches` holding each folder mapped, replayed and recorded
+    /// as `replay` says.
     fn run(
         self,
         caches: &BTreeMap<PathBuf, MappedContract>,
-        replay: Replay,
+        replay: (Replay, Recording),
     ) -> Result<RunOutputs, String> {
         let fronts = self
             .folders
@@ -206,6 +213,14 @@ fn mapped(
             Ok((folder, cache))
         })
         .collect()
+}
+
+/// What a run records of its trades' paths: each trade's, or none.
+const fn recording_of(trade_paths: bool) -> Recording {
+    match trade_paths {
+        true => Recording::Paths,
+        false => Recording::TradesOnly,
+    }
 }
 
 fn replay_of(replay: &str) -> PyResult<Replay> {

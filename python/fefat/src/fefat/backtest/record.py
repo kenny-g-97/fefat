@@ -3,7 +3,8 @@ versions, its strategy, its window, its instrument, each dataset it read with th
 under and the hash of its snapshot, the signal frame's hash, its settings with every default
 applied, its fee table, the rolls it crossed, the config the engine read, the warnings, a summary
 of its end, and, from step 2.11, its metrics; from step 2.12, the fidelity era of each trade
-date, in place of the fills by fidelity, and the data its signal bars were built from."""
+date, in place of the fills by fidelity, and the data its signal bars were built from; and, from
+step 2.13, the mix of its trades' path fidelities."""
 
 from datetime import date
 from decimal import Decimal
@@ -88,6 +89,14 @@ class RollRecord(FrozenModel):
     reason: RollReason
 
 
+class PathFidelity(FrozenModel):
+    """The trades whose paths have one fidelity, the coarsest level their marks and fills came
+    from (`03-prop-simulator.md` §4.4, step 2.13)."""
+
+    fidelity: FidelityText
+    trades: int = Field(ge=1)
+
+
 class RunSummary(FrozenModel):
     """A run's end: its fills, the ambiguous ones among them (F-BAR-05), its trades, the lots
     held, positive long, the cash, and the net profit and loss of its trades, in the
@@ -103,7 +112,8 @@ class RunSummary(FrozenModel):
 
 class RunRecord(FrozenModel):
     """`run.json`: what a run is, what it read, how it ran, the fidelity eras of its trade dates,
-    how it ended, and its metrics."""
+    the mix of its trades' path fidelities, in the order each first closed, how it ended, and its
+    metrics."""
 
     run_id: Hash
     run_key: Hash
@@ -119,6 +129,7 @@ class RunRecord(FrozenModel):
     rolls: tuple[RollRecord, ...]
     engine_config: dict[str, Any]
     fidelity_eras: tuple[FidelityEra, ...] = Field(min_length=1)
+    path_fidelities: tuple[PathFidelity, ...]
     warnings: tuple[str, ...]
     summary: RunSummary
     metrics: Metrics

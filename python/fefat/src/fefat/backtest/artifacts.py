@@ -1,8 +1,9 @@
 """A run's artifacts (step 2.10, `02` §7): the engine's tables made into the artifacts of
 `fefat.backtest.schemas`, the trades with their entry's trade date and features, their initial
-risk, and their R multiples, the equity at each signal bar with its trade date, and the equity
-of each trade date; each written as Parquet, with `run.json`, into the run's folder, named by its
-key, which is written whole or not at all, and read back."""
+risk, and their R multiples, their paths as the engine records them (step 2.13), the equity at
+each signal bar with its trade date, and the equity of each trade date; each written as Parquet,
+with `run.json`, into the run's folder, named by its key, which is written whole or not at all,
+and read back."""
 
 import math
 import shutil
@@ -20,10 +21,12 @@ from fefat.market.engine_units import InstrumentParameters
 from fefat.market.store_files import parsed_json
 from fefat.strategy.signal_frame import require_column_types
 
-ENGINE_TABLES = ("fills", "orders", "log", "costs", "trades", "equity")
+ENGINE_TABLES = ("fills", "orders", "log", "costs", "trades", "trade_paths", "equity")
 """The tables the engine gives for a run (`fefat_engine.run_signal_backtest`)."""
 RECORD_FILE = "run.json"
 _PARTIAL = ".partial"
+_FIRST_SCHEMA_WITH_PATHS = 2
+"""The artifact schema from which every run keeps its trades' paths (step 2.13)."""
 
 
 def artifacts_of(
@@ -43,6 +46,7 @@ def artifacts_of(
         "log": engine["log"],
         "costs": engine["costs"],
         "trades": _trades(engine["trades"], engine["fills"], signals, features, parameters),
+        "trade_paths": engine["trade_paths"],
         "equity": equity,
         "equity_daily": _equity_daily(equity, capital),
         "signals": signals,
@@ -137,14 +141,22 @@ class _WrittenBy(BaseModel):
 
 def read_record(folder: Path) -> RunRecord:
     """The record of the run in `folder`, refused by name when another version of the engine
-    wrote it, since a record holds what its own version's runs produce."""
+    or of the artifacts' layout wrote it, since a record holds what its own versions' runs
+    produce; a run saved before step 2.13 has no trade paths, and its refusal says so."""
     path = folder / RECORD_FILE
     content = path.read_bytes()
-    written = parsed_json(_WrittenBy, content, str(path)).versions.engine
-    if written != fefat_engine.ENGINE_VERSION:
+    written = parsed_json(_WrittenBy, content, str(path)).versions
+    if written.engine != fefat_engine.ENGINE_VERSION:
         raise ValueError(
             f"Expected a run of engine version {fefat_engine.ENGINE_VERSION}, got one of version "
-            f"{written} in {folder}: run it again with this engine."
+            f"{written.engine} in {folder}: run it again with this engine."
+        )
+    if written.artifact_schema != fefat_engine.ARTIFACT_SCHEMA_VERSION:
+        without = written.artifact_schema < _FIRST_SCHEMA_WITH_PATHS
+        reason = ", which has no trade paths" if without else ""
+        raise ValueError(
+            f"Expected a run of artifact schema {fefat_engine.ARTIFACT_SCHEMA_VERSION}, got one of "
+            f"schema {written.artifact_schema} in {folder}{reason}: run it again with this engine."
         )
     return parsed_json(RunRecord, content, str(path))
 

@@ -6,7 +6,7 @@ run of the same key instead of running it again:
     import fefat as ff
 
     run = ff.backtest.run(strategy, start="2026-03-05", end="2026-03-09")
-    run.trades; run.fills; run.equity("1d"); run.config; run.hash
+    run.trades; run.fills; run.trade_paths; run.equity("1d"); run.config; run.hash
     run.metrics.fidelity_check; run.report()
 
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
@@ -37,6 +37,7 @@ from fefat.backtest.schemas import (
     LOG,
     ORDERS,
     SIGNALS,
+    TRADE_PATHS,
     TRADES,
 )
 
@@ -50,6 +51,7 @@ __all__ = [
     "ORDERS",
     "SIGNALS",
     "TRADES",
+    "TRADE_PATHS",
     "AppliedRunConfig",
     "FidelityCheck",
     "FidelityEra",
