@@ -89,3 +89,24 @@ def test_an_export_without_the_grids_columns_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Expected the Strategy Analyzer's trade columns"):
         read_export(path, point_value=2)
+
+
+MONTH_FIRST_ROWS = (
+    "1;MNQ 09-26;Backtest;FefatCrossCheck;Long;1;24786.00;24796.00;08/03/2026 09:36:00;"
+    "08/03/2026 09:41:00;L;Profit target;$18.10;$18.10;$1.90;$0.00;$0.00;$0.00;$0.00;"
+    "($4.00);$20.00;$1.90;5;",
+    "2;MNQ 09-26;Backtest;FefatCrossCheck;Short;1;24800.25;24810.25;08/13/2026 10:06:00;"
+    "08/13/2026 10:08:00;S;Stop loss;($21.90);($3.80);$1.90;$0.00;$0.00;$0.00;$0.00;"
+    "($22.00);$4.00;$25.90;2;",
+)
+
+
+def test_a_month_first_export_without_am_and_pm_is_read_by_its_days_above_twelve(
+    tmp_path: Path,
+) -> None:
+    trades = read_export(written(tmp_path / "trades.csv", *MONTH_FIRST_ROWS), point_value=2)
+
+    assert trades["entry_ts"].to_list() == [
+        utc_ns(2026, 8, 3, 9 + EASTERN_OFFSET_HOURS, 36),
+        utc_ns(2026, 8, 13, 10 + EASTERN_OFFSET_HOURS, 6),
+    ]

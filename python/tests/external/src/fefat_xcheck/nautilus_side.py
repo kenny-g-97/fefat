@@ -6,7 +6,7 @@ bars as loaded, each run's decisions, and each run's trades in the comparison's 
 
 import json
 import warnings
-from datetime import UTC, date, datetime
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -37,11 +37,9 @@ from fefat_xcheck.strategies import (
     CrossCheckConfig,
     CrossCheckStrategy,
 )
+from fefat_xcheck.units import MINUTE, UNITS_PER_POINT, units_of, utc_day, whole_second
 
 VENUE = Venue("GLBX")
-UNITS_PER_POINT = 1_000_000_000
-NANOSECONDS_PER_SECOND = 1_000_000_000
-MINUTE = 60 * NANOSECONDS_PER_SECOND
 BAR_ORDERS = {"ohlc": False, "adaptive": True}
 """The two bar paths, by the venue's `bar_adaptive_high_low_ordering`."""
 BUILD_DELAY_MICROSECONDS = 1
@@ -133,8 +131,8 @@ def futures_contract(
         multiplier=Quantity.from_str(facts["instrument"]["point_value"]),
         lot_size=Quantity.from_int(1),
         underlying=facts["instrument"]["root"],
-        activation_ns=_utc_day(first) - 400 * 24 * 60 * MINUTE,
-        expiration_ns=_utc_day(last) + 90 * 24 * 60 * MINUTE,
+        activation_ns=utc_day(first) - 400 * 24 * 60 * MINUTE,
+        expiration_ns=utc_day(last) + 90 * 24 * 60 * MINUTE,
         ts_event=0,
         ts_init=0,
     )
@@ -209,10 +207,16 @@ def run_strategy(
 
 def trades_of(orders: list[Order], point_value: Decimal) -> pl.DataFrame:
     """The flat-to-flat trades from the filled orders: an entry's fill opens one, the next fill
-    of its leg or of a flat-by closes it; one lot, one position at a time."""
+    of its leg or of a flat-by closes it; one lot, one position at a time. A leg released on the
+    tick that fills its entry carries the entry's fill instant, so the entry sorts first by its
+    role, and the cache's order of orders, which Nautilus leaves undefined, decides nothing."""
     filled = sorted(
         (order for order in orders if order.filled_qty > 0),
-        key=lambda order: _fill_of(order).ts_event,
+        key=lambda order: (
+            _fill_of(order).ts_event,
+            _role(order) != ENTRY_TAG,
+            str(order.client_order_id),
+        ),
     )
     by_id = {order.client_order_id: order for order in orders}
     rows: list[dict[str, object]] = []
@@ -244,20 +248,20 @@ def _trade_row(
     entry_price, exit_price = entry_fill.last_px.as_decimal(), exit_fill.last_px.as_decimal()
     sign = 1 if long else -1
     return {
-        "entry_decision": _whole_second(entry.ts_init),
+        "entry_decision": whole_second(entry.ts_init),
         "side": "long" if long else "short",
         "entry_kind": {
             OrderType.MARKET: "market",
             OrderType.LIMIT: "limit",
             OrderType.STOP_MARKET: "stop",
         }[entry.order_type],
-        "entry_ts": _whole_second(entry_fill.ts_event),
-        "entry_price": _units(entry_price),
-        "exit_ts": _whole_second(exit_fill.ts_event),
-        "exit_price": _units(exit_price),
+        "entry_ts": whole_second(entry_fill.ts_event),
+        "entry_price": units_of(entry_price),
+        "exit_ts": whole_second(exit_fill.ts_event),
+        "exit_price": units_of(exit_price),
         "exit_reason": _role(exit),
-        "stop_price": _units(stop.trigger_price.as_decimal()),
-        "target_price": _units(target.price.as_decimal()),
+        "stop_price": units_of(stop.trigger_price.as_decimal()),
+        "target_price": units_of(target.price.as_decimal()),
         "gross_pnl": float((exit_price - entry_price) * sign * point_value),
     }
 
@@ -283,28 +287,13 @@ def bars_frame(bars: list[Bar]) -> pl.DataFrame:
         {
             "ts_open": [bar.ts_event - MINUTE for bar in bars],
             "ts_close": [bar.ts_event for bar in bars],
-            "open": [_units(bar.open.as_decimal()) for bar in bars],
-            "high": [_units(bar.high.as_decimal()) for bar in bars],
-            "low": [_units(bar.low.as_decimal()) for bar in bars],
-            "close": [_units(bar.close.as_decimal()) for bar in bars],
+            "open": [units_of(bar.open.as_decimal()) for bar in bars],
+            "high": [units_of(bar.high.as_decimal()) for bar in bars],
+            "low": [units_of(bar.low.as_decimal()) for bar in bars],
+            "close": [units_of(bar.close.as_decimal()) for bar in bars],
             "volume": [int(bar.volume.as_decimal()) for bar in bars],
         },
         schema={name: pl.Int64 for name in BARS_COLUMNS},
-    )
-
-
-def _units(price: Decimal) -> int:
-    return int(price * UNITS_PER_POINT)
-
-
-def _whole_second(instant: int) -> int:
-    """The instant without the build delay's microsecond (`BUILD_DELAY_MICROSECONDS`)."""
-    return instant // NANOSECONDS_PER_SECOND * NANOSECONDS_PER_SECOND
-
-
-def _utc_day(day: date) -> int:
-    return (
-        int(datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp()) * NANOSECONDS_PER_SECOND
     )
 
 

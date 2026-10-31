@@ -22,8 +22,9 @@ from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.orders import LimitOrder, MarketOrder, Order, OrderList, StopMarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
+from fefat_xcheck.units import NANOSECONDS_PER_SECOND
+
 ENTRY_TAG, STOP_TAG, TARGET_TAG, FLAT_BY_TAG = "entry", "stop", "target", "flat_by"
-NANOSECONDS_PER_SECOND = 1_000_000_000
 ENTRY_ORDER_TYPES = {
     "market": OrderType.MARKET,
     "limit": OrderType.LIMIT,

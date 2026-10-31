@@ -74,21 +74,18 @@ def nautilus_report(folder: Path, fefat: dict[str, Any]) -> EngineReport:
     for strategy in fefat["strategies"]:
         ours = fefat_trades(folder / "fefat", strategy)
         signals = pl.read_parquet(folder / "fefat" / f"signals_{strategy['name']}.parquet")
+        fills = pl.read_parquet(folder / "fefat" / f"fills_{strategy['name']}.parquet")
         for order_name, conventions in NAUTILUS_PATHS:
             name = f"{strategy['name']}_{order_name}"
             theirs = pl.read_parquet(folder / "engine" / f"trades_{name}.parquet")
             decisions = pl.read_parquet(folder / "engine" / f"decisions_{name}.parquet")
             if order_name == NAUTILUS_PATHS[0][0]:
                 checks.append(decisions_check(signals, decisions, strategy["name"]))
-            fills = pl.read_parquet(folder / "fefat" / f"fills_{strategy['name']}.parquet")
-            checks.append(
-                ambiguity_check(ours, fills, theirs, fefat_bars, conventions, strategy, tick)
+            report = _strategy_report(
+                strategy, conventions, ours, theirs, fefat_bars, tick, folder / "classified"
             )
-            strategies.append(
-                _strategy_report(
-                    strategy, conventions, ours, theirs, fefat_bars, tick, folder / "classified"
-                )
-            )
+            checks.append(ambiguity_check(ours, fills, report))
+            strategies.append(report)
     venue = engine["venue"]
     settings = (
         f"Venue {venue['name']}: OMS {venue['oms_type']}, {venue['account_type']} account, "
@@ -240,26 +237,17 @@ def decisions_check(signals: pl.DataFrame, decisions: pl.DataFrame, strategy: st
     )
 
 
-def ambiguity_check(
-    ours: pl.DataFrame,
-    fills: pl.DataFrame,
-    theirs: pl.DataFrame,
-    bars: pl.DataFrame,
-    conventions: EngineConventions,
-    strategy: dict[str, Any],
-    tick: int,
-) -> str:
+def ambiguity_check(ours: pl.DataFrame, fills: pl.DataFrame, report: StrategyReport) -> str:
     """Whether every exit the other engine's bar path changed was one FEFAT flagged ambiguous
     (F-BAR-05): the `bar_path` pairs' FEFAT exits against the fills' `ambiguous` flags."""
-    classified = classify(ours, theirs, bars, conventions, tick)
-    bar_path = classified.filter(pl.col("exit_outcome") == str(DifferenceClass.BAR_PATH))
+    bar_path = report.classified.filter(pl.col("exit_outcome") == str(DifferenceClass.BAR_PATH))
     exits = ours.join(bar_path.select("entry_decision", "side"), on=["entry_decision", "side"])
     flagged = fills.filter(pl.col("ambiguous")).select("ts", "price").unique()
     ambiguous = exits.join(
         flagged, left_on=["exit_ts", "exit_price"], right_on=["ts", "price"], how="semi"
     ).height
     return (
-        f"Ambiguous fills ({strategy['name']}, {conventions.name}): {ambiguous} of {exits.height} "
+        f"Ambiguous fills ({report.strategy}, {report.conventions.name}): {ambiguous} of {exits.height} "
         "exits the other bar path took to the other leg (`bar_path`) were flagged ambiguous by "
         "FEFAT (F-BAR-05), which flags a fill the swapped order of extremes would change."
     )

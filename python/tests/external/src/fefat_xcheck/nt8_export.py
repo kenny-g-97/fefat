@@ -6,6 +6,7 @@ culture: times on the platform clock, US Eastern on the builder's PC, written da
 
 import csv
 import re
+from collections.abc import Iterable
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -14,11 +15,9 @@ from zoneinfo import ZoneInfo
 import polars as pl
 
 from fefat_xcheck.classify import MARKET
+from fefat_xcheck.units import MINUTE, NANOSECONDS_PER_SECOND, units_of
 
 PLATFORM_TIME_ZONE = "America/New_York"
-UNITS_PER_POINT = 1_000_000_000
-NANOSECONDS_PER_SECOND = 1_000_000_000
-MINUTE = 60 * NANOSECONDS_PER_SECOND
 REQUIRED_COLUMNS = (
     "Market pos.",
     "Qty",
@@ -35,7 +34,9 @@ EXIT_REASONS = {"Stop loss": "stop", "Profit target": "target", "FlatBy": "flat_
 """The Analyzer's exit names for the strategy's Set() orders, and the exit signal name
 `FefatCrossCheck.cs` gives its flat-by."""
 SIDES = {"Long": "long", "Short": "short"}
-DAY_FIRST, MONTH_FIRST_WITH_MERIDIEM = "%d/%m/%Y %H:%M:%S", "%m/%d/%Y %I:%M:%S %p"
+DAY_FIRST, MONTH_FIRST = "%d/%m/%Y %H:%M:%S", "%m/%d/%Y %H:%M:%S"
+MONTH_FIRST_WITH_MERIDIEM = "%m/%d/%Y %I:%M:%S %p"
+MERIDIEMS = ("AM", "PM")
 EXPORT_COLUMNS = pl.Schema(
     {
         "entry_decision": pl.Int64,
@@ -69,31 +70,33 @@ def read_export(
         )
     column = {name: rows[0].index(name) for name in REQUIRED_COLUMNS}
     zone = ZoneInfo(time_zone)
-    trades = [
-        _trade(row, column, zone, Decimal(point_value))
-        for row in rows[1:]
-        if len(row) > column["Profit"] and row[column["Profit"]].strip()
+    exported = [
+        row for row in rows[1:] if len(row) > column["Profit"] and row[column["Profit"]].strip()
     ]
+    layout = twenty_four_hour_layout(
+        row[column[name]].strip() for row in exported for name in ("Entry time", "Exit time")
+    )
+    trades = [_trade(row, column, zone, layout, Decimal(point_value)) for row in exported]
     return pl.DataFrame(trades, schema=EXPORT_COLUMNS).sort("entry_ts")
 
 
 def _trade(
-    row: list[str], column: dict[str, int], zone: ZoneInfo, point_value: Decimal
+    row: list[str], column: dict[str, int], zone: ZoneInfo, layout: str, point_value: Decimal
 ) -> dict[str, object]:
     cell = lambda name: row[column[name]].strip()  # noqa: E731
     entry_price, exit_price = parse_number(cell("Entry price")), parse_number(cell("Exit price"))
     side = SIDES[cell("Market pos.")]
     sign = 1 if side == "long" else -1
     quantity = int(parse_number(cell("Qty")))
-    entry_ts = parse_platform_time(cell("Entry time"), zone)
+    entry_ts = parse_platform_time(cell("Entry time"), zone, layout)
     return {
         "entry_decision": entry_ts - MINUTE,
         "side": side,
         "entry_kind": MARKET,
         "entry_ts": entry_ts,
-        "entry_price": _units(entry_price),
-        "exit_ts": parse_platform_time(cell("Exit time"), zone),
-        "exit_price": _units(exit_price),
+        "entry_price": units_of(entry_price),
+        "exit_ts": parse_platform_time(cell("Exit time"), zone, layout),
+        "exit_price": units_of(exit_price),
         "exit_reason": _exit_reason(cell("Exit name")),
         "gross_pnl": float((exit_price - entry_price) * sign * quantity * point_value),
         "commission": float(parse_number(cell("Commission"))),
@@ -104,10 +107,6 @@ def _exit_reason(name: str) -> str:
     if name not in EXIT_REASONS:
         raise ValueError(f"Expected an exit name of {sorted(EXIT_REASONS)}, got {name!r}.")
     return EXIT_REASONS[name]
-
-
-def _units(price: Decimal) -> int:
-    return int(price * UNITS_PER_POINT)
 
 
 def parse_number(text: str) -> Decimal:
@@ -131,15 +130,35 @@ def parse_number(text: str) -> Decimal:
     return -value if negative else value
 
 
-def parse_platform_time(text: str, zone: ZoneInfo) -> int:
-    """A time on the platform's clock as nanoseconds UTC."""
-    for layout in (DAY_FIRST, MONTH_FIRST_WITH_MERIDIEM):
-        try:
-            local = datetime.strptime(text, layout)
-        except ValueError:
+def twenty_four_hour_layout(cells: Iterable[str]) -> str:
+    """Whether the export's 24-hour times put the day or the month first, settled once over the
+    whole column: a first field above 12 can only be a day, a second field above 12 only a day
+    after the month; with neither, the day comes first, the platform's culture on this PC."""
+    first_fields, second_fields = set(), set()
+    for cell in cells:
+        if cell.upper().endswith(MERIDIEMS):
             continue
-        return int(local.replace(tzinfo=zone).timestamp()) * NANOSECONDS_PER_SECOND
-    raise ValueError(
-        f"Expected a time as NinjaTrader writes one ({DAY_FIRST} or "
-        f"{MONTH_FIRST_WITH_MERIDIEM}), got {text!r}."
-    )
+        found = re.fullmatch(r"(\d{1,2})/(\d{1,2})/\d{4} .*", cell)
+        if found is None:
+            raise ValueError(f"Expected a time as NinjaTrader writes one, got {cell!r}.")
+        first_fields.add(int(found[1]))
+        second_fields.add(int(found[2]))
+    if max(first_fields, default=0) > 12:
+        return DAY_FIRST
+    if max(second_fields, default=0) > 12:
+        return MONTH_FIRST
+    return DAY_FIRST
+
+
+def parse_platform_time(text: str, zone: ZoneInfo, layout: str) -> int:
+    """A time on the platform's clock as nanoseconds UTC: with AM or PM the month comes first,
+    otherwise `layout`, the column's."""
+    with_meridiem = text.upper().endswith(MERIDIEMS)
+    try:
+        local = datetime.strptime(text, MONTH_FIRST_WITH_MERIDIEM if with_meridiem else layout)
+    except ValueError as error:
+        raise ValueError(
+            f"Expected a time as NinjaTrader writes one ({layout} or "
+            f"{MONTH_FIRST_WITH_MERIDIEM}), got {text!r}."
+        ) from error
+    return int(local.replace(tzinfo=zone).timestamp()) * NANOSECONDS_PER_SECOND

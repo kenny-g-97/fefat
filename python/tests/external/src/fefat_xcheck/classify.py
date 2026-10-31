@@ -163,6 +163,12 @@ class Bars:
         index = bisect_right(self._closes, instant)
         return self._bars[index] if index < len(self._bars) else None
 
+    def at_or_before(self, instant: int) -> Bar | None:
+        """The last bar closing at or before the instant: the one a decision at the instant
+        found the market at, whether or not the instant's own minute had a bar."""
+        index = bisect_right(self._closes, instant)
+        return self._bars[index - 1] if index else None
+
 
 def classify(
     fefat: pl.DataFrame,
@@ -234,7 +240,7 @@ def _pair(
 ) -> dict[str, object]:
     entry = _entry_outcome(mine, its, lookup, conventions)
     exit = _exit_outcome(mine, its, lookup, conventions)
-    outcome = entry if entry != MATCH else exit
+    outcome = _trade_outcome(entry, exit)
     return {
         "entry_decision": mine.entry_decision,
         "side": mine.side,
@@ -248,6 +254,14 @@ def _pair(
         "exit_ticks": _ticks(mine.exit_price - its.exit_price, tick),
         "note": f"entry {entry}; exit {mine.exit_reason} against {its.exit_reason}: {exit}",
     }
+
+
+def _trade_outcome(entry: str, exit: str) -> str:
+    """A trade is unknown when either of its fills is; otherwise its entry's class, or its
+    exit's when the entry matched."""
+    if str(DifferenceClass.UNKNOWN) in (entry, exit):
+        return str(DifferenceClass.UNKNOWN)
+    return entry if entry != MATCH else exit
 
 
 def _ticks(difference: int, tick: int) -> int:
@@ -279,7 +293,7 @@ def _at_close_against_next_open(
     bar's open (F-MKT-03, F-ACT-02)."""
     if conventions.market_fill != MarketFill.AT_DECISION_CLOSE:
         return False
-    decided_on, next_bar = lookup.at(decision), lookup.after(decision)
+    decided_on, next_bar = lookup.at_or_before(decision), lookup.after(decision)
     if decided_on is None or next_bar is None:
         return False
     return (

@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import warnings
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -40,6 +40,7 @@ from fefat.market.importers.dbn import read_dbn
 from fefat.market.raw_manifest import RawFile
 from fefat.market.schema import Timeframe
 from fefat.market.store import Store
+from fefat.market.store_files import hashed
 from fefat.reference.settings import LimitFill, SlippageTicks
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -244,6 +245,11 @@ def _record(
     comparison: Comparison, runs: dict[str, ff.backtest.Run], instrument: Any, tick: int
 ) -> dict[str, Any]:
     first = next(iter(runs.values()))
+    if len(first.record.datasets) != 1:
+        raise ValueError(
+            f"Expected the run of {comparison.contract} to read one dataset, got "
+            f"{[dataset.schema_name for dataset in first.record.datasets]} in run {first.id}."
+        )
     (dataset,) = first.record.datasets
     profile = first.config
     return {
@@ -340,7 +346,7 @@ def raw_batch_file(store: Store, comparison: Comparison) -> tuple[Path, RawFile]
 def written_cut(folder: Path, raw: Path, raw_file: RawFile, comparison: Comparison) -> Path:
     """The month cut for the comparison, written once per raw file and reused, with `cut.json`
     beside it naming the raw file, the cut, and their SHA-256s for the report."""
-    end = comparison.last + (date(2026, 9, 1) - date(2026, 8, 31))
+    end = comparison.last + timedelta(days=1)
     name = f"{comparison.contract}-{CUT_FROM}-{comparison.last}-{raw_file.sha256[:12]}.dbn.zst"
     cut = folder / name
     if not cut.is_file():
@@ -358,7 +364,7 @@ def written_cut(folder: Path, raw: Path, raw_file: RawFile, comparison: Comparis
         },
         "cut": {
             "name": cut.name,
-            "sha256": _sha256(cut),
+            "sha256": hashed(cut).sha256,
             "raw_symbol": comparison.raw_symbol,
             "from": CUT_FROM.isoformat(),
             "to": end.isoformat(),
@@ -366,13 +372,6 @@ def written_cut(folder: Path, raw: Path, raw_file: RawFile, comparison: Comparis
     }
     (folder / "cut.json").write_text(json.dumps(facts, indent=2) + "\n", encoding="utf-8")
     return cut
-
-
-def _sha256(path: Path) -> str:
-    import hashlib
-
-    with path.open("rb") as file:
-        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 def external(*arguments: str) -> None:

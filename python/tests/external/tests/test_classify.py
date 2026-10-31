@@ -450,3 +450,42 @@ def test_a_limit_passed_by_a_gap_fills_clamped_into_the_bar_in_ninjatrader_only(
     assert clamped["exit_outcome"].to_list() == [str(DifferenceClass.GAP_LIMIT_CLAMPED)]
     assert clamped["exit_ticks"].to_list() == [4]
     assert nautilus["outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]
+
+
+def test_an_unknown_exit_behind_a_classified_entry_makes_the_trade_unknown() -> None:
+    """A market entry the convention explains, then a stop both took at one price but in
+    different bars: the trade is unknown, so that the entry's class hides nothing."""
+    nautilus = trade(entry_minutes=0, entry=100.0, exit_minutes=4, exit=97.0, exit_reason="stop")
+    fefat = trade(exit_minutes=5, exit=97.0, exit_reason="stop")
+    late_low = bars(
+        (0, 100.0, 100.25, 99.75, 100.0),
+        (1, 100.25, 100.5, 100.0, 100.25),
+        (2, 100.25, 101.0, 100.0, 100.75),
+        (3, 100.75, 101.5, 100.5, 101.25),
+        (4, 101.25, 102.0, 96.75, 101.75),
+        (5, 101.75, 103.25, 96.5, 103.0),
+    )
+
+    classified = classify(trades(fefat), trades(nautilus), late_low, NAUTILUS_OHLC, TICK)
+
+    assert classified["entry_outcome"].to_list() == [str(DifferenceClass.BAR_BOUNDARY)]
+    assert classified["exit_outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]
+    assert classified["outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]
+    assert summarise(classified).unknown == 1
+
+
+def test_a_market_entry_after_a_bucket_whose_last_minute_had_no_bar_is_bar_boundary() -> None:
+    """The decision's own minute stored no bar: Nautilus filled at the close of the last bar
+    before the decision, FEFAT at the open of the first after it."""
+    gap_at_the_decision = bars(
+        (-1, 99.5, 100.25, 99.25, 100.0),
+        (1, 100.25, 100.5, 100.0, 100.25),
+        (5, 101.75, 103.25, 101.5, 103.0),
+    )
+    nautilus = trade(entry_minutes=-1, entry=100.0)
+
+    classified = classify(
+        trades(trade()), trades(nautilus), gap_at_the_decision, NAUTILUS_OHLC, TICK
+    )
+
+    assert classified["entry_outcome"].to_list() == [str(DifferenceClass.BAR_BOUNDARY)]

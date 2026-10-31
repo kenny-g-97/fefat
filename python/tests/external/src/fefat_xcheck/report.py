@@ -178,10 +178,7 @@ def _versions_and_data(inputs: ReportInputs) -> str:
     snapshot = facts["snapshot"]
     profile = facts["profile"]
     ticks = profile["slippage_ticks"]
-    in_force = [
-        fee for day, fee in facts["fee_table"]["schedules"] if day <= facts["window"]["first"]
-    ]
-    fees = in_force[-1] if in_force else facts["fee_table"]["schedules"][0][1]
+    fees = _fee_in_force(facts)
     lines = [
         "## Versions and data",
         "",
@@ -210,6 +207,14 @@ def _versions_and_data(inputs: ReportInputs) -> str:
     ]
     lines.extend(f"- {check}" for check in inputs.nautilus.data_checks)
     return "\n".join(lines) + "\n"
+
+
+def _fee_in_force(facts: dict[str, Any]) -> str:
+    """The fee table's schedule on the window's first trade date: the last that took effect by
+    then, or the table's first for a date before it, which such a date takes (F-FEE-01)."""
+    schedules = facts["fee_table"]["schedules"]
+    in_force = [fee for day, fee in schedules if day <= facts["window"]["first"]]
+    return in_force[-1] if in_force else schedules[0][1]
 
 
 def _strategies(facts: dict[str, Any]) -> str:
