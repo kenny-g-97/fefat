@@ -9,6 +9,9 @@ package = false
 
 [tool.uv.workspace]
 members = ["python/fefat", "python/fefat_app"]
+# The cross-check against NautilusTrader (step 2.14) is a uv project of its own, outside the
+# workspace: `uv run --project python/tests/external …`.
+exclude = ["python/tests/external"]
 
 [tool.uv.sources]
 fefat = { workspace = true }
@@ -33,7 +36,13 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["python/fefat/src", "python/fefat_app/src", "python/tests", "scripts"]
+src = [
+    "python/fefat/src",
+    "python/fefat_app/src",
+    "python/tests",
+    "python/tests/external/src",
+    "scripts",
+]
 extend-exclude = [".claude"]
 
 [tool.ruff.lint]
@@ -45,7 +54,7 @@ exclude = ["*.md"]
 [tool.pyright]
 include = ["python", "scripts"]
 extraPaths = ["scripts", "docs/masterplan/tools", "engine/crates/fefat-py"]
-exclude = ["**/node_modules", "**/__pycache__", "**/.venv"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.venv", "python/tests/external"]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
@@ -54,6 +63,7 @@ strict = ["python/fefat_app"]
 
 [tool.pytest.ini_options]
 testpaths = ["python/tests"]
+addopts = "--ignore=python/tests/external"
 pythonpath = ["scripts", "docs/masterplan/tools"]
 
 [tool.importlinter]
