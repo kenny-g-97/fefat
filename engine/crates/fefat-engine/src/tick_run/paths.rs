@@ -7,12 +7,11 @@
 //! favourable one, fill, or minute; the mark at every whole minute of the UTC clock from its
 //! entry's on, the last at or before it, closed hours included, until the fill that leaves it
 //! flat; and, after a bar's favourable extreme that beats the best price since the last fill or
-//! minute before the bar, while the bar's adverse extreme lies beyond its close,
-//! that adverse extreme, which the bar may have reached after it, a fill on the way to the
-//! favourable extreme included (`docs/spec/fill-semantics.md` §15). Each fill and each minute
-//! restarts the tracking, so that the extremes after any of them, and their order, survive: what a
-//! prop rule asks of equity from a reference on a minute or a fill, the compact path answers as
-//! the full one does.
+//! minute before the bar, or since a fill inside the bar, while the bar's adverse extreme lies
+//! beyond its close, that adverse extreme, which the bar may have reached after it
+//! (`docs/spec/fill-semantics.md` §15). Each fill and each minute restarts the tracking, so that
+//! the extremes after any of them, and their order, survive: what a prop rule asks of equity from
+//! a reference on a minute or a fill, the compact path answers as the full one does.
 
 use std::fmt;
 
@@ -45,8 +44,9 @@ pub enum PathPointKind {
     /// A new adverse extreme since the last favourable extreme, fill, or minute.
     Adverse,
     /// The adverse extreme of a bar, beyond its close, whose favourable extreme beat the best
-    /// price since the last fill or minute before the bar: the bar may have reached it
-    /// after that extreme, which the point before it, or a fill on the way to it, holds (§15).
+    /// price since the last fill or minute before the bar, or since a fill inside the bar: the
+    /// bar may have reached it after that extreme, which the point before it, or a fill on the
+    /// way to it, holds (§15).
     PossibleAdverse,
     /// Any other mark, in the full-resolution path of tests.
     #[cfg(test)]
@@ -164,7 +164,7 @@ impl PathRecorder {
 
     /// The position marked at `ts` at `mark`; at a bar's favourable extreme, `adverse_after` is
     /// the bar's adverse extreme beyond its close, which follows as a possible adverse extreme
-    /// when the favourable one beats the best before the bar (§15).
+    /// when the favourable one beats the best before the bar or the tracking as it stands (§15).
     pub(super) fn marked(
         &mut self,
         ts: Ts,
@@ -178,7 +178,8 @@ impl PathRecorder {
             self.push(ts, mark.price, PathPointKind::Mark);
             return Ok(());
         }
-        let possible = adverse_after.filter(|_| mark.distance > self.best_before);
+        let beaten = self.best_before.min(self.favourable);
+        let possible = adverse_after.filter(|_| mark.distance > beaten);
         if mark.distance > self.favourable {
             self.restart(mark.distance);
             self.push(ts, mark.price, PathPointKind::Favourable);

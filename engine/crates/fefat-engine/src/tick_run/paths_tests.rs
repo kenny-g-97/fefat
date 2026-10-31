@@ -272,9 +272,9 @@ fn a_bar_that_takes_a_long_to_a_new_high_above_its_low_below_its_close_flags_tha
     // 1-minute bars (F-MKT-03), is followed by the move against it, the low first (F-BAR-04), then
     // the high, 5000.50, a new favourable extreme while the low, 4999.75, lies below the close,
     // 5000.25: the bar may have reached its low after its high, a fall of 3 ticks from it, where
-    // its assumed path falls 1 to the close, and the trade's fall from its peak takes the worse
-    // order, 3 ticks. All of a bar's points are at its close (F-BAR-06), the minute of the entry's
-    // fill among them, and the sell at the next bar's open closes it.
+    // its assumed path falls 1 to the close, which the trade's fall from its peak follows. All of
+    // a bar's points are at its close (F-BAR-06), the minute of the entry's fill among them, and
+    // the sell at the next bar's open closes it.
     let reader = minutes(&[
         (0, [500_000, 500_050, 499_975, 500_025], 10),
         (1, [500_050, 500_100, 500_025, 500_075], 10),
@@ -308,7 +308,7 @@ fn a_bar_that_takes_a_long_to_a_new_high_above_its_low_below_its_close_flags_tha
     );
     assert_eq!(
         (trade.mae_ticks, trade.mfe_ticks, trade.max_drawdown_ticks),
-        (2, 1, 3)
+        (2, 1, 2)
     );
     assert_eq!(trade.path_fidelity, minute);
 }
@@ -519,7 +519,8 @@ fn a_target_that_fills_at_a_bars_new_high_flags_the_bars_low_after_it() {
     // first (F-BAR-02), then its limit at 5002.00 sells a lot at the bar's high (F-LMT-02, touch),
     // which restarts the tracking there, so the high itself is no new extreme. The position still
     // reached a new high while the low lies below the close, 5001.00, so the low follows as a
-    // possible adverse extreme; the fall from the peak counts it, 8 ticks from 5002.00 to 5000.00.
+    // possible adverse extreme, while the trade's fall from its peak follows the bar path, 5 ticks
+    // from 5002.00 to the last lot's sale at 5000.75.
     let bars = [
         (0, [500_000, 500_050, 499_975, 500_025], 10),
         (1, [500_025, 500_200, 500_000, 500_100], 10),
@@ -560,7 +561,7 @@ fn a_target_that_fills_at_a_bars_new_high_flags_the_bars_low_after_it() {
             (180_000, 500_075, fill(3)),
         ]
     );
-    assert_eq!(trade.max_drawdown_ticks, 8);
+    assert_eq!(trade.max_drawdown_ticks, 5);
 }
 
 #[test]
@@ -569,8 +570,8 @@ fn an_addition_that_fills_past_a_bars_high_flags_the_bars_low_after_the_high() {
     // the second bar's high and fills a tick past it, 5001.75 (F-STP-04), so the high, 5001.50,
     // is below the tracking's restart. It is still the bar's new high since the minute, and the
     // low, 5000.00, lies below the close, 5000.75, so the low follows it as a possible adverse
-    // extreme. An addition moves no excursion: the fall from the peak, 5001.50, to that low is
-    // 6 ticks.
+    // extreme. An addition moves no excursion, and the trade's fall from its peak follows the
+    // bar path, 4 ticks from 5001.50 to the sale at 5000.50.
     let bars = [
         (0, [500_000, 500_050, 499_975, 500_025], 10),
         (1, [500_050, 500_150, 500_000, 500_075], 10),
@@ -613,6 +614,60 @@ fn an_addition_that_fills_past_a_bars_high_flags_the_bars_low_after_the_high() {
     );
     assert_eq!(
         (trade.mae_ticks, trade.mfe_ticks, trade.max_drawdown_ticks),
-        (2, 5, 6)
+        (2, 5, 4)
+    );
+}
+
+#[test]
+fn a_bar_whose_new_high_beats_an_addition_inside_it_flags_its_low_after_the_high() {
+    // The ponytail review, §15: the long's first bar takes it to 5002.25, its best before the
+    // second bar. The second bar opens at 5001.75, where a buy limit adds 3 lots (F-LMT-02,
+    // touch), which restarts the tracking there, below that best; its high, 5002.00, is a new
+    // favourable extreme since the addition while its low, 5001.00, lies below its close, 5001.50,
+    // so the low follows the high as a possible adverse extreme, as it does after a new best.
+    let bars = [
+        (0, [500_000, 500_225, 500_000, 500_225], 10),
+        (1, [500_175, 500_200, 500_100, 500_150], 10),
+        (2, [500_150, 500_175, 500_125, 500_150], 10),
+    ];
+    let orders = vec![
+        order(1, Side::Buy, OrderKind::Market),
+        ScenarioOrder {
+            placed_at: at(60_000),
+            lots: Qty(3),
+            ..order(2, Side::Buy, limit(500_175))
+        },
+        ScenarioOrder {
+            placed_at: at(120_000),
+            lots: Qty(4),
+            ..order(3, Side::Sell, OrderKind::Market)
+        },
+    ];
+
+    let outputs = run_on_minutes(&bars, orders, LimitFill::Touch);
+
+    let ([trade], [path]) = (outputs.trades.as_slice(), outputs.trade_paths.as_slice()) else {
+        panic!("Expected one trade and its path, got {outputs:?}");
+    };
+    assert_eq!(
+        points(path),
+        [
+            (60_000, 500_025, fill(1)),
+            (60_000, 500_000, Adverse),
+            (60_000, 500_225, Favourable),
+            (60_000, 500_000, PossibleAdverse),
+            (60_000, 500_225, Minute),
+            (120_000, 500_175, fill(2)),
+            (120_000, 500_100, Adverse),
+            (120_000, 500_200, Favourable),
+            (120_000, 500_100, PossibleAdverse),
+            (120_000, 500_150, Adverse),
+            (120_000, 500_150, Minute),
+            (180_000, 500_125, fill(3)),
+        ]
+    );
+    assert_eq!(
+        (trade.mae_ticks, trade.mfe_ticks, trade.max_drawdown_ticks),
+        (1, 8, 5)
     );
 }

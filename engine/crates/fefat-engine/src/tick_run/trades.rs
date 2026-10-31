@@ -8,16 +8,15 @@
 //! the prices the run marks the position at while it is open (F-MRK-01), and the prices of the
 //! fills that close its lots, went against it and for it from its entry's price, in whole ticks,
 //! a roll moving that price by its gap as it moves the exit plan's (F-ROL-03); and, from step
-//! 2.13, the deepest fall of those prices from the best of them before (`02` §7), on a bar whose
-//! adverse extreme lies beyond its close the fall to that extreme after its favourable one
-//! included, the order §15 leaves open, so that on bars it is the worse order's; the coarsest
+//! 2.13, the deepest fall of those prices from the best of them before (`02` §7), on bars in the
+//! order of the engine's bar path (F-BAR-02 to F-BAR-04), as the excursions are; the coarsest
 //! level its marks and fills came from; and its path (`paths`), which a run may leave out. The
 //! legs of a roll that transfers the trade and a fill on the entry's side move no excursion: they
 //! are not prices the market took the position to, while a roll that flattens it closes it with
-//! its close leg, an exit like any other. A position held when the tape starts, which no fill opened, is no trade,
-//! nor is one a roll's leg reopens or one still open when the run ends; a fill on the entry's side
-//! while a trade is open adds its money to the trade but not its lots to the entry, which the
-//! execution template never sends (`BACKLOG.md`).
+//! its close leg, an exit like any other. A position held when the tape starts, which no fill
+//! opened, is no trade, nor is one a roll's leg reopens or one still open when the run ends; a
+//! fill on the entry's side while a trade is open adds its money to the trade but not its lots
+//! to the entry, which the execution template never sends (`BACKLOG.md`).
 
 use fefat_core::fidelity::Fidelity;
 use fefat_core::fills::Fill;
@@ -80,8 +79,8 @@ pub struct Trade {
     /// That favourable excursion over its entry's lots, in micro-units.
     pub mfe: Money,
     /// The deepest fall of its prices from the best of them before, its entry's price first, in
-    /// whole ticks; on a bar whose adverse extreme lies beyond its close, the fall to that extreme
-    /// after the bar's favourable one counts (§15), so that on bars it bounds the fall from above.
+    /// whole ticks, on bars in the order of the engine's bar path; the path's possible adverse
+    /// points mark bars whose other order falls further (§15).
     pub max_drawdown_ticks: i64,
     /// That fall over its entry's lots, in micro-units.
     pub max_drawdown: Money,
@@ -388,11 +387,10 @@ impl OpenTrade {
         let at = self.path_price(mark.price)?;
         self.excursion(at.distance)?;
         self.coarsest = self.coarsest.max(mark.fidelity);
-        let adverse_after = self.adverse_after(mark)?;
-        if let Some(adverse) = adverse_after {
-            let fall = self.favourable.checked_sub(adverse.distance)?;
-            self.drawdown = self.drawdown.max(fall);
+        if self.path.is_none() {
+            return Ok(());
         }
+        let adverse_after = self.adverse_after(mark)?;
         if let Some(path) = &mut self.path {
             path.marked(mark.ts, at, adverse_after)?;
         }
