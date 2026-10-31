@@ -56,6 +56,16 @@ EXPLANATIONS = {
         "its level (F-STP-04) and a target at its price, never better (F-LMT-03). The predicate "
         "replays both paths and requires both exits, at the same leg, to be what they give."
     ),
+    DifferenceClass.GAP_LIMIT_CLAMPED: (
+        "A bar opened past a resting limit's price in its favour and stayed past it. FEFAT "
+        "fills the limit at its price, never better and never clamped into the range of prices "
+        "traded in its interval (F-LMT-03, F-SLP-01); NinjaTrader 8 fills it at its price "
+        "clamped into the bar, the bar's high for a buy limit or its low for a sell limit, so "
+        "the fill is better than the limit by the gap (the builder's spec, H4: a limit fills at "
+        "its own price, also when the bar opens beyond it, clamped into the bar). NautilusTrader "
+        "fills a resting limit at its price, as FEFAT does. The predicate checks the bar lies "
+        "wholly past the level and that the other engine's price is the bar's nearest extreme."
+    ),
     DifferenceClass.CASCADE: (
         "A trade one engine made while the other still held a position at that decision, after "
         "an earlier difference on the same trade date left the two in different states; the "
@@ -168,7 +178,10 @@ def _versions_and_data(inputs: ReportInputs) -> str:
     snapshot = facts["snapshot"]
     profile = facts["profile"]
     ticks = profile["slippage_ticks"]
-    fees = "; ".join(f"{fee} from {day}" for day, fee in facts["fee_table"]["schedules"])
+    in_force = [
+        fee for day, fee in facts["fee_table"]["schedules"] if day <= facts["window"]["first"]
+    ]
+    fees = in_force[-1] if in_force else facts["fee_table"]["schedules"][0][1]
     lines = [
         "## Versions and data",
         "",
@@ -191,8 +204,9 @@ def _versions_and_data(inputs: ReportInputs) -> str:
         f"{cut['cut']['to']}, the raw file's own metadata): SHA-256 `{cut['cut']['sha256']}`.",
         f"- Profile: fidelity {profile['fidelity']}, latency {profile['latency_ms']} ms, slippage "
         f"{ticks['market']} ticks on market and {ticks['stop']} on stop orders, limit fill "
-        f"{profile['limit_fill']}; fee table {facts['fee_table']['name']} ({fees}), not compared: "
-        "fills do not depend on fees with fixed sizing, and the gross profit and loss is compared.",
+        f"{profile['limit_fill']}; fee table {facts['fee_table']['name']} ({fees} on the "
+        "window), not compared: fills do not depend on fees with fixed sizing, and the gross "
+        "profit and loss is compared.",
     ]
     lines.extend(f"- {check}" for check in inputs.nautilus.data_checks)
     return "\n".join(lines) + "\n"

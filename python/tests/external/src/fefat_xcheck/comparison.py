@@ -10,7 +10,7 @@ from typing import Any
 
 import polars as pl
 
-from fefat_xcheck.classify import TRADE_COLUMNS, classify
+from fefat_xcheck.classify import TRADE_COLUMNS, DifferenceClass, classify
 from fefat_xcheck.conventions import (
     NAUTILUS_ADAPTIVE,
     NAUTILUS_OHLC,
@@ -80,6 +80,10 @@ def nautilus_report(folder: Path, fefat: dict[str, Any]) -> EngineReport:
             decisions = pl.read_parquet(folder / "engine" / f"decisions_{name}.parquet")
             if order_name == NAUTILUS_PATHS[0][0]:
                 checks.append(decisions_check(signals, decisions, strategy["name"]))
+            fills = pl.read_parquet(folder / "fefat" / f"fills_{strategy['name']}.parquet")
+            checks.append(
+                ambiguity_check(ours, fills, theirs, fefat_bars, conventions, strategy, tick)
+            )
             strategies.append(
                 _strategy_report(
                     strategy, conventions, ours, theirs, fefat_bars, tick, folder / "classified"
@@ -128,7 +132,7 @@ def ninjatrader_report(folder: Path, export: Path) -> EngineReport:
         .select(list(TRADE_COLUMNS))
         .cast(TRADE_COLUMNS)
     )
-    on_grid = exported.filter(pl.col("entry_decision").is_in(signals["ts_close"])).height
+    on_grid = exported.filter(pl.col("entry_decision").is_in(signals["ts_close"].implode())).height
     checks = (
         f"NinjaTrader 8's trades read from `{export.name}`: {exported.height:,} trades, of which "
         f"{on_grid:,} were decided on a 5-minute close of FEFAT's grid (a market fill stamped "
@@ -233,6 +237,31 @@ def decisions_check(signals: pl.DataFrame, decisions: pl.DataFrame, strategy: st
         f"decisions on a bar find NautilusTrader's decision at the same instant with the same "
         f"close; {empty:,} rows of FEFAT's grid are empty buckets without a bar, on which "
         "NautilusTrader builds no bar."
+    )
+
+
+def ambiguity_check(
+    ours: pl.DataFrame,
+    fills: pl.DataFrame,
+    theirs: pl.DataFrame,
+    bars: pl.DataFrame,
+    conventions: EngineConventions,
+    strategy: dict[str, Any],
+    tick: int,
+) -> str:
+    """Whether every exit the other engine's bar path changed was one FEFAT flagged ambiguous
+    (F-BAR-05): the `bar_path` pairs' FEFAT exits against the fills' `ambiguous` flags."""
+    classified = classify(ours, theirs, bars, conventions, tick)
+    bar_path = classified.filter(pl.col("exit_outcome") == str(DifferenceClass.BAR_PATH))
+    exits = ours.join(bar_path.select("entry_decision", "side"), on=["entry_decision", "side"])
+    flagged = fills.filter(pl.col("ambiguous")).select("ts", "price").unique()
+    ambiguous = exits.join(
+        flagged, left_on=["exit_ts", "exit_price"], right_on=["ts", "price"], how="semi"
+    ).height
+    return (
+        f"Ambiguous fills ({strategy['name']}, {conventions.name}): {ambiguous} of {exits.height} "
+        "exits the other bar path took to the other leg (`bar_path`) were flagged ambiguous by "
+        "FEFAT (F-BAR-05), which flags a fill the swapped order of extremes would change."
     )
 
 

@@ -413,3 +413,40 @@ def test_the_nearest_extreme_first_on_a_tie_is_the_engines_own() -> None:
     assert NINJATRADER.first_extreme(*halfway, long=True) == Extreme.HIGH
     assert NAUTILUS_ADAPTIVE.first_extreme(*nearer_high, long=False) == Extreme.HIGH
     assert NAUTILUS_OHLC.first_extreme(*halfway, long=False) == Extreme.HIGH
+
+
+def test_a_limit_passed_by_a_gap_fills_clamped_into_the_bar_in_ninjatrader_only() -> None:
+    """A short's target, a buy limit, sits above a bar that opens and stays below it: FEFAT
+    fills it at its price, NinjaTrader 8 at the bar's high (the real pair of 2026-08-10
+    16:30 UTC, in ticks); NautilusTrader would have filled it at its price."""
+    gapped = bars(
+        (0, 100.0, 100.25, 99.75, 100.0),
+        (1, 100.0, 100.5, 99.5, 99.75),
+        (2, 99.75, 100.0, 99.0, 99.25),
+        (3, 95.0, 96.0, 92.0, 94.5),
+    )
+    fefat = trade(
+        side="short",
+        entry=100.0,
+        exit_minutes=3,
+        exit=97.0,
+        exit_reason="target",
+        stop=103.0,
+        target=97.0,
+    )
+    ninjatrader = trade(
+        side="short",
+        entry=100.0,
+        exit_minutes=3,
+        exit=96.0,
+        exit_reason="target",
+        stop=103.0,
+        target=97.0,
+    )
+
+    clamped = classify(trades(fefat), trades(ninjatrader), gapped, NINJATRADER, TICK)
+    nautilus = classify(trades(fefat), trades(ninjatrader), gapped, NAUTILUS_OHLC, TICK)
+
+    assert clamped["exit_outcome"].to_list() == [str(DifferenceClass.GAP_LIMIT_CLAMPED)]
+    assert clamped["exit_ticks"].to_list() == [4]
+    assert nautilus["outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]

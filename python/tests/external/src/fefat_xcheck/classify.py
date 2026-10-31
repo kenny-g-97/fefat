@@ -16,7 +16,7 @@ from enum import StrEnum
 
 import polars as pl
 
-from fefat_xcheck.conventions import EngineConventions, Extreme, MarketFill
+from fefat_xcheck.conventions import EngineConventions, Extreme, LimitGap, MarketFill
 from fefat_xcheck.entry_bar import EntryBar, fefat_exit, other_exit
 
 MATCH = "match"
@@ -45,6 +45,12 @@ class DifferenceClass(StrEnum):
     """The tick an entry fills on releases its legs, and that tick is already past a leg's level:
     NautilusTrader fills the leg at the tick's price, the bar's extreme; FEFAT works the leg on
     the rest of the path and fills it at its level (F-OCO-02, F-STP-04, F-LMT-03)."""
+
+    GAP_LIMIT_CLAMPED = "gap_limit_clamped"
+    """A bar opened past a resting limit's price in its favour and never came back to it: FEFAT
+    fills the limit at its price (F-LMT-03, never clamped into the bar's range, F-SLP-01);
+    NinjaTrader 8 fills it at that price clamped into the bar, its high for a buy, its low for a
+    sell (the builder's spec, H4)."""
 
     CASCADE = "cascade"
     """A trade one engine made while the other still held a position, after an earlier
@@ -298,7 +304,26 @@ def _exit_outcome(mine: Trade, its: Trade, lookup: Bars, conventions: EngineConv
         return str(DifferenceClass.UNKNOWN)
     if _other_path_reaches_its_leg_first(mine, its, lookup, conventions):
         return str(DifferenceClass.BAR_PATH)
+    if _limit_passed_by_a_gap_clamped(mine, its, lookup, conventions):
+        return str(DifferenceClass.GAP_LIMIT_CLAMPED)
     return _entry_bar_outcome(mine, its, lookup, conventions)
+
+
+def _limit_passed_by_a_gap_clamped(
+    mine: Trade, its: Trade, lookup: Bars, conventions: EngineConventions
+) -> bool:
+    """Both took the target, a limit, in one bar lying wholly past its price in its favour:
+    FEFAT at the price, the other engine at the bar's nearest extreme."""
+    if conventions.limit_gap != LimitGap.CLAMPED_INTO_THE_BAR:
+        return False
+    if mine.exit_reason != TARGET or its.exit_reason != TARGET or mine.exit_ts != its.exit_ts:
+        return False
+    bar = lookup.at(mine.exit_ts)
+    if bar is None or mine.exit_price != mine.target_price:
+        return False
+    if mine.long:
+        return bar.low > mine.target_price and its.exit_price == bar.low
+    return bar.high < mine.target_price and its.exit_price == bar.high
 
 
 def _other_path_reaches_its_leg_first(

@@ -37,6 +37,18 @@ class Extreme(StrEnum):
     LOW = "low"
 
 
+class LimitGap(StrEnum):
+    """Where a resting limit fills when a bar opens past its price in its favour."""
+
+    AT_THE_LIMIT = "at_the_limit"
+    """FEFAT (F-LMT-03, never better, and never clamped into the bar's range, F-SLP-01) and
+    NautilusTrader (a resting limit uses its price when a market move matches it)."""
+
+    CLAMPED_INTO_THE_BAR = "clamped_into_the_bar"
+    """NinjaTrader 8 (H4): the limit's price clamped into the bar's range, so a buy limit above
+    the whole bar fills at its high and a sell limit below it at its low."""
+
+
 @dataclass(frozen=True)
 class EngineConventions:
     """One engine's choices, named as the report names the engine."""
@@ -48,6 +60,7 @@ class EngineConventions:
     """The extreme visited first when the open lies halfway between them, where the order is
     the nearest extreme first: NinjaTrader 8 takes the high (H2), NautilusTrader the low (a run
     of step 2.14 on a bar whose open sat halfway filled the long's stop)."""
+    limit_gap: LimitGap = LimitGap.AT_THE_LIMIT
 
     def first_extreme(self, open: int, high: int, low: int, long: bool) -> Extreme:
         """The extreme the engine's path visits first after the bar's open, for a position of
@@ -74,5 +87,8 @@ NAUTILUS_ADAPTIVE = EngineConventions(
     tie=Extreme.LOW,
 )
 NINJATRADER = EngineConventions(
-    "NinjaTrader 8", MarketFill.NEXT_BAR_OPEN, BarOrder.NEAREST_EXTREME_FIRST
+    "NinjaTrader 8",
+    MarketFill.NEXT_BAR_OPEN,
+    BarOrder.NEAREST_EXTREME_FIRST,
+    limit_gap=LimitGap.CLAMPED_INTO_THE_BAR,
 )
