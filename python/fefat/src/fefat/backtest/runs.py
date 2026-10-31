@@ -5,10 +5,11 @@ that key when its folder holds one; otherwise it runs the engine (`fefat_engine`
 run's artifacts and record under `FEFAT_HOME/workspaces/default/artifacts/runs/<run key>/`, with
 the run's metrics (step 2.11), which a rerun at one more tick of slippage and the engine's
 `fefat-metrics` work out, the fidelity era of each trade date, and the fidelity check of its
-days finer than a minute (step 2.12), which reruns them coarser.
+days finer than a minute (step 2.12), which reruns them coarser; and each trade's path, with the
+mix of their fidelities (step 2.13), which the reruns leave out.
 
     run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
-    run.trades, run.fills, run.equity("1d"), run.config, run.hash, run.metrics
+    run.trades, run.fills, run.trade_paths, run.equity("1d"), run.config, run.hash, run.metrics
     run.explain(trade_id=4)
     run.report()
 """
@@ -39,6 +40,7 @@ from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, 
 from fefat.backtest.record import (
     EngineVersions,
     InstrumentRecord,
+    PathFidelity,
     RunRecord,
     RunSummary,
     StrategyRecord,
@@ -105,6 +107,12 @@ class Run:
     @property
     def fills(self) -> pl.DataFrame:
         return read_artifact(self.folder, "fills")
+
+    @property
+    def trade_paths(self) -> pl.DataFrame:
+        """Each point of each trade's path (`fefat.backtest.schemas.TRADE_PATHS`), `trade` its
+        row in `trades` from 0."""
+        return read_artifact(self.folder, "trade_paths")
 
     @property
     def orders(self) -> pl.DataFrame:
@@ -202,6 +210,7 @@ def _ran(
         rolls=inputs.rolls,
         engine_config=inputs.engine_config,
         fidelity_eras=eras,
+        path_fidelities=_path_fidelities(artifacts["trades"]),
         warnings=(*inputs.warnings, *_engine_warnings(engine["log"], inputs)),
         summary=RunSummary(
             fills=engine["fills"].height,
@@ -226,7 +235,7 @@ def _metrics(
     replay, config = str(inputs.config.replay), inputs.config_json_at_one_more_tick()
     try:
         slipped = fefat_engine.run_signal_backtest(
-            inputs.spec_json(), inputs.signals, caches, config, replay
+            inputs.spec_json(), inputs.signals, caches, config, replay, trade_paths=False
         )
     except ValueError as error:
         raise ValueError(
@@ -243,6 +252,14 @@ def _metrics(
         friction_tested=friction_tested(inputs.config.slippage_ticks, artifacts["fills"]),
     )
     return Metrics.model_validate_json(fefat_engine.metrics(document))
+
+
+def _path_fidelities(trades: pl.DataFrame) -> tuple[PathFidelity, ...]:
+    """How many trades' paths have each fidelity, in the order each first closed."""
+    counted = trades.group_by("path_fidelity", maintain_order=True).len("trades")
+    return tuple(
+        PathFidelity(fidelity=fidelity, trades=count) for fidelity, count in counted.iter_rows()
+    )
 
 
 def _checked(inputs: RunInputs, cache_paths: tuple[Path, ...], itself: PeriodRun) -> CheckedRun:

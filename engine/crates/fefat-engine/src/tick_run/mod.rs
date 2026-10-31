@@ -14,8 +14,10 @@
 //! F-ACT-02, F-MKT-03, F-STP-04). Each fill cancels its OCO group (F-OCO-01), places its bracket
 //! (F-OCO-02), and is booked in the [`Ledger`] with its fee (§14). A perpetual's funding times
 //! and a future's rolls are session and timer events (F-CLK-02, F-FND-01, §29). With
-//! [`Replay::Skipping`] the loop passes over blocks of records that no order can act on, by the
-//! bars above them (`02` §4).
+//! [`Replay::Skipping`] the loop passes over blocks of records that no order can act on, and that
+//! add nothing to the open trade's path, by the bars above them (`02` §4). Each trade's path
+//! (`paths`, step 2.13) follows the prices marked and the fills, as a pure observer: no fill
+//! depends on it.
 
 mod bars;
 #[cfg(test)]
@@ -26,6 +28,11 @@ mod fills;
 #[cfg(test)]
 mod limit_properties;
 mod outcomes;
+#[cfg(test)]
+mod path_probe;
+mod paths;
+#[cfg(test)]
+mod paths_tests;
 #[cfg(test)]
 mod plan_properties;
 #[cfg(test)]
@@ -43,6 +50,7 @@ mod trades;
 
 pub use descent::Replay;
 pub use outcomes::{BookedFill, EquityPoint, FidelityEra, RunError, RunOutputs, Stepped};
+pub use paths::{PathPoint, PathPointKind, Recording, TradePath};
 pub use records::{Quote, TickRecord};
 pub use trades::Trade;
 
@@ -51,7 +59,7 @@ use fefat_core::fidelity::Fidelity;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::instrument::Contract;
 use fefat_core::ledger::Ledger;
-use fefat_core::market_data::MarketDataReader;
+use fefat_core::market_data::{BarRow, MarketDataReader};
 use fefat_core::orders::OrderId;
 use fefat_core::rolls::Roll;
 use fefat_core::units::{Money, Price};
@@ -60,11 +68,12 @@ use descent::BarLevel;
 use records::{DayRecords, Unit};
 use rolls::Transfer;
 use timers::Timer;
-use trades::TradeBook;
+use trades::{Mark, TradeBook};
 
 use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::hours::TradingHours;
+use crate::rules::Extreme;
 use crate::settings::{RollHandling, RunCosts, RunSettings};
 use crate::strategy::{ClosedTrade, DecisionContext, Strategy};
 
@@ -192,17 +201,27 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         })
     }
 
+    /// The run, recording of its trades' paths what `recording` says: each trade's compact path
+    /// unless told otherwise, or none, as a sweep's trials may run (`02` §7).
+    #[must_use]
+    pub fn with_recording(mut self, recording: Recording) -> Self {
+        self.trades = self.trades.recording(recording);
+        self
+    }
+
     /// Runs to the end of the records, the timers, and the decisions.
     pub fn run(mut self) -> Result<RunOutputs, RunError> {
         while self.step()?.is_some() {}
         self.value_before_the_legs()?;
+        let (trades, trade_paths) = self.trades.into_closed();
         Ok(RunOutputs {
             orders: self.book.into_orders(),
             fills: self.fills,
             log: self.log,
             ledger: self.ledger,
             cost_lines: self.cost_lines,
-            trades: self.trades.into_closed(),
+            trades,
+            trade_paths,
             equity: self.equity,
             eras: self.eras,
         })
@@ -367,10 +386,22 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         })
     }
 
-    /// Marks the position at `price` (F-MRK-01), which the open trade's excursions follow.
-    pub(super) fn mark_at(&mut self, price: Price) -> Result<(), RunError> {
+    /// Marks the position at `price`, a record's received at `ts` (F-MRK-01), which the open
+    /// trade's excursions and its path follow.
+    pub(super) fn mark_at(&mut self, ts: Ts, price: Price) -> Result<(), RunError> {
         self.ledger.mark_at(price);
-        Ok(self.trades.marked(price)?)
+        Ok(self.trades.marked(&self.mark(ts, price, None))?)
+    }
+
+    /// A price marked at `ts` on the trade date being read, at a bar's extreme pseudo-tick the
+    /// extreme and the bar.
+    const fn mark(&self, ts: Ts, price: Price, extreme: Option<(Extreme, BarRow)>) -> Mark {
+        Mark {
+            ts,
+            price,
+            fidelity: self.fidelity,
+            extreme,
+        }
     }
 
     fn receive(&mut self, unit: Unit, index: usize) -> Result<Stepped, RunError> {

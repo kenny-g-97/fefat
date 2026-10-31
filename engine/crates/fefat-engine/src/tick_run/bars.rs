@@ -6,7 +6,9 @@
 //! replayed again on a copy with its first extreme the other way round, and every fill of the bar
 //! flagged ambiguous when the copy fills otherwise (F-BAR-05); and every fill at the bar's close
 //! (F-BAR-06). Each point of the path marked, the open, each extreme reached, and the close, is
-//! a price each exit plan follows once the fills at it are done (F-PLN-04).
+//! a price each exit plan follows once the fills at it are done (F-PLN-04), and the open trade's
+//! excursions and path follow at the bar's close, a bar no order can act on marked along the same
+//! path (step 2.13).
 
 use fefat_core::fills::PricingRule;
 use fefat_core::ledger::{Ledger, Position};
@@ -20,16 +22,17 @@ use super::{RunError, TickRun};
 use crate::book::{Book, WorkingOrder};
 use crate::event_log::LogEntry;
 use crate::exit_plan::Move;
-use crate::rules::{self, Priced};
+use crate::rules::{self, Extreme, Priced};
 use crate::settings::{RunCosts, RunSettings};
 
 /// What a bar's replay did, in the order it did it: a fill, a stop its plan moved, or a point of
-/// the path marked (F-MRK-01), which the open trade's excursions follow.
+/// the path marked (F-MRK-01), an extreme or not, which the open trade's excursions and path
+/// follow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BarEvent {
     Filled(Execution),
     Moved(Move),
-    Marked(Price),
+    Marked(Price, Option<Extreme>),
 }
 
 impl<R: MarketDataReader> TickRun<'_, R> {
@@ -53,8 +56,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             });
         }
         if !self.book.has_live() {
-            self.trades.reached(bar.low, bar.high)?;
-            return self.mark_at(bar.close);
+            return self.marked_along(bar);
         }
         for id in self.book.ids_in(OrderState::Waiting, |_| true) {
             let waiting = self.book.live_in(id, OrderState::Waiting);
@@ -82,10 +84,40 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             match event {
                 BarEvent::Filled(execution) => self.record(execution)?,
                 BarEvent::Moved(moved) => self.log_moves(at.ts, &[moved]),
-                BarEvent::Marked(price) => self.trades.marked(price)?,
+                BarEvent::Marked(price, extreme) => self.trade_marked(bar, price, extreme)?,
             }
         }
         Ok(())
+    }
+
+    /// A bar no order can act on: the position marked at its open, its extremes, the adverse one
+    /// first for a position held (F-BAR-02), and its close (F-BAR-01, F-MRK-01), as a replay of
+    /// its path with orders marks them.
+    fn marked_along(&mut self, bar: &BarRow) -> Result<(), RunError> {
+        let first = rules::f_bar_02(self.ledger.position());
+        let path = [
+            (bar.open, None),
+            (first.of(bar), Some(first)),
+            (first.other().of(bar), Some(first.other())),
+            (bar.close, None),
+        ];
+        for (price, extreme) in path {
+            self.trade_marked(bar, price, extreme)?;
+        }
+        self.ledger.mark_at(bar.close);
+        Ok(())
+    }
+
+    /// A point of `bar`'s path at `price`, at its close (F-BAR-06), which the open trade follows.
+    fn trade_marked(
+        &mut self,
+        bar: &BarRow,
+        price: Price,
+        extreme: Option<Extreme>,
+    ) -> Result<(), RunError> {
+        let on_bar = extreme.map(|reached| (reached, *bar));
+        let mark = self.mark(rules::f_bar_06(bar), price, on_bar);
+        Ok(self.trades.marked(&mark)?)
     }
 }
 
@@ -93,7 +125,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
 fn fills_of(events: &[BarEvent]) -> impl Iterator<Item = (OrderId, Price)> + '_ {
     events.iter().filter_map(|event| match event {
         BarEvent::Filled(execution) => Some((execution.fill.order, execution.fill.price)),
-        BarEvent::Moved(_) | BarEvent::Marked(_) => None,
+        BarEvent::Moved(_) | BarEvent::Marked(..) => None,
     })
 }
 
@@ -145,7 +177,7 @@ impl<'replay> BarReplay<'replay> {
             let (reached, opened) = self.leg(point, extreme)?;
             point = reached;
             if point == extreme {
-                self.marked(extreme)?;
+                self.marked(extreme, Some(next))?;
                 remaining.remove(0);
             }
             if opened {
@@ -153,14 +185,15 @@ impl<'replay> BarReplay<'replay> {
             }
         }
         self.leg(point, bar.close)?;
-        self.marked(bar.close)?;
+        self.marked(bar.close, None)?;
         Ok(self.events)
     }
 
-    /// A point of the path marked (F-MRK-01), and each exit plan's turn at it (F-PLN-04).
-    fn marked(&mut self, price: Price) -> Result<(), RunError> {
+    /// A point of the path marked (F-MRK-01), `extreme` when it is one, and each exit plan's turn
+    /// at it (F-PLN-04).
+    fn marked(&mut self, price: Price, extreme: Option<Extreme>) -> Result<(), RunError> {
         self.ledger.mark_at(price);
-        self.events.push(BarEvent::Marked(price));
+        self.events.push(BarEvent::Marked(price, extreme));
         let moves = self.book.marked(price, self.tick())?;
         self.events.extend(moves.into_iter().map(BarEvent::Moved));
         Ok(())
@@ -211,7 +244,7 @@ impl<'replay> BarReplay<'replay> {
                 .rest(id)
                 .ok_or(RunError::UnknownOrder { order: id.0 })?;
         }
-        self.marked(point)
+        self.marked(point, None)
     }
 
     /// An order's first bar (F-ACT-02): a market order fills at its open (F-MKT-03), and so does

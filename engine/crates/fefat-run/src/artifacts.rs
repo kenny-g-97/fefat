@@ -1,8 +1,8 @@
 //! The tables of runs' outputs, each row tagged with its run's `case`, the place of the run in its
 //! batch: the fills, each with the contract it is of and its trade date; the orders in their last
-//! state; the event log; the cost lines; and the trades and the accounts at each decision
-//! (`crate::trade_tables`). `fefat-cli run` writes them for a batch, and `fefat_engine` gives a
-//! single run's without the tag.
+//! state; the event log; the cost lines; and the trades, their paths, and the accounts at each
+//! decision (`crate::trade_tables`). `fefat-cli run` writes them for a batch, and `fefat_engine`
+//! gives a single run's without the tag.
 
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use fefat_engine::book::WorkingOrder;
 use fefat_engine::event_log::LogEntry;
 use fefat_engine::tick_run::{BookedFill, RunOutputs};
 
-use crate::trade_tables::{equity_table, trades_table};
+use crate::trade_tables::{equity_table, trade_paths_table, trades_table};
 
 type FillRow<'run> = (i64, &'run BookedFill);
 type OrderRow<'run> = (i64, &'run WorkingOrder);
@@ -25,7 +25,8 @@ type CostRow<'run> = (i64, &'run CostLine);
 /// The name of the column that tags each row with its run's place in a batch.
 pub const CASE_COLUMN: &str = "case";
 
-/// Each table of `runs`, by name: `fills`, `orders`, `log`, `costs`, `trades`, and `equity`.
+/// Each table of `runs`, by name: `fills`, `orders`, `log`, `costs`, `trades`, `trade_paths`, and
+/// `equity`.
 pub fn run_tables(
     runs: &[(i64, RunOutputs)],
 ) -> Result<Vec<(&'static str, RecordBatch)>, ArrowError> {
@@ -35,6 +36,7 @@ pub fn run_tables(
         ("log", log_table(runs)?),
         ("costs", costs_table(runs)?),
         ("trades", trades_table(runs)?),
+        ("trade_paths", trade_paths_table(runs)?),
         ("equity", equity_table(runs)?),
     ])
 }

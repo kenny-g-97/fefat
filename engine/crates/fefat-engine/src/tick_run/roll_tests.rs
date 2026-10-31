@@ -761,3 +761,70 @@ fn a_long_held_when_the_tape_starts_is_no_trade_though_a_roll_reopens_it() {
     );
     assert!(outputs.trades.is_empty(), "{:?}", outputs.trades);
 }
+
+#[test]
+fn a_trades_path_across_a_roll_runs_on_in_its_entry_contracts_prices_through_both_legs() {
+    // Step 2.13, BACKLOG's marks between a roll and its legs (F-ROL-03): S-fill-058's long's
+    // path is in ESH2026's prices throughout. The minutes from 20:00 on 03-06 to the roll's open,
+    // 22:00 on 03-08, before the legs fill, take the last mark, 5004.00, not the mark the roll
+    // moved by its gap; the close leg sells at 5004.75, the open leg buys at 5025.25 on ESM2026,
+    // 5005.25 less the gap, and the mark after them, 5025.00, is 5005.00, below the open leg's
+    // fill; the stop's fill at 5009.75 ends the path at 4989.75, the trade's exit price. Every
+    // whole minute from 14:31 on 03-06 to 13:59 on 03-09 has its mark, 4,289 of them.
+    let reader = across_the_roll();
+    let rolls = (vec![march_roll()], RollHandling::Transfer);
+
+    let outputs = run_on_trades(
+        &reader,
+        capital(),
+        &mut bracketed_long(1),
+        futures_fee(250),
+        rolls,
+    )
+    .unwrap();
+
+    let ([trade], [path]) = (outputs.trades.as_slice(), outputs.trade_paths.as_slice()) else {
+        panic!("Expected one trade and its path, got {outputs:?}");
+    };
+    let hundredths = |point: &PathPoint| point.price.0 / 10_000_000;
+    let (minutes, others): (Vec<&PathPoint>, Vec<&PathPoint>) = path
+        .points
+        .iter()
+        .partition(|point| point.kind == PathPointKind::Minute);
+    let others: Vec<(Ts, i64, PathPointKind)> = others
+        .into_iter()
+        .map(|point| (point.ts, hundredths(point), point.kind))
+        .collect();
+    let fill = |order: u64| PathPointKind::Fill(OrderId(order));
+    assert_eq!(
+        others,
+        [
+            (at(MARCH_6_14_30, 200), 500_025, fill(1)),
+            (at(MARCH_6_14_30, 200), 500_000, PathPointKind::Adverse),
+            (at(MARCH_6_20_00, 0), 500_400, PathPointKind::Favourable),
+            (at(ROLL_OPEN, 500), 500_475, fill(4)),
+            (at(ROLL_OPEN, 500), 500_525, fill(5)),
+            (at(ROLL_OPEN, 500), 500_500, PathPointKind::Adverse),
+            (at(MARCH_9_14_00, 0), 498_975, fill(2)),
+        ]
+    );
+    let priced_at = |hundredths_wanted: i64| {
+        let at_price = minutes
+            .iter()
+            .filter(|point| hundredths(point) == hundredths_wanted);
+        at_price.count()
+    };
+    assert_eq!(minutes.len(), 4_289);
+    assert_eq!(
+        (priced_at(500_000), priced_at(500_400), priced_at(500_500)),
+        (329, 3_001, 959)
+    );
+    let at_the_roll = minutes.iter().find(|point| point.ts == at(ROLL_OPEN, 0));
+    assert_eq!(at_the_roll.map(|point| hundredths(point)), Some(500_400));
+    let last = path.points.last().map(|point| point.price.0 as f64);
+    assert_eq!(last, trade.exit_price);
+    assert_eq!(
+        (trade.mae_ticks, trade.mfe_ticks, trade.max_drawdown_ticks),
+        (42, 19, 61)
+    );
+}

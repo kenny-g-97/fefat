@@ -39,6 +39,9 @@ def test_the_report_prints_the_metrics_split_by_era_and_the_fidelity_checks_delt
         "  2026-03-03 to 2026-03-09     5 trade dates  1m",
         "  2026-03-10 to 2026-03-13     4 trade dates  trades",
     ]
+    # Step 2.13: the mix of path fidelities keeps the order each first closed, so run.json is the
+    # same on every run (D-11).
+    assert [str(path.fidelity) for path in run.record.path_fidelities] == ["1m", "trades"]
     split = lines.index("Trades by the fidelity of their entry")
     groups = run.metrics.breakdowns.fidelity
     assert len(groups) == 2

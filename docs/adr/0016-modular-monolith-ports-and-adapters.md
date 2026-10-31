@@ -23,6 +23,7 @@ The rule, its reasons, and how `just check` enforces it are in [08-code-design.m
 - The layout and names are those of [01-architecture.md §3](../masterplan/01-architecture.md#3-repository-layout): `fefat.market`, `fefat.indicators`, `fefat.reference`, `fefat_app.http`, `services/`, `ports.py`, `container.py`, `database/`, `executor.py`, `credentials.py`, and the web app's `areas/`.
 - The Python packages use the src layout.
 - `import-linter`, and an import-boundary lint for the web app, are development dependencies.
+- matplotlib is a development dependency too, for the check notebooks' plots, which no package imports (step 2.13, D-65).
 - The rules files of step 0.4 carry the rules.
 
 ## How we would know it is wrong

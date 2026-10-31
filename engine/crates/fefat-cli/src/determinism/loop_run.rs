@@ -5,8 +5,9 @@
 //! bars; each run paying a futures fee table whose first schedule starts after the tape's date,
 //! funding at two times, and rolling once, a gap of 5.00, inside the tape (step 2.9); and every
 //! order, fill with its contract, entry of the event log, and cost line, with the final cash and
-//! position, the trades and the account at each decision (step 2.10), and the fidelity eras of
-//! each run's trade dates (step 2.12), hashed in order.
+//! position, the trades and the account at each decision (step 2.10), the fidelity eras of each
+//! run's trade dates (step 2.12), and each trade's fall from its peak, its path's fidelity, and its
+//! path (step 2.13), hashed in order.
 
 use fefat_core::costs::{CostReason, FeeRate, FeeSchedule, FeeTable, FundingRate, Rate};
 use fefat_core::fidelity::{Fidelity, Timeframe};
@@ -312,6 +313,21 @@ fn hash_outputs(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
     hash_numbers(hasher, [outputs.ledger.cash().0, held.0].into_iter());
     hash_trades_and_equity(hasher, outputs);
     hash_eras(hasher, outputs);
+    hash_paths(hasher, outputs);
+}
+
+/// Step 2.13's trade paths: their count, then each path's count of points and each point's
+/// instant, price, and order, -1 for a point that is no fill, and its kind.
+fn hash_paths(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
+    hash_numbers(hasher, [outputs.trade_paths.len() as i64].into_iter());
+    for path in &outputs.trade_paths {
+        hash_numbers(hasher, [path.points.len() as i64].into_iter());
+        for point in &path.points {
+            let order = point.kind.order().map_or(-1, |order| order.0 as i64);
+            hash_numbers(hasher, [point.ts.0, point.price.0, order].into_iter());
+            hash_words(hasher, [point.kind.to_string()]);
+        }
+    }
 }
 
 /// Step 2.12's fidelity eras: their count, then each era's first and last trade date, its count
@@ -368,6 +384,8 @@ fn hash_trades_and_equity(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
             trade.mfe_ticks,
             trade.mae.0,
             trade.mfe.0,
+            trade.max_drawdown_ticks,
+            trade.max_drawdown.0,
         ];
         hash_numbers(hasher, excursions.into_iter());
         hash_words(
@@ -377,6 +395,7 @@ fn hash_trades_and_equity(hasher: &mut blake3::Hasher, outputs: &RunOutputs) {
                 trade.exit_reason.to_string(),
                 trade.entry_contract.0.clone(),
                 trade.exit_contract.0.clone(),
+                trade.path_fidelity.to_string(),
             ],
         );
     }

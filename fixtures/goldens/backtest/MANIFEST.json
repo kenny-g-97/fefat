@@ -3,7 +3,7 @@
   "versions": {
     "engine": 8,
     "fill_model": 1,
-    "artifact_schema": 1
+    "artifact_schema": 2
   },
   "inputs": {
     "strategy": {
@@ -48,13 +48,14 @@
     "fixtures_manifest_sha256": "0fd2a9ba5be14693150f17e7e5a755cd3095407739014c3916312f09b0b3d2af"
   },
   "outputs": {
-    "run_key": "d09b176f2fbc43cecbf20a9958d3c2ab808b78755c6e1f9ad5f0f1f80aaabb76",
+    "run_key": "29ecbfeb5e98d1b75f20a86fbe607530c9e75441623cc29b1f77c31dfbde3ecd",
     "artifacts": {
       "fills": "601a549375a45176124e88c9770b771f88ce124b1f0a499eab3aa1e8026b311d",
       "orders": "23e3c6bb65b52743bef824fd8002b2234baab6755a4093c863e636e0e1abe661",
       "log": "58321fea7560c0b4a8460161ab2fb607cb242c5854993ce8f437ce19cdc503a0",
       "costs": "d526d4bd51242cab22d60fc42b1a69720aff7105966276387995e4b148fea39d",
-      "trades": "0a9e579925d26cbe3ff91a84c9ee7b32a7ffde150dee7743f36cb6c15773abef",
+      "trades": "c98fb493f5ea90eeabf56bbcca9ec6e717aad16e8f0ca3afd911025e754b7a7b",
+      "trade_paths": "4b7e1c31b9430af2a9b2e03bdf2c7b56069f804f6c0ce4fe75c40df09805d1ff",
       "equity": "115955a5daa6f7193ba4db0f546a19b83c1832749152910be7528422565a594d",
       "equity_daily": "45551ee4134dfea9b8a09d19c7f9787c94a53542d7a645ef296fb9b3d7f77866",
       "signals": "67ef06cb4abcdd0ab12b1a1f3d948ff90fa107e3c49ece2011a72ed46b4da240"

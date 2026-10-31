@@ -10,8 +10,14 @@ nanoseconds since the Unix epoch, UTC. Each artifact is a Parquet file of the ru
 - `costs`: each fee and funding payment, paid positive (F-FEE-01, F-FND-01);
 - `trades`: a row per flat-to-flat trade (§20), its entry, its exits and their average price,
   its exit reason, the rolls it crossed, its money, its initial risk and R multiple, its
-  excursions in ticks, money, and R, and the value of each feature at its entry, as
+  excursions in ticks, money, and R, its deepest fall from its peak in ticks and money and its
+  path's fidelity (step 2.13), and the value of each feature at its entry, as
   `<feature>_at_entry`, beside the columns of `TRADES`;
+- `trade_paths`: a row per point of each trade's path (`03-prop-simulator.md` §4.2, step 2.13),
+  `trade` its row in `trades` from 0, each fill at its own price with its `order`, each new
+  favourable extreme and each new adverse one since the last favourable, the mark at each whole
+  minute, and a bar's `possible_adverse` extreme, in the order they happened, every price in
+  the trade's entry contract's prices;
 - `equity`: the account after each decision, at each signal bar's close;
 - `equity_daily`: the account at each trade date's last decision and the day's profit and loss;
 - `signals`: the signal frame the engine read, the strategy's features among its columns.
@@ -92,6 +98,9 @@ ENGINE_TRADES = pl.Schema(
         "mfe_ticks": pl.Int64,
         "mae": pl.Int64,
         "mfe": pl.Int64,
+        "max_drawdown_ticks": pl.Int64,
+        "max_drawdown": pl.Int64,
+        "path_fidelity": pl.String,
     }
 )
 """The trades as the engine records them (`fefat_run::trade_tables`)."""
@@ -108,6 +117,18 @@ TRADES = pl.Schema(
 """The trades artifact's columns but the features at entry: the engine's, the trade date of the
 entry's fill, the initial risk over the entry's lots in micro-units, and the profit and loss and
 the excursions over it, in R; the last four null for a trade without a stop."""
+TRADE_PATHS = pl.Schema(
+    {
+        "trade": pl.Int64,
+        "ts": pl.Int64,
+        "price": pl.Int64,
+        "kind": pl.String,
+        "order": pl.UInt64,
+    }
+)
+"""Each point of each trade's path (`fefat_run::trade_tables`): its trade's row in `trades`, its
+instant and price, its kind, `fill`, `minute`, `favourable`, `adverse`, or `possible_adverse`,
+and a fill's order, null for any other point."""
 ENGINE_EQUITY = pl.Schema(
     {"ts": pl.Int64, "cash": pl.Int64, "position": pl.Int64, "mark": pl.Int64, "equity": pl.Int64}
 )
@@ -140,6 +161,7 @@ ARTIFACT_SCHEMAS: dict[str, pl.Schema] = {
     "log": LOG,
     "costs": COSTS,
     "trades": TRADES,
+    "trade_paths": TRADE_PATHS,
     "equity": EQUITY,
     "equity_daily": EQUITY_DAILY,
     "signals": SIGNALS,

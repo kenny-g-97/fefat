@@ -29,7 +29,7 @@ from fefat.reference.settings import RunSettings, SlippageTicks
 from fefat.reference.units import CAPITAL, instrument_parameters
 from notebook_runs import breakout, store_with
 
-TABLES = ("fills", "orders", "log", "costs", "trades", "equity")
+TABLES = ("fills", "orders", "log", "costs", "trades", "trade_paths", "equity")
 CASES = 100
 
 
@@ -105,6 +105,31 @@ def test_the_bindings_return_the_tables_fefat_cli_writes_for_the_same_case(
     assert not expected["trades"].is_empty()
     for name in TABLES:
         assert pl.DataFrame(run[name]).equals(expected[name]), name
+
+
+def test_fills_and_trades_hash_alike_with_and_without_trade_paths(
+    cached_month: tuple[Path, pl.DataFrame],
+) -> None:
+    # Step 2.13's Done means 2: recording paths is a pure observer of the loop (`02` §4), so a
+    # sweep's trials, which `run_batch` runs without paths unless asked for them, fill and trade
+    # as a saved run does.
+    folder, bars = cached_month
+    strategy = breakout(12)
+    config = config_json(RunSettings.for_fidelity(TickFidelity.TRADES))
+    case = (strategy.to_spec().document_json(), engine_frame(strategy, bars), [str(folder)], config)
+
+    with_paths = fefat_engine.run_signal_backtest(*case, "skipping")
+    without = fefat_engine.run_signal_backtest(*case, "skipping", trade_paths=False)
+    [batched] = fefat_engine.run_batch([case], "skipping")
+
+    for name in ("fills", "trades"):
+        runs = (with_paths, without, batched)
+        hashes = {fefat_engine.table_hash(pl.DataFrame(run[name])) for run in runs}
+        assert len(hashes) == 1, name
+    assert pl.DataFrame(with_paths["trades"]).height > 0
+    assert pl.DataFrame(with_paths["trade_paths"]).height > 0
+    assert pl.DataFrame(without["trade_paths"]).is_empty()
+    assert pl.DataFrame(batched["trade_paths"]).is_empty()
 
 
 def test_a_batch_of_100_runs_shares_the_cache_and_uses_more_than_one_core(

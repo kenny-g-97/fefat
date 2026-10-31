@@ -21,19 +21,19 @@ use crate::strategy::{ScenarioOrder, ScenarioOrders};
 use crate::template::{SignalRow, TemplateStrategy};
 
 /// 2026-03-06, the trade date of the scenarios' tapes.
-const TRADE_DATE: TradeDate = TradeDate(20_518);
+pub(super) const TRADE_DATE: TradeDate = TradeDate(20_518);
 /// 2026-03-06T14:30:00Z.
-const HALF_PAST_TWO: i64 = 1_772_807_400 * 1_000_000_000;
+pub(super) const HALF_PAST_TWO: i64 = 1_772_807_400 * 1_000_000_000;
 
-fn at(milliseconds: i64) -> Ts {
+pub(super) fn at(milliseconds: i64) -> Ts {
     Ts(HALF_PAST_TWO + milliseconds * 1_000_000)
 }
 
-fn price(hundredths: i64) -> Price {
+pub(super) fn price(hundredths: i64) -> Price {
     Price(hundredths * 10_000_000)
 }
 
-fn es() -> InstrumentParameters {
+pub(super) fn es() -> InstrumentParameters {
     InstrumentParameters::new(
         Price(250_000_000),
         Money(50 * MONEY_UNITS),
@@ -53,7 +53,7 @@ fn day(tbbo: Vec<TbboRow>, trades: Vec<TradeRow>) -> InMemoryMarketData {
 }
 
 /// Trades of `(milliseconds after 14:30, price in hundredths, size)`.
-fn trades(records: &[(i64, i64, i64)]) -> InMemoryMarketData {
+pub(super) fn trades(records: &[(i64, i64, i64)]) -> InMemoryMarketData {
     let rows = records
         .iter()
         .map(|&(milliseconds, hundredths, size)| TradeRow {
@@ -80,7 +80,7 @@ fn tbbo(records: &[(i64, i64, i64, i64, i64, i64, i64)]) -> InMemoryMarketData {
     day(rows.collect(), Vec::new())
 }
 
-fn order(id: u64, side: Side, kind: OrderKind) -> ScenarioOrder {
+pub(super) fn order(id: u64, side: Side, kind: OrderKind) -> ScenarioOrder {
     ScenarioOrder {
         placed_at: at(0),
         id: OrderId(id),
@@ -113,13 +113,13 @@ fn bracketed(order: ScenarioOrder, stop: (u64, i64), target: (u64, i64)) -> Scen
     }
 }
 
-fn stop(hundredths: i64) -> OrderKind {
+pub(super) fn stop(hundredths: i64) -> OrderKind {
     OrderKind::StopMarket {
         stop: price(hundredths),
     }
 }
 
-fn limit(hundredths: i64) -> OrderKind {
+pub(super) fn limit(hundredths: i64) -> OrderKind {
     OrderKind::Limit {
         limit: price(hundredths),
     }
@@ -137,7 +137,7 @@ fn long_one() -> Ledger {
     .unwrap()
 }
 
-fn flat() -> Ledger {
+pub(super) fn flat() -> Ledger {
     Ledger::new(es(), Money(50_000 * MONEY_UNITS))
 }
 
@@ -166,7 +166,7 @@ fn bars(timeframe: Timeframe, rows: &[(i64, i64, [i64; 4], i64)]) -> InMemoryMar
 
 /// 1-minute bars of `(minutes after 14:30 it opens, its open, high, low, and close in
 /// hundredths, its volume)`.
-fn minutes(rows: &[(i64, [i64; 4], i64)]) -> InMemoryMarketData {
+pub(super) fn minutes(rows: &[(i64, [i64; 4], i64)]) -> InMemoryMarketData {
     let rows: Vec<(i64, i64, [i64; 4], i64)> = rows
         .iter()
         .map(|&(minute, prices, volume)| (minute * 60, 60, prices, volume))
@@ -196,7 +196,7 @@ fn run(
     .unwrap()
 }
 
-fn run_orders(
+pub(super) fn run_orders(
     reader: &InMemoryMarketData,
     fidelity: Fidelity,
     ledger: Ledger,

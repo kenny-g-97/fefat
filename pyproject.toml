@@ -20,6 +20,7 @@ dev = [
     "import-linter",
     "ipykernel>=7.4.0",
     "jsonschema>=4.26.0",
+    "matplotlib>=3.11.2",
     "maturin>=1.15.0",
     "nbstripout",
     "pyarrow==26.0.0",
