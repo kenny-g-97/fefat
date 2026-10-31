@@ -231,6 +231,8 @@ def _market_entry(
         decided_on = bars.at_or_before(decision)
         if decided_on is None:
             return None
+        # shortcut: legs already past the deciding close at submission, which Nautilus fills at
+        # once, are not judged; unreachable while the levels are set from that close.
         return _Entered(decided_on, decision, decided_on.close, decided_on.close, None, [])
     next_bar = bars.after(decision)
     if next_bar is None:

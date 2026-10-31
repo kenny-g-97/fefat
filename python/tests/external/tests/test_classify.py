@@ -566,3 +566,37 @@ def test_a_target_at_the_entrys_own_point_fills_there_in_every_engine() -> None:
     classified = classify(trades(both), trades(both), bar, rules(NAUTILUS_OHLC))
 
     assert classified["outcome"].to_list() == [MATCH]
+
+
+def test_a_pair_whose_engines_placed_other_levels_is_unknown() -> None:
+    """Each trade is what its own rules give, but Nautilus's stop sits five ticks from FEFAT's:
+    the difference is the levels, not the bar's order, so no class may name it (the
+    engine-accuracy review's scenario)."""
+    bar = bars(
+        (0, 100.0, 101.25, 99.0, 101.5),
+        (1, 101.5, 102.75, 99.5, 100.5),
+        (2, 100.5, 101.0, 98.25, 99.0),
+    )
+    fefat = trade(
+        entry_kind="limit",
+        entry=101.0,
+        exit_minutes=2,
+        exit=98.5,
+        exit_reason="stop",
+        stop=98.5,
+        target=104.5,
+    )
+    nautilus = trade(
+        entry_kind="limit",
+        entry=101.0,
+        exit_minutes=1,
+        exit=99.5,
+        exit_reason="stop",
+        stop=99.75,
+        target=104.5,
+    )
+
+    classified = classify(trades(fefat), trades(nautilus), bar, rules(NAUTILUS_OHLC))
+
+    assert classified["entry_outcome"].to_list() == [MATCH]
+    assert classified["exit_outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]

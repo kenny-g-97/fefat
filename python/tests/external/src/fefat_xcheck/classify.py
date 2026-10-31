@@ -239,10 +239,11 @@ def _pair(
     expected_its = its.as_rules_give(rules, lookup)
     entries_given = mine.entry_is(expected_mine) and its.entry_is(expected_its)
     exits_given = mine.exit_is(expected_mine) and its.exit_is(expected_its)
+    same_levels = (mine.stop_price, mine.target_price) == (its.stop_price, its.target_price)
     entry = _entry_outcome(mine, its, rules) if entries_given else str(DifferenceClass.UNKNOWN)
     exit = (
         _exit_outcome(mine, its, rules, lookup)
-        if entries_given and exits_given
+        if entries_given and exits_given and same_levels
         else str(DifferenceClass.UNKNOWN)
     )
     return {
