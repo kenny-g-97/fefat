@@ -375,10 +375,10 @@ def external(*arguments: str) -> None:
     subprocess.run([*command, *arguments], cwd=REPOSITORY, env=environment, check=True)
 
 
-def _comparisons_in_the_store(store: Store) -> list[Comparison]:
+def _comparisons_in_the_store(store: Store, reports_dir: Path) -> list[Comparison]:
     """The Nautilus comparison, and the NinjaTrader 8 one where the store holds the provider's
     dataset of its root; a store without the NinjaTrader import skips it and says so."""
-    listed = dataset_status(store, resolve_paths(os.environ).reports_dir)
+    listed = dataset_status(store, reports_dir)
     comparisons = [NAUTILUS]
     held = listed.filter(
         (pl.col("provider") == NINJATRADER.provider) & (pl.col("root") == NINJATRADER.root)
@@ -394,13 +394,16 @@ def _comparisons_in_the_store(store: Store) -> list[Comparison]:
 
 def main() -> int:
     paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
     xcheck = paths.workspace_dir / XCHECK_FOLDER
-    for comparison in _comparisons_in_the_store(Store(paths.data_dir)):
+    comparisons = _comparisons_in_the_store(store, paths.reports_dir)
+    for comparison in comparisons:
         print(f"FEFAT's {comparison.name} side: {comparison.contract} on {comparison.provider}")
         record = export_fefat_side(comparison, xcheck / comparison.name)
         print(f"  {len(record['runs'])} runs under {xcheck / comparison.name / 'fefat'}")
-    (xcheck / NINJATRADER.name / EXPORT_FOLDER).mkdir(exist_ok=True)
-    raw, raw_file = raw_batch_file(Store(paths.data_dir), NAUTILUS)
+    if NINJATRADER in comparisons:
+        (xcheck / NINJATRADER.name / EXPORT_FOLDER).mkdir(parents=True, exist_ok=True)
+    raw, raw_file = raw_batch_file(store, NAUTILUS)
     cut = written_cut(xcheck / NAUTILUS.name, raw, raw_file, NAUTILUS)
     print(f"NautilusTrader's side on {cut.name}")
     external("nautilus", str(xcheck / NAUTILUS.name))

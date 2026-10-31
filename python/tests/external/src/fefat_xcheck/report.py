@@ -172,7 +172,8 @@ def _title(inputs: ReportInputs) -> str:
             "the rules give, and every explained difference falls into a class below. A market "
             "entry and a flat-by exit are compared by their prices, since their stamps are a "
             "convention of their own (`bar_boundary`); every other fill by its price and its "
-            "bar. A pair is exact when both its fills match.",
+            "bar. A pair is exact when both its fills match; its exits are alike when its exit "
+            "fills match, whatever its entries' convention.",
             "",
         ]
     )
@@ -262,11 +263,10 @@ def _engine_section(title: str, engine: EngineReport) -> str:
 def _trades_table(engine: EngineReport) -> str:
     header = (
         "| Strategy | Bar path | FEFAT | Other | Matched | Exact | Exact of matched | "
-        + " | ".join(CLASS_COLUMNS)
-        + " |"
+        "Exits alike of matched | " + " | ".join(CLASS_COLUMNS) + " |"
     )
     rule = (
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | "
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | "
         + " | ".join("---:" for _ in CLASS_COLUMNS)
         + " |"
     )
@@ -277,7 +277,8 @@ def _trades_table(engine: EngineReport) -> str:
         rows.append(
             f"| {strategy.strategy} | {strategy.conventions.name} | {summary.fefat_trades} | "
             f"{summary.other_trades} | {summary.matched} | {summary.exact} | "
-            f"{_rate(summary.exact, summary.matched)} | {counts} |"
+            f"{_rate(summary.exact, summary.matched)} | "
+            f"{_rate(summary.exits_alike, summary.matched)} | {counts} |"
         )
     return "\n".join([header, rule, *rows])
 

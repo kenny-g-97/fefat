@@ -1,6 +1,7 @@
 """What each engine does where the fill specification (`docs/spec/fill-semantics.md`) makes a
 choice FEFAT's own: when a market order decided at a bar close fills, and in which order a
-bar's extremes are visited. The classifier's predicates read these to explain a difference."""
+bar's extremes are visited. The replay (`fefat_xcheck.replay`) reads these to give each engine
+its own fills."""
 
 from dataclasses import dataclass
 from enum import StrEnum

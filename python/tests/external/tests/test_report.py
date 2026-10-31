@@ -142,7 +142,7 @@ def test_the_report_counts_matches_rates_and_classes_per_strategy() -> None:
     text = report_text(inputs(100.0))
 
     assert (
-        "| market | NautilusTrader, open-high-low-close | 1 | 1 | 1 | 0 | 0.0% | "
+        "| market | NautilusTrader, open-high-low-close | 1 | 1 | 1 | 0 | 0.0% | 100.0% | "
         "1 | 0 | 0 | 0 | 0 | 0 | 0 |"
     ) in text
     assert (
@@ -168,7 +168,10 @@ def test_the_ninjatrader_section_states_its_export_and_snapshot() -> None:
 
     assert "trades read from `trades.csv`" in text
     assert "d" * 64 in text
-    assert "| market | NinjaTrader 8 | 1 | 1 | 1 | 1 | 100.0% | 0 | 0 | 0 | 0 | 0 | 0 | 0 |" in text
+    assert (
+        "| market | NinjaTrader 8 | 1 | 1 | 1 | 1 | 100.0% | 100.0% | 0 | 0 | 0 | 0 | 0 | 0 | 0 |"
+        in text
+    )
 
 
 def test_an_unknown_difference_is_counted_and_refuses_the_report() -> None:

@@ -319,14 +319,16 @@ def _same_leg_apart(mine: Trade, rules: Rules, lookup: Bars, in_entry_bar: bool)
 @dataclass(frozen=True)
 class Summary:
     """One strategy's comparison in numbers: the trades of each engine, the pairs matched by
-    decision and side, the pairs whose two fills matched, the fills of the pairs that matched
-    (two a pair) and those equal, the trades by class (the first class among a pair's fills, or
-    the lone trade's), the pairs' fills by class, and the trades left unknown."""
+    decision and side, the pairs whose two fills matched, the pairs whose exits matched, the
+    fills of the pairs that matched (two a pair) and those equal, the trades by class (the first
+    class among a pair's fills, or the lone trade's), the pairs' fills by class, and the trades
+    left unknown."""
 
     fefat_trades: int
     other_trades: int
     matched: int
     exact: int
+    exits_alike: int
     fills_compared: int
     equal_fills: int
     trades_by_class: dict[str, int]
@@ -348,6 +350,7 @@ def summarise(classified: pl.DataFrame) -> Summary:
         other_trades=int(classified["in_other"].sum()),
         matched=paired.height,
         exact=paired.filter(pl.col("outcome") == MATCH).height,
+        exits_alike=paired.filter(pl.col("exit_outcome") == MATCH).height,
         fills_compared=2 * paired.height,
         equal_fills=equal,
         trades_by_class=dict(sorted(Counter(differing["outcome"].to_list()).items())),

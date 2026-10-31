@@ -1,6 +1,6 @@
 # FEFAT against NautilusTrader and NinjaTrader 8
 
-Written by `just xcheck` on 2026-10-31 (step 2.14, `02-engine-and-data.md` §8 item 5, D-51, D-59): the same strategies on MESU2026 from 2026-08-03 to 2026-08-31, deciding on 5-minute closes and filling on 1-minute bars, FEFAT under the compatibility profile (touch fills, no slippage ticks, no latency, FEFAT's own bar path), and the market strategy on MNQU2026 against NinjaTrader 8. Trades are matched by the decision that entered them and their side. Each engine's trade is held to a replay of its own documented rules on the 1-minute bars (`fefat_xcheck.replay`), so a difference is explained only where both fills are what the rules give, and every explained difference falls into a class below. A market entry and a flat-by exit are compared by their prices, since their stamps are a convention of their own (`bar_boundary`); every other fill by its price and its bar. A pair is exact when both its fills match.
+Written by `just xcheck` on 2026-10-31 (step 2.14, `02-engine-and-data.md` §8 item 5, D-51, D-59): the same strategies on MESU2026 from 2026-08-03 to 2026-08-31, deciding on 5-minute closes and filling on 1-minute bars, FEFAT under the compatibility profile (touch fills, no slippage ticks, no latency, FEFAT's own bar path), and the market strategy on MNQU2026 against NinjaTrader 8. Trades are matched by the decision that entered them and their side. Each engine's trade is held to a replay of its own documented rules on the 1-minute bars (`fefat_xcheck.replay`), so a difference is explained only where both fills are what the rules give, and every explained difference falls into a class below. A market entry and a flat-by exit are compared by their prices, since their stamps are a convention of their own (`bar_boundary`); every other fill by its price and its bar. A pair is exact when both its fills match; its exits are alike when its exit fills match, whatever its entries' convention.
 
 ## Versions and data
 
@@ -35,14 +35,14 @@ Written by `just xcheck` on 2026-10-31 (step 2.14, `02-engine-and-data.md` §8 i
 
 ### Trades
 
-| Strategy | Bar path | FEFAT | Other | Matched | Exact | Exact of matched | bar_boundary | bar_path | entry_bar_path | leg_released_through | gap_limit_clamped | cascade | unknown |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| market | NautilusTrader, open-high-low-close | 1007 | 1007 | 1007 | 540 | 53.6% | 463 | 4 | 0 | 0 | 0 | 0 | 0 |
-| market | NautilusTrader, nearest extreme first | 1007 | 1007 | 1007 | 542 | 53.8% | 463 | 2 | 0 | 0 | 0 | 0 | 0 |
-| limit | NautilusTrader, open-high-low-close | 909 | 910 | 909 | 768 | 84.5% | 0 | 2 | 26 | 113 | 0 | 1 | 0 |
-| limit | NautilusTrader, nearest extreme first | 909 | 911 | 909 | 759 | 83.5% | 0 | 2 | 35 | 113 | 0 | 2 | 0 |
-| stop | NautilusTrader, open-high-low-close | 912 | 907 | 907 | 778 | 85.8% | 0 | 2 | 30 | 97 | 0 | 5 | 0 |
-| stop | NautilusTrader, nearest extreme first | 912 | 906 | 906 | 793 | 87.5% | 0 | 1 | 16 | 96 | 0 | 6 | 0 |
+| Strategy | Bar path | FEFAT | Other | Matched | Exact | Exact of matched | Exits alike of matched | bar_boundary | bar_path | entry_bar_path | leg_released_through | gap_limit_clamped | cascade | unknown |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| market | NautilusTrader, open-high-low-close | 1007 | 1007 | 1007 | 540 | 53.6% | 99.1% | 463 | 4 | 0 | 0 | 0 | 0 | 0 |
+| market | NautilusTrader, nearest extreme first | 1007 | 1007 | 1007 | 542 | 53.8% | 99.5% | 463 | 2 | 0 | 0 | 0 | 0 | 0 |
+| limit | NautilusTrader, open-high-low-close | 909 | 910 | 909 | 768 | 84.5% | 84.5% | 0 | 2 | 26 | 113 | 0 | 1 | 0 |
+| limit | NautilusTrader, nearest extreme first | 909 | 911 | 909 | 759 | 83.5% | 83.5% | 0 | 2 | 35 | 113 | 0 | 2 | 0 |
+| stop | NautilusTrader, open-high-low-close | 912 | 907 | 907 | 778 | 85.8% | 85.8% | 0 | 2 | 30 | 97 | 0 | 5 | 0 |
+| stop | NautilusTrader, nearest extreme first | 912 | 906 | 906 | 793 | 87.5% | 87.5% | 0 | 1 | 16 | 96 | 0 | 6 | 0 |
 
 ### Fills
 
@@ -127,14 +127,15 @@ Differences without a class, unknown: 0.
 
 - NinjaTrader 8 (the builder's installed platform).
 - Strategy Analyzer: `FefatCrossCheck.cs` on MNQ 09-26, a 5-minute series, order fill resolution High on 1-minute bars, slippage 0, limit orders filled on touch, exit on session close off, GTC; the strategy's stop and target are Set() orders at prices from the signal bar's close, its flat-by an exit at the market named `FlatBy`.
-- NinjaTrader 8's trades read from `trades.csv`: 1,354 trades, of which 1,354 were decided on a 5-minute close of FEFAT's grid (a market fill stamped with the next minute, H1); commission as exported 0.00 USD, not compared.
+- NinjaTrader 8's trades read from `trades.csv`: 1,354 trades, of which 1,354 were stamped one minute after the 5-minute close that decided them (a market fill at the next minute's open, H1); commission as exported 0.00 USD, not compared.
+- The export holds no order prices: NinjaTrader's stop and target are the signal frame's levels, which the strategy sets from the same close, so they are checked through the exits filled at a level rather than compared with FEFAT's.
 - Data: the store's NinjaTrader import of MNQU2026 (`ninjatrader/ohlcv-1m/root=MNQ`, snapshot `9882cbbe70782c9f8fe8eb13691c8b5ed7913c5aa9ab13f04b6ff7d782d33271` of the request 2026-07-31 to 2026-08-31), NinjaTrader's own history exported on 2026-10-13, which the Strategy Analyzer also reads.
 
 ### Trades
 
-| Strategy | Bar path | FEFAT | Other | Matched | Exact | Exact of matched | bar_boundary | bar_path | entry_bar_path | leg_released_through | gap_limit_clamped | cascade | unknown |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| market | NinjaTrader 8 | 1354 | 1354 | 1354 | 1293 | 95.5% | 0 | 60 | 0 | 0 | 1 | 0 | 0 |
+| Strategy | Bar path | FEFAT | Other | Matched | Exact | Exact of matched | Exits alike of matched | bar_boundary | bar_path | entry_bar_path | leg_released_through | gap_limit_clamped | cascade | unknown |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| market | NinjaTrader 8 | 1354 | 1354 | 1354 | 1293 | 95.5% | 95.5% | 0 | 60 | 0 | 0 | 1 | 0 | 0 |
 
 ### Fills
 

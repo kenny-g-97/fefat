@@ -27,6 +27,7 @@ from fefat_xcheck.report import (
     report_text,
     unknown_count,
 )
+from fefat_xcheck.units import MINUTE
 
 NAUTILUS_FOLDER, NINJATRADER_FOLDER, EXPORT_FOLDER = "nautilus", "nt8", "export"
 NAUTILUS_PATHS = (("ohlc", NAUTILUS_OHLC), ("adaptive", NAUTILUS_ADAPTIVE))
@@ -131,12 +132,15 @@ def ninjatrader_report(folder: Path, export: Path) -> EngineReport:
         .select(list(TRADE_COLUMNS))
         .cast(TRADE_COLUMNS)
     )
-    on_grid = exported.filter(pl.col("entry_decision").is_in(signals["ts_close"].implode())).height
+    next_minute = exported.filter(pl.col("entry_ts") - pl.col("entry_decision") == MINUTE).height
     checks = (
         f"NinjaTrader 8's trades read from `{export.name}`: {exported.height:,} trades, of which "
-        f"{on_grid:,} were decided on a 5-minute close of FEFAT's grid (a market fill stamped "
-        "with the next minute, H1); commission as exported "
+        f"{next_minute:,} were stamped one minute after the 5-minute close that decided them (a "
+        "market fill at the next minute's open, H1); commission as exported "
         f"{exported['commission'].sum():,.2f} USD, not compared.",
+        "The export holds no order prices: NinjaTrader's stop and target are the signal frame's "
+        "levels, which the strategy sets from the same close, so they are checked through the "
+        "exits filled at a level rather than compared with FEFAT's.",
         f"Data: the store's NinjaTrader import of {facts['instrument']['contract']} "
         f"(`{facts['snapshot']['dataset']}`, snapshot `{facts['snapshot']['sha256']}` of the "
         f"request {facts['snapshot']['first']} to {facts['snapshot']['last']}), NinjaTrader's "

@@ -300,7 +300,11 @@ def _bars(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         frame = load(
-            contract or root, str(timeframe), *dates, fidelity=timeframe, provider=provider
+            root if contract is None else contract,
+            str(timeframe),
+            *dates,
+            fidelity=timeframe,
+            provider=provider,
         ).collect()
     if contract is not None:
         return _cut(stored_bars(frame), *instants), (), contract

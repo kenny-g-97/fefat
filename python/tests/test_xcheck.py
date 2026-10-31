@@ -3,17 +3,23 @@
 the other engines' sides read, on the synthetic store."""
 
 import json
+import os
 from datetime import date
 from pathlib import Path
 
 import polars as pl
+import pytest
 
+from fefat.config import resolve_paths
 from fefat.market.importers.dbn import read_dbn
+from fefat.market.store import Store
 from notebook_runs import SYNTHETIC, store_with
 from xcheck import (
+    NAUTILUS,
     Comparison,
     CrossCheckStrategy,
     EntryKind,
+    _comparisons_in_the_store,
     cut_month,
     export_fefat_side,
     instrument_id_of,
@@ -116,3 +122,17 @@ def test_the_fefat_side_writes_its_tables_and_record(tmp_path: Path) -> None:
     bars = pl.read_parquet(tmp_path / "fefat" / "bars_1m.parquet")
     assert bars.columns == ["ts_open", "ts_close", "open", "high", "low", "close", "volume"]
     assert bars.height == 2 * 1380
+
+
+def test_a_store_without_the_ninjatrader_import_skips_that_comparison(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The synthetic store holds no `ninjatrader` dataset of MNQ: the Nautilus comparison runs
+    alone, and the script says so rather than failing on the missing data."""
+    store_with("ohlcv-1m")
+    paths = resolve_paths(os.environ)
+
+    comparisons = _comparisons_in_the_store(Store(paths.data_dir), paths.reports_dir)
+
+    assert comparisons == [NAUTILUS]
+    assert "NinjaTrader 8 comparison is skipped" in capsys.readouterr().out
