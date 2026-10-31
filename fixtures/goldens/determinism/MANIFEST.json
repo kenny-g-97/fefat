@@ -3,12 +3,12 @@
   "versions": {
     "engine": 8,
     "fill_model": 1,
-    "artifact_schema": 1
+    "artifact_schema": 2
   },
   "inputs": {
     "seed": 20260308
   },
   "outputs": {
-    "digest": "df682dbc5b098a9afe783216593e397058b1be7a82b9c93b281530062ffb3df6"
+    "digest": "38bd8845e1d3f2b48b1500ac002a4e571037843d11a966a6cc26e4bfcf5f2144"
   }
 }
