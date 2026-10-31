@@ -121,10 +121,7 @@ pub fn trade_paths_table(runs: &[(i64, RunOutputs)]) -> Result<RecordBatch, Arro
         ("ts", int(|(_, _, point)| point.ts.0)),
         ("price", int(|(_, _, point)| point.price.0)),
         ("kind", Arc::new(StringArray::from_iter_values(kinds))),
-        (
-            "order",
-            Arc::new(UInt64Array::from(orders.collect::<Vec<_>>())),
-        ),
+        ("order", Arc::new(orders.collect::<UInt64Array>())),
     ])
 }
 
