@@ -41,9 +41,9 @@ class DifferenceClass(StrEnum):
     FEFAT at the next 1-minute bar's open (F-MKT-03, F-ACT-02)."""
 
     BAR_PATH = "bar_path"
-    """One later bar reached both legs of the bracket: FEFAT visits the adverse extreme first
-    and fills the stop (F-BAR-02, flagged ambiguous by F-BAR-05); the other engine's path visits
-    the target's extreme first."""
+    """A bar held from its open, a later bar or a market entry's own bar, reached both legs of
+    the bracket: FEFAT visits the adverse extreme first and fills the stop (F-BAR-02, F-BAR-04,
+    flagged ambiguous by F-BAR-05); the other engine's path visits the target's extreme first."""
 
     ENTRY_BAR_PATH = "entry_bar_path"
     """After an entry inside a bar, the two engines visit the bar's remaining extremes in

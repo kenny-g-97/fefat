@@ -97,7 +97,7 @@ A market order decided at a 5-minute close. NautilusTrader settles an order subm
 
 ### `bar_path`
 
-One later 1-minute bar reached both the stop and the target. FEFAT visits a bar's adverse extreme first while holding a position, so the stop fills (F-BAR-02) and the fill is flagged ambiguous (F-BAR-05). NautilusTrader visits the open, the high, the low, and the close in that order, or with `bar_adaptive_high_low_ordering` the extreme nearer the open first, the low on a tie; NinjaTrader 8 the extreme nearer the open first, the high on a tie (H2). The replay of both paths gives each engine the leg it took.
+A 1-minute bar the position was held through from its open, a later bar or the bar a market entry filled at the open of, reached both the stop and the target. FEFAT visits a bar's adverse extreme first while holding a position, so the stop fills (F-BAR-02, F-BAR-04) and the fill is flagged ambiguous (F-BAR-05). NautilusTrader visits the open, the high, the low, and the close in that order, or with `bar_adaptive_high_low_ordering` the extreme nearer the open first, the low on a tie; NinjaTrader 8 the extreme nearer the open first, the high on a tie (H2). The replay of both paths gives each engine the leg it took.
 
 ### `entry_bar_path`
 

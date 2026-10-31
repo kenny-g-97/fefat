@@ -553,3 +553,16 @@ def test_the_nearest_extreme_first_on_a_tie_is_the_engines_own() -> None:
     assert NINJATRADER.first_extreme(*halfway, long=True) == Extreme.HIGH
     assert NAUTILUS_ADAPTIVE.first_extreme(*nearer_high, long=False) == Extreme.HIGH
     assert NAUTILUS_OHLC.first_extreme(*halfway, long=False) == Extreme.HIGH
+
+
+def test_a_target_at_the_entrys_own_point_fills_there_in_every_engine() -> None:
+    """A buy stop two ticks over the close fills at a gap open exactly at the target: FEFAT's
+    target is past at the entry's point and fills there at its price (the reference engine's
+    `fill`, F-OCO-02, F-LMT-03), as Nautilus's released target does on the open tick, although
+    the bar also reaches the stop."""
+    bar = bars((0, 100.0, 100.25, 99.75, 100.0), (1, 103.0, 103.5, 96.5, 100.0))
+    both = trade(entry_kind="stop", entry=103.0, exit_minutes=1, exit=103.0)
+
+    classified = classify(trades(both), trades(both), bar, rules(NAUTILUS_OHLC))
+
+    assert classified["outcome"].to_list() == [MATCH]

@@ -284,13 +284,20 @@ def _at_or_past(price: int, level: int, upward: bool) -> bool:
 def _exit_on_the_entry_bar(
     entered: _Entered, legs: Legs, conventions: EngineConventions
 ) -> Exit | None:
-    """The leg the rest of the entry's bar fills, and its price."""
+    """The leg the rest of the entry's bar fills, and its price. Legs released on a tick fill
+    at that tick's price when it is past them; legs placed at the entry's point of a path are
+    judged there at once, a stop through it filling there (F-STP-05) and a target it reaches at
+    its price (F-LMT-03, clamped where the engine clamps), as the reference engine's `fill`
+    does."""
     if entered.release_price is not None:
         for reason in (ExitReason.STOP, ExitReason.TARGET):
             if legs.past(entered.release_price, reason):
                 return entered.bar.ts_close, entered.release_price, reason
     elif entered.remaining and legs.past(entered.market, ExitReason.STOP):
         return entered.bar.ts_close, entered.market, ExitReason.STOP
+    elif entered.remaining and legs.past(entered.market, ExitReason.TARGET):
+        price = _limit_price(entered.bar, legs.target, conventions)
+        return entered.bar.ts_close, price, ExitReason.TARGET
     leg = _first_leg_crossed(entered.market, entered.remaining, legs)
     if leg is None:
         return None
