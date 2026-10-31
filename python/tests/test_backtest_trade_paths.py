@@ -49,16 +49,18 @@ def test_every_saved_run_holds_its_trades_paths_and_the_mix_of_their_fidelities(
 def test_each_trades_path_runs_from_its_entry_to_the_fill_that_closes_it_through_its_mae() -> None:
     # Your checks: a path starts at its entry's fill and ends at the fill that closes it, the
     # trade's exit price when one fill closed it, and its most adverse price is the trade's MAE.
-    # A roll's legs, which no excursion counts, and a bar's possible adverse extreme are left out.
+    # The legs of a roll that transfers the trade, which no excursion counts, and a bar's possible
+    # adverse extreme are left out; a roll's close leg that flattens the trade is its last fill.
     run = ff.backtest.run(breakout(), *WINDOW)
     tick = instrument_parameters(instruments.get("ES")).tick
     roles = run.fills.select("order", "role")
     points = run.trade_paths.join(roles, on="order", how="left", maintain_order="left")
-    of_the_market = (~pl.col("role").str.starts_with("roll_")).fill_null(True) & (
-        pl.col("kind") != "possible_adverse"
-    )
     for trade, row in enumerate(run.trades.iter_rows(named=True)):
-        path = points.filter(pl.col("trade") == trade)
+        path = points.filter(pl.col("trade") == trade).with_row_index("at")
+        transfer_leg = pl.col("role").str.starts_with("roll_").fill_null(False) & (
+            pl.col("at") < path.height - 1
+        )
+        of_the_market = ~transfer_leg & (pl.col("kind") != "possible_adverse")
         first, last = path.row(0, named=True), path.row(-1, named=True)
         assert (first["kind"], first["order"]) == ("fill", row["entry_order"])
         assert (first["ts"], first["price"]) == (row["entry_ts"], row["entry_price"])
