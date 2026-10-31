@@ -34,12 +34,27 @@ EXPLANATIONS = {
         "(H2). The predicate checks the bar's range covers both levels and that the other "
         "engine's order of extremes reaches the leg it took first."
     ),
-    DifferenceClass.SAME_BAR_BRACKET: (
-        "An entry filled inside a 1-minute bar. FEFAT places the exit plan at the entry's point "
-        "of the bar's path and works it on the rest of the bar, the extremes not yet reached "
-        "adverse first (F-OCO-02, F-BAR-04); the other engine's legs met the bar after instead, "
-        "or the reverse. The predicate checks the early engine's exit fell in its entry's bar "
-        "and that the bar's range reaches the leg it took."
+    DifferenceClass.ENTRY_BAR_PATH: (
+        "A limit or stop entry filled inside a 1-minute bar, and the two engines visit the rest "
+        "of the bar in different orders. Flat, FEFAT visits the extreme favourable to the entry "
+        "first, the high for a buy (F-BAR-03); after the fill, the extremes not yet reached come "
+        "adverse first, then the close (F-BAR-04), the exit plan working from the entry's point "
+        "(F-OCO-02). NautilusTrader visits the open, the high, the low, and the close in its "
+        "fixed or adaptive order whatever the entry, so an extreme FEFAT visited before the "
+        "fill can come after it there, or the reverse: one engine fills a leg on the rest of the "
+        "bar while the other carries the position into the next bar, or they fill different "
+        "legs. The predicate replays both paths on the bar (`fefat_xcheck.entry_bar`) and "
+        "requires each engine's exit on the bar, or none, to be what its path gives."
+    ),
+    DifferenceClass.LEG_RELEASED_THROUGH: (
+        "A limit or stop entry filled inside a 1-minute bar on a tick already past one of its "
+        "legs. NautilusTrader releases the stop and the target on the tick that fills the entry, "
+        "and a leg whose level that tick's price is past fills at that price: a buy limit filled "
+        "on the low tick has its stop filled at the low, below the stop's level; a buy stop "
+        "filled on the high tick has its target filled at the high, above the target's level. "
+        "FEFAT works the legs on the rest of the path from the entry's point and fills a stop at "
+        "its level (F-STP-04) and a target at its price, never better (F-LMT-03). The predicate "
+        "replays both paths and requires both exits, at the same leg, to be what they give."
     ),
     DifferenceClass.CASCADE: (
         "A trade one engine made while the other still held a position at that decision, after "

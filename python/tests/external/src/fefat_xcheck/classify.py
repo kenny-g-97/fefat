@@ -17,6 +17,7 @@ from enum import StrEnum
 import polars as pl
 
 from fefat_xcheck.conventions import EngineConventions, Extreme, MarketFill
+from fefat_xcheck.entry_bar import EntryBar, fefat_exit, other_exit
 
 MATCH = "match"
 """A fill, or a trade, the other engine made alike."""
@@ -34,9 +35,16 @@ class DifferenceClass(StrEnum):
     the stop (F-BAR-02, flagged ambiguous by F-BAR-05); the other engine's path visits the
     target's extreme first."""
 
-    SAME_BAR_BRACKET = "same_bar_bracket"
-    """An exit plan placed at an entry inside a bar works on the rest of that bar's path in FEFAT
-    (F-OCO-02, F-BAR-04), while the other engine's legs see the bar after; or the reverse."""
+    ENTRY_BAR_PATH = "entry_bar_path"
+    """After an entry inside a bar, the two engines visit the bar's remaining extremes in
+    different orders (F-BAR-03, F-BAR-04 against the other engine's fixed or adaptive order), so
+    one fills a leg on the rest of the bar where the other carries the position out of it, or
+    they fill different legs."""
+
+    LEG_RELEASED_THROUGH = "leg_released_through"
+    """The tick an entry fills on releases its legs, and that tick is already past a leg's level:
+    NautilusTrader fills the leg at the tick's price, the bar's extreme; FEFAT works the leg on
+    the rest of the path and fills it at its level (F-OCO-02, F-STP-04, F-LMT-03)."""
 
     CASCADE = "cascade"
     """A trade one engine made while the other still held a position, after an earlier
@@ -290,9 +298,7 @@ def _exit_outcome(mine: Trade, its: Trade, lookup: Bars, conventions: EngineConv
         return str(DifferenceClass.UNKNOWN)
     if _other_path_reaches_its_leg_first(mine, its, lookup, conventions):
         return str(DifferenceClass.BAR_PATH)
-    if _one_exit_plan_worked_on_its_entrys_bar(mine, its, lookup):
-        return str(DifferenceClass.SAME_BAR_BRACKET)
-    return str(DifferenceClass.UNKNOWN)
+    return _entry_bar_outcome(mine, its, lookup, conventions)
 
 
 def _other_path_reaches_its_leg_first(
@@ -313,17 +319,40 @@ def _other_path_reaches_its_leg_first(
     return first == target_extreme
 
 
-def _one_exit_plan_worked_on_its_entrys_bar(mine: Trade, its: Trade, lookup: Bars) -> bool:
-    """One engine's exit fell in its entry's bar, whose range reaches the leg it took, while the
-    other engine's legs saw later bars only."""
-    for early, late in ((mine, its), (its, mine)):
-        if early.exit_ts != early.entry_ts or late.exit_ts <= late.entry_ts:
-            continue
-        level = early.level_of(early.exit_reason)
-        bar = lookup.at(early.entry_ts)
-        if level is not None and bar is not None and bar.reaches(level):
-            return True
-    return False
+def _entry_bar_outcome(
+    mine: Trade, its: Trade, lookup: Bars, conventions: EngineConventions
+) -> str:
+    """Both entries filled inside one bar: each engine's exit on the rest of that bar, or none,
+    must be what its path gives (`fefat_xcheck.entry_bar`); the two paths differing explains
+    the difference, as a leg filled at the releasing tick's price or as the order of the
+    extremes."""
+    bar = lookup.at(mine.entry_ts)
+    if mine.entry_kind == MARKET or bar is None or mine.entry_ts != its.entry_ts:
+        return str(DifferenceClass.UNKNOWN)
+    entry_bar = EntryBar(
+        bar.open,
+        bar.high,
+        bar.low,
+        bar.close,
+        mine.long,
+        mine.entry_kind,
+        mine.entry_price,
+        mine.stop_price,
+        mine.target_price,
+    )
+    expected_mine, expected_its = fefat_exit(entry_bar), other_exit(entry_bar, conventions)
+    observed_mine, observed_its = _exit_in_the_entry_bar(mine), _exit_in_the_entry_bar(its)
+    if expected_mine != observed_mine or expected_its != observed_its:
+        return str(DifferenceClass.UNKNOWN)
+    if expected_mine is None or expected_its is None or expected_mine[0] != expected_its[0]:
+        return str(DifferenceClass.ENTRY_BAR_PATH)
+    return str(DifferenceClass.LEG_RELEASED_THROUGH)
+
+
+def _exit_in_the_entry_bar(trade: Trade) -> tuple[str, int] | None:
+    if trade.exit_ts != trade.entry_ts:
+        return None
+    return trade.exit_reason, trade.exit_price
 
 
 @dataclass(frozen=True)

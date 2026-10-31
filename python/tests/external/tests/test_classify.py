@@ -164,39 +164,173 @@ def test_a_short_whose_bar_reaches_its_target_first_under_the_adaptive_path_is_b
     assert ohlc["outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]
 
 
-def test_a_bracket_working_on_the_rest_of_its_entrys_bar_is_same_bar_bracket() -> None:
-    reached_in_the_entry_bar = bars(
-        (0, 100.0, 100.25, 99.75, 100.0),
-        (1, 100.5, 100.75, 96.5, 97.5),
-        (2, 97.5, 98.0, 96.0, 96.25),
-    )
+def test_a_stop_released_on_the_tick_already_past_it_fills_at_that_tick_in_nautilus() -> None:
+    """A buy limit two ticks under the close fills on the next bar's low tick in Nautilus, and
+    the stop it releases is already below that tick: Nautilus fills it at the low, FEFAT at the
+    stop's level on the way down (the real pair of 2026-08-03 13:40 UTC, in ticks)."""
+    bar = bars((0, 100.0, 101.25, 99.0, 101.5), (1, 101.5, 102.75, 95.25, 100.5))
     fefat = trade(
         entry_kind="limit",
         entry_minutes=1,
-        entry=99.75,
+        entry=101.0,
         exit_minutes=1,
-        exit=97.0,
+        exit=98.5,
         exit_reason="stop",
-        stop=97.0,
-        target=103.0,
+        stop=98.5,
+        target=104.5,
     )
-    other = trade(
+    nautilus = trade(
         entry_kind="limit",
         entry_minutes=1,
-        entry=99.75,
-        exit_minutes=2,
-        exit=97.0,
+        entry=101.0,
+        exit_minutes=1,
+        exit=95.25,
         exit_reason="stop",
+        stop=98.5,
+        target=104.5,
+    )
+
+    classified = classify(trades(fefat), trades(nautilus), bar, NAUTILUS_OHLC, TICK)
+
+    assert classified["entry_outcome"].to_list() == [MATCH]
+    assert classified["exit_outcome"].to_list() == [str(DifferenceClass.LEG_RELEASED_THROUGH)]
+    assert classified["exit_ticks"].to_list() == [13]
+
+
+def test_a_target_released_on_the_tick_already_past_it_fills_at_that_tick_in_nautilus() -> None:
+    """A buy stop two ticks over the close fills on the next bar's high tick, which is already
+    above the target it releases: Nautilus fills the target at the high, FEFAT at its price."""
+    bar = bars((0, 100.0, 101.25, 99.0, 100.0), (1, 100.0, 107.0, 99.75, 105.0))
+    fefat = trade(
+        entry_kind="stop",
+        entry_minutes=1,
+        entry=100.5,
+        exit_minutes=1,
+        exit=103.0,
+        exit_reason="target",
+        stop=97.0,
+        target=103.0,
+    )
+    nautilus = trade(
+        entry_kind="stop",
+        entry_minutes=1,
+        entry=100.5,
+        exit_minutes=1,
+        exit=107.0,
+        exit_reason="target",
         stop=97.0,
         target=103.0,
     )
 
-    classified = classify(
-        trades(fefat), trades(other), reached_in_the_entry_bar, NAUTILUS_OHLC, TICK
+    classified = classify(trades(fefat), trades(nautilus), bar, NAUTILUS_ADAPTIVE, TICK)
+
+    assert classified["outcome"].to_list() == [str(DifferenceClass.LEG_RELEASED_THROUGH)]
+
+
+def test_a_released_leg_at_another_price_than_the_tick_is_unknown() -> None:
+    bar = bars((0, 100.0, 101.25, 99.0, 100.0), (1, 100.0, 107.0, 99.75, 105.0))
+    fefat = trade(
+        entry_kind="stop",
+        entry_minutes=1,
+        entry=100.5,
+        exit_minutes=1,
+        exit=103.0,
+        exit_reason="target",
+        stop=97.0,
+        target=103.0,
+    )
+    nautilus = trade(
+        entry_kind="stop",
+        entry_minutes=1,
+        entry=100.5,
+        exit_minutes=1,
+        exit=106.0,
+        exit_reason="target",
+        stop=97.0,
+        target=103.0,
     )
 
+    classified = classify(trades(fefat), trades(nautilus), bar, NAUTILUS_OHLC, TICK)
+
+    assert classified["outcome"].to_list() == [str(DifferenceClass.UNKNOWN)]
+
+
+def test_an_extreme_visited_after_the_entry_in_one_engine_only_is_entry_bar_path() -> None:
+    """A sell limit above the open fills on the way up. FEFAT visited the low before the fill
+    (the favourable extreme first, F-BAR-03) and goes high, close after it, so the target below
+    waits for the next bar; Nautilus's fixed order visits the low after the high and fills the
+    target on the rest of the bar (the real pair of 2026-08-04 18:00 UTC, in ticks)."""
+    bar = bars(
+        (0, 104.0, 104.25, 100.0, 100.0),
+        (1, 100.0, 101.75, 95.25, 97.25),
+        (2, 97.25, 101.75, 96.75, 101.5),
+    )
+    fefat = trade(
+        side="short",
+        entry_kind="limit",
+        entry_minutes=1,
+        entry=100.5,
+        exit_minutes=2,
+        exit=97.0,
+        exit_reason="target",
+        stop=103.0,
+        target=97.0,
+    )
+    nautilus = trade(
+        side="short",
+        entry_kind="limit",
+        entry_minutes=1,
+        entry=100.5,
+        exit_minutes=1,
+        exit=97.0,
+        exit_reason="target",
+        stop=103.0,
+        target=97.0,
+    )
+
+    classified = classify(trades(fefat), trades(nautilus), bar, NAUTILUS_OHLC, TICK)
+
     assert classified["entry_outcome"].to_list() == [MATCH]
-    assert classified["exit_outcome"].to_list() == [str(DifferenceClass.SAME_BAR_BRACKET)]
+    assert classified["exit_outcome"].to_list() == [str(DifferenceClass.ENTRY_BAR_PATH)]
+
+
+def test_a_stop_entry_whose_bar_reaches_the_stop_after_the_fill_in_fefat_only_is_entry_bar_path() -> (
+    None
+):
+    """A sell stop below the open fills on the way down to the low (the favourable extreme
+    first); FEFAT then visits the high, the short's adverse extreme, and fills the stop; Nautilus
+    visited the high before the low and carries the position into the next bar."""
+    bar = bars(
+        (0, 100.0, 100.25, 99.0, 100.0),
+        (1, 100.0, 104.0, 98.0, 102.5),
+        (2, 102.5, 104.0, 102.0, 103.5),
+    )
+    fefat = trade(
+        side="short",
+        entry_kind="stop",
+        entry_minutes=1,
+        entry=99.5,
+        exit_minutes=1,
+        exit=103.0,
+        exit_reason="stop",
+        stop=103.0,
+        target=97.0,
+    )
+    nautilus = trade(
+        side="short",
+        entry_kind="stop",
+        entry_minutes=1,
+        entry=99.5,
+        exit_minutes=2,
+        exit=103.0,
+        exit_reason="stop",
+        stop=103.0,
+        target=97.0,
+    )
+
+    classified = classify(trades(fefat), trades(nautilus), bar, NAUTILUS_OHLC, TICK)
+
+    assert classified["exit_outcome"].to_list() == [str(DifferenceClass.ENTRY_BAR_PATH)]
 
 
 def test_a_trade_of_one_engine_while_the_other_held_a_position_is_a_cascade() -> None:
@@ -267,3 +401,15 @@ def test_the_summary_counts_trades_and_fills_by_outcome() -> None:
     assert summary.trades_by_class == {"bar_boundary": 1, "unknown": 1}
     assert summary.fills_by_class == {"bar_boundary": 1, "unknown": 2}
     assert summary.unknown == 1
+
+
+def test_the_nearest_extreme_first_on_a_tie_is_the_engines_own() -> None:
+    from fefat_xcheck.conventions import Extreme
+
+    halfway = (price(100.0), price(104.0), price(96.0))
+    nearer_high = (price(100.0), price(103.0), price(96.0))
+
+    assert NAUTILUS_ADAPTIVE.first_extreme(*halfway, long=True) == Extreme.LOW
+    assert NINJATRADER.first_extreme(*halfway, long=True) == Extreme.HIGH
+    assert NAUTILUS_ADAPTIVE.first_extreme(*nearer_high, long=False) == Extreme.HIGH
+    assert NAUTILUS_OHLC.first_extreme(*halfway, long=False) == Extreme.HIGH

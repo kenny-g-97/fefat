@@ -29,7 +29,7 @@ class BarOrder(StrEnum):
 
     NEAREST_EXTREME_FIRST = "nearest_extreme_first"
     """NautilusTrader with `bar_adaptive_high_low_ordering`, and NinjaTrader 8 (H2): the extreme
-    nearer the open first, the high on a tie."""
+    nearer the open first; on a tie, the engine's `tie` extreme."""
 
 
 class Extreme(StrEnum):
@@ -44,6 +44,10 @@ class EngineConventions:
     name: str
     market_fill: MarketFill
     bar_order: BarOrder
+    tie: Extreme = Extreme.HIGH
+    """The extreme visited first when the open lies halfway between them, where the order is
+    the nearest extreme first: NinjaTrader 8 takes the high (H2), NautilusTrader the low (a run
+    of step 2.14 on a bar whose open sat halfway filled the long's stop)."""
 
     def first_extreme(self, open: int, high: int, low: int, long: bool) -> Extreme:
         """The extreme the engine's path visits first after the bar's open, for a position of
@@ -52,7 +56,9 @@ class EngineConventions:
             return Extreme.LOW if long else Extreme.HIGH
         if self.bar_order == BarOrder.OPEN_HIGH_LOW_CLOSE:
             return Extreme.HIGH
-        return Extreme.HIGH if high - open <= open - low else Extreme.LOW
+        if high - open == open - low:
+            return self.tie
+        return Extreme.HIGH if high - open < open - low else Extreme.LOW
 
 
 FEFAT = EngineConventions("FEFAT", MarketFill.NEXT_BAR_OPEN, BarOrder.ADVERSE_FIRST)
@@ -65,6 +71,7 @@ NAUTILUS_ADAPTIVE = EngineConventions(
     "NautilusTrader, nearest extreme first",
     MarketFill.AT_DECISION_CLOSE,
     BarOrder.NEAREST_EXTREME_FIRST,
+    tie=Extreme.LOW,
 )
 NINJATRADER = EngineConventions(
     "NinjaTrader 8", MarketFill.NEXT_BAR_OPEN, BarOrder.NEAREST_EXTREME_FIRST
