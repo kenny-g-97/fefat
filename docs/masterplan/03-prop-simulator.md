@@ -84,6 +84,8 @@ This record is enough for every rule in the taxonomy. A design review simulated 
 
 Size: compressed, a few MB for a typical intraday run; runs with many multi-day holds carry more, because every minute in a position has a mark. Step 2.13 measures both.
 
+Amended in step 2.13 (2026-10-31, D-65): the paths are a run's `trade_paths` artifact, a row per point, beside `trades` and `fills`, which a fill's point names by its `order` (`02` §7). A fill's point is at the fill's own price, so that a path ends at its trade's last exit and the equity runs on through each fill; a roll's two legs are points too, at their prices in the entry contract's prices, so that a replay charges their slippage for any size without the roll's gap, while the excursions in `trades` leave the legs out. A trade's path fidelity is the coarsest level its marks and fills came from (§4.4). After a favourable extreme a bar reached while its adverse extreme lies beyond its close, that extreme follows as a `possible_adverse` point, the order §15 of the fill specification leaves open, which the replay takes worst for each rule; the fall from the peak in `trades` follows the engine's assumed order. Measured on five generated years of ES 1-minute bars: a strategy holding minutes, 17,333 trades held 0.9 hours on average, keeps 2.5 million points in 11.5 MB, beside 0.5 MB of fills, about 2.3 MB a year; one holding days, 394 trades held 56 hours on average, keeps 3.5 million points in 15.9 MB. On 1-minute bars each minute restarts the tracking, so that a bar's extremes are points of its minute, about 2.7 points for each minute in a position.
+
 ### 4.3 Replay
 
 The replay walks the trades in time order and turns each trade path into account events (§3):
