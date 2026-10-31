@@ -4,8 +4,10 @@
 //! 10,000 generated months under a fixed seed: the equity at each whole minute; and, from a
 //! reference on a fill or a whole minute, for a drawn size and threshold, whether the equity
 //! relative to the reference reaches the threshold for the trade or against it, when, at what
-//! price, and by how much each crossing first does, which of the two comes first, and the highest
-//! and lowest equity from the reference on. A path's equity is the trade's position valued along its
+//! price, and by how much each crossing first does, which of the two comes first, the highest
+//! and lowest equity from the reference on, and, as a trailing drawdown reads it, the deepest fall
+//! from the highest equity before and the first fall that reaches the threshold; and each path's
+//! equity at its trade's last fill is the trade's gross profit and loss, the engine's own money. A path's equity is the trade's position valued along its
 //! prices, each fill valuing it at its own price before it changes the lots held; a bar's possible
 //! adverse extreme (§15) is the prop simulator's to weigh, and no point of the engine's path.
 //! Recording paths changes nothing else: each month runs with compact paths, as saved runs record
@@ -19,7 +21,7 @@ use std::collections::BTreeMap;
 
 use fefat_core::instants::{NANOSECONDS_PER_MINUTE, Ts};
 use fefat_core::orders::OrderId;
-use fefat_core::units::Price;
+use fefat_core::units::{MONEY_UNITS, PRICE_UNITS, Price};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
@@ -32,6 +34,8 @@ const SEED: u64 = 20_261_030;
 const CASES: u32 = 10_000;
 /// The tick of the drawn months' instrument, 0.25 in 1e-9 units.
 const TICK: i64 = 250_000_000;
+/// The money a lot of the drawn months' instrument makes per point, 50 in micro-units.
+const MONEY_PER_POINT: i64 = 50 * MONEY_UNITS;
 
 /// A question drawn for each trade: its reference, a fill of the trade for an even number and a
 /// whole minute for an odd one, the size that multiplies the trade's lots, and the threshold in
@@ -210,7 +214,10 @@ struct Crossing {
     change: i128,
 }
 
-/// What a prop rule asks from a reference, for one size and threshold.
+/// What a prop rule asks from a reference, for one size and threshold: the first crossings for
+/// the trade and against it, which comes first, the highest and lowest change, and, as a trailing
+/// drawdown reads it, the deepest fall from the highest change before, the reference's counted,
+/// and the first fall that reaches the threshold, by how much it fell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Answer {
     favourable: Option<Crossing>,
@@ -218,6 +225,8 @@ struct Answer {
     favourable_first: Option<bool>,
     highest: i128,
     lowest: i128,
+    deepest_fall: i128,
+    fall: Option<Crossing>,
 }
 
 /// The steps after `reference`, where its equity stands: those after its fill's step, or after
@@ -269,13 +278,39 @@ fn answer(
     };
     // From the reference on: its own change, none, counts, as it does for a threshold.
     let moved = std::iter::once(0).chain(changes.iter().map(|&(_, change)| change));
+    let (deepest_fall, fall) = trailing_fall(steps, &changes, threshold);
     Answer {
         favourable: favourable.map(|(_, crossing)| crossing),
         adverse: adverse.map(|(_, crossing)| crossing),
         favourable_first,
         highest: moved.clone().max().unwrap_or(0),
         lowest: moved.min().unwrap_or(0),
+        deepest_fall,
+        fall,
     }
+}
+
+/// The deepest fall of `changes` from the highest change before each, the reference's none
+/// first, and the first fall that reaches `threshold`.
+fn trailing_fall(
+    steps: &[Step],
+    changes: &[(usize, i128)],
+    threshold: i128,
+) -> (i128, Option<Crossing>) {
+    let (mut peak, mut deepest, mut first) = (0, 0, None);
+    for &(index, change) in changes {
+        peak = change.max(peak);
+        let fallen = peak - change;
+        deepest = fallen.max(deepest);
+        if first.is_none() && fallen >= threshold {
+            first = Some(Crossing {
+                ts: steps[index].ts,
+                price: steps[index].price,
+                change: fallen,
+            });
+        }
+    }
+    (deepest, first)
 }
 
 /// The reference a question draws among the trade's fills and its whole minutes.
@@ -299,6 +334,7 @@ struct Coverage {
     adverse_crossings: usize,
     favourable_first: usize,
     adverse_first: usize,
+    falls: usize,
     closed_in_parts: usize,
     across_a_close: usize,
     across_trade_dates: usize,
@@ -334,6 +370,17 @@ fn ask(
         equity_at_minutes(&compact_steps, &compact_equity, &minutes),
         equity_at_minutes(&full_steps, &full_equity, &minutes)
     );
+    // The engine's own money: each path's equity at the fill that closes the trade, in points of
+    // the drawn instrument, is the trade's gross profit and loss, a roll's legs and gaps included.
+    let gross = i128::from(trade.gross_pnl.0) * i128::from(PRICE_UNITS);
+    for equity in [&compact_equity, &full_equity] {
+        let closed = equity.last().copied().unwrap_or(0) * i128::from(MONEY_PER_POINT);
+        prop_assert_eq!(
+            closed,
+            gross,
+            "Expected the path's equity to be the gross P&L"
+        );
+    }
     let fills_of_trade: Vec<OrderId> = full_steps.iter().filter_map(|step| step.fill).collect();
     for &question in questions {
         let reference = reference_of(question, &fills_of_trade, &minutes);
@@ -353,6 +400,7 @@ fn ask(
         let both = full_answer.favourable.is_some() && full_answer.adverse.is_some();
         seen.favourable_first += usize::from(both && full_answer.favourable_first == Some(true));
         seen.adverse_first += usize::from(both && full_answer.favourable_first == Some(false));
+        seen.falls += usize::from(full_answer.fall.is_some());
     }
     seen.trades += 1;
     seen.closed_in_parts += usize::from(trade.exits > 1);
@@ -439,6 +487,7 @@ fn compact_trade_paths_answer_what_prop_rules_ask_as_the_full_paths_do_on_10000_
     for reached in [
         coverage.favourable_first,
         coverage.adverse_first,
+        coverage.falls,
         coverage.closed_in_parts,
         coverage.across_a_close,
         coverage.across_trade_dates,
