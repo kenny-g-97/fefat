@@ -81,7 +81,9 @@ def nautilus_report(folder: Path, fefat: dict[str, Any]) -> EngineReport:
             if order_name == NAUTILUS_PATHS[0][0]:
                 checks.append(decisions_check(signals, decisions, strategy["name"]))
             strategies.append(
-                _strategy_report(strategy, conventions, ours, theirs, fefat_bars, tick)
+                _strategy_report(
+                    strategy, conventions, ours, theirs, fefat_bars, tick, folder / "classified"
+                )
             )
     venue = engine["venue"]
     settings = (
@@ -143,7 +145,9 @@ def ninjatrader_report(folder: Path, export: Path) -> EngineReport:
         "session close off, GTC; the strategy's stop and target are Set() orders at prices from "
         "the signal bar's close, its flat-by an exit at the market named `FlatBy`.",
     )
-    report = _strategy_report(strategy, NINJATRADER, ours, theirs, bars, tick)
+    report = _strategy_report(
+        strategy, NINJATRADER, ours, theirs, bars, tick, folder / "classified"
+    )
     return EngineReport(
         engine="NinjaTrader 8 (the builder's installed platform)",
         settings=settings,
@@ -159,8 +163,14 @@ def _strategy_report(
     theirs: pl.DataFrame,
     bars: pl.DataFrame,
     tick: int,
+    classified_folder: Path,
 ) -> StrategyReport:
+    """One strategy classified against one engine, its table saved under `classified_folder`
+    for the check notebook."""
     classified = classify(ours, theirs, bars, conventions, tick)
+    classified_folder.mkdir(exist_ok=True)
+    name = conventions.name.lower().replace(" ", "_").replace(",", "").replace("-", "_")
+    classified.write_parquet(classified_folder / f"{strategy['name']}_{name}.parquet")
     return StrategyReport(
         strategy=strategy["name"],
         conventions=conventions,
