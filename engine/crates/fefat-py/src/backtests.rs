@@ -59,10 +59,11 @@ pub fn run_signal_backtest<'py>(
 /// Runs each case of `cases`, `(spec_json, signal_frame, cache_paths, config_json)` as
 /// `run_signal_backtest` takes them, on Rayon's threads, each cache mapped once and shared, with
 /// the interpreter released: each run as `run_signal_backtest` gives it, in the order of
-/// `cases`, with its trades' paths unless `trade_paths` is false, as a sweep's trials may run
-/// (`02` §7); a case that does not run stops the batch with its place.
+/// `cases`, without its trades' paths unless `trade_paths` is true, as a sweep's trials run
+/// (`02` §4 and §7), since a batch holds every run's outputs until its last ends; a case that
+/// does not run stops the batch with its place.
 #[pyfunction]
-#[pyo3(signature = (cases, replay = "skipping", trade_paths = true))]
+#[pyo3(signature = (cases, replay = "skipping", trade_paths = false))]
 pub fn run_batch<'py>(
     py: Python<'py>,
     cases: Vec<BacktestArguments>,

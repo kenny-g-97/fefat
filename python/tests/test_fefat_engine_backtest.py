@@ -111,7 +111,8 @@ def test_fills_and_trades_hash_alike_with_and_without_trade_paths(
     cached_month: tuple[Path, pl.DataFrame],
 ) -> None:
     # Step 2.13's Done means 2: recording paths is a pure observer of the loop (`02` §4), so a
-    # sweep's trials, which `run_batch` may run without paths, fill and trade as a saved run does.
+    # sweep's trials, which `run_batch` runs without paths unless asked for them, fill and trade
+    # as a saved run does.
     folder, bars = cached_month
     strategy = breakout(12)
     config = config_json(RunSettings.for_fidelity(TickFidelity.TRADES))
@@ -119,7 +120,7 @@ def test_fills_and_trades_hash_alike_with_and_without_trade_paths(
 
     with_paths = fefat_engine.run_signal_backtest(*case, "skipping")
     without = fefat_engine.run_signal_backtest(*case, "skipping", trade_paths=False)
-    [batched] = fefat_engine.run_batch([case], "skipping", trade_paths=False)
+    [batched] = fefat_engine.run_batch([case], "skipping")
 
     for name in ("fills", "trades"):
         runs = (with_paths, without, batched)
