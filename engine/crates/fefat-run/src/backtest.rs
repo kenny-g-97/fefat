@@ -40,7 +40,8 @@ pub enum BacktestError {
 /// trades' paths what `recording` says (step 2.13).
 pub fn run_strategy<R: MarketDataReader>(
     config: &RunConfig,
-    (replay, recording): (Replay, Recording),
+    replay: Replay,
+    recording: Recording,
     reader: &R,
     strategy: &mut dyn Strategy,
 ) -> Result<RunOutputs, BacktestError> {
@@ -58,11 +59,12 @@ pub fn run_strategy<R: MarketDataReader>(
 /// recorded as `run_strategy` takes them.
 pub fn run_template<R: MarketDataReader>(
     config: &RunConfig,
-    replayed: (Replay, Recording),
+    replay: Replay,
+    recording: Recording,
     spec: &StrategySpec,
     rows: Vec<SignalRow>,
     reader: &R,
 ) -> Result<RunOutputs, BacktestError> {
     let mut strategy = TemplateStrategy::new(spec, rows, &config.instrument()?)?;
-    run_strategy(config, replayed, reader, &mut strategy)
+    run_strategy(config, replay, recording, reader, &mut strategy)
 }

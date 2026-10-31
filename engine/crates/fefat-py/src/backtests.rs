@@ -48,11 +48,11 @@ pub fn run_signal_backtest<'py>(
     replay: &str,
     trade_paths: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let replayed = (replay_of(replay)?, recording_of(trade_paths));
+    let (replay, recording) = (replay_of(replay)?, recording_of(trade_paths));
     let backtest = Backtest::read(spec_json, signal_frame, cache_paths, config_json)
         .map_err(PyValueError::new_err)?;
     let caches = mapped(backtest.spans())?;
-    let outputs = py.detach(|| backtest.run(&caches, replayed));
+    let outputs = py.detach(|| backtest.run(&caches, replay, recording));
     run_of(py, outputs.map_err(PyValueError::new_err)?)
 }
 
@@ -69,7 +69,7 @@ pub fn run_batch<'py>(
     replay: &str,
     trade_paths: bool,
 ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-    let replay = (replay_of(replay)?, recording_of(trade_paths));
+    let (replay, recording) = (replay_of(replay)?, recording_of(trade_paths));
     let backtests = cases
         .into_iter()
         .enumerate()
@@ -80,7 +80,8 @@ pub fn run_batch<'py>(
     let caches = mapped(backtests.iter().flat_map(Backtest::spans))?;
     let runs: Vec<Result<RunOutputs, String>> = py.detach(|| {
         let runs = backtests.into_par_iter();
-        runs.map(|backtest| backtest.run(&caches, replay)).collect()
+        runs.map(|backtest| backtest.run(&caches, replay, recording))
+            .collect()
     });
     runs.into_iter()
         .enumerate()
@@ -162,12 +163,13 @@ impl Backtest {
             .collect()
     }
 
-    /// The run over the fronts' caches, `caches` holding each folder mapped, replayed and recorded
-    /// as `replay` says.
+    /// The run over the fronts' caches, `caches` holding each folder mapped, replayed as `replay`
+    /// says and recording what `recording` says.
     fn run(
         self,
         caches: &BTreeMap<PathBuf, MappedContract>,
-        replay: (Replay, Recording),
+        replay: Replay,
+        recording: Recording,
     ) -> Result<RunOutputs, String> {
         let fronts = self
             .folders
@@ -181,8 +183,15 @@ impl Backtest {
         let rolls = self.config.fronts_from();
         let reader = FrontSequence::new(&fronts, &rolls, self.first, self.last);
         let reader = reader.map_err(|error| error.to_string())?;
-        run_template(&self.config, replay, &self.spec, self.rows, &reader)
-            .map_err(|error| error.to_string())
+        run_template(
+            &self.config,
+            replay,
+            recording,
+            &self.spec,
+            self.rows,
+            &reader,
+        )
+        .map_err(|error| error.to_string())
     }
 }
 

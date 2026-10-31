@@ -174,17 +174,29 @@ fn run_case(
             Box::new(template.map_err(BacktestError::from)?)
         }
     };
-    let replay = (case.replay(), Recording::Paths);
+    let (replay, paths) = (case.replay(), Recording::Paths);
     match &case.market_data {
         MarketDataManifest::Tape { levels } => {
             let days = tables.tape_days(index, levels).map_err(Box::new)?;
             let reader = InMemoryMarketData::new(Contract(case.contract.clone()), days)?;
-            Ok(run_strategy(config, replay, &reader, strategy.as_mut())?)
+            Ok(run_strategy(
+                config,
+                replay,
+                paths,
+                &reader,
+                strategy.as_mut(),
+            )?)
         }
         MarketDataManifest::Cache { folder } => {
             let reader = MappedContract::open(folder)
                 .map_err(|error| Box::new(BatchError::Records(error)))?;
-            Ok(run_strategy(config, replay, &reader, strategy.as_mut())?)
+            Ok(run_strategy(
+                config,
+                replay,
+                paths,
+                &reader,
+                strategy.as_mut(),
+            )?)
         }
     }
 }

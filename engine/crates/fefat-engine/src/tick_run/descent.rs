@@ -74,12 +74,12 @@ impl<R: MarketDataReader> TickRun<'_, R> {
             let end = timer.map_or(end, |at| before(instants, start, end, at, of_bars));
             let last = day.records.get(end.checked_sub(1)?)?;
             let first = *instants.get(start)?;
-            let nothing_acts = end > start && self.untouched_by(&bar, last.ts());
-            let path_stays = self
-                .trades
-                .can_skip(&bar, first, last.ts())
-                .unwrap_or(false);
-            (nothing_acts && path_stays).then_some(Block { end, last })
+            let path_stays = || {
+                let skippable = self.trades.can_skip(&bar, first, last.ts());
+                skippable.unwrap_or(false)
+            };
+            let nothing_acts = end > start && self.untouched_by(&bar, last.ts()) && path_stays();
+            nothing_acts.then_some(Block { end, last })
         })
     }
 
