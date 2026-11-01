@@ -675,6 +675,51 @@ Not in this step: new engine features.
 
 2026-10-21 (Phase 2 kickoff, D-51): the benchmark dataset is the generated year of 2.7, not committed; `cargo test` stays the runner, and `cargo nextest` waits for the phase exit (`BACKLOG.md`). The tutorial decides on MES 5-minute closes and fills on 1-minute bars, its `fidelity_check` cell runs on the generated year, since MES has one level on this PC, and Your checks time a five-year run of MES.
 
+### 2.16 Tick engine on real IBKR prints
+
+Depends on: 2.14 · Plan mode: optional · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+The tick engine, proven so far on generated tapes and scenario tables, is checked on real prints: the reference engine and the Rust engine agree on sessions of MNQ ticks from Interactive Brokers, the bars rebuilt from those ticks match the broker's, and the difference between tick fills and 1-minute fills on real data is measured and explained.
+
+#### Prerequisites
+
+- Step 2.14 merged.
+- The IBKR MNQZ2026 sessions in the store (`docs/data-inventory.md`): the ticks you pull by hand from TWS with your puller outside the repository (`reqHistoricalTicks`, TRADES, 12 s between requests) and import with your `ibkr-ticks` profile, and IBKR's own 1-minute bars of the same sessions imported with the `ibkr` preset, 2026-09-21 to 2026-09-23 first, as `ibkr/trades/root=MNQ` and `ibkr/ohlcv-1m/root=MNQ`.
+
+#### Prompt
+
+```text
+Masterplan step 2.16 — Tick engine on real IBKR prints.
+
+Read docs/masterplan/02-engine-and-data.md §8 (items 2 and 4 and the real-prints addition of D-67) and docs/data-inventory.md. Add `just tick-check`, which runs `scripts/tick_check.py` on the store's `ibkr` sessions of MNQZ2026 and writes `docs/validation/ibkr-tick-check.md`:
+
+1. Bars: `fefat data verify-bars` for each session: the 1-minute bars rebuilt from the ticks equal IBKR's own, and the differences from Databento's bars of the same minutes are counted (IBKR filters block and spread trades and stamps prints to the second).
+2. Differential on real prints: the three strategies of 2.14's compatibility profile (market, limit, and stop entries with a stop and a target at fixed levels), deciding on 5-minute closes, run through the Python reference engine and through `ff.backtest.run` at fidelity `trades` on the same sessions, `RunConfig.contract` reading MNQZ2026 unspliced; every fill must be identical, in the integer units of ADR-0019.
+3. Fidelity: the same runs' `fidelity_check` at one minute, every differing fill given a class from 2.14's catalogue (`bar_boundary`, `bar_path`, `entry_bar_path`, `leg_released_through`, `cascade`) or a new documented class; none `unknown`.
+4. Determinism: each run's hash is the same on a second run and on a prefix of the tape, and the prints that share a second fill in their stored sequence.
+
+The report holds counts, rates, timestamps, and tick differences alone: no price leaves the store (D-21). Keep the command out of `just test`, since it needs your data; a store without the `ibkr` sessions makes it say so and exit 0. Show the comparison in `notebooks/checks/2.16.ipynb`.
+
+Not in this step: a connector or a puller for IBKR in the repository (the TWS API licence is non-commercial, and ib_async is no dependency of FEFAT), changing fill defaults, more products or sessions than the store holds.
+```
+
+#### Done means
+
+1. `just tick-check` writes `docs/validation/ibkr-tick-check.md` with the sessions, the bar check per session, the match of reference and Rust fills, the fidelity classes with their counts, and the hashes; its test runs on a generated tape standing in for the IBKR sessions, since the real sessions stay out of CI.
+2. Reference and Rust fills are identical on every session; every tick-versus-minute difference has a class; no `unknown`.
+3. The report, the notebook, and the inventory hold no prices.
+
+#### Your checks
+
+- Run `just tick-check` after pulling and importing the sessions, and read the report: the bar check should say no differences for every session, and the largest fidelity class should make sense to you (an entry at a bar's open against an entry at the print after the decision).
+
+#### If it fails
+
+- If the reference engine is too slow on a million prints, run it on the regular hours of one session first, and cut the tape to the prints an order can act on (`Replay.SKIPPING` gives the same fills).
+- If reference and Rust fills differ, write the case as a scenario in `fixtures/scenarios/` from the tape around it with made-up prices at the same tick offsets, and fix the engine that is wrong, never the expected value.
+
 ## Phase exit
 
 ```text

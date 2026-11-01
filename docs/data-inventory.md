@@ -68,7 +68,15 @@ Your NinjaTrader 8 export of MNQ minute bars (Historical Data window, Export, in
 - Imported by step 1.10 on 2026-10-20 with `fefat data import file <file> --profile ninjatrader`, one file at a time: 27 contracts into `ninjatrader/ohlcv-1m/root=MNQ`, each original kept under `raw/user/<sha256>/`. Three files were refused for spurious bars in NinjaTrader's history, under a wrong cause (`BACKLOG.md`, bars in a break that no offset explains): `MNQ 12-20.Last.txt` (a corrupt week, 2020-10-18 to 10-23), `MNQ 03-24.Last.txt` (extra bars in the hour before the 2024-03-10 open), and `MNQ 03-25.Last.txt` (a bar in the minute before the 2025-03-09 open).
 - `fefat data status` reads MNQ from `ninjatrader` as 2019-05-06 to 2026-09-18, complete at 1-minute fidelity, quality flagged: 175 sessions without records, where the three refused contracts were the front month. `load("MNQ", …)` reads Databento's MNQ first, the catalog's recommended source.
 
+## Interactive Brokers ticks and bars (2026-10-31)
+
+Sessions of MNQZ2026 pulled from your TWS with `C:\Users\kenji\Documents\Trading\Data\ibkr\pull_mnq_ticks.py` (`reqHistoricalTicks`, TRADES, about 1,000 prints a request, 12 s apart), one CSV of ticks and one of 1-minute bars per session, imported with the `ibkr-ticks` profile beside the script and the `ibkr` preset with `--time-zone UTC`, for step 2.16's check of the tick engine (D-67).
+
+- 2026-09-21: 976,389 prints, equal to the trade count of IBKR's bars, imported on 2026-11-01 into `ibkr/trades/root=MNQ` and `ibkr/ohlcv-1m/root=MNQ`, quality clean; `fefat data verify-bars MNQ 2026-09-21` rebuilds 1,379 bars from the ticks with no differences. Against Databento's bars, 14 minutes differ in volume (0.8 % less over the session, blocks at 09:05 and 09:55 Chicago) and 10 in a price, and IBKR's bar of the closing minute is empty while its ticks hold the 789 lots Databento shows.
+- 2026-09-22 and 09-23: still to pull; the 09-22 pull reached 09:43 Chicago when TWS logged off, and the puller resumes. A session's file is imported only once it is complete, since a trade date's first import stands.
+- IBKR stamps prints to the second, gives no aggressor side (`N`), and filters block and spread trades; its Time and Sales goes back three years, an expired contract two years after its expiry, and a session takes about 3.2 hours to pull.
+
 ## Not on this PC
 
 - Nothing else from Databento (confirmed at the kickoff): no ES, NQ, CL, or GC; no trades, TBBO, 1-second bars, definitions, or statistics.
-- No crypto archives; no IBKR, TradingView, Sierra Chart, or TradeStation export yet (the NinjaTrader export is above).
+- No crypto archives; no TradingView, Sierra Chart, or TradeStation export yet (the NinjaTrader export and the IBKR sessions are above).
