@@ -125,14 +125,16 @@ fn single_runs(
                 year,
             )
         };
-        describe_run(name, &run()?);
+        describe_run(name, &run()?)?;
         group.bench_function(name, |bencher| bencher.iter(&run));
     }
     group.finish();
     Ok(())
 }
 
-fn describe_run(name: &str, outputs: &RunOutputs) {
+/// Prints what the run made, and refuses a run that fills nothing, whose time would read as a
+/// gain in speed.
+fn describe_run(name: &str, outputs: &RunOutputs) -> Result<(), Failure> {
     let points: usize = outputs
         .trade_paths
         .iter()
@@ -140,10 +142,19 @@ fn describe_run(name: &str, outputs: &RunOutputs) {
         .sum();
     let (fills, trades) = (outputs.fills.len(), outputs.trades.len());
     println!("single_run/{name}: {fills} fills, {trades} trades, {points} path points");
+    trading(&format!("single_run/{name}"), fills)
 }
 
-/// 1,000 runs over the month, each with its own stop and target, checked once before they are
-/// timed.
+fn trading(benchmark: &str, fills: usize) -> Result<(), Failure> {
+    if fills == 0 {
+        return Err(format!("Expected {benchmark} to fill orders, got no fill").into());
+    }
+    Ok(())
+}
+
+/// 1,000 runs over the month, each with its own stop and target, checked once beside their
+/// timing: inside the benchmark, which criterion calls only when its filter keeps the batch, so
+/// that a profile of a single run holds none of the batch's threads.
 fn batch(
     criterion: &mut Criterion,
     config: &RunConfig,
@@ -151,20 +162,27 @@ fn batch(
 ) -> Result<(), Failure> {
     let specs = batch_specs()?;
     let rows = signal_rows(month)?;
-    let fills: usize = run_batch(config, &specs, &rows, month)?.iter().sum();
+    let mut checked = None;
+    let mut group = criterion.benchmark_group("batch");
+    configure(&mut group, Duration::from_secs(30));
+    group.bench_function("1000_runs_one_month", |bencher| {
+        if checked.is_none() {
+            checked = Some(run_batch(config, &specs, &rows, month));
+        }
+        bencher.iter(|| run_batch(config, &specs, &rows, month));
+    });
+    group.finish();
+    let Some(checked) = checked else {
+        return Ok(());
+    };
+    let fills: usize = checked?.iter().sum();
     println!(
         "batch: {} runs over {} trade dates on {} threads, {fills} fills in all",
         specs.len(),
         month.trade_dates().len(),
         rayon::current_num_threads()
     );
-    let mut group = criterion.benchmark_group("batch");
-    configure(&mut group, Duration::from_secs(30));
-    group.bench_function("1000_runs_one_month", |bencher| {
-        bencher.iter(|| run_batch(config, &specs, &rows, month));
-    });
-    group.finish();
-    Ok(())
+    trading("batch/1000_runs_one_month", fills)
 }
 
 /// The fills of each run of `specs` over `month`, on Rayon's threads, each run's outputs dropped

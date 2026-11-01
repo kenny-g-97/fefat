@@ -12,6 +12,7 @@ import yaml
 
 import bench
 from fefat.config import resolve_paths
+from fefat.market.engine_cache import EngineCacheBuild
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,7 +103,7 @@ def test_a_regression_warns_in_the_job_summary_and_never_fails_the_run(
     baseline.write_text(json.dumps(stored), encoding="utf-8")
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    monkeypatch.setattr(bench, "generated_year", lambda paths, environment: tmp_path)
+    monkeypatch.setattr(bench, "generated_year", lambda paths: tmp_path)
     monkeypatch.setattr(bench, "run_benches", lambda contract: CRITERION_OUTPUT)
 
     assert bench.main(["--baseline", str(baseline)]) == 0
@@ -114,17 +115,46 @@ def test_a_regression_warns_in_the_job_summary_and_never_fails_the_run(
 
 
 def test_the_generated_year_is_built_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FEFAT_CHECK_DAYS", "2")
+    monkeypatch.setattr(bench, "LAST", date(2026, 1, 5))
     paths = resolve_paths(os.environ)
 
-    contract = bench.generated_year(paths, os.environ)
-    (manifest,) = paths.cache_dir.glob("synthetic-es-2026-01-02-*/data/synthetic/MANIFEST.json")
+    contract = bench.generated_year(paths)
+    (manifest,) = paths.cache_dir.glob(
+        "synthetic-es-2026-01-02-2026-01-05/data/synthetic/MANIFEST.json"
+    )
     written = manifest.stat().st_mtime_ns
 
-    assert bench.generated_year(paths, os.environ) == contract
+    assert bench.generated_year(paths) == contract
     assert manifest.stat().st_mtime_ns == written
     assert contract.name == "ESH2026"
     assert (contract / "2026-01" / "index.json").is_file()
+
+
+def test_a_month_the_cache_refuses_refuses_the_benchmarks(monkeypatch: pytest.MonkeyPatch) -> None:
+    refused = EngineCacheBuild(
+        provider="synthetic",
+        root="ES",
+        year=2026,
+        months=(),
+        removed=(),
+        refused=("ESH2026 2026-01: a layout the engine does not read",),
+    )
+    monkeypatch.setattr(bench.gen_fixtures, "main", lambda arguments: 0)
+    monkeypatch.setattr(bench, "build_engine_cache", lambda *arguments: refused)
+
+    with pytest.raises(RuntimeError, match="Expected every month of the year cached, got: ESH2026"):
+        bench.generated_year(resolve_paths(os.environ))
+
+
+@pytest.mark.parametrize(
+    "stored", [{"ns_per_iter": {BATCH: 0}}, {"ns_per_iter": {BATCH: "fast"}}, {"medians": {}}, []]
+)
+def test_a_baseline_without_positive_nanoseconds_is_refused(tmp_path: Path, stored: object) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps(stored), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Expected ns_per_iter to give positive nanoseconds"):
+        bench.stored_baseline(baseline)
 
 
 def test_just_bench_runs_the_benchmarks() -> None:
@@ -133,12 +163,22 @@ def test_just_bench_runs_the_benchmarks() -> None:
     assert "bench *ARGS:\n    uv run python scripts/bench.py {{ARGS}}\n" in justfile
 
 
-def test_ci_runs_the_benchmarks_as_an_advisory_job_against_the_runner_baseline() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
-    job = workflow["jobs"]["benchmarks"]
-    commands = [step.get("run") for step in job["steps"]]
+def test_ci_runs_the_benchmarks_on_engine_changes_and_never_blocks_a_merge() -> None:
+    workflow_file = ROOT / ".github/workflows/benchmarks.yml"
+    workflow = yaml.safe_load(workflow_file.read_text(encoding="utf-8"))
+    triggers = workflow[True]  # PyYAML reads the key `on` as true, as YAML 1.1 does
+    (job,) = workflow["jobs"].values()
+    (benchmark,) = [step for step in job["steps"] if "just bench" in step.get("run", "")]
 
-    assert job["continue-on-error"] is True
     assert job["runs-on"] == "ubuntu-latest"
-    assert f"just bench --baseline {bench.CI_BASELINE}" in commands
+    assert benchmark["run"] == f"just bench --baseline {bench.CI_BASELINE}"
+    assert benchmark["continue-on-error"] is True
+    for event in ("pull_request", "push"):
+        assert {"engine/**", "scripts/bench.py"} <= set(triggers[event]["paths"]), event
+    assert (
+        "benchmarks"
+        not in yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))[
+            "jobs"
+        ]
+    )
     assert isinstance(bench.stored_baseline(ROOT / bench.CI_BASELINE), dict)

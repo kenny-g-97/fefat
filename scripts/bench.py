@@ -28,6 +28,7 @@ from fefat.config import FefatPaths, resolve_paths
 from fefat.market import instruments
 from fefat.market.calendar import build_sessions
 from fefat.market.engine_cache import build_engine_cache
+from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
 from fefat.market.store import Store
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -63,25 +64,29 @@ class Comparison:
         return self.median * 100 > self.baseline * (100 + REGRESSION_PERCENT)
 
 
-def generated_year(paths: FefatPaths, environment: Mapping[str, str]) -> Path:
-    """The engine cache folder of ESH2026 in step 2.7's generated year, the year generated first
-    when it is missing and its cache built or brought up to date: the year's first
-    `FEFAT_CHECK_DAYS` sessions where that is set, as the tests run it."""
+def generated_year(paths: FefatPaths) -> Path:
+    """The engine cache folder of ESH2026 in step 2.7's generated year, its sessions from `FIRST`
+    through `LAST`: the year generated first when it is missing, and its cache built or brought up
+    to date. A month the cache refuses refuses the benchmarks, which would time the others alone
+    and read as a gain in speed."""
     calendar = instruments.get("ES").session_calendar()
     trade_dates = build_sessions(calendar, FIRST, LAST).get_column("trade_date")
-    sessions = int(environment.get("FEFAT_CHECK_DAYS", trade_dates.len()))
-    last = trade_dates[sessions - 1]
+    last = trade_dates[-1]
     year = paths.cache_dir / f"synthetic-es-{FIRST}-{last}"
     synthetic = year / "data" / "synthetic"
     if not (synthetic / "MANIFEST.json").is_file():
-        print(f"Generating {sessions} sessions of ES into {synthetic}", flush=True)
+        print(f"Generating {trade_dates.len()} sessions of ES into {synthetic}", flush=True)
         dates = ["--dates", f"{FIRST}..{last}", "--contracts", CONTRACT]
         arguments = ["--out", str(synthetic), *dates, "--planted-gaps", PLANTED_GAPS]
         if gen_fixtures.main(arguments) != 0:
             raise RuntimeError(f"Expected gen_fixtures.py to write {synthetic}, it did not")
     build = build_engine_cache(Store(year / "data"), year / "cache", "ES", FIRST.year)
+    if build.refused:
+        raise RuntimeError(
+            f"Expected every month of the year cached, got: {'; '.join(build.refused)}"
+        )
     print(build.summary().splitlines()[0], flush=True)
-    return year / "cache" / "engine" / "synthetic" / "ES" / CONTRACT
+    return year / "cache" / ENGINE_CACHE_FOLDER_NAME / build.provider / "ES" / CONTRACT
 
 
 def run_benches(contract: Path) -> str:
@@ -121,11 +126,13 @@ def stored_baseline(path: Path | None) -> dict[str, int]:
     """The medians of the baseline file at `path`, none without one."""
     if path is None:
         return {}
-    medians = json.loads(path.read_text(encoding="utf-8"))["ns_per_iter"]
-    valid = isinstance(medians, dict) and all(isinstance(value, int) for value in medians.values())
-    if not valid:
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    medians = stored.get("ns_per_iter") if isinstance(stored, dict) else stored
+    if not isinstance(medians, dict) or not all(
+        isinstance(value, int) and value > 0 for value in medians.values()
+    ):
         raise ValueError(
-            f"Expected ns_per_iter to give nanoseconds by name in {path}, got {medians}"
+            f"Expected ns_per_iter to give positive nanoseconds by name in {path}, got {medians}"
         )
     return medians
 
@@ -190,7 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the engine's benchmarks (step 2.15).")
     parser.add_argument("--baseline", type=Path, help=f"medians to compare with, as {CI_BASELINE}")
     arguments = parser.parse_args(argv)
-    contract = generated_year(resolve_paths(os.environ), os.environ)
+    contract = generated_year(resolve_paths(os.environ))
     medians = parse_medians(run_benches(contract))
     comparisons = compare(medians, stored_baseline(arguments.baseline))
     table = render_table(comparisons)
