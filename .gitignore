@@ -76,6 +76,9 @@ htmlcov/
 target/
 **/*.rs.bk
 *.pdb
+# what `just mutants` (cargo-mutants) writes under engine/
+mutants.out/
+mutants.out.old/
 
 # --- Node and web -------------------------------------------------------------
 node_modules/

@@ -89,6 +89,11 @@ xcheck:
 bench *ARGS:
     uv run python scripts/bench.py {{ARGS}}
 
+# Mutation-test fefat-engine with cargo-mutants for the phase exits (step 2.15): each mutant its tests miss is listed in engine/mutants.out/; -f <file> tests one file, --list counts the mutants
+[working-directory("engine")]
+mutants *ARGS:
+    cargo mutants --package fefat-engine {{ARGS}}
+
 # Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
 strip-notebooks:
     uv run python scripts/strip_notebooks.py
