@@ -1,0 +1,213 @@
+# The engine, for your strategies
+
+How you write a signal strategy, run it, and read what the run saved, written for you as the trader using FEFAT on this PC. `notebooks/02-engine-tutorial.ipynb` runs every part of it on your own data. The rules that price every fill are in [the fill specification](spec/fill-semantics.md); the design behind the engine is in `docs/masterplan/02-engine-and-data.md` §2 to §7, and its measured speed in `docs/validation/benchmarks.md`.
+
+## A strategy in one cell
+
+```python
+import polars as pl
+import fefat as ff
+
+close = pl.col("close")
+strategy = ff.SignalStrategy(
+    instrument="MES",
+    timeframe="5m",
+    features={"highest": close.rolling_max(12).shift(1), "atr": (pl.col("high") - pl.col("low")).rolling_mean(14)},
+    long_entry=close > pl.col("highest"),
+    short_entry=pl.lit(False),
+    execution=ff.Execution(
+        entry=ff.Market(),
+        stop=ff.Stop(atr=1.5),
+        targets=[ff.Target(r=2)],
+        sizing=ff.Fixed(1),
+    ),
+)
+run = ff.backtest.run(strategy, "2025-09-01", "2026-09-23", ff.backtest.RunConfig(fidelity="1m"))
+run.report()
+```
+
+The strategy decides at the close of each 5-minute bar and fills on the finest data each day has, here capped at 1-minute bars. Every run saves itself under its run key, and running the same strategy on the same data again reads the saved run back instead of running it.
+
+## The signal strategy
+
+A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions over the signal bars that `ff.market.load` returns (`docs/data-guide.md`, "Units and the columns of a load"), and how it trades.
+
+| Field | Meaning |
+| --- | --- |
+| `instrument` | the root it trades, such as `MES`; a run follows the roll calendar's front contracts unless `RunConfig.contract` names one |
+| `timeframe` | the signal bars whose closes decide, such as `5m`: a count, then `s`, `m`, `h`, or `d` |
+| `features` | a mapping of names to expressions, each evaluated in turn over the bars and the features before it; every trade records each feature's value at its entry as `<feature>_at_entry` |
+| `long_entry`, `short_entry` | the entry signals, a boolean expression each; a null counts as false |
+| `long_exit`, `short_exit` | the exit signals, false by default; they close the position while `signal_exit` is on |
+| `entry_price` | the price of a limit or stop entry at the column, for `Limit(column=True)` and `StopEntry(column=True)` |
+| `stop_price`, `target_price` | the prices of a stop or a target at the column, for `Stop(column=True)` and `Target(column=True)` |
+| `trail_ref` | the level of a trailing stop at the column, for `Trailing(column=True)` |
+| `size_mult` | a multiple of the size on each bar, which must make whole lots |
+| `wake` | whether a bar may enter at all, true by default; a null counts as true |
+| `execution` | the execution template below |
+
+- Prices in the columns are whole numbers of billionths of a point, like the bars' prices: `close - 4 * 250_000_000` is four MES ticks below the close.
+- A feature must be prefix-invariant: its value at a bar may depend only on that bar and the bars before it. Use `shift(1)` to read the bar before; never `shift(-1)`, a centred window, a backward fill, or a rank or a normalisation over the whole sample (D-12). Phase 3 brings `@ff.feature` and a leak detector that checks this; until then, a feature is a plain expression.
+- A feature name may not repeat a column of the bars or of the signal frame.
+
+## The execution template
+
+`ff.Execution` says how the strategy enters on its signals, how each entry leaves, and what filters entries.
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `entry` | the order an entry signal places: `Market()`, `Limit(...)`, or `StopEntry(...)` | required |
+| `on_opposite_signal` | what an entry signal against the open position does: `ignore`, `close`, or `reverse` (close and enter the other way at the same decision) | `ignore` |
+| `stop` | the stop-market order placed against the position when an entry fills: `Stop(...)` | none |
+| `targets` | up to three limit orders placed when an entry fills, each closing a fraction of the lots still open, one OCO group with the stop: `Target(...)` | none |
+| `breakeven` | when the stop moves to the entry's fill price: `Breakeven(...)`; needs a stop | none |
+| `trailing` | how the stop follows the price: `Trailing(...)`; needs a stop | none |
+| `time` | entry windows and time exits in local time: `TimeRules(...)` | none |
+| `limits` | filters on entries: a blackout column, daily limits, a cooldown after a loss, and fresh signals: `Limits(...)` | none of them |
+| `sizing` | how many units an entry trades: `Fixed(...)`, `Notional(...)`, or `RiskPerTrade(...)` | required |
+| `signal_exit` | whether `long_exit` and `short_exit` close the position | `True` |
+
+Each helper takes one choice by keyword and refuses none or two, so `Stop(ticks=12, atr=1.5)` is an error.
+
+### Entries
+
+- `Market()`: a market order, active the run's latency after the decision, filled at the next price plus the slippage ticks ([F-MKT](spec/fill-semantics.md#5-market-orders-f-mkt)).
+- `Limit(offset_ticks=n)`: a limit `n` ticks from the signal bar's close, below it for a buy; `Limit(column=True)` at the row's `entry_price`. It fills only when the market trades through it, at its own price, never better ([F-LMT](spec/fill-semantics.md#7-limit-orders-f-lmt)).
+- `StopEntry(offset_ticks=n)` or `StopEntry(column=True)`: a stop-market order, above the close for a buy ([F-STP](spec/fill-semantics.md#6-stop-market-orders-f-stp)).
+- `time_to_live_bars`: a limit or stop entry still working at that many decisions after its own is cancelled; without it, it works until it fills or a time rule cancels it.
+- With a limit or stop entry, a bar that gives both entry signals places a buy and a sell as one OCO group; with a market entry such a bar is refused.
+
+### Stops
+
+`Stop(...)` places one stop-market order for all the entry's lots ([F-PLN](spec/fill-semantics.md#22-exit-plans-f-pln)):
+
+- `ticks`: that many ticks from the fill price;
+- `percent`: that percentage of the fill price from it, `0.5` being 0.5 %;
+- `atr`: that multiple of the entry bar's `feature` (by default the feature named `atr`) from the fill;
+- `column`: at the entry row's `stop_price`.
+
+Computed distances are rounded to whole ticks, at least one, down for a stop so that it never lies farther than asked ([F-RND](spec/fill-semantics.md#21-rounding-f-rnd)).
+
+### Targets
+
+`Target(...)` places one limit order, at most three of them:
+
+- `ticks`, `atr` (with its `feature`), or `column` as for the stop, in the position's favour, rounded up so that a target never lies nearer than asked;
+- `r`: that multiple of the trade's initial risk, the ticks from its fill to its first stop, which needs a stop;
+- `fraction`: the share of the lots still open that it closes, `1.0` (the rest) by default. Three lots under fractions 0.5, 0.5, and 1 make targets of one lot each.
+
+When a target fills, the stop is cut to the lots still open; when the stop fills, the targets are cancelled.
+
+### Breakeven
+
+`Breakeven(...)` moves the stop to the entry's fill price, `offset_ticks` beyond it (below zero, short of it), once the trade first reaches `ticks` ticks of profit, `r` times its initial risk, or once target `after_target` (counted from 1) fills ([F-BRK](spec/fill-semantics.md#23-breakeven-f-brk)). A stop only ever moves in the position's favour, and never to or past the market.
+
+### Trailing stops
+
+`Trailing(...)` keeps the stop `ticks` ticks, or `atr` times the signal bars' `feature`, behind the best price since its activation, or at each row's `trail_ref` with `column` ([F-TRL](spec/fill-semantics.md#24-trailing-stops-f-trl)):
+
+- `step_ticks`: moves the stop in whole steps of that many ticks, every tick without it;
+- `activation`: from when it works, the entry's fill without it; it takes a trigger from `ff.strategy`: `TicksTrigger(ticks=8)`, `RMultipleTrigger(multiple=1)`, or `AfterTargetTrigger(target=1)`;
+- `update`: `intrabar`, moving at every price the engine marks, or `bar_close`, moving at decisions alone, which a trailing stop by the column needs and gets by default.
+
+### Sizing
+
+- `Fixed(units)`: the same units on every entry, contracts for futures, times the row's `size_mult` where the frame has one ([F-SIZ](spec/fill-semantics.md#28-sizing-f-siz)).
+- `Notional(amount)`: the whole lots whose value at the entry is at most `amount` in the account's currency.
+- `RiskPerTrade(amount=...)` or `RiskPerTrade(percent=...)`: the whole lots that lose at most that amount, or that percentage of equity, at the stop; it needs a stop.
+
+### Time rules
+
+`TimeRules(...)` works in the local time of `tz`, such as `America/Chicago`, through the session table, so that a clock change moves the instants and never the local times ([F-TIM](spec/fill-semantics.md#26-time-rules-f-tim)):
+
+- `windows`: entry windows, each an `EntryWindow(start, end, weekdays)` or a `("08:35", "14:30")` pair; an entry is placed only at a decision from `start` to just before `end`, on one of its `weekdays` (every day without them); a window whose `end` comes before its `start` runs past midnight;
+- `flat_by`: from this local time each trade date, the position is closed, working orders are cancelled, and no entry is placed;
+- `max_bars`, `max_minutes`: the position is closed at that many decisions, or at the first decision that many minutes, after its entry's fill;
+- `no_overnight`: closes the position before each stop of trading, a session's close or a holiday's halt;
+- `no_weekend`: closes it before each weekend's break.
+
+### Entry limits
+
+`Limits(...)` filters entries ([F-LIM](spec/fill-semantics.md#27-entry-limits-f-lim)):
+
+- `blackout`: the name of a boolean feature; a row where it is true places no entry;
+- `max_trades_per_day`, `max_losses_per_day`: no entry once a trade date's entries, or its losing trades, reach that count;
+- `daily_loss_stop`, `profit_lock`: no entry once that trade date's closed trades have lost, or made, that amount in the account's currency;
+- `cooldown_after_loss`: no entry for a while after a losing trade, `BarsCooldown(bars=n)` decisions or `MinutesCooldown(minutes=n)` minutes, both from `ff.strategy`;
+- `fresh_signal`: an entry signal counts only on a row where it was false on the row before, so that a signal still true after an exit does not enter again.
+
+### Rules that need a stop
+
+A specification is refused before it runs when a breakeven, a trailing stop, a target in R, or a risk size comes without a stop, since each counts from the stop's distance; when `after_target` names a target the specification does not have; and when a trailing stop by the column moves `intrabar`. `strategy.to_spec().document_json()` prints the document the engine reads, the same one `run.json` keeps under `strategy`.
+
+## Run settings
+
+`ff.backtest.RunConfig` holds how a run fills. A setting left out takes its default, and the run's record writes every value in, so that a run always says what it ran under.
+
+| Setting | Meaning | Default |
+| --- | --- | --- |
+| `fidelity` | the finest data the run fills on, `trades`, `tbbo`, or bars such as `1m`; each trade date fills on its finest level at or coarser than this (D-58) | the finest the store holds |
+| `latency_ms` | from a decision to its orders' activation ([F-ACT](spec/fill-semantics.md#4-activation-f-act)); exit plans placed at a fill take none | `100` |
+| `slippage_ticks` | whole ticks against you on market and stop fills, `SlippageTicks(market=1, stop=1)` from `fefat.reference.settings` ([F-SLP](spec/fill-semantics.md#12-slippage-f-slp)) | one each on trades and bars, none on TBBO |
+| `limit_fill` | `through`: a limit fills when the market trades past it; `touch`: a price at the limit is enough, the optimistic bound | `through` |
+| `roll_handling` | at a futures roll, `transfer` the position to the new front with two market orders, or `flatten` it ([F-ROL](spec/fill-semantics.md#29-rolls-f-rol)) | `transfer` |
+| `fee_table` | `retail-default`, `prop-topstep`, or `binance-default` ([F-FEE](spec/fill-semantics.md#14-fees-funding-and-money-f-fee-f-fnd)) | `retail-default` for futures, `binance-default` for crypto |
+| `capital` | the starting cash, in the instrument's currency | `50000` |
+| `replay` | `skipping`, which passes over records no order can act on, or `full`; both give the same fills | `skipping` |
+| `provider` | whose datasets the run reads, as `load` takes it | the catalog's recommended source |
+| `contract` | one contract of the root, read unspliced, so that the run crosses no roll | the roll calendar's fronts |
+
+Every run is also rerun at one more tick of slippage, which `run.metrics.pnl_at_plus_one_tick` reports, and, where its trade dates are finer than a minute, at one second and at one minute: `run.metrics.fidelity_check`, or `ff.backtest.fidelity_check(run)`, compares those reruns with the run.
+
+## The fill rules in brief
+
+Fills follow [the fill specification](spec/fill-semantics.md), which the Python reference engine implements rule by rule and the Rust engine matches exactly. In brief:
+
+- **Decisions at bar closes.** The strategy decides at each signal bar's close, and its orders become active the latency later. Nothing acts on a record before it was received ([F-CLK](spec/fill-semantics.md#3-clock-and-order-of-events-f-clk), [F-ACT](spec/fill-semantics.md#4-activation-f-act)).
+- **The finest data, day by day.** Each trade date fills on its finest level at or coarser than the run's fidelity: trades, TBBO, 1-second, or 1-minute bars ([order type by fidelity](spec/fill-semantics.md#17-order-type-by-fidelity)). The run records each date's level as its fidelity eras.
+- **Market orders** fill at the next price after their activation, plus the slippage ticks ([F-MKT](spec/fill-semantics.md#5-market-orders-f-mkt)).
+- **Stops** trigger when the market trades at or through them, and fill at the stop plus the slippage ticks, or at the first price past it after a gap, whichever is worse ([F-STP](spec/fill-semantics.md#6-stop-market-orders-f-stp), [gaps](spec/fill-semantics.md#9-gaps)).
+- **Limits** fill when the market trades through them, at their own price, never better ([F-LMT](spec/fill-semantics.md#7-limit-orders-f-lmt)).
+- **Bars** replay as their open, the extreme against the open position, the extreme in its favour, and their close; a bar whose other order would fill differently flags its fills `ambiguous` ([F-BAR](spec/fill-semantics.md#8-replaying-bars-f-bar)).
+- **Exit plans** are placed the moment their entry fills, with no latency, and when one record reaches both the stop and a target, the stop fills ([F-OCO](spec/fill-semantics.md#11-brackets-and-oco-groups-f-oco)).
+- **Orders fill whole**, and a fill larger than its record's size is flagged `size_exceeded` ([F-QTY](spec/fill-semantics.md#13-quantities-f-qty)).
+- **Costs and marks.** Fees come from the run's fee table by trade date, funding applies to perpetuals, and an open position is marked at the last trade seen ([F-FEE, F-FND](spec/fill-semantics.md#14-fees-funding-and-money-f-fee-f-fnd), [F-MRK](spec/fill-semantics.md#15-marking-open-positions-f-mrk)).
+- **The template's own rules**: [decisions and entries](spec/fill-semantics.md#25-decisions-and-entries-f-ent), [exit plans](spec/fill-semantics.md#22-exit-plans-f-pln), [rounding](spec/fill-semantics.md#21-rounding-f-rnd), and [rolls](spec/fill-semantics.md#29-rolls-f-rol).
+
+Every fill records the rule that priced it, which `run.explain` prints.
+
+## Reading a run folder
+
+Each run is saved in `%LOCALAPPDATA%\FEFAT\workspaces\default\artifacts\runs\<run key>\`, under `FEFAT_HOME` wherever you moved it. The folder's name is the run key, a hash of the strategy's document, its signal frame, the snapshots of the data it read, its settings, and the engine's versions, so a change to any of them makes a new run and a repeated run reads the old one. A run saved by another version of the engine is refused by name; delete its folder to run it again. `ff.backtest.Run.open(folder)` opens a saved run.
+
+The units are the store's: prices in billionths of a point, money in millionths of the account's currency, and instants in nanoseconds since 1970-01-01, UTC.
+
+| File | Holds | From Python |
+| --- | --- | --- |
+| `run.json` | the run's record: `run_id`, `run_key`, the engine's `versions`, the `strategy` document and its features, the `window`, the `instrument`, the `datasets` read with their snapshots, the `signal_frame_hash`, the `signal_source`, every setting in `config`, the `fee_table`, the `rolls`, the `engine_config`, the `fidelity_eras`, the `path_fidelities`, its `warnings`, the `summary`, and the `metrics` | `run.record`, `run.metrics`, `run.report()` |
+| `fills.parquet` | each fill: its order and role (`entry`, `stop`, `target_1`, an exit reason, or a roll's leg), side, lots, time, price, the rule that priced it, its fidelity, maker or taker, its slippage ticks, its flags, its fee, the cash it moved, its contract, and its trade date | `run.fills` |
+| `orders.parquet` | every order in its last state: its kind, price, lots, role, when it was placed and became active, its OCO group, the entry it belongs to, and its state | `run.orders` |
+| `log.parquet` | the event log: each placement, activation, move, cancellation, and fill, with its order and its rule | `run.log` |
+| `costs.parquet` | each fee and funding payment, paid amounts positive | `run.costs` |
+| `trades.parquet` | a row per trade, flat to flat: entry and exit, their contracts, the exit reason, the rolls crossed, gross and net profit and loss, fees, funding, the initial risk and the R multiple, the excursions against and for it (`mae_ticks`, `mfe_ticks`), its deepest fall from its peak, its path's fidelity, and each feature at its entry | `run.trades` |
+| `trade_paths.parquet` | a row per point of each trade's price path, below | `run.trade_paths` |
+| `equity.parquet` | the account after each decision: cash, position, mark, and equity | `run.equity(strategy.timeframe)` |
+| `equity_daily.parquet` | the account at each trade date's last decision, with the day's profit and loss | `run.equity("1d")` |
+| `signals.parquet` | the signal frame the engine read, the features among its columns | `run.signals` |
+
+`python/fefat/src/fefat/backtest/schemas.py` lists every column of every file. Polars reads any of them without FEFAT, for example `pl.read_parquet(folder / "trades.parquet")`.
+
+### Trade paths
+
+`trade_paths.parquet` keeps each trade's compact price path, what a prop firm's trailing drawdown needs (`docs/masterplan/03-prop-simulator.md` §4.2):
+
+- `trade`: the trade's row in `trades.parquet`, counted from 0, so `run.trades.with_row_index("trade")` joins the two;
+- `ts` and `price`: the point's instant and its price, in the trade's entry contract's prices, so a path stays continuous across a roll;
+- `kind`: `fill` for each of the trade's fills, at its own price; `favourable` for each new best price; `adverse` for each new worst price since the last best; `minute` for the mark at each whole minute; and `possible_adverse` for a bar in which the price could have fallen further than its replay shows, since a bar does not say which of its extremes came first;
+- `order`: a fill's order, empty for every other point.
+
+The `path_fidelity` of each trade in `trades.parquet` is the coarsest data its path's points came from, and `run.json` counts the trades of each path fidelity. Points in ticks from the entry are `(price - entry_price) / (tick_size * 1e9)`, which the tutorial plots.
+
+### Explaining a trade
+
+`run.explain(entry_order)` takes a trade's `entry_order` from `trades.parquet` and replays it through the reference engine on the run's own records: it prints each event with its rule, each fill with its rule and slippage, and the bar that priced a fill on bars, and it raises an error if the two engines disagree.
