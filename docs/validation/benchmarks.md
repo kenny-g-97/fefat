@@ -97,6 +97,8 @@ The first run, [41323585243](https://github.com/kenny-g-97/fefat/actions/runs/41
 | `single_run/without_paths` | 0.276 s | 0.207 to 0.216 s |
 | `batch/1000_runs_one_month` | 14.2 s on 2 threads | 0.851 to 0.864 s on 32 threads |
 
+The third run, [41331090010](https://github.com/kenny-g-97/fefat/actions/runs/41331090010), the first compared with that baseline, ran the same engine 50 % slower with paths, 14 % without, and 47 % on the batch, and warned on two benchmarks: shared runners vary that much from one run to the next. A warning is a prompt to run `just bench` on this PC before believing it; `BACKLOG.md` keeps the question of a steadier comparison.
+
 ## Reproduce
 
 ```text
