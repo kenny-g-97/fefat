@@ -1,0 +1,9 @@
+{
+  "recorded": "2026-11-01",
+  "run": "https://github.com/kenny-g-97/fefat/actions/runs/41334928993",
+  "ns_per_iter": {
+    "single_run/with_paths": 1432875959,
+    "single_run/without_paths": 314953877,
+    "batch/1000_runs_one_month": 17561124924
+  }
+}

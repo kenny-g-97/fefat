@@ -40,3 +40,28 @@ def test_a_check_never_lets_rustup_install_a_toolchain(monkeypatch: pytest.Monke
     environment = options["env"]
     assert isinstance(environment, dict)
     assert environment["RUSTUP_AUTO_INSTALL"] == "0"
+
+
+def test_cargo_mutants_answers_through_cargo_from_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    commands: list[tuple[list[str], Path | None]] = []
+
+    def recorded_run(arguments: list[str], directory: Path | None = None) -> str:
+        commands.append((arguments, directory))
+        return "cargo-mutants 27.1.0"
+
+    monkeypatch.setattr(doctor, "run_command", recorded_run)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"C:/cargo/bin/{name}.exe")
+    (mutants,) = [r for r in doctor.requirements() if r.name == "cargo-mutants"]
+
+    found = mutants.locate()
+
+    assert commands == [(["cargo", "mutants", "--version"], doctor.ENGINE)], "alone it refuses"
+    assert found is not None
+    assert found.version == doctor.Version(27, 1, 0)
+
+
+def test_just_mutants_runs_cargo_mutants_on_the_engine_crate() -> None:
+    justfile = (doctor.ENGINE.parent / "justfile").read_text(encoding="utf-8")
+    recipe = '[working-directory("engine")]\nmutants *ARGS:\n'
+
+    assert f"{recipe}    cargo mutants --package fefat-engine {{{{ARGS}}}}\n" in justfile

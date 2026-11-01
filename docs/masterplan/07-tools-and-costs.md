@@ -10,6 +10,7 @@ Already present on 2026-10-05: git 2.55, GitHub CLI 2.97 (signed in), Node 24 + 
 | Rust (stable) via rustup | the engine | `winget install Rustlang.Rustup`, then `rustup default stable`; pinned by `engine/rust-toolchain.toml` |
 | pnpm | the web app | `corepack enable --install-directory "$env:APPDATA\npm"` (Node ships corepack; the install directory keeps the shims out of Program Files, which needs administrator rights) then `corepack install -g pnpm@latest` (corepack 0.35 has no `prepare` command), or `npm install -g pnpm` |
 | `just` | the task runner | `winget install Casey.Just` or `cargo install just` |
+| cargo-mutants 27.1 | mutation testing at the phase exits, `just mutants` (step 2.15) | `cargo install cargo-mutants --locked`; `just doctor` checks it |
 | Python 3.12 | SDK and server | already installed by uv; `.python-version` pins it |
 | Playwright browsers (P4) | UI tests | `pnpm exec playwright install chromium` |
 | Claude Code CLI (optional) | running `claude` from a terminal, not only VS Code | `winget install Anthropic.ClaudeCode` or the installer from the docs |
@@ -50,7 +51,7 @@ Details and sources: `appendix/research-market-data.md` and `appendix/research-d
 | Electricity | a few dollars a month under heavy sweeps | 9950X at full load is about 200 W |
 | In-app agent | pay as you go; set a monthly cap in Settings | Opus 5.5: $4 / $20 per million tokens in / out; Sonnet 5.5: $2 / $10; cache reads are much cheaper |
 | Claude Code during the build | your plan | each step carries a model hint; heavy multi-agent workflows are off by default |
-| CI (GitHub Actions, step 0.6) | $0 within the free plan | the private repository gets 2,000 minutes and 500 MB of artifact storage a month; every push to a pull request runs a Windows and a Linux job, and Windows minutes are priced higher; without a payment method on file, runs stop when the minutes are used up |
+| CI (GitHub Actions, step 0.6) | $0 within the free plan | the private repository gets 2,000 minutes and 500 MB of artifact storage a month; every push to a pull request runs a Windows and a Linux job, and Windows minutes are priced higher; a push that changes the engine or the benchmarks also runs the Linux Benchmarks job of step 2.15, about 10 minutes on its first, cold run, which is why it runs on no other; without a payment method on file, runs stop when the minutes are used up |
 | Market data | $199 for the history, up to ~$2.5k for five years of ticks (§3); then a recurring cost to keep the futures catalog products current through your Databento account: pay-as-you-go downloads, priced on Databento's website before each one until a connector exists (D-38), then by the sync (at the 2024 rates, daily ticks for the eight products come to tens of dollars a month; bars only, a few dollars), or the $199 plan in months you need more | crypto updates are free |
 
 ## 5. Product-phase costs (P14 and beyond)

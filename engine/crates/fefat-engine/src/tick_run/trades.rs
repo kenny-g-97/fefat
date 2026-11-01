@@ -98,6 +98,15 @@ pub(super) struct Mark {
     pub(super) extreme: Option<(Extreme, BarRow)>,
 }
 
+/// The values of the trade open that `can_skip` reads and a mark can move (step 2.15): its best
+/// price as a distance from its entry, and its path's best and worst since its last point and its
+/// next whole minute (`PathRecorder::tracking`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Tracking {
+    favourable: Price,
+    path: Option<(Price, Price, Ts)>,
+}
+
 /// A trade still open.
 #[derive(Debug, Clone, PartialEq)]
 struct OpenTrade {
@@ -300,6 +309,16 @@ impl TradeBook {
             Some(path) => Ok(below_the_best && path.can_skip(first, last, best, worst)?),
             None => Ok(below_the_best),
         }
+    }
+
+    /// What `can_skip` reads of the trade open that a mark can move (step 2.15): its best and,
+    /// where its path is recorded, the path's tracking; none while the run is flat.
+    pub(super) fn tracking(&self) -> Option<Tracking> {
+        let open = self.open.as_ref()?;
+        Some(Tracking {
+            favourable: open.favourable,
+            path: open.path.as_ref().map(PathRecorder::tracking),
+        })
     }
 
     /// A funding payment while the trade is open, the change to the cash (F-FND-01).

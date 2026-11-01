@@ -151,14 +151,15 @@ pub struct Shift {
 }
 
 /// The orders of a run: the live ones, waiting, working, or triggered, and those filled or
-/// cancelled; the ids it has given orders of its own, from 1; and the live exit plans, by their
-/// entries' ids.
+/// cancelled; the ids it has given orders of its own, from 1; the live exit plans, by their
+/// entries' ids; and the memory of the last snapshot of ids given back (`give_back_ids`).
 #[derive(Debug, Clone, Default)]
 pub struct Book {
     live: Vec<WorkingOrder>,
     closed: Vec<WorkingOrder>,
     issued: u64,
     plans: BTreeMap<OrderId, LivePlan>,
+    spare_ids: Vec<OrderId>,
 }
 
 impl Book {
@@ -268,25 +269,31 @@ impl Book {
             closed: Vec::new(),
             issued: self.issued,
             plans: self.plans.clone(),
+            spare_ids: Vec::new(),
         }
     }
 
     /// The ids of the live orders in `state` whose kind `wanted` keeps, lowest first: a snapshot
     /// that a loop over them checks again order by order, since a fill can cancel its group while
-    /// the loop runs (`Book.each`).
+    /// the loop runs (`Book.each`). It reuses the memory of the snapshot last given back
+    /// (`give_back_ids`), so that the loops the engine runs at every record allocate nothing.
     pub(crate) fn ids_in(
-        &self,
+        &mut self,
         state: OrderState,
         wanted: impl Fn(&OrderKind) -> bool,
     ) -> Vec<OrderId> {
-        let mut ids: Vec<OrderId> = self
-            .live
-            .iter()
-            .filter(|order| order.state == state && wanted(&order.order.kind))
-            .map(|order| order.order.id)
-            .collect();
+        let mut ids = std::mem::take(&mut self.spare_ids);
+        ids.clear();
+        let live = self.live.iter();
+        let kept = live.filter(|order| order.state == state && wanted(&order.order.kind));
+        ids.extend(kept.map(|order| order.order.id));
         ids.sort_unstable();
         ids
+    }
+
+    /// Keeps the memory of `ids`, a snapshot of `ids_in` that a loop has done with, for the next.
+    pub(crate) fn give_back_ids(&mut self, ids: Vec<OrderId>) {
+        self.spare_ids = ids;
     }
 
     /// The ids of the live orders, lowest first.
@@ -323,6 +330,17 @@ impl Book {
     pub(crate) fn rest(&mut self, id: OrderId) -> Option<()> {
         self.live_in_mut(id, OrderState::Working)?.rested = true;
         Some(())
+    }
+
+    /// Every working limit saw a price without filling: each rests (F-LMT-04).
+    pub(crate) fn rest_working_limits(&mut self) {
+        let working_limits = self.live.iter_mut().filter(|order| {
+            order.state == OrderState::Working
+                && matches!(order.order.kind, OrderKind::Limit { .. })
+        });
+        for order in working_limits {
+            order.rested = true;
+        }
     }
 
     /// Closes the live order `id`, filled or cancelled, and returns it; its plan leaves with its

@@ -24,6 +24,7 @@ The rule, its reasons, and how `just check` enforces it are in [08-code-design.m
 - The Python packages use the src layout.
 - `import-linter`, and an import-boundary lint for the web app, are development dependencies.
 - matplotlib is a development dependency too, for the check notebooks' plots, which no package imports (step 2.13, D-65).
+- criterion and Rayon are development dependencies of `fefat-cli`, for the engine's benchmarks, and cargo-mutants a development tool, for mutation testing at the phase exits (step 2.15, D-68).
 - The rules files of step 0.4 carry the rules.
 
 ## How we would know it is wrong

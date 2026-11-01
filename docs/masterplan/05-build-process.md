@@ -107,6 +107,7 @@ git pull --ff-only                       # bring the merged commit to this PC
 
 - In the browser instead: "Squash and merge", then "Confirm squash and merge"; afterwards `git switch main` and `git pull --ff-only`.
 - A failing check means no merge: tell Claude Code which check failed and paste what it printed.
+- The Benchmarks check (from step 2.15) runs on a change to the engine or the benchmarks, and warns in its summary when the engine runs more than 30 % slower than the runner's baseline. It passes even then, and when its benchmarks break, so it never stops a merge: read its summary before merging such a change.
 - Never `git push origin main` or `git push --force`: on the free plan GitHub accepts both.
 - Claude Code opens the pull requests from step 0.4 on. To open one by hand from a step branch: `git push -u origin HEAD`, then `gh pr create --base main --web` (the browser form starts from the template).
 

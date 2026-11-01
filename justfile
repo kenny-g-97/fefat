@@ -85,6 +85,15 @@ regenerate-goldens: build-engine
 xcheck:
     uv run python scripts/xcheck.py
 
+# Benchmark the engine on the generated year of step 2.7, built under FEFAT_HOME when missing (step 2.15): a run with trade paths, one without, a batch of 1,000; --baseline <file> warns above a 30 % regression
+bench *ARGS:
+    uv run python scripts/bench.py {{ARGS}}
+
+# Mutation-test fefat-engine with cargo-mutants for the phase exits (step 2.15): each mutant its tests miss is listed in engine/mutants.out/; -f <file> tests one file, --list counts the mutants
+[working-directory("engine")]
+mutants *ARGS:
+    cargo mutants --package fefat-engine {{ARGS}}
+
 # Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
 strip-notebooks:
     uv run python scripts/strip_notebooks.py

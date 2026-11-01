@@ -252,23 +252,31 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
         &self.cost_lines
     }
 
-    /// What comes next of `unit`, the next record or bar, the next timer, and the next decision.
+    /// What comes next of `unit`, the next record or bar, the next timer, and the next decision:
+    /// the first by instant and phase, compared on those keys alone, which never tie, since each
+    /// of the three has a phase of its own.
     fn next_event(&self, unit: Option<Unit>) -> Next {
-        let unit = unit.map(|unit| {
+        let timer = self.next_timer();
+        let decision = self.decisions.get(self.next_decision).copied();
+        let unit_key = unit.map(|unit| {
             let phase = match unit {
                 Unit::Bar(_) => Phase::Bars,
                 Unit::Tick(_) => Phase::Records,
             };
-            ((unit.ts(), phase), Next::Unit(unit))
+            (unit.ts(), phase)
         });
-        let timer = self
-            .next_timer()
-            .map(|timer| ((timer.at(), Phase::Timers), Next::Timer(timer)));
-        let decision = self.decisions.get(self.next_decision).copied();
-        let decision = decision.map(|now| ((now, Phase::Decisions), Next::Decision(now)));
-        let next = [unit, timer, decision].into_iter().flatten();
-        next.min_by_key(|(key, _)| *key)
-            .map_or(Next::Done, |(_, next)| next)
+        let timer_key = timer.map(|timer| (timer.at(), Phase::Timers));
+        let decision_key = decision.map(|now| (now, Phase::Decisions));
+        let first = [unit_key, timer_key, decision_key]
+            .into_iter()
+            .flatten()
+            .min();
+        match (unit, timer, decision) {
+            (Some(unit), _, _) if first == unit_key => Next::Unit(unit),
+            (_, Some(timer), _) if first == timer_key => Next::Timer(timer),
+            (_, _, Some(now)) if first == decision_key => Next::Decision(now),
+            _ => Next::Done,
+        }
     }
 
     /// The ledger as the run stands.
@@ -334,10 +342,10 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
                     continue;
                 };
                 if level > finest && finest.nests_in(timeframe) {
-                    above.push(BarLevel {
-                        bars: reader.bars(trade_date, timeframe)?,
-                        offsets: reader.offsets(trade_date, timeframe, finest)?,
-                    });
+                    above.push(BarLevel::new(
+                        reader.bars(trade_date, timeframe)?,
+                        reader.offsets(trade_date, timeframe, finest)?,
+                    ));
                 }
             }
         }

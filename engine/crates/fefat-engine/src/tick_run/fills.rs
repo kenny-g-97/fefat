@@ -51,21 +51,29 @@ impl<R: MarketDataReader> TickRun<'_, R> {
 
     /// The live orders' turn on a tradeable record, in the order of `on_record`.
     fn work_orders(&mut self, record: &TickRecord, index: usize) -> Result<(), RunError> {
-        for id in self.book.ids_in(OrderState::Triggered, |_| true) {
+        let ids = self.book.ids_in(OrderState::Triggered, |_| true);
+        for &id in &ids {
             self.fill_triggered(id, record, index)?;
         }
-        for id in self.book.ids_in(OrderState::Waiting, |_| true) {
+        self.book.give_back_ids(ids);
+        let ids = self.book.ids_in(OrderState::Waiting, |_| true);
+        for &id in &ids {
             let waiting = self.book.live_in(id, OrderState::Waiting);
             if waiting.is_some_and(|order| rules::f_act_01(order, record.ts, index)) {
                 self.first_record(id, record, index)?;
             }
         }
-        for id in self.book.ids_in(OrderState::Working, is_stop) {
+        self.book.give_back_ids(ids);
+        let ids = self.book.ids_in(OrderState::Working, is_stop);
+        for &id in &ids {
             self.trigger(id, record, index)?;
         }
-        for id in self.book.ids_in(OrderState::Working, is_limit) {
+        self.book.give_back_ids(ids);
+        let ids = self.book.ids_in(OrderState::Working, is_limit);
+        for &id in &ids {
             self.limit_on_record(id, record, index)?;
         }
+        self.book.give_back_ids(ids);
         Ok(())
     }
 

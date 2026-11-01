@@ -128,6 +128,21 @@ def command_on_path(
     return locate
 
 
+def cargo_subcommand(name: str) -> Callable[[], Installation | None]:
+    """`cargo-<name>` on the PATH, its version asked through cargo from engine/, since
+    `cargo-mutants --version` alone is refused."""
+
+    def locate() -> Installation | None:
+        found = shutil.which(f"cargo-{name}")
+        if found is None:
+            return None
+        output = run_command(["cargo", name, "--version"], ENGINE)
+        version = None if output is None else Version.parse(first_line(output))
+        return Installation(Path(found), version)
+
+    return locate
+
+
 def uv_managed_python(requested: str) -> Installation | None:
     uv = shutil.which("uv")
     if uv is None:
@@ -232,6 +247,12 @@ def requirements() -> list[Requirement]:
             "winget install Rustlang.Rustup, then `rustup toolchain install` in engine/ (the pin)",
         ),
         Requirement("cargo", Version(1, 85), command_on_path("cargo", ENGINE), "comes with rustup"),
+        Requirement(
+            "cargo-mutants",
+            Version(27, 1),
+            cargo_subcommand("mutants"),
+            "cargo install cargo-mutants --locked (mutation testing at the phase exits)",
+        ),
         Requirement("just", Version(1, 38), command_on_path("just"), "winget install Casey.Just"),
         native_linker_requirement(),
     ]

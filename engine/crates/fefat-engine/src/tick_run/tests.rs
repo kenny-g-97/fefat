@@ -17,6 +17,7 @@ use fefat_core::units::{MONEY_UNITS, Money, PRICE_UNITS, Price, Qty};
 use super::*;
 use crate::book::{Bracket, BracketLeg, LegPrice};
 use crate::hours::Session;
+use crate::settings::SlippageTicks;
 use crate::strategy::{ScenarioOrder, ScenarioOrders};
 use crate::template::{SignalRow, TemplateStrategy};
 
@@ -1005,6 +1006,94 @@ fn skipping_passes_over_records_no_order_can_act_on_and_ends_as_a_full_replay() 
     assert_eq!((none_skipped, skipped), (0, 3));
     assert_eq!(skipping, full);
     assert_eq!(skipping.ledger.mark(), Some(price(499_950)));
+}
+
+#[test]
+fn a_refusal_to_skip_kept_past_its_reason_ends_as_a_full_replay() {
+    // Step 2.15's kept refusal (descent.rs `Refusal`), from its engine-accuracy review: with a
+    // trade open and its path recorded, the 1-minute bar from 14:30 refuses the block that its
+    // record at 14:30:00, on the whole minute, opens (`PathRecorder::can_skip`). That record
+    // changes nothing the refusal keeps, so the refusal stands at 14:30:10, which a fresh check
+    // would skip, and the record is read on its own; every output is still the full replay's.
+    let seconds = [-30, 0, 10, 20, 30, 65, 100];
+    let trades: Vec<TradeRow> = seconds
+        .iter()
+        .map(|&second| TradeRow {
+            ts_recv: at(second * 1_000),
+            price: price(500_000),
+            size: Qty(1),
+        })
+        .collect();
+    let bar = |opens: i64, held: &[TradeRow]| BarRow {
+        ts_open: at(opens * 1_000),
+        ts_close: at((opens + 60) * 1_000),
+        open: price(500_000),
+        high: price(500_000),
+        low: price(500_000),
+        close: price(500_000),
+        volume: Qty(held.len() as i64),
+    };
+    let minute_bars = vec![
+        bar(-60, &trades[0..1]),
+        bar(0, &trades[1..5]),
+        bar(60, &trades[5..7]),
+    ];
+    let tape = TapeDay {
+        trade_date: TRADE_DATE,
+        tbbo: Vec::new(),
+        trades,
+        bars: BTreeMap::from([(Timeframe::ONE_MINUTE, minute_bars)]),
+    };
+    let reader = InMemoryMarketData::new(Contract("ESH2026".to_owned()), vec![tape]).unwrap();
+    let orders = vec![
+        ScenarioOrder {
+            placed_at: at(-40_000),
+            ..order(1, Side::Buy, OrderKind::Market)
+        },
+        ScenarioOrder {
+            placed_at: at(90_000),
+            ..order(2, Side::Sell, OrderKind::Market)
+        },
+    ];
+    let hours = TradingHours::always();
+    let settings = RunSettings {
+        latency_milliseconds: 0,
+        slippage: SlippageTicks { market: 0, stop: 0 },
+        ..RunSettings::defaults_for(Fidelity::Trades)
+    };
+    let replayed = |replay: Replay| {
+        let mut strategy = ScenarioOrders::new(orders.clone());
+        let run = TickRun::new(
+            &reader,
+            Fidelity::Trades,
+            replay,
+            &hours,
+            settings,
+            flat(),
+            &mut strategy,
+        );
+        let mut run = run.unwrap().with_recording(Recording::Paths);
+        let (mut records, mut skipped) = (0, 0);
+        while let Some(stepped) = run.step().unwrap() {
+            match stepped {
+                Stepped::Record(_) => records += 1,
+                Stepped::Skipped { units } => skipped += units,
+                _ => {}
+            }
+        }
+        (run.run().unwrap(), records, skipped)
+    };
+    let (full, full_records, _) = replayed(Replay::Full);
+    let (skipping, records, skipped) = replayed(Replay::Skipping);
+    assert_eq!(full_records, 7);
+    assert_eq!((records, skipped), (4, 3), "14:30:10 is read on its own");
+    assert_eq!(skipping, full);
+    let kinds: Vec<String> = full.trade_paths[0]
+        .points
+        .iter()
+        .map(|point| point.kind.to_string())
+        .collect();
+    assert_eq!(kinds, ["fill", "minute", "minute", "fill"]);
 }
 
 fn minute() -> Fidelity {
