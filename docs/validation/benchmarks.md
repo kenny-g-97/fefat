@@ -89,6 +89,14 @@ No output changed: the determinism digest, the backtest golden, the scenarios th
 
 The workflow `.github/workflows/benchmarks.yml` runs `just bench --baseline docs/validation/benchmarks-ci-baseline.json` on `ubuntu-latest` for every pull request and every push to main that changes the engine, the benchmarks, the generator of their year, or the store code that caches it; the private repository's free plan counts its minutes. It generates the year, runs the three benchmarks, writes their medians beside the baseline's into the job's summary, and warns on a benchmark more than 30 % slower, without failing, since shared runners vary too much for a gate (`02` §8 item 7) and the numbers on this PC decide; even a benchmark step that breaks or reaches its time limit leaves the check passing, its log saying why. `docs/validation/benchmarks-ci-baseline.json` holds the medians of one runner's run, with its date and link; after a deliberate change to the engine's speed, copy the JSON block from a later run's summary into it.
 
+The first run, [41323585243](https://github.com/kenny-g-97/fefat/actions/runs/41323585243) on 2026-11-01, took about 10 minutes on a runner with two threads: 3.4 to build the engine from a cold cache, and 6.2 to generate the year, build its cache, and run the benchmarks. It generated the same year as this PC, 252 trade dates and 17,864,735 trades, and its runs made the same 14,557 fills.
+
+| Benchmark | Runner baseline | This PC |
+| --- | ---: | ---: |
+| `single_run/with_paths` | 0.972 s | 0.809 to 0.835 s |
+| `single_run/without_paths` | 0.276 s | 0.207 to 0.216 s |
+| `batch/1000_runs_one_month` | 14.2 s on 2 threads | 0.851 to 0.864 s on 32 threads |
+
 ## Reproduce
 
 ```text
