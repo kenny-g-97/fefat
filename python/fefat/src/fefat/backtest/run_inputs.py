@@ -24,6 +24,7 @@ from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.config import FefatPaths
 from fefat.market.api import load, parse_trade_date, roll_calendar
 from fefat.market.calendar import SessionTable, counted
+from fefat.market.contracts import parse_contract_name
 from fefat.market.dataset_choice import provider_datasets, signal_source
 from fefat.market.engine_cache import build_cache_months, level_of
 from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
@@ -148,7 +149,7 @@ def run_inputs(
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
     held = {str(dataset.schema_name): dataset for dataset in market.datasets}
     source = signal_source(market.store, held, Timeframe.parse(strategy.timeframe), dates)
-    bars, loaded = _bars(strategy, dates, market.provider, source)
+    bars, loaded = _bars(strategy, dates, market.provider, source, applied.contract)
     spec = strategy.to_spec()
     signals = strategy.signals(bars).collect()
     require_named_columns(spec.execution, signals.columns)
@@ -233,15 +234,25 @@ def _bars(
     dates: tuple[date, date],
     provider: str,
     source: TickFidelity | Timeframe,
+    contract: str | None,
 ) -> tuple[pl.DataFrame, tuple[str, ...]]:
     """The strategy's signal bars from `dates`' start to its end, as `load` gives them from
-    `source`, and the warnings it raised, which the run's record keeps."""
+    `source`, of the root's fronts or of the one `contract`, and the warnings it raised, which
+    the run's record keeps."""
     root, timeframe = strategy.instrument, strategy.timeframe
+    symbol = root if contract is None else _contract_of(root, contract)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        bars = load(root, timeframe, *dates, fidelity=source, provider=provider)
+        bars = load(symbol, timeframe, *dates, fidelity=source, provider=provider)
         frame = bars.collect()
     return frame, tuple(str(warning.message) for warning in caught)
+
+
+def _contract_of(root: str, contract: str) -> str:
+    contract_root, _ = parse_contract_name(contract)
+    if contract_root != root:
+        raise ValueError(f"Expected a contract of {root}, the strategy's root, got {contract}.")
+    return contract
 
 
 def _window(signals: pl.DataFrame) -> Window:

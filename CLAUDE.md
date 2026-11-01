@@ -31,6 +31,7 @@ just build-engine  # compile the engine into .venv, where `import fefat` finds i
 just strip-notebooks  # clear notebook outputs; then git add the notebooks again
 just gen-schema  # write the StrategySpec JSON schema from the Rust types; a cargo test fails when it is stale
 just regenerate-goldens  # rewrite fixtures/goldens/ from the engine; only with the builder's approval (the engine-golden skill)
+just xcheck   # cross-check the engine against NautilusTrader and NinjaTrader 8's export on the real store (step 2.14): slow, writes docs/validation/nautilus-comparison.md
 just dev      # local server and web dev server (from Phase 4)
 ```
 

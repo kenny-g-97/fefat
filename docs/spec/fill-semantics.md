@@ -244,7 +244,7 @@ How the rules answer the red-flag checklist of the `backtest-expert` skill (`ref
 
 ## 19. Not in this specification
 
-- The NautilusTrader compatibility profile: touch fills, no slippage ticks, no latency, and Nautilus's own bar path (step 2.14).
+- The NautilusTrader compatibility profile: touch fills, no slippage ticks, no latency, and FEFAT's own bar path, Nautilus's being a documented difference class of the comparison (step 2.14, D-66).
 - Stop-limit orders (event strategies, Phase 9), partial fills, a queue or volume model for limits, and order rejections.
 
 ## 20. The execution template

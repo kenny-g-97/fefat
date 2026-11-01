@@ -81,6 +81,10 @@ regenerate-goldens: build-engine
     cargo run -p fefat-cli -- determinism 20260308 --write ../fixtures/goldens/determinism/MANIFEST.json
     uv run python ../scripts/golden_backtest.py --write ../fixtures/goldens/backtest/MANIFEST.json
 
+# Cross-check the engine against NautilusTrader, and NinjaTrader 8's exported trades when present, on MES in August 2026 (step 2.14): slow, needs the real store, runs the other engine in python/tests/external's own environment, and writes docs/validation/nautilus-comparison.md
+xcheck:
+    uv run python scripts/xcheck.py
+
 # Clear every notebook's outputs (they can hold licensed data); then `git add` the notebooks again
 strip-notebooks:
     uv run python scripts/strip_notebooks.py
