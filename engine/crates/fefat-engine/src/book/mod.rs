@@ -332,6 +332,17 @@ impl Book {
         Some(())
     }
 
+    /// Every working limit saw a price without filling: each rests (F-LMT-04).
+    pub(crate) fn rest_working_limits(&mut self) {
+        let working_limits = self.live.iter_mut().filter(|order| {
+            order.state == OrderState::Working
+                && matches!(order.order.kind, OrderKind::Limit { .. })
+        });
+        for order in working_limits {
+            order.rested = true;
+        }
+    }
+
     /// Closes the live order `id`, filled or cancelled, and returns it; its plan leaves with its
     /// last leg.
     pub(crate) fn close(&mut self, id: OrderId, closing: Closing) -> Option<WorkingOrder> {

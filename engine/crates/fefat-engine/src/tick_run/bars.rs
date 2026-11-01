@@ -251,13 +251,7 @@ impl<'replay> BarReplay<'replay> {
             }
         }
         self.book.give_back_ids(ids);
-        let ids = self.book.ids_in(OrderState::Working, is_limit);
-        for &id in &ids {
-            self.book
-                .rest(id)
-                .ok_or(RunError::UnknownOrder { order: id.0 })?;
-        }
-        self.book.give_back_ids(ids);
+        self.book.rest_working_limits();
         self.marked(point, None)
     }
 

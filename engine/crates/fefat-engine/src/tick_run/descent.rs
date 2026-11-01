@@ -10,8 +10,8 @@
 //! (F-MRK-01). The bar's range bounds the prices of the records it holds, which every reader
 //! checks where the levels nest, so skipping changes nothing that a full replay finds (skip equals
 //! no-skip). A level that refuses a block keeps its refusal for the block's later records while
-//! nothing its verdict reads has changed (step 2.15), since a refusal kept too long only replays
-//! records one by one.
+//! what it remembers of the run has not changed (step 2.15), since a refusal kept too long only
+//! leaves the records to a finer level or to a replay one by one.
 
 use std::cell::Cell;
 
@@ -19,7 +19,6 @@ use fefat_core::instants::Ts;
 use fefat_core::market_data::{BarColumns, BarRow, MarketDataReader};
 use fefat_core::orders::{OrderKind, OrderState, Side};
 
-use super::fills::is_limit;
 use super::records::{Unit, bar_row};
 use super::trades::Tracking;
 use super::{RunError, Stepped, TickRun, Timer};
@@ -47,16 +46,20 @@ pub(super) struct BarLevel<'run> {
 /// A level's refusal to skip the records from the one it was asked about to just before `end`,
 /// given while the run's skip state was `state` (step 2.15). It stands for those records while
 /// the state holds, so that the level is not asked again at each of them. A refusal kept after a
-/// change the state does not see only has more records replayed one by one, which leaves the run
-/// as a skip would (skip equals no-skip): a refusal is remembered, never a skip.
+/// change the state does not see only leaves the records to a finer level, whose own verdict is
+/// worked out afresh, or to a replay one by one, and either leaves the run as a skip would (skip
+/// equals no-skip): a refusal is remembered, never a skip.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Refusal {
     end: usize,
     state: SkipState,
 }
 
-/// What a level's verdict reads of the run that a record can change: the length of the event log,
-/// which every change to an order or an exit plan adds to, and the open trade's tracking.
+/// What a level's verdict reads of the run that its records most often change: the length of the
+/// event log, to which a fill, an activation, a placed or cancelled order, and a moved stop add,
+/// and the open trade's tracking. It misses what moves without a log entry, such as an exit
+/// plan's best price, a resting limit, the last mark, or the record's own instant, which only
+/// keeps a refusal past its reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SkipState {
     logged: usize,
@@ -170,13 +173,7 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let units = block.end - self.next_record;
         self.next_record = block.end;
         self.in_break = false;
-        let ids = self.book.ids_in(OrderState::Working, is_limit);
-        for &id in &ids {
-            self.book
-                .rest(id)
-                .ok_or(RunError::UnknownOrder { order: id.0 })?;
-        }
-        self.book.give_back_ids(ids);
+        self.book.rest_working_limits();
         // F-MRK-01: the finest record's price, which its bar's close, a vendor's, need not be.
         self.mark_at(block.last.ts(), block.last.last_price())?;
         Ok(Stepped::Skipped { units })
