@@ -42,7 +42,7 @@ Three runs of `just bench` before the fixes and three after, each a fresh proces
 | `single_run/without_paths` | the same run recording no paths, as a sweep's trials run | 0.343 s | 0.207 to 0.216 s |
 | `batch/1000_runs_one_month` | 1,000 runs over January's 20 trade dates, stops of 4 to 28 ticks by targets of 8 to 86, on 32 threads, as `fefat_engine.run_batch` runs a sweep | 1.314 to 1.327 s | 0.851 to 0.864 s |
 
-The batch runs one month, not the year: criterion takes at least ten samples, which would keep 1,000 runs of the year running for about three minutes here and far longer on a runner with two cores.
+Each timing includes copying the run's signal rows, about 14 MB for the year and 1 MB for a month, as every run through the bindings builds its rows from its frame. The batch runs one month, not the year: criterion takes at least ten samples, which would keep 1,000 runs of the year running for about three minutes here and far longer on a runner with two cores.
 
 ## Against the targets
 
@@ -58,7 +58,7 @@ Before the fixes every target was missed by more than twice even at the smaller 
 
 ## Where the time went
 
-The profile is two recordings of 20 seconds each, the year with paths and without, made with cargo-flamegraph 0.6.14 on the benchmark built with debug information (`CARGO_PROFILE_BENCH_DEBUG=true`), from an administrator terminal, since its Windows recorder needs one. samply was the first choice, but it records through the Windows Performance Toolkit, and Microsoft's server serves a documentation file that matches neither release of the kit that holds it (D-68). Shares of each run's time, before the fixes:
+The profile is two recordings of 20 seconds each, the year with paths and without, made with cargo-flamegraph 0.6.14 on the benchmark built with debug information (`CARGO_PROFILE_BENCH_DEBUG=true`), from an administrator terminal, since its Windows recorder needs one. samply was the first choice, but it records through the Windows Performance Toolkit, and Microsoft's server serves a documentation file that matches neither release of the kit that holds it (D-68). The shares count the samples of the timed run alone, below criterion's routine on the main thread, and leave out the benchmark's untimed checks, which the batch's ran on Rayon's threads then; the benchmark now runs that check only when the batch is chosen. Shares of each run's time, before the fixes:
 
 | Where | With paths | Without paths |
 | --- | ---: | ---: |
@@ -87,7 +87,7 @@ No output changed: the determinism digest, the backtest golden, the scenarios th
 
 ## The runner baseline
 
-The Benchmarks job of `.github/workflows/ci.yml` runs `just bench --baseline docs/validation/benchmarks-ci-baseline.json` on `ubuntu-latest` for every pull request and every push to main: it generates the year, runs the three benchmarks, writes their medians beside the baseline's into the job's summary, and warns on a benchmark more than 30 % slower, without failing, since shared runners vary too much for a gate (`02` §8 item 7) and the numbers on this PC decide. `docs/validation/benchmarks-ci-baseline.json` holds the medians of one runner's run, with its date and link; after a deliberate change to the engine's speed, copy the JSON block from a later run's summary into it.
+The workflow `.github/workflows/benchmarks.yml` runs `just bench --baseline docs/validation/benchmarks-ci-baseline.json` on `ubuntu-latest` for every pull request and every push to main that changes the engine, the benchmarks, the generator of their year, or the store code that caches it; the private repository's free plan counts its minutes. It generates the year, runs the three benchmarks, writes their medians beside the baseline's into the job's summary, and warns on a benchmark more than 30 % slower, without failing, since shared runners vary too much for a gate (`02` §8 item 7) and the numbers on this PC decide; even a benchmark step that breaks or reaches its time limit leaves the check passing, its log saying why. `docs/validation/benchmarks-ci-baseline.json` holds the medians of one runner's run, with its date and link; after a deliberate change to the engine's speed, copy the JSON block from a later run's summary into it.
 
 ## Reproduce
 
