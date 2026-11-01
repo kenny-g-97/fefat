@@ -123,11 +123,13 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         let units = block.end - self.next_record;
         self.next_record = block.end;
         self.in_break = false;
-        for id in self.book.ids_in(OrderState::Working, is_limit) {
+        let ids = self.book.ids_in(OrderState::Working, is_limit);
+        for &id in &ids {
             self.book
                 .rest(id)
                 .ok_or(RunError::UnknownOrder { order: id.0 })?;
         }
+        self.book.give_back_ids(ids);
         // F-MRK-01: the finest record's price, which its bar's close, a vendor's, need not be.
         self.mark_at(block.last.ts(), block.last.last_price())?;
         Ok(Stepped::Skipped { units })

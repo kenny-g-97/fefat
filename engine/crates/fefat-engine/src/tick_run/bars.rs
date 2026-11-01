@@ -48,7 +48,11 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         }
         let at = self.fill_point(rules::f_bar_06(bar), index);
         self.transfer_on_bar(bar, at)?;
-        if let Some(stop) = self.book.ids_in(OrderState::Triggered, |_| true).first() {
+        let triggered = self
+            .book
+            .live()
+            .filter(|order| order.state() == OrderState::Triggered);
+        if let Some(stop) = triggered.map(|order| order.order.id).min() {
             return Err(RunError::TriggeredWithoutQuotes {
                 order: stop.0,
                 at: rules::f_bar_06(bar),
@@ -58,12 +62,14 @@ impl<R: MarketDataReader> TickRun<'_, R> {
         if !self.book.has_live() {
             return self.marked_along(bar);
         }
-        for id in self.book.ids_in(OrderState::Waiting, |_| true) {
+        let ids = self.book.ids_in(OrderState::Waiting, |_| true);
+        for &id in &ids {
             let waiting = self.book.live_in(id, OrderState::Waiting);
             if waiting.is_some_and(|order| rules::f_act_02(order, bar)) {
                 self.log.push(LogEntry::active_on_bar(at.ts, id));
             }
         }
+        self.book.give_back_ids(ids);
         let (mut trial_book, mut trial_ledger) = (self.book.trial(), self.ledger.clone());
         let (settings, costs) = (&self.settings, &self.costs);
         let real = BarReplay::on(&mut self.book, &mut self.ledger, settings, costs, at);
@@ -209,13 +215,16 @@ impl<'replay> BarReplay<'replay> {
     /// limits still working rest (F-LMT-04), and the open marks the position.
     fn open(&mut self, bar: &BarRow) -> Result<(), RunError> {
         let (point, market) = (bar.open, self.ledger.mark());
-        for id in self.book.ids_in(OrderState::Waiting, |_| true) {
+        let ids = self.book.ids_in(OrderState::Waiting, |_| true);
+        for &id in &ids {
             let waiting = self.book.live_in(id, OrderState::Waiting);
             if waiting.is_some_and(|order| rules::f_act_02(order, bar)) {
                 self.first_bar(id, point, market)?;
             }
         }
-        for id in self.book.ids_in(OrderState::Working, is_stop) {
+        self.book.give_back_ids(ids);
+        let ids = self.book.ids_in(OrderState::Working, is_stop);
+        for &id in &ids {
             let Some(order) = self.book.live_in(id, OrderState::Working) else {
                 continue;
             };
@@ -228,7 +237,9 @@ impl<'replay> BarReplay<'replay> {
                 self.fill(point, id, on_bars(price, PricingRule::StopOnBars, stop))?;
             }
         }
-        for id in self.book.ids_in(OrderState::Working, is_limit) {
+        self.book.give_back_ids(ids);
+        let ids = self.book.ids_in(OrderState::Working, is_limit);
+        for &id in &ids {
             let Some(order) = self.book.live_in(id, OrderState::Working) else {
                 continue;
             };
@@ -239,11 +250,14 @@ impl<'replay> BarReplay<'replay> {
                 self.fill(point, id, at_its_price(limit))?;
             }
         }
-        for id in self.book.ids_in(OrderState::Working, is_limit) {
+        self.book.give_back_ids(ids);
+        let ids = self.book.ids_in(OrderState::Working, is_limit);
+        for &id in &ids {
             self.book
                 .rest(id)
                 .ok_or(RunError::UnknownOrder { order: id.0 })?;
         }
+        self.book.give_back_ids(ids);
         self.marked(point, None)
     }
 
