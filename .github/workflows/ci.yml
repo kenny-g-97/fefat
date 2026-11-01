@@ -3,8 +3,8 @@
 # checks and tests run on the real extension), then builds and imports the
 # fefat_engine wheel. One job per system, so `gh pr checks` lists one check
 # each: the merge routine in docs/masterplan/05-build-process.md section 8
-# waits for them. Actions are pinned to commits (D-33); the comment names
-# the release.
+# waits for them. Beside them, the advisory Benchmarks job (step 2.15).
+# Actions are pinned to commits (D-33); the comment names the release.
 name: CI
 
 on:
@@ -111,3 +111,44 @@ jobs:
           if-no-files-found: error
           # Artifacts count against the free plan's storage.
           retention-days: 14
+
+  # The engine's benchmarks on the generated year of step 2.7 (`just bench`,
+  # step 2.15, D-68), each median against the runner's baseline. A benchmark
+  # over 30 % slower warns in the job's summary and the job still passes:
+  # shared runners are too noisy for a gate, and the numbers on the reference
+  # PC (docs/validation/benchmarks.md) decide. continue-on-error keeps even a
+  # broken benchmark from failing the workflow. The year is generated on each
+  # run, about 1.4 GB under the runner's home.
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.11.33"
+          activate-environment: true
+
+      - name: Install the Rust toolchain pinned in engine/rust-toolchain.toml
+        working-directory: engine
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: engine
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.58.0
+
+      - run: uv sync --locked --all-packages
+      - run: just build-engine
+      - run: just bench --baseline docs/validation/benchmarks-ci-baseline.json
