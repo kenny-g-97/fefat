@@ -10,6 +10,7 @@ Already present on 2026-10-05: git 2.55, GitHub CLI 2.97 (signed in), Node 24 + 
 | Rust (stable) via rustup | the engine | `winget install Rustlang.Rustup`, then `rustup default stable`; pinned by `engine/rust-toolchain.toml` |
 | pnpm | the web app | `corepack enable --install-directory "$env:APPDATA\npm"` (Node ships corepack; the install directory keeps the shims out of Program Files, which needs administrator rights) then `corepack install -g pnpm@latest` (corepack 0.35 has no `prepare` command), or `npm install -g pnpm` |
 | `just` | the task runner | `winget install Casey.Just` or `cargo install just` |
+| cargo-mutants 27.1 | mutation testing at the phase exits, `just mutants` (step 2.15) | `cargo install cargo-mutants --locked`; `just doctor` checks it |
 | Python 3.12 | SDK and server | already installed by uv; `.python-version` pins it |
 | Playwright browsers (P4) | UI tests | `pnpm exec playwright install chromium` |
 | Claude Code CLI (optional) | running `claude` from a terminal, not only VS Code | `winget install Anthropic.ClaudeCode` or the installer from the docs |
