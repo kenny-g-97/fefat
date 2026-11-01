@@ -9,7 +9,11 @@
 //! block's lowest and highest prices, and the position marked at the block's last record
 //! (F-MRK-01). The bar's range bounds the prices of the records it holds, which every reader
 //! checks where the levels nest, so skipping changes nothing that a full replay finds (skip equals
-//! no-skip).
+//! no-skip). A level that refuses a block keeps its refusal for the block's later records while
+//! nothing its verdict reads has changed (step 2.15), since a refusal kept too long only replays
+//! records one by one.
+
+use std::cell::Cell;
 
 use fefat_core::instants::Ts;
 use fefat_core::market_data::{BarColumns, BarRow, MarketDataReader};
@@ -17,6 +21,7 @@ use fefat_core::orders::{OrderKind, OrderState, Side};
 
 use super::fills::is_limit;
 use super::records::{Unit, bar_row};
+use super::trades::Tracking;
 use super::{RunError, Stepped, TickRun, Timer};
 use crate::book::WorkingOrder;
 use crate::exit_plan::LivePlan;
@@ -31,14 +36,43 @@ pub enum Replay {
     Skipping,
 }
 
-/// A bar level above a trade date's finest one, which nests its records, and the offsets that
-/// take each of its bars down to them (`MarketDataReader::offsets`).
+/// A bar level above a trade date's finest one, which nests its records, the offsets that take
+/// each of its bars down to them (`MarketDataReader::offsets`), and its last refusal to skip.
 pub(super) struct BarLevel<'run> {
-    pub(super) bars: BarColumns<'run>,
-    pub(super) offsets: &'run [u32],
+    bars: BarColumns<'run>,
+    offsets: &'run [u32],
+    refusal: Cell<Option<Refusal>>,
 }
 
-impl BarLevel<'_> {
+/// A level's refusal to skip the records from the one it was asked about to just before `end`,
+/// given while the run's skip state was `state` (step 2.15). It stands for those records while
+/// the state holds, so that the level is not asked again at each of them. A refusal kept after a
+/// change the state does not see only has more records replayed one by one, which leaves the run
+/// as a skip would (skip equals no-skip): a refusal is remembered, never a skip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Refusal {
+    end: usize,
+    state: SkipState,
+}
+
+/// What a level's verdict reads of the run that a record can change: the length of the event log,
+/// which every change to an order or an exit plan adds to, and the open trade's tracking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SkipState {
+    logged: usize,
+    tracking: Option<Tracking>,
+}
+
+impl<'run> BarLevel<'run> {
+    /// The level of `bars`, whose `offsets` take each bar down to the finest records.
+    pub(super) const fn new(bars: BarColumns<'run>, offsets: &'run [u32]) -> Self {
+        Self {
+            bars,
+            offsets,
+            refusal: Cell::new(None),
+        }
+    }
+
     /// The bar holding the finest record `index`, and the place just past that bar's records.
     fn holding(&self, index: usize) -> Option<(BarRow, usize)> {
         let after = self
@@ -60,15 +94,25 @@ impl<R: MarketDataReader> TickRun<'_, R> {
     /// The block of the finest records from the next one that a skip may pass over: those of the
     /// coarsest bar holding it, or of a finer one, that come before the next decision (F-CLK-02),
     /// that no order can act on, and that leave the open trade's excursions and path as a full
-    /// replay would; none when the run replays in full or no bar holding the record allows it.
+    /// replay would; none when the run replays in full or no bar holding the record allows it. A
+    /// level that refused the records from an earlier one is not asked again while its refusal
+    /// stands (`Refusal`).
     pub(super) fn skippable(&self) -> Option<Block> {
         let day = self.day.as_ref()?;
         let start = self.next_record;
+        let state = SkipState {
+            logged: self.log.len(),
+            tracking: self.trades.tracking(),
+        };
         let instants = day.records.instants();
         let decision = self.decisions.get(self.next_decision).copied();
         let timer = self.next_timer().map(Timer::at);
         let of_bars = day.records.are_bars();
         day.levels.iter().find_map(|level| {
+            let refused = level.refusal.get();
+            if refused.is_some_and(|refusal| start < refusal.end && refusal.state == state) {
+                return None;
+            }
             let (bar, end) = level.holding(start)?;
             let end = decision.map_or(end, |decision| before(instants, start, end, decision, true));
             let end = timer.map_or(end, |at| before(instants, start, end, at, of_bars));
@@ -79,6 +123,9 @@ impl<R: MarketDataReader> TickRun<'_, R> {
                 skippable.unwrap_or(false)
             };
             let nothing_acts = end > start && self.untouched_by(&bar, last.ts()) && path_stays();
+            if !nothing_acts {
+                level.refusal.set(Some(Refusal { end, state }));
+            }
             nothing_acts.then_some(Block { end, last })
         })
     }

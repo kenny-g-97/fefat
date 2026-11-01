@@ -240,6 +240,12 @@ impl PathRecorder {
         Ok(best <= favourable && worst >= adverse)
     }
 
+    /// The tracking `can_skip` reads that a mark can move but for the last mark itself: the best
+    /// and the worst distance since the last point, and the next whole minute (step 2.15).
+    pub(super) const fn tracking(&self) -> (Price, Price, Ts) {
+        (self.favourable, self.adverse, self.next_minute)
+    }
+
     /// The path, its trade closed.
     pub(super) fn into_path(self) -> TradePath {
         TradePath {

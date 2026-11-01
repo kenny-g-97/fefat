@@ -342,10 +342,10 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
                     continue;
                 };
                 if level > finest && finest.nests_in(timeframe) {
-                    above.push(BarLevel {
-                        bars: reader.bars(trade_date, timeframe)?,
-                        offsets: reader.offsets(trade_date, timeframe, finest)?,
-                    });
+                    above.push(BarLevel::new(
+                        reader.bars(trade_date, timeframe)?,
+                        reader.offsets(trade_date, timeframe, finest)?,
+                    ));
                 }
             }
         }
