@@ -157,6 +157,17 @@ def test_a_baseline_without_positive_nanoseconds_is_refused(tmp_path: Path, stor
         bench.stored_baseline(baseline)
 
 
+def test_benchmarks_that_measure_nothing_raise_a_github_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    bench.announce_failure(ValueError("Expected cargo bench to report a benchmark, got:\nnone"))
+
+    assert capsys.readouterr().out == (
+        "::warning title=Benchmarks did not run::The benchmarks measured nothing: "
+        "Expected cargo bench to report a benchmark, got:\n"
+    )
+
+
 def test_just_bench_runs_the_benchmarks() -> None:
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 
@@ -173,6 +184,9 @@ def test_ci_runs_the_benchmarks_on_engine_changes_and_never_blocks_a_merge() -> 
     assert job["runs-on"] == "ubuntu-latest"
     assert benchmark["run"] == f"just bench --baseline {bench.CI_BASELINE}"
     assert benchmark["continue-on-error"] is True
+    assert benchmark["env"]["CRITERION_HOME"].startswith("${{ runner.temp }}"), (
+        "not the cached target/"
+    )
     for event in ("pull_request", "push"):
         assert {"engine/**", "scripts/bench.py"} <= set(triggers[event]["paths"]), event
     assert (

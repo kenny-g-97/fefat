@@ -75,7 +75,12 @@ jobs:
       - run: uv sync --locked --all-packages
       - run: just build-engine
 
+      # criterion keeps its results in the runner's temporary folder: the Rust
+      # cache restores engine/target/criterion only in part, and criterion
+      # then fails to read its last run's samples.
       - name: Benchmark the engine against the runner baseline
         run: just bench --baseline docs/validation/benchmarks-ci-baseline.json
+        env:
+          CRITERION_HOME: ${{ runner.temp }}/criterion
         continue-on-error: true
         timeout-minutes: 30

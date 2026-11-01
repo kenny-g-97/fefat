@@ -109,7 +109,7 @@ def run_benches(contract: Path) -> str:
             print(line, end="", flush=True)
             lines.append(line)
     if process.returncode != 0:
-        raise SystemExit(f"Expected cargo bench to pass, got exit code {process.returncode}")
+        raise RuntimeError(f"Expected cargo bench to pass, got exit code {process.returncode}")
     return "".join(lines)
 
 
@@ -193,6 +193,13 @@ def _milliseconds(nanoseconds: int) -> str:
     return f"{nanoseconds / 1_000_000:,.1f} ms"
 
 
+def announce_failure(failure: Exception) -> None:
+    """A GitHub warning that the benchmarks measured nothing, which the Benchmarks job's passing
+    check would otherwise hide (`.github/workflows/benchmarks.yml`): the failure's first line."""
+    message = f"The benchmarks measured nothing: {failure}".splitlines()[0]
+    print(f"::warning title=Benchmarks did not run::{message.replace('%', '%25')}", flush=True)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the engine's benchmarks (step 2.15).")
     parser.add_argument("--baseline", type=Path, help=f"medians to compare with, as {CI_BASELINE}")
@@ -216,4 +223,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as failure:
+        announce_failure(failure)
+        raise
