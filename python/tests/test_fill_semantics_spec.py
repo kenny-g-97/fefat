@@ -72,6 +72,17 @@ def test_the_sign_off_table_lists_every_proposed_rule() -> None:
     assert proposed - listed == set()
 
 
+def test_every_default_of_the_sign_off_table_carries_its_date() -> None:
+    # The Phase 2 exit's step review: 30 rows waited undated until you signed them off on
+    # 2026-11-02; a row added later must carry its date too.
+    header, *rows = first_table(section("Sign-off"))
+    rules, signed = header.index("Rules"), header.index("Signed off")
+
+    unsigned = [row[rules] for row in rows if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", row[signed])]
+
+    assert unsigned == []
+
+
 def test_the_sign_off_table_starts_from_the_kickoff_answers() -> None:
     header, *rows = first_table(section("Sign-off"))
     rules, source = header.index("Rules"), header.index("Source")
