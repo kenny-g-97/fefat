@@ -76,7 +76,21 @@ class Explanation:
 
 
 class EnginesDisagreementError(AssertionError):
-    """The reference engine's fills of an episode are not the Rust engine's (D-10)."""
+    """The reference engine's fills of an episode are not the Rust engine's (D-10): both are
+    its `reference` and `rust`, which its message leaves out, since they hold the trader's
+    prices (D-21)."""
+
+    def __init__(
+        self, trade_id: int, reference: tuple[FillView, ...], rust: tuple[FillView, ...]
+    ) -> None:
+        apart = sum(ours != theirs for ours, theirs in zip(reference, rust, strict=False))
+        apart += abs(len(reference) - len(rust))
+        super().__init__(
+            f"Expected the reference engine's fills of trade {trade_id} to be the Rust "
+            f"engine's, got {apart} of {max(len(reference), len(rust))} apart: the error's "
+            "`reference` and `rust` hold them, which `fill_text` writes out."
+        )
+        self.reference, self.rust = reference, rust
 
 
 @dataclass(frozen=True)
@@ -120,11 +134,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     replayed = _replayed(record, episode, (fidelity, fees), first_id, sessions)
     reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
     if reference != rust:
-        raise EnginesDisagreementError(
-            f"Expected the reference engine's fills of trade {trade_id} to be the Rust "
-            f"engine's, got:\nreference: {'; '.join(map(fill_text, reference))}\n"
-            f"Rust: {'; '.join(map(fill_text, rust))}"
-        )
+        raise EnginesDisagreementError(trade_id, reference, rust)
     lines = (
         _heading(trade, record),
         f"Replayed through the reference engine on {fidelity_in_words(fidelity)} records from "

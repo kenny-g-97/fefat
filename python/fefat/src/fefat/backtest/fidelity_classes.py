@@ -162,14 +162,19 @@ class _Trade:
 
     @classmethod
     def of_row(cls, row: Mapping[str, object]) -> "_Trade":
+        # The messages name the trade and the type alone, since a row's values are prices (D-21).
+        trade = f"the {row.get('side')} trade entered at decision {row.get('entry_decision')}"
+
         def integer(name: str) -> int:
             value = row[name]
             if not isinstance(value, int):
-                raise ValueError(f"Expected an integer {name}, got {value!r} in {dict(row)}.")
+                raise ValueError(f"Expected an integer {name} of {trade}, got {type(value)}.")
             return value
 
-        level = row["entry_level"]
-        exit_role = OrderRole(str(row["exit_reason"]))
+        level, reason = row["entry_level"], row["exit_reason"]
+        if not isinstance(reason, str):
+            raise ValueError(f"Expected the exit reason of {trade}, got {type(reason)}.")
+        exit_role = OrderRole(reason)
         return cls(
             entry_decision=integer("entry_decision"),
             side=PositionSide(str(row["side"])),
