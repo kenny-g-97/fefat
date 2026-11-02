@@ -13,7 +13,7 @@ mod tests;
 
 pub use rows::{RowFeatures, SignalRow};
 
-use fefat_core::instants::Ts;
+use fefat_core::instants::{NANOSECONDS_PER_MINUTE, Ts};
 use fefat_core::instrument::InstrumentParameters;
 use fefat_core::ledger::Position;
 use fefat_core::orders::{ExitReason, OrderKind, Side};
@@ -122,9 +122,11 @@ impl TemplateStrategy {
         if time.max_bars.is_some_and(|bars| decisions >= bars as usize) {
             return Some(ExitReason::MaxBars);
         }
+        // A span past the last instant is never reached, as the reference's integers give
+        // (S-template-082).
         let minutes = time
             .max_minutes
-            .map(|minutes| i64::from(minutes) * 60_000_000_000);
+            .and_then(|minutes| i64::from(minutes).checked_mul(NANOSECONDS_PER_MINUTE));
         let after = minutes.and_then(|span| opened_at.checked_add_nanoseconds(span).ok());
         after
             .is_some_and(|after| now >= after)

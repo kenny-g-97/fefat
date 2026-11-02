@@ -1,0 +1,41 @@
+id: S-template-083
+title: A cooldown_after_loss of 200,000,000 minutes skips every later entry, its span past the last instant a run holds
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 4}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    limits: {cooldown_after_loss: {kind: minutes, minutes: 200000000}}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:33:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:34:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:30:30.000Z", price: "4999.00", size: 1}
+  - {ts: "2026-03-05T14:31:00.200Z", price: "4999.50", size: 1}
+  - {ts: "2026-03-05T14:32:00.200Z", price: "4999.75", size: 1}
+  - {ts: "2026-03-05T14:33:00.200Z", price: "5000.00", size: 1}
+  - {ts: "2026-03-05T14:34:00.200Z", price: "5000.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02}
+    - {order: 2, ts: "2026-03-05T14:30:30.000Z", price: "4999.00", rule: F-STP-03}
+rules: [F-ACT-01, F-LIM-03, F-MKT-02, F-OCO-02, F-SLP-01, F-STP-01, F-STP-03]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms), as in
+# S-template-062 but for its span (the Phase 2 exit's engine-accuracy review):
+# the long of 14:30, order 1 at 5000.00 + 0.25 = 5000.25, closes at a loss when its stop,
+# order 2 at 5000.25 - 4 × 0.25 = 4999.25, fills at 4999.25 - 0.25 = 4999.00 at 14:30:30.000
+# (F-STP-03);
+# 200,000,000 minutes after 14:30:30 is about 380 years later, past 2262, the last instant a
+# run's nanoseconds since 1970 hold in 64 bits, so the cooldown skips the entries of every later
+# decision (F-LIM-03): 14:31 to 14:34 place nothing; a span that overflows is never over.

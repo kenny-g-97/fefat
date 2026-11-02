@@ -4,7 +4,7 @@
 //! Amounts of money count micro-units, a specification's amount rounded down to the micro-unit
 //! (F-RND-01).
 
-use fefat_core::instants::{TradeDate, Ts};
+use fefat_core::instants::{NANOSECONDS_PER_MINUTE, TradeDate, Ts};
 use fefat_core::strategy_spec::{Cooldown, Limits};
 use fefat_core::units::{MONEY_UNITS, Money, Overflow};
 
@@ -93,7 +93,7 @@ impl EntryLimits {
             self.day.pnl = self.day.pnl.checked_add(trade.pnl)?;
             if trade.pnl.0 < 0 {
                 self.day.losses = self.day.losses.saturating_add(1);
-                self.cool_down(trade, decision)?;
+                self.cool_down(trade, decision);
             }
         }
         self.counted += trades.len();
@@ -110,20 +110,23 @@ impl EntryLimits {
         self.day.entries = self.day.entries.saturating_add(1);
     }
 
-    fn cool_down(&mut self, trade: &ClosedTrade, decision: usize) -> Result<(), Overflow> {
+    fn cool_down(&mut self, trade: &ClosedTrade, decision: usize) {
         match self.limits.cooldown_after_loss {
             Some(Cooldown::Bars { bars }) => {
                 let through = decision.saturating_add(bars as usize).saturating_sub(1);
                 self.cooled_through = self.cooled_through.max(Some(through));
             }
             Some(Cooldown::Minutes { minutes }) => {
-                let span = i64::from(minutes) * 60_000_000_000;
-                let until = trade.closed_at.checked_add_nanoseconds(span)?;
+                // A span past the last instant is never over, as the reference's integers give
+                // (S-template-083).
+                let until = i64::from(minutes)
+                    .checked_mul(NANOSECONDS_PER_MINUTE)
+                    .and_then(|span| trade.closed_at.checked_add_nanoseconds(span).ok())
+                    .unwrap_or(Ts(i64::MAX));
                 self.cooled_until = self.cooled_until.max(Some(until));
             }
             None => {}
         }
-        Ok(())
     }
 
     /// F-LIM-02: whether the day's counts keep the template from entering: its entries at
