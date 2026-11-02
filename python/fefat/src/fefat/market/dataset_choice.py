@@ -15,10 +15,12 @@ backtest builds its signal bars from the data `signal_source` names (step 2.12).
 
 from datetime import date
 
+import polars as pl
+
 from fefat.market.catalog import CATALOG, Catalog
-from fefat.market.coverage import dataset_coverage, session_datasets
+from fefat.market.coverage import session_datasets
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
-from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind
+from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind, YearMonth
 from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
@@ -163,9 +165,9 @@ def signal_source(
     store: Store, datasets: dict[str, Dataset], timeframe: Timeframe, dates: tuple[date, date]
 ) -> TickFidelity | Timeframe:
     """The data a backtest builds its signal bars of `timeframe` from (step 2.12): of the
-    1-minute bars, 1-second bars, and trades held that build them, the finest of those whose
-    trade dates cover the most of the window from `dates`' first to its last, since ticks may
-    cover a part of the window that bars cover, or bars a part the ticks cover, and among equals
+    1-minute bars, 1-second bars, and trades held that build them, the finest of those holding
+    the most trade dates of the window from `dates`' first to its last, since ticks may cover a
+    part of the window that bars cover, or bars a part the ticks cover, and among equals
     `load`'s own choice, whose trades give the vwap and trade count an import's bars lack (your
     choice of 2026-10-30); else what `load` reads, the finest data held, an import's coarser
     bars, which it refuses when they are coarser than `timeframe`."""
@@ -180,7 +182,7 @@ def signal_source(
     ]
     if not building:
         return held[0][0]
-    covered = [_days_covered(store, dataset, dates) for _, dataset in building]
+    covered = [_trade_dates_held(store, dataset, dates) for _, dataset in building]
     return building[covered.index(max(covered))][0]
 
 
@@ -192,15 +194,24 @@ def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
     return timeframe.nominal_seconds() % level.nominal_seconds() == 0
 
 
-def _days_covered(store: Store, dataset: Dataset, dates: tuple[date, date]) -> int:
-    """How many days of the window from `dates`' first to its last lie between the dataset's
-    first and last trade dates."""
-    coverage = dataset_coverage(store, dataset)
-    if coverage is None:
+def _trade_dates_held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> int:
+    """How many trade dates of the window from `dates`' first to its last the dataset holds: the
+    keys of its partitions where it keeps a file per trade date, else the trade dates of its
+    bars in the window, so that a stretch without records between two counts for nothing."""
+    first, last = dates
+    partitions = [file.partition for file in store.list_partitions(dataset)]
+    by_date = {partition.key for partition in partitions if isinstance(partition.key, date)}
+    if by_date:
+        return sum(first <= key <= last for key in by_date)
+    in_window = [
+        store.scan_partition(partition).select("trade_date")
+        for partition in partitions
+        if not isinstance(partition.key, YearMonth) or partition.key.overlaps(first, last)
+    ]
+    if not in_window:
         return 0
-    first = max(dates[0], coverage.first_trade_date)
-    last = min(dates[1], coverage.last_trade_date)
-    return max(0, (last - first).days + 1)
+    held = pl.concat(in_window).filter(pl.col("trade_date").is_between(first, last))
+    return held.select(pl.col("trade_date").n_unique()).collect().item()
 
 
 def _finest_first(

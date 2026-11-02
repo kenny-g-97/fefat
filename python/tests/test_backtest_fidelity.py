@@ -256,6 +256,23 @@ def test_signal_bars_come_from_the_level_that_covers_the_most_of_the_window() ->
         signal_source(store, {}, five_minutes, window)
 
 
+@pytest.mark.usefixtures("fixture_store")
+def test_a_level_counts_the_trade_dates_it_holds_not_the_span_between_them() -> None:
+    # The Phase 2 exit's reviews: trades of 03-05 and 03-09 alone span the window as the
+    # 1-second bars do, but hold two of its three trade dates, so the 1-second bars build the
+    # signal bars, and the grid never fills 03-06 with empty buckets.
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    held = provider_datasets(store, "ES", None, None)
+    window, five_minutes = (date(2026, 3, 5), date(2026, 3, 9)), Timeframe.parse("5m")
+    for friday in (paths.data_dir / "synthetic" / "trades" / "root=ES").glob(
+        "contract=*/date=2026-03-06"
+    ):
+        shutil.rmtree(friday)
+
+    assert signal_source(store, held, five_minutes, window) == ONE_SECOND
+
+
 def outcome_of(run: Run) -> PeriodOutcome:
     """A whole run as the check's outcome of a period."""
     return PeriodOutcome(
