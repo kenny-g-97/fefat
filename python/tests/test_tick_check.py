@@ -349,6 +349,22 @@ def test_a_difference_without_a_class_in_either_comparison_counts() -> None:
     assert tick_check_report.unknown_count(facts(2, 0)) == 2
 
 
+@pytest.mark.parametrize(
+    ("moved", "says"), [(0, "None of the 1,976,277 prints"), (20, "20 of the 552 decisions")]
+)
+def test_the_report_says_whether_prints_sit_at_a_decisions_instant(moved: int, says: str) -> None:
+    # The Phase 2 exit: since D-70 an import stores IBKR's prints at the end of their second,
+    # so the restamped replay moves none and the report says why no difference is
+    # bar_boundary, where a store imported before it keeps the old sentence.
+    second = {"with_prints": moved, "decisions": 552, "prints": moved}
+    facts = {"decision_second": {**second, "of_prints": 1_976_277}, "strategies": []}
+
+    (paragraph, *_) = tick_check_report._decision_second(facts)
+
+    assert paragraph.startswith(says)
+    assert ("D-70" in paragraph) == (moved == 0)
+
+
 def test_a_run_whose_hashes_part_is_refused() -> None:
     # The code review: a determinism check that only wrote "different" let the report pass.
     determined = {
