@@ -251,6 +251,72 @@ def test_the_restamped_replay_holds_its_position_at_its_own_instants() -> None:
     assert only_row(classified, LATER)["outcome"] == FidelityClass.CASCADE
 
 
+def test_a_trade_the_replay_makes_otherwise_while_the_bars_held_is_a_cascade() -> None:
+    # The engine review, round two: the limit's exit parted the runs in its entry's bar, so the
+    # run on bars still held at the next decision, where the prints and the replay both entered,
+    # the prints a tick higher from their mark (F-ENT-02). The trade's being made at all is the
+    # bar path's knock-on, its fills the decision second's.
+    limit = {"entry_kind": "limit", "entry_level": PRICE}
+    first = on_prints(**limit, entry_ts=at(2, 10), exit_ts=at(2, 30))
+    replayed_first = on_prints(entry_kind="limit", entry_ts=at(2, 10), exit_ts=at(2, 30))
+    replayed_again = on_prints(
+        entry_kind="limit",
+        entry_decision=LATER,
+        entry_ts=at(1, 10, LATER),
+        exit_ts=at(3, 10, LATER),
+    )
+    again = on_prints(
+        entry_kind="limit",
+        entry_level=PRICE + TICK,
+        entry_decision=LATER,
+        entry_ts=at(0, 20, LATER),
+        entry_price=PRICE + TICK,
+        exit_ts=at(3, 10, LATER),
+    )
+    held = trades(on_bars(**limit, entry_ts=at(minutes=3), exit_ts=at(minutes=9)))
+    replayed = trades(replayed_first, replayed_again)
+
+    row = only_row(classify(trades(first, again), replayed, held, TICK), LATER)
+
+    assert row["outcome"] == FidelityClass.CASCADE
+    assert "the restamped replay makes it otherwise" in row["note"]
+    assert only_row(classify(replayed, replayed, held, TICK), LATER)["outcome"] == "cascade"
+
+
+def test_a_trade_on_bars_alone_while_the_replay_held_is_a_cascade() -> None:
+    # The engine review, round two: the run on prints is flat at the next decision and misses the
+    # trade the run on bars makes, as the replay misses it, which still held its position there
+    # after its exit parted from the bars' in the limit's bar.
+    limit = {"entry_kind": "limit", "entry_level": PRICE}
+    ticks = on_prints(
+        **{**limit, "entry_level": PRICE + TICK},
+        entry_ts=at(2, 5),
+        entry_price=PRICE + TICK,
+        exit_ts=at(2, 40),
+        exit_reason="stop",
+        exit_price=PRICE - 14 * TICK,
+    )
+    replayed = on_prints(entry_kind="limit", entry_ts=at(2, 40), exit_ts=at(7, 0))
+    stopped = on_bars(
+        **limit,
+        entry_ts=at(minutes=3),
+        exit_ts=at(minutes=3),
+        exit_reason="stop",
+        exit_price=PRICE - 12 * TICK,
+    )
+    after = on_bars(
+        **limit, entry_decision=LATER, entry_ts=at(1, 0, LATER), exit_ts=at(4, 0, LATER)
+    )
+
+    row = only_row(classify(trades(ticks), trades(replayed), trades(stopped, after), TICK), LATER)
+
+    assert row["outcome"] == FidelityClass.CASCADE
+    assert row["note"] == (
+        "a trade on 1-minute bars alone; the restamped replay does not make it either and is in "
+        "a position at its decision"
+    )
+
+
 @pytest.mark.parametrize("kind", ["market", "limit"])
 def test_a_trade_on_prints_alone_with_the_1_minute_run_flat_is_unknown(kind: str) -> None:
     # The restamped replay makes the trade as the prints do, so the decision second does not

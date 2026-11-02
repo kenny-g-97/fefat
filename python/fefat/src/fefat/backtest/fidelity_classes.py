@@ -6,13 +6,15 @@ differs gets a class with a third run: the reference engine's replay of the same
 each print stamped at a decision's instant moved one nanosecond after it, where the 1-minute
 bars put it (`restamped`).
 
-A fill or a trade of one run alone that the restamped replay makes otherwise than the prints is
-`bar_boundary`: the prints of a decision's second alone moved it, directly or through an earlier
-trade of the day. A fill the restamped replay makes as the prints do differs between those prints
-and their 1-minute bars, and a class names where FEFAT's path through a bar parts from the prints,
-held to what the trades show: `bar_path`, `entry_bar_path`, or `stop_through`; a trade of one run
-alone that the replay makes as the prints do, made while the other run held a position, is a
-`cascade` of such a difference; anything else is `unknown`. A fill on prints and a fill on a bar
+A fill the restamped replay makes otherwise than the prints is `bar_boundary`: the prints of a
+decision's second alone moved it. So is a trade of one run alone that the replay makes where the
+prints do not, or does not make where they do: that second made or prevented it, at once or
+through an earlier trade of the day. A fill the replay makes as the prints do differs between
+those prints and their 1-minute bars, and a class names where FEFAT's path through a bar parts
+from the prints, held to what the trades show: `bar_path`, `entry_bar_path`, or `stop_through`;
+a trade of one run alone that the replay and the prints agree on is a `cascade` when, of the
+replay and the bars, the one without it held a position at its decision, the knock-on of such a
+difference; anything else is `unknown`. A fill on prints and a fill on a bar
 are alike at one price inside the bar's minute, the bar's fills being stamped at its close
 (F-BAR-06). The restamped replay is read at its own instants, at which it held its positions, a
 fill of it on a moved print one nanosecond after that print's stamp being the prints' own fill;
@@ -62,8 +64,9 @@ class FidelityClass(StrEnum):
     its level on the bar's path (F-STP-04)."""
 
     CASCADE = "cascade"
-    """A trade of one run alone, made as the restamped replay makes it, while the other run still
-    held a position at its decision after an earlier difference of the bar's path that day."""
+    """A trade of one run alone, which the restamped replay makes or misses as the prints do,
+    while the one of the replay and the bars without it held a position at its decision, after an
+    earlier difference of the bar's path that day."""
 
     UNKNOWN = "unknown"
     """A difference nothing above explains; the tick check fails with one."""
@@ -254,28 +257,35 @@ class _Runs:
         return self._on_bars_alone(on_bars, restamped)
 
     def _on_prints_alone(self, trade: _Trade, restamped: _Trade | None) -> dict[str, object]:
-        """A trade on prints alone: a `bar_boundary` when the restamped replay does not make it
-        as the prints do; else a cascade when the run on bars held a position at its decision."""
-        made = trade.filled_as(restamped)
+        """A trade on prints alone: `bar_boundary` when the restamped replay does not make it;
+        else, the replay making it too, a cascade when the run on bars held a position at its
+        decision."""
         held = _held(self.minutes, trade.entry_decision)
-        replay = "makes it as the prints do" if made else "does not make it"
+        if restamped is None:
+            replay, outcome = "does not make it", FidelityClass.BAR_BOUNDARY
+        else:
+            alike = "as the prints do" if trade.filled_as(restamped) else "otherwise"
+            replay, outcome = f"makes it {alike}", _cascade_if(held)
         note = (
             f"a trade on prints alone; the restamped replay {replay}, and the 1-minute run is "
             f"{_state(held)} at its decision"
         )
-        return _alone_row(trade, _alone_outcome(moved=not made, held=held), note, on_prints=True)
+        return _alone_row(trade, outcome, note, on_prints=True)
 
     def _on_bars_alone(self, trade: _Trade, restamped: _Trade | None) -> dict[str, object]:
-        """A trade on bars alone: a `bar_boundary` when the restamped replay makes it; else a
-        cascade when the run on prints held a position at its decision."""
-        made = restamped is not None
-        held = _held(self.ticks, trade.entry_decision)
-        replay = "makes it" if made else "does not make it either"
+        """A trade on bars alone: `bar_boundary` when the restamped replay makes it; else, the
+        replay missing it as the prints do, a cascade when the replay held a position at its
+        decision."""
+        held = _held(self.restamped, trade.entry_decision)
+        if restamped is not None:
+            replay, outcome = "makes it", FidelityClass.BAR_BOUNDARY
+        else:
+            replay, outcome = "does not make it either", _cascade_if(held)
         note = (
-            f"a trade on 1-minute bars alone; the restamped replay {replay}, and the run on "
-            f"prints is {_state(held)} at its decision"
+            f"a trade on 1-minute bars alone; the restamped replay {replay} and is "
+            f"{_state(held)} at its decision"
         )
-        return _alone_row(trade, _alone_outcome(moved=made, held=held), note, on_prints=False)
+        return _alone_row(trade, outcome, note, on_prints=False)
 
 
 def _held(trades: dict[_Key, _Trade], decision: int) -> bool:
@@ -286,11 +296,7 @@ def _state(held: bool) -> str:
     return "in a position" if held else "flat"
 
 
-def _alone_outcome(*, moved: bool, held: bool) -> FidelityClass:
-    """The decision second when the restamped replay settles the trade otherwise than its run,
-    a cascade when it does not and the other run held a position, else unknown."""
-    if moved:
-        return FidelityClass.BAR_BOUNDARY
+def _cascade_if(held: bool) -> FidelityClass:
     return FidelityClass.CASCADE if held else FidelityClass.UNKNOWN
 
 
