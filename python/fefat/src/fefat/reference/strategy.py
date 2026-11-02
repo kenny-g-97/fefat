@@ -75,6 +75,7 @@ class DecisionContext:
         latency: int,
         instrument: InstrumentParameters,
         log: EventLog,
+        roll_gap: int = 0,
     ) -> None:
         self._book = book
         self.now = now
@@ -82,6 +83,7 @@ class DecisionContext:
         self._latency = latency
         self._instrument = instrument
         self._log = log
+        self._roll_gap = roll_gap
 
     @property
     def position(self) -> int:
@@ -95,7 +97,9 @@ class DecisionContext:
 
     @property
     def equity(self) -> int:
-        """Cash plus the open position's value at the mark, floored, in micro-units (F-MRK-01)."""
+        """Cash plus the open position's value at the mark, floored, in micro-units (F-MRK-01),
+        or, while a roll's legs are on their way, at the mark less the roll's gap, the
+        position's own contract's price (F-ROL-03), as the run's marks are."""
         book = self._book
         if book.position == 0:
             return book.cash
@@ -103,7 +107,8 @@ class DecisionContext:
             raise ValueError(
                 f"Expected a mark for the equity at {instant_text(self.now)}, got none."
             )
-        return book.cash + math.floor(self._instrument.value(book.mark, book.position))
+        price = book.mark - self._roll_gap
+        return book.cash + math.floor(self._instrument.value(price, book.position))
 
     def closed_trades(self, after: int) -> list[ClosedTrade]:
         """The trades closed so far but the first `after` (F-LIM-02)."""

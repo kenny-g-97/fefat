@@ -38,3 +38,21 @@ fn flatten_leaves_a_stop_triggered_on_tbbo_to_fill_as_the_market_order_it_is() {
     assert_eq!(still.map(|order| order.order.id), Some(OrderId(1)));
     assert_eq!(log.len(), 1, "{log:?}");
 }
+
+#[test]
+fn equity_before_a_rolls_legs_values_the_position_at_its_own_contracts_price() {
+    // F-ROL-03: until a roll's legs fill, the mark is the new front's and the position is worth
+    // its own contract's price, the mark less the roll's gap, as the run's equity points are.
+    let (mut book, mut log) = (Book::default(), Vec::new());
+    let es = InstrumentParameters::new(Price(250_000_000), Money(50_000_000), LotStep(1));
+    let bought = Price(5_000_000_000_000);
+    let mut ledger = Ledger::holding(es.unwrap(), Money(0), Side::Buy, Qty(1), bought).unwrap();
+    ledger.mark_at(Price(5_024_000_000_000));
+    let gap = Price(20_000_000_000);
+
+    let context = DecisionContext::new(&mut book, &mut log, &ledger, &[], Ts(0), 0, 0);
+    let rolling = context.before_the_legs(gap);
+
+    // Four points above the fill at 50 USD a point, where the mark alone gives 24.
+    assert_eq!(rolling.equity(), Ok(Money(200_000_000)));
+}

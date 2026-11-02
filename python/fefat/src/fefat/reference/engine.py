@@ -335,8 +335,9 @@ class ReferenceEngine:
             self.trade_date = event.trade_date
         if isinstance(subject, Decision) and on_bar is not None:
             latency = self.settings.latency_nanoseconds()
+            gap = 0 if self.transfer is None else self.transfer.gap  # F-ROL-03
             context = DecisionContext(
-                self.book, at.ts, at.index, latency, self.instrument, self.log
+                self.book, at.ts, at.index, latency, self.instrument, self.log, gap
             )
             on_bar(subject.bar, context)
         elif isinstance(subject, RollRow):

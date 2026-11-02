@@ -98,6 +98,7 @@ pub struct DecisionContext<'run> {
     now: Ts,
     timeline: usize,
     latency_nanoseconds: i64,
+    roll_gap: Price,
 }
 
 impl<'run> DecisionContext<'run> {
@@ -118,7 +119,16 @@ impl<'run> DecisionContext<'run> {
             now,
             timeline,
             latency_nanoseconds,
+            roll_gap: Price(0),
         }
+    }
+
+    /// The context of a decision taken while a roll's legs are on their way, `gap` the roll's
+    /// gap: equity values the position at the mark less it, its own contract's price (F-ROL-03).
+    #[must_use]
+    pub(crate) const fn before_the_legs(mut self, gap: Price) -> Self {
+        self.roll_gap = gap;
+        self
     }
 
     /// The position held.
@@ -131,9 +141,23 @@ impl<'run> DecisionContext<'run> {
         self.ledger.mark()
     }
 
-    /// Cash plus the open position's value at the mark, floored (F-MRK-01).
+    /// Cash plus the open position's value at the mark, floored (F-MRK-01), or, while a roll's
+    /// legs are on their way, at the mark less the roll's gap (F-ROL-03), as the run's equity at
+    /// each decision is.
     pub fn equity(&self) -> Result<Money, DecisionError> {
-        Ok(self.ledger.equity()?)
+        let (cash, position) = (self.ledger.cash(), self.ledger.position());
+        if position == Position::Flat {
+            return Ok(cash);
+        }
+        let mark = self
+            .ledger
+            .mark()
+            .ok_or(LedgerError::UnmarkedPosition { position })?;
+        let value = self
+            .ledger
+            .instrument()
+            .value(mark.checked_sub(self.roll_gap)?, position.signed_lots())?;
+        Ok(cash.checked_add(value)?)
     }
 
     /// The trades closed so far but the first `after` (F-LIM-02).

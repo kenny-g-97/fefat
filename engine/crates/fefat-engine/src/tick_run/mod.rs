@@ -358,9 +358,11 @@ impl<'run, R: MarketDataReader> TickRun<'run, R> {
     fn decide(&mut self, now: Ts, index: usize) -> Result<Stepped, RunError> {
         self.next_decision += 1;
         let latency = self.settings.latency_nanoseconds();
+        let gap = self.transfer.as_ref().map_or(Price(0), Transfer::gap);
         let (book, log, ledger) = (&mut self.book, &mut self.log, &self.ledger);
         let trades = &self.closed_trades;
-        let mut context = DecisionContext::new(book, log, ledger, trades, now, index, latency);
+        let mut context = DecisionContext::new(book, log, ledger, trades, now, index, latency)
+            .before_the_legs(gap);
         self.strategy.on_decision(now, &mut context)?;
         let point = self.equity_at(now)?;
         self.equity.push(point);
