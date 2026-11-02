@@ -602,6 +602,39 @@ def test_a_roll_before_the_legs_of_the_roll_before_it_have_filled_is_refused() -
         engine.run(tape, position=1, contract="ESH2026", rolls=(first, second))
 
 
+def test_a_decision_before_a_rolls_legs_values_the_position_at_its_own_contracts_price() -> None:
+    # F-ROL-03: the roll at 200 moves the mark to the new front's prices, 20 points higher, and
+    # until its legs fill on the print at 400 the long held from 5000.00 is worth its own
+    # contract's price, as the run's marks are: 5000 points at 5 USD a point, not 5020.
+    trades = TickFidelity.TRADES
+    tape = tuple(
+        TradeRecord.model_construct(ts=ts, ts_event=None, price=price_units(price), size=1)
+        for ts, price in ((100, "5000.00"), (400, "5020.00"))
+    )
+    roll = RollRow.model_construct(
+        trade_date=date(2026, 3, 9),
+        gap=price_units("20.00"),
+        reason=RollReason.VOLUME,
+        session_open=200,
+        rolled_from="ESH2026",
+        contract="ESM2026",
+    )
+    engine = ReferenceEngine(RunSettings.for_fidelity(trades), MES, trades, AlwaysOpen())
+    seen: list[int] = []
+
+    engine.run(
+        tape,
+        [Decision(ts=300, bar={"ts_close": 300})],
+        lambda _, context: seen.append(context.equity),
+        position=1,
+        cash=0,
+        contract="ESH2026",
+        rolls=(roll,),
+    )
+
+    assert seen == [25_000_000_000]
+
+
 def test_fee_schedules_out_of_the_order_of_their_dates_are_refused() -> None:
     # Step 2.9 (F-FEE-01): each schedule is in force from its date until the next one's.
     later = DatedFuturesFee(per_contract_side=Decimal("2.50"), effective_from=date(2026, 3, 7))

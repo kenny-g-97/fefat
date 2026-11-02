@@ -32,6 +32,7 @@ from fefat.backtest.record import DatasetRecord, RollRecord, RunRecord
 from fefat.config import resolve_paths
 from fefat.market.api import load, roll_calendar
 from fefat.market.calendar import SessionTable
+from fefat.market.coverage import session_datasets
 from fefat.market.fees import TABLES
 from fefat.market.fidelity import TickFidelity, fidelity_in_words, parse_fidelity
 from fefat.market.layout import Dataset, Partition, PartitionRequest
@@ -76,7 +77,21 @@ class Explanation:
 
 
 class EnginesDisagreementError(AssertionError):
-    """The reference engine's fills of an episode are not the Rust engine's (D-10)."""
+    """The reference engine's fills of an episode are not the Rust engine's (D-10): both are
+    its `reference` and `rust`, which its message leaves out, since they hold the trader's
+    prices (D-21)."""
+
+    def __init__(
+        self, trade_id: int, reference: tuple[FillView, ...], rust: tuple[FillView, ...]
+    ) -> None:
+        apart = sum(ours != theirs for ours, theirs in zip(reference, rust, strict=False))
+        apart += abs(len(reference) - len(rust))
+        super().__init__(
+            f"Expected the reference engine's fills of trade {trade_id} to be the Rust "
+            f"engine's, got {apart} of {max(len(reference), len(rust))} apart: the error's "
+            "`reference` and `rust` hold them, which `fill_text` writes out."
+        )
+        self.reference, self.rust = reference, rust
 
 
 @dataclass(frozen=True)
@@ -120,11 +135,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     replayed = _replayed(record, episode, (fidelity, fees), first_id, sessions)
     reference = _through_exit((FillView.of(fill) for fill in replayed.fills), trade)
     if reference != rust:
-        raise EnginesDisagreementError(
-            f"Expected the reference engine's fills of trade {trade_id} to be the Rust "
-            f"engine's, got:\nreference: {'; '.join(map(fill_text, reference))}\n"
-            f"Rust: {'; '.join(map(fill_text, rust))}"
-        )
+        raise EnginesDisagreementError(trade_id, reference, rust)
     lines = (
         _heading(trade, record),
         f"Replayed through the reference engine on {fidelity_in_words(fidelity)} records from "
@@ -199,8 +210,9 @@ def _fidelity(fills: Sequence[FillView], trade_id: int) -> TickFidelity | Timefr
 
 def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
     """A snapshot of each dataset the run read, by schema, refused unless it is the one the
-    run's record pins: the data changed since the run otherwise. `fidelity_check` reruns a saved
-    run on the data this guards too."""
+    run's record pins, and refused when the store holds trades or bars of the run's provider in
+    its dates that the run did not read: the data changed since the run otherwise.
+    `fidelity_check` reruns a saved run on the data this guards too."""
     snapshots = {}
     for dataset in record.datasets:
         snapshot = store.snapshot(_request(dataset))
@@ -211,7 +223,31 @@ def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
                 "changed since the run, so run it again first."
             )
         snapshots[dataset.schema_name] = snapshot
+    _require_no_dataset_since(store, record)
     return snapshots
+
+
+def _require_no_dataset_since(store: Store, record: RunRecord) -> None:
+    """Refuse a dataset of trades, TBBO, or bars of the run's provider and root with partitions
+    in the run's dates that its record does not name, an import since the run, which the engine
+    cache a rerun builds would read."""
+    first = min(dataset.first for dataset in record.datasets)
+    last = max(dataset.last for dataset in record.datasets)
+    named = {dataset.schema_name for dataset in record.datasets}
+    provider, root = record.config.provider, record.instrument.root
+    for dataset in session_datasets(store):
+        if (dataset.provider, dataset.root) != (provider, root):
+            continue
+        request = PartitionRequest(dataset=dataset, start=first, end=last)
+        listed = store.list_partitions(dataset)
+        if str(dataset.schema_name) not in named and any(
+            request.selects(file.partition) for file in listed
+        ):
+            raise ValueError(
+                f"Expected the store's data of {root} as the run read it, got "
+                f"{dataset.schema_name} of {root} from {provider} in the run's dates, which it "
+                "did not read: it was imported since the run, so run it again first."
+            )
 
 
 def _the_runs_fees_and_calendar(run: "Run", sessions: SessionTable) -> RunFees:

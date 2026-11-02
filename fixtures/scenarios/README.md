@@ -231,3 +231,5 @@ The orders a template places take the ids the engine gives them, from 1 in the o
 | [S-template-079](S-template-079.yaml) | trades | Across a roll a template's exit plan keeps its fill price in the new front's prices, so breakeven moves its stop where it would |
 | [S-template-080](S-template-080.yaml) | trades | A signal exit on its way across a roll does the close leg's work on the old contract, and the roll sends no legs |
 | [S-template-081](S-template-081.yaml) | trades | An exit still waiting for its activation at a roll does not do the close leg's work, and fills after the legs on the new front |
+| [S-template-082](S-template-082.yaml) | trades | A position with max_minutes of 200,000,000 never closes, its span past the last instant a run holds |
+| [S-template-083](S-template-083.yaml) | trades | A cooldown_after_loss of 200,000,000 minutes skips every later entry, its span past the last instant a run holds |

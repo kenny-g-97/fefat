@@ -84,6 +84,7 @@ from xcheck import (
     CrossCheckStrategy,
     EntryKind,
     compatibility_profile,
+    require_one_contract,
     signal_strategy,
 )
 
@@ -171,13 +172,7 @@ def backtest(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         run = ff.backtest.run(strategy, *window, config)
-    contracts = run.fills["contract"].unique().to_list()
-    if run.record.rolls or contracts not in ([], [check.contract]):
-        raise ValueError(
-            f"Expected every fill of {check.root} from {window[0]} to {window[1]} on "
-            f"{check.contract} and no roll, got the contracts {contracts} and "
-            f"{len(run.record.rolls)} rolls in run {run.id}."
-        )
+    require_one_contract(run, check.root, check.contract, window)
     return run
 
 
@@ -719,6 +714,11 @@ def session_facts(
     }
     facts = []
     for day in sessions:
+        if day not in left_out:
+            raise ValueError(
+                f"Expected the engine cache of {check.contract} to hold {day}, got no such "
+                "trade date in its index."
+            )
         partition = Partition(dataset=check.dataset("trades"), contract=check.contract, key=day)
         prints = store.scan_partition(partition).select(pl.len()).collect().item()
         facts.append(
@@ -726,7 +726,7 @@ def session_facts(
                 "trade_date": str(day),
                 "prints": prints,
                 "fidelity": str(era_of(run, day).fidelity),
-                "left_out": left_out.get(day, {}).get(str(TickFidelity.TRADES)),
+                "left_out": left_out[day].get(str(TickFidelity.TRADES)),
             }
         )
     return facts

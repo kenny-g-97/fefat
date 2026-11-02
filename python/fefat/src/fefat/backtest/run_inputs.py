@@ -11,7 +11,7 @@ slippage and its exchange's time zone, which its metrics read (step 2.11)."""
 
 import json
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -96,7 +96,7 @@ class RunInputs:
         """The engine cache's folder of each front, its months of the window built from the store
         (`engine_cache_folder`)."""
         root, provider = self.instrument.root, self.config.provider
-        folder = engine_cache_folder(self.store, paths, (root, provider), self.window)
+        folder = engine_cache_folder(self.store, paths, (root, provider), self.window, self.fronts)
         folders = tuple(folder / contract for contract in self.fronts)
         missing = [str(path) for path in folders if not path.is_dir()]
         if missing:
@@ -107,13 +107,18 @@ class RunInputs:
 
 
 def engine_cache_folder(
-    store: Store, paths: FefatPaths, root_and_provider: tuple[str, str], window: Window
+    store: Store,
+    paths: FefatPaths,
+    root_and_provider: tuple[str, str],
+    window: Window,
+    fronts: Sequence[str],
 ) -> Path:
-    """The folder of the engine caches of a root's contracts from a provider, their months of
-    the window built from the store (`build_cache_months`); a month the cache refuses refuses
-    the run."""
+    """The folder of the engine caches of a root's contracts from a provider, the months of the
+    window of its `fronts`, the contracts a run trades, built from the store
+    (`build_cache_months`); a month of a front the cache refuses refuses the run."""
     root, provider = root_and_provider
-    built = build_cache_months(store, paths.cache_dir, root, _months(window), provider)
+    months = _months(window)
+    built = build_cache_months(store, paths.cache_dir, root, months, provider, fronts)
     if built.refused:
         raise ValueError(
             f"Expected the engine cache of {root} from {window.start} to {window.end}, got: "

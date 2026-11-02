@@ -11,6 +11,7 @@ import warnings
 from collections import Counter
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import PurePosixPath
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -25,7 +26,8 @@ from fefat.backtest.artifacts import read_artifact, write_run
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
 from fefat.market.fidelity import TickFidelity
-from fefat.market.layout import DatasetOrigin
+from fefat.market.layout import DatasetOrigin, Partition
+from fefat.market.store import Store
 from fefat.reference.settings import SlippageTicks
 from fefat.strategy.signal_frame import require_column_types
 from notebook_runs import breakout, store_with
@@ -55,6 +57,24 @@ def test_a_run_on_the_synthetic_month_writes_every_artifact_with_its_schema() ->
     assert record.run_key == run.hash == folder.name
     assert not run.trades.is_empty()
     assert run.fills.height == record.summary.fills
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_run_builds_its_fronts_months_alone_so_another_contract_cannot_refuse_it() -> None:
+    # The Phase 2 exit's reviews: a run on ESH2026 before the roll of 03-09 neither builds nor
+    # reads ESM2026's month, so a 1-second bar of ESM2026 the engine cannot read, its high below
+    # its close, leaves it alone.
+    store = Store(resolve_paths(os.environ).data_dir)
+    path = "synthetic/ohlcv-1s/root=ES/contract=ESM2026/date=2026-03-05/part.parquet"
+    partition = Partition.from_relative_path(PurePosixPath(path))
+    bars = store.scan_partition(partition).collect().with_row_index("row")
+    (broken,) = bars.filter(pl.col("close") > pl.col("low")).head(1).get_column("row")
+    high = pl.when(pl.col("row") == broken).then(pl.col("low")).otherwise(pl.col("high"))
+    store.write_partition(partition, bars.with_columns(high=high).drop("row"))
+
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-06")
+
+    assert run.signals.get_column("contract").unique().to_list() == ["ESH2026"]
 
 
 @pytest.mark.usefixtures("fixture_store")

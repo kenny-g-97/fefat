@@ -6,13 +6,13 @@ Written by `just tick-check` on 2026-11-02 (step 2.16, `02-engine-and-data.md` ย
 
 - FEFAT: engine 8, fill model 1, artifact schema 2 (crate 0.0.1, SDK 0.0.1).
 - Data: `ibkr/ohlcv-1m/root=MNQ`, the store snapshot of the request 2026-09-18 to 2026-09-23 the runs pinned (ADR-0019): `16a8b5807aa251d2487bc918d7ccbdc479d7f5bff89d4f92137e488ff8233e43`.
-- Data: `ibkr/trades/root=MNQ`, the store snapshot of the request 2026-09-18 to 2026-09-23 the runs pinned (ADR-0019): `86908b75705df1ecaf11b58d3c4ad7db910f4b5694319a5be294f5e313e1aaf7`.
+- Data: `ibkr/trades/root=MNQ`, the store snapshot of the request 2026-09-18 to 2026-09-23 the runs pinned (ADR-0019): `1d97c8c204d69733ced66c859d14024a2b3f42841736761b303552c7ec28d62c`.
 - Sessions:
   - 2026-09-21: 976,389 prints, filled on trade prints.
   - 2026-09-22: 999,888 prints, filled on trade prints.
   - 2026-09-23: 1,069,604 prints, filled on 1-minute bars: the engine cache leaves its prints out, since its records in the 1m bar opening at 2026-09-23T20:59:00Z add up to 464 lots, not the bar's 463.
 - Profile: latency 0 ms, slippage 0 ticks on market and 0 on stop orders, limit fill touch, fee table retail-default; the run on prints at fidelity `trades`, each trade date on its finest cached level (D-58), and the run on bars at `1m`.
-- The reference engine replayed a strategy's sessions of prints in about 7.7 s on this PC.
+- The reference engine replayed a strategy's sessions of prints in about 6.9 s on this PC.
 
 ## The strategies
 
@@ -45,8 +45,8 @@ The reference engine (`fefat.reference`, D-10) replays each strategy from flat o
 | Strategy | Sessions | Prints | Decisions | Rust fills | Reference fills | Identical |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | market | 2026-09-21 to 2026-09-22 | 1,976,277 | 552 | 242 | 242 | 242 |
-| limit | 2026-09-21 to 2026-09-22 | 1,976,277 | 552 | 238 | 238 | 238 |
-| stop | 2026-09-21 to 2026-09-22 | 1,976,277 | 552 | 234 | 234 | 234 |
+| limit | 2026-09-21 to 2026-09-22 | 1,976,277 | 552 | 224 | 224 | 224 |
+| stop | 2026-09-21 to 2026-09-22 | 1,976,277 | 552 | 236 | 236 | 236 |
 
 - The runs on 1-minute bars too: the reference engine replays them on every session's bars, 2026-09-21 to 2026-09-23, and their fills are identical, market 372 of 372, limit 352 of 352, stop 362 of 362.
 - On 2026-09-23, of which the engine cache holds no prints, the runs on prints fill on the bars (D-58), and their fills are the runs on bars' fills of it, order ids apart, which number each run's own orders: market 130, limit 128, stop 126.
@@ -55,25 +55,25 @@ The reference engine (`fefat.reference`, D-10) replays each strategy from flat o
 
 The fidelity check at one minute (`fidelity_check`, step 2.12) reruns the sessions on prints from flat on their 1-minute bars under the run's own settings; the run on bars here is that rerun, pair for pair and tick for tick, which the command holds to each other. Trades are matched by the decision that entered them and their side; a fill on prints and a fill on a bar are alike at one price inside the bar's minute.
 
-- `market`: the fidelity check of 2026-09-21 to 2026-09-22 reran 121 trades against the prints' 121: 121 matched pairs, 107 with a fill price moved, 0 of the prints' trades and 0 of its own without a pair.
-- `limit`: the fidelity check of 2026-09-21 to 2026-09-22 reran 112 trades against the prints' 119: 110 matched pairs, 99 with a fill price moved, 9 of the prints' trades and 2 of its own without a pair.
-- `stop`: the fidelity check of 2026-09-21 to 2026-09-22 reran 118 trades against the prints' 117: 115 matched pairs, 105 with a fill price moved, 2 of the prints' trades and 3 of its own without a pair.
+- `market`: the fidelity check of 2026-09-21 to 2026-09-22 reran 121 trades against the prints' 121: 121 matched pairs, 3 with a fill price moved, 0 of the prints' trades and 0 of its own without a pair.
+- `limit`: the fidelity check of 2026-09-21 to 2026-09-22 reran 112 trades against the prints' 112: 112 matched pairs, 5 with a fill price moved, 0 of the prints' trades and 0 of its own without a pair.
+- `stop`: the fidelity check of 2026-09-21 to 2026-09-22 reran 118 trades against the prints' 118: 118 matched pairs, 12 with a fill price moved, 0 of the prints' trades and 0 of its own without a pair.
 
 ### Trades
 
 | Strategy | Ticks | Minutes | Matched | Exact | Exact of matched | Exits alike of matched | bar_boundary | bar_path | entry_bar_path | stop_through | cascade | unknown |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| market | 121 | 121 | 121 | 14 | 11.6% | 97.5% | 107 | 0 | 0 | 0 | 0 | 0 |
-| limit | 119 | 112 | 110 | 10 | 9.1% | 90.0% | 110 | 0 | 1 | 0 | 0 | 0 |
-| stop | 117 | 118 | 115 | 10 | 8.7% | 94.8% | 109 | 0 | 0 | 1 | 0 | 0 |
+| market | 121 | 121 | 121 | 118 | 97.5% | 97.5% | 0 | 2 | 0 | 1 | 0 | 0 |
+| limit | 112 | 112 | 112 | 103 | 92.0% | 92.0% | 0 | 1 | 7 | 1 | 0 | 0 |
+| stop | 118 | 118 | 118 | 106 | 89.8% | 97.5% | 0 | 1 | 1 | 10 | 0 | 0 |
 
 ### Fills
 
 | Strategy | Fills compared | Equal | Equal of compared | bar_boundary | bar_path | entry_bar_path | stop_through | cascade | unknown |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| market | 242 | 132 | 54.5% | 107 | 2 | 0 | 1 | 0 | 0 |
-| limit | 220 | 110 | 50.0% | 124 | 1 | 6 | 1 | 0 | 0 |
-| stop | 230 | 119 | 51.7% | 117 | 1 | 1 | 2 | 0 | 0 |
+| market | 242 | 239 | 98.8% | 0 | 2 | 0 | 1 | 0 | 0 |
+| limit | 224 | 215 | 96.0% | 0 | 1 | 7 | 1 | 0 | 0 |
+| stop | 236 | 224 | 94.9% | 0 | 1 | 1 | 10 | 0 | 0 |
 
 Each trade counts once, by its first class; each fill that differs counts once, a pair's entry or exit, and a trade of one run alone with both its fills.
 
@@ -83,25 +83,22 @@ The differing fills of the matched pairs, the fill on prints less the fill on ba
 
 | Strategy | Class | Fills | Mean ticks apart | Largest |
 | --- | --- | ---: | ---: | ---: |
-| market | `bar_boundary` | 107 | 4.0 | 23 |
 | market | `bar_path` | 2 | 80.0 | 80 |
 | market | `stop_through` | 1 | 1.0 | 1 |
-| limit | `bar_boundary` | 102 | 4.8 | 80 |
 | limit | `bar_path` | 1 | 80.0 | 80 |
-| limit | `entry_bar_path` | 6 | 40.0 | 80 |
+| limit | `entry_bar_path` | 7 | 34.3 | 80 |
 | limit | `stop_through` | 1 | 1.0 | 1 |
-| stop | `bar_boundary` | 107 | 4.6 | 64 |
 | stop | `bar_path` | 1 | 80.0 | 80 |
 | stop | `entry_bar_path` | 1 | 80.0 | 80 |
-| stop | `stop_through` | 2 | 1.0 | 1 |
+| stop | `stop_through` | 10 | 1.0 | 1 |
 
-- `market`: over its 121 matched pairs the trades on prints made 163 ticks more than those on bars, 1.35 a trade.
-- `limit`: over its 110 matched pairs the trades on prints made 392 ticks more than those on bars, 3.56 a trade.
-- `stop`: over its 115 matched pairs the trades on prints made 176 ticks more than those on bars, 1.53 a trade.
+- `market`: over its 121 matched pairs the trades on prints made 159 ticks more than those on bars, 1.31 a trade.
+- `limit`: over its 112 matched pairs the trades on prints made 319 ticks more than those on bars, 2.85 a trade.
+- `stop`: over its 118 matched pairs the trades on prints made 150 ticks more than those on bars, 1.27 a trade.
 
 ### The decision second
 
-541 of the 552 decisions on the sessions on prints have prints stamped at their own instant, 20,514 of the 1,976,277 prints. With those prints moved one nanosecond after their decision, the reference engine's trades on the prints are those on the bars but for the trades below, each classed by where the bar's path parts from the prints; every other difference of the runs on prints from those on bars is the decision second's, `bar_boundary`.
+None of the 1,976,277 prints sits at one of the 552 decisions' instants: the import stores a print stamped to the second at its second's end (D-70), after every decision inside that second, where the 1-minute bars put it, so the restamped replay is the run on prints, no difference is `bar_boundary`, and the trades below, apart from those on bars, are each classed by where the bar's path parts from the prints.
 
 | Strategy | Trades apart | bar_path | entry_bar_path | stop_through | cascade | unknown |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -111,30 +108,33 @@ The differing fills of the matched pairs, the fill on prints less the fill on ba
 
 ### Examples
 
-- `market`, `bar_boundary`: the long decided at 2026-09-21T13:35:00Z, entry bar_boundary; exit stop against stop: match; ticks less minutes: entry -3 ticks.
-- `limit`, `bar_boundary`: the long decided at 2026-09-21T13:35:00Z, entry bar_boundary; exit stop against stop: match; ticks less minutes: entry -1 ticks.
-- `limit`, `entry_bar_path`: the long decided at 2026-09-21T16:20:00Z, entry match; exit target_1 against target_1: entry_bar_path.
-- `stop`, `bar_boundary`: the long decided at 2026-09-21T13:35:00Z, entry bar_boundary; exit stop against stop: match; ticks less minutes: entry -1 ticks.
-- `stop`, `stop_through`: the long decided at 2026-09-21T16:20:00Z, entry stop_through; exit target_1 against target_1: match; ticks less minutes: entry +1 ticks.
+- `market`, `bar_path`: the long decided at 2026-09-21T17:30:00Z, entry match; exit target_1 against stop: bar_path; ticks less minutes: exit +80 ticks.
+- `market`, `stop_through`: the long decided at 2026-09-22T18:00:00Z, entry match; exit stop against stop: stop_through; ticks less minutes: exit -1 ticks.
+- `limit`, `bar_path`: the long decided at 2026-09-21T17:30:00Z, entry match; exit target_1 against stop: bar_path; ticks less minutes: exit +80 ticks.
+- `limit`, `entry_bar_path`: the long decided at 2026-09-21T13:40:00Z, entry match; exit target_1 against target_1: entry_bar_path.
+- `limit`, `stop_through`: the long decided at 2026-09-22T18:00:00Z, entry match; exit stop against stop: stop_through; ticks less minutes: exit -1 ticks.
+- `stop`, `bar_path`: the long decided at 2026-09-21T17:30:00Z, entry match; exit target_1 against stop: bar_path; ticks less minutes: exit +80 ticks.
+- `stop`, `entry_bar_path`: the long decided at 2026-09-22T13:45:00Z, entry match; exit target_1 against stop: entry_bar_path; ticks less minutes: exit +80 ticks.
+- `stop`, `stop_through`: the short decided at 2026-09-21T15:35:00Z, entry stop_through; exit stop against stop: match; ticks less minutes: entry -1 ticks.
 
 ## Determinism
 
 | Strategy | Run key | Key again | Fills | Second run | Saved | Through 2026-09-21 | Through 2026-09-22 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| market | `40adf5c11c28fc95` | equal | `1ef0e8fddd02fe3b` | equal | equal | equal | equal |
-| limit | `25fd65d583cfb3ae` | equal | `590ce5e95e695a13` | equal | equal | equal | equal |
-| stop | `de7962c4022749dd` | equal | `ecc24b318f6e7345` | equal | equal | equal | equal |
+| market | `0a7f4463b5a86a42` | equal | `8e564cf38d46f0ac` | equal | equal | equal | equal |
+| limit | `c73eaaad00000905` | equal | `a5715984b0481def` | equal | equal | equal | equal |
+| stop | `3e4c16a0deedbe91` | equal | `9e288e05fb5889d7` | equal | equal | equal | equal |
 
 - Each run's key (`02` ยง4) is worked out again from its inputs. Two fresh runs of the engine give fills of one hash (`fefat_engine.table_hash`), which is the saved run's. The runs on its first sessions alone, fresh from the engine as well, give the whole run's fills of those sessions.
-- `market`: 242 of its 242 fills on prints fell in a second holding more than one print. Replayed with each second's prints in the reverse of their stored order, the reference engine makes 104 of its 121 trades otherwise and 104 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03).
-- `limit`: 238 of its 238 fills on prints fell in a second holding more than one print. Replayed with each second's prints in the reverse of their stored order, the reference engine makes 111 of its 119 trades otherwise and 107 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03).
-- `stop`: 234 of its 234 fills on prints fell in a second holding more than one print. Replayed with each second's prints in the reverse of their stored order, the reference engine makes 101 of its 117 trades otherwise and 101 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03).
+- `market`: 242 of its 242 fills on prints fell in a second holding more than one print. Replayed with each second's prints in the reverse of their stored order, the reference engine makes 111 of its 121 trades otherwise and 111 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03).
+- `limit`: 224 of its 224 fills on prints fell in a second holding more than one print. Replayed with each second's prints in the reverse of their stored order, the reference engine makes 97 of its 112 trades otherwise and 100 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03).
+- `stop`: 236 of its 236 fills on prints fell in a second holding more than one print. Replayed with each second's prints in the reverse of their stored order, the reference engine makes 104 of its 118 trades otherwise and 103 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03).
 
 ## Difference classes
 
 ### `bar_boundary`
 
-IBKR stamps its prints to the second, so the prints of the second a 5-minute bar closes in carry the decision's own instant. On prints they are received at the decision, so they come before it (F-CLK-02): the mark at the decision is the last of them, and an order decided there never sees them, so a market order fills on the first print after that second (F-MKT-02). At one minute they open the bar that starts at the decision: the mark is the close of the bar before, and an order decided there sees that bar from its open (F-ACT-02), so a market order fills at its open, the first of them (F-MKT-03). The two runs therefore fill a market entry and a flat-by exit on different prints, place a limit or stop entry from different marks (F-ENT-02), and can reach a resting entry on those prints at the decision that places it on bars alone, or at the decision that cancels it on prints alone (F-ENT-03). A fill is of this class when the reference engine, replaying the prints with each print stamped at a decision's instant moved one nanosecond after it, where the bars put it, fills it otherwise than the prints: those prints alone moved it. A trade of one run alone is of this class too when the replay makes it where the prints do not, or does not make it where they do: the decision second made or prevented it, at once or through a position it left open on one run at a later decision.
+IBKR stamps its prints to the second. Stored at their stamp, as imports did before D-70, the prints of the second a 5-minute bar closes in carry the decision's own instant, and an import since stores each at the end of its second, after the decision, where the bars put it, which leaves this class empty. On prints at the decision's instant they are received at the decision, so they come before it (F-CLK-02): the mark at the decision is the last of them, and an order decided there never sees them, so a market order fills on the first print after that second (F-MKT-02). At one minute they open the bar that starts at the decision: the mark is the close of the bar before, and an order decided there sees that bar from its open (F-ACT-02), so a market order fills at its open, the first of them (F-MKT-03). The two runs therefore fill a market entry and a flat-by exit on different prints, place a limit or stop entry from different marks (F-ENT-02), and can reach a resting entry on those prints at the decision that places it on bars alone, or at the decision that cancels it on prints alone (F-ENT-03). A fill is of this class when the reference engine, replaying the prints with each print stamped at a decision's instant moved one nanosecond after it, where the bars put it, fills it otherwise than the prints: those prints alone moved it. A trade of one run alone is of this class too when the replay makes it where the prints do not, or does not make it where they do: the decision second made or prevented it, at once or through a position it left open on one run at a later decision.
 
 ### `bar_path`
 

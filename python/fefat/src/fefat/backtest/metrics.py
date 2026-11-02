@@ -32,6 +32,7 @@ from pydantic import Field
 from fefat.backtest.run_config import FidelityText
 from fefat.market.schema import FrozenModel
 from fefat.reference.orders import OrderRole, PositionSide
+from fefat.strategy.exits import Weekday
 
 
 def running_drawdown(equity: pl.Series) -> pl.Series:
@@ -99,18 +100,6 @@ class Outcome(FrozenModel):
     trades: int = Field(ge=0)
     wins: int = Field(ge=0)
     pnl: Decimal
-
-
-class Weekday(StrEnum):
-    """A day of the week."""
-
-    MONDAY = "monday"
-    TUESDAY = "tuesday"
-    WEDNESDAY = "wednesday"
-    THURSDAY = "thursday"
-    FRIDAY = "friday"
-    SATURDAY = "saturday"
-    SUNDAY = "sunday"
 
 
 Hour = Annotated[int, Field(ge=0, le=23)]

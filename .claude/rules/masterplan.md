@@ -13,4 +13,5 @@ From `docs/masterplan/05-build-process.md` §1 and §6, and the conventions in `
 - **Prompts** start with "Masterplan step N.M — Title" and end with "Not in this step".
 - **Checker.** `uv run python docs/masterplan/tools/check_masterplan.py` stays green after every edit; `scripts/masterplan_step.py` reads the same format.
 - **Status.** `PROGRESS.md` is the single status table; `BACKLOG.md` takes what is noticed but not done now; `DECISIONS.md` entries are never rewritten, only superseded by a later entry.
+- **Decision numbers.** A new `D-` entry takes the number after the highest in `DECISIONS.md` on `origin/main` and in every open pull request (`gh pr list`): two sessions took D-53 at once on 2026-10-24.
 - **Nothing private.** No real data paths, account details, or secrets in any masterplan file.

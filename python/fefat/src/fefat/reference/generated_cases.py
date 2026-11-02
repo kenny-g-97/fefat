@@ -22,6 +22,7 @@ failure shrinks to its smallest tape. Hypothesis is imported when a strategy is 
 from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from fefat.market.calendar import Session
@@ -63,6 +64,8 @@ GAPS_MS = (100, 0, 1, 50, 250, 900, 5_000, 60_000, 36_000_000)
 hours take a tape past a UTC midnight, onto a second trade date of the batch."""
 STEPS = (0, 1, -1, 2, -2, 1, -1, 0, 12, -12, 40, -40, 200, -200)
 """Ticks from one trade to the next: a walk with planted jumps up to a session's range."""
+JUMP_TICKS = 12
+"""The smallest planted jump, past most drawn stops."""
 OFFSETS_MS = (0, -100, 100, -1, 1, -1_000, 1_000)
 """Milliseconds from a record to a decision instant drawn beside it."""
 BAR_TIMEFRAMES = (
@@ -351,7 +354,7 @@ def _order(
             stop=BracketLeg.model_construct(id=100 + number, price=level - stop_ticks * away),
             target=BracketLeg.model_construct(id=200 + number, price=level + target_ticks * away),
         )
-    common = {
+    order_fields = {
         "id": number,
         "placed_at": placed_at,
         "side": side,
@@ -360,10 +363,10 @@ def _order(
         "bracket": bracket,
     }
     if kind == "market":
-        return MarketOrder.model_construct(kind="market", **common)
+        return MarketOrder.model_construct(kind="market", **order_fields)
     if kind == "stop":
-        return StopOrder.model_construct(kind="stop", price=level, **common)
-    return LimitOrder.model_construct(kind="limit", price=level, **common)
+        return StopOrder.model_construct(kind="stop", price=level, **order_fields)
+    return LimitOrder.model_construct(kind="limit", price=level, **order_fields)
 
 
 def _position(draw: "DrawFn", drawn: DrawnInstrument) -> OpenPosition | None:
@@ -467,14 +470,25 @@ def _funding(draw: "DrawFn", tape: Tape, marked: int) -> tuple[FundingRate, ...]
 
 
 def _rolls(draw: "DrawFn", drawn: DrawnInstrument, tape: Tape) -> tuple[RollRow, ...]:
-    """None, or one roll beside a record of the tape, from DRAWN-H to DRAWN-M, its gap -20 to 20
-    ticks, for a drawn reason."""
+    """None, or one roll from DRAWN-H to DRAWN-M, its gap -20 to 20 ticks, for a drawn reason:
+    beside a record of the tape, or on TBBO a millisecond after a planted jump, the record most
+    likely to trigger a drawn stop, so that the roll comes in the stop's wait for the next
+    record's quote and the stop does the close leg's work (F-STP-02, F-ROL-02, S-fill-068)."""
     from hypothesis import strategies as st
 
     if not draw(st.booleans()):
         return ()
-    record = tape[draw(st.integers(0, len(tape) - 1))]
-    at = record.available_at() + draw(st.sampled_from(OFFSETS_MS)) * MILLISECOND
+    jumps = [
+        later.available_at()
+        for earlier, later in pairwise(tape)
+        if isinstance(later, TbboRecord)
+        and abs(later.price - earlier.prices()[0]) >= JUMP_TICKS * drawn.tick
+    ]
+    if jumps and draw(st.booleans()):
+        at = draw(st.sampled_from(jumps)) + MILLISECOND
+    else:
+        record = tape[draw(st.integers(0, len(tape) - 1))]
+        at = record.available_at() + draw(st.sampled_from(OFFSETS_MS)) * MILLISECOND
     roll = RollRow.model_construct(
         trade_date=utc_date(at),
         session_open=at,

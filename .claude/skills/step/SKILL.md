@@ -68,7 +68,7 @@ Before the pull request, run these in order, fix what they find, and re-run what
 3. `git push -u origin HEAD` (the builder approves the push).
 4. Write the body from `.github/pull_request_template.md` into a file in the scratchpad and run `gh pr create --base main --title "<subject> (step <ID>)" --body-file <file>`. Sections: Summary (the step, linked to its phase file with a full github.com URL), Done means (every item in order with its evidence: the command and what it printed, the test that fails without the change, a file), Deviations (or "None."), Follow-ups (the BACKLOG lines added), Progress row (as committed), Screenshots or recordings (UI steps; otherwise "Not a UI step."). End with the attribution line configured for pull requests.
 5. If GitHub gave a different number than predicted, fix the row, commit, push, and update the body with `gh pr edit <number> --body-file <file>`.
-6. Finish with the pull request URL, the step's **Your checks**, word for word, for the builder, and the next step with the line to type in a fresh session once this one is merged (`/step N.M`, or `/phase-exit N` when the phase's last step is done).
+6. Finish with the pull request URL, the step's **Your checks**, word for word, for the builder, and the next step with the line to type in a fresh session once this one is merged (`/step N.M`, or `/phase-exit N` when the phase's last step is done); when another pull request is open, say which to merge first.
 
 ## Never
 

@@ -32,6 +32,7 @@ just strip-notebooks  # clear notebook outputs; then git add the notebooks again
 just gen-schema  # write the StrategySpec JSON schema from the Rust types; a cargo test fails when it is stale
 just regenerate-goldens  # rewrite fixtures/goldens/ from the engine; only with the builder's approval (the engine-golden skill)
 just xcheck   # cross-check the engine against NautilusTrader and NinjaTrader 8's export on the real store (step 2.14): slow, writes docs/validation/nautilus-comparison.md
+just xcheck-tests  # the cross-check project's own tests and pyright, outside just test; CI runs them when python/tests/external changes
 just tick-check  # the tick engine on the store's IBKR sessions (step 2.16): bars, reference against Rust, tick-versus-minute classes, hashes; writes docs/validation/ibkr-tick-check.md
 just bench    # the engine's benchmarks on the generated year of step 2.7 (step 2.15); --baseline <file> warns above a 30 % regression
 just mutants  # cargo-mutants on fefat-engine, for the phase exits (step 2.15); -f <file> for one file
@@ -50,7 +51,7 @@ just dev      # local server and web dev server (from Phase 4)
 - Plans run on the strongest model (Fable) and the work on Opus: after approving a plan the builder switches with `/model opus` and says "proceed with opus"; continue the approved plan from its first item, without planning again. `Model hint: hard` marks the steps where the strongest model matters most.
 - Stay inside the step and put anything else in `docs/masterplan/BACKLOG.md`. If a step's assumption no longer holds, stop and propose an Amendment block instead of deviating silently.
 - A plan revision or setup change the builder asks for during a step (a skill, reviewer, plugin, or setting) goes in its own commit before the step's work, or its own `config/<slug>` pull request when it stands alone, with a `DECISIONS.md` entry when it decides something. The builder merges that pull request before the step's opens: two pull requests never wait on each other.
-- A step's closing message names the next step and the line to type in a fresh session (`/step N.M`, or `/phase-exit N`): the builder asks after every merge.
+- Every closing message, a step's or a side discussion's, names the next step and the line to type in a fresh session (`/step N.M`, or `/phase-exit N`), and which open pull request to merge first: the builder asks after every merge.
 - When an option costs money, recommend the free or local one first and give the paid one's monthly cost (D-01, D-30).
 - Each acceptance item gets a test that fails without the change, shown failing first.
 - Before the pull request: `just check`, `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, `/ponytail-review` (the ponytail plugin, D-32), the reviewers on the step's meta line, and `/security-review` when it says `Security: yes`.
@@ -87,7 +88,7 @@ Each is a decision in `docs/masterplan/DECISIONS.md`, with its record where it h
 - Node 24 runs the Claude Code hooks. The settings call them in exec form (`node` and its arguments), never through a shell, and their smoke tests are `scripts/test_hooks.py`.
 - The standalone `claude` CLI is not installed, by choice: Claude Code runs in the VS Code extension, plugins come from `/plugins`, and the extension's own CLI sits in `~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/`.
 - The language-server plugins (`rust-analyzer-lsp`, `pyright-lsp`, `typescript-lsp`) report type errors after each edit; their servers must be on PATH (`06-claude-code-setup.md` §7).
-- The builder knows Python and notebooks well and is new to web, mobile, and DevOps: explain those parts plainly, say in plain words what a step changes in their store and why, and prefer checks they can run or click over code they must read.
+- The builder knows Python and notebooks well and is new to web, mobile, and DevOps: explain those parts, and an engine or data term (TBBO, a memory-mapped cache) the first time, plainly; say in plain words what a step changes in their store, what it keeps on disk or in memory, and why; and prefer checks they can run or click over code they must read.
 
 ## Never
 

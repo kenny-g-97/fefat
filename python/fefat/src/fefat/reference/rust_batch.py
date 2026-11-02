@@ -384,11 +384,11 @@ def _ohlcv(record: Record) -> tuple[int, int, int, int, int]:
 
 
 def _record_values(case: int, trade_date: int, record: Record) -> dict[str, int]:
-    common = {"case": case, "trade_date": trade_date}
+    case_and_date = {"case": case, "trade_date": trade_date}
     if isinstance(record, BarRecord):
         bar = record.model_dump(include={"ts_open", "ts_close", "open", "high", "low", "close"})
-        return {**common, **bar, "volume": record.volume}
-    values = {**common, "ts_recv": record.ts, "price": record.price, "size": record.size}
+        return {**case_and_date, **bar, "volume": record.volume}
+    values = {**case_and_date, "ts_recv": record.ts, "price": record.price, "size": record.size}
     if isinstance(record, TbboRecord):
         quote = {"bid": record.bid, "ask": record.ask, "bid_size": record.bid_size}
         values |= {**quote, "ask_size": record.ask_size}

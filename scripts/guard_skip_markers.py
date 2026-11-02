@@ -9,10 +9,13 @@ CI runs it beside the data guard, over the lines a pull request adds:
 It reads `git diff --unified=0` of the range and reports every added line of a code file (Python,
 Rust, TypeScript, or JavaScript) that skips a test, expects it to fail, or runs others alone:
 pytest's `mark.skip`, `skipif`, `xfail`, `pytest.skip(`, and `pytest.importorskip(`; unittest's
-`skip`, `skipIf`, `skipUnless`, and `expectedFailure`; Rust's `#[ignore]` and a `#[cfg_attr(...)]`
-that ignores; and vitest's `it`, `test`, and `describe` with `.skip`, `.skipIf`, `.only`, or
-`.todo`, and `xit(`, `xtest(`, and `xdescribe(`. This guard and its test, which name the markers,
-are left out. Tests a pull request deletes stay the step-reviewer's check. Exits 0 when no added
+`skip`, `skipIf`, `skipUnless`, `expectedFailure`, and `SkipTest`; Rust's `#[ignore]`, a
+`#[cfg_attr(...)]` that ignores, and `#[cfg(any())]`; and vitest's `it`, `test`, and `describe`
+with `.skip`, `.skipIf`, `.runIf`, `.only`, `.fails`, or `.todo`, and `xit(`, `xtest(`, and
+`xdescribe(`. In `pyproject.toml`, the justfile, and CI's workflows it reports an added option
+that leaves tests out of a run: `--ignore=`, `--deselect`, `-k`, and `--skip` (the Phase 2
+exit). This guard and its test, which name the markers, are left out. Tests a pull request
+deletes stay the step-reviewer's check. Exits 0 when no added
 line holds a marker, 1 with each one listed as `path:line: adds <marker>`, and 2 when git cannot
 be read. Standard library only.
 """
@@ -36,17 +39,24 @@ SKIP_MARKER = re.compile(
         (
             r"\b(?:pytest\.)?mark\.(?:skip(?:if)?|xfail)\b",
             r"\bpytest\.(?:skip|xfail|importorskip)\(",
-            r"\bunittest\.(?:skip(?:If|Unless)?|expectedFailure)\b",
+            r"\bunittest\.(?:skip(?:If|Unless)?|expectedFailure|SkipTest)\b",
+            r"\bSkipTest\b",
             r"\bskip(?:if|If|Unless)\b",
             r"\bxfail\b",
             r"\bexpectedFailure\b",
             r"#\[ignore\b[^\]]*\]?",
             r"#\[cfg_attr\([^\]]*\bignore\b[^\]]*\]?",
-            r"\b(?:it|test|describe)\.(?:skip(?:If)?|only|todo)\b",
+            r"#\[cfg\(any\(\)\)\]",
+            r"\b(?:it|test|describe)\.(?:skip(?:If)?|only|todo|fails|runIf)\b",
             r"\bx(?:it|test|describe)\(",
         )
     )
 )
+TEST_RUNNERS_CONFIGURATION = frozenset({"pyproject.toml", "justfile"})
+"""The files that set which tests pytest, cargo, and vitest run, beside CI's workflows."""
+DESELECTION = re.compile(r"--ignore(?:-glob)?=|--deselect\b|(?<!\S)-k(?=\s)|--skip\b")
+"""An option that leaves tests out of a run: pytest's `--ignore`, `--deselect`, and `-k`, and
+the `--skip` of `cargo test` and of vitest."""
 HUNK = re.compile(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 REMEDY = (
     "Remove the marker and fix the test: tests are never weakened, skipped, or deleted to make "
@@ -100,15 +110,27 @@ def added_lines(diff: str) -> Iterator[tuple[str, int, str]]:
 
 
 def added_skip_markers(diff: str) -> list[Finding]:
-    """The added lines of code files in `diff` that hold a skip marker, each with its first."""
+    """The added lines in `diff` of code files that hold a skip marker, and of the test runners'
+    configuration that hold a deselection, each with its first."""
     found: list[Finding] = []
     for path, number, text in added_lines(diff):
-        if PurePosixPath(path).suffix not in CODE_SUFFIXES or path in NAMES_THE_MARKERS:
-            continue
-        marker = SKIP_MARKER.search(text)
+        markers = _markers_of(path)
+        marker = None if markers is None else markers.search(text)
         if marker is not None:
             found.append(Finding(path, number, marker.group(0)))
     return found
+
+
+def _markers_of(path: str) -> re.Pattern[str] | None:
+    """What an added line of `path` may skip tests with: a marker in code, an option in the
+    test runners' configuration or CI's workflows; none for other files and this guard's own."""
+    if path in NAMES_THE_MARKERS:
+        return None
+    if PurePosixPath(path).suffix in CODE_SUFFIXES:
+        return SKIP_MARKER
+    if path in TEST_RUNNERS_CONFIGURATION or path.startswith(".github/workflows/"):
+        return DESELECTION
+    return None
 
 
 def diff_of(revisions: str) -> str:

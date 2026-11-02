@@ -197,9 +197,10 @@ impl TradeBook {
         instrument: &InstrumentParameters,
     ) -> Result<(), Overflow> {
         let before = self.held;
-        self.held += traded.signed_lots();
+        self.held = Qty(before).checked_add(Qty(traded.signed_lots()))?.0;
         if before != 0 && self.held != 0 && (before > 0) != (self.held > 0) {
-            return self.reversed(traded, before.abs(), instrument);
+            let closing = Qty(0).checked_sub(Qty(before))?.0.max(before);
+            return self.reversed(traded, closing, instrument);
         }
         let Some(open) = &mut self.open else {
             if before == 0 && !matches!(traded.fill.role, OrderRole::Roll(_)) {
@@ -248,7 +249,7 @@ impl TradeBook {
             ..*fill
         };
         let opened_part = Fill {
-            lots: Qty(lots - closing),
+            lots: Qty(lots).checked_sub(Qty(closing))?,
             fee: fill.fee.checked_sub(fee)?,
             ..*fill
         };

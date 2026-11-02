@@ -1,0 +1,37 @@
+id: S-template-082
+title: A position with max_minutes of 200,000,000 never closes, its span past the last instant a run holds
+fidelity: trades
+instrument: ES
+strategy:
+  spec_version: 1
+  instrument: ES
+  timeframe: 1m
+  execution:
+    entry: {kind: market}
+    stop: {kind: ticks, ticks: 40}
+    targets: [{price: {kind: ticks, ticks: 40}}]
+    time: {tz: UTC, max_minutes: 200000000}
+    sizing: {kind: fixed, units: 1}
+signals:
+  - {ts_close: "2026-03-05T14:30:00Z", trade_date: "2026-03-05", contract: ESH2026, long_entry: true}
+  - {ts_close: "2026-03-05T14:31:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T14:32:00Z", trade_date: "2026-03-05", contract: ESH2026}
+  - {ts_close: "2026-03-05T14:33:00Z", trade_date: "2026-03-05", contract: ESH2026}
+tape:
+  - {ts: "2026-03-05T14:30:00.200Z", price: "5000.00", size: 2}
+  - {ts: "2026-03-05T14:31:00.500Z", price: "5000.50", size: 1}
+  - {ts: "2026-03-05T14:32:00.400Z", price: "5001.00", size: 1}
+  - {ts: "2026-03-05T14:33:00.300Z", price: "4999.50", size: 1}
+expected:
+  fills:
+    - {order: 1, ts: "2026-03-05T14:30:00.200Z", price: "5000.25", rule: F-MKT-02, role: entry}
+rules: [F-ACT-01, F-MKT-02, F-OCO-02, F-PLN-01, F-SLP-01, F-TIM-02]
+
+# Arithmetic (ES, tick 0.25; one tick of slippage on trades: F-SLP-01; latency 100 ms), as in
+# S-template-036 but for its span (the Phase 2 exit's engine-accuracy review):
+# at the 14:30 close long_entry is true: the template buys 1 lot at the market, order 1, which
+# fills on the trade at 14:30:00.200: 5000.00 + 0.25 = 5000.25 (F-MKT-02), and places its stop,
+# order 2, at 4990.25 and its target, order 3, at 5010.25, which no trade reaches;
+# 200,000,000 minutes after the fill is about 380 years later, past 2262, the last instant a run's
+# nanoseconds since 1970 hold in 64 bits, so no decision comes at or after it and the position
+# stays open (F-TIM-02); a span that overflows is never reached, as a span past the tape is.

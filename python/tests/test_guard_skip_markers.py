@@ -41,10 +41,43 @@ def diff_adding(path: str, *lines: str, start: int = 1) -> str:
         ("it.only('renders the chart', () => {})", "it.only"),
         ("test.todo('compares two runs')", "test.todo"),
         ("xit('renders the chart', () => {})", "xit("),
+        # The Phase 2 exit's reviews: skips the first markers did not name.
+        ("    raise unittest.SkipTest('slow')", "unittest.SkipTest"),
+        ("    raise SkipTest('slow')", "SkipTest"),
+        ("it.fails('renders the chart', () => {})", "it.fails"),
+        ("it.runIf(isWindows)('renders the chart', () => {})", "it.runIf"),
+        ("#[cfg(any())]", "#[cfg(any())]"),
     ],
 )
 def test_each_marker_on_an_added_line_of_code_is_found(line: str, marker: str) -> None:
     found = guard_skip_markers.added_skip_markers(diff_adding("python/tests/test_runs.py", line))
+
+    assert [finding.marker for finding in found] == [marker]
+
+
+@pytest.mark.parametrize(
+    ("path", "line", "marker"),
+    [
+        (
+            "pyproject.toml",
+            'addopts = "--ignore=python/tests/test_backtest_golden.py"',
+            "--ignore=",
+        ),
+        (
+            "pyproject.toml",
+            'addopts = "--deselect python/tests/test_runs.py::test_sums"',
+            "--deselect",
+        ),
+        ("justfile", '    uv run pytest -k "not golden"', "-k"),
+        (".github/workflows/ci.yml", "      - run: cargo test -- --skip golden", "--skip"),
+    ],
+)
+def test_a_deselection_added_to_the_test_runners_configuration_is_found(
+    path: str, line: str, marker: str
+) -> None:
+    # The Phase 2 exit's ponytail review: a test left out by the runner's options passes as
+    # silently as one skipped in its code.
+    found = guard_skip_markers.added_skip_markers(diff_adding(path, line))
 
     assert [finding.marker for finding in found] == [marker]
 

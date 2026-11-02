@@ -8,8 +8,11 @@ from fefat.backtest.fidelity_classes import FidelityClass
 CLASSES = [str(name) for name in FidelityClass if name is not FidelityClass.MATCH]
 EXPLANATIONS = {
     FidelityClass.BAR_BOUNDARY: (
-        "IBKR stamps its prints to the second, so the prints of the second a 5-minute bar "
-        "closes in carry the decision's own instant. On prints they are received at the "
+        "IBKR stamps its prints to the second. Stored at their stamp, as imports did before "
+        "D-70, the prints of the second a 5-minute bar closes in carry the decision's own "
+        "instant, and an import since stores each at the end of its second, after the "
+        "decision, where the bars put it, which leaves this class empty. On prints at the "
+        "decision's instant they are received at the "
         "decision, so they come before it (F-CLK-02): the mark at the decision is the last of "
         "them, and an order decided there never sees them, so a market order fills on the first "
         "print after that second (F-MKT-02). At one minute they open the bar that starts at the "
@@ -377,14 +380,26 @@ def _net_ticks(strategy: dict[str, Any]) -> str:
 def _decision_second(facts: dict[str, Any]) -> list[str]:
     second = facts["decision_second"]
     path_classes = [name for name in CLASSES if name != str(FidelityClass.BAR_BOUNDARY)]
-    return [
+    restamped = (
         f"{second['with_prints']} of the {second['decisions']} decisions on the sessions on "
         f"prints have prints stamped at their own instant, {second['prints']:,} of the "
         f"{second['of_prints']:,} prints. With those prints moved one nanosecond after their "
         "decision, the reference engine's trades on the prints are those on the bars but for "
         "the trades below, each classed by where the bar's path parts from the prints; every "
         "other difference of the runs on prints from those on bars is the decision second's, "
-        "`bar_boundary`.",
+        "`bar_boundary`."
+    )
+    if second["prints"] == 0:
+        restamped = (
+            f"None of the {second['of_prints']:,} prints sits at one of the {second['decisions']} "
+            "decisions' instants: the import stores a print stamped to the second at its "
+            "second's end (D-70), after every decision inside that second, where the 1-minute "
+            "bars put it, so the restamped replay is the run on prints, no difference is "
+            "`bar_boundary`, and the trades below, apart from those on bars, are each classed by "
+            "where the bar's path parts from the prints."
+        )
+    return [
+        restamped,
         "",
         f"| Strategy | Trades apart | {' | '.join(path_classes)} |",
         f"| --- | ---: | {' | '.join(['---:'] * len(path_classes))} |",
@@ -463,8 +478,11 @@ def _alike(first: str, second: str) -> str:
 
 
 def _shared_seconds(strategy: dict[str, Any]) -> str:
-    shared = strategy["determinism"]["shared_seconds"]
-    otherwise, own = shared["trades_reversed_otherwise"], shared["reversed_trades_of_its_own"]
+    shared_seconds = strategy["determinism"]["shared_seconds"]
+    otherwise, own = (
+        shared_seconds["trades_reversed_otherwise"],
+        shared_seconds["reversed_trades_of_its_own"],
+    )
     reading = (
         "so their order matters, and the Rust engine's fills are those of the stored order "
         "(F-CLK-03)"
@@ -472,10 +490,10 @@ def _shared_seconds(strategy: dict[str, Any]) -> str:
         else "so their order changes no trade of these sessions"
     )
     return (
-        f"- `{strategy['name']}`: {shared['fills_in_shared_seconds']:,} of its "
-        f"{shared['fills']:,} fills on prints fell in a second holding more than one print. "
+        f"- `{strategy['name']}`: {shared_seconds['fills_in_shared_seconds']:,} of its "
+        f"{shared_seconds['fills']:,} fills on prints fell in a second holding more than one print. "
         "Replayed with each second's prints in the reverse of their stored order, the "
-        f"reference engine makes {otherwise} of its {shared['trades']} trades otherwise and "
+        f"reference engine makes {otherwise} of its {shared_seconds['trades']} trades otherwise and "
         f"{own} of its own, {reading}."
     )
 

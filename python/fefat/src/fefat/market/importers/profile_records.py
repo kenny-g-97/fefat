@@ -9,15 +9,16 @@ pairs one to one with the contracts, else the contract's year and month (202603 
 or 1 for a contract that never expires, such as a continuous series or a perpetual.
 
 It then places each record in the sessions of its instrument's calendar: a tick takes the trade
-date of its session, an intraday bar the bucket of its session that its timestamp opens or
-closes, as the bar builder cuts buckets (`fefat.market.bars.in_buckets`), so an hourly bar
-stamped at a 12:15 early close is the bucket from 12:00 to 12:15, and a daily bar the session of
-the date it names, stamped with the date alone or, where the profile stamps the close, at its
-session's close. A timestamp outside the calendar's session table, a price off the instrument's
-tick, a record before the product's first trade date, two bars of a contract in one bucket, a
-bar off the buckets of its session, and bars no two of which lie one timeframe apart are
-problems (`RecordProblem`), their rows left out; a file left without records is refused with
-the problems of its rows.
+date of its session, received at its second's last nanosecond where the file stamps prints to
+the second (`tick_arrival_offset`); an intraday bar takes the bucket of its session that its
+timestamp opens or closes, as the bar builder cuts buckets (`fefat.market.bars.in_buckets`), so
+an hourly bar stamped at a 12:15 early close is the bucket from 12:00 to 12:15; and a daily bar
+takes the session of the date it names, stamped with the date alone or, where the profile stamps
+the close, at its session's close. A timestamp outside the calendar's session table, a price off
+the instrument's tick, a record before the product's first trade date, two bars of a contract in
+one bucket, a bar off the buckets of its session, and bars no two of which lie one timeframe
+apart are problems (`RecordProblem`), their rows left out; a file left without records is
+refused with the problems of its rows.
 """
 
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ from fefat.market.importers.profile_values import (
     RecordProblem,
     problem_of,
     read_rows,
+    unix_unit_nanoseconds,
 )
 from fefat.market.importers.profiles import BarStamp, ImportProfile, NewInstrument
 from fefat.market.instruments import Instrument, InstrumentTable
@@ -89,7 +91,7 @@ def mapped_records(
     _require_records(priced, (*read.problems, outside, off_tick), profile, facts.file_name)
     timeframe = profile.bar_timeframe()
     if timeframe is None:
-        placed, placing = _dated_ticks(priced, sessions), []
+        placed, placing = _dated_ticks(priced, sessions, tick_arrival_offset(profile)), []
     else:
         placed, placing = _placed_bars(priced, timeframe, profile, sessions, time_zone)
     kept, early = _from_the_first_trade_date(
@@ -254,11 +256,26 @@ def _on_the_tick(
     return rows.filter(on_the_tick), problem
 
 
-def _dated_ticks(rows: pl.DataFrame, sessions: SessionTable) -> pl.DataFrame:
-    """Ticks received at their timestamp, each with the trade date of its session (or of the
-    session before it, in a break), in the file's order where instants are equal."""
+def tick_arrival_offset(profile: ImportProfile) -> int:
+    """How long after its stamp a print of the profile's file may have arrived: a print stamped
+    in Unix seconds, milliseconds, or microseconds up to one unit less a nanosecond, so it is
+    received at its stamp's last nanosecond and follows every decision inside that unit
+    (F-CLK-02, D-70); 0 for nanosecond stamps, and for bars, whose stamp marks a bucket's edge."""
+    # shortcut: a print stamped as text (ISO, or a strptime pattern without fractions) keeps its stamp; give it its unit when such a tick export arrives (BACKLOG.md).
+    unit = unix_unit_nanoseconds(profile.timestamp.format)
+    if profile.bar_timeframe() is not None or unit is None:
+        return 0
+    return unit - 1
+
+
+def _dated_ticks(rows: pl.DataFrame, sessions: SessionTable, arrival_offset: int) -> pl.DataFrame:
+    """Ticks received `arrival_offset` after their timestamp, which stays their event time
+    unless the file has its own, each with the trade date of its session (or of the session
+    before it, in a break), in the file's order where instants are equal. The offset stays
+    inside the stamp's second, so a tick keeps its minute and, sessions opening and closing on
+    whole seconds, its trade date."""
     received = rows.with_columns(
-        ts_recv=pl.col("instant"),
+        ts_recv=pl.col("instant") + arrival_offset,
         ts_event=pl.col("event_instant") if "event_instant" in rows.columns else pl.col("instant"),
         sequence=pl.col("sequence") if "sequence" in rows.columns else pl.col("row") - 1,
         size=pl.col("volume"),

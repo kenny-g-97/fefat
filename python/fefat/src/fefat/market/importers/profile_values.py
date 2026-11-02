@@ -222,6 +222,12 @@ def _timestamp_text(columns: _Columns, profile: ImportProfile) -> pl.Expr:
     return day + " " + padded
 
 
+def unix_unit_nanoseconds(form: TimestampForm | str) -> int | None:
+    """The nanoseconds of one unit of a Unix timestamp form, such as 1,000,000 for `unix_ms`;
+    None for a form written as text."""
+    return _UNIT_NANOSECONDS.get(form) if isinstance(form, TimestampForm) else None
+
+
 def _instants(text: pl.Expr, form: TimestampForm | str, time_zone: str) -> pl.Expr:
     if isinstance(form, TimestampForm) and form in _UNIT_NANOSECONDS:
         return _integer(text) * _UNIT_NANOSECONDS[form]

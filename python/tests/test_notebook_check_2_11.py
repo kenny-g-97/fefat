@@ -27,5 +27,7 @@ def test_the_check_notebook_prints_the_metrics_and_explains_a_losing_trade(
     explanation = check["EXPLANATION"]
     assert explanation.trade_id == check["TRADE"]
     assert len(explanation.fills) == 2
-    assert "(F-STP-04, taker, 1 ticks)" in printed
-    assert "reached the stop at" in printed
+    # The Phase 2 exit: the notebook shows the explanation as display output, not printed text,
+    # which a runner keeping printed text would pass on with the store's prices (D-21).
+    assert "(F-STP-04, taker, 1 ticks)" in explanation.text()
+    assert "reached the stop at" in explanation.text()

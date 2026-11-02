@@ -145,10 +145,10 @@ class ScenarioBase(FrozenModel):
 
     @field_validator("tape", mode="before")
     @classmethod
-    def _records_of_the_fidelity(cls, raw: object, info: ValidationInfo) -> object:
+    def _records_of_the_fidelity(cls, raw: object, validation: ValidationInfo) -> object:
         """The tape read as the records its fidelity names; without a valid fidelity, the
         fidelity's own error says why."""
-        fidelity = info.data.get("fidelity")
+        fidelity = validation.data.get("fidelity")
         if fidelity is None:
             return raw
         return parse_tape(fidelity, raw)

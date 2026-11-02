@@ -14,6 +14,7 @@ from typing import Annotated
 
 from pydantic import BeforeValidator, Field
 
+from fefat.market.calendar import counted
 from fefat.market.fidelity import Fidelity, TickFidelity
 from fefat.market.layout import YearMonth
 from fefat.market.schema import FrozenModel, Timeframe
@@ -102,11 +103,6 @@ def _coarsest_first(level: TickFidelity | Timeframe) -> tuple[int, int]:
     if isinstance(level, Timeframe):
         return (0, -level.nominal_seconds())
     return (1, 0 if level is TickFidelity.TRADES else 1)
-
-
-def counted(count: int, noun: str) -> str:
-    """`1 day`, `2 days`: a count with its noun."""
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def size_text(size_bytes: int) -> str:

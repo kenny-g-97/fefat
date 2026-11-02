@@ -22,6 +22,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-10-21 — Phase 2 kickoff (D-51, pull request #24): your fill defaults (a limit fills on a trade through its price, one tick of slippage that each run can change, 100 ms latency), a reference capital of 50,000 USD, the NautilusTrader comparison on MES in August 2026, and no fill exports for now; every Phase 2 step reconciled with the data on this PC (1-minute bars for the four micros, so the real-data checks fill at bar fidelity on MES, while tick fills run on the fixtures and on generated tapes), with the backlog items aimed at the kickoff written into steps 2.1 to 2.7 and 2.9 to 2.11 (an Amendment under each step); scenarios are YAML and goldens JSON. No step ID changed.
 - 2026-10-23 — Phone access leaves the plan until FEFAT is fully functional (D-54, superseding D-17): FEFAT is used from the browser on the PC, with no Tailscale exposure, installable app, web push, or phone-size check in the UI steps. Phase 4 becomes the local app alone (4.3 and 4.4 reworded), steps 4.6 and 5.11 and all of Phase 12 are skipped, 5.13 loses its phone pass, Phase 13 follows Phase 11, and the phone plan is one backlog item that runs after Phase 14 or earlier at a kickoff. No step ID changed.
 - 2026-11-01 — The tick engine gets a check on real prints (D-67): you pull sessions of MNQZ2026 ticks and IBKR's 1-minute bars from TWS with a puller of your own outside the repository, import them as the provider `ibkr`, and the new step 2.16 holds the reference engine and the Rust engine to identical fills on them, rebuilds the bars, and classifies the tick-versus-minute fill differences; 2026-09-21 is in the store, 09-22 and 09-23 follow. No existing step changed.
+- 2026-11-02 — The Phase 2 exit (D-70, pull request #43): you signed off D-69's readings and 30 undated rows of the fill specification, prints stamped to the second are now stored at the end of their second, which your IBKR sessions were imported again under, so the tick check's `bar_boundary` is gone; the phase-wide reviews' fixes (a run builds its fronts' cache months alone, the signal source counts the trade dates a level holds, huge spans of minutes, the equity a decision reads before a roll's legs, a saved run's rerun refused on data imported since, notebooks and errors without prices, more skips refused in CI); the mutation run recorded; the upgrade step; and the retro in `CLAUDE.md`, the step skill, and the masterplan and engine rules. Step 2.2 and step 2.16 gain an Amendment each; no unstarted step changed.
 
 ## Steps
 
@@ -169,7 +170,7 @@ Phase kickoffs and exits are tracked in the second table.
 | --- | --- | --- | --- | --- | --- |
 | P0 | (no kickoff) | | #8 | 2026-10-11 | phase-0 |
 | P1 | #10 | 2026-10-12 | #23 | 2026-10-21 | phase-1 |
-| P2 | #24 | 2026-10-21 | | | |
+| P2 | #24 | 2026-10-21 | #43 | 2026-11-02 | phase-2 |
 | P3 | | | | | |
 | P4 | | | | | |
 | P5 | | | | | |
@@ -187,10 +188,10 @@ Phase kickoffs and exits are tracked in the second table.
 
 | Milestone | Step | Reached |
 | --- | --- | --- |
-| Your Databento files and your own exports imported from the command line | 1.10 | |
-| First backtest in a notebook (reference engine) | 2.2 | |
-| Every run ready for prop simulation (trade paths) | 2.13 | |
-| Trustworthy tick-level backtests from a notebook | 2.15 | |
+| Your Databento files and your own exports imported from the command line | 1.10 | 2026-10-20 |
+| First backtest in a notebook (reference engine) | 2.2 | 2026-10-23 |
+| Every run ready for prop simulation (trade paths) | 2.13 | 2026-10-31 |
+| Trustworthy tick-level backtests from a notebook | 2.15 | 2026-11-01 |
 | Feature system complete in notebooks | 3.8 | |
 | App on the phone over Tailscale | 4.6 | deferred (D-54) |
 | Web MVP | 5.13 | |
