@@ -54,6 +54,10 @@ def known_time_zone(name: str) -> str:
 TimeZoneName = Annotated[str, AfterValidator(known_time_zone)]
 """An IANA time-zone name that Polars knows, such as `America/Chicago` or `UTC`."""
 
+LocalTime = Annotated[str, Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
+"""A local time of day, `HH:MM`, as an execution template's time rules and a feature's
+parameters write it."""
+
 SourceLink = Annotated[str, StringConstraints(pattern=r"^https://\S+$")]
 """Where a holiday's date or time is published."""
 
