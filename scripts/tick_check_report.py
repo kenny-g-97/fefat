@@ -46,6 +46,13 @@ EXPLANATIONS = {
         "start each trade date together."
     ),
 }
+OTHER_ENGINES = (
+    "`leg_released_through` and `gap_limit_clamped` of step 2.14 name conventions of "
+    "NautilusTrader and NinjaTrader 8: a leg released on its entry's tick and filled at that "
+    "tick's price, and a limit filled at its price clamped into a bar that opened past it. Both "
+    "runs here are FEFAT's, whose legs work from the record after the entry's fill and whose "
+    "limits fill at their price (F-OCO-02, F-LMT-03), so neither class can arise."
+)
 NOT_EXERCISED = (
     "- **Aggressor sides and quotes.** IBKR's prints carry no aggressor side and no quotes, so "
     "the fills on prints follow FEFAT's rules for trades (F-MKT-02, F-STP-03, F-LMT-01); a run "
@@ -429,6 +436,10 @@ def _classes(facts: dict[str, Any]) -> str:
     for name, explanation in EXPLANATIONS.items():
         lines += ["", f"### `{name}`", "", explanation]
     lines += [
+        "",
+        "### Step 2.14's other classes",
+        "",
+        OTHER_ENGINES,
         "",
         "### What the data cannot exercise",
         "",
