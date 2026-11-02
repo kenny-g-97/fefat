@@ -1,0 +1,53 @@
+# The cross-check's own tests and type check (`just xcheck-tests`, step 2.14, the
+# Phase 2 exit), which `just test` and the main CI job leave out: the project under
+# python/tests/external/ installs NautilusTrader's 113 MB wheel in an environment
+# of its own (D-66). It runs on Ubuntu alone, only for a change to that project or
+# to this workflow, since the private repository's free plan counts its minutes
+# (docs/masterplan/07-tools-and-costs.md). The tests read the synthetic fixtures
+# of the checkout and need no engine build. Actions are pinned to commits (D-33);
+# the comment names the release.
+name: Cross-check tests
+
+on:
+  pull_request:
+    paths:
+      - "python/tests/external/**"
+      - ".github/workflows/xcheck-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "python/tests/external/**"
+      - ".github/workflows/xcheck-tests.yml"
+
+permissions:
+  contents: read
+
+# A newer push to a pull request makes its older run pointless; every merge
+# to main keeps its own run.
+concurrency:
+  group: xcheck-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  xcheck-tests:
+    name: Cross-check tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.33"
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        with:
+          just-version: 1.58.0
+
+      - run: uv sync --locked --directory python/tests/external
+      - run: just xcheck-tests

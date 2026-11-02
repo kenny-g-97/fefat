@@ -9,6 +9,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+import yaml
 
 from fefat.config import resolve_paths
 from fefat.market.importers.dbn import read_dbn
@@ -28,6 +29,8 @@ from xcheck import (
 
 BATCH = SYNTHETIC / "databento-batch" / "GLBX-20260310-SYNTHETIC0"
 RAW = BATCH / "glbx-mdp3-20260304-20260309.ohlcv-1m.dbn"
+REPOSITORY = Path(__file__).resolve().parents[2]
+EXTERNAL_TESTS_PATHS = ["python/tests/external/**", ".github/workflows/xcheck-tests.yml"]
 
 
 STRATEGIES = (
@@ -136,3 +139,31 @@ def test_a_store_without_the_ninjatrader_import_skips_that_comparison(
 
     assert comparisons == [NAUTILUS]
     assert "NinjaTrader 8 comparison is skipped" in capsys.readouterr().out
+
+
+def test_just_xcheck_tests_runs_the_cross_checks_own_tests_and_type_check() -> None:
+    # The Phase 2 exit (BACKLOG.md): the external project's tests, which `just test` leaves out.
+    justfile = (REPOSITORY / "justfile").read_text(encoding="utf-8")
+
+    assert (
+        "xcheck-tests:\n"
+        "    uv run --directory python/tests/external pytest\n"
+        "    uv run --directory python/tests/external pyright\n"
+    ) in justfile
+
+
+def test_ci_runs_the_cross_checks_tests_on_changes_to_them_alone() -> None:
+    workflow_file = REPOSITORY / ".github/workflows/xcheck-tests.yml"
+    workflow = yaml.safe_load(workflow_file.read_text(encoding="utf-8"))
+    triggers = workflow[True]  # PyYAML reads the key `on` as true, as YAML 1.1 does
+    (job,) = workflow["jobs"].values()
+    runs = [step.get("run", "") for step in job["steps"]]
+    ci = yaml.safe_load((REPOSITORY / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+
+    assert job["runs-on"] == "ubuntu-latest"
+    assert "uv sync --locked --directory python/tests/external" in runs
+    assert runs[-1] == "just xcheck-tests"
+    for event in ("pull_request", "push"):
+        assert triggers[event]["paths"] == EXTERNAL_TESTS_PATHS, event
+    assert triggers["push"]["branches"] == ["main"]
+    assert "xcheck-tests" not in ci["jobs"]

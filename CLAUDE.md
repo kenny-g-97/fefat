@@ -32,6 +32,7 @@ just strip-notebooks  # clear notebook outputs; then git add the notebooks again
 just gen-schema  # write the StrategySpec JSON schema from the Rust types; a cargo test fails when it is stale
 just regenerate-goldens  # rewrite fixtures/goldens/ from the engine; only with the builder's approval (the engine-golden skill)
 just xcheck   # cross-check the engine against NautilusTrader and NinjaTrader 8's export on the real store (step 2.14): slow, writes docs/validation/nautilus-comparison.md
+just xcheck-tests  # the cross-check project's own tests and pyright, outside just test; CI runs them when python/tests/external changes
 just tick-check  # the tick engine on the store's IBKR sessions (step 2.16): bars, reference against Rust, tick-versus-minute classes, hashes; writes docs/validation/ibkr-tick-check.md
 just bench    # the engine's benchmarks on the generated year of step 2.7 (step 2.15); --baseline <file> warns above a 30 % regression
 just mutants  # cargo-mutants on fefat-engine, for the phase exits (step 2.15); -f <file> for one file

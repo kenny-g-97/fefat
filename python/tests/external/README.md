@@ -19,7 +19,7 @@ just xcheck      # slow: the real store, the month cut, four FEFAT runs, six Nau
 
 Everything derived from licensed data stays under `FEFAT_HOME`; the report holds counts, rates, timestamps, and tick differences.
 
-The project's own tests run on the synthetic Databento batch and on hand-made tables, with no real data and no skips:
+The project's own tests run on the synthetic Databento batch and on hand-made tables, with no real data and no skips. `just xcheck-tests` runs both lines, and since the Phase 2 exit the Cross-check tests workflow (`.github/workflows/xcheck-tests.yml`) runs it on Ubuntu for any change to this folder:
 
 ```text
 uv run --directory python/tests/external pytest

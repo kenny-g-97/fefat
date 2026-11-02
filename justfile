@@ -85,6 +85,11 @@ regenerate-goldens: build-engine
 xcheck:
     uv run python scripts/xcheck.py
 
+# Run the cross-check's own tests and type check in python/tests/external's environment (step 2.14), which `just test` leaves out since it installs NautilusTrader's 113 MB wheel; CI runs it when that project changes
+xcheck-tests:
+    uv run --directory python/tests/external pytest
+    uv run --directory python/tests/external pyright
+
 # Check the tick engine on the store's IBKR sessions of MNQZ2026 (step 2.16): the bars rebuilt from the prints, the reference engine against the Rust engine, every tick-versus-minute difference classed, and the hashes; needs your data, says so without it, and writes docs/validation/ibkr-tick-check.md
 tick-check:
     uv run python scripts/tick_check.py
