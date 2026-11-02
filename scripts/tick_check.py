@@ -52,6 +52,7 @@ from fefat.backtest.fidelity_classes import (
 from fefat.backtest.fidelity_summary import FidelitySummary, summarise
 from fefat.backtest.metrics import FidelityEra
 from fefat.backtest.run_inputs import RunInputs, run_inputs
+from fefat.backtest.runs import run_key
 from fefat.config import FefatPaths, resolve_paths
 from fefat.market.api import load
 from fefat.market.bars_check import ColumnDifference, ComparedBars, verify_bars
@@ -60,7 +61,7 @@ from fefat.market.engine_cache_index import engine_cache_status
 from fefat.market.engine_units import micro_units
 from fefat.market.fees import TABLES
 from fefat.market.fidelity import TickFidelity
-from fefat.market.layout import Dataset, Partition, YearMonth
+from fefat.market.layout import Dataset, Partition, PartitionRequest
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe, parse_schema_name
 from fefat.market.store import Store
@@ -71,7 +72,6 @@ from fefat.reference.hours import CalendarHours
 from fefat.reference.ledger import Fill
 from fefat.reference.orders import OrderKind, OrderRole, PositionSide, Side
 from fefat.reference.rust_batch import FillView
-from fefat.reference.settings import LimitFill, SlippageTicks
 from fefat.reference.strategy import decisions_of
 from fefat.reference.tape import Record, stored_bars, tape_of_trades
 from fefat.reference.template import TemplateStrategy
@@ -79,7 +79,13 @@ from fefat.reference.timeline import RunResult
 from fefat.reference.units import instant_text, instrument_parameters
 from fefat.strategy.spec import StrategySpec
 from tick_check_report import report_text, unknown_count
-from xcheck import UNITS_PER_POINT, CrossCheckStrategy, EntryKind, signal_strategy
+from xcheck import (
+    UNITS_PER_POINT,
+    CrossCheckStrategy,
+    EntryKind,
+    compatibility_profile,
+    signal_strategy,
+)
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 REPORT = REPOSITORY / "docs" / "validation" / "ibkr-tick-check.md"
@@ -87,11 +93,6 @@ WORK_FOLDER = "tick-check"
 """The folder under the workspace for the tables the notebook reads."""
 ONE_MINUTE = Timeframe.parse("1m")
 NANOSECONDS_PER_SECOND = 1_000_000_000
-ENTRY_KINDS = {
-    EntryKind.MARKET: OrderKind.MARKET,
-    EntryKind.LIMIT: OrderKind.LIMIT,
-    EntryKind.STOP: OrderKind.STOP,
-}
 TRADE_FILLS = ["entry_decision", "side", "entry_ts", "entry_price", "exit_ts", "exit_price"]
 
 
@@ -145,7 +146,7 @@ class StrategyRuns:
 
     @property
     def kind(self) -> OrderKind:
-        return ENTRY_KINDS[self.definition.entry]
+        return OrderKind(str(self.definition.entry))
 
 
 def sessions_in_the_store(store: Store, check: TickCheck) -> list[date]:
@@ -158,16 +159,8 @@ def sessions_in_the_store(store: Store, check: TickCheck) -> list[date]:
 
 
 def profile(check: TickCheck, fidelity: TickFidelity | Timeframe) -> RunConfig:
-    """Step 2.14's compatibility profile, touch fills with no slippage ticks and no latency, at
-    `fidelity` on the contract unspliced (`RunConfig.contract`)."""
-    return RunConfig(
-        fidelity=fidelity,
-        latency_ms=0,
-        slippage_ticks=SlippageTicks(market=0, stop=0),
-        limit_fill=LimitFill.TOUCH,
-        provider=check.provider,
-        contract=check.contract,
-    )
+    """Step 2.14's compatibility profile at `fidelity` on the check's contract."""
+    return compatibility_profile(check.provider, check.contract, fidelity)
 
 
 def backtest(
@@ -324,6 +317,7 @@ def replay_all(
             replayed = replays.replayed(each.ticks, tape, TickFidelity.TRADES, on_prints)
             results[each.name][name] = replayed
         seconds[name] = (time.perf_counter() - started) / len(runs)
+        del tape
     bars = replays.bars()
     for each in runs:
         replayed = replays.replayed(each.minutes, bars, ONE_MINUTE, replays.sessions)
@@ -622,16 +616,14 @@ def measured(classified: pl.DataFrame) -> dict[str, Any]:
     return {"pairs": paired.height, "net_ticks": int(net), "by_class": by_class.to_dicts()}
 
 
-def fresh_fills_hash(inputs: RunInputs, paths: FefatPaths) -> tuple[str, int]:
-    """The hash of a run's fills straight from the engine, never a saved run read back, and how
-    many fills."""
+def fresh_fills_hash(inputs: RunInputs, paths: FefatPaths) -> str:
+    """The hash of a run's fills straight from the engine, never a saved run read back."""
     caches = [str(folder) for folder in inputs.cache_paths(paths)]
     replay = str(inputs.config.replay)
     outputs = fefat_engine.run_signal_backtest(
         inputs.spec_json(), inputs.signals, caches, inputs.config_json(), replay
     )
-    fills = pl.DataFrame(outputs["fills"])
-    return fefat_engine.table_hash(fills), fills.height
+    return fefat_engine.table_hash(pl.DataFrame(outputs["fills"]))
 
 
 def determinism(
@@ -646,17 +638,17 @@ def determinism(
     refused unless every one agrees."""
     config = profile(check, TickFidelity.TRADES)
     inputs = run_inputs(runs.strategy, *window, config, paths)
-    frame_hash = fefat_engine.table_hash(inputs.signals)
-    partitions = list(inputs.partition_hashes)
-    key = fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
-    (first, _), (second, _) = (fresh_fills_hash(inputs, paths) for _ in "ab")
+    key = run_key(inputs, fefat_engine.table_hash(inputs.signals))
+    first, second = (fresh_fills_hash(inputs, paths) for _ in "ab")
     prefixes = []
     for through in sessions[:-1]:
-        shorter = run_inputs(runs.strategy, window[0], through, config, paths)
-        prefix, fills = fresh_fills_hash(shorter, paths)
+        prefix = fresh_fills_hash(
+            run_inputs(runs.strategy, window[0], through, config, paths), paths
+        )
         whole = runs.ticks.fills.filter(pl.col("trade_date") <= through)
-        equal = prefix == fefat_engine.table_hash(whole)
-        prefixes.append({"through": str(through), "fills": fills, "equal": equal})
+        prefixes.append(
+            {"through": str(through), "equal": prefix == fefat_engine.table_hash(whole)}
+        )
     determined = {
         "run_key": runs.ticks.hash,
         "key_again": key,
@@ -696,22 +688,21 @@ def shared_seconds(
     context: "Context",
     reversed_result: RunResult,
 ) -> dict[str, int]:
-    """The run's fills on prints whose instant holds more than one print, and its trades on
-    prints, `on_prints`, that the reference engine fills otherwise with each instant's prints
-    reversed (F-CLK-03)."""
+    """The run's fills on prints whose instant holds more than one print, and how its trades on
+    prints, `on_prints`, and the reference engine's with each instant's prints reversed part:
+    the run's that the reversed order makes otherwise and the reversed order's own (F-CLK-03)."""
     per_instant = context.prints.group_by("ts_recv").agg(pl.len().alias("prints"))
     fills = runs.ticks.fills.filter(pl.col("trade_date").is_in(context.days))
     counted = fills.join(per_instant, left_on="ts", right_on="ts_recv", how="left")
     columns = [*TRADE_FILLS, "exit_reason"]
-    reversed_trades = replay_trades(reversed_result, runs.ticks.signals, runs.kind)
-    otherwise = on_prints.select(columns).join(
-        reversed_trades.select(columns), on=columns, how="anti"
-    )
+    stored = on_prints.select(columns)
+    reversed_trades = replay_trades(reversed_result, runs.ticks.signals, runs.kind).select(columns)
     return {
         "fills": fills.height,
         "fills_in_shared_seconds": counted.filter(pl.col("prints") > 1).height,
-        "trades": on_prints.height,
-        "trades_reversed_otherwise": otherwise.height,
+        "trades": stored.height,
+        "trades_reversed_otherwise": stored.join(reversed_trades, on=columns, how="anti").height,
+        "reversed_trades_of_its_own": reversed_trades.join(stored, on=columns, how="anti").height,
     }
 
 
@@ -799,19 +790,11 @@ def clock(instant: int) -> str:
 def against_the_reference(store: Store, check: TickCheck, day: date) -> dict[str, Any] | None:
     """The provider's 1-minute bars of the session against the reference provider's of the same
     minutes, those after the reference's last bar of it left out; None where the reference holds
-    no bar of the session."""
-    held = any(
-        file.partition.contract == check.contract
-        and isinstance(file.partition.key, YearMonth)
-        and file.partition.key.overlaps(day, day)
-        for file in store.list_partitions(check.dataset("ohlcv-1m", check.reference_provider))
-    )
-    if not held:
+    no bar of the contract that session."""
+    if not reference_holds(store, check, day):
         return None
     ours = minute_bars(check, check.provider, day)
     theirs = minute_bars(check, check.reference_provider, day)
-    if theirs.is_empty():
-        return None
     last = last_close(theirs)
     joined = ours.join(theirs, on="ts_close", how="full", coalesce=True, suffix="_reference")
     joined = joined.filter(pl.col("ts_close") <= last)
@@ -829,6 +812,18 @@ def against_the_reference(store: Store, check: TickCheck, day: date) -> dict[str
         "volume_share": volume / reference_volume if reference_volume else None,
         "ends": clock(last) if last < last_close(ours) else None,
     }
+
+
+def reference_holds(store: Store, check: TickCheck, day: date) -> bool:
+    """Whether the reference provider's 1-minute bars hold a bar of the contract on the trade
+    date: a month partition can cover the date while its data ends before it."""
+    dataset = check.dataset("ohlcv-1m", check.reference_provider)
+    request = PartitionRequest(dataset=dataset, start=day, end=day)
+    selected = any(request.selects(file.partition) for file in store.list_partitions(dataset))
+    if not selected:
+        return False
+    rows = store.scan_contracts(request).filter(pl.col("contract") == check.contract)
+    return rows.select(pl.len()).collect().item() > 0
 
 
 def last_close(bars: pl.DataFrame) -> int:
@@ -890,8 +885,10 @@ class Context:
 def strategy_facts(
     each: StrategyRuns, results: dict[str, RunResult], context: Context, work: Path
 ) -> dict[str, Any]:
-    """Items 2 to 4 of one strategy, with its tables for the notebook written to `work`."""
+    """Items 2 to 4 of one strategy, with its tables for the notebook written to `work`: the
+    reference engine's fills first, which refuse the rest when they are not the Rust engine's."""
     days, tick = context.days, context.tick
+    differential_facts = differential(each, context, results)
     trades = (run_trades(each.ticks, days, each.kind), run_trades(each.minutes, days, each.kind))
     classified, beside_bars, fidelity_facts = fidelity(each, trades, results, tick)
     classified.write_parquet(work / f"classified_{each.name}.parquet")
@@ -904,7 +901,7 @@ def strategy_facts(
     return {
         "name": each.name,
         "definition": each.definition.record(),
-        "differential": differential(each, context, results),
+        "differential": differential_facts,
         "fidelity": fidelity_facts,
         "determinism": determined,
     }
@@ -1004,6 +1001,7 @@ def main() -> int:
     print(f"Checking {check.contract} on {len(sessions)} {check.provider} sessions")
     work = paths.workspace_dir / WORK_FOLDER
     work.mkdir(parents=True, exist_ok=True)
+    (work / "facts.json").unlink(missing_ok=True)
     facts = checked_facts(check, store, paths, sessions, work)
     (work / "facts.json").write_text(json.dumps(facts, indent=2) + "\n", encoding="utf-8")
     text = report_text(facts)

@@ -63,6 +63,8 @@ class Checked:
     printed: str
     report: str
     report_path: Path
+    data_dir: Path
+    reference_ends: int
     facts: dict[str, Any]
     work: Path
     prices: frozenset[int]
@@ -89,30 +91,33 @@ def stamped_to_the_second(store: Store) -> None:
         store.write_partition(file.partition, stamped)
 
 
-def databento_bars(store: Store) -> tuple[int, int]:
-    """A copy of the bars as another provider's: the volume of a minute of FIRST changed and a
-    minute of MIDDLE left out, whose closes it returns."""
+def databento_bars(store: Store) -> int:
+    """A copy of the bars as another provider's: the volume of a minute of FIRST changed, a
+    minute of MIDDLE left out, and LAST ending at the close of its 1,001st bar, which it returns,
+    as Databento's MNQ on the builder's PC ends inside 2026-09-23."""
     shutil.copytree(store.folder / "ibkr" / "ohlcv-1m", store.folder / "databento" / "ohlcv-1m")
     (file,) = store.list_partitions(dataset("databento", "ohlcv-1m"))
     bars = store.scan_partition(file.partition).collect()
     changed = bars.filter(pl.col("trade_date") == FIRST).item(100, "ts_close")
     dropped = bars.filter(pl.col("trade_date") == MIDDLE).item(200, "ts_close")
+    ends = bars.filter(pl.col("trade_date") == LAST).item(1_000, "ts_close")
     volume = pl.when(pl.col("ts_close") == changed).then(pl.col("volume") + 3)
     other = bars.with_columns(volume.otherwise(pl.col("volume")).alias("volume"))
-    store.write_partition(file.partition, other.filter(pl.col("ts_close") != dropped))
-    return changed, dropped
+    kept = other.filter(pl.col("ts_close") != dropped, pl.col("ts_close") <= ends)
+    store.write_partition(file.partition, kept)
+    return ends
 
 
-def generated_ibkr_store(data_dir: Path) -> frozenset[int]:
+def generated_ibkr_store(data_dir: Path) -> tuple[frozenset[int], int]:
     """The generated sessions in `data_dir` as the module docstring says; the prices of the
-    tape, its prints' and its bars'."""
+    tape, its prints' and its bars', and where the reference provider's bars end."""
     out = data_dir / "ibkr"
     dates = ["--dates", f"{FIRST}..{LAST}", "--contracts", "ESH2026"]
     assert gen_fixtures.main(["--out", str(out), *dates]) == 0
     shutil.rmtree(out / "ohlcv-1s")
     store = Store(data_dir)
     stamped_to_the_second(store)
-    databento_bars(store)
+    ends = databento_bars(store)
     prints = pl.concat(
         store.scan_partition(file.partition).collect()
         for file in store.list_partitions(dataset("ibkr", "trades"))
@@ -122,7 +127,7 @@ def generated_ibkr_store(data_dir: Path) -> frozenset[int]:
     prices = pl.concat(
         [prints["price"], *(bars[column] for column in ("open", "high", "low", "close"))]
     )
-    return frozenset(prices.unique().to_list())
+    return frozenset(prices.unique().to_list()), ends
 
 
 @pytest.fixture(name="checked", scope="module")
@@ -132,7 +137,7 @@ def fixture_checked(tmp_path_factory: pytest.TempPathFactory) -> Checked:
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("FEFAT_HOME", str(home / "home"))
         patch.setenv("FEFAT_DATA_DIR", str(home / "data"))
-        prices = generated_ibkr_store(home / "data")
+        prices, ends = generated_ibkr_store(home / "data")
         patch.setattr(tick_check, "CHECK", GENERATED)
         patch.setattr(tick_check, "REPORT", report)
         printed = io.StringIO()
@@ -141,7 +146,8 @@ def fixture_checked(tmp_path_factory: pytest.TempPathFactory) -> Checked:
         work = resolve_paths(os.environ).workspace_dir / tick_check.WORK_FOLDER
     facts = json.loads((work / "facts.json").read_text(encoding="utf-8"))
     text = report.read_text(encoding="utf-8")
-    return Checked(code, printed.getvalue(), text, report, facts, work, prices)
+    data_dir = home / "data"
+    return Checked(code, printed.getvalue(), text, report, data_dir, ends, facts, work, prices)
 
 
 def strategy_facts(checked: Checked, name: str) -> dict[str, Any]:
@@ -189,8 +195,23 @@ def test_the_providers_bars_are_counted_against_the_other_providers(checked: Che
     assert (bars[str(MIDDLE)]["volume_differs"], bars[str(MIDDLE)]["alone"]) == (0, 1)
     assert bars[str(MIDDLE)]["reference_alone"] == 0
     assert bars[str(LAST)]["price_differs"] == 0
+    ends = tick_check.clock(checked.reference_ends)
+    assert (bars[str(LAST)]["both"], bars[str(LAST)]["ends"]) == (1_001, ends)
     both = bars[str(FIRST)]["both"]
     assert f"| {FIRST} | {both:,} | 0 | 0 | 1 | 0 |" in checked.report
+    assert f"`databento`'s bars of {LAST} end at {ends}" in checked.report
+
+
+def test_a_session_after_the_reference_providers_data_holds_no_bar_of_it(
+    checked: Checked, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The ponytail review: the reference's month partition covers the date while its data ends
+    # before it, and `load` refuses a window past the data rather than giving no bars.
+    monkeypatch.setenv("FEFAT_DATA_DIR", str(checked.data_dir))
+    store = Store(checked.data_dir)
+
+    assert tick_check.against_the_reference(store, GENERATED, date(2026, 3, 5)) is None
+    assert tick_check.against_the_reference(store, GENERATED, LAST) is not None
 
 
 def test_the_reference_engine_fills_every_session_as_the_rust_engine(checked: Checked) -> None:
@@ -338,13 +359,23 @@ def test_the_reversed_seconds_are_read_from_their_count() -> None:
         "fills_in_shared_seconds": 4,
         "trades": 5,
         "trades_reversed_otherwise": 0,
+        "reversed_trades_of_its_own": 0,
     }
-    strategy = {"name": "market", "determinism": {"shared_seconds": shared}}
+    of_its_own = {**shared, "reversed_trades_of_its_own": 1}
 
-    line = tick_check_report._shared_seconds(strategy)
+    line = tick_check_report._shared_seconds(
+        {"name": "market", "determinism": {"shared_seconds": shared}}
+    )
+    another = tick_check_report._shared_seconds(
+        {"name": "market", "determinism": {"shared_seconds": of_its_own}}
+    )
 
+    assert another.endswith(
+        "otherwise and 1 of its own, so their order matters, and the Rust engine's fills are those of the stored order (F-CLK-03)."
+    )
     assert line.endswith(
-        "0 of its 5 trades otherwise, so their order changes no trade of these sessions."
+        "0 of its 5 trades otherwise and 0 of its own, so their order changes no trade of these "
+        "sessions."
     )
 
 
@@ -375,3 +406,65 @@ def test_just_tick_check_runs_the_check() -> None:
     justfile = (ROOT / "justfile").read_text(encoding="utf-8")
 
     assert "tick-check:\n    uv run python scripts/tick_check.py\n" in justfile
+
+
+def test_one_session_leaves_the_determinism_table_whole() -> None:
+    # The ponytail review: without a prefix, the table's rows ended in an empty cell.
+    determinism = {
+        "run_key": "a" * 64,
+        "key_again": "a" * 64,
+        "fills_hash": "b" * 64,
+        "second_fills_hash": "b" * 64,
+        "saved_fills_hash": "b" * 64,
+        "prefixes": [],
+        "shared_seconds": {
+            "fills": 2,
+            "fills_in_shared_seconds": 2,
+            "trades": 1,
+            "trades_reversed_otherwise": 1,
+            "reversed_trades_of_its_own": 0,
+        },
+    }
+
+    section = tick_check_report._determinism(
+        {"strategies": [{"name": "market", "determinism": determinism}]}
+    )
+
+    lines = section.splitlines()
+    assert lines[2] == "| Strategy | Run key | Key again | Fills | Second run | Saved |"
+    assert lines[3] == "| --- | --- | --- | --- | --- | --- |"
+    assert lines[4].count("|") == 7
+    assert "The window holds one session, so no run of its first sessions is checked." in section
+
+
+def test_the_net_ticks_take_each_sides_profit() -> None:
+    # The ponytail review: the sign of a short's ticks was untested. A long one tick worse in and
+    # two better out made one tick more on prints; a short one tick better in, a tick higher, and
+    # one worse out, a tick higher, made nothing more.
+    classified = pl.DataFrame(
+        {
+            "entry_decision": [1, 2],
+            "side": ["long", "short"],
+            "entry_kind": ["market", "market"],
+            "in_ticks": [True, True],
+            "in_minutes": [True, True],
+            "entry_outcome": ["bar_boundary", "bar_boundary"],
+            "exit_outcome": ["bar_path", "stop_through"],
+            "outcome": ["bar_boundary", "bar_boundary"],
+            "entry_ticks": [1, 1],
+            "exit_ticks": [2, 1],
+            "note": ["", ""],
+        },
+        schema=CLASSIFIED_COLUMNS,
+    )
+
+    measured = tick_check.measured(classified)
+
+    assert (measured["pairs"], measured["net_ticks"]) == (2, 1)
+    by_class = {row["outcome"]: row for row in measured["by_class"]}
+    assert by_class["bar_boundary"] == {
+        "outcome": "bar_boundary",
+        "fills": 2,
+        "mean": 1.0,
+        "largest": 1,
+    }

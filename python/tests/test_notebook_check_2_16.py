@@ -14,6 +14,7 @@ import pytest
 
 from fefat.backtest.fidelity_classes import CLASSIFIED_COLUMNS
 from fefat.config import resolve_paths
+from fefat.market.engine_units import price_text
 from notebook_runs import run_notebook
 
 NOTEBOOK = Path(__file__).resolve().parents[2] / "notebooks" / "checks" / "2.16.ipynb"
@@ -148,6 +149,10 @@ def test_the_check_notebook_shows_the_tick_check_and_ends_on_its_verdict(
     assert "bar_boundary" in printed
     assert "market: fills 1ef0e8fddd02fe3b, again 1ef0e8fddd02fe3b, prefixes equal: True" in printed
     assert cells["side_by_side"].height == 2
+    assert not {"entry_price", "exit_price"} & set(cells["side_by_side"].columns)
+    for price in (*trades(5)["entry_price"], *trades(5)["exit_price"]):
+        assert str(price) not in printed
+        assert price_text(price) not in printed
     assert printed.rstrip().endswith(
         "Verdict: reference and Rust identical: True; differences without a class: 0; "
         "rebuilt bars equal the provider's on 1 of 2 sessions."

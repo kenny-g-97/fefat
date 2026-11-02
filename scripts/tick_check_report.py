@@ -22,9 +22,9 @@ EXPLANATIONS = {
         "when the reference engine, replaying the prints with each print stamped at a "
         "decision's instant moved one nanosecond after it, where the bars put it, fills it "
         "otherwise than the prints: those prints alone moved it. A trade of one run alone is of "
-        "this class too when the replay settles it otherwise than its run, the decision second "
-        "having made or prevented it, at once or through a position it left open on one run at "
-        "a later decision."
+        "this class too when the replay makes it where the prints do not, or does not make it "
+        "where they do: the decision second made or prevented it, at once or through a position "
+        "it left open on one run at a later decision."
     ),
     FidelityClass.BAR_PATH: (
         "A 1-minute bar the position was held through reached both legs of the bracket. The "
@@ -44,10 +44,11 @@ EXPLANATIONS = {
         "trigger (F-STP-03); on the bar's path it fills at its level (F-STP-04)."
     ),
     FidelityClass.CASCADE: (
-        "A trade of one run alone that the restamped replay settles as its run does, made at a "
-        "decision where the other run still held a position after an earlier difference of "
-        "the bar's path on the same trade date. A knock-on of the decision second is "
-        "`bar_boundary` instead. Flat by 15:00 Chicago, the runs start each trade date together."
+        "A trade of one run alone that the restamped replay makes or misses as the prints do, "
+        "made at a decision where, of the replay and the bars, the one without it still held a "
+        "position after an earlier difference of the bar's path on the same trade date. A "
+        "knock-on of the decision second is `bar_boundary` instead. Flat by 15:00 Chicago, the "
+        "runs start each trade date together."
     ),
 }
 OTHER_ENGINES = (
@@ -422,19 +423,22 @@ def _example(name: str, example: dict[str, Any]) -> str:
 def _determinism(facts: dict[str, Any]) -> str:
     strategies = facts["strategies"]
     throughs = [prefix["through"] for prefix in strategies[0]["determinism"]["prefixes"]]
+    header = "| Strategy | Run key | Key again | Fills | Second run | Saved |"
     lines = [
         "## Determinism",
         "",
-        "| Strategy | Run key | Key again | Fills | Second run | Saved | "
-        + " | ".join(f"Through {through}" for through in throughs)
-        + " |",
-        "| --- | --- | --- | --- | --- | --- | " + " | ".join("---" for _ in throughs) + " |",
+        header + "".join(f" Through {through} |" for through in throughs),
+        "| --- | --- | --- | --- | --- | --- |" + " --- |" * len(throughs),
         *(_determinism_row(strategy) for strategy in strategies),
         "",
         "- Each run's key (`02` §4) is worked out again from its inputs. Two fresh runs of the "
         "engine give fills of one hash (`fefat_engine.table_hash`), which is the saved run's. "
-        "The runs on its first sessions alone, fresh from the engine as well, give the whole "
-        "run's fills of those sessions.",
+        + (
+            "The runs on its first sessions alone, fresh from the engine as well, give the whole "
+            "run's fills of those sessions."
+            if throughs
+            else "The window holds one session, so no run of its first sessions is checked."
+        ),
         *(_shared_seconds(strategy) for strategy in strategies),
     ]
     return "\n".join(lines)
@@ -460,19 +464,19 @@ def _alike(first: str, second: str) -> str:
 
 def _shared_seconds(strategy: dict[str, Any]) -> str:
     shared = strategy["determinism"]["shared_seconds"]
-    otherwise = shared["trades_reversed_otherwise"]
+    otherwise, own = shared["trades_reversed_otherwise"], shared["reversed_trades_of_its_own"]
     reading = (
         "so their order matters, and the Rust engine's fills are those of the stored order "
         "(F-CLK-03)"
-        if otherwise
+        if otherwise or own
         else "so their order changes no trade of these sessions"
     )
     return (
         f"- `{strategy['name']}`: {shared['fills_in_shared_seconds']:,} of its "
         f"{shared['fills']:,} fills on prints fell in a second holding more than one print. "
         "Replayed with each second's prints in the reverse of their stored order, the "
-        f"reference engine makes {otherwise} of its {shared['trades']} trades otherwise, "
-        f"{reading}."
+        f"reference engine makes {otherwise} of its {shared['trades']} trades otherwise and "
+        f"{own} of its own, {reading}."
     )
 
 
