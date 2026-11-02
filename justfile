@@ -85,6 +85,10 @@ regenerate-goldens: build-engine
 xcheck:
     uv run python scripts/xcheck.py
 
+# Check the tick engine on the store's IBKR sessions of MNQZ2026 (step 2.16): the bars rebuilt from the prints, the reference engine against the Rust engine, every tick-versus-minute difference classed, and the hashes; needs your data, says so without it, and writes docs/validation/ibkr-tick-check.md
+tick-check:
+    uv run python scripts/tick_check.py
+
 # Benchmark the engine on the generated year of step 2.7, built under FEFAT_HOME when missing (step 2.15): a run with trade paths, one without, a batch of 1,000; --baseline <file> warns above a 30 % regression
 bench *ARGS:
     uv run python scripts/bench.py {{ARGS}}

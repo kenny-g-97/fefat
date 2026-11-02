@@ -155,8 +155,7 @@ def run(
     paths = resolve_paths(os.environ)
     inputs = run_inputs(strategy, start, end, RunConfig() if config is None else config, paths)
     frame_hash = fefat_engine.table_hash(inputs.signals)
-    partitions = list(inputs.partition_hashes)
-    key = fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
+    key = run_key(inputs, frame_hash)
     folder = paths.runs_dir / key
     if (folder / RECORD_FILE).is_file():
         saved = Run.open(folder)
@@ -166,6 +165,13 @@ def run(
     for warning in saved.record.warnings:
         warnings.warn(warning, UserWarning, stacklevel=2)
     return saved
+
+
+def run_key(inputs: RunInputs, frame_hash: str) -> str:
+    """The run key of `inputs` (`02` §4), their signal frame hashing to `frame_hash`: the name of
+    the run's folder, which a second run of the same inputs reads back."""
+    partitions = list(inputs.partition_hashes)
+    return fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
 
 
 def _ran(

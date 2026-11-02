@@ -5,7 +5,7 @@ Where the market data on this PC is and what it holds: paths, schemas, and range
 ## Folders
 
 - `FEFAT_DATA_DIR` is not set, so the store is the default `%LOCALAPPDATA%\FEFAT\data` (`fefat.config.resolve_paths`), which step 1.6's imports created.
-- Vendor files bought before the plan sit in `C:\Users\kenji\Documents\AlgoTrading_app\market_data\`, a sibling of the repository folder and outside git. Step 1.6 copies them under `data/raw/` with manifest entries; the originals stay where they are.
+- Vendor files bought before the plan sit in `C:\Users\kenji\Documents\AlgoTrading_app\market_data\`, a sibling of the repository folder and outside git: Databento's under `Databento_data\`, NinjaTrader's export under `NT8_data\`. Step 1.6 copies them under `data/raw/` with manifest entries; the originals stay where they are.
 
 ## Databento batch downloads (2026-09-23)
 
@@ -13,8 +13,8 @@ Two batch jobs on the dataset `GLBX.MDP3`, schema `ohlcv-1m`, parent symbology i
 
 | Folder | Job | Parents | File | Size | Range (UTC) | Records (estimate) | Child symbols in the metadata |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `market_data\MCL_MGC_MES\` | `GLBX-20260923-KYNG8TXEXQ` | `MCL.FUT`, `MGC.FUT`, `MES.FUT` | `glbx-mdp3-20100606-20260922.ohlcv-1m.dbn` | 873,270,512 bytes | 2010-06-06 00:00 to 2026-09-23 00:00 | 15.6 million | 1,913: MCL 101 outrights, 885 spreads, 31 strategies; MGC 60 outrights, 664 spreads; MES 35 outrights, 132 spreads; 5 `UD` strategies |
-| `market_data\MNQ\` | `GLBX-20260923-KF6FGGLH79` | `MNQ.FUT` | `glbx-mdp3-20100606-20260923.ohlcv-1m.dbn` | 222,496,208 bytes | 2010-06-06 00:00 to 2026-09-23 15:20 | 4.0 million | 167: MNQ 35 outrights, 132 spreads |
+| `market_data\Databento_data\MCL_MGC_MES\` | `GLBX-20260923-KYNG8TXEXQ` | `MCL.FUT`, `MGC.FUT`, `MES.FUT` | `glbx-mdp3-20100606-20260922.ohlcv-1m.dbn` | 873,270,512 bytes | 2010-06-06 00:00 to 2026-09-23 00:00 | 15.6 million | 1,913: MCL 101 outrights, 885 spreads, 31 strategies; MGC 60 outrights, 664 spreads; MES 35 outrights, 132 spreads; 5 `UD` strategies |
+| `market_data\Databento_data\MNQ\` | `GLBX-20260923-KF6FGGLH79` | `MNQ.FUT` | `glbx-mdp3-20100606-20260923.ohlcv-1m.dbn` | 222,496,208 bytes | 2010-06-06 00:00 to 2026-09-23 15:20 | 4.0 million | 167: MNQ 35 outrights, 132 spreads |
 
 - The SHA-256 of each file is in its folder's `manifest.json`; step 1.6 verifies it before importing.
 - Imported by step 1.6 on 2026-10-13 with `fefat data import databento <folder>`: MNQ 34 contracts with bars (MNQM2019 to MNQU2027; MNQZ2027, listed on 2026-09-06, has none), MES 34 (MESM2019 to MESU2027), MCL 84 (MCLQ2021 to MCLZ2029), and MGC 106 (MGCZ2010 to MGCM2028), with 1,291 spread and strategy symbols set aside; the originals stay in their folders.
@@ -29,7 +29,7 @@ The vendor's continuous mapping `MES.v.0`, which you fetched once from the free 
 
 | File | Size | Holds |
 | --- | --- | --- |
-| `market_data\databento-symbology\MES.v.0.json` | 1,765 bytes | 31 intervals from 2019-05-03 to 2026-09-24, one front contract each |
+| `market_data\Databento_data\databento-symbology\MES.v.0.json` | 1,765 bytes | 31 intervals from 2019-05-03 to 2026-09-24, one front contract each |
 
 - Filed in the store as `raw/databento/symbology/GLBX.MDP3-MES.v.0.json`, with its SHA-256 in the raw manifest, where `fefat.market.continuous_check` reads it; the original stays in its folder.
 
@@ -70,10 +70,19 @@ Your NinjaTrader 8 export of MNQ minute bars (Historical Data window, Export, in
 
 ## Interactive Brokers ticks and bars (2026-10-31)
 
-Sessions of MNQZ2026 pulled from your TWS with `C:\Users\kenji\Documents\Trading\Data\ibkr\pull_mnq_ticks.py` (`reqHistoricalTicks`, TRADES, about 1,000 prints a request, 12 s apart), one CSV of ticks and one of 1-minute bars per session, imported with the `ibkr-ticks` profile beside the script and the `ibkr` preset with `--time-zone UTC`, for step 2.16's check of the tick engine (D-67).
+Sessions of MNQZ2026 pulled from your TWS with `C:\Users\kenji\Documents\Trading\Data\ibkr\pull_mnq_ticks.py` (`reqHistoricalTicks`, TRADES, about 1,000 prints a request, 12 s apart), one CSV of ticks per session, imported with the `ibkr-ticks` profile beside the script, and IBKR's own 1-minute bars of the same sessions, imported with the `ibkr` preset and `--time-zone UTC`, for step 2.16's check of the tick engine (D-67). `just tick-check` reads them and writes `docs/validation/ibkr-tick-check.md`.
 
-- 2026-09-21: 976,389 prints, equal to the trade count of IBKR's bars, imported on 2026-11-01 into `ibkr/trades/root=MNQ` and `ibkr/ohlcv-1m/root=MNQ`, quality clean; `fefat data verify-bars MNQ 2026-09-21` rebuilds 1,379 bars from the ticks with no differences. Against Databento's bars, 14 minutes differ in volume (0.8 % less over the session, blocks at 09:05 and 09:55 Chicago) and 10 in a price, and IBKR's bar of the closing minute is empty while its ticks hold the 789 lots Databento shows.
-- 2026-09-22 and 09-23: still to pull; the 09-22 pull reached 09:43 Chicago when TWS logged off, and the puller resumes. A session's file is imported only once it is complete, since a trade date's first import stands.
+| Session | Prints | Quality | Bars rebuilt from the prints | Filled on |
+| --- | ---: | --- | --- | --- |
+| 2026-09-21 | 976,389 | clean | 1,379, no difference | trade prints |
+| 2026-09-22 | 999,888 | clean | 1,380, no difference | trade prints |
+| 2026-09-23 | 1,069,604 | flagged | 1,380, 3 differences in the 20:59Z bar | 1-minute bars |
+
+- All imported on 2026-11-01: the ticks into `ibkr/trades/root=MNQ`, one partition a session, from `MNQZ2026-trades-<date>.csv`; the bars into `ibkr/ohlcv-1m/root=MNQ`, one partition for the contract's month, from `MNQZ2026-1min-2026-09.csv`, the three sessions' bars in one file, since a month's partition takes one import. The raw manifest also keeps `MNQZ2026-1min-2026-09-21.csv`, the first session's bars imported alone, whose partition the month's file replaced.
+- 2026-09-21: IBKR's ticks and bars hold no print of the 14:56Z minute (09:56 Chicago), where Databento shows 6,856 lots, and its volume over the session is 0.8 % under Databento's, most of it at 14:05Z and 14:57Z (09:05 and 09:57 Chicago); 13 minutes differ in volume and 9 in a price.
+- 2026-09-22: IBKR's volume equals Databento's over the session; 29 minutes differ in volume by a few lots and 24 in a price.
+- 2026-09-23: IBKR's Time and Sales holds one print more in the 20:59Z bar than IBKR's own bar (257 against 256 prints, 464 against 463 lots), pulled in one uninterrupted request, so `verify-bars` finds that bar's close, volume, and trade count apart, the quality report flags the session, and the engine cache leaves its ticks out: a run fills it on its bars (D-58). Databento's MNQ on this PC ends at 15:20Z that day; its 1,040 minutes compare with 8 apart in volume and 3 in a price.
+- `ff.market.load("MNQZ2026", "1m", ..., provider="ibkr")` gives 2026-09-23 through 20:58Z: the closing bar, which closes at 21:00:00Z after the last print stamped to the second, is held back as the bar of a session still open would be.
 - IBKR stamps prints to the second, gives no aggressor side (`N`), and filters block and spread trades; its Time and Sales goes back three years, an expired contract two years after its expiry, and a session takes about 3.2 hours to pull.
 
 ## Not on this PC

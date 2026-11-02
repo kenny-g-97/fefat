@@ -36,6 +36,7 @@ from databento_dbn import Compression, DBNDecoder, Encoding, Metadata, Transcode
 import fefat as ff
 from fefat.backtest import RunConfig
 from fefat.config import resolve_paths
+from fefat.market.fidelity import TickFidelity
 from fefat.market.importers.dbn import CHUNK_BYTES, read_dbn
 from fefat.market.raw_manifest import RawFile
 from fefat.market.schema import Timeframe
@@ -56,6 +57,7 @@ TIME_ZONE = "America/Chicago"
 ONE_LOT = 1
 NANOSECONDS_PER_DAY = 86_400_000_000_000
 UNITS_PER_POINT = 1_000_000_000
+ONE_MINUTE = Timeframe.parse("1m")
 
 
 class EntryKind(StrEnum):
@@ -173,15 +175,19 @@ def _entry_order(definition: CrossCheckStrategy) -> Any:
     )
 
 
-def compatibility_profile(comparison: Comparison) -> RunConfig:
-    """The fill specification's §19 profile on 1-minute bars of the comparison's one contract."""
+def compatibility_profile(
+    provider: str, contract: str, fidelity: TickFidelity | Timeframe = ONE_MINUTE
+) -> RunConfig:
+    """The fill specification's §19 profile, touch fills with no slippage ticks and no latency,
+    at `fidelity`, 1-minute bars unless another is named, on one provider's one contract read
+    unspliced (`RunConfig.contract`)."""
     return RunConfig(
-        fidelity=Timeframe.parse("1m"),
+        fidelity=fidelity,
         latency_ms=0,
         slippage_ticks=SlippageTicks(market=0, stop=0),
         limit_fill=LimitFill.TOUCH,
-        provider=comparison.provider,
-        contract=comparison.contract,
+        provider=provider,
+        contract=contract,
     )
 
 
@@ -193,7 +199,7 @@ def export_fefat_side(comparison: Comparison, folder: Path) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     instrument = ff.instruments.get(comparison.root)
     tick = int(instrument.tick_size * UNITS_PER_POINT)
-    config = compatibility_profile(comparison)
+    config = compatibility_profile(comparison.provider, comparison.contract)
     runs = {}
     for definition in comparison.strategies:
         strategy = signal_strategy(comparison.root, definition, tick)
