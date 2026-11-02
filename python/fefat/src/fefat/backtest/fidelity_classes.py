@@ -1,18 +1,22 @@
 """Why a run's fills on trade prints differ from its fills on 1-minute bars (step 2.16,
-`02-engine-and-data.md` §8, D-67). The trades of a run on prints and of its run on the 1-minute
-bars of the same sessions are matched by the decision that entered them and their side, as
-`fefat.backtest.fidelity` matches a rerun's, and each fill that differs gets a class from a third
-run: the reference engine's replay of the same prints with each print stamped at a decision's
-instant moved one nanosecond after it, where the 1-minute bars put it (`restamped`).
+`02-engine-and-data.md` §8, D-67, D-69). The trades of a run on prints and of its run on the
+1-minute bars of the same prints, bars equal to the prints' own, are matched by the decision that
+entered them and their side, as `fefat.backtest.fidelity` matches a rerun's, and each fill that
+differs gets a class with a third run: the reference engine's replay of the same prints with
+each print stamped at a decision's instant moved one nanosecond after it, where the 1-minute
+bars put it (`restamped`).
 
-A fill the restamped replay fills otherwise than the prints is `bar_boundary`: the prints of a
-decision's second alone moved it. A fill the restamped replay fills as the prints do differs
-between those prints and the 1-minute bars of the same prints, and a class names where FEFAT's
-path through a bar parts from the prints, held to what the trades show: `bar_path`,
-`entry_bar_path`, or `stop_through`. A trade of one run alone, made while the other held a
-position at its decision, is a `cascade`; any other difference is `unknown`. A fill on prints and
-a fill on a bar are alike at one price inside the bar's minute, the bar's fills being stamped at
-its close (F-BAR-06); the restamped replay's fills carry the instants of their prints.
+A fill or a trade of one run alone that the restamped replay makes otherwise than the prints is
+`bar_boundary`: the prints of a decision's second alone moved it, directly or through an earlier
+trade of the day. A fill the restamped replay makes as the prints do differs between those prints
+and their 1-minute bars, and a class names where FEFAT's path through a bar parts from the prints,
+held to what the trades show: `bar_path`, `entry_bar_path`, or `stop_through`; a trade of one run
+alone that the replay makes as the prints do, made while the other run held a position, is a
+`cascade` of such a difference; anything else is `unknown`. A fill on prints and a fill on a bar
+are alike at one price inside the bar's minute, the bar's fills being stamped at its close
+(F-BAR-06). The restamped replay is read at its own instants, at which it held its positions, a
+fill of it on a moved print one nanosecond after that print's stamp being the prints' own fill;
+`classify(restamped, restamped, minutes, tick)` compares the replay with the bars alone.
 
 Prices are int64 in 1e-9 units and instants int64 nanoseconds UTC (ADR-0019). The trades of a few
 sessions are a few hundred rows, so they are read as plain Python objects."""
@@ -29,13 +33,17 @@ from fefat.reference.units import instant_text
 
 MINUTE = 60_000_000_000
 """One minute in nanoseconds, the bars' timeframe."""
-MATCH = "match"
-"""A fill, or a trade, alike on prints and on bars."""
+RESTAMP = 1
+"""How far after a decision's instant the restamped replay moves a print stamped at it, in
+nanoseconds."""
 
 
 class FidelityClass(StrEnum):
-    """Why a fill on prints differs from the same order's fill on 1-minute bars; the tick check's
-    report documents each with the rules behind it."""
+    """How a fill on prints compares with the same order's fill on 1-minute bars: alike, or
+    apart for the reason its class names; the tick check's report documents each with its rules."""
+
+    MATCH = "match"
+    """Alike on prints and on bars: a fill, or a trade whose two fills are."""
 
     BAR_BOUNDARY = "bar_boundary"
     """Moved by the prints stamped in a decision's second: on prints they come before the decision
@@ -55,12 +63,14 @@ class FidelityClass(StrEnum):
     its level on the bar's path (F-STP-04)."""
 
     CASCADE = "cascade"
-    """A trade of one run alone, made while the other still held a position at its decision after
-    an earlier difference on the same trade date."""
+    """A trade of one run alone, made as the restamped replay makes it, while the other run still
+    held a position at its decision after an earlier difference of the bar's path that day."""
 
     UNKNOWN = "unknown"
     """A difference nothing above explains; the tick check fails with one."""
 
+
+MATCH = FidelityClass.MATCH
 
 TRADE_COLUMNS = pl.Schema(
     {
@@ -97,9 +107,9 @@ CLASSIFIED_COLUMNS = pl.Schema(
         "note": pl.String,
     }
 )
-"""One row per trade of either run: the outcome of its entry fill and of its exit fill, each
-`match` or a class, the trade's (`unknown` when either fill is, else the entry's class, else the
-exit's), the fills on prints less those on bars in ticks, and a note without prices."""
+"""One row per trade of either run: the outcome of its entry fill and of its exit fill, each a
+`FidelityClass`, the trade's (`unknown` when either fill is, else the entry's when it differs,
+else the exit's), the fills on prints less those on bars in ticks, and a note without prices."""
 
 
 class _Leg(StrEnum):
@@ -118,6 +128,12 @@ class _Fill:
         minute of the bar that closes at the bar fill's instant."""
         same = (self.price, self.role) == (on_a_bar.price, on_a_bar.role)
         return same and _inside_the_bar(self.ts, on_a_bar.ts)
+
+    def on_the_same_print(self, restamped: "_Fill") -> bool:
+        """Whether the restamped replay's fill is this fill on prints: one price and role, on
+        the same print, at its stamp or moved `RESTAMP` after it."""
+        same = (self.price, self.role) == (restamped.price, restamped.role)
+        return same and 0 <= restamped.ts - self.ts <= RESTAMP
 
 
 def _inside_the_bar(instant: int, bar_close: int) -> bool:
@@ -151,15 +167,14 @@ class _Trade:
             return value
 
         level = row["entry_level"]
+        exit_role = OrderRole(str(row["exit_reason"]))
         return cls(
             entry_decision=integer("entry_decision"),
             side=PositionSide(str(row["side"])),
             kind=OrderKind(str(row["entry_kind"])),
             entry=_Fill(integer("entry_ts"), integer("entry_price"), OrderRole.ENTRY),
             entry_level=level if isinstance(level, int) else None,
-            exit=_Fill(
-                integer("exit_ts"), integer("exit_price"), OrderRole(str(row["exit_reason"]))
-            ),
+            exit=_Fill(integer("exit_ts"), integer("exit_price"), exit_role),
             exit_ambiguous=bool(row["exit_ambiguous"]),
             stop=integer("stop_price"),
             target=integer("target_price"),
@@ -172,10 +187,13 @@ class _Trade:
     def fill(self, leg: _Leg) -> _Fill:
         return self.entry if leg is _Leg.ENTRY else self.exit
 
-    def filled_as(self, other: "_Trade | None") -> bool:
-        """Whether another run filled this trade's entry and exit alike: the levels and the
-        bar's flags are not fills, and the restamped replay gives neither."""
-        return other is not None and (self.entry, self.exit) == (other.entry, other.exit)
+    def filled_as(self, restamped: "_Trade | None") -> bool:
+        """Whether the restamped replay filled this trade's entry and exit on the same prints:
+        the levels and the bar's flags are not fills, and the replay gives neither."""
+        if restamped is None:
+            return False
+        entered = self.entry.on_the_same_print(restamped.entry)
+        return entered and self.exit.on_the_same_print(restamped.exit)
 
     def holds_at(self, decision: int) -> bool:
         """Whether the position was open at a decision: entered by then and left after it, the
@@ -237,33 +255,44 @@ class _Runs:
         return self._on_bars_alone(on_bars, restamped)
 
     def _on_prints_alone(self, trade: _Trade, restamped: _Trade | None) -> dict[str, object]:
-        """A trade on prints alone: a cascade when the run on bars held a position at its
-        decision, else a `bar_boundary` when the restamped replay does not make it as the prints
-        do."""
-        held = any(other.holds_at(trade.entry_decision) for other in self.minutes.values())
+        """A trade on prints alone: a `bar_boundary` when the restamped replay does not make it
+        as the prints do; else a cascade when the run on bars held a position at its decision."""
         made = trade.filled_as(restamped)
-        outcome = _alone_outcome(held, moved=not made)
+        held = _held(self.minutes, trade.entry_decision)
         replay = "makes it as the prints do" if made else "does not make it"
-        state = "in a position" if held else f"flat; the restamped replay {replay}"
-        note = f"a trade on prints alone, the 1-minute run {state} at its decision"
-        return _alone_row(trade, outcome, note, on_prints=True)
+        note = (
+            f"a trade on prints alone; the restamped replay {replay}, and the 1-minute run is "
+            f"{_state(held)} at its decision"
+        )
+        return _alone_row(trade, _alone_outcome(moved=not made, held=held), note, on_prints=True)
 
     def _on_bars_alone(self, trade: _Trade, restamped: _Trade | None) -> dict[str, object]:
-        """A trade on bars alone: a cascade when the run on prints held a position at its
-        decision, else a `bar_boundary` when the restamped replay makes it."""
-        held = any(other.holds_at(trade.entry_decision) for other in self.ticks.values())
+        """A trade on bars alone: a `bar_boundary` when the restamped replay makes it; else a
+        cascade when the run on prints held a position at its decision."""
         made = restamped is not None
-        outcome = _alone_outcome(held, moved=made)
+        held = _held(self.ticks, trade.entry_decision)
         replay = "makes it" if made else "does not make it either"
-        state = "in a position" if held else f"flat; the restamped replay {replay}"
-        note = f"a trade on 1-minute bars alone, the run on prints {state} at its decision"
-        return _alone_row(trade, outcome, note, on_prints=False)
+        note = (
+            f"a trade on 1-minute bars alone; the restamped replay {replay}, and the run on "
+            f"prints is {_state(held)} at its decision"
+        )
+        return _alone_row(trade, _alone_outcome(moved=made, held=held), note, on_prints=False)
 
 
-def _alone_outcome(held: bool, *, moved: bool) -> FidelityClass:
-    if held:
-        return FidelityClass.CASCADE
-    return FidelityClass.BAR_BOUNDARY if moved else FidelityClass.UNKNOWN
+def _held(trades: dict[_Key, _Trade], decision: int) -> bool:
+    return any(trade.holds_at(decision) for trade in trades.values())
+
+
+def _state(held: bool) -> str:
+    return "in a position" if held else "flat"
+
+
+def _alone_outcome(*, moved: bool, held: bool) -> FidelityClass:
+    """The decision second when the restamped replay settles the trade otherwise than its run,
+    a cascade when it does not and the other run held a position, else unknown."""
+    if moved:
+        return FidelityClass.BAR_BOUNDARY
+    return FidelityClass.CASCADE if held else FidelityClass.UNKNOWN
 
 
 def _alone_row(
@@ -296,24 +325,26 @@ def _pair(
         "entry_kind": str(on_prints.kind),
         "in_ticks": True,
         "in_minutes": True,
-        "entry_outcome": entry,
-        "exit_outcome": exit,
-        "outcome": _trade_outcome(entry, exit),
+        "entry_outcome": str(entry),
+        "exit_outcome": str(exit),
+        "outcome": str(_trade_outcome(entry, exit)),
         "entry_ticks": _ticks(on_prints.entry.price - on_bars.entry.price, tick),
         "exit_ticks": _ticks(on_prints.exit.price - on_bars.exit.price, tick),
         "note": f"entry {entry}; exit {reasons}: {exit}",
     }
 
 
-def _fill_outcome(on_prints: _Trade, restamped: _Trade | None, on_bars: _Trade, leg: _Leg) -> str:
+def _fill_outcome(
+    on_prints: _Trade, restamped: _Trade | None, on_bars: _Trade, leg: _Leg
+) -> FidelityClass:
     """`match` when the fill on prints is the bar's; `bar_boundary` when the restamped replay
     fills it otherwise than the prints; else the class of the restamped fill against the bar's."""
     if on_prints.fill(leg).alike_on_a_bar(on_bars.fill(leg)):
-        return MATCH
-    if restamped is None or restamped.fill(leg) != on_prints.fill(leg):
-        return str(FidelityClass.BAR_BOUNDARY)
+        return FidelityClass.MATCH
+    if restamped is None or not on_prints.fill(leg).on_the_same_print(restamped.fill(leg)):
+        return FidelityClass.BAR_BOUNDARY
     apart = _entry_apart if leg is _Leg.ENTRY else _exit_apart
-    return str(apart(restamped, on_bars))
+    return apart(restamped, on_bars)
 
 
 def _entry_apart(on_prints: _Trade, on_bars: _Trade) -> FidelityClass:
@@ -362,12 +393,12 @@ def _in_the_entry_bar(on_prints: _Trade, on_bars: _Trade) -> bool:
     return resting and entered_alike and left_there
 
 
-def _trade_outcome(entry: str, exit: str) -> str:
+def _trade_outcome(entry: FidelityClass, exit: FidelityClass) -> FidelityClass:
     """`unknown` when either fill is; otherwise the entry's class, or the exit's when the entry
     matched."""
-    if str(FidelityClass.UNKNOWN) in (entry, exit):
-        return str(FidelityClass.UNKNOWN)
-    return entry if entry != MATCH else exit
+    if FidelityClass.UNKNOWN in (entry, exit):
+        return FidelityClass.UNKNOWN
+    return entry if entry is not FidelityClass.MATCH else exit
 
 
 def _ticks(difference: int, tick: int) -> int:
@@ -403,15 +434,15 @@ def summarise(classified: pl.DataFrame) -> FidelitySummary:
     fills = Counter(outcome for outcome in pair_fills if outcome != MATCH)
     for outcome in alone.get_column("outcome"):
         fills[outcome] += 2
-    differing = classified.filter(pl.col("outcome") != MATCH).get_column("outcome")
+    differing = classified.filter(pl.col("outcome") != str(MATCH)).get_column("outcome")
     return FidelitySummary(
         tick_trades=int(classified["in_ticks"].sum()),
         minute_trades=int(classified["in_minutes"].sum()),
         matched=paired.height,
-        exact=paired.filter(pl.col("outcome") == MATCH).height,
-        exits_alike=paired.filter(pl.col("exit_outcome") == MATCH).height,
+        exact=paired.filter(pl.col("outcome") == str(MATCH)).height,
+        exits_alike=paired.filter(pl.col("exit_outcome") == str(MATCH)).height,
         fills_compared=len(pair_fills),
-        equal_fills=pair_fills.count(MATCH),
+        equal_fills=pair_fills.count(str(MATCH)),
         trades_by_class=dict(sorted(Counter(differing.to_list()).items())),
         fills_by_class=dict(sorted(fills.items())),
         unknown=int((differing == str(FidelityClass.UNKNOWN)).sum()),

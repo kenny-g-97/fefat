@@ -12,6 +12,7 @@ import pytest
 
 from fefat.backtest.fidelity_classes import (
     MATCH,
+    RESTAMP,
     TRADE_COLUMNS,
     FidelityClass,
     classify,
@@ -82,9 +83,10 @@ def test_a_trade_alike_on_prints_and_bars_matches() -> None:
 
 def test_a_market_entry_the_decision_second_moves_is_a_bar_boundary() -> None:
     # On prints the market order fills after the decision's second, a tick higher; with that
-    # second's prints after the decision it fills on the first of them, the bar's open.
+    # second's prints moved a nanosecond after the decision it fills on the first of them, the
+    # bar's open.
     ticks = trades(on_prints(entry_ts=at(seconds=1), entry_price=PRICE + TICK))
-    restamped = trades(on_prints(entry_ts=DECISION))
+    restamped = trades(on_prints(entry_ts=DECISION + RESTAMP))
 
     row = only_row(classify(ticks, restamped, trades(on_bars()), TICK))
 
@@ -187,7 +189,66 @@ def test_a_trade_made_while_the_other_run_held_a_position_is_a_cascade() -> None
     assert only_row(classified)["outcome"] == FidelityClass.ENTRY_BAR_PATH
     row = only_row(classified, LATER)
     assert outcomes(row) == (FidelityClass.CASCADE,) * 3
-    assert row["note"] == "a trade on prints alone, the 1-minute run in a position at its decision"
+    assert row["note"] == (
+        "a trade on prints alone; the restamped replay makes it as the prints do, and the "
+        "1-minute run is in a position at its decision"
+    )
+
+
+def test_a_trade_after_an_exit_on_the_decisions_own_second_is_a_bar_boundary() -> None:
+    # The engine review: the run on prints left on a print stamped at the next decision's
+    # instant, which comes before that decision (F-CLK-02); the bar holding it closes a minute
+    # later, after it, so the 1-minute run still held the position there, and so does the
+    # restamped replay, the print moved after the decision. The exits are one print, alike, and
+    # the trades that follow differ by the decision second alone, with no earlier difference:
+    # the run on prints enters at that decision and still holds at the next, where the others
+    # enter.
+    first = on_prints(exit_ts=LATER)
+    second = on_prints(entry_decision=LATER, entry_ts=at(0, 1, LATER), exit_ts=at(7, 10, LATER))
+    replayed = on_prints(exit_ts=LATER + RESTAMP)
+    held = on_bars(exit_ts=LATER + MINUTE)
+    next_decision = LATER + 5 * MINUTE
+    after = on_bars(entry_decision=next_decision, entry_ts=at(6, 0, LATER), exit_ts=at(9, 0, LATER))
+    restamped_after = on_prints(
+        entry_decision=next_decision, entry_ts=at(5, 3, LATER), exit_ts=at(8, 10, LATER)
+    )
+
+    classified = classify(
+        trades(first, second), trades(replayed, restamped_after), trades(held, after), TICK
+    )
+
+    assert only_row(classified)["outcome"] == MATCH
+    assert only_row(classified, LATER)["outcome"] == FidelityClass.BAR_BOUNDARY
+    assert only_row(classified, LATER + 5 * MINUTE)["outcome"] == FidelityClass.BAR_BOUNDARY
+
+
+def test_the_restamped_replay_holds_its_position_at_its_own_instants() -> None:
+    # The engine review: compared with the bars alone, the replay's stop filled on a print moved
+    # a nanosecond after the next decision, so it still held the position there, while the bar of
+    # the limit's fill reached the stop too (F-BAR-04) and left the 1-minute run flat to enter.
+    limit = {"entry_kind": "limit", "entry_level": PRICE}
+    replayed = on_prints(
+        entry_kind="limit",
+        entry_ts=at(4, 30),
+        exit_ts=LATER + RESTAMP,
+        exit_price=PRICE - 13 * TICK,
+        exit_reason="stop",
+    )
+    stopped = on_bars(
+        **limit, entry_ts=LATER, exit_ts=LATER, exit_price=PRICE - 12 * TICK, exit_reason="stop"
+    )
+    again = on_bars(
+        **limit,
+        entry_decision=LATER,
+        side="short",
+        entry_ts=at(3, 0, LATER),
+        exit_ts=at(6, 0, LATER),
+    )
+
+    classified = classify(trades(replayed), trades(replayed), trades(stopped, again), TICK)
+
+    assert only_row(classified)["outcome"] == FidelityClass.ENTRY_BAR_PATH
+    assert only_row(classified, LATER)["outcome"] == FidelityClass.CASCADE
 
 
 @pytest.mark.parametrize("kind", ["market", "limit"])
@@ -226,7 +287,7 @@ def test_the_summary_counts_the_trades_and_the_fills_by_class() -> None:
     moved = on_prints(entry_ts=at(seconds=1), entry_price=PRICE + TICK)
     alone = on_prints(entry_decision=LATER, entry_kind="limit", entry_ts=LATER)
     ticks = trades(moved, alone)
-    restamped = trades(on_prints(entry_ts=DECISION))
+    restamped = trades(on_prints(entry_ts=DECISION + RESTAMP))
 
     summary = summarise(classify(ticks, restamped, trades(on_bars()), TICK))
 
