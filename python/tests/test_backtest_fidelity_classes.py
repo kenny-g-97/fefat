@@ -190,10 +190,16 @@ def test_a_trade_made_while_the_other_run_held_a_position_is_a_cascade() -> None
     assert row["note"] == "a trade on prints alone, the 1-minute run in a position at its decision"
 
 
-def test_a_trade_on_prints_alone_with_the_1_minute_run_flat_is_unknown() -> None:
+@pytest.mark.parametrize("kind", ["market", "limit"])
+def test_a_trade_on_prints_alone_with_the_1_minute_run_flat_is_unknown(kind: str) -> None:
     # The restamped replay makes the trade as the prints do, so the decision second does not
-    # explain it, and nothing kept the 1-minute run from entering.
-    row = only_row(classify(trades(on_prints()), trades(on_prints()), trades(), TICK))
+    # explain it, and nothing kept the 1-minute run from entering. The replay's trades carry no
+    # level, which the runs on bars give, so only the fills count.
+    level = None if kind == "market" else PRICE
+    ticks = trades(on_prints(entry_kind=kind, entry_level=level))
+    restamped = trades(on_prints(entry_kind=kind))
+
+    row = only_row(classify(ticks, restamped, trades(), TICK))
 
     assert row["outcome"] == FidelityClass.UNKNOWN
 

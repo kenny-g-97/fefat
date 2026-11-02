@@ -172,6 +172,11 @@ class _Trade:
     def fill(self, leg: _Leg) -> _Fill:
         return self.entry if leg is _Leg.ENTRY else self.exit
 
+    def filled_as(self, other: "_Trade | None") -> bool:
+        """Whether another run filled this trade's entry and exit alike: the levels and the
+        bar's flags are not fills, and the restamped replay gives neither."""
+        return other is not None and (self.entry, self.exit) == (other.entry, other.exit)
+
     def holds_at(self, decision: int) -> bool:
         """Whether the position was open at a decision: entered by then and left after it, the
         fills at the decision's own instant coming before it (F-CLK-02, F-BAR-06)."""
@@ -236,7 +241,7 @@ class _Runs:
         decision, else a `bar_boundary` when the restamped replay does not make it as the prints
         do."""
         held = any(other.holds_at(trade.entry_decision) for other in self.minutes.values())
-        made = restamped == trade
+        made = trade.filled_as(restamped)
         outcome = _alone_outcome(held, moved=not made)
         replay = "makes it as the prints do" if made else "does not make it"
         state = "in a position" if held else f"flat; the restamped replay {replay}"
