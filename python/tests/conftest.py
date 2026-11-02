@@ -28,7 +28,7 @@ def fefat_folders_in_tmp_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     monkeypatch.setenv("FEFAT_DATA_DIR", str(tmp_path / "fefat-data"))
 
 
-CHECKED_HYPOTHESIS = "6.170.5"
+CHECKED_HYPOTHESIS = "6.170.14"
 """The Hypothesis whose reading of local constants `draws_of_the_seed_alone` was checked against."""
 
 
