@@ -2,9 +2,13 @@
 //! order's activation, nor on a record received while the market is closed; every fill on the
 //! costly side of the trade of the record it fills on, a buy never below it and a sell never above
 //! it, and so of every trade its order saw, which TBBO's quotes, read no better than their trades,
-//! cannot break (F-SLP-01); and, after every record, equity equal to cash plus the position's value
-//! at the mark, with the cash and the position tracked apart from the ledger, from the fills alone.
+//! cannot break (F-SLP-01); a triggered stop never better than its price (F-STP-02, F-STP-03),
+//! while one already through the market when it becomes active fills as a market order, which can
+//! be (F-STP-05, `02-engine-and-data.md` §8 item 3); and, after every record, equity equal to
+//! cash plus the position's value at the mark, with the cash and the position tracked apart from
+//! the ledger, from the fills alone.
 
+use fefat_core::fills::PricingRule;
 use fefat_core::instants::{TradeDate, Ts};
 use fefat_core::instrument::{Contract, InstrumentParameters, LotStep};
 use fefat_core::ledger::Ledger;
@@ -346,6 +350,14 @@ proptest! {
                 match fill.side {
                     Side::Buy => prop_assert!(fill.price >= traded, "{fill:?} below its trade {traded}"),
                     Side::Sell => prop_assert!(fill.price <= traded, "{fill:?} above its trade {traded}"),
+                }
+                if let OrderKind::StopMarket { stop } = order.order.kind
+                    && fill.rule != PricingRule::StopThroughMarket
+                {
+                    match fill.side {
+                        Side::Buy => prop_assert!(fill.price >= stop, "{fill:?} better than its stop {stop}"),
+                        Side::Sell => prop_assert!(fill.price <= stop, "{fill:?} better than its stop {stop}"),
+                    }
                 }
                 let moved = value(fill.price.0, -fill.side.sign() * fill.lots.0);
                 prop_assert_eq!(booked.cash, Money(moved));
