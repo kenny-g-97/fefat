@@ -55,12 +55,15 @@ DAILY_SESSION_ASSUMED = (
     "session, so compare one bar's open and close with the platform's session settings"
 )
 """The warning of every daily import: a daily bar names its session by its date alone."""
-PRINTS_AT_THE_END_OF_THEIR_SECOND = (
-    "the prints are stamped to the second, so each is stored at the end of its second, the "
-    "latest instant it can have arrived, and comes after every decision inside that second; "
-    "its minute, and so every bar, stays as the file has it"
+PRINTS_AT_THE_END_OF_THEIR_STAMP = (
+    "the prints are stamped to the second, millisecond, or microsecond, so each is stored at "
+    "the end of its stamp, the latest instant it can have arrived, and comes after every "
+    "decision inside it; its minute, and so every bar, stays as the file has it"
 )
-"""The warning of an import of prints stamped to the second (D-70)."""
+"""The warning of an import of prints stamped coarser than a nanosecond (D-70)."""
+PRINTS_AT_THE_END_OF_THEIR_STAMP_RECORDED = ", prints received at the end of their stamp"
+"""How the raw manifest records that rule among an import's arguments, so that a file imported
+before it is refused rather than read as imported (D-50, D-70)."""
 
 
 @dataclass(frozen=True)
@@ -292,7 +295,7 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
         warnings=(
             *dataset_warnings(dataset, profile.series),
             *([DAILY_SESSION_ASSUMED] if _daily(profile) else []),
-            *([PRINTS_AT_THE_END_OF_THEIR_SECOND] if tick_arrival_offset(profile) else []),
+            *([PRINTS_AT_THE_END_OF_THEIR_STAMP] if tick_arrival_offset(profile) else []),
             *([TIMING_UNCHECKED] if unchecked else []),
         ),
     )
@@ -304,7 +307,8 @@ def _daily(profile: ImportProfile) -> bool:
 
 def _import_arguments(request: FileImportRequest) -> str:
     """What besides the file decides its records, as the raw manifest records it: the profile,
-    and the contract, root, and time zone the command named, if any."""
+    the contract, root, and time zone the command named, if any, and whether its prints are
+    received at the end of their stamp (D-70)."""
     # shortcut: a profile edited under its name is not told apart; record the profile's hash
     # when profiles get versions.
     named = (
@@ -313,7 +317,10 @@ def _import_arguments(request: FileImportRequest) -> str:
         ("time zone", request.time_zone),
     )
     given = "".join(f", {name} {value}" for name, value in named if value is not None)
-    return f"import profile {request.profile.name}{given}"
+    stamped = (
+        PRINTS_AT_THE_END_OF_THEIR_STAMP_RECORDED if tick_arrival_offset(request.profile) else ""
+    )
+    return f"import profile {request.profile.name}{given}{stamped}"
 
 
 def _require_no_refusals(request: FileImportRequest, reading: FileReading) -> None:

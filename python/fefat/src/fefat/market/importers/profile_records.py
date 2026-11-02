@@ -38,8 +38,9 @@ from fefat.market.importers.profile_values import (
     RecordProblem,
     problem_of,
     read_rows,
+    unix_unit_nanoseconds,
 )
-from fefat.market.importers.profiles import BarStamp, ImportProfile, NewInstrument, TimestampForm
+from fefat.market.importers.profiles import BarStamp, ImportProfile, NewInstrument
 from fefat.market.instruments import Instrument, InstrumentTable
 from fefat.market.layout import SeriesKind
 from fefat.market.schema import SchemaName, Timeframe, TimeUnit, parse_schema_name, polars_schema
@@ -257,14 +258,14 @@ def _on_the_tick(
 
 def tick_arrival_offset(profile: ImportProfile) -> int:
     """How long after its stamp a print of the profile's file may have arrived: a print stamped
-    to the second (`unix_s`), up to a second less a nanosecond, so it is received at its
-    second's end and follows every decision inside that second (F-CLK-02, D-70); 0 for finer
-    stamps, and for bars, whose stamp marks a bucket's edge."""
-    # shortcut: unix_s alone counts as a stamp to the second; ISO text or a strptime pattern without fractions on a file of prints waits for such an export.
-    ticks = profile.bar_timeframe() is None
-    if ticks and profile.timestamp.format is TimestampForm.UNIX_SECONDS:
-        return _NANOSECONDS_PER_SECOND - 1
-    return 0
+    in Unix seconds, milliseconds, or microseconds up to one unit less a nanosecond, so it is
+    received at its stamp's last nanosecond and follows every decision inside that unit
+    (F-CLK-02, D-70); 0 for nanosecond stamps, and for bars, whose stamp marks a bucket's edge."""
+    # shortcut: a print stamped as text (ISO, or a strptime pattern without fractions) keeps its stamp; give it its unit when such a tick export arrives (BACKLOG.md).
+    unit = unix_unit_nanoseconds(profile.timestamp.format)
+    if profile.bar_timeframe() is not None or unit is None:
+        return 0
+    return unit - 1
 
 
 def _dated_ticks(rows: pl.DataFrame, sessions: SessionTable, arrival_offset: int) -> pl.DataFrame:

@@ -353,21 +353,23 @@ def test_a_databento_trades_export_imports_its_ticks(tmp_path: Path) -> None:
     assert_frame_equal(store.scan_partition(partition).collect(), trades)
 
 
-def test_prints_stamped_to_the_second_are_received_at_the_end_of_their_second(
-    tmp_path: Path,
+@pytest.mark.parametrize(("form", "unit"), [("unix_s", 1_000_000_000), ("unix_ms", 1_000_000)])
+def test_prints_stamped_coarser_than_a_nanosecond_are_received_at_the_end_of_their_stamp(
+    tmp_path: Path, form: str, unit: int
 ) -> None:
     # IBKR stamps its prints to the second (D-70): a print stamped at a decision's instant may
-    # have arrived after the decision, so it is stored at its second's last nanosecond, with
-    # its stamp as its event time and the file's order within the second.
-    second = int(datetime(2026, 3, 6, 14, 30, tzinfo=UTC).timestamp())
+    # have arrived after the decision, so it is stored at its stamp's last nanosecond, with its
+    # stamp as its event time and the file's order within the stamp, and the raw manifest
+    # records the rule with the import's arguments.
+    stamp = int(datetime(2026, 3, 6, 14, 30, tzinfo=UTC).timestamp()) * 1_000_000_000 // unit
     path = written_export(
         tmp_path / "exports",
         "ESH2026-trades-2026-03-06.csv",
         [
             "time,price,size",
-            f"{second},5000.25,3",
-            f"{second},5000.50,1",
-            f"{second + 1},5000.25,2",
+            f"{stamp},5000.25,3",
+            f"{stamp},5000.50,1",
+            f"{stamp + 1},5000.25,2",
         ],
     )
     profile = ImportProfile.model_validate(
@@ -377,7 +379,7 @@ def test_prints_stamped_to_the_second_are_received_at_the_end_of_their_second(
             "description": "IBKR Time and Sales from the TWS API",
             "layout": {"delimiter": ",", "header": True},
             "columns": {"timestamp": "time", "ticks": {"price": "price", "size": "size"}},
-            "timestamp": {"format": "unix_s", "time_zone": "UTC"},
+            "timestamp": {"format": form, "time_zone": "UTC"},
             "timeframe": "ticks",
             "contract_in_file_name": "(?P<contract>[A-Z0-9]{1,4}[FGHJKMNQUVXZ][0-9]{4})",
         }
@@ -389,15 +391,19 @@ def test_prints_stamped_to_the_second_are_received_at_the_end_of_their_second(
 
     dataset = Dataset(provider="ibkr", schema_name=parse_schema_name("trades"), root="ES")
     partition = Partition(dataset=dataset, contract="ESH2026", key=date(2026, 3, 6))
-    stamped, last = second * 1_000_000_000, 999_999_999
+    stamped, last = stamp * unit, unit - 1
     assert store.scan_partition(partition).collect().select(
         "ts_recv", "ts_event", "size"
     ).rows() == [
         (stamped + last, stamped, 3),
         (stamped + last, stamped, 1),
-        (stamped + 1_000_000_000 + last, stamped + 1_000_000_000, 2),
+        (stamped + unit + last, stamped + unit, 2),
     ]
-    assert any("end of its second" in warning for warning in preview.reading.warnings)
+    assert any("end of its stamp" in warning for warning in preview.reading.warnings)
+    (recorded,) = store.raw.manifest().files
+    assert recorded.vendor_version == (
+        "import profile ibkr-ticks, prints received at the end of their stamp"
+    )
 
 
 def test_a_spot_pair_named_by_its_root_imports_as_its_one_contract(tmp_path: Path) -> None:
