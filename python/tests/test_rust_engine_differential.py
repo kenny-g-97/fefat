@@ -75,6 +75,13 @@ def cost_coverage(comparison: CaseComparison) -> Counter[str]:
         fill.rule == "F-ROL-02" for fill in rust.fills
     )
     reached["fills below zero"] += any(fill.price < 0 for fill in rust.fills)
+    reached["stops closing before a roll"] += any(  # S-fill-068: F-ROL-02 in F-STP-02's wait
+        fill.rule == "F-STP-02"
+        and fill.contract == roll.rolled_from
+        and fill.ts >= roll.session_open
+        for roll in scenario.rolls
+        for fill in rust.fills
+    )
     return reached
 
 
@@ -138,3 +145,7 @@ def test_the_rust_engine_fills_10000_generated_tapes_as_the_reference_does(
     assert (sum(ambiguous) > 0) == (tapes is DrawnTapes.BARS)
     reached_costs = {what for what, cases in costs.items() if cases > 0}
     assert reached_costs >= COSTS, f"Expected cases of every cost and roll, got {costs}"
+    waited = costs["stops closing before a roll"]
+    assert (waited > 0) == (tapes is DrawnTapes.TICKS), (
+        f"Expected rolls in a TBBO stop's wait on ticks alone, got {waited}"
+    )
