@@ -16,8 +16,8 @@ from fefat.backtest.fidelity_classes import (
     TRADE_COLUMNS,
     FidelityClass,
     classify,
-    summarise,
 )
+from fefat.backtest.fidelity_summary import summarise
 
 TICK = 250_000_000
 SECOND = 1_000_000_000

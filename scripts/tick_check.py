@@ -45,13 +45,13 @@ from fefat.backtest import FidelityCheck, Run, RunConfig
 from fefat.backtest.explain import pinned_snapshots
 from fefat.backtest.fidelity_classes import (
     MATCH,
+    RESTAMP,
     TRADE_COLUMNS,
-    FidelitySummary,
     classify,
-    summarise,
 )
+from fefat.backtest.fidelity_summary import FidelitySummary, summarise
 from fefat.backtest.metrics import FidelityEra
-from fefat.backtest.run_inputs import run_inputs
+from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import FefatPaths, resolve_paths
 from fefat.market.api import load
 from fefat.market.bars_check import ColumnDifference, ComparedBars, verify_bars
@@ -230,14 +230,19 @@ def pinned_prints(store: Store, run: Run, contract: str, days: Sequence[date]) -
         partition = Partition.from_relative_path(PurePosixPath(digest.path))
         if partition.contract == contract and partition.key in days:
             held.append(store.read_pinned_partition(snapshot, digest))
+    if not held:
+        raise ValueError(
+            f"Expected the prints of {contract} on {[str(day) for day in days]} in the trades "
+            f"snapshot run {run.id} pins, got none."
+        )
     return pl.concat(held)
 
 
 def restamped(prints: pl.DataFrame, decisions: pl.Series) -> pl.DataFrame:
-    """The prints with each one stamped at a decision's instant moved one nanosecond after it,
-    where the 1-minute bars put it: after the decision, in the bar that opens there."""
+    """The prints with each one stamped at a decision's instant moved `RESTAMP`, a nanosecond,
+    after it, where the 1-minute bars put it: after the decision, in the bar that opens there."""
     at_a_decision = pl.col("ts_recv").is_in(decisions.implode())
-    moved = pl.when(at_a_decision).then(pl.col("ts_recv") + 1).otherwise(pl.col("ts_recv"))
+    moved = pl.when(at_a_decision).then(pl.col("ts_recv") + RESTAMP).otherwise(pl.col("ts_recv"))
     return prints.with_columns(moved.alias("ts_recv"))
 
 
@@ -502,14 +507,17 @@ def entries_and_exits(fills: Sequence[Fill]) -> list[tuple[Fill, Fill]]:
 
 
 def fidelity(
-    runs: StrategyRuns, days: Sequence[date], results: dict[str, RunResult], tick: int
+    runs: StrategyRuns,
+    trades: tuple[pl.DataFrame, pl.DataFrame],
+    results: dict[str, RunResult],
+    tick: int,
 ) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, Any]]:
-    """Item 3: the trades on prints, the restamped replay's, and those on bars classified, held
-    to the run's own fidelity check at one minute; the restamped replay's against those on bars
-    classified alone, the differences the decision second leaves, each of which needs a class of
-    the bar's path or a cascade too; and how far apart the fills lie."""
-    on_prints = run_trades(runs.ticks, days, runs.kind)
-    on_bars = run_trades(runs.minutes, days, runs.kind)
+    """Item 3: the trades on prints, the restamped replay's, and those on bars, `trades` holding
+    the first and the last, classified and held to the run's own fidelity check at one minute;
+    the restamped replay's against those on bars classified alone, the differences the decision
+    second leaves, each of which needs a class of the bar's path or a cascade too; and how far
+    apart the fills lie."""
+    on_prints, on_bars = trades
     replayed = replay_trades(results["restamped"], runs.ticks.signals, runs.kind)
     classified = classify(on_prints, replayed, on_bars, tick)
     beside_bars = classify(replayed, replayed, on_bars, tick)
@@ -614,12 +622,9 @@ def measured(classified: pl.DataFrame) -> dict[str, Any]:
     return {"pairs": paired.height, "net_ticks": int(net), "by_class": by_class.to_dicts()}
 
 
-def fresh_fills_hash(
-    check: TickCheck, strategy: ff.SignalStrategy, window: tuple[date, date], paths: FefatPaths
-) -> tuple[str, int]:
+def fresh_fills_hash(inputs: RunInputs, paths: FefatPaths) -> tuple[str, int]:
     """The hash of a run's fills straight from the engine, never a saved run read back, and how
     many fills."""
-    inputs = run_inputs(strategy, *window, profile(check, TickFidelity.TRADES), paths)
     caches = [str(folder) for folder in inputs.cache_paths(paths)]
     replay = str(inputs.config.replay)
     outputs = fefat_engine.run_signal_backtest(
@@ -637,19 +642,22 @@ def determinism(
     paths: FefatPaths,
 ) -> dict[str, Any]:
     """Item 4: the run's key worked out again from its inputs, its fills on two fresh engine
-    runs and as saved, and fresh runs of its first sessions against its own fills of them."""
-    inputs = run_inputs(runs.strategy, *window, profile(check, TickFidelity.TRADES), paths)
+    runs and as saved, and fresh runs of its first sessions against its own fills of them,
+    refused unless every one agrees."""
+    config = profile(check, TickFidelity.TRADES)
+    inputs = run_inputs(runs.strategy, *window, config, paths)
     frame_hash = fefat_engine.table_hash(inputs.signals)
     partitions = list(inputs.partition_hashes)
     key = fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
-    (first, _), (second, _) = (fresh_fills_hash(check, runs.strategy, window, paths) for _ in "ab")
+    (first, _), (second, _) = (fresh_fills_hash(inputs, paths) for _ in "ab")
     prefixes = []
     for through in sessions[:-1]:
-        prefix, fills = fresh_fills_hash(check, runs.strategy, (window[0], through), paths)
+        shorter = run_inputs(runs.strategy, window[0], through, config, paths)
+        prefix, fills = fresh_fills_hash(shorter, paths)
         whole = runs.ticks.fills.filter(pl.col("trade_date") <= through)
         equal = prefix == fefat_engine.table_hash(whole)
         prefixes.append({"through": str(through), "fills": fills, "equal": equal})
-    return {
+    determined = {
         "run_key": runs.ticks.hash,
         "key_again": key,
         "fills_hash": first,
@@ -657,27 +665,52 @@ def determinism(
         "saved_fills_hash": fefat_engine.table_hash(runs.ticks.fills),
         "prefixes": prefixes,
     }
+    require_deterministic(runs.name, determined)
+    return determined
+
+
+def require_deterministic(name: str, determined: dict[str, Any]) -> None:
+    """Refuse a run whose key worked out again, second fresh run, saved fills, or runs of its
+    first sessions are not its own (`02` §8 item 3)."""
+    fills = determined["fills_hash"]
+    checks = [
+        ("its key worked out again", determined["key_again"] == determined["run_key"]),
+        ("a second fresh run", determined["second_fills_hash"] == fills),
+        ("its saved fills", determined["saved_fills_hash"] == fills),
+        *(
+            (f"its run through {prefix['through']}", prefix["equal"])
+            for prefix in determined["prefixes"]
+        ),
+    ]
+    apart = [what for what, alike in checks if not alike]
+    if apart:
+        raise ValueError(
+            f"Expected the run of {name} to be the same on {', '.join(apart)}, got other "
+            "hashes: the engine is not deterministic on these prints."
+        )
 
 
 def shared_seconds(
-    runs: StrategyRuns, prints: pl.DataFrame, days: Sequence[date], reversed_result: RunResult
+    runs: StrategyRuns,
+    on_prints: pl.DataFrame,
+    context: "Context",
+    reversed_result: RunResult,
 ) -> dict[str, int]:
-    """The run's fills on prints whose instant holds more than one print, and its trades the
-    reference engine fills otherwise with each instant's prints reversed (F-CLK-03)."""
-    per_instant = prints.group_by("ts_recv").agg(pl.len().alias("prints"))
-    fills = runs.ticks.fills.filter(pl.col("trade_date").is_in(days))
+    """The run's fills on prints whose instant holds more than one print, and its trades on
+    prints, `on_prints`, that the reference engine fills otherwise with each instant's prints
+    reversed (F-CLK-03)."""
+    per_instant = context.prints.group_by("ts_recv").agg(pl.len().alias("prints"))
+    fills = runs.ticks.fills.filter(pl.col("trade_date").is_in(context.days))
     counted = fills.join(per_instant, left_on="ts", right_on="ts_recv", how="left")
-    stored = run_trades(runs.ticks, days, runs.kind).select(*TRADE_FILLS, "exit_reason")
+    columns = [*TRADE_FILLS, "exit_reason"]
     reversed_trades = replay_trades(reversed_result, runs.ticks.signals, runs.kind)
-    otherwise = stored.join(
-        reversed_trades.select(*TRADE_FILLS, "exit_reason"),
-        on=[*TRADE_FILLS, "exit_reason"],
-        how="anti",
+    otherwise = on_prints.select(columns).join(
+        reversed_trades.select(columns), on=columns, how="anti"
     )
     return {
         "fills": fills.height,
         "fills_in_shared_seconds": counted.filter(pl.col("prints") > 1).height,
-        "trades": stored.height,
+        "trades": on_prints.height,
         "trades_reversed_otherwise": otherwise.height,
     }
 
@@ -859,14 +892,15 @@ def strategy_facts(
 ) -> dict[str, Any]:
     """Items 2 to 4 of one strategy, with its tables for the notebook written to `work`."""
     days, tick = context.days, context.tick
-    classified, beside_bars, fidelity_facts = fidelity(each, days, results, tick)
+    trades = (run_trades(each.ticks, days, each.kind), run_trades(each.minutes, days, each.kind))
+    classified, beside_bars, fidelity_facts = fidelity(each, trades, results, tick)
     classified.write_parquet(work / f"classified_{each.name}.parquet")
     beside_bars.write_parquet(work / f"classified_{each.name}_restamped.parquet")
-    for name, run in (("ticks", each.ticks), ("minutes", each.minutes)):
-        run_trades(run, days, each.kind).write_parquet(work / f"trades_{each.name}_{name}.parquet")
+    for name, table in zip(("ticks", "minutes"), trades, strict=True):
+        table.write_parquet(work / f"trades_{each.name}_{name}.parquet")
     window, sessions = context.window, context.sessions
     determined = determinism(context.check, each, window, sessions, context.paths)
-    determined["shared_seconds"] = shared_seconds(each, context.prints, days, results["reversed"])
+    determined["shared_seconds"] = shared_seconds(each, trades[0], context, results["reversed"])
     return {
         "name": each.name,
         "definition": each.definition.record(),

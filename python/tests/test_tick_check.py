@@ -25,6 +25,7 @@ import pytest
 
 import gen_fixtures
 import tick_check
+import tick_check_report
 from fefat.backtest.fidelity_classes import CLASSIFIED_COLUMNS
 from fefat.config import resolve_paths
 from fefat.market.engine_units import price_text
@@ -314,6 +315,37 @@ def test_a_difference_without_a_class_refuses_the_report(
 
     assert not report.exists()
     assert "2 differences without a class: the report is not written" in capsys.readouterr().out
+
+
+def test_a_run_whose_hashes_part_is_refused() -> None:
+    # The code review: a determinism check that only wrote "different" let the report pass.
+    determined = {
+        "run_key": "a" * 64,
+        "key_again": "a" * 64,
+        "fills_hash": "b" * 64,
+        "second_fills_hash": "c" * 64,
+        "saved_fills_hash": "b" * 64,
+        "prefixes": [{"through": str(FIRST), "fills": 10, "equal": False}],
+    }
+
+    with pytest.raises(ValueError, match=r"same on a second fresh run, its run through 2026-03-02"):
+        tick_check.require_deterministic("market", determined)
+
+
+def test_the_reversed_seconds_are_read_from_their_count() -> None:
+    shared = {
+        "fills": 10,
+        "fills_in_shared_seconds": 4,
+        "trades": 5,
+        "trades_reversed_otherwise": 0,
+    }
+    strategy = {"name": "market", "determinism": {"shared_seconds": shared}}
+
+    line = tick_check_report._shared_seconds(strategy)
+
+    assert line.endswith(
+        "0 of its 5 trades otherwise, so their order changes no trade of these sessions."
+    )
 
 
 def test_fills_the_engines_do_not_share_are_refused() -> None:
