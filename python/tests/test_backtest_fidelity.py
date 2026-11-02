@@ -64,7 +64,7 @@ def fixture_sessions_across_a_month_end() -> None:
 def test_a_run_across_a_month_end_reads_every_month_of_its_cache() -> None:
     # The Phase 2 exit's ponytail review: every other run of the suite stays inside one month,
     # so a front whose later months were mapped short would skip their dates without an error.
-    run = ff.backtest.run(breakout(), "2026-02-25", "2026-03-04", RunConfig(fidelity="1m"))
+    run = ff.backtest.run(breakout(), "2026-02-25", "2026-03-04", RunConfig(fidelity=ONE_MINUTE))
 
     (era,) = run.record.fidelity_eras
     assert (era.first, era.last, era.trade_dates) == (date(2026, 2, 26), date(2026, 3, 4), 5)
