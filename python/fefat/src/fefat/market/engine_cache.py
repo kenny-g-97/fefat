@@ -29,13 +29,13 @@ from typing import NamedTuple
 import polars as pl
 from fefat_engine import write_cache_month
 
+from fefat.market.calendar import counted
 from fefat.market.dataset_choice import provider_datasets
 from fefat.market.engine_cache_index import (
     ENGINE_CACHE_FOLDER_NAME,
     LAYOUT_VERSION,
     PARTIAL_SUFFIX,
     CacheMonthIndex,
-    counted,
     read_cache_month_index,
     size_text,
 )

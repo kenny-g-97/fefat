@@ -354,7 +354,7 @@ def _order(
             stop=BracketLeg.model_construct(id=100 + number, price=level - stop_ticks * away),
             target=BracketLeg.model_construct(id=200 + number, price=level + target_ticks * away),
         )
-    common = {
+    order_fields = {
         "id": number,
         "placed_at": placed_at,
         "side": side,
@@ -363,10 +363,10 @@ def _order(
         "bracket": bracket,
     }
     if kind == "market":
-        return MarketOrder.model_construct(kind="market", **common)
+        return MarketOrder.model_construct(kind="market", **order_fields)
     if kind == "stop":
-        return StopOrder.model_construct(kind="stop", price=level, **common)
-    return LimitOrder.model_construct(kind="limit", price=level, **common)
+        return StopOrder.model_construct(kind="stop", price=level, **order_fields)
+    return LimitOrder.model_construct(kind="limit", price=level, **order_fields)
 
 
 def _position(draw: "DrawFn", drawn: DrawnInstrument) -> OpenPosition | None:

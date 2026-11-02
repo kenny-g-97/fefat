@@ -140,7 +140,7 @@ class CaseComparison:
         reference_log = tuple(LogView.of(entry) for entry in self.reference.log.entries)
         if reference_log != self.rust.log:
             pairs = enumerate(zip_longest(reference_log, self.rust.log), start=1)
-            number, (expected, got) = next(item for item in pairs if item[1][0] != item[1][1])
+            number, (expected, got) = next(pair for pair in pairs if pair[1][0] != pair[1][1])
             found.append(
                 f"the event logs differ at entry {number}: the reference {expected}, Rust {got}"
             )
