@@ -16,6 +16,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -244,10 +245,15 @@ def test_each_runs_hashes_hold_on_a_second_run_and_on_a_prefix(checked: Checked)
 
 
 def test_the_report_holds_no_price_of_the_tape(checked: Checked) -> None:
-    written = set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w.])", checked.report))
-    prices = {text for price in checked.prices for text in (price_text(price), str(price))}
+    # Every number of the report, its thousands' commas dropped, against every price of the tape
+    # in points and in its 1e-9 units, as decimals, so that 6,849.75 and 6849.750 count too.
+    numbers = re.findall(r"(?<![\w.,])\d[\d,]*(?:\.\d+)?(?![\w,]|\.\d)", checked.report)
+    written = {Decimal(number.replace(",", "")) for number in numbers}
+    prices = {Decimal(price_text(price)) for price in checked.prices}
+    units = {Decimal(price) for price in checked.prices}
 
-    assert written & prices == set()
+    assert written & (prices | units) == set()
+    assert len(written) > 50
 
 
 def test_the_notebooks_tables_are_left_in_the_work_folder(checked: Checked) -> None:
@@ -255,7 +261,35 @@ def test_the_notebooks_tables_are_left_in_the_work_folder(checked: Checked) -> N
         for fidelity in ("ticks", "minutes"):
             trades = pl.read_parquet(checked.work / f"trades_{definition.name}_{fidelity}.parquet")
             assert trades.height > 0
+        restamped = checked.work / f"classified_{definition.name}_restamped.parquet"
+        assert pl.read_parquet(restamped).schema == CLASSIFIED_COLUMNS
     assert checked.facts["check"]["contract"] == "ESH2026"
+
+
+def test_the_fills_apart_are_measured_in_ticks(checked: Checked) -> None:
+    for definition in STRATEGIES:
+        measured = strategy_facts(checked, definition.name)["fidelity"]["measured"]
+        fidelity = strategy_facts(checked, definition.name)["fidelity"]
+        assert measured["pairs"] == fidelity["matched"]
+        paired = sum(count for name, count in fidelity["fills_by_class"].items())
+        assert sum(row["fills"] for row in measured["by_class"]) <= paired
+        for row in measured["by_class"]:
+            assert 0 <= row["mean"] <= row["largest"]
+            assert f"| {definition.name} | `{row['outcome']}` | {row['fills']} |" in checked.report
+    assert "### How far apart" in checked.report
+    assert "matched pairs the trades on prints made" in checked.report
+
+
+def test_a_session_on_prints_whose_bars_are_not_its_prints_is_refused() -> None:
+    # The engine review: a bar whose close is not its last print's gives the run on bars another
+    # mark than the prints give the restamped replay (F-ENT-02), so its entries' levels part, and
+    # the classes, which hold the prints to their own bars, would name the wrong cause.
+    rebuilt = {"compared": 1_380, "differences": 1, "columns": ["close"], "minutes": ["13:59Z"]}
+    bars = [{"trade_date": str(FIRST), "rebuilt": rebuilt, "reference": None}]
+
+    with pytest.raises(ValueError, match=r"of 2026-03-02, a session on prints, to be its prints'"):
+        tick_check.require_own_bars(bars, [FIRST])
+    tick_check.require_own_bars(bars, [MIDDLE])
 
 
 def test_a_store_without_the_sessions_skips_the_check(

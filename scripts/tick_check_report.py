@@ -5,7 +5,7 @@ from typing import Any
 
 from fefat.backtest.fidelity_classes import FidelityClass
 
-CLASSES = [str(name) for name in FidelityClass]
+CLASSES = [str(name) for name in FidelityClass if name is not FidelityClass.MATCH]
 EXPLANATIONS = {
     FidelityClass.BAR_BOUNDARY: (
         "IBKR stamps its prints to the second, so the prints of the second a 5-minute bar "
@@ -21,7 +21,10 @@ EXPLANATIONS = {
         "at the decision that cancels it on prints alone (F-ENT-03). A fill is of this class "
         "when the reference engine, replaying the prints with each print stamped at a "
         "decision's instant moved one nanosecond after it, where the bars put it, fills it "
-        "otherwise than the prints: those prints alone moved it."
+        "otherwise than the prints: those prints alone moved it. A trade of one run alone is of "
+        "this class too when the replay settles it otherwise than its run, the decision second "
+        "having made or prevented it, at once or through a position it left open on one run at "
+        "a later decision."
     ),
     FidelityClass.BAR_PATH: (
         "A 1-minute bar the position was held through reached both legs of the bracket. The "
@@ -41,9 +44,10 @@ EXPLANATIONS = {
         "trigger (F-STP-03); on the bar's path it fills at its level (F-STP-04)."
     ),
     FidelityClass.CASCADE: (
-        "A trade of one run alone, made at a decision where the other still held a position "
-        "after an earlier difference on the same trade date. Flat by 15:00 Chicago, the runs "
-        "start each trade date together."
+        "A trade of one run alone that the restamped replay settles as its run does, made at a "
+        "decision where the other run still held a position after an earlier difference of "
+        "the bar's path on the same trade date. A knock-on of the decision second is "
+        "`bar_boundary` instead. Flat by 15:00 Chicago, the runs start each trade date together."
     ),
 }
 OTHER_ENGINES = (
@@ -55,11 +59,13 @@ OTHER_ENGINES = (
 )
 NOT_EXERCISED = (
     "- **Aggressor sides and quotes.** IBKR's prints carry no aggressor side and no quotes, so "
-    "the fills on prints follow FEFAT's rules for trades (F-MKT-02, F-STP-03, F-LMT-01); a run "
+    "the fills on prints follow FEFAT's rules for trades (F-MKT-02, F-STP-03, F-LMT-02); a run "
     "on TBBO is not checked here.",
     "- **Rolls.** The runs read the contract unspliced (`RunConfig.contract`) and cross no roll.",
-    "- **Latency and slippage.** The compatibility profile has neither; the defaults, 100 ms "
-    "and one tick (D-51), are not checked here.",
+    "- **Latency, slippage, and limits filled through their price.** The compatibility profile "
+    "has no latency or slippage and fills a limit on a touch of its price (F-LMT-02); the "
+    "defaults, 100 ms, one tick, and a limit filled by a print through its price (D-51, "
+    "F-LMT-01), are not checked here.",
 )
 
 
@@ -283,6 +289,22 @@ def _ticks_against_minutes(facts: dict[str, Any]) -> str:
         "Each trade counts once, by its first class; each fill that differs counts once, a pair's "
         "entry or exit, and a trade of one run alone with both its fills.",
         "",
+        "### How far apart",
+        "",
+        "The differing fills of the matched pairs, the fill on prints less the fill on bars in "
+        "ticks, by class, and how many ticks more the pairs made on prints than on bars, a lot "
+        "each, long and short alike.",
+        "",
+        "| Strategy | Class | Fills | Mean ticks apart | Largest |",
+        "| --- | --- | ---: | ---: | ---: |",
+        *(
+            _apart_row(strategy["name"], row)
+            for strategy in facts["strategies"]
+            for row in strategy["fidelity"]["measured"]["by_class"]
+        ),
+        "",
+        *(_net_ticks(strategy) for strategy in facts["strategies"]),
+        "",
         "### The decision second",
         "",
         *_decision_second(facts),
@@ -331,6 +353,23 @@ def _fills_row(strategy: dict[str, Any]) -> str:
     return (
         f"| {strategy['name']} | {compared} | {fidelity['equal_fills']} | "
         f"{_rate(fidelity['equal_fills'], compared)} | {' | '.join(classes)} |"
+    )
+
+
+def _apart_row(name: str, row: dict[str, Any]) -> str:
+    return (
+        f"| {name} | `{row['outcome']}` | {row['fills']} | {row['mean']:.1f} | {row['largest']} |"
+    )
+
+
+def _net_ticks(strategy: dict[str, Any]) -> str:
+    measured = strategy["fidelity"]["measured"]
+    net, pairs = measured["net_ticks"], measured["pairs"]
+    more = "more" if net >= 0 else "less"
+    each = f", {abs(net) / pairs:.2f} a trade" if pairs else ""
+    return (
+        f"- `{strategy['name']}`: over its {pairs} matched pairs the trades on prints made "
+        f"{abs(net)} ticks {more} than those on bars{each}."
     )
 
 
@@ -394,7 +433,8 @@ def _determinism(facts: dict[str, Any]) -> str:
         "",
         "- Each run's key (`02` §4) is worked out again from its inputs. Two fresh runs of the "
         "engine give fills of one hash (`fefat_engine.table_hash`), which is the saved run's. "
-        "The runs on the first sessions alone give the whole run's fills of those sessions.",
+        "The runs on its first sessions alone, fresh from the engine as well, give the whole "
+        "run's fills of those sessions.",
         *(_shared_seconds(strategy) for strategy in strategies),
     ]
     return "\n".join(lines)
