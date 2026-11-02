@@ -84,6 +84,7 @@ from xcheck import (
     CrossCheckStrategy,
     EntryKind,
     compatibility_profile,
+    require_one_contract,
     signal_strategy,
 )
 
@@ -171,13 +172,7 @@ def backtest(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         run = ff.backtest.run(strategy, *window, config)
-    contracts = run.fills["contract"].unique().to_list()
-    if run.record.rolls or contracts not in ([], [check.contract]):
-        raise ValueError(
-            f"Expected every fill of {check.root} from {window[0]} to {window[1]} on "
-            f"{check.contract} and no roll, got the contracts {contracts} and "
-            f"{len(run.record.rolls)} rolls in run {run.id}."
-        )
+    require_one_contract(run, check.root, check.contract, window)
     return run
 
 

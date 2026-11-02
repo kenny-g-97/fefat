@@ -206,7 +206,8 @@ def export_fefat_side(comparison: Comparison, folder: Path) -> dict[str, Any]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             run = ff.backtest.run(strategy, comparison.first, comparison.last, config)
-        _require_one_contract(run, comparison)
+        window = (comparison.first, comparison.last)
+        require_one_contract(run, comparison.root, comparison.contract, window)
         run.trades.write_parquet(out / f"trades_{definition.name}.parquet")
         run.fills.write_parquet(out / f"fills_{definition.name}.parquet")
         run.signals.write_parquet(out / f"signals_{definition.name}.parquet")
@@ -217,13 +218,17 @@ def export_fefat_side(comparison: Comparison, folder: Path) -> dict[str, Any]:
     return record
 
 
-def _require_one_contract(run: ff.backtest.Run, comparison: Comparison) -> None:
+def require_one_contract(
+    run: ff.backtest.Run, root: str, contract: str, window: tuple[date, date]
+) -> None:
+    """Refuse a run of the window with a fill on another contract than `contract`, or a
+    roll: a comparison holds one contract's records alone."""
     contracts = run.fills["contract"].unique().to_list()
-    if run.record.rolls or contracts not in ([], [comparison.contract]):
+    if run.record.rolls or contracts not in ([], [contract]):
         raise ValueError(
-            f"Expected every fill of {comparison.root} from {comparison.first} to "
-            f"{comparison.last} on {comparison.contract} and no roll, got the contracts "
-            f"{contracts} and {len(run.record.rolls)} rolls in run {run.id}."
+            f"Expected every fill of {root} from {window[0]} to {window[1]} on {contract} "
+            f"and no roll, got the contracts {contracts} and {len(run.record.rolls)} rolls "
+            f"in run {run.id}."
         )
 
 
