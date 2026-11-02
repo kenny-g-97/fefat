@@ -315,3 +315,14 @@ def long_btc() -> ff.SignalStrategy:
         long_exit=at(23),
         execution=ff.Execution(entry=ff.Market(), sizing=ff.Fixed(0.1)),
     )
+
+
+def test_a_saved_runs_check_is_refused_once_data_it_did_not_read_is_imported() -> None:
+    # The Phase 2 exit's ponytail review: a check worked out again after 1-second bars were
+    # imported for the run's dates would rebuild the cache from them and differ from the run's.
+    store_with("trades", "ohlcv-1m")
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+    store_with("ohlcv-1s")
+
+    with pytest.raises(ValueError, match="ohlcv-1s of ES from synthetic in the run's dates"):
+        fidelity_check(run)
