@@ -719,6 +719,11 @@ def session_facts(
     }
     facts = []
     for day in sessions:
+        if day not in left_out:
+            raise ValueError(
+                f"Expected the engine cache of {check.contract} to hold {day}, got no such "
+                "trade date in its index."
+            )
         partition = Partition(dataset=check.dataset("trades"), contract=check.contract, key=day)
         prints = store.scan_partition(partition).select(pl.len()).collect().item()
         facts.append(
@@ -726,7 +731,7 @@ def session_facts(
                 "trade_date": str(day),
                 "prints": prints,
                 "fidelity": str(era_of(run, day).fidelity),
-                "left_out": left_out.get(day, {}).get(str(TickFidelity.TRADES)),
+                "left_out": left_out[day].get(str(TickFidelity.TRADES)),
             }
         )
     return facts

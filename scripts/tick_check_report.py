@@ -463,8 +463,11 @@ def _alike(first: str, second: str) -> str:
 
 
 def _shared_seconds(strategy: dict[str, Any]) -> str:
-    shared = strategy["determinism"]["shared_seconds"]
-    otherwise, own = shared["trades_reversed_otherwise"], shared["reversed_trades_of_its_own"]
+    shared_seconds = strategy["determinism"]["shared_seconds"]
+    otherwise, own = (
+        shared_seconds["trades_reversed_otherwise"],
+        shared_seconds["reversed_trades_of_its_own"],
+    )
     reading = (
         "so their order matters, and the Rust engine's fills are those of the stored order "
         "(F-CLK-03)"
@@ -472,10 +475,10 @@ def _shared_seconds(strategy: dict[str, Any]) -> str:
         else "so their order changes no trade of these sessions"
     )
     return (
-        f"- `{strategy['name']}`: {shared['fills_in_shared_seconds']:,} of its "
-        f"{shared['fills']:,} fills on prints fell in a second holding more than one print. "
+        f"- `{strategy['name']}`: {shared_seconds['fills_in_shared_seconds']:,} of its "
+        f"{shared_seconds['fills']:,} fills on prints fell in a second holding more than one print. "
         "Replayed with each second's prints in the reverse of their stored order, the "
-        f"reference engine makes {otherwise} of its {shared['trades']} trades otherwise and "
+        f"reference engine makes {otherwise} of its {shared_seconds['trades']} trades otherwise and "
         f"{own} of its own, {reading}."
     )
 
