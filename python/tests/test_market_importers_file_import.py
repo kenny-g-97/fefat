@@ -353,6 +353,53 @@ def test_a_databento_trades_export_imports_its_ticks(tmp_path: Path) -> None:
     assert_frame_equal(store.scan_partition(partition).collect(), trades)
 
 
+def test_prints_stamped_to_the_second_are_received_at_the_end_of_their_second(
+    tmp_path: Path,
+) -> None:
+    # IBKR stamps its prints to the second (D-70): a print stamped at a decision's instant may
+    # have arrived after the decision, so it is stored at its second's last nanosecond, with
+    # its stamp as its event time and the file's order within the second.
+    second = int(datetime(2026, 3, 6, 14, 30, tzinfo=UTC).timestamp())
+    path = written_export(
+        tmp_path / "exports",
+        "ESH2026-trades-2026-03-06.csv",
+        [
+            "time,price,size",
+            f"{second},5000.25,3",
+            f"{second},5000.50,1",
+            f"{second + 1},5000.25,2",
+        ],
+    )
+    profile = ImportProfile.model_validate(
+        {
+            "name": "ibkr-ticks",
+            "provider": "ibkr",
+            "description": "IBKR Time and Sales from the TWS API",
+            "layout": {"delimiter": ",", "header": True},
+            "columns": {"timestamp": "time", "ticks": {"price": "price", "size": "size"}},
+            "timestamp": {"format": "unix_s", "time_zone": "UTC"},
+            "timeframe": "ticks",
+            "contract_in_file_name": "(?P<contract>[A-Z0-9]{1,4}[FGHJKMNQUVXZ][0-9]{4})",
+        }
+    )
+    request = FileImportRequest(path=path, profile=profile)
+
+    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    store = imported(tmp_path, request)
+
+    dataset = Dataset(provider="ibkr", schema_name=parse_schema_name("trades"), root="ES")
+    partition = Partition(dataset=dataset, contract="ESH2026", key=date(2026, 3, 6))
+    stamped, last = second * 1_000_000_000, 999_999_999
+    assert store.scan_partition(partition).collect().select(
+        "ts_recv", "ts_event", "size"
+    ).rows() == [
+        (stamped + last, stamped, 3),
+        (stamped + last, stamped, 1),
+        (stamped + 1_000_000_000 + last, stamped + 1_000_000_000, 2),
+    ]
+    assert any("end of its second" in warning for warning in preview.reading.warnings)
+
+
 def test_a_spot_pair_named_by_its_root_imports_as_its_one_contract(tmp_path: Path) -> None:
     # A product that never expires has no contract to name, so its records are the root's. On
     # a calendar without breaks, the calendar check cannot test the file's timing.

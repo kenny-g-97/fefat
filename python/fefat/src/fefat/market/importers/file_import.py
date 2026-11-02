@@ -31,7 +31,11 @@ from fefat.market.engine_units import price_text
 from fefat.market.importers.canonical import partition_key, partition_of
 from fefat.market.importers.partition_buffers import PartitionBuffers
 from fefat.market.importers.profile_contracts import ImportFacts
-from fefat.market.importers.profile_records import MappedRecords, mapped_records
+from fefat.market.importers.profile_records import (
+    MappedRecords,
+    mapped_records,
+    tick_arrival_offset,
+)
 from fefat.market.importers.profiles import ImportProfile
 from fefat.market.importers.tabular import read_table
 from fefat.market.instruments import InstrumentTable
@@ -51,6 +55,12 @@ DAILY_SESSION_ASSUMED = (
     "session, so compare one bar's open and close with the platform's session settings"
 )
 """The warning of every daily import: a daily bar names its session by its date alone."""
+PRINTS_AT_THE_END_OF_THEIR_SECOND = (
+    "the prints are stamped to the second, so each is stored at the end of its second, the "
+    "latest instant it can have arrived, and comes after every decision inside that second; "
+    "its minute, and so every bar, stays as the file has it"
+)
+"""The warning of an import of prints stamped to the second (D-70)."""
 
 
 @dataclass(frozen=True)
@@ -282,6 +292,7 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
         warnings=(
             *dataset_warnings(dataset, profile.series),
             *([DAILY_SESSION_ASSUMED] if _daily(profile) else []),
+            *([PRINTS_AT_THE_END_OF_THEIR_SECOND] if tick_arrival_offset(profile) else []),
             *([TIMING_UNCHECKED] if unchecked else []),
         ),
     )
