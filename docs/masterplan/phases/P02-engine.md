@@ -722,6 +722,10 @@ Not in this step: a connector or a puller for IBKR in the repository (the TWS AP
 - If the reference engine is too slow on a million prints, run it on the regular hours of one session first, and cut the tape to the prints an order can act on (`Replay.SKIPPING` gives the same fills).
 - If reference and Rust fills differ, write the case as a scenario in `fixtures/scenarios/` from the tape around it with made-up prices at the same tick offsets, and fix the engine that is wrong, never the expected value.
 
+#### Amendment
+
+2026-11-02, while doing the step (D-69): the engine cache leaves out the prints of 2026-09-23, since IBKR's Time and Sales holds one print of one lot more in that session's 20:59Z bar than IBKR's own bar (D-56), so the runs at fidelity `trades` fill that session on its bars (D-58). The reference engine replays the run on prints on 2026-09-21 and 09-22 and the run on bars on all three sessions, the run on prints' fills of 2026-09-23 are held to the run on bars' fills of it, order ids apart, and that session's bar check shows the three differences of that bar, the source's and not the engine's. IBKR stamps its prints to the second, so the prints of a decision's own second come before the decision on prints (F-CLK-02) and after it on bars (F-ACT-02): `bar_boundary` names every difference that the reference engine's replay of the prints with those prints moved one nanosecond after the decision removes, which holds the market entry at a bar's open against the print after the decision that your check names, and the classes of the bar's path, `bar_path`, `entry_bar_path`, and the new `stop_through` (F-STP-03 against F-STP-04), and `cascade` name what that replay leaves against the bars, which must be the prints' own; `leg_released_through` and `gap_limit_clamped` name other engines' conventions and cannot arise. The classes live in the SDK, `fefat.backtest.fidelity_classes`, beside the fidelity check whose differences they name, and the report also measures in ticks how far apart the fills lie.
+
 ## Phase exit
 
 ```text
