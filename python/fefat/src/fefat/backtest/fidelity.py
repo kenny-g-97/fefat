@@ -133,11 +133,12 @@ def fidelity_check(run: "Run") -> FidelityCheck | RefusedCheck | None:
     itself = PeriodRun(
         record.config.fidelity, run.trades, run.equity(timeframe), record.fidelity_eras
     )
+    fronts = run.signals.get_column("contract").unique(maintain_order=True).to_list()
     checked = CheckedRun(
         spec_json=json.dumps(record.strategy.spec),
         signals=run.signals,
         engine_config=record.engine_config,
-        cache_folder=engine_cache_folder(store, paths, root_and_provider, record.window),
+        cache_folder=engine_cache_folder(store, paths, root_and_provider, record.window, fronts),
         replay=record.config.replay,
         capital=micro_units(record.config.capital),
         window=record.window,

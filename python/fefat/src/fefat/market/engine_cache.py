@@ -19,7 +19,7 @@ partitions that changed. What a month holds, and the status of the cache, are
 
 import shutil
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import StrEnum
@@ -159,9 +159,11 @@ def build_cache_months(
     root: str,
     months: Sequence[YearMonth],
     provider: str | None = None,
+    contracts: Collection[str] | None = None,
 ) -> CachedMonths:
     """Build the engine cache of `root`'s trade dates of `months`, as `build_engine_cache`
-    builds a year's, so that a backtest builds the months it reads alone (step 2.10)."""
+    builds a year's, so that a backtest builds the months it reads alone (step 2.10), of the
+    `contracts` it trades where it names them, whose months alone can then refuse it."""
     datasets = tuple(provider_datasets(store, root, provider, origin=None).values())
     chosen = datasets[0].provider
     levels = {dataset: level_of(dataset) for dataset in datasets}
@@ -174,7 +176,9 @@ def build_cache_months(
     removed: list[str] = []
     refused: list[str] = []
     for month in months:
-        month_built, month_refused, held = _build_month(store, root_folder, levels, listed, month)
+        month_built, month_refused, held = _build_month(
+            store, root_folder, levels, listed, month, contracts
+        )
         built += month_built
         refused += month_refused
         removed += _remove_months_left_behind(root_folder, month, held)
@@ -201,9 +205,11 @@ def _build_month(
     levels: dict[Dataset, Level],
     listed: dict[Dataset, tuple[Partition, ...]],
     month: YearMonth,
+    contracts: Collection[str] | None,
 ) -> tuple[list[CachedMonthBuild], list[str], set[str]]:
     """The month's contract-months, built or up to date, those refused, each with its reason,
-    and the contracts the store holds partitions of in the month."""
+    of `contracts` where they are named, and the contracts the store holds partitions of in the
+    month, whose other months a build keeps."""
     start = date(month.year, month.month, 1)
     end = date(month.year + month.month // 12, month.month % 12 + 1, 1) - timedelta(days=1)
     by_contract: defaultdict[str, list[_PinnedPartition]] = defaultdict(list)
@@ -219,6 +225,8 @@ def _build_month(
     built: list[CachedMonthBuild] = []
     refused: list[str] = []
     for contract, pinned in sorted(by_contract.items()):
+        if contracts is not None and contract not in contracts:
+            continue
         try:
             month_build = _build_contract_month(store, root_folder / contract, month, pinned)
         except ValueError as error:
