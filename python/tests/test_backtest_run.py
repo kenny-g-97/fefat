@@ -21,6 +21,7 @@ import pytest
 
 import fefat as ff
 import fefat.backtest.run_inputs as run_inputs
+import fefat.backtest.run_signals as run_signals
 from fefat.backtest import ARTIFACT_SCHEMAS, Run, RunConfig, RunRecord
 from fefat.backtest.artifacts import read_artifact, write_run
 from fefat.backtest.metrics import Metrics
@@ -242,7 +243,7 @@ def test_the_warnings_load_raises_are_in_the_record_and_raised_on_every_call(
         warnings.warn("a warning of load", UserWarning, stacklevel=2)
         return ff.market.load(*arguments, **keywords)
 
-    monkeypatch.setattr(run_inputs, "load", warning_load)
+    monkeypatch.setattr(run_signals, "load", warning_load)
 
     with pytest.warns(UserWarning, match="a warning of load"):
         run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")

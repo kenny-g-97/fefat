@@ -251,13 +251,10 @@ def test_a_stop_reads_the_example_atr_in_the_bars_units() -> None:
     assert not [str(w.message) for w in caught if "below one tick" in str(w.message)]
 
 
-def test_a_stop_reading_a_feature_in_its_warmup_refuses_the_run() -> None:
-    """A feature's slot is null on the rows of its declared warm-up, and F-RND-01 refuses a run
-    whose exit rule reads a missing feature, so an entry the ATR does not gate inside its 140
-    bars refuses the run. Step 3.2 reads the warm-up from before the window (BACKLOG.md),
-    which will change this test."""
-    store_with("ohlcv-1m")
-    rising = ff.SignalStrategy(
+def rising() -> ff.SignalStrategy:
+    """A long on every rising 5-minute bar of ES, with a stop of 1.5 ATRs, which the ATR does
+    not gate."""
+    return ff.SignalStrategy(
         instrument="ES",
         timeframe="5m",
         features={"atr": atr(n=14)},
@@ -266,5 +263,26 @@ def test_a_stop_reading_a_feature_in_its_warmup_refuses_the_run() -> None:
         execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(atr=1.5), sizing=ff.Fixed(1)),
     )
 
+
+def test_a_stop_reading_a_feature_in_its_warmup_refuses_the_run() -> None:
+    """A feature's slot is null on the rows of its declared warm-up, and F-RND-01 refuses a run
+    whose exit rule reads a missing feature. A run reads the warm-up from the sessions before
+    its window (step 3.2), but the fixtures' first front trades on 2026-03-06, so a run from
+    03-05 has no bars before it, and an entry inside the ATR's 140 bars refuses it."""
+    store_with("ohlcv-1m")
+
     with pytest.raises(ValueError, match="Expected the feature atr above zero, got null"):
-        ff.backtest.run(rising, "2026-03-05", "2026-03-09")
+        ff.backtest.run(rising(), "2026-03-05", "2026-03-09")
+
+
+def test_a_run_reads_its_features_warmup_from_the_sessions_before_its_window() -> None:
+    """BACKLOG.md: a run from 2026-03-09 reads the ATR's 140 bars from the Friday before, so its
+    first rows have the ATR the stop reads, where they had none and refused the run."""
+    store_with("ohlcv-1m")
+
+    run = ff.backtest.run(rising(), "2026-03-09", "2026-03-09")
+
+    assert (run.record.window.start, run.record.window.end) == (date(2026, 3, 9), date(2026, 3, 9))
+    assert run.signals.get_column("atr").null_count() == 0
+    assert run.trades.height > 0
+    assert (run.trades["atr_at_entry"] > TICK).all()

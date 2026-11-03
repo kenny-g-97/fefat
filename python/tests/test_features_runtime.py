@@ -346,7 +346,9 @@ def test_a_fifteen_minute_rsi_on_five_minute_bars_changes_only_at_its_closes() -
     joined = computed.select("ts_close").join_asof(expected, on="ts_close", strategy="backward")
     assert computed.get_column("rsi_15m").equals(joined.get_column("rsi_15m"))
     assert computed.get_column("rsi_15m").drop_nulls().len() > 0
-    changes = computed.filter(pl.col("rsi_15m").ne_missing(pl.col("rsi_15m").shift(1)))
+    after_the_first = pl.int_range(pl.len()) > 0
+    previous = pl.col("rsi_15m").shift(1)
+    changes = computed.filter(pl.col("rsi_15m").ne_missing(previous), after_the_first)
     assert (changes.get_column("ts_close") % (15 * MINUTE) == 0).all()
 
 
@@ -370,3 +372,24 @@ def test_another_calendars_instrument_is_null_before_its_first_bar_then_stale() 
         (date(2026, 3, 9), 0, [saturday_ends]),
     ]
 
+
+def test_a_run_reads_its_strategys_features_as_compute_gives_them() -> None:
+    # D-71: a feature previewed alone and the same feature inside a run see the same bars, read
+    # from as far before the window, so they give the same values.
+    store_with("ohlcv-1m")
+    slots = {"rsi": rsi(n=14), "rsi_15m": rsi_15m()}
+    strategy = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features=slots,
+        long_entry=pl.col("rsi_15m") < 50,
+        short_entry=pl.lit(False),
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(ticks=12), sizing=ff.Fixed(1)),
+    )
+
+    run = ff.backtest.run(strategy, "2026-03-09", "2026-03-09")
+
+    computed = ff.features.compute(slots, "ES", "5m", "2026-03-09", "2026-03-09").collect()
+    columns = ["ts_close", "rsi", "rsi_15m"]
+    assert run.signals.select(columns).equals(computed.select(columns))
+    assert run.signals.get_column("rsi").null_count() == 0

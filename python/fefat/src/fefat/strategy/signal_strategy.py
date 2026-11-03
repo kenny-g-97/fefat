@@ -1,8 +1,9 @@
 """Signal strategies (`02-engine-and-data.md` §2.1 and §5, D-53): features and signals written as
 Polars expressions over the signal bars, `load`'s frame, and an execution template written as a
 `StrategySpec`. A feature's slot takes a plain expression, such as
-`pl.col("close").ewm_mean(span=20)`, or a feature of one output with its parameters, a
-`FeatureSpec` such as `rsi(n=14)` (`fefat.features`, step 3.1):
+`pl.col("close").ewm_mean(span=20)`, or a feature with its parameters, a `FeatureSpec` such as
+`rsi(n=14)` (`fefat.features`, step 3.1), which the feature runtime evaluates with what it reads
+(`fefat.features.runtime`, step 3.2), a column for each of its outputs:
 
     strategy = ff.SignalStrategy(
         instrument="ES",
@@ -22,6 +23,7 @@ Polars expressions over the signal bars, `load`'s frame, and an execution templa
 """
 
 from collections.abc import Mapping
+from datetime import date
 from types import MappingProxyType
 from typing import Annotated
 
@@ -29,9 +31,10 @@ import polars as pl
 from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator
 
 from fefat.features.evaluation import FeatureSpec
+from fefat.features.runtime import NO_INPUTS, FeatureGraph, InputBars, slot_columns
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted, utc_text
-from fefat.market.schema import FrozenModel
+from fefat.market.schema import FrozenModel, Timeframe
 from fefat.strategy.signal_frame import (
     OPTIONAL_SIGNAL_COLUMNS,
     PRICE_COLUMNS,
@@ -64,7 +67,8 @@ def _read_only(
 class SignalStrategy(FrozenModel):
     """A signal strategy on `instrument`, deciding at the closes of its `timeframe` bars: its
     `features` (each expression evaluated in turn over the bars and the features before it, and
-    each `FeatureSpec` over the bars alone, null in its declared warm-up), its signals,
+    the `FeatureSpec`s by the feature runtime over the bars and what they declare, each output a
+    column, null in its warm-up), its signals,
     the optional columns its execution template reads (`entry_price`, `stop_price`,
     `target_price`, and `trail_ref` in 1e-9 units of the bars' prices, `size_mult`, and `wake`),
     and the `execution` template itself."""
@@ -94,13 +98,34 @@ class SignalStrategy(FrozenModel):
         cls, features: Mapping[str, pl.Expr | FeatureSpec]
     ) -> Mapping[str, pl.Expr | FeatureSpec]:
         frame_columns = {*SIGNAL_BAR_COLUMNS, *REQUIRED_SIGNAL_COLUMNS, *OPTIONAL_SIGNAL_COLUMNS}
-        taken = sorted(set(features) & frame_columns)
+        columns = [
+            column for name, feature in features.items() for column in _columns(name, feature)
+        ]
+        twice = {column for column in columns if columns.count(column) > 1}
+        taken = sorted(twice | (set(columns) & frame_columns))
         if taken:
             raise ValueError(
-                "Expected feature names apart from the bars' and the signal frame's columns, got "
-                f"{', '.join(taken)}."
+                "Expected feature names apart from the bars' and the signal frame's columns and "
+                f"from each other's, got {', '.join(taken)}."
             )
         return features
+
+    def feature_columns(self) -> tuple[str, ...]:
+        """The signal frame's columns of the features, in their slots' order: an expression's
+        slot, and a column for each output of a `FeatureSpec` (`slot_columns`)."""
+        return tuple(
+            column for name, feature in self.features.items() for column in _columns(name, feature)
+        )
+
+    def feature_graph(self) -> FeatureGraph:
+        """The graph of the strategy's `FeatureSpec`s on its signal grid, which the feature
+        runtime evaluates (`fefat.features.runtime`)."""
+        specs = {
+            name: feature
+            for name, feature in self.features.items()
+            if isinstance(feature, FeatureSpec)
+        }
+        return FeatureGraph.of(specs, self.instrument, Timeframe.parse(self.timeframe))
 
     def to_spec(self) -> StrategySpec:
         """The strategy's specification: the document the builder, the SDK, and the engine share."""
@@ -111,22 +136,34 @@ class SignalStrategy(FrozenModel):
             execution=self.execution,
         )
 
-    def signals(self, bars: pl.DataFrame | pl.LazyFrame) -> pl.LazyFrame:
+    def signals(
+        self,
+        bars: pl.DataFrame | pl.LazyFrame,
+        inputs: InputBars = NO_INPUTS,
+        *,
+        start: date | None = None,
+    ) -> pl.LazyFrame:
         """The signal frame of `bars`, `load`'s frame of the strategy's signal bars
-        (`fefat.strategy.signal_frame`). A null signal, as where a feature has no value yet, is
-        no signal, and a null `wake` wakes; each price column becomes raw prices of its row's
-        contract, its values less the row's `adj_offset` (D-09). A back-adjusted import (D-49), a
-        price that is not a whole number of units, and, with a market entry, a bar with both entry
-        signals are refused, and the frame is checked as the engine reads it
-        (`validated_signal_frame`)."""
+        (`fefat.strategy.signal_frame`), its `FeatureSpec`s reading the bars of the other grids
+        they declare in `inputs` (`fefat.features.runtime.load_inputs`), and its rows those of
+        the trade dates from `start` on, where it is given, the bars before it read for the
+        features' warm-up. A null signal, as where a feature has no value yet, is no signal, and a
+        null `wake` wakes; each price column becomes raw prices of its row's contract, its values
+        less the row's `adj_offset` (D-09). A back-adjusted import (D-49), a price that is not a
+        whole number of units, and, with a market entry, a bar with both entry signals are
+        refused, and the frame is checked as the engine reads it (`validated_signal_frame`)."""
         frame = signal_bars = _with_raw_prices(bars.lazy().collect())
+        graph = self.feature_graph()
+        computed = graph.evaluate({**inputs, graph.signal_grid: signal_bars})
         for name, feature in self.features.items():
-            frame = frame.with_columns(_feature_column(signal_bars, name, feature))
+            frame = frame.with_columns(_feature_columns(computed, name, feature))
         signal_columns = self._signal_columns()
         frame = frame.with_columns(**signal_columns)
+        if start is not None:
+            frame = frame.filter(pl.col("trade_date") >= start)
         prices = [name for name in PRICE_COLUMNS if name in signal_columns]
         frame = frame.with_columns(_raw_price(frame, name) for name in prices)
-        signal_frame = frame.select(*_CARRIED_COLUMNS, *self.features, *signal_columns)
+        signal_frame = frame.select(*_CARRIED_COLUMNS, *self.feature_columns(), *signal_columns)
         if isinstance(self.execution.entry, MarketEntry):
             require_one_entry_per_bar(signal_frame)
         return validated_signal_frame(signal_frame).lazy()
@@ -151,24 +188,24 @@ class SignalStrategy(FrozenModel):
         return signals | {name: column for name, column in optional.items() if column is not None}
 
 
-def _feature_column(
-    signal_bars: pl.DataFrame, name: str, feature: pl.Expr | FeatureSpec
-) -> pl.Expr | pl.Series:
-    """The feature in the slot `name` as a column: an expression as it is, over the bars and the
-    features before it; and a feature's one output as its spec gives it, evaluated over the bars
-    alone, since what else it reads it declares (step 3.2), a NaN made null and the rows of its
-    declared warm-up null, a value it cannot give yet (step 3.1)."""
+def _columns(name: str, feature: pl.Expr | FeatureSpec) -> list[str]:
+    """The columns of the slot `name`: its name for an expression, and a column for each output
+    of a `FeatureSpec` (`slot_columns`)."""
     if isinstance(feature, pl.Expr):
-        return feature.alias(name)
-    outputs = list(feature.definition.outputs)
-    if len(outputs) != 1:
-        raise ValueError(
-            f"Expected a feature of one output in the slot {name}, got {feature.definition.name} "
-            f"with {', '.join(outputs)}: several outputs wait for the runtime of step 3.2."
-        )
-    column = feature.expressions(signal_bars)[outputs[0]]
-    warmed = pl.when(pl.int_range(pl.len()) >= feature.warmup).then(column)
-    return signal_bars.select(warmed.alias(name)).to_series()
+        return [name]
+    return list(slot_columns(name, feature).values())
+
+
+def _feature_columns(
+    computed: pl.DataFrame, name: str, feature: pl.Expr | FeatureSpec
+) -> list[pl.Expr] | list[pl.Series]:
+    """The columns of the slot `name`: an expression as it is, over the bars and the features
+    before it; and a feature's outputs as the runtime gives them on the signal bars' rows
+    (`FeatureGraph.evaluate`), a NaN made null and the rows of its warm-up null, a value it
+    cannot give yet (D-71)."""
+    if isinstance(feature, pl.Expr):
+        return [feature.alias(name)]
+    return [computed.get_column(column) for column in slot_columns(name, feature).values()]
 
 
 def _with_raw_prices(bars: pl.DataFrame) -> pl.DataFrame:

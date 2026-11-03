@@ -537,13 +537,21 @@ def flags(bars: pl.LazyFrame) -> pl.Expr:
     assert in_the_slot.to_list() == flags.evaluate(bars).collect()["flags"].to_list()
 
 
-def test_a_feature_of_several_outputs_waits_for_step_3_2_in_a_strategy_slot() -> None:
+def test_a_feature_of_several_outputs_fills_a_column_for_each_in_a_strategy_slot() -> None:
+    # Step 3.2: the slot `band` of a feature of the outputs upper and lower gives the columns
+    # band_upper and band_lower, which no other slot may take.
     store_with("ohlcv-1m")
     channel = features_of_cell(CHANNEL)["channel"]
     bars = ff.market.load("ES", "5m", "2026-03-05", "2026-03-06")
 
-    with pytest.raises(ValueError, match=re.escape("several outputs wait for the runtime")):
-        strategy({"channel": channel()}).signals(bars)
+    signals = strategy({"band": channel()}).signals(bars).collect()
+
+    own = channel().evaluate(bars).collect()
+    assert signals["band_upper"].equals(own["upper"].alias("band_upper"))
+    assert signals["band_lower"].equals(own["lower"].alias("band_lower"))
+    taken = "Expected feature names apart from the bars' and the signal frame's columns and "
+    with pytest.raises(ValidationError, match=re.escape(taken)):
+        strategy({"band": channel(), "band_upper": pl.col("close")})
 
 
 def test_a_mapping_in_a_strategy_slot_is_refused() -> None:
