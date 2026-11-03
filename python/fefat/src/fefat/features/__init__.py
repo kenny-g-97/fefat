@@ -5,7 +5,7 @@ the signal grid (`fefat.features.runtime`) and keeps their values in the feature
 `cache_status` lists (`fefat.features.cache`), `save` and `load` keep their versions in the
 workspace (`fefat.features.versions`), `validate` checks that a feature never reads ahead, its
 values before each cut of the data unchanged by the data after it (`fefat.features.validation`),
-and `lint` reads its source for the usual ways of reading ahead (`fefat.features.lint`);
+and `lint` reads its source for the usual ways of reading ahead (`fefat.features.source_lint`);
 `fefat.features.examples` holds RSI, ATR, and a flag of a window of the trading day."""
 
 from fefat.features.cache import compute
@@ -20,7 +20,7 @@ from fefat.features.inputs import (
     TimeframeInput,
     TradesInput,
 )
-from fefat.features.lint import lint
+from fefat.features.source_lint import lint
 from fefat.features.validation import ValidationReport, validate
 from fefat.features.versions import FeatureVersion, load, save
 

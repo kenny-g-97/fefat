@@ -31,6 +31,7 @@ from fefat.market.schema import FrozenModel
 from fefat.market.store_files import create_atomically, json_writer, parsed_json
 
 _VERSION_FILE = re.compile(r"v([1-9][0-9]*)\.json")
+_CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
 
 
 class FeatureVersion(FrozenModel):
@@ -133,10 +134,15 @@ def _create(path: Path, record: FeatureVersion) -> None:
         ) from error
 
 
-def validations_folder(name: str) -> Path:
-    """The folder beside the feature `name`'s versions where the leak detector keeps the latest
-    validation of each content hash, `validations/<hash>.json` (`fefat.features.validation`)."""
-    return _folder(name) / "validations"
+def validation_file(name: str, content_hash: str) -> Path:
+    """The file beside the feature `name`'s versions where the leak detector keeps the latest
+    validation of its content hash, `validations/<hash>.json` (`fefat.features.validation`); a
+    hash that is not 64 hexadecimal digits is refused, so that no text reaches outside it."""
+    if _CONTENT_HASH.fullmatch(content_hash) is None:
+        raise ValueError(
+            f"Expected a feature's content hash, 64 hexadecimal digits, got {content_hash!r}."
+        )
+    return _folder(name) / "validations" / f"{content_hash}.json"
 
 
 def _folder(name: str) -> Path:

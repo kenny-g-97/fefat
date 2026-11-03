@@ -1,7 +1,7 @@
 """The leak detector (step 3.4, `02-engine-and-data.md` §6, ADR-0010, D-12, D-71): a feature is
 prefix-invariant when its values before a cut never change once the data past the cut is removed,
 and `validate` checks it on the data, beside the lint's reading of its source
-(`fefat.features.lint`).
+(`fefat.features.source_lint`).
 
     report = ff.features.validate(next_close(), "ES", "5m", "2026-02-11", "2026-02-19")
     report.passed  # False
@@ -25,7 +25,7 @@ to be the whole range's, so that a feature that remembers more than its warm-up,
 total, fails it; the roll calendar keeps its anchor, the dataset's first whole session, whatever
 the start (D-45). The random cuts come from `seed`, drawn when it is None and recorded, so that a
 validation repeats (D-11). The report is kept beside the feature's versions, the latest of each
-content hash (`fefat.features.versions.validations_folder`), for the database of Phase 4.
+content hash (`fefat.features.versions.validation_file`), for the database of Phase 4.
 
 What it misses: wrong availability timestamps, since it cuts each record at the instant the data
 says it became available; revised data, since it reads one vintage; parameters chosen on the full
@@ -45,9 +45,9 @@ import polars as pl
 from fefat.features.cache_evaluation import Difference, compare_values, slot_outputs
 from fefat.features.cuts import Cut, CutKind, cuts_of
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.lint import LintFinding, lint
 from fefat.features.runtime import FeatureGraph, Grid, InputBars
-from fefat.features.versions import validations_folder
+from fefat.features.source_lint import LintFinding, lint
+from fefat.features.versions import validation_file
 from fefat.market.api import SeriesSource, parse_trade_date, series_source
 from fefat.market.calendar import utc_text
 from fefat.market.schema import FrozenModel, Timeframe
@@ -183,24 +183,24 @@ def validate(
 ) -> ValidationReport:
     """Validate `spec` on the signal bars of the root `instrument` of `timeframe` on the trade
     dates from `start` to `end` from `provider`, as `load` names it (module docstring): `reads`
-    are the features it reads, each with its parameters, as `compute` takes them in slots; at most
-    `stops` stops of trading are cut at, and `random_cuts` closes drawn from `seed`. The report is
-    kept beside the feature's versions."""
+    are the features it reads, each with its parameters, as `compute` takes them in slots; the
+    stops of trading cut at are at most `stops`, but never fewer than the first and the last, a
+    weekend, and a holiday halt where the window holds them, and `random_cuts` closes are drawn
+    from `seed`. The report is kept beside the feature's versions."""
     first, last = parse_trade_date(start, "start"), parse_trade_date(end, "end")
     if last < first:
         raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
+    if min(stops, random_cuts) < 0:
+        raise ValueError(
+            f"Expected numbers of stops and random cuts of at least 0, got stops={stops} and "
+            f"random_cuts={random_cuts}."
+        )
     graph = _graph_of(spec, reads, instrument, Timeframe.parse(timeframe))
     sources = _sources_of(graph, provider)
     signal = sources[graph.root]
     lead = graph.lead_in(signal.sessions, first)
     inputs = _loaded(graph, sources, (lead, signal.sessions.following(last).trade_date))
-    window = slot_outputs(graph, inputs).filter(pl.col("trade_date").is_between(first, last))
-    days = window.get_column("trade_date").n_unique()
-    if days < 2:
-        raise ValueError(
-            f"Expected bars of {instrument} on two trade dates from {first} to {last} at least, "
-            f"so that the start check can move the window's start, got {days}."
-        )
+    window = _window(graph, inputs, (first, last))
     drawn = random.randrange(2**32) if seed is None else seed
     chooser = random.Random(drawn)
     higher = _higher_timeframes(graph, inputs)
@@ -222,10 +222,22 @@ def validate(
         lint=lint(spec.definition),
         created_at=datetime.now(UTC),
     )
-    write_atomically(
-        validations_folder(report.feature) / f"{report.hash}.json", json_writer(report)
-    )
+    write_atomically(validation_file(report.feature, report.hash), json_writer(report))
     return report
+
+
+def _window(graph: FeatureGraph, inputs: InputBars, dates: tuple[date, date]) -> pl.DataFrame:
+    """`trade_date`, `ts_close`, and the feature's outputs evaluated on the whole of `inputs`, on
+    the window's trade dates, `dates`, which must hold two at least, for the start check."""
+    first, last = dates
+    window = slot_outputs(graph, inputs).filter(pl.col("trade_date").is_between(first, last))
+    days = window.get_column("trade_date").n_unique()
+    if days < 2:
+        raise ValueError(
+            f"Expected bars of {graph.root} on two trade dates from {first} to {last} at least, "
+            f"so that the start check can move the window's start, got {days}."
+        )
+    return window
 
 
 def _graph_of(

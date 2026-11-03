@@ -64,8 +64,9 @@ def cuts_of(
     random_cuts: int,
 ) -> tuple[Cut, ...]:
     """The cuts of a window, the signal bars' `trade_date` and `ts_close` from its first trade
-    date to its last, in order: at most `stops` stops of trading, the first and the last, a
-    weekend and a holiday halt where the window holds them, and others drawn by `chooser`; the
+    date to its last, in order: the stops of trading, at most `stops` of them but never fewer
+    than the first and the last, a weekend, and a holiday halt where the window holds them, the
+    others drawn by `chooser`; the
     rolls of `roll_days`; `HIGHER_TIMEFRAME_BARS` bars of each frame of `higher`, the
     `trade_date` and `ts_close` of a higher timeframe's bars in the window, after its first
     session; and `random_cuts` closes of the window's signal bars after its first session."""
@@ -92,8 +93,9 @@ def cuts_of(
 def _kept_stops(
     sessions: SessionTable, days: Sequence[date], floor: int, chooser: random.Random, stops: int
 ) -> list[tuple[date, TradingStop]]:
-    """The stops of trading of `days` from `floor` on, at most `stops` of them: the first and the
-    last, the first weekend and the first holiday halt, and others drawn by `chooser`."""
+    """The stops of trading of `days` from `floor` on, at most `stops` of them but never fewer
+    than the first and the last, the first weekend, and the first holiday halt, the others drawn
+    by `chooser`."""
     every = [
         (day, stop) for day in days for stop in trading_stops(sessions, day) if stop.start >= floor
     ]

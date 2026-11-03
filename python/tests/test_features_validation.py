@@ -18,7 +18,7 @@ from fefat.config import resolve_paths
 from fefat.features import TimeframeInput, ValidationReport
 from fefat.features.cuts import CutKind
 from fefat.features.examples import rsi
-from fefat.features.lint import LintRule
+from fefat.features.source_lint import LintRule
 from fefat.market.api import SeriesSource
 from fefat.reference.units import instant_nanoseconds
 from generated_minutes import FEBRUARY_WINDOW, february_store
@@ -83,6 +83,28 @@ def test_a_report_names_the_first_failing_cut_and_row_of_a_planted_leak() -> Non
     )
     assert [finding.rule for finding in report.lint] == [LintRule.NEGATIVE_SHIFT]
     assert summary[-1] == f"lint: {report.lint[0]}"
+
+
+@ff.feature(
+    inputs=[next_close, TimeframeInput(timeframe="15m")], outputs={"next_15m_close": "price"}
+)
+def next_15m_close(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("next_close")
+
+
+def test_a_leak_inside_a_feature_of_a_higher_timeframe_fails_while_its_bar_is_in_progress() -> None:
+    # The amendment and the step review: every input is cut at its own availability, so a
+    # 15-minute bar in progress at a cut is held back, and a feature reading the next 15-minute
+    # close through the feature it reads fails each cut inside a 15-minute bar, though its own
+    # source, which the lint reads, reads nothing ahead.
+    report = ff.features.validate(
+        next_15m_close(), "ES", "1m", *FEBRUARY_WINDOW, reads=[next_close()], seed=SEED
+    )
+
+    inside = [cut for cut in report.cuts if CutKind.HIGHER_TIMEFRAME_LAST_BAR in cut.kinds]
+    assert report.lint == ()
+    assert inside
+    assert not any(cut.passed for cut in inside)
 
 
 def test_the_cuts_fall_at_every_kind_of_instant_and_repeat_with_their_seed() -> None:
@@ -174,6 +196,21 @@ def test_a_cut_where_the_store_ends_removes_nothing_and_is_left_out() -> None:
     assert report.failing_cuts() == report.cuts
 
 
-def test_a_window_of_one_trade_date_is_refused() -> None:
+def test_a_window_of_one_trade_date_or_a_negative_number_of_cuts_is_refused() -> None:
     with pytest.raises(ValueError, match="Expected bars of ES on two trade dates"):
         ff.features.validate(previous_close(), "ES", "1m", "2026-02-11", "2026-02-11")
+    with pytest.raises(ValueError, match="got stops=24 and random_cuts=-1"):
+        ff.features.validate(previous_close(), "ES", "1m", *FEBRUARY_WINDOW, random_cuts=-1)
+
+
+def test_stops_caps_the_stops_drawn_beside_the_four_always_cut() -> None:
+    # The code review: `stops` caps the stops drawn beside these four, which every validation
+    # cuts at, and no more.
+    report = ff.features.validate(previous_close(), "ES", "1m", *FEBRUARY_WINDOW, stops=0)
+
+    kinds = {kind for cut in report.cuts for kind in cut.kinds}
+    closes = [cut.instant for cut in report.cuts if CutKind.SESSION_CLOSE in cut.kinds]
+    assert {CutKind.WEEKEND, CutKind.HOLIDAY_HALT} <= kinds
+    assert closes[0] == instant_nanoseconds("2026-02-11T22:00:00Z")
+    assert closes[-1] == instant_nanoseconds("2026-02-19T22:00:00Z")
+    assert len(closes) == 3

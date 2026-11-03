@@ -8,8 +8,9 @@ from datetime import date
 import polars as pl
 
 import fefat as ff
+from fefat.features import examples
 from fefat.features.examples import atr, in_session_window, rsi
-from fefat.features.lint import LintFinding, LintRule, lint
+from fefat.features.source_lint import LintFinding, LintRule, lint
 
 SESSION_START = date(2026, 3, 9)
 
@@ -70,14 +71,17 @@ def test_the_examples_have_no_finding() -> None:
 
 
 def test_aggregates_in_a_group_by_a_cumulative_window_or_a_list_are_no_finding() -> None:
+    # The step review: a group-by's own aggregate, `group_by(...).min()`, reduces each group, as
+    # `agg` does, and is left to the cuts.
     @ff.feature(outputs={"prior_high": "price"})
     def prior_high(bars: pl.LazyFrame) -> pl.LazyFrame:
         highs = bars.group_by("trade_date").agg(prior_high=pl.col("high").max())
         shifted = highs.sort("trade_date").with_columns(pl.col("prior_high").shift(1))
         running = pl.col("high").cum_max().over("trade_date").alias("running")
         hourly = pl.col("close").mean().rolling(index_column="ts_close", period="1h")
+        lows = bars.group_by("trade_date").min().select("trade_date", prior_low="low")
         listed = pl.concat_list("open", "close").list.max().alias("listed")
-        frame = bars.join(shifted, on="trade_date", how="left", maintain_order="left")
+        frame = bars.join(shifted.join(lows, on="trade_date"), on="trade_date", how="left")
         return frame.with_columns(running, hourly, listed).select("ts_close", "prior_high")
 
     assert lint(prior_high) == ()
@@ -112,3 +116,32 @@ def test_the_lint_warns_of_a_helper_and_a_default_the_hash_leaves_out() -> None:
     assert "scaled_close" in findings[2].explanation
     assert not any(finding.rule.looks_ahead for finding in findings)
     assert isinstance(findings[0], LintFinding)
+
+
+def doubled(closes: pl.Series) -> pl.Series:
+    return closes * 2
+
+
+@ff.feature(outputs={"binned": "other"})
+def binned(bars: pl.LazyFrame) -> pl.Expr:
+    bins = pl.col("close").qcut(5).to_physical()
+    peaks = pl.col("high").peak_max()
+    twice = pl.col("close").map_batches(lambda closes: doubled(closes))
+    return (bins + peaks + twice).alias(examples.atr.name)
+
+
+def test_the_lint_reads_quantile_bins_peaks_and_a_helper_inside_a_lambda() -> None:
+    # The code review: bins from the full sample's quantiles and a peak, which compares a bar with
+    # the next, read ahead; a helper called inside a lambda is read from outside the feature; and
+    # an attribute that shares a name with a global, `atr` here, is no name the feature reads.
+    def line(text: str) -> int:
+        (number,) = [n for n, each in enumerate(binned.code.splitlines(), 1) if text in each]
+        return number
+
+    found = [(finding.rule, finding.line) for finding in lint(binned)]
+
+    assert found == [
+        (LintRule.FULL_SAMPLE, line("qcut")),
+        (LintRule.CENTRED_WINDOW, line("peak_max")),
+        (LintRule.NAME_READ_OUTSIDE, line("doubled(closes)")),
+    ]
