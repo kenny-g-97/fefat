@@ -707,7 +707,7 @@ def test_a_bucket_held_back_at_the_end_of_the_data_comes_back_with_the_data_afte
 def test_a_daily_warmup_of_hundreds_of_sessions_is_counted_back_in_milliseconds() -> None:
     # The ponytail review: each partition counts its features' warm-up back a session at a time
     # on every computation, read back too, and a session found by filtering the whole session
-    # table made a daily RSI's 294 sessions a tenth of a second a partition.
+    # table made a daily RSI's 350 sessions a tenth of a second a partition.
     paths = resolve_paths(os.environ)
     sessions = sessions_of(instruments.get("ES").session_calendar(), paths.cache_dir)
     graph = FeatureGraph.of({"rsi": rsi(n=14)}, "ES", Timeframe.parse("1d"))
@@ -717,7 +717,7 @@ def test_a_daily_warmup_of_hundreds_of_sessions_is_counted_back_in_milliseconds(
     start = graph.lead_in(sessions, date(2026, 3, 9))
     took = time.perf_counter() - began
 
-    assert sessions.between(start, date(2026, 3, 6)).height == 294
+    assert sessions.between(start, date(2026, 3, 6)).height == 350
     assert took < 0.05
 
 
