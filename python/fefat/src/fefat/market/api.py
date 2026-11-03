@@ -1,6 +1,10 @@
 """The SDK's data API (steps 1.8 and 1.9): `load` gives the signal bars of a product or a
 contract in one call, `datasets` lists what the store holds, and `roll_calendar` gives the roll
-calendar `load` splices a future with (step 2.9).
+calendar `load` splices a future with (step 2.9). `series_source` gives what `load` reads a
+symbol's bars from, built once to give the bars of many windows, as the feature cache reads a
+window's partitions (step 3.3); and a roll calendar is built once in a process for each state of
+the data it reads, so that a notebook's loop of loads, a cache's partitions, and a backtest do
+not build it again (D-71).
 
     import fefat as ff
 
@@ -68,6 +72,7 @@ and filters before it collects.
 
 import os
 import warnings
+from dataclasses import dataclass
 from datetime import date, datetime
 
 import polars as pl
@@ -114,51 +119,108 @@ def load(
     """The signal bars of `root_or_symbol` (a root such as `MES`, or a contract such as
     `MESH2024`) of `timeframe` on the trade dates from `start` to `end`, with the columns of
     `SIGNAL_BAR_COLUMNS`; the module docstring has the details and examples."""
+    first, last = parse_trade_date(start, "start"), parse_trade_date(end, "end")
+    if last < first:
+        raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
+    bar_timeframe = Timeframe.parse(timeframe)
+    source = series_source(root_or_symbol, continuous, provider, origin)
+    wanted = None if fidelity is None else parse_fidelity(fidelity)
+    bars = source.signal_bars(bar_timeframe, (first, last), wanted)
+    return _some(bars, source.symbol, first, last).lazy()
+
+
+@dataclass(frozen=True)
+class SeriesSource:
+    """What `load` builds a symbol's signal bars from (module docstring): the store, the root's
+    instrument and session table, one provider's datasets of it by schema and their series kind,
+    the contract the symbol names, where it names one, and the roll calendar a spliced series
+    follows, None for a series that is not spliced."""
+
+    store: Store
+    instrument: Instrument
+    sessions: SessionTable
+    datasets: dict[str, Dataset]
+    series: SeriesKind
+    contract: str | None
+    calendar: RollCalendar | None
+
+    @property
+    def provider(self) -> str:
+        """The provider whose datasets the bars come from."""
+        return next(iter(self.datasets.values())).provider
+
+    @property
+    def symbol(self) -> str:
+        """The contract named, else the root."""
+        return self.instrument.root if self.contract is None else self.contract
+
+    def counted(self, dates: tuple[date, date]) -> pl.DataFrame | None:
+        """The contract whose data chooses each trade date's level (`signal_bar_eras`): the front
+        a spliced series keeps, or the one contract named; every contract's for a series of a
+        product that does not expire, or of every contract."""
+        if self.calendar is not None:
+            return front_contracts(self.calendar)
+        if self.contract is not None:
+            rows = self.sessions.between(*dates)
+            return rows.select("trade_date", contract=pl.lit(self.contract))
+        return None
+
+    def signal_bars(
+        self,
+        timeframe: Timeframe,
+        dates: tuple[date, date],
+        wanted: TickFidelity | Timeframe | None = None,
+    ) -> pl.DataFrame:
+        """`load`'s bars of `timeframe` on the trade dates `dates` spans, each date's from the
+        level `wanted`, or else from the finest that holds it, read from the session before the
+        first: none where the store holds none, which `load` refuses."""
+        first, last = dates
+        # shortcut: one session of lead-in, so a contract without trades in it starts its grid on
+        # `first` at its first bar; read back to each contract's last bar when a strategy needs it.
+        dates_read = (self.sessions.preceding(first).trade_date, last)
+        counted = self.counted(dates_read)
+        spans = source_spans(
+            self.store, self.datasets, timeframe, dates_read, wanted=wanted, contracts=counted
+        )
+        _warn_of(spans, self.series)
+        gridded = gridded_bars(
+            self.store, spans, timeframe, self.sessions, dates_read, self.contract, self.calendar
+        )
+        if self.calendar is None:
+            unspliced = _unspliced(gridded, self.series)
+            return _signal_bars(unspliced, first, last, ("contract", "ts_open"))
+        return _signal_bars(self.calendar.continuous_bars(gridded), first, last, ("ts_open",))
+
+
+def series_source(
+    root_or_symbol: str,
+    continuous: bool | None = None,
+    provider: str | None = None,
+    origin: str | None = None,
+) -> SeriesSource:
+    """What `load` reads the bars of `root_or_symbol` from, `continuous`, `provider`, and
+    `origin` taken as `load` takes them: built once, it gives the bars of many windows
+    (`SeriesSource.signal_bars`), as the feature cache reads a window's partitions
+    (`fefat.features.cache`)."""
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     table = instrument_table(paths.data_dir)
     root, contract = _root_and_contract(root_or_symbol, table)
     instrument = table.get(root)
-    first, last = parse_trade_date(start, "start"), parse_trade_date(end, "end")
-    if last < first:
-        raise ValueError(f"Expected the start {first} on or before the end, got the end {last}.")
-    bar_timeframe = Timeframe.parse(timeframe)
     sessions = table.sessions_of(root, paths.cache_dir)
     datasets = provider_datasets(store, root, provider, _origin(origin))
     series = series_of(store, datasets)
     splices = _splices(instrument, contract, continuous, series)
-    wanted = None if fidelity is None else parse_fidelity(fidelity)
-    # shortcut: one session of lead-in, so a contract without trades in it starts its grid on
-    # `first` at its first bar; read back to each contract's last bar when a strategy needs it.
-    dates_read = (sessions.preceding(first).trade_date, last)
     calendar = _roll_calendar(store, datasets, instrument, sessions) if splices else None
-    counted = _contracts_counted(calendar, contract, sessions, dates_read)
-    spans = source_spans(
-        store, datasets, bar_timeframe, dates_read, wanted=wanted, contracts=counted
+    return SeriesSource(
+        store=store,
+        instrument=instrument,
+        sessions=sessions,
+        datasets=datasets,
+        series=series,
+        contract=contract,
+        calendar=calendar,
     )
-    _warn_of(spans, series)
-    gridded = gridded_bars(store, spans, bar_timeframe, sessions, dates_read, contract, calendar)
-    if calendar is None:
-        bars = _signal_bars(_unspliced(gridded, series), first, last, ("contract", "ts_open"))
-        return _some(bars, contract or root, first, last).lazy()
-    bars = _signal_bars(calendar.continuous_bars(gridded), first, last, ("ts_open",))
-    return _some(bars, root, first, last).lazy()
-
-
-def _contracts_counted(
-    calendar: RollCalendar | None,
-    contract: str | None,
-    sessions: SessionTable,
-    dates: tuple[date, date],
-) -> pl.DataFrame | None:
-    """The contract whose data chooses each trade date's level (`signal_bar_eras`): the front a
-    spliced load keeps, or the one contract named; every contract's for a load of every contract
-    or of a product that does not expire."""
-    if calendar is not None:
-        return front_contracts(calendar)
-    if contract is not None:
-        return sessions.between(*dates).select("trade_date", contract=pl.lit(contract))
-    return None
 
 
 def _some(bars: pl.DataFrame, named: str, first: date, last: date) -> pl.DataFrame:
@@ -267,7 +329,12 @@ def _warn_of(spans: list[SourceSpan], series: SeriesKind) -> None:
     bars coarser than a minute as the finest data, and a continuous series."""
     for source in dict.fromkeys(span.dataset for span in spans):
         for warning in dataset_warnings(source, series):
-            warnings.warn(warning, UserWarning, stacklevel=3)
+            warnings.warn(warning, UserWarning, stacklevel=4)
+
+
+_KEPT_ROLL_CALENDARS: dict[tuple[str, Dataset], tuple[object, RollCalendar]] = {}
+"""The roll calendar last built in this process from each dataset of a store's folder, with the
+stamp of what it was built from (`_roll_calendar`)."""
 
 
 def _roll_calendar(
@@ -278,16 +345,42 @@ def _roll_calendar(
     session: the bars of a first session the data starts
     inside are left out, since their volumes are partial. It rolls by volume, the only rule load
     applies, and a product the catalog gives another rule is refused rather than rolled by
-    volume (step 2.9)."""
+    volume (step 2.9). It is built once in a process while what it reads keeps its stamp: the
+    dataset's partitions by path, size, and modification time, the instrument, and the session
+    table's key (D-71)."""
     rule = CATALOG.roll_rule(instrument.root)
     if rule is not RollRule.VOLUME:
         raise ValueError(
             f"Expected the roll rule volume for {instrument.root}, the only rule load applies, "
             f"got {rule} in the product catalog (fefat.market.catalog)."
         )
-    request = PartitionRequest(
-        dataset=roll_dataset(datasets, instrument.root), start=date.min, end=date.max
-    )
+    dataset = roll_dataset(datasets, instrument.root)
+    place = (str(store.folder), dataset)
+    stamp = (_listing_stamp(store, dataset), instrument.model_dump_json(), sessions.key)
+    kept = _KEPT_ROLL_CALENDARS.get(place)
+    if kept is not None and kept[0] == stamp:
+        return kept[1]
+    calendar = _built_roll_calendar(store, dataset, instrument, sessions)
+    _KEPT_ROLL_CALENDARS[place] = (stamp, calendar)
+    return calendar
+
+
+def _listing_stamp(store: Store, dataset: Dataset) -> tuple[tuple[str, int, int], ...]:
+    """Each partition of the dataset by path, size, and modification time, which a write
+    changes."""
+    stamped = []
+    for file in store.list_partitions(dataset):
+        relative = file.partition.relative_path()
+        status = (store.folder / relative).stat()
+        stamped.append((relative.as_posix(), status.st_size, status.st_mtime_ns))
+    return tuple(stamped)
+
+
+def _built_roll_calendar(
+    store: Store, dataset: Dataset, instrument: Instrument, sessions: SessionTable
+) -> RollCalendar:
+    """The roll calendar of `_roll_calendar`, built from `dataset`'s bars."""
+    request = PartitionRequest(dataset=dataset, start=date.min, end=date.max)
     bars = store.scan_contracts(request).collect()
     first_day, first_open, received_until = bars.select(
         pl.col("trade_date").min(), pl.col("ts_open").min(), pl.col("ts_close").max()

@@ -2,6 +2,7 @@ import os
 import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -14,7 +15,7 @@ from fefat.market import instruments
 from fefat.market.api import DATASETS_COLUMNS, SIGNAL_BAR_COLUMNS, datasets, load, roll_calendar
 from fefat.market.calendar import sessions_of
 from fefat.market.catalog import CATALOG, RollRule
-from fefat.market.continuous import volume_rolls
+from fefat.market.continuous import RollCalendar, volume_rolls
 from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import write_quality_report
@@ -147,6 +148,35 @@ def test_the_roll_calendar_is_the_one_load_splices_with(tmp_path: Path) -> None:
     assert gap == fixture_gap(tmp_path)
     assert flagged.get_column("contract").to_list() == ["ESM2026"]
     assert flagged.item(0, "ts_open") >= session_open
+
+
+def test_loads_build_a_roll_calendar_once_while_its_bars_keep_their_stamp(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # D-71, step 3.3: a notebook's loop of loads and the feature cache's partitions build a
+    # product's roll calendar once, and again once a partition of the bars it reads is written.
+    store = Store(data_folder_with(monkeypatch, tmp_path, "ohlcv-1m"))
+    built: list[RollCalendar] = []
+
+    def counted_rolls(*arguments: Any) -> RollCalendar:
+        built.append(volume_rolls(*arguments))
+        return built[-1]
+
+    monkeypatch.setattr("fefat.market.api.volume_rolls", counted_rolls)
+    load("ES", "5m", "2026-03-06", "2026-03-09")
+    load("ES", "15m", "2026-03-09", "2026-03-09")
+    rolls = roll_calendar("ES").rolls()
+    built_once = len(built)
+    (march,) = (
+        file.partition
+        for file in store.list_partitions()
+        if file.partition.dataset.root == "ES" and file.partition.contract == "ESH2026"
+    )
+    store.write_partition(march, store.scan_partition(march).collect())
+
+    assert built_once == 1
+    assert roll_calendar("ES").rolls().equals(rolls)
+    assert len(built) == 2
 
 
 @pytest.mark.usefixtures("fixtures_as_data")
