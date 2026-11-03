@@ -1,7 +1,7 @@
 {
   "command": "cargo run -p fefat-cli -- determinism 20260308",
   "versions": {
-    "engine": 8,
+    "engine": 9,
     "fill_model": 1,
     "artifact_schema": 2
   },
@@ -9,6 +9,6 @@
     "seed": 20260308
   },
   "outputs": {
-    "digest": "0aacaf2b0270f8e826f023c92c9f75e08774860cb37f1082ddb91fe2f0866fad"
+    "digest": "4ce8deb62040d948007d7bfb37b5c6679a310be7609484a5e88d9535862f7185"
   }
 }
