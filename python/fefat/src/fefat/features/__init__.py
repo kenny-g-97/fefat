@@ -2,9 +2,11 @@
 (`fefat.features.definition`), a `FeatureSpec` binds its parameters and evaluates it over the
 signal bars (`fefat.features.evaluation`), `compute` evaluates features with what they read on
 the signal grid (`fefat.features.runtime`) and keeps their values in the feature cache, which
-`cache_status` lists (`fefat.features.cache`), and `save` and `load` keep their versions in the
-workspace (`fefat.features.versions`); `fefat.features.examples` holds RSI, ATR, and a flag of a
-window of the trading day."""
+`cache_status` lists (`fefat.features.cache`), `save` and `load` keep their versions in the
+workspace (`fefat.features.versions`), `validate` checks that a feature never reads ahead, its
+values before each cut of the data unchanged by the data after it (`fefat.features.validation`),
+and `lint` reads its source for the usual ways of reading ahead (`fefat.features.source_lint`);
+`fefat.features.examples` holds RSI, ATR, and a flag of a window of the trading day."""
 
 from fefat.features.cache import compute
 from fefat.features.cache_index import cache_status
@@ -18,6 +20,9 @@ from fefat.features.inputs import (
     TimeframeInput,
     TradesInput,
 )
+from fefat.features.source_lint import lint
+from fefat.features.validation import validate
+from fefat.features.validation_report import ValidationReport
 from fefat.features.versions import FeatureVersion, load, save
 
 __all__ = [
@@ -30,9 +35,12 @@ __all__ = [
     "OutputKind",
     "TimeframeInput",
     "TradesInput",
+    "ValidationReport",
     "cache_status",
     "compute",
     "feature",
+    "lint",
     "load",
     "save",
+    "validate",
 ]

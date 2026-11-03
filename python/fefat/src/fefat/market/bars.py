@@ -134,9 +134,7 @@ def session_grid(
     _require_a_bar_timeframe(timeframe)
     _require_bars_of_the_timeframe(bars, timeframe, sessions)
     in_range = sessions.between(first, last)
-    buckets = _outside_halts(_session_buckets(in_range, timeframe), in_range).filter(
-        pl.col("ts_close") <= received_until
-    )
+    buckets = grid_buckets(in_range, timeframe).filter(pl.col("ts_close") <= received_until)
     pairs = _instrument_sessions(bars, in_range) if rows_for is None else rows_for
     asked = buckets.join(pairs.select("trade_date", "instrument_id"), on="trade_date")
     sparse = bars.rename({"ts_close": "bar_close", "trade_date": "bar_trade_date"})
@@ -144,6 +142,16 @@ def session_grid(
     _require_one_bar_a_bucket(grid, asked.height)
     traded = pl.col("bar_close").is_not_null().cum_max().over("instrument_id")
     return _with_empty_buckets_filled(grid.sort("instrument_id", "ts_open").filter(traded))
+
+
+def grid_buckets(sessions: pl.DataFrame, timeframe: Timeframe) -> pl.DataFrame:
+    """The buckets of the session grid of `timeframe` in `sessions`, rows of the session table, in
+    order: `trade_date`, `ts_open`, and `ts_close` of a bucket every `timeframe` from each open,
+    the last cut at the close, a daily bar the whole session, and none of those lying wholly
+    inside a halt, as `session_grid` lays them and the execution template's time rules read them
+    (`fefat.reference.time_rules`)."""
+    _require_a_bar_timeframe(timeframe)
+    return _outside_halts(_session_buckets(sessions, timeframe), sessions)
 
 
 def _instrument_sessions(bars: pl.DataFrame, sessions: pl.DataFrame) -> pl.DataFrame:

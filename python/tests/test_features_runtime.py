@@ -292,15 +292,15 @@ def test_bars_a_feature_reads_but_not_given_are_refused() -> None:
 
 
 def test_the_lead_in_counts_back_the_sessions_that_hold_a_warmup(tmp_path: Path) -> None:
-    # ES's session holds 276 five-minute buckets, so ATR(13)'s 273 bars before a Monday lie in
-    # the Friday before it, ATR(14)'s 294 reach the Thursday, and no warm-up reads none.
+    # ES's session holds 276 five-minute buckets, so ATR(11)'s 275 bars before a Monday lie in
+    # the Friday before it, ATR(14)'s 350 reach the Thursday, and no warm-up reads none.
     sessions = sessions_of(instruments.get("ES").session_calendar(), tmp_path)
     monday = date(2026, 3, 9)
 
     def lead_in(slots: dict[str, ff.features.FeatureSpec]) -> date:
         return FeatureGraph.of(slots, "ES", FIVE).lead_in(sessions, monday)
 
-    assert lead_in({"atr": atr(n=13)}) == date(2026, 3, 6)
+    assert lead_in({"atr": atr(n=11)}) == date(2026, 3, 6)
     assert lead_in({"atr": atr(n=14)}) == date(2026, 3, 5)
     assert lead_in({"close_15m": close_15m()}) == date(2026, 3, 6)
     assert lead_in({}) == monday
@@ -340,11 +340,11 @@ def test_compute_of_a_chain_of_three_features_gives_the_values_worked_out_direct
 
 
 def test_warmups_carried_through_the_graph_leave_no_null_or_nan_in_the_window() -> None:
-    # Done means 3: ATR(13) needs 273 bars and the chain 3, so a window from 2026-03-09 reads
+    # Done means 3: ATR(11) needs 275 bars and the chain 3, so a window from 2026-03-09 reads
     # them from the Friday before; a window from 03-06 has no session before it with a front,
     # so its first rows have no ATR, null and never NaN.
     store_with("ohlcv-1m")
-    slots = {**CHAIN, "atr": atr(n=13)}
+    slots = {**CHAIN, "atr": atr(n=11)}
     columns = ["step", "swing", "blend", "atr"]
 
     monday = ff.features.compute(slots, "ES", "5m", "2026-03-09", "2026-03-09").collect()
@@ -353,7 +353,7 @@ def test_warmups_carried_through_the_graph_leave_no_null_or_nan_in_the_window() 
     assert monday.height == 276
     assert monday.select(pl.col(columns).null_count()).row(0) == (0, 0, 0, 0)
     assert friday.select(pl.col("atr").is_nan().sum()).item() == 0
-    assert friday.select(pl.col("atr").null_count()).item() == 273
+    assert friday.select(pl.col("atr").null_count()).item() == 275
     assert friday.filter(pl.col("trade_date") == date(2026, 3, 9)).equals(monday)
 
 

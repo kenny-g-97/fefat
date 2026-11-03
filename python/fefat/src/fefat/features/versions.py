@@ -12,7 +12,8 @@ A version's file is only ever created, whole: written beside its place, flushed,
 a second process saving under the same number at the same moment is refused, to save again,
 rather than replacing the first, and a crash never leaves half a record. A Pydantic release that
 writes the JSON schema of the same parameters otherwise gives unchanged code a new version; a
-version saved before still loads, since its hash is worked out again from the schema it keeps."""
+version saved before still loads, since its hash is worked out again from the schema it keeps.
+The leak detector keeps each hash's latest validation beside the versions, in `validations/`."""
 
 import os
 import re
@@ -30,6 +31,7 @@ from fefat.market.schema import FrozenModel
 from fefat.market.store_files import create_atomically, json_writer, parsed_json
 
 _VERSION_FILE = re.compile(r"v([1-9][0-9]*)\.json")
+_CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
 
 
 class FeatureVersion(FrozenModel):
@@ -130,6 +132,17 @@ def _create(path: Path, record: FeatureVersion) -> None:
             f"Expected to save version {record.version} of feature {record.name} as a new file, "
             f"got {path} saved by another process first: save it again."
         ) from error
+
+
+def validation_file(name: str, content_hash: str) -> Path:
+    """The file beside the feature `name`'s versions where the leak detector keeps the latest
+    validation of its content hash, `validations/<hash>.json` (`fefat.features.validation`); a
+    hash that is not 64 hexadecimal digits is refused, so that no text reaches outside it."""
+    if _CONTENT_HASH.fullmatch(content_hash) is None:
+        raise ValueError(
+            f"Expected a feature's content hash, 64 hexadecimal digits, got {content_hash!r}."
+        )
+    return _folder(name) / "validations" / f"{content_hash}.json"
 
 
 def _folder(name: str) -> Path:

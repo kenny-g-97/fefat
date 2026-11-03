@@ -1,8 +1,9 @@
 """Evaluating the partitions of the feature cache that a computation lacks (`fefat.features.cache`,
 step 3.3): each feature from its own warm-up, its slot's graph alone (`FeatureGraph.of_slot`), over
 the bars each instrument's source gives (`SeriesSource.signal_bars`); and the check that a feature
-read from two starts gives the same values (`check_warmups`, `first_difference`), which refuses a
-feature that remembers more than its warm-up."""
+read from two starts gives the same values (`check_warmups`, `compare_values`), which refuses a
+feature that remembers more than its warm-up, with the comparison the leak detector reads too
+(step 3.4)."""
 
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
@@ -18,6 +19,7 @@ from fefat.features.cache_keys import CachePartition
 from fefat.features.runtime import FeatureGraph, Grid, InputBars, slot_columns
 from fefat.market.api import SeriesSource
 from fefat.market.calendar import SessionTable, counted, utc_text
+from fefat.market.schema import FrozenModel
 
 TOLERANCE = 1e-9
 """How far apart two float values of a feature read from two starts may lie, relative to the
@@ -61,11 +63,11 @@ def evaluated_features(
         if end > partition.last:
             own = _cut(graphs[0], inputs, sources, (start, partition.last))
         for folder in group:
-            values = _outputs(folder.graph, own)
+            values = slot_outputs(folder.graph, own)
             frames[folder.path] = bars.select("ts_close").join(
                 values.drop("trade_date"), on="ts_close", how="left", maintain_order="left"
             )
-            read = values if own is inputs else _outputs(folder.graph, inputs)
+            read = values if own is inputs else slot_outputs(folder.graph, inputs)
             past_its_first = pl.col("trade_date") >= partition.first
             beyond[folder.path] = read.filter(past_its_first, ~partition.holds())
     return Evaluation(frames, beyond, starts)
@@ -102,8 +104,9 @@ def _cut(
     }
 
 
-def _outputs(graph: FeatureGraph, inputs: InputBars) -> pl.DataFrame:
-    """`trade_date`, `ts_close`, and the outputs of the one slot of `graph` on its signal grid."""
+def slot_outputs(graph: FeatureGraph, inputs: InputBars) -> pl.DataFrame:
+    """`trade_date`, `ts_close`, and the outputs of the one slot of `graph` on its signal grid,
+    named by output."""
     ((slot, node),) = graph.slots.items()
     named = {column: output for output, column in slot_columns(slot, node.spec).items()}
     values = graph.evaluate(inputs).rename(named)
@@ -148,39 +151,72 @@ def _require_agreement(
     if read is None or read.is_empty():
         return
     held = frames[(folder.path, other.name)]
-    difference = first_difference(read.drop("trade_date"), held, folder.outputs())
+    difference = compare_values(read.drop("trade_date"), held, folder.outputs()).difference
     if difference is not None:
         starts = (done.starts[folder.path], folder.graph.lead_in(sessions, other.first))
         raise ValueError(_disagreement(folder, starts, difference))
 
 
-def first_difference(read: pl.DataFrame, held: pl.DataFrame, outputs: Iterable[str]) -> str | None:
-    """Where two computations of a feature's `outputs` on the same rows, each a frame of
-    `ts_close` and the outputs, first differ, in words; None where they agree: integers and
-    Booleans exactly, floats within `TOLERANCE` of the output's largest finite magnitude among
-    the rows, and a null on one side only differing."""
+class Difference(FrozenModel):
+    """Where two computations of a feature's output on the same rows first differ: the output, the
+    row's close, and the value each gives, the first `value` and the second `against`."""
+
+    output: str
+    ts_close: int
+    value: bool | int | float | None
+    against: bool | int | float | None
+
+    def __str__(self) -> str:
+        return f"{self.output} at {utc_text(self.ts_close)}: {self.value} against {self.against}"
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """Two computations of a feature's outputs on the same rows compared: the earliest row where
+    they differ, None where they agree, and the values compared, non-null in both, by output."""
+
+    difference: Difference | None
+    compared: dict[str, int]
+
+
+def compare_values(read: pl.DataFrame, held: pl.DataFrame, outputs: Iterable[str]) -> Comparison:
+    """Two computations of a feature's `outputs` on the same rows, each a frame of `ts_close` and
+    the outputs, compared: integers and Booleans exactly, floats within `TOLERANCE` of the
+    output's largest finite magnitude among the rows, and a null on one side only differing."""
     joined = read.join(held, on="ts_close", suffix="_held").sort("ts_close")
-    for output in outputs:
-        ours, theirs = pl.col(output), pl.col(f"{output}_held")
-        apart = ours != theirs
-        if joined.schema[output].is_float():
-            scale = joined.select(
-                pl.max_horizontal(
-                    ours.filter(ours.is_finite()).abs().max(),
-                    theirs.filter(theirs.is_finite()).abs().max(),
-                )
-            ).item()
-            if scale is not None:
-                apart = apart & ((ours - theirs).abs() > TOLERANCE * scale)
-        differing = joined.filter((apart | (ours.is_null() != theirs.is_null())).fill_null(False))
-        if not differing.is_empty():
-            row = differing.row(0, named=True)
-            at = utc_text(row["ts_close"])
-            return f"{output} at {at}: {row[output]} against {row[f'{output}_held']}"
-    return None
+    names = tuple(outputs)
+    found = [each for each in (_first_apart(joined, output) for output in names) if each]
+    compared = {
+        output: joined.select(
+            (pl.col(output).is_not_null() & pl.col(f"{output}_held").is_not_null()).sum()
+        ).item()
+        for output in names
+    }
+    return Comparison(min(found, key=lambda each: each.ts_close, default=None), compared)
 
 
-def _disagreement(folder: FeatureFolder, starts: tuple[date, date], difference: str) -> str:
+def _first_apart(joined: pl.DataFrame, output: str) -> Difference | None:
+    ours, theirs = pl.col(output), pl.col(f"{output}_held")
+    apart = ours != theirs
+    if joined.schema[output].is_float():
+        scale = joined.select(
+            pl.max_horizontal(
+                ours.filter(ours.is_finite()).abs().max(),
+                theirs.filter(theirs.is_finite()).abs().max(),
+            )
+        ).item()
+        if scale is not None:
+            apart = apart & ((ours - theirs).abs() > TOLERANCE * scale)
+    differing = joined.filter((apart | (ours.is_null() != theirs.is_null())).fill_null(False))
+    if differing.is_empty():
+        return None
+    row = differing.row(0, named=True)
+    return Difference(
+        output=output, ts_close=row["ts_close"], value=row[output], against=row[f"{output}_held"]
+    )
+
+
+def _disagreement(folder: FeatureFolder, starts: tuple[date, date], difference: Difference) -> str:
     node = folder.graph.slots[folder.slot]
     warmup = counted(folder.graph.warmups[node], "bar")
     ours, theirs = starts
