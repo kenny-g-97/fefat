@@ -2,6 +2,7 @@
 strategy the backtest tests run there."""
 
 import json
+import linecache
 import os
 import re
 import shutil
@@ -12,6 +13,7 @@ import polars as pl
 
 import fefat as ff
 from fefat.config import resolve_paths
+from fefat.features import FeatureDef
 
 SYNTHETIC = Path(__file__).resolve().parents[2] / "fixtures" / "synthetic"
 SCENARIOS = Path(__file__).resolve().parents[2] / "fixtures" / "scenarios"
@@ -63,5 +65,20 @@ def run_notebook(notebook: Path) -> dict[str, Any]:
     namespace: dict[str, Any] = {}
     for number, cell in enumerate(cells):
         if cell["cell_type"] == "code":
-            exec(compile("".join(cell["source"]), f"cell {number}", "exec"), namespace)
+            run_cell("".join(cell["source"]), f"{notebook.name} cell {number}", namespace)
     return namespace
+
+
+def run_cell(source: str, filename: str, namespace: dict[str, Any]) -> None:
+    """Run one cell's code in `namespace` with its text kept in `linecache` under `filename`, as
+    ipykernel keeps a cell's, so that `inspect.getsource` reads a feature defined in it."""
+    linecache.cache[filename] = (len(source), None, source.splitlines(keepends=True), filename)
+    exec(compile(source, filename, "exec"), namespace)
+
+
+def features_of_cell(source: str, filename: str = "test cell") -> dict[str, FeatureDef]:
+    """The features a cell of `source` defines, by name, run as a notebook cell under
+    `filename` with `ff` and `pl` imported."""
+    namespace: dict[str, Any] = {"ff": ff, "pl": pl}
+    run_cell(source, filename, namespace)
+    return {name: value for name, value in namespace.items() if isinstance(value, FeatureDef)}

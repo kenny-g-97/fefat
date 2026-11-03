@@ -1,12 +1,16 @@
 """Signal strategies (`02-engine-and-data.md` §2.1 and §5, D-53): features and signals written as
 Polars expressions over the signal bars, `load`'s frame, and an execution template written as a
-`StrategySpec`. Until `@ff.feature` and `fefat.indicators` arrive in Phase 3, a feature is a plain
-expression, such as `pl.col("close").ewm_mean(span=20)`, in the same slot:
+`StrategySpec`. A feature's slot takes a plain expression, such as
+`pl.col("close").ewm_mean(span=20)`, or a feature of one output with its parameters, a
+`FeatureSpec` such as `rsi(n=14)` (`fefat.features`, step 3.1):
 
     strategy = ff.SignalStrategy(
         instrument="ES",
         timeframe="5m",
-        features={"mean": pl.col("close").rolling_mean(20)},
+        features={
+            "mean": pl.col("close").rolling_mean(20),
+            "rsi": rsi(n=14),
+        },
         long_entry=pl.col("close") > pl.col("mean"),
         short_entry=pl.lit(False),
         execution=ff.Execution(
@@ -22,8 +26,9 @@ from types import MappingProxyType
 from typing import Annotated
 
 import polars as pl
-from pydantic import AfterValidator, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator
 
+from fefat.features.evaluation import FeatureSpec
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted, utc_text
 from fefat.market.schema import FrozenModel
@@ -49,14 +54,17 @@ _BAR_COLUMNS_READ = pl.Schema(
 )
 
 
-def _read_only(features: Mapping[str, pl.Expr]) -> Mapping[str, pl.Expr]:
+def _read_only(
+    features: Mapping[str, pl.Expr | FeatureSpec],
+) -> Mapping[str, pl.Expr | FeatureSpec]:
     """The features as a mapping no one can change after the strategy is built."""
     return MappingProxyType(dict(features))
 
 
 class SignalStrategy(FrozenModel):
     """A signal strategy on `instrument`, deciding at the closes of its `timeframe` bars: its
-    `features` (each evaluated in turn over the bars and the features before it), its signals,
+    `features` (each expression evaluated in turn over the bars and the features before it, and
+    each `FeatureSpec` over the bars alone, null in its declared warm-up), its signals,
     the optional columns its execution template reads (`entry_price`, `stop_price`,
     `target_price`, and `trail_ref` in 1e-9 units of the bars' prices, `size_mult`, and `wake`),
     and the `execution` template itself."""
@@ -65,9 +73,9 @@ class SignalStrategy(FrozenModel):
 
     instrument: InstrumentRoot
     timeframe: TimeframeText
-    features: Annotated[Mapping[str, pl.Expr], AfterValidator(_read_only)] = Field(
-        default_factory=lambda: MappingProxyType({})
-    )
+    features: Annotated[
+        Mapping[str, pl.Expr | InstanceOf[FeatureSpec]], AfterValidator(_read_only)
+    ] = Field(default_factory=lambda: MappingProxyType({}))
     long_entry: pl.Expr
     short_entry: pl.Expr
     long_exit: pl.Expr = Field(default_factory=lambda: pl.lit(False))
@@ -82,7 +90,9 @@ class SignalStrategy(FrozenModel):
 
     @field_validator("features")
     @classmethod
-    def _features_named_apart(cls, features: Mapping[str, pl.Expr]) -> Mapping[str, pl.Expr]:
+    def _features_named_apart(
+        cls, features: Mapping[str, pl.Expr | FeatureSpec]
+    ) -> Mapping[str, pl.Expr | FeatureSpec]:
         frame_columns = {*SIGNAL_BAR_COLUMNS, *REQUIRED_SIGNAL_COLUMNS, *OPTIONAL_SIGNAL_COLUMNS}
         taken = sorted(set(features) & frame_columns)
         if taken:
@@ -103,14 +113,15 @@ class SignalStrategy(FrozenModel):
 
     def signals(self, bars: pl.DataFrame | pl.LazyFrame) -> pl.LazyFrame:
         """The signal frame of `bars`, `load`'s frame of the strategy's signal bars
-        (`fefat.strategy.signal_frame`). A null signal, as in a feature's warm-up, is no signal,
-        and a null `wake` wakes; each price column becomes raw prices of its row's contract, its
-        values less the row's `adj_offset` (D-09). A back-adjusted import (D-49), a price that is
-        not a whole number of units, and, with a market entry, a bar with both entry signals are
-        refused, and the frame is checked as the engine reads it (`validated_signal_frame`)."""
-        frame = _with_raw_prices(bars.lazy().collect())
+        (`fefat.strategy.signal_frame`). A null signal, as where a feature has no value yet, is
+        no signal, and a null `wake` wakes; each price column becomes raw prices of its row's
+        contract, its values less the row's `adj_offset` (D-09). A back-adjusted import (D-49), a
+        price that is not a whole number of units, and, with a market entry, a bar with both entry
+        signals are refused, and the frame is checked as the engine reads it
+        (`validated_signal_frame`)."""
+        frame = signal_bars = _with_raw_prices(bars.lazy().collect())
         for name, feature in self.features.items():
-            frame = frame.with_columns(feature.alias(name))
+            frame = frame.with_columns(_feature_column(signal_bars, name, feature))
         signal_columns = self._signal_columns()
         frame = frame.with_columns(**signal_columns)
         prices = [name for name in PRICE_COLUMNS if name in signal_columns]
@@ -138,6 +149,26 @@ class SignalStrategy(FrozenModel):
             "short_exit": self.short_exit.fill_null(False),
         }
         return signals | {name: column for name, column in optional.items() if column is not None}
+
+
+def _feature_column(
+    signal_bars: pl.DataFrame, name: str, feature: pl.Expr | FeatureSpec
+) -> pl.Expr | pl.Series:
+    """The feature in the slot `name` as a column: an expression as it is, over the bars and the
+    features before it; and a feature's one output as its spec gives it, evaluated over the bars
+    alone, since what else it reads it declares (step 3.2), a NaN made null and the rows of its
+    declared warm-up null, a value it cannot give yet (step 3.1)."""
+    if isinstance(feature, pl.Expr):
+        return feature.alias(name)
+    outputs = list(feature.definition.outputs)
+    if len(outputs) != 1:
+        raise ValueError(
+            f"Expected a feature of one output in the slot {name}, got {feature.definition.name} "
+            f"with {', '.join(outputs)}: several outputs wait for the runtime of step 3.2."
+        )
+    column = feature.expressions(signal_bars)[outputs[0]]
+    warmed = pl.when(pl.int_range(pl.len()) >= feature.warmup).then(column)
+    return signal_bars.select(warmed.alias(name)).to_series()
 
 
 def _with_raw_prices(bars: pl.DataFrame) -> pl.DataFrame:

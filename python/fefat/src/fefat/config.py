@@ -23,6 +23,7 @@ CACHE_FOLDER_NAME = "cache"
 REPORTS_FOLDER_NAME = "reports"
 WORKSPACE_FOLDER = Path("workspaces") / "default"
 RUNS_FOLDER = Path("artifacts") / "runs"
+FEATURES_FOLDER_NAME = "features"
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,13 @@ class FefatPaths:
         """`<workspace>/artifacts/runs`: each saved run's artifacts in a folder of its own, named
         by its run key (`fefat.backtest`, step 2.10)."""
         return self.workspace_dir / RUNS_FOLDER
+
+    @property
+    def features_dir(self) -> Path:
+        """`<workspace>/features`: each saved feature's versions in a folder of its own, named by
+        the feature, as `v<n>.json` (`fefat.features`, step 3.1), until the database of step 4.1
+        imports them."""
+        return self.workspace_dir / FEATURES_FOLDER_NAME
 
     @property
     def reports_dir(self) -> Path:

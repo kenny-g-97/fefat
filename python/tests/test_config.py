@@ -36,6 +36,13 @@ def test_runs_are_kept_in_the_default_workspace_under_fefat_home(tmp_path: Path)
     assert paths.runs_dir == tmp_path / "workspaces" / "default" / "artifacts" / "runs"
 
 
+def test_feature_versions_are_kept_in_the_default_workspace(tmp_path: Path) -> None:
+    # Step 3.1 (`01-architecture.md` section 4): versions are files until the database of 4.1.
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
+
+    assert paths.features_dir == tmp_path / "workspaces" / "default" / "features"
+
+
 def test_fefat_data_dir_points_the_market_data_at_another_folder(tmp_path: Path) -> None:
     market_data = tmp_path / "market-data"
 

@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BeforeValidator, Field
 
-from fefat.market.calendar_definition import TimeZoneName
+from fefat.market.calendar_definition import LocalTime, TimeZoneName
 from fefat.market.schema import FrozenModel
 
 _LARGEST_COUNT = 4_294_967_295
@@ -23,8 +23,6 @@ Positive = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 """A number above zero: a multiple, a percentage, units, or an amount of money."""
 FeatureName = Annotated[str, Field(min_length=1)]
 """A feature's column in the signal frame, such as `atr`."""
-LocalTime = Annotated[str, Field(pattern=r"^([01][0-9]|2[0-3]):[0-5][0-9]$")]
-"""A local time of day, `HH:MM`."""
 
 
 class TicksStop(FrozenModel):

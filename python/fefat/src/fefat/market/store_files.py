@@ -12,7 +12,8 @@ as the one the snapshot pinned.
 import hashlib
 import os
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
@@ -85,6 +86,22 @@ def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
     """Write through a temporary file beside the target, flush it to disk, then replace the
     target in one step (atomic on one NTFS or POSIX volume): a reader, or a power cut, sees
     the old file or the new one, never half of one."""
+    with _flushed_beside(path, write) as temporary:
+        temporary.replace(path)
+
+
+def create_atomically(path: Path, write: Callable[[Path], object]) -> None:
+    """Write a new file as `write_atomically` does, then link it into place in one step, which
+    a file already at `path` refuses with `FileExistsError`: a file is never replaced, and a
+    reader, or a power cut, never sees half of one."""
+    with _flushed_beside(path, write) as temporary:
+        os.link(temporary, path)
+
+
+@contextmanager
+def _flushed_beside(path: Path, write: Callable[[Path], object]) -> Iterator[Path]:
+    """A temporary file beside `path`, written by `write` and flushed to disk, removed once the
+    caller has moved or linked it into place, or failed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent, prefix=f"{path.stem}.", suffix=".tmp"
@@ -95,7 +112,7 @@ def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
         write(temporary)
         with temporary.open("rb+") as written:
             os.fsync(written.fileno())
-        temporary.replace(path)
+        yield temporary
     finally:
         temporary.unlink(missing_ok=True)
 
