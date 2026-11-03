@@ -160,18 +160,23 @@ def signal_bar_eras(
     datasets: dict[str, Dataset],
     timeframe: Timeframe,
     dates: tuple[date, date],
-    contract: str | None = None,
+    contracts: pl.DataFrame | None = None,
 ) -> tuple[FidelityEra, ...]:
     """The levels signal bars of `timeframe` are built from on the trade dates from `dates`'
-    first to its last (D-71): each trade date the trades or bars held hold, of one `contract`
-    where it is named, from the finest of those that build the timeframe, in eras of dates in a
-    row on one level, as a run names the levels it fills on (D-64). So a date's bars never
-    depend on the dates after it, as a level chosen over a whole window made them (the leakage
-    audit of the Phase 2 exit). A timeframe finer than every level, or one that none builds, is
-    refused."""
+    first to its last (D-71): each trade date the trades or bars held hold, from the finest of
+    those that build the timeframe, in eras of dates in a row on one level, as a run names the
+    levels it fills on (D-64). So a date's bars never depend on the dates after it, as a level
+    chosen over a whole window made them (the leakage audit of the Phase 2 exit). Where
+    `contracts` names the contract whose bars a date gives (`trade_date` and `contract`), as a
+    spliced series' fronts, the level holds the date only if it holds it for that contract, since
+    another contract's data builds none of its bars; every contract's counts otherwise. A
+    timeframe finer than every level, or one that none builds, is refused."""
     finest: dict[date, TickFidelity | Timeframe] = {}
     for level, dataset in reversed(_building(datasets, timeframe)):
-        finest |= dict.fromkeys(_trade_dates_held(store, dataset, dates, contract), level)
+        held = _held(store, dataset, dates)
+        if contracts is not None:
+            held = held.join(contracts, on=["trade_date", "contract"], how="semi")
+        finest |= dict.fromkeys(held.get_column("trade_date").to_list(), level)
     dated = sorted(finest.items())
     return tuple(_era(list(run)) for _, run in groupby(dated, key=lambda pair: pair[1]))
 
@@ -210,31 +215,32 @@ def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
     return timeframe.nominal_seconds() % level.nominal_seconds() == 0
 
 
-def _trade_dates_held(
-    store: Store, dataset: Dataset, dates: tuple[date, date], contract: str | None = None
-) -> set[date]:
-    """The trade dates of the window from `dates`' first to its last that the dataset holds, of
-    one `contract` where it is named: the keys of its partitions where it keeps a file per trade
-    date, else the trade dates of its bars in the window, so that a stretch without records
-    between two holds none."""
+_HELD = pl.Schema({"trade_date": pl.Date, "contract": pl.String})
+
+
+def _held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> pl.DataFrame:
+    """The trade dates of the window from `dates`' first to its last that the dataset holds, each
+    with each contract that holds it (`_HELD`): the keys of its partitions where it keeps a file
+    per trade date, else the trade dates of its bars in the window, so that a stretch without
+    records between two holds none."""
     first, last = dates
-    partitions = [
-        file.partition
-        for file in store.list_partitions(dataset)
-        if contract is None or file.partition.contract == contract
-    ]
-    by_date = {partition.key for partition in partitions if isinstance(partition.key, date)}
-    if by_date:
-        return {key for key in by_date if first <= key <= last}
+    partitions = [file.partition for file in store.list_partitions(dataset)]
+    if any(isinstance(partition.key, date) for partition in partitions):
+        keyed = [
+            (partition.key, partition.contract)
+            for partition in partitions
+            if isinstance(partition.key, date) and first <= partition.key <= last
+        ]
+        return pl.DataFrame(keyed, schema=_HELD, orient="row")
     in_window = [
-        store.scan_partition(partition).select("trade_date")
+        store.scan_partition(partition).select("trade_date", contract=pl.lit(partition.contract))
         for partition in partitions
         if not isinstance(partition.key, YearMonth) or partition.key.overlaps(first, last)
     ]
     if not in_window:
-        return set()
+        return pl.DataFrame(schema=_HELD)
     held = pl.concat(in_window).filter(pl.col("trade_date").is_between(first, last))
-    return set(held.select(pl.col("trade_date").unique()).collect().to_series().to_list())
+    return held.unique().collect()
 
 
 def _finest_first(

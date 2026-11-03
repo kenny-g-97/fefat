@@ -131,7 +131,8 @@ class FeatureGraph:
         warmups: dict[_Node, int] = {}
         for node in order:
             inherited = (
-                _rows_before(warmups[read], read.timeframe, node.timeframe) for read in reads[node]
+                _rows_before(warmups[input_node], input_node.timeframe, node.timeframe)
+                for input_node in reads[node]
             )
             warmups[node] = node.spec.warmup + max(inherited, default=0)
         return cls(
@@ -197,10 +198,10 @@ class FeatureGraph:
     ) -> pl.DataFrame:
         """`ts_close` and the node's outputs on its grid, null on the rows of its warm-up."""
         frame = _bars_of(inputs, Grid(self.root, node.timeframe), node.name)
-        read = iter(self.reads[node])
+        dependencies = iter(self.reads[node])
         for declared in node.spec.definition.inputs:
             if isinstance(declared, FeatureInput):
-                frame = with_feature(frame, values[next(read)], node.name)
+                frame = with_feature(frame, values[next(dependencies)], node.name)
             if isinstance(declared, InstrumentInput):
                 other = _bars_of(inputs, Grid(declared.root, node.timeframe), node.name)
                 frame = with_instrument(frame, other, declared.root, node.name)
@@ -317,12 +318,12 @@ def _reads(
         if node in reads:
             continue
         _require_inputs_the_runtime_evaluates(node.spec)
-        read = tuple(
+        inputs = tuple(
             _Node(spec, _timeframe_of(spec, node.timeframe))
             for spec in _read_specs(node.spec, given)
         )
-        reads[node] = read
-        pending.extend(read)
+        reads[node] = inputs
+        pending.extend(inputs)
     return reads
 
 

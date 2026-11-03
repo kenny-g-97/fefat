@@ -10,11 +10,12 @@ import polars as pl
 from fefat.features.evaluation import require_one_series_of_raw_prices
 
 
-def with_feature(frame: pl.DataFrame, read: pl.DataFrame, reader: str) -> pl.DataFrame:
-    """`frame` with the outputs of a feature that the feature `reader` reads, as of each row's
-    close: on its own grid the row's, on a coarser grid the last bar closed by then."""
-    _require_apart(frame, [column for column in read.columns if column != "ts_close"], reader)
-    return frame.join_asof(read, on="ts_close", strategy="backward")
+def with_feature(frame: pl.DataFrame, values: pl.DataFrame, reader: str) -> pl.DataFrame:
+    """`frame` with the `values` of a feature that the feature `reader` reads, its `ts_close` and
+    outputs, as of each row's close: on its own grid the row's, on a coarser grid the last bar
+    closed by then."""
+    _require_apart(frame, [column for column in values.columns if column != "ts_close"], reader)
+    return frame.join_asof(values, on="ts_close", strategy="backward")
 
 
 def with_instrument(

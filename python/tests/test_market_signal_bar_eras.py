@@ -7,6 +7,7 @@ import os
 import shutil
 from datetime import date
 
+import polars as pl
 import pytest
 
 import gen_fixtures
@@ -148,3 +149,28 @@ def test_data_that_builds_no_signal_bars_of_the_timeframe_is_refused(
         signal_bar_eras(
             store, held, Timeframe.parse(timeframe), (date(2026, 3, 5), date(2026, 3, 9))
         )
+
+
+def test_a_date_takes_the_finest_level_its_counted_contract_holds(fixture_store: Store) -> None:
+    # The step review: on a spliced series a date's bars are its front's, so the levels another
+    # contract holds that day count for nothing; without the contracts every contract's count.
+    held = provider_datasets(fixture_store, "ES", None, None)
+    trades = fixture_store.folder / "synthetic" / "trades" / "root=ES"
+    shutil.rmtree(trades / "contract=ESH2026" / "date=2026-03-06")
+    window = (date(2026, 3, 5), date(2026, 3, 9))
+    fronts = pl.DataFrame(
+        {
+            "trade_date": [date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)],
+            "contract": ["ESH2026", "ESH2026", "ESM2026"],
+        }
+    )
+
+    by_front = signal_bar_eras(fixture_store, held, FIVE_MINUTES, window, fronts)
+
+    assert [(each.first, each.fidelity) for each in by_front] == [
+        (date(2026, 3, 5), TickFidelity.TRADES),
+        (date(2026, 3, 6), Timeframe.parse("1s")),
+        (date(2026, 3, 9), TickFidelity.TRADES),
+    ]
+    every_contract = signal_bar_eras(fixture_store, held, FIVE_MINUTES, window)
+    assert every_contract == (era(date(2026, 3, 5), date(2026, 3, 9), 3, TickFidelity.TRADES),)

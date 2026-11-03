@@ -409,3 +409,21 @@ def test_a_date_no_level_holds_has_the_same_rows_in_a_window_ending_on_it_and_on
     assert ending.filter(pl.col("trade_date") == MARCH_6).height == BUCKETS_OF_FIVE_MINUTES
     assert ending.equals(running_past.filter(pl.col("trade_date") <= MARCH_6))
     assert ending.equals(named)
+
+
+def test_a_spliced_load_builds_each_trade_date_from_the_finest_level_its_front_holds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The step review: ESH2026 is the front on 2026-03-06, so ESM2026's trades of that day build
+    # none of the series' bars. With ESH2026's trades of 03-06 gone, the date takes its front's
+    # 1-minute bars, where it once took the trades and gave the front a session of empty buckets.
+    data_folder_with(monkeypatch, tmp_path, "trades", "ohlcv-1m")
+    front = tmp_path / "synthetic" / "trades" / "root=ES" / "contract=ESH2026"
+    shutil.rmtree(front / "date=2026-03-06")
+
+    bars = load("ES", "5m", "2026-03-06", "2026-03-06").collect()
+
+    minutes = load("ES", "5m", "2026-03-06", "2026-03-06", fidelity="1m").collect()
+    assert bars.get_column("contract").unique().to_list() == ["ESH2026"]
+    assert bars.get_column("volume").equals(minutes.get_column("volume"))
+    assert bars.get_column("zero_volume").sum() < BUCKETS_OF_FIVE_MINUTES

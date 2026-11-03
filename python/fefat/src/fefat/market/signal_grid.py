@@ -35,19 +35,22 @@ class SourceSpan(NamedTuple):
 def source_spans(
     store: Store,
     datasets: dict[str, Dataset],
-    wanted: TickFidelity | Timeframe | None,
     timeframe: Timeframe,
     dates: tuple[date, date],
-    contract: str | None,
+    *,
+    wanted: TickFidelity | Timeframe | None,
+    contracts: pl.DataFrame | None,
 ) -> list[SourceSpan]:
     """The datasets the bars of `timeframe` of the trade dates `dates` span are built from:
     every date's from the fidelity `wanted`, or else each date's from the finest level that
-    holds it, of one `contract` where it is named (`signal_bar_eras`); none where no level holds
-    a date of them."""
+    holds it for the contract `contracts` names that day, every contract where it is None
+    (`signal_bar_eras`); none where no level holds a date of them."""
+    if not datasets:
+        raise ValueError("Expected trades or bars to build bars from, got none.")
     root = next(iter(datasets.values())).root
     if wanted is not None:
         return [SourceSpan(source_dataset(datasets, wanted, timeframe, root), *dates)]
-    eras = signal_bar_eras(store, datasets, timeframe, dates, contract)
+    eras = signal_bar_eras(store, datasets, timeframe, dates, contracts)
     return [
         SourceSpan(source_dataset(datasets, era.fidelity, timeframe, root), era.first, era.last)
         for era in eras
@@ -88,14 +91,16 @@ def gridded_bars(
         _require_fronts_for(bars, calendar)
         fronts = _fronts_with_their_lead_in(calendar, contracts)
     grid = session_grid(bars, timeframe, sessions, received_until, first, last, rows_for=fronts)
-    held_back = [
+    within = grid.filter(~_past_their_data(spans, ends))
+    return within.join(contracts, on="instrument_id").select(CONTRACT_BAR_COLUMNS.names())
+
+
+def _past_their_data(spans: Sequence[SourceSpan], ends: Sequence[int]) -> pl.Expr:
+    """Whether a row of a span's dates closes after the end of that span's data, a bucket held
+    back (D-43) though a later span's data runs on."""
+    return pl.any_horizontal(
         pl.col("trade_date").is_between(span.first, span.last) & (pl.col("ts_close") > end)
         for span, end in zip(spans, ends, strict=True)
-    ]
-    return (
-        grid.filter(~pl.any_horizontal(held_back))
-        .join(contracts, on="instrument_id")
-        .select(CONTRACT_BAR_COLUMNS.names())
     )
 
 
@@ -132,6 +137,15 @@ def _bars_of(
     if str(source.schema_name) == f"ohlcv-{timeframe}":
         return rows
     return resample_bars(rows, timeframe, sessions, received_until)
+
+
+def front_contracts(calendar: RollCalendar) -> pl.DataFrame:
+    """The contract whose bars a spliced load gives on each trade date (`trade_date` and
+    `contract`): the session's front, and on a first session without one, the contract that
+    became the front after it, whose rows lead in to its first."""
+    fronts = calendar.rows.select("trade_date", "contract")
+    lead_in = fronts.with_columns(trade_date=pl.col("trade_date").shift(1)).drop_nulls()
+    return pl.concat([fronts, lead_in.join(fronts, on="trade_date", how="anti")])
 
 
 def _fronts_with_their_lead_in(calendar: RollCalendar, contracts: pl.DataFrame) -> pl.DataFrame:

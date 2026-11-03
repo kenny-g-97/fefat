@@ -50,7 +50,9 @@ rows to `end`, as zero-volume bars, since the grid adds no row because of a late
 
 `fidelity` names the data the bars are built from (`fefat.market.fidelity`, as text or as the
 type): `trades`, or bars of a timeframe such as `1s`, `1m`, or an import's `5m`; without it,
-the finest the store holds; `tbbo` is refused, since bars are not built from TBBO yet; a
+each trade date's from the finest level the store holds for it that builds the bars, of
+the contract whose bars it gives that day (`fefat.market.dataset_choice.signal_bar_eras`,
+step 3.2); `tbbo` is refused, since bars are not built from TBBO yet; a
 timeframe finer than the data is refused, and bars coarser than a minute as the finest data are warned of on every
 load, since backtests on them fill at that fidelity. `provider` names the provider whose
 datasets the bars come from, such as `databento`, where several hold the root; without it the
@@ -86,7 +88,7 @@ from fefat.market.instruments import Instrument, InstrumentKind, InstrumentTable
 from fefat.market.layout import Dataset, DatasetOrigin, PartitionRequest, SeriesKind
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
-from fefat.market.signal_grid import SourceSpan, gridded_bars, source_spans
+from fefat.market.signal_grid import SourceSpan, front_contracts, gridded_bars, source_spans
 from fefat.market.status import DATASET_COLUMNS, dataset_status
 from fefat.market.store import Store
 
@@ -128,17 +130,35 @@ def load(
     wanted = None if fidelity is None else parse_fidelity(fidelity)
     # shortcut: one session of lead-in, so a contract without trades in it starts its grid on
     # `first` at its first bar; read back to each contract's last bar when a strategy needs it.
-    read = (sessions.preceding(first).trade_date, last)
-    spans = source_spans(store, datasets, wanted, bar_timeframe, read, contract)
+    dates_read = (sessions.preceding(first).trade_date, last)
+    calendar = _roll_calendar(store, datasets, instrument, sessions) if splices else None
+    counted = _contracts_counted(calendar, contract, sessions, dates_read)
+    spans = source_spans(
+        store, datasets, bar_timeframe, dates_read, wanted=wanted, contracts=counted
+    )
     _warn_of(spans, series)
-    if not splices:
-        gridded = gridded_bars(store, spans, bar_timeframe, sessions, read, contract)
+    gridded = gridded_bars(store, spans, bar_timeframe, sessions, dates_read, contract, calendar)
+    if calendar is None:
         bars = _signal_bars(_unspliced(gridded, series), first, last, ("contract", "ts_open"))
         return _some(bars, contract or root, first, last).lazy()
-    calendar = _roll_calendar(store, datasets, instrument, sessions)
-    gridded = gridded_bars(store, spans, bar_timeframe, sessions, read, contract, calendar)
     bars = _signal_bars(calendar.continuous_bars(gridded), first, last, ("ts_open",))
     return _some(bars, root, first, last).lazy()
+
+
+def _contracts_counted(
+    calendar: RollCalendar | None,
+    contract: str | None,
+    sessions: SessionTable,
+    dates: tuple[date, date],
+) -> pl.DataFrame | None:
+    """The contract whose data chooses each trade date's level (`signal_bar_eras`): the front a
+    spliced load keeps, or the one contract named; every contract's for a load of every contract
+    or of a product that does not expire."""
+    if calendar is not None:
+        return front_contracts(calendar)
+    if contract is not None:
+        return sessions.between(*dates).select("trade_date", contract=pl.lit(contract))
+    return None
 
 
 def _some(bars: pl.DataFrame, named: str, first: date, last: date) -> pl.DataFrame:

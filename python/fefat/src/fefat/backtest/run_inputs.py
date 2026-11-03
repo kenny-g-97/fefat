@@ -152,12 +152,12 @@ def run_inputs(
     market = _market(strategy.instrument, config.provider, paths)
     applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
-    read = signal_frame(strategy, market.sessions, market.provider, dates, applied.contract)
-    signals = read.signals
+    produced = signal_frame(strategy, market.sessions, market.provider, dates, applied.contract)
+    signals = produced.signals
     spec = strategy.to_spec()
     require_named_columns(spec.execution, signals.columns)
     window = _window(signals)
-    snapshots = _snapshots(market, read.warmup_from, window)
+    snapshots = _snapshots(market, produced.warmup_from, window)
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)
     engine_config = _engine_config(market, applied, signals, snapshots, window, rolls)
@@ -175,9 +175,9 @@ def run_inputs(
         fee_table=_fee_table_record(applied.fee_table, market.instrument.root),
         rolls=tuple(_roll_record(roll) for roll in rolls),
         window=window,
-        warnings=(*read.warnings, *_features_below_a_tick(spec, signals, parameters.tick)),
+        warnings=(*produced.warnings, *_features_below_a_tick(spec, signals, parameters.tick)),
         time_zone=market.sessions.time_zone(),
-        signal_bar_eras=_signal_bar_eras(market, strategy, window, applied.contract),
+        signal_bar_eras=_signal_bar_eras(market, strategy, window, signals),
     )
 
 
@@ -233,13 +233,16 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
 
 
 def _signal_bar_eras(
-    market: _Market, strategy: SignalStrategy, window: Window, contract: str | None
+    market: _Market, strategy: SignalStrategy, window: Window, signals: pl.DataFrame
 ) -> tuple[FidelityEra, ...]:
     """The levels the window's signal bars were built from, each trade date's as `load` chose it
-    (`signal_bar_eras`), in eras."""
+    for the contract the signal frame holds that day (`signal_bar_eras`), in eras; the dates
+    its features' warm-up reads before the window are keyed by the snapshots alone."""
     held = {str(dataset.schema_name): dataset for dataset in market.datasets}
     timeframe = Timeframe.parse(strategy.timeframe)
-    return signal_bar_eras(market.store, held, timeframe, (window.start, window.end), contract)
+    contracts = signals.select("trade_date", "contract").unique()
+    dates = (window.start, window.end)
+    return signal_bar_eras(market.store, held, timeframe, dates, contracts)
 
 
 def _window(signals: pl.DataFrame) -> Window:
