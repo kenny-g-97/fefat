@@ -9,15 +9,20 @@ library's indicators, matched to TA-Lib; these show the contract.
 """
 
 from datetime import time
+from typing import Annotated
 
 import polars as pl
+from pydantic import Field
 
 from fefat.features.definition import feature
 from fefat.market.calendar_definition import LocalTime, TimeZoneName
 
+BarCount = Annotated[int, Field(ge=1)]
+"""A number of bars, at least one, as a moving average's or a range's."""
+
 
 @feature(params={"n": 14}, warmup=lambda n: 10 * n, outputs={"rsi": "ratio"})
-def rsi(bars: pl.LazyFrame, n: int) -> pl.Expr:
+def rsi(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     """The relative strength index of the closes over `n` bars, from 0 to 100, as `02` §5 writes
     it: 100 less 100 over one plus the closes' mean rise over their mean fall, each mean weighing
     a bar 1 - 1/n times the bar after it (`ewm_mean(alpha=1/n)`), and null where the closes have
@@ -29,7 +34,7 @@ def rsi(bars: pl.LazyFrame, n: int) -> pl.Expr:
 
 
 @feature(params={"n": 14}, warmup=lambda n: 10 * n, outputs={"atr": "price_distance"})
-def atr(bars: pl.LazyFrame, n: int) -> pl.Expr:
+def atr(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     """The average true range over `n` bars in the bars' 1e-9 units of price, the units in which
     the execution template reads it (`ff.Stop(atr=1.5)`, F-RND-01): each bar's true range, its
     high less its low widened to the close before it, averaged as `rsi` averages; the first

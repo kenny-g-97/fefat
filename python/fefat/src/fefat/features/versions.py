@@ -2,15 +2,16 @@
 never changes, to `<FEFAT_HOME>/workspaces/default/features/<name>/v<n>.json`, `n` counting from
 1 per name, and returns the version a saved record of the same hash already has rather than
 writing another; `load` reads a version back and refuses a record whose content no longer gives
-its hash. The database of step 4.1 imports these files (`01-architecture.md` §4 and §5).
+its hash, or whose declarations are not those its code writes. The database of step 4.1 imports
+these files (`01-architecture.md` §4 and §5).
 
     version = ff.features.save(rsi)
     ff.features.load("rsi", version.version)
 
-One writer at a time: two processes saving different code under one name at once could take the
-same number, which the database of step 4.1 settles (`BACKLOG.md`). A Pydantic release that
-writes the JSON schema of the same parameters otherwise gives unchanged code a new version; a
-version saved before still loads, since its hash is worked out again from the schema it keeps."""
+A version's file is only ever created: a second process saving under the same name at the same
+moment is refused, to save again, rather than replacing the first. A Pydantic release that writes
+the JSON schema of the same parameters otherwise gives unchanged code a new version; a version
+saved before still loads, since its hash is worked out again from the schema it keeps."""
 
 import os
 import re
@@ -21,10 +22,11 @@ from typing import Any
 from pydantic import Field
 
 from fefat.config import resolve_paths
+from fefat.features.declarations import inputs_as_written, written_declarations
 from fefat.features.definition import FeatureDef, content_hash
 from fefat.features.inputs import DeclaredInput, OutputKind
 from fefat.market.schema import FrozenModel
-from fefat.market.store_files import json_writer, parsed_json, write_atomically
+from fefat.market.store_files import parsed_json
 
 _VERSION_FILE = re.compile(r"v([1-9][0-9]*)\.json")
 
@@ -67,17 +69,22 @@ def save(definition: FeatureDef) -> FeatureVersion:
         parameter_schema=definition.parameter_schema,
         inputs=definition.inputs,
         outputs=dict(definition.outputs),
-        warmup=definition.warmup if isinstance(definition.warmup, int) else definition.warmup_text,
+        warmup=definition.written_warmup,
         created_at=datetime.now(UTC),
     )
-    write_atomically(folder / f"v{record.version}.json", json_writer(record))
+    _create(folder / f"v{record.version}.json", record)
     return record
 
 
 def load(name: str, version: int) -> FeatureVersion:
     """The saved version `version` of the feature `name`, refused when its file holds another
-    feature or version, or when its content no longer gives its hash."""
+    feature or version, when its content no longer gives its hash, or when its declarations are
+    not those its code writes."""
     path = _folder(name) / f"v{version}.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Expected version {version} of feature {name} at {path}, got no such file."
+        )
     record = parsed_json(FeatureVersion, path.read_bytes(), str(path))
     if (record.name, record.version) != (name, version):
         raise ValueError(
@@ -90,7 +97,38 @@ def load(name: str, version: int) -> FeatureVersion:
             f"Expected the content of {path} to give its hash {record.hash}, got {found}: the "
             "file was changed after it was written."
         )
+    _require_declarations_of_its_code(record, path)
     return record
+
+
+def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> None:
+    """Refuse a record whose outputs, inputs, or warm-up are not those its code's decorator
+    writes, which the hash covers through that text alone."""
+    written = written_declarations(record.name, record.code)
+    if (
+        record.outputs == written.outputs
+        and inputs_as_written(record.inputs, written.inputs)
+        and record.warmup == written.warmup
+    ):
+        return
+    raise ValueError(
+        f"Expected the outputs, inputs, and warm-up in {path} as its code's decorator writes them, "
+        "got others: the file was changed after it was written."
+    )
+
+
+def _create(path: Path, record: FeatureVersion) -> None:
+    """Write `record` to a new file at `path`: a version another process saved there first is
+    refused, never replaced (D-11)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as created:
+            created.write(record.model_dump_json(indent=2).encode() + b"\n")
+    except FileExistsError as error:
+        raise ValueError(
+            f"Expected to save version {record.version} of feature {record.name} as a new file, "
+            f"got {path} saved by another process first: save it again."
+        ) from error
 
 
 def _folder(name: str) -> Path:

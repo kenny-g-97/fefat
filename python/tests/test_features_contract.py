@@ -54,7 +54,7 @@ def test_a_feature_keeps_its_source_parameters_outputs_and_warmup() -> None:
     }
     assert gap.outputs == {"gap": OutputKind.PRICE_DISTANCE}
     assert gap.inputs == ()
-    assert gap.warmup_text == "lambda n: n"
+    assert gap.written_warmup == "lambda n: n"
     assert re.fullmatch("[0-9a-f]{64}", gap.hash)
 
 
@@ -81,6 +81,15 @@ def test_a_changed_default_or_one_changed_character_changes_the_hash() -> None:
     other_character = features_of_cell(GAP.replace(" - ", " + "))["gap"]
 
     assert len({first.hash, other_default.hash, other_character.hash}) == 3
+
+
+def test_the_hash_covers_the_parameter_schema_beside_the_code() -> None:
+    bound = 'DEFAULTS = {"n": 3}\n\n\n' + GAP.replace('params={"n": 3}', "params=DEFAULTS")
+    first = features_of_cell(bound)["gap"]
+    other = features_of_cell(bound.replace('{"n": 3}', '{"n": 4}', 1))["gap"]
+
+    assert first.code == other.code
+    assert first.hash != other.hash
 
 
 def test_the_hash_covers_the_hashes_of_the_features_it_reads() -> None:
@@ -171,15 +180,58 @@ def test_a_feature_without_source_is_refused() -> None:
         ),
         pytest.param(
             cell('@ff.feature(outputs={"close": "price"})'),
-            "Expected outputs of feature gap named apart from ts_close, warmup, and the bars' "
-            "columns, got close.",
+            "Expected outputs of feature gap, at least one, named apart from ts_close, warmup, "
+            "and the bars' columns, got close.",
             id="output-named-a-bar-column",
+        ),
+        pytest.param(
+            cell("@ff.feature(outputs={})"),
+            "Expected outputs of feature gap, at least one, named apart from ts_close, warmup, "
+            "and the bars' columns, got none.",
+            id="no-output",
+        ),
+        pytest.param(
+            cell("@ff.feature(outputs=KINDS)", before='KINDS = {"gap": "price"}\n\n\n'),
+            "Expected the outputs of feature gap written in its decorator as a mapping of names "
+            'to kinds, such as {"rsi": "ratio"}, got KINDS.',
+            id="outputs-from-elsewhere",
         ),
         pytest.param(
             cell('@ff.feature(inputs=["MNQ"])'),
             "Expected each input of feature gap as a feature or one of FeatureInput, "
             "InstrumentInput, TimeframeInput, DatasetInput, got 'MNQ'.",
             id="input-of-no-kind",
+        ),
+        pytest.param(
+            cell(
+                "@ff.feature(inputs=[HIGHER])",
+                before='HIGHER = ff.features.TimeframeInput(timeframe="15m")\n\n\n',
+            ),
+            "Expected each input of feature gap other than a feature written in its decorator "
+            'with literal values, such as InstrumentInput(root="MNQ"), got '
+            "(TimeframeInput(kind='timeframe', timeframe='15m'),) where it writes a name.",
+            id="input-from-elsewhere",
+        ),
+        pytest.param(
+            cell(
+                "@ff.feature(inputs=[ff.features.InstrumentInput(root=ROOT)])",
+                before='ROOT = "MNQ"\n',
+            ),
+            "Expected each input of feature gap written in its decorator, a feature by its name "
+            'or an input with literal values such as InstrumentInput(root="MNQ"), got '
+            "ff.features.InstrumentInput(root=ROOT).",
+            id="input-of-a-value-from-elsewhere",
+        ),
+        pytest.param(
+            cell("@ff.feature(inputs=INPUTS)", before="INPUTS = []\n\n\n"),
+            "Expected the inputs of feature gap written in its decorator as a list, got INPUTS.",
+            id="inputs-from-elsewhere",
+        ),
+        pytest.param(
+            cell('@ff.feature(**{"params": {"n": 3}})', "bars: pl.LazyFrame, n: int"),
+            "Expected the declarations of feature gap written in its decorator by name, got "
+            "ff.feature(**{'params': {'n': 3}}).",
+            id="declarations-unpacked",
         ),
         pytest.param(
             'def gap(bars: pl.LazyFrame) -> pl.Expr:\n    return pl.col("close")\n\n\n'
@@ -327,6 +379,34 @@ def test_a_feature_that_reads_other_inputs_waits_for_the_runtime_of_step_3_2() -
         spec.expressions(BARS)
 
 
+def test_bars_that_are_not_one_series_are_refused() -> None:
+    """Contracts stacked as `load(continuous=False)` gives them: the second contract's first
+    rows would read the first contract's last close, a later bar, as the bar before."""
+    stacked = pl.concat([BARS, BARS])
+    expected = "Expected the bars of feature gap as one series, their closes strictly increasing"
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        features_of_cell(GAP)["gap"]().evaluate(stacked)
+
+
+def test_a_back_adjusted_import_is_refused() -> None:
+    adjusted = BARS.with_columns(close_raw=pl.lit(None, dtype=pl.Int64))
+
+    with pytest.raises(ValueError, match=re.escape("got a back-adjusted import")):
+        features_of_cell(GAP)["gap"]().evaluate(adjusted)
+
+
+def test_a_column_the_bars_lack_is_refused_naming_the_feature() -> None:
+    source = cell("@ff.feature()").replace('pl.col("close")', 'pl.col("vwap")')
+    expected = (
+        "Expected the expressions of feature gap to evaluate over the bars, got: unable to find "
+        'column "vwap"'
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        features_of_cell(source)["gap"]().evaluate(BARS)
+
+
 def strategy(features: dict[str, object]) -> ff.SignalStrategy:
     """A strategy of ES's 5-minute bars with `features`, which never enters."""
     return ff.SignalStrategy.model_validate(
@@ -344,27 +424,35 @@ def strategy(features: dict[str, object]) -> ff.SignalStrategy:
 
 
 def test_a_feature_takes_a_slot_of_a_signal_strategy_beside_an_expression() -> None:
+    """A feature's slot holds its one output, null on the rows of its declared warm-up, a value
+    it cannot give yet; an expression after it reads it as it reads the bars."""
     store_with("ohlcv-1m")
-    defined = features_of_cell(
-        GAP + "\n\n@ff.feature()\ndef above(bars: pl.LazyFrame) -> pl.Expr:\n"
-        '    return pl.col("close") > pl.col("mean")\n'
-    )
-    features = {
-        "gap": defined["gap"](n=3),
-        "mean": pl.col("close").rolling_mean(3),
-        "above": defined["above"](),
-    }
+    gap = features_of_cell(GAP)["gap"]
+    features = {"gap": gap(n=3), "doubled": pl.col("gap") * 2}
     bars = ff.market.load("ES", "5m", "2026-03-05", "2026-03-06")
 
     signals = strategy(features).signals(bars).collect()
 
-    mean = pl.col("close").rolling_mean(3)
-    by_hand = bars.select(gap=pl.col("close") - mean, above=pl.col("close") > mean).collect()
+    warmed = pl.int_range(pl.len()) >= 3
+    gap_by_hand = pl.col("close") - pl.col("close").rolling_mean(3)
+    by_hand = bars.select(gap=pl.when(warmed).then(gap_by_hand)).collect()["gap"]
     assert signals.schema["gap"] == pl.Float64
-    assert signals.schema["above"] == pl.Boolean
-    assert signals["gap"].equals(by_hand["gap"])
-    assert signals["above"].equals(by_hand["above"])
-    assert signals["gap"].null_count() == 2
+    assert signals["gap"].equals(by_hand)
+    assert signals["gap"].null_count() == 3
+    assert signals["doubled"].equals((by_hand * 2).alias("doubled"))
+
+
+def test_a_feature_in_a_slot_reads_the_bars_alone() -> None:
+    """What else a feature reads it declares, for the runtime of step 3.2 to evaluate, so an
+    earlier slot's column is not one of its inputs."""
+    store_with("ohlcv-1m")
+    source = cell("@ff.feature()").replace('pl.col("close")', 'pl.col("close") > pl.col("mean")')
+    features = {"mean": pl.col("close").rolling_mean(3), "gap": features_of_cell(source)["gap"]()}
+    bars = ff.market.load("ES", "5m", "2026-03-05", "2026-03-06")
+    expected = 'Expected the expressions of feature gap to evaluate over the bars, got: unable to find column "mean"'
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        strategy(features).signals(bars)
 
 
 def test_a_feature_of_several_outputs_waits_for_step_3_2_in_a_strategy_slot() -> None:

@@ -23,15 +23,12 @@ negative shift, backward fill, or centred window, which the lint of step 3.4 fin
 and of kind `other` when it is left out. `inputs` declares what the feature reads beside the
 bars: other features, by their `FeatureDef`, and `InstrumentInput`, `TimeframeInput`, and
 `DatasetInput`, which the runtime of step 3.2 evaluates. `warmup` is the number of bars before
-the feature's values mean what they say, or a lambda of its parameters written in the
-decorator, such as `lambda n: 10 * n`.
-
-The hash covers the function's own text: a helper it calls is not versioned with it, and
-neither is a declaration bound to a name defined elsewhere, but the features it reads, whose
-hashes it covers (`BACKLOG.md`).
+the feature's values mean what they say, or a lambda of its parameters, such as
+`lambda n: 10 * n`. All three are written in the decorator, whose text the hash covers
+(`fefat.features.declarations`); a helper the function calls is not versioned with it
+(`BACKLOG.md`).
 """
 
-import ast
 import hashlib
 import inspect
 import json
@@ -43,19 +40,17 @@ from types import MappingProxyType
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
 
-from fefat.features.evaluation import FeatureSpec
-from fefat.features.inputs import (
-    DatasetInput,
-    DeclaredInput,
-    FeatureInput,
-    InstrumentInput,
-    OutputKind,
-    TimeframeInput,
+from fefat.features.declarations import (
+    INPUT_KINDS,
+    WrittenDeclarations,
+    inputs_as_written,
+    written_declarations,
 )
+from fefat.features.evaluation import FeatureSpec
+from fefat.features.inputs import DeclaredInput, FeatureInput, OutputKind
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 
 _RESERVED_OUTPUTS = frozenset({"ts_close", "warmup", *SIGNAL_BAR_COLUMNS})
-_INPUT_KINDS = (FeatureInput, InstrumentInput, TimeframeInput, DatasetInput)
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
 _PARAMETERS_CONFIG = ConfigDict(frozen=True, extra="forbid", strict=True)
 
@@ -64,7 +59,8 @@ _PARAMETERS_CONFIG = ConfigDict(frozen=True, extra="forbid", strict=True)
 class FeatureDef:
     """A feature's definition (the module docstring): its function, its normalised source, the
     model of its parameters, the inputs it declares beside the bars, its outputs with their kinds,
-    its warm-up, and its content hash. Call it with parameters for a `FeatureSpec`."""
+    its warm-up and the warm-up as its decorator writes it, and its content hash. Call it with
+    parameters for a `FeatureSpec`."""
 
     name: str
     function: Callable[..., object]
@@ -73,7 +69,7 @@ class FeatureDef:
     inputs: tuple[DeclaredInput, ...]
     outputs: Mapping[str, OutputKind]
     warmup: int | Callable[..., object]
-    warmup_text: str
+    written_warmup: int | str
     hash: str
 
     @property
@@ -111,7 +107,7 @@ class FeatureDef:
         if isinstance(bars, bool) or not isinstance(bars, int) or bars < 0:
             raise ValueError(
                 f"Expected the warm-up of feature {self.name} as a whole number of bars, at least "
-                f"0, got {bars!r} from {self.warmup_text} with {parameters!r}."
+                f"0, got {bars!r} from {self.written_warmup} with {parameters!r}."
             )
         return bars
 
@@ -125,15 +121,16 @@ def feature(
 ) -> Callable[[Callable[..., object]], FeatureDef]:
     """Define a feature (the module docstring): `params` gives its parameters' defaults, `warmup`
     its warm-up in bars or as a lambda of its parameters, `inputs` what it reads beside the bars,
-    and `outputs` its outputs with their kinds."""
+    and `outputs` its outputs with their kinds, the last three written in the decorator."""
 
     def define(function: Callable[..., object]) -> FeatureDef:
         name = function.__name__
         code = _source(function)
-        call = _feature_call(name, code)
         model = _parameter_model(name, function, {} if params is None else params)
-        declared = tuple(_declared(name, each) for each in inputs)
         checked_warmup = _checked_warmup(name, warmup, model)
+        declared = tuple(_declared(name, each) for each in inputs)
+        written = written_declarations(name, code)
+        _require_inputs_as_written(name, declared, written)
         return FeatureDef(
             name=name,
             function=function,
@@ -142,7 +139,7 @@ def feature(
             inputs=declared,
             outputs=_outputs(name, {name: OutputKind.OTHER} if outputs is None else outputs),
             warmup=checked_warmup,
-            warmup_text=_warmup_text(name, code, call, checked_warmup),
+            written_warmup=written.warmup,
             hash=content_hash(code, declared, model.model_json_schema()),
         )
 
@@ -173,27 +170,6 @@ def _source(function: Callable[..., object]) -> str:
         ) from error
     lines = textwrap.dedent(text.replace("\r\n", "\n")).split("\n")
     return "\n".join(line.rstrip() for line in lines).strip("\n") + "\n"
-
-
-def _feature_call(name: str, code: str) -> ast.Call:
-    """The `@feature(...)` call among the function's decorators: its version keeps the
-    declarations as that call writes them, so a feature made without it is refused."""
-    statement = ast.parse(code).body[0]
-    if isinstance(statement, ast.FunctionDef):
-        for decorator in statement.decorator_list:
-            if isinstance(decorator, ast.Call) and _names_feature(decorator.func):
-                return decorator
-    raise ValueError(
-        f"Expected feature {name} defined with def under its decorator, @ff.feature(...), whose "
-        "declarations its version keeps, got a function without it."
-    )
-
-
-def _names_feature(callee: ast.expr) -> bool:
-    """Whether a decorator calls `feature`, as `@feature`, `@ff.feature`, or `@features.feature`."""
-    if isinstance(callee, ast.Name):
-        return callee.id == "feature"
-    return isinstance(callee, ast.Attribute) and callee.attr == "feature"
 
 
 def _parameter_model(
@@ -265,26 +241,41 @@ def _type_text(hint: object) -> str:
     return getattr(base, "__name__", str(base))
 
 
+def _require_inputs_as_written(
+    name: str, declared: Sequence[DeclaredInput], written: WrittenDeclarations
+) -> None:
+    """Refuse inputs other than those the decorator writes: an input other than a feature bound
+    to a name defined elsewhere would change no hash."""
+    if inputs_as_written(declared, written.inputs):
+        return
+    writes = ", ".join("a name" if each is None else repr(each) for each in written.inputs)
+    raise ValueError(
+        f"Expected each input of feature {name} other than a feature written in its decorator "
+        f'with literal values, such as InstrumentInput(root="MNQ"), got {declared!r} where it '
+        f"writes {writes}."
+    )
+
+
 def _declared(name: str, declared: FeatureDef | DeclaredInput) -> DeclaredInput:
     """An input of the feature as its version keeps it: another feature by its name and hash."""
     if isinstance(declared, FeatureDef):
         return FeatureInput(name=declared.name, hash=declared.hash)
-    if isinstance(declared, _INPUT_KINDS):
+    if isinstance(declared, INPUT_KINDS):
         return declared
-    kinds = ", ".join(kind.__name__ for kind in _INPUT_KINDS)
+    kinds = ", ".join(kind.__name__ for kind in INPUT_KINDS)
     raise ValueError(
         f"Expected each input of feature {name} as a feature or one of {kinds}, got {declared!r}."
     )
 
 
 def _outputs(name: str, declared: Mapping[str, str]) -> Mapping[str, OutputKind]:
-    """The outputs with their kinds, named apart from the bars' columns, `ts_close`, and
-    `warmup`, which the frame of `FeatureSpec.evaluate` holds beside them."""
+    """The outputs with their kinds, at least one, named apart from the bars' columns,
+    `ts_close`, and `warmup`, which the frame of `FeatureSpec.evaluate` holds beside them."""
     taken = sorted(set(declared) & _RESERVED_OUTPUTS)
-    if taken:
+    if taken or not declared:
         raise ValueError(
-            f"Expected outputs of feature {name} named apart from ts_close, warmup, and the bars' "
-            f"columns, got {', '.join(taken)}."
+            f"Expected outputs of feature {name}, at least one, named apart from ts_close, warmup, "
+            f"and the bars' columns, got {', '.join(taken) if taken else 'none'}."
         )
     kinds = [kind.value for kind in OutputKind]
     unknown = {output: kind for output, kind in declared.items() if kind not in kinds}
@@ -315,21 +306,3 @@ def _checked_warmup(
             f"lambda of its parameters, got {warmup!r}."
         )
     return warmup
-
-
-def _warmup_text(name: str, code: str, call: ast.Call, warmup: int | Callable[..., object]) -> str:
-    """The warm-up as the decorator writes it, which the version keeps: a number of bars or a
-    lambda. One bound to a name defined elsewhere is refused, since the version would miss its
-    code."""
-    written = next((keyword.value for keyword in call.keywords if keyword.arg == "warmup"), None)
-    if written is None and warmup == 0:
-        return "0"
-    if isinstance(written, ast.Constant | ast.Lambda):
-        segment = ast.get_source_segment(code, written)
-        if segment is not None:
-            return segment
-    got = "none in it" if written is None else ast.unparse(written)
-    raise ValueError(
-        f"Expected the warm-up of feature {name} written in its decorator, as a number of bars or "
-        f"a lambda of its parameters, got {got}."
-    )

@@ -112,15 +112,64 @@ def reader(bars: pl.LazyFrame) -> dict[str, pl.Expr]:
     assert loaded.hash == defined["reader"].hash
 
 
-def test_a_file_changed_after_it_was_written_is_refused() -> None:
+@pytest.mark.parametrize(
+    ("written", "changed"),
+    [
+        pytest.param(b"rolling_mean", b"rolling_max", id="code"),
+        pytest.param(b'"default": 3', b'"default": 4', id="parameter-schema"),
+        pytest.param(b'"gap": "price_distance"', b'"gap": "flag"', id="outputs"),
+        pytest.param(b'"warmup": "lambda n: n"', b'"warmup": 0', id="warmup"),
+    ],
+)
+def test_a_file_changed_after_it_was_written_is_refused(written: bytes, changed: bytes) -> None:
     ff.features.save(features_of_cell(GAP)["gap"])
     path = folder("gap") / "v1.json"
-    path.write_bytes(path.read_bytes().replace(b"rolling_mean", b"rolling_max"))
+    content = path.read_bytes()
+    assert written in content
+    path.write_bytes(content.replace(written, changed))
 
     with pytest.raises(ValueError, match="the file was changed after it was written"):
         ff.features.load("gap", 1)
     with pytest.raises(ValueError, match="the file was changed after it was written"):
         ff.features.save(features_of_cell(GAP)["gap"])
+
+
+def test_a_file_whose_inputs_were_changed_after_it_was_written_is_refused() -> None:
+    source = """\
+@ff.feature(inputs=[ff.features.InstrumentInput(root="MNQ")])
+def reader(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("close")
+"""
+    ff.features.save(features_of_cell(source)["reader"])
+    path = folder("reader") / "v1.json"
+    path.write_bytes(path.read_bytes().replace(b'"root": "MNQ"', b'"root": "MCL"'))
+
+    with pytest.raises(ValueError, match="the file was changed after it was written"):
+        ff.features.load("reader", 1)
+
+
+def test_a_version_not_saved_is_named_when_it_is_missing() -> None:
+    expected = (
+        f"Expected version 2 of feature gap at {folder('gap') / 'v2.json'}, got no such file."
+    )
+
+    with pytest.raises(FileNotFoundError, match=re.escape(expected)):
+        ff.features.load("gap", 2)
+
+
+def test_a_version_another_process_saved_first_is_never_replaced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two processes saving under one name at once both take the next number; the second is
+    refused rather than replacing the first, as here, where the versions on disk go unseen."""
+    first = ff.features.save(features_of_cell(GAP)["gap"])
+    before = (folder("gap") / "v1.json").read_bytes()
+    monkeypatch.setattr("fefat.features.versions._version_numbers", lambda folder: [])
+
+    with pytest.raises(ValueError, match="saved by another process first: save it again"):
+        ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
+    assert (folder("gap") / "v1.json").read_bytes() == before
+    assert ff.features.load("gap", 1) == first
 
 
 def test_a_record_moved_under_another_name_is_refused() -> None:

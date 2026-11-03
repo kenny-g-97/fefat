@@ -14,6 +14,7 @@ import polars as pl
 import pytest
 
 import fefat as ff
+from fefat.features import FeatureDef, FeatureSpec
 from fefat.features.examples import atr, in_session_window, rsi
 from notebook_runs import store_with
 
@@ -123,9 +124,12 @@ def test_the_session_window_follows_local_time_across_the_clock_change() -> None
 
 
 def test_a_window_whose_end_comes_first_runs_past_midnight() -> None:
-    closes = [chicago(6, c) for c in ["16:59", "17:00", "23:55", "00:05", "08:25", "08:30"]]
+    evening = [chicago(5, c) for c in ["16:59", "17:00", "23:55"]]
+    morning = [chicago(6, c) for c in ["00:05", "08:25", "08:30"]]
 
-    assert flags(closes, start="17:00", end="08:30") == [False, True, True, True, True, False]
+    flagged = flags([*evening, *morning], start="17:00", end="08:30")
+
+    assert flagged == [False, True, True, True, True, False]
 
 
 def test_the_session_window_flags_the_cash_session_of_the_fixtures_bars() -> None:
@@ -135,6 +139,18 @@ def test_the_session_window_flags_the_cash_session_of_the_fixtures_bars() -> Non
     flagged = in_session_window().evaluate(bars).collect()["in_session_window"].sum()
 
     assert flagged == 78
+
+
+@pytest.mark.parametrize("example", [rsi, atr])
+def test_a_count_of_bars_below_one_is_refused(example: FeatureDef) -> None:
+    expected = (
+        f"Expected the parameters of feature {example.name} as {{n: int}}, got n=0: Input "
+        "should be greater than or equal to 1."
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        example(n=0)
+    assert example.parameter_schema["properties"]["n"]["minimum"] == 1
 
 
 @pytest.mark.parametrize(
@@ -184,7 +200,41 @@ def test_the_examples_take_their_slots_in_a_signal_strategy() -> None:
         {"rsi": pl.Float64, "atr": pl.Float64, "cash": pl.Boolean}
     )
     assert signals.select(pl.col("rsi", "atr").is_nan().sum()).row(0) == (0, 0)
+    assert signals.head(140).select(pl.col("rsi", "atr").null_count()).row(0) == (140, 140)
+    assert signals.slice(140).select(pl.col("rsi", "atr").null_count()).row(0) == (0, 0)
     assert signals["long_entry"].sum() > 0
+    assert not signals.head(140)["long_entry"].any()
+
+
+def test_the_examples_refuse_contracts_stacked_one_after_another() -> None:
+    """`load(continuous=False)` gives each contract's bars after the one before, so ESM2026's
+    first bars would read ESH2026's last close, days later, as the bar before."""
+    store_with("ohlcv-1m")
+    stacked = ff.market.load("ES", "5m", "2026-03-05", "2026-03-09", continuous=False)
+
+    with pytest.raises(ValueError, match=re.escape("as load(continuous=False) stacks contracts")):
+        rsi(n=14).evaluate(stacked)
+
+
+@pytest.mark.parametrize("example", [rsi(n=14), atr(n=14), in_session_window()])
+def test_the_examples_values_before_a_cut_never_change(example: FeatureSpec) -> None:
+    """D-12: cut at each session's first and last close, and a nanosecond either side, the
+    fixtures' bars give the values before the cut that the whole three sessions give."""
+    store_with("ohlcv-1m")
+    bars = ff.market.load("ES", "5m", "2026-03-05", "2026-03-09").collect()
+    whole = example.evaluate(bars).collect()
+    edges = bars.group_by("trade_date").agg(
+        first=pl.col("ts_close").min(), last=pl.col("ts_close").max()
+    )
+    cuts = {
+        edge + step
+        for edge in edges["first"].to_list() + edges["last"].to_list()
+        for step in (-1, 0, 1)
+    }
+
+    for cut in sorted(cuts):
+        before = example.evaluate(bars.filter(pl.col("ts_close") <= cut)).collect()
+        assert before.rows() == whole.filter(pl.col("ts_close") <= cut).rows(), cut
 
 
 def test_a_stop_reads_the_example_atr_in_the_bars_units() -> None:

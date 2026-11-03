@@ -7,8 +7,10 @@ to a frame of `ts_close`, its outputs, and its warm-up flag.
     spec.evaluate(bars)  # ts_close, rsi, and warmup, true on the first 140 rows
 
 A value a feature cannot give yet is null, never NaN, which `SignalStrategy.signals()` refuses
-(D-53); the rows inside the declared warm-up keep the values the feature gives there, flagged. A
-feature that reads inputs beside the bars waits for the runtime of step 3.2."""
+(D-53); the rows inside the declared warm-up keep the values the feature gives there, flagged.
+The bars are one series, as `load` gives a root spliced or one contract, never the contracts
+`load(continuous=False)` stacks, and never a back-adjusted import. A feature that reads inputs
+beside the bars waits for the runtime of step 3.2."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -41,8 +43,15 @@ class FeatureSpec:
                 f"{kinds}: a feature that reads other inputs waits for the runtime of step 3.2."
             )
         frame = bars.lazy()
+        _require_one_series_of_raw_prices(frame, definition.name)
         outputs = _named(definition, definition.function(frame, **dict(self.parameters)))
-        schema = frame.select(*outputs.values()).collect_schema()
+        try:
+            schema = frame.select(*outputs.values()).collect_schema()
+        except pl.exceptions.PolarsError as error:
+            raise ValueError(
+                f"Expected the expressions of feature {definition.name} to evaluate over the bars, "
+                f"got: {str(error).splitlines()[0]}"
+            ) from error
         for output, kind in definition.outputs.items():
             if not kind.admits(schema[output]):
                 raise ValueError(
@@ -63,6 +72,29 @@ class FeatureSpec:
             "ts_close",
             *self.expressions(bars).values(),
             warmup=pl.int_range(pl.len()) < self.warmup,
+        )
+
+
+def _require_one_series_of_raw_prices(bars: pl.LazyFrame, name: str) -> None:
+    """Refuse bars a feature would read across in error, since it reads the row above as the bar
+    before: bars that are not one series, their closes strictly increasing, such as the contracts
+    `load(continuous=False)` stacks, whose next contract's first rows would read the last rows of
+    the one before, days later; and a back-adjusted import's, whose prices hold the gaps of rolls
+    after them (D-09, D-49), as a signal strategy refuses them."""
+    checks = {"back": (pl.col("ts_close").diff() <= 0).any()}
+    if "close_raw" in bars.collect_schema():
+        checks["adjusted"] = pl.col("close_raw").is_null().any()
+    found = bars.select(**checks).collect().row(0, named=True)
+    if found["back"]:
+        raise ValueError(
+            f"Expected the bars of feature {name} as one series, their closes strictly "
+            "increasing, got a close at or before the one above it, as load(continuous=False) "
+            "stacks contracts: load the root spliced, or one contract."
+        )
+    if found.get("adjusted"):
+        raise ValueError(
+            f"Expected bars with raw closes for feature {name}, got a back-adjusted import, whose "
+            "prices hold the gaps of rolls after them (D-09, D-49)."
         )
 
 
