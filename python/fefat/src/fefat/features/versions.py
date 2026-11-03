@@ -119,16 +119,23 @@ def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> Non
 
 def _create(path: Path, record: FeatureVersion) -> None:
     """Write `record` to a new file at `path`: a version another process saved there first is
-    refused, never replaced (D-11)."""
+    refused, never replaced (D-11), and a file this write leaves half-written is removed, since
+    every later save of the name reads it."""
+    content = record.model_dump_json(indent=2).encode() + b"\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with path.open("xb") as created:
-            created.write(record.model_dump_json(indent=2).encode() + b"\n")
+        created = path.open("xb")
     except FileExistsError as error:
         raise ValueError(
             f"Expected to save version {record.version} of feature {record.name} as a new file, "
             f"got {path} saved by another process first: save it again."
         ) from error
+    try:
+        with created:
+            created.write(content)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def _folder(name: str) -> Path:

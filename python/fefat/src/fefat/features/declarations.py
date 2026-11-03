@@ -90,7 +90,10 @@ def _names_feature(callee: ast.expr) -> bool:
 
 
 def _written_outputs(name: str, node: ast.expr) -> dict[str, str]:
-    """The outputs a literal mapping of names to kinds writes."""
+    """The outputs a literal mapping of names to kinds writes, and the default one, named after
+    the feature and of kind `other`, where it writes None."""
+    if isinstance(node, ast.Constant) and node.value is None:
+        return {name: "other"}
     try:
         outputs = ast.literal_eval(node)
     except (ValueError, TypeError):

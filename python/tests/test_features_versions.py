@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 from pathlib import Path
+from typing import IO, Any
 
 import pytest
 
@@ -155,6 +156,40 @@ def test_a_version_not_saved_is_named_when_it_is_missing() -> None:
 
     with pytest.raises(FileNotFoundError, match=re.escape(expected)):
         ff.features.load("gap", 2)
+
+
+def test_a_version_whose_write_fails_leaves_no_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A half-written version would block every later save of its name, which reads it."""
+    gap = features_of_cell(GAP)["gap"]
+    opened = Path.open
+
+    class FullDisk:
+        """A new file that takes no bytes, as on a full disk."""
+
+        def __init__(self, created: IO[Any]) -> None:
+            self.created = created
+
+        def __enter__(self) -> "FullDisk":
+            return self
+
+        def __exit__(self, *raised: object) -> None:
+            self.created.close()
+
+        def write(self, content: bytes) -> int:
+            raise OSError(28, "No space left on device")
+
+    def open_on_a_full_disk(path: Path, mode: str = "r", *rest: Any, **options: Any) -> Any:
+        file = opened(path, mode, *rest, **options)
+        return FullDisk(file) if mode == "xb" else file
+
+    with monkeypatch.context() as full_disk:
+        full_disk.setattr(Path, "open", open_on_a_full_disk)
+        with pytest.raises(OSError, match="No space left on device"):
+            ff.features.save(gap)
+
+    assert folder("gap").is_dir()
+    assert not (folder("gap") / "v1.json").exists()
+    assert ff.features.save(gap).version == 1
 
 
 def test_a_version_another_process_saved_first_is_never_replaced(

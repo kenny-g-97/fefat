@@ -247,6 +247,12 @@ def test_a_declaration_its_version_could_not_keep_is_refused(source: str, refusa
         features_of_cell(source)
 
 
+def test_outputs_written_as_none_are_the_default_output() -> None:
+    gap = features_of_cell(cell("@ff.feature(outputs=None)"))["gap"]
+
+    assert gap.outputs == {"gap": OutputKind.OTHER}
+
+
 def test_calling_a_feature_binds_its_parameters_and_their_warmup() -> None:
     gap = features_of_cell(GAP)["gap"]
 
