@@ -1,5 +1,5 @@
 """A run's report as text (step 2.12, `02` §7), which `Run.report()` prints: the run, the
-fidelity era of its trade dates, its trades split by the fidelity of their entry and, from step
+eras of its signal bars' levels (step 3.2), the fidelity era of its trade dates, its trades split by the fidelity of their entry and, from step
 2.13, by the fidelity of their paths, its main metrics, and its fidelity check, the error bar of
 its days at lower fidelity, or why it has none.
 
@@ -35,6 +35,7 @@ def report_text(record: RunRecord) -> str:
     return "\n\n".join(
         [
             _heading(record),
+            "Signal bars\n" + "\n".join(_era_line(era) for era in record.signal_bar_eras),
             "Fidelity eras\n" + "\n".join(_era_line(era) for era in eras),
             _split_by_fidelity(metrics, eras),
             _paths_by_fidelity(record),
@@ -49,7 +50,8 @@ def _heading(record: RunRecord) -> str:
     return (
         f"Run {record.run_key[:12]} of {record.instrument.root} {spec['timeframe']} bars from "
         f"{window.start} to {window.end}\nEach trade date filled on its finest data at or "
-        f"coarser than {record.config.fidelity}; signal bars built from {record.signal_source}."
+        f"coarser than {record.config.fidelity}; signal bars built from each trade date's finest "
+        "data."
     )
 
 

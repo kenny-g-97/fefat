@@ -25,9 +25,7 @@ from fefat.backtest import (
     fidelity_check,
 )
 from fefat.config import resolve_paths
-from fefat.market.dataset_choice import provider_datasets, signal_source
 from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
-from fefat.market.schema import Timeframe
 from fefat.market.store import Store
 from notebook_runs import breakout, store_with
 
@@ -88,7 +86,9 @@ def test_a_run_records_its_fidelity_eras_and_checks_the_period_its_ticks_cover()
         {"first": "2026-03-03", "last": "2026-03-09", "trade_dates": 5, "fidelity": "1m"},
         {"first": "2026-03-10", "last": "2026-03-13", "trade_dates": 4, "fidelity": "trades"},
     ]
-    assert run.record.signal_source == ONE_MINUTE
+    # Step 3.2: the signal bars of each trade date come from its finest level, as it fills.
+    assert run.record.signal_bar_eras == (bars, ticks)
+    assert stored["signal_bar_eras"] == stored["fidelity_eras"]
     assert (run.record.window.start, run.record.window.end) == (date(2026, 3, 3), date(2026, 3, 13))
     check = run.metrics.fidelity_check
     assert isinstance(check, FidelityCheck)
@@ -250,46 +250,49 @@ def test_trades_entered_at_one_decision_on_one_side_match_one_by_one() -> None:
     assert (compared.unmatched_trades, compared.extra_trades) == (0, 0)
 
 
-@pytest.mark.usefixtures("fixture_store")
-def test_signal_bars_come_from_the_level_that_covers_the_most_of_the_window() -> None:
-    # The code review: a level that covers less of the window than another would cut the window
-    # to it, so the level covering the most is the source, and among equals the finest, as `load`
-    # chooses, whose trades give the vwap an import's bars lack (the engine review; your choice
-    # of 2026-10-30).
-    paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
-    held = provider_datasets(store, "ES", None, None)
-    window, five_minutes = (date(2026, 3, 5), date(2026, 3, 9)), Timeframe.parse("5m")
-    synthetic = paths.data_dir / "synthetic"
-    assert signal_source(store, held, five_minutes, window) == TickFidelity.TRADES
-
-    for monday in (synthetic / "trades" / "root=ES").glob("contract=*/date=2026-03-09"):
-        shutil.rmtree(monday)
-    assert signal_source(store, held, five_minutes, window) == ONE_SECOND
-
-    for monday in (synthetic / "ohlcv-1s" / "root=ES").glob("contract=*/date=2026-03-09"):
-        shutil.rmtree(monday)
-    assert signal_source(store, held, five_minutes, window) == ONE_MINUTE
-    # The step review: a store without trades or bars names what it lacks, at once.
-    with pytest.raises(ValueError, match="Expected trades or bars to build signal bars from"):
-        signal_source(store, {}, five_minutes, window)
+def breakout_reading_vwap() -> ff.SignalStrategy:
+    """`breakout` with its bars' vwap as a feature, which trades give and a vendor's bars lack."""
+    strategy = breakout()
+    return ff.SignalStrategy(
+        instrument=strategy.instrument,
+        timeframe=strategy.timeframe,
+        features={**strategy.features, "bar_vwap": pl.col("vwap")},
+        long_entry=strategy.long_entry,
+        short_entry=strategy.short_entry,
+        execution=strategy.execution,
+    )
 
 
-@pytest.mark.usefixtures("fixture_store")
-def test_a_level_counts_the_trade_dates_it_holds_not_the_span_between_them() -> None:
-    # The Phase 2 exit's reviews: trades of 03-05 and 03-09 alone span the window as the
-    # 1-second bars do, but hold two of its three trade dates, so the 1-second bars build the
-    # signal bars, and the grid never fills 03-06 with empty buckets.
-    paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
-    held = provider_datasets(store, "ES", None, None)
-    window, five_minutes = (date(2026, 3, 5), date(2026, 3, 9)), Timeframe.parse("5m")
-    for friday in (paths.data_dir / "synthetic" / "trades" / "root=ES").glob(
-        "contract=*/date=2026-03-06"
-    ):
-        shutil.rmtree(friday)
+@pytest.mark.usefixtures("ticks_for_the_last_sessions")
+def test_a_trade_dates_signal_bars_are_the_same_in_a_window_ending_on_it_and_one_past_it() -> None:
+    # The Phase 2 exit's leakage audit (D-71): with trades of 03-10 and 03-11 alone and 1-minute
+    # bars to 03-13 without a vwap, as a vendor's are, a level chosen over the whole window built
+    # 03-10 from the trades in a window ending on 03-11 and from the bars in one running to 03-13,
+    # so a strategy reading the vwap decided otherwise on the same day.
+    store = Store(resolve_paths(os.environ).data_dir)
+    for file in store.list_partitions():
+        partition = file.partition
+        schema = str(partition.dataset.schema_name)
+        if schema != "ohlcv-1m" and str(partition.key) in ("2026-03-12", "2026-03-13"):
+            shutil.rmtree((store.folder / partition.relative_path()).parent)
+        if schema == "ohlcv-1m":
+            rows = store.scan_partition(partition).collect()
+            store.write_partition(partition, rows.with_columns(vwap=pl.lit(None, pl.Int64)))
 
-    assert signal_source(store, held, five_minutes, window) == ONE_SECOND
+    ending = ff.backtest.run(breakout_reading_vwap(), "2026-03-10", "2026-03-11")
+    running_past = ff.backtest.run(breakout_reading_vwap(), "2026-03-10", "2026-03-13")
+
+    shared = pl.col("trade_date") <= date(2026, 3, 11)
+    assert ending.signals.get_column("bar_vwap").null_count() == 0
+    assert running_past.signals.filter(shared).equals(ending.signals)
+    trades = FidelityEra(
+        first=date(2026, 3, 10), last=date(2026, 3, 11), trade_dates=2, fidelity=TickFidelity.TRADES
+    )
+    minutes = FidelityEra(
+        first=date(2026, 3, 12), last=date(2026, 3, 13), trade_dates=2, fidelity=ONE_MINUTE
+    )
+    assert ending.record.signal_bar_eras == (trades,)
+    assert running_past.record.signal_bar_eras == (trades, minutes)
 
 
 def outcome_of(run: Run) -> PeriodOutcome:

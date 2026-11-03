@@ -211,7 +211,7 @@ def _ran(
         instrument=_instrument_record(inputs),
         datasets=inputs.datasets,
         signal_frame_hash=frame_hash,
-        signal_source=inputs.signal_source,
+        signal_bar_eras=inputs.signal_bar_eras,
         config=inputs.config,
         fee_table=inputs.fee_table,
         rolls=inputs.rolls,

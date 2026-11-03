@@ -10,8 +10,8 @@ date (`signal_bar_eras`, D-71), or every date's from the fidelity named
 (`fefat.market.fidelity`): trades, then bars by their timeframe, finest first, none coarser
 than the bars asked for; bars coarser than a minute are an import's finest data, which fill
 backtests at their own fidelity. The roll calendar reads the 1-minute bars, or else the finest
-bars held. `dataset_warnings` names what every load of a dataset, and its import, warns of. A
-backtest builds its signal bars from the data `signal_source` names (step 2.12).
+bars held. `dataset_warnings` names what every load of a dataset, and its import, warns of,
+and a backtest reads the signal bars `load` builds and records their eras (step 3.2).
 """
 
 from datetime import date
@@ -21,7 +21,7 @@ import polars as pl
 
 from fefat.market.catalog import CATALOG, Catalog
 from fefat.market.coverage import session_datasets
-from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, FidelityEra, TickFidelity
+from fefat.market.fidelity import ONE_MINUTE, FidelityEra, TickFidelity
 from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind, YearMonth
 from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
@@ -153,39 +153,6 @@ def roll_dataset(datasets: dict[str, Dataset], root: str) -> Dataset:
     if not bars:
         raise ValueError(f"Expected bars of {root} to splice its contracts, got none.")
     return bars[0]
-
-
-_SIGNAL_SOURCES: tuple[TickFidelity | Timeframe, ...] = (
-    ONE_MINUTE,
-    ONE_SECOND,
-    TickFidelity.TRADES,
-)
-"""The data a backtest's signal bars may be built from."""
-
-
-def signal_source(
-    store: Store, datasets: dict[str, Dataset], timeframe: Timeframe, dates: tuple[date, date]
-) -> TickFidelity | Timeframe:
-    """The data a backtest builds its signal bars of `timeframe` from (step 2.12): of the
-    1-minute bars, 1-second bars, and trades held that build them, the finest of those holding
-    the most trade dates of the window from `dates`' first to its last, since ticks may cover a
-    part of the window that bars cover, or bars a part the ticks cover, and among equals
-    `load`'s own choice, whose trades give the vwap and trade count an import's bars lack (your
-    choice of 2026-10-30); else what `load` reads, the finest data held, an import's coarser
-    bars, which it refuses when they are coarser than `timeframe`."""
-    held = _finest_first(datasets)
-    if not held:
-        named = ", ".join(sorted(datasets)) or "none"
-        raise ValueError(f"Expected trades or bars to build signal bars from, got {named}.")
-    building = [
-        (level, dataset)
-        for level, dataset in held
-        if level in _SIGNAL_SOURCES and _builds(level, timeframe)
-    ]
-    if not building:
-        return held[0][0]
-    covered = [len(_trade_dates_held(store, dataset, dates)) for _, dataset in building]
-    return building[covered.index(max(covered))][0]
 
 
 def signal_bar_eras(
