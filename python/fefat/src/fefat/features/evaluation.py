@@ -4,7 +4,7 @@ to a frame of `ts_close`, its outputs, and its warm-up flag.
 
     spec = rsi(n=14)
     spec.expressions(bars)  # {"rsi": <expression>}, a NaN that arithmetic gives made null
-    spec.evaluate(bars)  # ts_close, rsi, and warmup, true on the first 140 rows
+    spec.evaluate(bars)  # ts_close, rsi, and warmup, true on the first 294 rows
 
 A value a feature cannot give yet is null, never NaN, which `SignalStrategy.signals()` refuses
 (D-53); the rows inside the declared warm-up keep the values the feature gives there, flagged.

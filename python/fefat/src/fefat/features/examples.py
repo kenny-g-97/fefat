@@ -21,24 +21,26 @@ BarCount = Annotated[int, Field(ge=1)]
 """A number of bars, at least one, as a moving average's or a range's."""
 
 
-@feature(params={"n": 14}, warmup=lambda n: 10 * n, outputs={"rsi": "ratio"})
+@feature(params={"n": 14}, warmup=lambda n: 21 * n, outputs={"rsi": "ratio"})
 def rsi(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     """The relative strength index of the closes over `n` bars, from 0 to 100, as `02` §5 writes
     it: 100 less 100 over one plus the closes' mean rise over their mean fall, each mean weighing
     a bar 1 - 1/n times the bar after it (`ewm_mean(alpha=1/n)`), and null where the closes have
-    not moved. By its warm-up of ten times `n` bars the weight of the bars before has fallen below
-    a ten-thousandth; TA-Lib seeds its means otherwise, which step 3.5 matches."""
+    not moved. A mean never forgets its first bars: by its warm-up of 21 times `n` bars their
+    weight has fallen below a billionth, the tolerance within which values read from a later
+    start must agree with the whole range's, as the feature cache and the leak detector compare
+    them (step 3.3, your choice); TA-Lib seeds its means otherwise, which step 3.5 matches."""
     change = pl.col("close").diff()
     rise, fall = change.clip(lower_bound=0), (-change).clip(lower_bound=0)
     return 100 - 100 / (1 + rise.ewm_mean(alpha=1 / n) / fall.ewm_mean(alpha=1 / n))
 
 
-@feature(params={"n": 14}, warmup=lambda n: 10 * n, outputs={"atr": "price_distance"})
+@feature(params={"n": 14}, warmup=lambda n: 21 * n, outputs={"atr": "price_distance"})
 def atr(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     """The average true range over `n` bars in the bars' 1e-9 units of price, the units in which
     the execution template reads it (`ff.Stop(atr=1.5)`, F-RND-01): each bar's true range, its
-    high less its low widened to the close before it, averaged as `rsi` averages; the first
-    bar's range is its high less its low."""
+    high less its low widened to the close before it, averaged as `rsi` averages, with its
+    warm-up; the first bar's range is its high less its low."""
     previous = pl.col("close").shift(1)
     true_range = pl.max_horizontal("high", previous) - pl.min_horizontal("low", previous)
     return true_range.ewm_mean(alpha=1 / n)

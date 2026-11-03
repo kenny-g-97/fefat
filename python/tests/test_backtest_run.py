@@ -26,6 +26,7 @@ from fefat.backtest import ARTIFACT_SCHEMAS, Run, RunConfig, RunRecord
 from fefat.backtest.artifacts import read_artifact, write_run
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
+from fefat.market.continuous import RollCalendar, volume_rolls
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import DatasetOrigin, Partition
 from fefat.market.store import Store
@@ -76,6 +77,26 @@ def test_a_run_builds_its_fronts_months_alone_so_another_contract_cannot_refuse_
     run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-06")
 
     assert run.signals.get_column("contract").unique().to_list() == ["ESH2026"]
+
+
+@pytest.mark.usefixtures("fixture_store")
+def test_a_run_across_a_roll_builds_its_roll_calendar_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # D-71 (BACKLOG.md, step 3.3): the run's load and the rolls it crosses read one roll
+    # calendar, where each built its own.
+    built: list[RollCalendar] = []
+
+    def counted_rolls(*arguments: Any) -> RollCalendar:
+        built.append(volume_rolls(*arguments))
+        return built[-1]
+
+    monkeypatch.setattr("fefat.market.roll_calendars.volume_rolls", counted_rolls)
+
+    run = ff.backtest.run(breakout(), "2026-03-06", "2026-03-09")
+
+    assert [roll.contract for roll in run.record.rolls] == ["ESM2026"]
+    assert len(built) == 1
 
 
 @pytest.mark.usefixtures("fixture_store")

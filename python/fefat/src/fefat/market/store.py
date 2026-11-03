@@ -225,12 +225,8 @@ class Store:
             )
 
     def _selected(self, request: PartitionRequest) -> tuple[PartitionFile, ...]:
-        dataset_folder = self._folder / request.dataset.relative_folder()
-        selected = _sorted_by_path(
-            file
-            for file in self._partition_files(dataset_folder)
-            if request.selects(file.partition)
-        )
+        listed = self.list_partitions(request.dataset)
+        selected = _sorted_by_path(file for file in listed if request.selects(file.partition))
         if not selected:
             raise ValueError(
                 f"Expected at least one partition of {request.dataset.relative_folder()} from "
@@ -239,7 +235,9 @@ class Store:
         return selected
 
     def _snapshot(
-        self, request: PartitionRequest, digest_of: Callable[[Path], FileDigestRecord]
+        self,
+        request: PartitionRequest,
+        digest_of: Callable[[Path], FileDigestRecord],
     ) -> Snapshot:
         self.dataset_metadata(request.dataset)
         partitions = tuple(
@@ -272,6 +270,28 @@ class Store:
         frame = pl.read_parquet(io.BytesIO(self._pinned_bytes(digest)))
         require_columns(expected, frame.schema, digest.path)
         return frame
+
+
+class ListedStore(Store):
+    """A `Store` that lists each dataset's partitions once and keeps the listing, for a reader of
+    many windows of a store that does not change meanwhile, as `load` and the feature cache read
+    one (`fefat.market.api.series_source`): listing a dataset of years of files is most of the
+    time a month's load takes. A partition written through it lists the store again."""
+
+    def __init__(self, folder: Path) -> None:
+        super().__init__(folder)
+        self._listings: dict[Dataset, tuple[PartitionFile, ...]] = {}
+
+    def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
+        if dataset is None:
+            return super().list_partitions()
+        if dataset not in self._listings:
+            self._listings[dataset] = super().list_partitions(dataset)
+        return self._listings[dataset]
+
+    def write_partition(self, partition: Partition, frame: pl.DataFrame) -> PartitionFile:
+        self._listings.clear()
+        return super().write_partition(partition, frame)
 
 
 def _sorted_by_path(files: Iterable[PartitionFile]) -> tuple[PartitionFile, ...]:

@@ -153,9 +153,33 @@ class SignalStrategy(FrozenModel):
         (D-09). A back-adjusted import (D-49), a price that is not a whole number of units, and,
         with a market entry, a bar with both entry signals are refused, and the frame is checked
         as the engine reads it (`validated_signal_frame`)."""
-        frame = signal_bars = _with_raw_prices(bars.lazy().collect())
+        signal_bars = _with_raw_prices(bars.lazy().collect())
         graph = self.feature_graph()
         computed = graph.evaluate({**inputs, graph.signal_grid: signal_bars})
+        return self._signal_frame(signal_bars, computed, start)
+
+    def signals_with(
+        self,
+        bars: pl.DataFrame | pl.LazyFrame,
+        computed: pl.DataFrame,
+        *,
+        start: date | None = None,
+    ) -> pl.LazyFrame:
+        """`signals`, the columns of its `FeatureSpec`s taken from `computed`, their slots'
+        columns by `ts_close` as the feature cache keeps them (`fefat.features.cache`), where a
+        run reads them, instead of evaluated over `bars`; a row `computed` lacks has none."""
+        signal_bars = _with_raw_prices(bars.lazy().collect())
+        aligned = signal_bars.select("ts_close").join(
+            computed, on="ts_close", how="left", maintain_order="left"
+        )
+        return self._signal_frame(signal_bars, aligned, start)
+
+    def _signal_frame(
+        self, signal_bars: pl.DataFrame, computed: pl.DataFrame, start: date | None
+    ) -> pl.LazyFrame:
+        """The signal frame of `signals` from the bars with their raw prices and the columns of
+        the strategy's `FeatureSpec`s on their rows."""
+        frame = signal_bars
         for name, feature in self.features.items():
             frame = frame.with_columns(_feature_columns(computed, name, feature))
         signal_columns = self._signal_columns()

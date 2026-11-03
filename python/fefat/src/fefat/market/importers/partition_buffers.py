@@ -124,6 +124,5 @@ class PartitionBuffers:
 def _last_trade_date(partition: Partition) -> date | None:
     key = partition.key
     if isinstance(key, YearMonth):
-        first_of_next = date(key.year + key.month // 12, key.month % 12 + 1, 1)
-        return first_of_next - timedelta(days=1)
+        return key.days()[1]
     return key

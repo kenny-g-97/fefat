@@ -64,20 +64,25 @@ def gridded_bars(
     sessions: SessionTable,
     dates: tuple[date, date],
     contract: str | None,
-    calendar: RollCalendar | None = None,
+    calendar: RollCalendar | None,
+    building: Sequence[Dataset],
 ) -> pl.DataFrame:
     """The bars of `timeframe` on the session grid of the trade dates `dates` span, with the
     columns of `CONTRACT_BAR_COLUMNS`: each span's dates built from its dataset, up to the end of
     its data; given the roll `calendar`, the rows of each session's front only, which a spliced
     load keeps, instead of every contract's on every session; none without spans. The grid runs
-    to the end of `dates` or of the data, whichever comes first, so that a date no level holds
-    has the rows any window holding it gives."""
+    to the end of `dates` or of the data of `building`, the datasets that build the bars,
+    whichever comes first, so that a date no level holds, even in a stretch between two
+    datasets, has the rows any window holding it gives, whichever datasets it reaches (the
+    leakage audit of step 3.3)."""
     if not spans:
         return pl.DataFrame(schema=CONTRACT_BAR_COLUMNS)
     first, last = dates
     data_ends = {span.dataset: _end_of_data(store, span.dataset) for span in spans}
     ends = [min(sessions.following(span.last).open, data_ends[span.dataset]) for span in spans]
-    received_until = min(sessions.following(last).open, max(data_ends.values()))
+    received_until = min(
+        sessions.following(last).open, max(_end_of_data(store, each) for each in building)
+    )
     windows = [_rows(store, span, contract) for span in spans]
     contracts = contracts_by_instrument(
         pl.concat(window.select("instrument_id", "contract") for window in windows)
@@ -116,11 +121,9 @@ def _rows(store: Store, span: SourceSpan, contract: str | None) -> pl.DataFrame:
 
 def _end_of_data(store: Store, dataset: Dataset) -> int:
     """The instant by which every record of the dataset is in hand, after which a bucket is held
-    back (D-43, D-45)."""
+    back (D-43, D-45); a dataset without partitions has none in hand."""
     coverage = dataset_coverage(store, dataset)
-    if coverage is None:
-        raise ValueError(f"Expected partitions of {dataset.relative_folder()}, got none.")
-    return coverage.received_until
+    return 0 if coverage is None else coverage.received_until
 
 
 def _bars_of(

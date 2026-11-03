@@ -117,6 +117,22 @@ def test_removing_the_data_after_a_trade_date_changes_nothing_before_it(
         )
 
 
+def test_a_calendars_key_through_a_session_holds_as_later_sessions_come(
+    table: SessionTable,
+) -> None:
+    # Step 3.3: the feature cache keys a month by the calendar's rows through the last date it
+    # reads, which the bars of later sessions never change (D-09).
+    bars = fixture_bars("ohlcv-1m")
+    whole = volume_rolls(bars, table, ES, the_end(table))
+    in_hand = bars.filter(pl.col("trade_date") <= MARCH_6)
+    cut = volume_rolls(in_hand, table, ES, table.following(MARCH_6).open)
+
+    assert cut.key_through(MARCH_6) == whole.key_through(MARCH_6)
+    assert cut.key_through(MARCH_9) == whole.key_through(MARCH_9)
+    assert whole.key_through(MARCH_9) != whole.key_through(MARCH_6)
+    assert whole.key_through(MARCH_10) != whole.key_through(MARCH_9)
+
+
 def instants(table: SessionTable) -> list[int]:
     """Instants to cut the fixtures at: opens and closes and either side of them, inside a
     session, the print after the close of 03-06 and its bars' ends, the weekend, the end."""

@@ -171,14 +171,33 @@ def signal_bar_eras(
     spliced series' fronts, the level holds the date only if it holds it for that contract, since
     another contract's data builds none of its bars; every contract's counts otherwise. A
     timeframe finer than every level, or one that none builds, is refused."""
+    dated = signal_bar_levels(store, datasets, timeframe, dates, contracts).items()
+    return tuple(_era(list(run)) for _, run in groupby(dated, key=lambda pair: pair[1]))
+
+
+def signal_bar_levels(
+    store: Store,
+    datasets: dict[str, Dataset],
+    timeframe: Timeframe,
+    dates: tuple[date, date],
+    contracts: pl.DataFrame | None = None,
+) -> dict[date, TickFidelity | Timeframe]:
+    """Each trade date from `dates`' first to its last that a level holds, in order, with the
+    level its signal bars of `timeframe` are built from, as `signal_bar_eras` chooses it, which
+    the feature cache splits into partitions as the store does (`fefat.features.cache`)."""
     finest: dict[date, TickFidelity | Timeframe] = {}
     for level, dataset in reversed(_building(datasets, timeframe)):
         held = _held(store, dataset, dates)
         if contracts is not None:
             held = held.join(contracts, on=["trade_date", "contract"], how="semi")
         finest |= dict.fromkeys(held.get_column("trade_date").to_list(), level)
-    dated = sorted(finest.items())
-    return tuple(_era(list(run)) for _, run in groupby(dated, key=lambda pair: pair[1]))
+    return dict(sorted(finest.items()))
+
+
+def building_datasets(datasets: dict[str, Dataset], timeframe: Timeframe) -> list[Dataset]:
+    """The trades and bars held that build bars of `timeframe`, finest first: those whose
+    ends end a load's grid, whichever of them a window reaches (`gridded_bars`)."""
+    return [dataset for _, dataset in _building(datasets, timeframe)]
 
 
 def _building(

@@ -39,6 +39,7 @@ are the same when the data stops there (D-12).
     signal_bars = calendar.continuous_bars(bars)
 """
 
+import hashlib
 from datetime import date
 
 import polars as pl
@@ -127,8 +128,16 @@ class RollCalendar:
 
     @property
     def rows(self) -> pl.DataFrame:
-        """The row of each session, with the columns of `ROLL_CALENDAR_COLUMNS`."""
-        return self._rows
+        """The row of each session, with the columns of `ROLL_CALENDAR_COLUMNS`: a copy, since the
+        calendar is kept for every later load in the process (`fefat.market.api`)."""
+        return self._rows.clone()
+
+    def key_through(self, last: date) -> str:
+        """The SHA-256 of the root and the rows of the sessions to `last`: their fronts, offsets,
+        and rolls, which a later session's data never changes (D-09), so that the feature cache
+        keeps a month's values while a later month is imported (`fefat.features.cache`)."""
+        rows = self._rows.filter(pl.col("trade_date") <= last).write_csv()
+        return hashlib.sha256(f"{self._root}\n{rows}".encode()).hexdigest()
 
     def rolls(self) -> pl.DataFrame:
         """The rolls, sorted by trade date: at `session_open` the front passes from

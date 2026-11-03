@@ -17,8 +17,10 @@ folder. The built-in calendars are `fefat.market.builtin_calendars`:
     table.session(date(2026, 3, 9))  # open 2026-03-08 22:00 UTC (17:00 CDT), close 21:00 UTC
 """
 
+import bisect
 import hashlib
 from datetime import UTC, date, datetime, timedelta
+from functools import cached_property
 from pathlib import Path
 from typing import Self
 
@@ -109,6 +111,19 @@ class SessionTable:
         first, last = self._span()
         return f"SessionTable({self._calendar.name!r}, {self._sessions.height} sessions, {first} to {last})"
 
+    @cached_property
+    def key(self) -> str:
+        """The key `sessions_of` names the table's file by: its calendar with its holidays, this
+        module's source, and the Polars version, so that two tables of one key hold the same
+        sessions, as the feature cache's keys read it (`fefat.features.cache`)."""
+        return _cache_key(self._calendar)
+
+    @cached_property
+    def _trade_dates(self) -> list[date]:
+        """The table's trade dates in order, which `following` and `preceding` search by
+        bisection, since the feature cache counts warm-ups back a session at a time."""
+        return self._sessions.get_column("trade_date").to_list()
+
     def session(self, trade_date: date) -> Session:
         """The session of `trade_date`; a date without one is refused with the reason."""
         found = self._sessions.filter(pl.col("trade_date") == trade_date)
@@ -123,24 +138,24 @@ class SessionTable:
     def following(self, trade_date: date) -> Session:
         """The session of the first trade date after `trade_date`, whose open ends the break in
         which a print still takes `trade_date`; none after the table's last is refused."""
-        found = self._sessions.filter(pl.col("trade_date") > trade_date).head(1)
-        if found.is_empty():
+        index = bisect.bisect_right(self._trade_dates, trade_date)
+        if index == len(self._trade_dates):
             raise ValueError(
                 f"Expected a trade date of {self._calendar.name} after {trade_date}, got none in "
                 "its session table."
             )
-        return Session.model_validate(found.row(0, named=True))
+        return Session.model_validate(self._sessions.row(index, named=True))
 
     def preceding(self, trade_date: date) -> Session:
         """The session of the last trade date before `trade_date`, whose break ends at the open
         of `trade_date`'s session; none before the table's first is refused."""
-        found = self._sessions.filter(pl.col("trade_date") < trade_date).tail(1)
-        if found.is_empty():
+        index = bisect.bisect_left(self._trade_dates, trade_date)
+        if index == 0:
             raise ValueError(
                 f"Expected a trade date of {self._calendar.name} before {trade_date}, got none "
                 "in its session table."
             )
-        return Session.model_validate(found.row(0, named=True))
+        return Session.model_validate(self._sessions.row(index - 1, named=True))
 
     def between(self, first: date, last: date) -> pl.DataFrame:
         """The sessions of the trade dates from `first` to `last`, with the columns of
