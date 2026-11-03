@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import shutil
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -10,7 +11,9 @@ import polars as pl
 import pytest
 import yaml
 
+import fefat as ff
 from fefat.config import resolve_paths
+from fefat.features.examples import rsi
 from fefat.market.importers.profiles import preset_profiles
 from fefat.market.layout import (
     Dataset,
@@ -584,6 +587,55 @@ def test_cache_status_without_a_cache_says_how_to_build_one(
     assert capsys.readouterr().out == (
         f"No engine cache in {cache}; build one with fefat cache build --root <root> "
         "--year <year>.\n"
+    )
+
+
+def test_cache_features_lists_the_feature_cache_and_prunes_it_by_age(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Step 3.3: a line for the signal bars and each feature of each product and timeframe, here
+    # two trade dates of ticks, each a partition, and --prune removes the partitions unused for
+    # 30 days, or for the days --older-than names.
+    fixtures_in_the_data_folder()
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    today = f"{datetime.now(UTC):%Y-%m-%d}"
+
+    listed = main(["cache", "features"])
+    lines = capsys.readouterr().out.splitlines()
+    kept = main(["cache", "features", "--prune"])
+    kept_line = capsys.readouterr().out
+    pruned = main(["cache", "features", "--prune", "--older-than", "0"])
+    pruned_line = capsys.readouterr().out
+    empty = main(["cache", "features"])
+
+    assert (listed, kept, pruned, empty) == (0, 0, 0, 0)
+    span = "2 partitions, 2026-03-06 to 2026-03-09"
+    key = lines[1].split()[4].removesuffix(":")
+    assert [re.sub(r", [0-9.]+ [kM]B, ", ", <size>, ", line) for line in lines] == [
+        f"synthetic ES 5m bars: {span}, <size>, last used {today}",
+        f"synthetic ES 5m rsi(n=7) {key}: {span}, <size>, last used {today}",
+    ]
+    assert re.fullmatch(r"[0-9a-f]{8}", key)
+    assert re.fullmatch(
+        r"Removed 0 partitions of 0 kB unused for 30 days; 4 partitions of \d+ kB remain\.\n",
+        kept_line,
+    )
+    assert re.fullmatch(
+        r"Removed 4 partitions of \d+ kB unused for 0 days; 0 partitions of 0 kB remain\.\n",
+        pruned_line,
+    )
+    cache = resolve_paths(os.environ).cache_dir / "features"
+    assert capsys.readouterr().out == (
+        f"No feature cache in {cache}; ff.features.compute writes one.\n"
+    )
+
+
+def test_cache_features_takes_an_age_with_prune_alone(capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(["cache", "features", "--older-than", "3"])
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "fefat: Expected --older-than with --prune, got --older-than 3.\n"
     )
 
 
