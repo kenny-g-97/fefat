@@ -4,11 +4,14 @@ calendar rolls where the volumes cross, and with `quiet` a share of its minutes 
 trades, whose buckets the session grid holds empty (`zero_volume`), as sparse data does."""
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 from fefat.config import resolve_paths
 from fefat.market import instruments
@@ -53,6 +56,37 @@ YEAR = (
     listing("ESM2026", 2005, ("2026-02-23", "2026-03-31"), ("2026-03-11", "2026-03-31")),
 )
 """A year of ES from 2025-04-01 to 2026-03-31, rolling each quarter."""
+
+FEBRUARY = (
+    listing("ESH2026", 3001, ("2026-02-02", "2026-02-20"), ("2026-02-02", "2026-02-17")),
+    listing("ESM2026", 3002, ("2026-02-02", "2026-02-20"), ("2026-02-18", "2026-02-20")),
+)
+"""ES from 2026-02-02 to 02-20, across Presidents' Day's halt from noon on 02-16, which the
+session of 02-17 holds, and rolling from March to June at the open of 2026-02-19."""
+
+FEBRUARY_NQ = (
+    listing("NQH2026", 3101, ("2026-02-02", "2026-02-20"), ("2026-02-02", "2026-02-17")),
+    listing("NQM2026", 3102, ("2026-02-02", "2026-02-20"), ("2026-02-18", "2026-02-20")),
+)
+"""NQ over the same trade dates, a second instrument on ES's calendar."""
+QUIET = 0.3
+"""The share of minutes the leak detector's stores leave without trades (step 3.4)."""
+FEBRUARY_WINDOW = ("2026-02-11", "2026-02-19")
+"""The window the leak detector validates on the February store: six sessions after a week of
+warm-up and before one more session, holding a weekend, Presidents' Day's halt, and the roll."""
+
+
+@contextmanager
+def february_store(folder: Path) -> Iterator[None]:
+    """`FEFAT_HOME` and `FEFAT_DATA_DIR` in `folder`, holding ES's and NQ's February bars with a
+    `QUIET` share of their minutes empty, for as long as the block runs: the store the leak
+    detector's suites share (step 3.4)."""
+    with pytest.MonkeyPatch.context() as patched:
+        patched.setenv("FEFAT_HOME", str(folder / "fefat-home"))
+        patched.setenv("FEFAT_DATA_DIR", str(folder / "fefat-data"))
+        write_minutes(FEBRUARY, quiet=QUIET)
+        write_minutes(FEBRUARY_NQ, root="NQ", quiet=QUIET)
+        yield
 
 
 def write_minutes(listings: tuple[Listing, ...], *, root: str = "ES", quiet: float = 0.0) -> Store:

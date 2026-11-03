@@ -12,7 +12,8 @@ A version's file is only ever created, whole: written beside its place, flushed,
 a second process saving under the same number at the same moment is refused, to save again,
 rather than replacing the first, and a crash never leaves half a record. A Pydantic release that
 writes the JSON schema of the same parameters otherwise gives unchanged code a new version; a
-version saved before still loads, since its hash is worked out again from the schema it keeps."""
+version saved before still loads, since its hash is worked out again from the schema it keeps.
+The leak detector keeps each hash's latest validation beside the versions, in `validations/`."""
 
 import os
 import re
@@ -130,6 +131,12 @@ def _create(path: Path, record: FeatureVersion) -> None:
             f"Expected to save version {record.version} of feature {record.name} as a new file, "
             f"got {path} saved by another process first: save it again."
         ) from error
+
+
+def validations_folder(name: str) -> Path:
+    """The folder beside the feature `name`'s versions where the leak detector keeps the latest
+    validation of each content hash, `validations/<hash>.json` (`fefat.features.validation`)."""
+    return _folder(name) / "validations"
 
 
 def _folder(name: str) -> Path:
