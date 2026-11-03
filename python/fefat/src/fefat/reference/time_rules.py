@@ -12,13 +12,15 @@ template applies them at its decisions.
     frame.select("ts_close", "flat_by", "session_end", "week_end", "in_window")
 """
 
+from bisect import bisect_left
 from collections.abc import Iterable, Sequence
 from datetime import date, time
 
 import polars as pl
 
+from fefat.market.bars import grid_buckets
 from fefat.market.calendar import Session, SessionTable, utc_text
-from fefat.market.schema import Timeframe, TimeUnit
+from fefat.market.schema import Timeframe
 from fefat.market.trading_stops import trading_stops
 from fefat.reference.orders import OrderRole
 from fefat.strategy.exits import EntryWindow, TimeRules, Weekday
@@ -88,14 +90,15 @@ def f_tim_03(
 ) -> pl.Series:
     """Whether each row lies from the last close of the grid of signal bars of `timeframe` before
     a stop of trading of its trade date (§20, `last_grid_close_before`) until trading resumes:
-    `session_end` for every stop, `week_end` for a stop over a weekend."""
+    `session_end` for every stop, `week_end` for a stop over a weekend. A frame holds a row at
+    that close, as `load`'s dense grid does, for the template to decide there."""
     days = frame.get_column("trade_date").to_list()
+    closes_of = grid_closes(sessions, days, timeframe)
     flagged_from: dict[date, list[tuple[int, int]]] = {}
-    for day in set(days):
-        session = sessions.session(day)
+    for day, closes in closes_of.items():
         stops = [stop for stop in trading_stops(sessions, day) if stop.weekend or not weekend]
-        lasts = [(last_grid_close_before(session, timeframe, stop.start), stop) for stop in stops]
-        flagged_from[day] = [(last, stop.resumes) for last, stop in lasts if last is not None]
+        lasts = [(last_grid_close_before(closes, stop.start), stop.resumes) for stop in stops]
+        flagged_from[day] = [(last, resumes) for last, resumes in lasts if last is not None]
     closes = frame.get_column("ts_close").to_list()
     flagged = [
         any(last <= close < resumes for last, resumes in flagged_from[day])
@@ -154,37 +157,39 @@ def flat_by_instants(
     bar does."""
     days = sorted(set(trade_dates))
     local = f_tim_05(days, time.fromisoformat(flat_by), tz)
+    closes_of = grid_closes(sessions, days, timeframe)
     named = f"{flat_by} in {tz}"
     instants = {}
     for day in days:
         session = sessions.session(day)
         if local[day] >= session.close:
-            last = last_grid_close_before(session, timeframe, session.close)
+            last = last_grid_close_before(closes_of[day], session.close)
             instants[day] = session.close if last is None else last
             continue
         instants[day] = _on_the_grid(local[day], session, timeframe, named)
     return instants
 
 
-def last_grid_close_before(session: Session, timeframe: Timeframe, instant: int) -> int | None:
-    """The last close before `instant` of the grid of signal bars of `timeframe` in `session`, as
-    `fefat.market.bars` lays it: a bucket every `timeframe` from the open, the last cut at the
-    close, a daily bar the whole session, and none of the buckets lying wholly inside a halt; None
-    where no bucket closes before it."""
-    if timeframe.unit is TimeUnit.DAY:
-        return session.close if session.close < instant else None
-    width = timeframe.nominal_nanoseconds()
-    if instant > session.close:
-        close = session.close
-    elif instant - 1 - session.open < width:
-        return None
-    else:
-        close = session.open + (instant - 1 - session.open) // width * width
-    bucket_open = session.open + (close - 1 - session.open) // width * width
-    for halt in session.halts:
-        if halt.start <= bucket_open and close <= halt.end:
-            return last_grid_close_before(session, timeframe, halt.start + 1)
-    return close
+def grid_closes(
+    sessions: SessionTable, trade_dates: Iterable[date], timeframe: Timeframe
+) -> dict[date, list[int]]:
+    """The closes of the grid of signal bars of `timeframe` in the session of each of
+    `trade_dates`, in order, as `fefat.market.bars.grid_buckets` lays them."""
+    days = sorted(set(trade_dates))
+    closes: dict[date, list[int]] = {day: [] for day in days}
+    if not days:
+        return closes
+    rows = sessions.between(days[0], days[-1]).filter(pl.col("trade_date").is_in(days))
+    for day, close in grid_buckets(rows, timeframe).select("trade_date", "ts_close").iter_rows():
+        closes[day].append(close)
+    return closes
+
+
+def last_grid_close_before(closes: Sequence[int], instant: int) -> int | None:
+    """The last of a session's grid `closes`, in order (`grid_closes`), before `instant`; None
+    where none closes before it."""
+    before = bisect_left(closes, instant)
+    return closes[before - 1] if before else None
 
 
 def _on_the_grid(instant: int, session: Session, timeframe: Timeframe, named: str) -> int:

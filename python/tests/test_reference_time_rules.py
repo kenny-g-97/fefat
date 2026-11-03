@@ -13,7 +13,12 @@ from fefat.market import instruments
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.schema import Timeframe
 from fefat.market.trading_stops import TradingStop, trading_stops
-from fefat.reference.time_rules import flat_by_instants, last_grid_close_before, with_time_rules
+from fefat.reference.time_rules import (
+    flat_by_instants,
+    grid_closes,
+    last_grid_close_before,
+    with_time_rules,
+)
 from fefat.reference.units import instant_nanoseconds
 from fefat.strategy import TimeRules
 from test_reference_template import spec_of
@@ -143,8 +148,8 @@ def test_flat_by_on_an_early_close_acts_at_the_grids_last_close_before_it_whatev
 def test_the_last_close_of_the_grid_before_an_instant_comes_from_the_session_and_the_timeframe(
     es_sessions: SessionTable, trade_date: date, timeframe: str, before: str, last: str | None
 ) -> None:
-    session = es_sessions.session(trade_date)
+    closes = grid_closes(es_sessions, [trade_date], Timeframe.parse(timeframe))[trade_date]
 
-    found = last_grid_close_before(session, Timeframe.parse(timeframe), instant_nanoseconds(before))
+    found = last_grid_close_before(closes, instant_nanoseconds(before))
 
     assert found == (None if last is None else instant_nanoseconds(last))
