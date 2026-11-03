@@ -128,8 +128,9 @@ class RollCalendar:
 
     @property
     def rows(self) -> pl.DataFrame:
-        """The row of each session, with the columns of `ROLL_CALENDAR_COLUMNS`."""
-        return self._rows
+        """The row of each session, with the columns of `ROLL_CALENDAR_COLUMNS`: a copy, since the
+        calendar is kept for every later load in the process (`fefat.market.api`)."""
+        return self._rows.clone()
 
     def key_through(self, last: date) -> str:
         """The SHA-256 of the root and the rows of the sessions to `last`: their fronts, offsets,

@@ -15,7 +15,6 @@ that index leaves out is computed again when it is next asked for.
 """
 
 import os
-import shutil
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
@@ -34,6 +33,8 @@ FEATURE_CACHE_FOLDER_NAME = "features"
 """The feature cache's folder in `FEFAT_HOME/cache` (`fefat.config.FefatPaths.cache_dir`)."""
 BARS_FOLDER_NAME = "bars"
 """The folder of a timeframe's signal bars, which every feature of it reads."""
+KEY_METADATA = "fefat_key"
+"""The entry of a partition file's own metadata that holds the key it was computed under."""
 FEATURE_CACHE_COLUMNS = pl.Schema(
     {
         "provider": pl.String,
@@ -91,6 +92,16 @@ class FeatureCacheIndex(FrozenModel):
         return self.model_copy(update={"partitions": partitions})
 
 
+def readable_index(folder: Path) -> FeatureCacheIndex | None:
+    """The folder's index, or None while it has none, or one this code cannot read, which a
+    computation writes again, as the engine cache does a month's (D-56), and pruning
+    removes."""
+    try:
+        return read_cache_index(folder)
+    except ValueError:
+        return None
+
+
 def read_cache_index(folder: Path) -> FeatureCacheIndex | None:
     """The folder's index, or None while it has none."""
     path = folder / INDEX_FILE_NAME
@@ -107,9 +118,7 @@ def write_cache_index(folder: Path, index: FeatureCacheIndex) -> None:
 def partition_dates(name: str) -> tuple[date, date]:
     """The first and last day of a partition: its month's, or its one trade date."""
     if len(name) == len("2026-03"):
-        month = YearMonth.parse(name)
-        following = date(month.year + month.month // 12, month.month % 12 + 1, 1)
-        return date(month.year, month.month, 1), following - timedelta(days=1)
+        return YearMonth.parse(name).days()
     day = date.fromisoformat(name)
     return day, day
 
@@ -155,46 +164,67 @@ def _parameters_text(feature: CachedFeature) -> str:
 
 
 class PrunedCache(NamedTuple):
-    """What `prune_feature_cache` did: the partitions removed and those kept, with their
-    sizes."""
+    """What `prune_feature_cache` did: the partitions removed and those kept, with their sizes,
+    and the files another program held open, which Windows will not remove, kept with their
+    partitions."""
 
     removed: int
     removed_bytes: int
     kept: int
     kept_bytes: int
+    held: tuple[Path, ...]
 
 
 def prune_feature_cache(cache_folder: Path, older_than: timedelta, now: datetime) -> PrunedCache:
     """Remove from the feature cache in `cache_folder` each partition last used `older_than`
-    or longer before `now`, and each file of a folder its index does not name, and a folder
-    left without partitions, so that what remains is what was used since."""
-    removed = removed_bytes = kept = kept_bytes = 0
-    for folder, index in _indexes(cache_folder):
-        fresh = {
-            name: partition
-            for name, partition in index.partitions.items()
-            if partition.last_used > now - older_than
-        }
-        stale = [partition for name, partition in index.partitions.items() if name not in fresh]
-        removed += len(stale)
-        removed_bytes += sum(partition.size_bytes for partition in stale)
-        kept += len(fresh)
-        kept_bytes += sum(partition.size_bytes for partition in fresh.values())
-        _keep_only(folder, index.with_partitions(fresh))
+    or longer before `now`, each file of a folder its index does not name, all of a folder whose
+    index this code cannot read, and a folder left without partitions, so that what remains is
+    what was used since; a file another program holds open stays, named in `held`."""
+    pruned = PrunedCache(0, 0, 0, 0, ())
+    folders = sorted((cache_folder / FEATURE_CACHE_FOLDER_NAME).glob(f"*/*/*/*/{INDEX_FILE_NAME}"))
+    for path in folders:
+        pruned = _pruned(path.parent, now - older_than, pruned)
     _remove_empty_folders(cache_folder / FEATURE_CACHE_FOLDER_NAME)
-    return PrunedCache(removed, removed_bytes, kept, kept_bytes)
+    return pruned
 
 
-def _keep_only(folder: Path, index: FeatureCacheIndex) -> None:
-    """Leave in `folder` the partitions `index` names, and the index; the folder goes when it
-    names none."""
-    if not index.partitions:
-        shutil.rmtree(folder)
-        return
+def _pruned(folder: Path, used_after: datetime, pruned: PrunedCache) -> PrunedCache:
+    """`pruned` with the folder's partitions last used by `used_after` removed, and its files
+    that its index does not name."""
+    index = readable_index(folder)
+    partitions = {} if index is None else index.partitions
+    held: list[Path] = []
+    kept = {
+        name: partition
+        for name, partition in partitions.items()
+        if partition.last_used > used_after or not _unlinked(folder / f"{name}.parquet", held)
+    }
     for path in folder.glob("*.parquet"):
-        if path.stem not in index.partitions:
-            path.unlink()
-    write_cache_index(folder, index)
+        if path.stem not in partitions:
+            _unlinked(path, held)
+    if index is not None and kept:
+        write_cache_index(folder, index.with_partitions(kept))
+    else:
+        _unlinked(folder / INDEX_FILE_NAME, held)
+    gone = [partition for name, partition in partitions.items() if name not in kept]
+    return PrunedCache(
+        removed=pruned.removed + len(gone),
+        removed_bytes=pruned.removed_bytes + sum(partition.size_bytes for partition in gone),
+        kept=pruned.kept + len(kept),
+        kept_bytes=pruned.kept_bytes + sum(partition.size_bytes for partition in kept.values()),
+        held=(*pruned.held, *held),
+    )
+
+
+def _unlinked(path: Path, held: list[Path]) -> bool:
+    """Whether the file is gone, removed now or before; one another program holds open stays,
+    added to `held`."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        held.append(path)
+        return False
+    return True
 
 
 def _remove_empty_folders(folder: Path) -> None:
@@ -206,12 +236,13 @@ def _remove_empty_folders(folder: Path) -> None:
 
 
 def _indexes(cache_folder: Path) -> list[tuple[Path, FeatureCacheIndex]]:
-    """Each folder of the feature cache with its index, in path order."""
+    """Each folder of the feature cache with its index, in path order, but one whose index
+    this code cannot read, which holds nothing a computation reads."""
     found = []
     for path in sorted(
         (cache_folder / FEATURE_CACHE_FOLDER_NAME).glob(f"*/*/*/*/{INDEX_FILE_NAME}")
     ):
-        index = read_cache_index(path.parent)
+        index = readable_index(path.parent)
         if index is not None:
             found.append((path.parent, index))
     return found

@@ -17,14 +17,12 @@ import polars as pl
 
 from fefat.features.cache_index import partition_dates
 from fefat.features.runtime import FeatureGraph
-from fefat.market import api as market_api
 from fefat.market.api import SeriesSource
 from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import signal_bar_levels, source_dataset
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import Dataset, Partitioning, PartitionRequest, YearMonth, partitioning
 from fefat.market.schema import Timeframe
-from fefat.market.store import PartitionFile
 
 Levels = Mapping[date, TickFidelity | Timeframe]
 """Each trade date the store holds, with the level its signal bars are built from."""
@@ -104,16 +102,16 @@ def _month_name(day: date) -> str:
 
 @cache
 def runtime_key() -> str:
-    """The SHA-256 of the Polars version and the source of the SDK's `fefat.market` and
-    `fefat.features`, whose code shapes the bars and values the cache keeps, so that a changed
-    rule, or a new Polars, computes them again."""
+    """The SHA-256 of the Polars version and the source of the SDK, `fefat`, whose code shapes
+    the bars and the values the cache keeps, its market data, features, and the indicators
+    features call, so that a changed rule, or a new Polars, computes them again."""
     # shortcut: the key reads the SDK's source, which a build shipping only bytecode lacks;
     # replace it with a version constant when the app is packaged (Phase 14).
     digest = hashlib.sha256(pl.__version__.encode())
-    for folder in (Path(__file__).parent, Path(market_api.__file__).parent):
-        for path in sorted(folder.rglob("*.py")):
-            digest.update(path.relative_to(folder).as_posix().encode() + b"\n")
-            digest.update(path.read_bytes())
+    sdk = Path(__file__).parent.parent
+    for path in sorted(sdk.rglob("*.py")):
+        digest.update(path.relative_to(sdk).as_posix().encode() + b"\n")
+        digest.update(path.read_bytes())
     return digest.hexdigest()
 
 
@@ -123,7 +121,6 @@ class PartitionKeys:
 
     def __init__(self, sources: Mapping[str, SeriesSource]) -> None:
         self._sources = sources
-        self._listings: dict[Dataset, tuple[PartitionFile, ...]] = {}
         self._ends: dict[Dataset, int] = {}
         self._pins: dict[tuple[str, date, date], tuple[str, ...]] = {}
 
@@ -185,9 +182,7 @@ class PartitionKeys:
         after which a bucket is held back (D-43), capped at `until`, the close of the last
         session read, by which every bucket read has closed, so that a month whose data is
         whole keeps its key as later data comes."""
-        if dataset not in self._listings:
-            self._listings[dataset] = source.store.list_partitions(dataset)
-        listing = self._listings[dataset]
+        listing = source.store.list_partitions(dataset)
         request = PartitionRequest(dataset=dataset, start=dates[0], end=dates[1])
         if not any(request.selects(file.partition) for file in listing):
             return f"{_folder(dataset)} none"

@@ -2,8 +2,8 @@
 each trade date's from the finest level that holds it, read from as many sessions before the
 window as its features' warm-up needs (`FeatureGraph.lead_in`, D-71), its features' values read
 from the feature cache, as `ff.features.compute` keeps them (`fefat.features.cache`), its signals
-evaluated over them and cut to the window, and the warnings the load raised, which the run's
-record keeps."""
+evaluated over them and cut to the window, and the warnings of the load and of the datasets its
+features read, which the run's record keeps."""
 
 import warnings
 from dataclasses import dataclass
@@ -56,7 +56,8 @@ def signal_frame(
     first_read = bars.get_column("trade_date").min()
     if signals.is_empty() or not isinstance(first_read, date):
         raise ValueError(f"Expected bars of {symbol} from {start} to {end} in the store, got none.")
-    loaded = tuple(str(warning.message) for warning in caught)
+    warned = [str(warning.message) for warning in caught]
+    loaded = tuple(dict.fromkeys([*warned, *slots.warnings]))
     read = [first_read] if slots.first_read is None else [first_read, slots.first_read]
     return SignalFrame(signals=signals, warnings=loaded, first_read=min(read))
 

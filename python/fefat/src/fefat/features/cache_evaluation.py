@@ -40,8 +40,11 @@ def evaluated_features(
     bars: pl.DataFrame,
     end: date,
 ) -> Evaluation:
-    """Each folder's feature evaluated from its own warm-up to `end`: its values on the
-    partition's `bars`, and on the trade dates past its first that it does not hold."""
+    """Each folder's feature evaluated from its own warm-up: its values on the partition's
+    `bars`, from what the partition's own dates give, and on the trade dates past its first
+    that it does not hold, read to `end`, past its last day where the warm-up check compares
+    them with the next partition's, so that what a partition holds never depends on whether
+    the check ran, even for a feature that reads ahead."""
     starts = {
         folder.path: folder.graph.lead_in(sources[folder.graph.root].sessions, partition.first)
         for folder in folders
@@ -50,14 +53,19 @@ def evaluated_features(
     beyond: dict[Path, pl.DataFrame] = {}
     for start in sorted(set(starts.values())):
         group = [folder for folder in folders if starts[folder.path] == start]
-        inputs = _inputs([folder.graph for folder in group], sources, (start, end))
+        graphs = [folder.graph for folder in group]
+        inputs = _inputs(graphs, sources, (start, end))
+        own = inputs
+        if end > partition.last:
+            own = _cut(graphs[0], inputs, sources, (start, partition.last))
         for folder in group:
-            values = _outputs(folder.graph, inputs)
+            values = _outputs(folder.graph, own)
             frames[folder.path] = bars.select("ts_close").join(
                 values.drop("trade_date"), on="ts_close", how="left", maintain_order="left"
             )
+            read = values if own is inputs else _outputs(folder.graph, inputs)
             past_its_first = pl.col("trade_date") >= partition.first
-            beyond[folder.path] = values.filter(past_its_first, ~partition.holds())
+            beyond[folder.path] = read.filter(past_its_first, ~partition.holds())
     return Evaluation(frames, beyond, starts)
 
 
@@ -72,6 +80,22 @@ def _inputs(
             grid.timeframe, graphs[0].grid_dates(grid, dates, sources[grid.root].sessions)
         )
         for grid in grids
+    }
+
+
+def _cut(
+    graph: FeatureGraph,
+    inputs: Mapping[Grid, pl.DataFrame],
+    sources: Mapping[str, SeriesSource],
+    dates: tuple[date, date],
+) -> dict[Grid, pl.DataFrame]:
+    """`inputs` cut to what a read for the window `dates` gives: each grid's bars of the trade
+    dates up to the last it is read for, which a longer read gives alike (step 3.2)."""
+    return {
+        grid: frame.filter(
+            pl.col("trade_date") <= graph.grid_dates(grid, dates, sources[grid.root].sessions)[1]
+        )
+        for grid, frame in inputs.items()
     }
 
 

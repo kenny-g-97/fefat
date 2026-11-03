@@ -42,7 +42,8 @@ import os
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from itertools import product
 from pathlib import Path
 
 import polars as pl
@@ -57,6 +58,7 @@ from fefat.features.cache_evaluation import (
 from fefat.features.cache_folders import CacheFolder, FeatureFolder, bars_folder, feature_folder
 from fefat.features.cache_index import (
     FEATURE_CACHE_FOLDER_NAME,
+    KEY_METADATA,
     CachedPartition,
     write_cache_index,
 )
@@ -76,6 +78,10 @@ from fefat.market.store_files import write_atomically
 
 Place = tuple[Path, str]
 """A folder of the cache and the name of one of its partitions."""
+LAST_USE_STEP = timedelta(hours=1)
+"""How long a partition's last use may age before a computation that reads it writes its
+index again: pruning counts days, and a sweep reading one folder many times an hour writes
+it once."""
 
 
 def compute(
@@ -109,12 +115,14 @@ def compute(
 
 @dataclass(frozen=True)
 class CachedSlots:
-    """A graph's slots' columns by `ts_close` on the cached partitions holding a window, and the
+    """A graph's slots' columns by `ts_close` on the cached partitions holding a window, the
     first trade date their values were computed from, from which a run's snapshots pin it, None
-    for a graph without slots, which reads nothing."""
+    for a graph without slots, which reads nothing, and what `load` warns of the datasets they
+    were computed from, which a run's record keeps."""
 
     values: pl.DataFrame
     first_read: date | None
+    warnings: tuple[str, ...]
 
 
 def cached_slots(
@@ -127,9 +135,9 @@ def cached_slots(
     spans, of the graph's root from `provider` or of the one `contract` a run trades, read from
     the cache or computed there; a graph without slots reads nothing."""
     if not graph.slots:
-        return CachedSlots(pl.DataFrame(schema={"ts_close": pl.Int64}), None)
+        return CachedSlots(pl.DataFrame(schema={"ts_close": pl.Int64}), None, ())
     window = cached_window(graph, dates, provider, contract)
-    return CachedSlots(window.slots, window.first_read)
+    return CachedSlots(window.slots, window.first_read, window.warnings)
 
 
 @dataclass(frozen=True)
@@ -164,10 +172,35 @@ def cached_window(
         raise ValueError(
             f"Expected bars of {signal.symbol} from {first} to {last} in the store, got none."
         )
+    warned = [
+        *_warnings(signal, graph.timeframe, dates, levels),
+        *_inputs_warnings(graph, sources, dates),
+    ]
     cache_dir = resolve_paths(os.environ).cache_dir
     folder = cache_dir / FEATURE_CACHE_FOLDER_NAME / signal.provider / signal.symbol
     window = _Computation(graph, sources, partitions, folder / str(graph.timeframe)).window()
-    return dataclasses.replace(window, warnings=_warnings(signal, graph.timeframe, dates, levels))
+    return dataclasses.replace(window, warnings=tuple(dict.fromkeys(warned)))
+
+
+def _inputs_warnings(
+    graph: FeatureGraph, sources: Mapping[str, SeriesSource], dates: tuple[date, date]
+) -> list[str]:
+    """What `load` warns of the datasets of each other instrument the graph reads, over the
+    trade dates it reads them for (`FeatureGraph.grid_dates`); an instrument without bars
+    there is refused, as `load` refused it when a window read it whole (step 3.2)."""
+    warned: list[str] = []
+    for grid in graph.grids():
+        if grid.root == graph.root:
+            continue
+        source = sources[grid.root]
+        first, last = graph.grid_dates(grid, dates, source.sessions)
+        levels = held_levels(source, grid.timeframe, (first, last))
+        if not any(first <= day <= last for day in levels):
+            raise ValueError(
+                f"Expected bars of {grid.root} from {first} to {last} in the store, got none."
+            )
+        warned += _warnings(source, grid.timeframe, (first, last), levels)
+    return warned
 
 
 def _warnings(
@@ -176,10 +209,9 @@ def _warnings(
     """What `load` warns of the datasets that build the bars of the trade dates `dates` spans."""
     first, last = dates
     root = source.instrument.root
+    held = {str(level): level for day, level in levels.items() if first <= day <= last}
     used = dict.fromkeys(
-        source_dataset(source.datasets, level, timeframe, root)
-        for day, level in levels.items()
-        if first <= day <= last
+        source_dataset(source.datasets, level, timeframe, root) for level in held.values()
     )
     return tuple(
         warning for dataset in used for warning in dataset_warnings(dataset, source.series)
@@ -279,20 +311,30 @@ class _Computation:
     ) -> None:
         """Refuse a feature whose values one partition read past its end differ from those the
         partition holding them gives from its own warm-up (module docstring)."""
-        for name, done in evaluations.items():
+        for (name, done), other in product(evaluations.items(), self._partitions):
+            if other.name == name or other.name not in evaluations:
+                continue
             for folder in self._features:
-                beyond = done.beyond.get(folder.path)
-                if beyond is None:
-                    continue
-                for other in self._partitions:
-                    read = beyond.filter(other.holds())
-                    if other.name == name or other.name not in evaluations or read.is_empty():
-                        continue
-                    held = frames[(folder.path, other.name)]
-                    difference = first_difference(read.drop("trade_date"), held, folder.outputs())
-                    if difference is not None:
-                        starts = (done.starts[folder.path], self._start_of(folder, other))
-                        raise ValueError(disagreement(folder, starts, difference))
+                self._require_agreement(folder, done, other, frames)
+
+    def _require_agreement(
+        self,
+        folder: FeatureFolder,
+        done: Evaluation,
+        other: CachePartition,
+        frames: Mapping[Place, pl.DataFrame],
+    ) -> None:
+        """Refuse the folder's feature where its values one evaluation read on the trade dates
+        of `other` differ from those `other` holds."""
+        beyond = done.beyond.get(folder.path)
+        read = None if beyond is None else beyond.filter(other.holds())
+        if read is None or read.is_empty():
+            return
+        held = frames[(folder.path, other.name)]
+        difference = first_difference(read.drop("trade_date"), held, folder.outputs())
+        if difference is not None:
+            starts = (done.starts[folder.path], self._start_of(folder, other))
+            raise ValueError(disagreement(folder, starts, difference))
 
     def _start_of(self, folder: FeatureFolder, partition: CachePartition) -> date:
         """The trade date the folder's feature is read from for the partition."""
@@ -305,17 +347,21 @@ class _Computation:
         frames: Mapping[Place, pl.DataFrame],
         computed: set[Place],
     ) -> None:
-        """Write each frame computed, then each folder's index with the time its partitions
-        were last used."""
+        """Write each frame computed, then the index of each folder that gained a partition,
+        or whose partitions read here were last used more than `LAST_USE_STEP` ago, so that
+        a computation read back within the hour writes nothing."""
         now = datetime.now(UTC)
         for folder in folders:
             partitions = dict(folder.index.partitions)
             for partition in self._partitions:
                 place = (folder.path, partition.name)
-                partitions[partition.name] = _kept(
-                    place, frames[place], keys[place], now, place in computed
-                )
-            write_cache_index(folder.path, folder.index.with_partitions(partitions))
+                held = partitions.get(partition.name)
+                if place in computed or held is None or now - held.last_used >= LAST_USE_STEP:
+                    partitions[partition.name] = _kept(
+                        place, frames[place], keys[place], now, place in computed
+                    )
+            if partitions != folder.index.partitions:
+                write_cache_index(folder.path, folder.index.with_partitions(partitions))
 
     def _assembled(self, frames: Mapping[Place, pl.DataFrame]) -> CachedWindow:
         order = ("ts_open",) if self._signal.calendar is not None else ("contract", "ts_open")
@@ -342,10 +388,13 @@ def _present(frame: pl.DataFrame | None, place: Place) -> pl.DataFrame:
 def _kept(
     place: Place, frame: pl.DataFrame, key: str, now: datetime, computed: bool
 ) -> CachedPartition:
-    """The partition's entry in its folder's index, its frame written where it was computed."""
+    """The partition's entry in its folder's index, its frame written where it was computed,
+    with its key in the file's own metadata (`CacheFolder.cached`)."""
     folder, name = place
     file = folder / f"{name}.parquet"
     if computed:
-        write_atomically(file, frame.write_parquet)
+        write_atomically(
+            file, lambda temporary: frame.write_parquet(temporary, metadata={KEY_METADATA: key})
+        )
     size = file.stat().st_size
     return CachedPartition(key=key, rows=frame.height, size_bytes=size, last_used=now)

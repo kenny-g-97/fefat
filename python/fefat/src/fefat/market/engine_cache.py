@@ -21,7 +21,7 @@ import shutil
 from collections import defaultdict
 from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -210,8 +210,7 @@ def _build_month(
     """The month's contract-months, built or up to date, those refused, each with its reason,
     of `contracts` where they are named, and the contracts the store holds partitions of in the
     month, whose other months a build keeps."""
-    start = date(month.year, month.month, 1)
-    end = date(month.year + month.month // 12, month.month % 12 + 1, 1) - timedelta(days=1)
+    start, end = month.days()
     by_contract: defaultdict[str, list[_PinnedPartition]] = defaultdict(list)
     for dataset, level in levels.items():
         request = PartitionRequest(dataset=dataset, start=start, end=end)

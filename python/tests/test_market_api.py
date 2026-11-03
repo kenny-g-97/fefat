@@ -457,3 +457,13 @@ def test_a_spliced_load_builds_each_trade_date_from_the_finest_level_its_front_h
     assert bars.get_column("contract").unique().to_list() == ["ESH2026"]
     assert bars.get_column("volume").equals(minutes.get_column("volume"))
     assert bars.get_column("zero_volume").sum() < BUCKETS_OF_FIVE_MINUTES
+
+
+@pytest.mark.usefixtures("fixtures_as_data")
+def test_the_kept_roll_calendar_gives_a_copy_of_its_rows() -> None:
+    # The step review: the calendar is kept for every later load in the process, so a notebook
+    # that changes the rows it was given in place changes no load after it.
+    rows = roll_calendar("ES").rows
+    rows[0, "adj_offset"] = 999
+
+    assert roll_calendar("ES").rows.item(0, "adj_offset") == 0

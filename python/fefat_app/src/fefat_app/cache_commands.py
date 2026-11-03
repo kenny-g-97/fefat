@@ -14,7 +14,8 @@ levels of its trade dates and its size. `features` lists the feature cache that
 bars and for each feature with its parameters of each product and timeframe, with its partitions,
 the dates they span, their size, and when one was last used (`fefat.features.cache_index`); with
 `--prune`, it removes the partitions unused for 30 days, or for the days `--older-than` names,
-and prints what it removed and what remains.
+and prints what it removed and what remains, exiting with 1 where another program holds a
+file open, which it names.
 """
 
 import argparse
@@ -112,7 +113,15 @@ def manage_the_feature_cache(arguments: argparse.Namespace) -> int:
         f"unused for {counted(days, 'day')}; {counted(pruned.kept, 'partition')} of "
         f"{size_text(pruned.kept_bytes)} remain."
     )
-    return EXIT_OK
+    if not pruned.held:
+        return EXIT_OK
+    print(
+        f"Kept {counted(len(pruned.held), 'file')} another program holds open; close it and "
+        "prune again:"
+    )
+    for held in pruned.held:
+        print(f"  {held}")
+    return EXIT_REFUSED
 
 
 def _feature_cache_lines(rows: list[dict[str, Any]]) -> str:

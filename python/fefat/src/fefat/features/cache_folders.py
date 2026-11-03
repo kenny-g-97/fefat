@@ -13,9 +13,10 @@ import polars as pl
 
 from fefat.features.cache_index import (
     BARS_FOLDER_NAME,
+    KEY_METADATA,
     CachedFeature,
     FeatureCacheIndex,
-    read_cache_index,
+    readable_index,
 )
 from fefat.features.cache_keys import CachePartition
 from fefat.features.evaluation import FeatureSpec
@@ -32,12 +33,20 @@ class CacheFolder:
     index: FeatureCacheIndex
 
     def cached(self, partition: CachePartition, key: str) -> pl.DataFrame | None:
-        """The partition's frame, read while its key is `key`; None otherwise."""
+        """The partition's frame, read while its key is `key` in the index and in the file
+        itself, which two processes writing one folder at once can leave apart; None
+        otherwise, and where its file cannot be read, as one another program damaged,
+        which the computation writes again."""
         held = self.index.partitions.get(partition.name)
         path = self.path / f"{partition.name}.parquet"
         if held is None or held.key != key or not path.is_file():
             return None
-        return pl.read_parquet(path)
+        try:
+            if pl.read_parquet_metadata(path).get(KEY_METADATA) != key:
+                return None
+            return pl.read_parquet(path)
+        except (OSError, pl.exceptions.PolarsError):
+            return None
 
 
 @dataclass(frozen=True)
@@ -102,10 +111,7 @@ def _cached_feature(spec: FeatureSpec, timeframe: Timeframe) -> CachedFeature:
 
 
 def _readable(path: Path, fresh: FeatureCacheIndex) -> FeatureCacheIndex:
-    """The folder's index; `fresh` where it has none, or one this code cannot read, which the
-    computation writes again, as the engine cache does a month's (D-56)."""
-    try:
-        index = read_cache_index(path)
-    except ValueError:
-        return fresh
+    """The folder's index; `fresh` where it has none, or one this code cannot read
+    (`readable_index`)."""
+    index = readable_index(path)
     return fresh if index is None else index

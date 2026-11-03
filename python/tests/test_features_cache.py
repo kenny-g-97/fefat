@@ -35,8 +35,9 @@ from fefat.features.runtime import FeatureGraph
 from fefat.market import api as market_api
 from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS
-from fefat.market.calendar import sessions_of
-from fefat.market.layout import Dataset, Partition, YearMonth
+from fefat.market.calendar import SessionTable, sessions_of
+from fefat.market.continuous import RollCalendar
+from fefat.market.layout import Dataset, Partition, SeriesKind, YearMonth
 from fefat.market.schema import Timeframe, parse_schema_name
 from fefat.market.store import Store
 from notebook_runs import store_with
@@ -431,9 +432,220 @@ def test_the_cache_status_lists_each_folder_and_pruning_removes_what_was_not_use
     ]
     assert status.get_column("first").to_list() == [date(2026, 3, 1)] * 3
     size = int(status.get_column("size_bytes").sum())
-    assert kept == PrunedCache(removed=0, removed_bytes=0, kept=3, kept_bytes=size)
+    assert kept == PrunedCache(removed=0, removed_bytes=0, kept=3, kept_bytes=size, held=())
     assert pruned.removed == 1 and pruned.kept == 2
     assert not bars.exists()
     assert prune_feature_cache(cache_dir, timedelta(0), now).kept == 0
     assert ff.features.cache_status().is_empty()
     assert list(cache_folder().iterdir()) == []
+
+
+def test_pruning_keeps_the_partitions_another_program_holds_and_names_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The code review: Windows refuses to remove a file another program holds open, and pruning
+    # goes on past it, keeping its partition, so that each index names the files that remain.
+    store_with("ohlcv-1m")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    (rsi_file,) = cache_folder().glob("synthetic/ES/5m/rsi-*/2026-03.parquet")
+    unlink = Path.unlink
+
+    def held_open(path: Path, missing_ok: bool = False) -> None:
+        if path == rsi_file:
+            raise PermissionError("[WinError 32] The process cannot access the file")
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held_open)
+
+    pruned = prune_feature_cache(
+        resolve_paths(os.environ).cache_dir, timedelta(0), datetime.now(UTC)
+    )
+
+    assert (pruned.removed, pruned.kept, pruned.held) == (1, 1, (rsi_file,))
+    assert ff.features.cache_status().get_column("feature").to_list() == ["rsi"]
+    assert sorted(path.name for path in rsi_file.parent.iterdir()) == [
+        "2026-03.parquet",
+        "index.json",
+    ]
+
+
+def test_a_damaged_file_or_index_of_the_cache_is_computed_again() -> None:
+    # The code review: a file another program damaged reads as missing, and an index this code
+    # cannot read as none, so that a computation writes them again; status and pruning pass over
+    # such an index, and pruning removes its folder.
+    store_with("ohlcv-1m")
+    window = ("2026-03-06", "2026-03-09")
+    first = ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    (damaged,) = cache_folder().glob("synthetic/ES/5m/rsi-*/2026-03.parquet")
+    damaged.write_bytes(b"not a parquet file")
+    (unreadable,) = cache_folder().glob("synthetic/ES/5m/bars/index.json")
+
+    again = ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    unreadable.write_text("{}", encoding="utf-8")
+    listed = ff.features.cache_status()
+    pruned = prune_feature_cache(
+        resolve_paths(os.environ).cache_dir, timedelta(days=30), datetime.now(UTC)
+    )
+
+    assert again.equals(first)
+    assert damaged.read_bytes() != b"not a parquet file"
+    assert listed.get_column("feature").to_list() == ["rsi"]
+    assert (pruned.removed, pruned.kept) == (0, 1)
+    assert not unreadable.parent.exists()
+
+
+def test_a_computation_read_back_within_the_hour_writes_no_index() -> None:
+    # The code review: an index rewritten on every read is a write another process's read can
+    # refuse on Windows; a partition's last use is kept to the hour, which pruning by days needs.
+    store_with("ohlcv-1m")
+    window = ("2026-03-06", "2026-03-09")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    (bars,) = cache_folder().glob("synthetic/ES/5m/bars")
+    index = read_cache_index(bars)
+    assert index is not None
+    written_at = (bars / "index.json").stat().st_mtime_ns
+
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    unchanged = (bars / "index.json").stat().st_mtime_ns
+    hours_ago = datetime.now(UTC) - timedelta(hours=2)
+    old = index.partitions["2026-03"].model_copy(update={"last_used": hours_ago})
+    write_cache_index(bars, index.with_partitions({"2026-03": old}))
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    renewed = read_cache_index(bars)
+
+    assert unchanged == written_at
+    assert renewed is not None
+    assert renewed.partitions["2026-03"].last_used > hours_ago + timedelta(hours=1)
+
+
+def test_another_instrument_without_bars_where_a_feature_reads_it_is_refused() -> None:
+    # The step review: each partition reads another instrument for its own dates, where a
+    # window read it whole and refused it without bars (step 3.2); the fixtures' bitcoin trades
+    # on 2026-03-07 alone.
+    store_with("ohlcv-1m")
+
+    with pytest.raises(ValueError, match="Expected bars of BTCUSDT-PERP from 2026-03-08 to"):
+        ff.features.compute({"btc_age": btc_age()}, "ES", "5m", "2026-03-09", "2026-03-09")
+
+
+def test_the_warnings_of_another_instruments_data_come_with_the_values_read_from_it() -> None:
+    # The step review: what load warns of another instrument's data, here a continuous series,
+    # comes with every computation and lands in a run's record, whether the cache computed the
+    # values or read them back.
+    store_with("ohlcv-1m")
+    store = Store(resolve_paths(os.environ).data_dir)
+    bitcoin = Dataset(provider="synthetic", schema_name=MINUTES.schema_name, root="BTCUSDT-PERP")
+    continuous = store.dataset_metadata(bitcoin).model_copy(
+        update={"series": SeriesKind.CONTINUOUS}
+    )
+    store.write_dataset_metadata(bitcoin, continuous)
+    slots = {"btc_age": btc_age()}
+    strategy = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features=slots,
+        long_entry=pl.lit(False),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(ticks=12), sizing=ff.Fixed(1)),
+    )
+    warned = "root=BTCUSDT-PERP is a continuous series"
+
+    for _ in range(2):
+        with pytest.warns(UserWarning, match=warned):
+            ff.features.compute(slots, "ES", "5m", "2026-03-06", "2026-03-09")
+    run = ff.backtest.run(strategy, "2026-03-06", "2026-03-09")
+
+    assert [warning for warning in run.record.warnings if warned in warning]
+
+
+def test_a_changed_session_table_or_roll_calendar_computes_each_partition_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The amendment: the key names the session table and, on a spliced series, the roll calendar
+    # through the last date read, beside the store's partitions.
+    store_with("ohlcv-1m")
+    window = ("2026-03-06", "2026-03-09")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    cached = written()
+
+    with monkeypatch.context() as patched:
+        patched.setattr(SessionTable, "key", "another calendar")
+        ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    by_sessions = rewritten(cached)
+    cached = written()
+    with monkeypatch.context() as patched:
+        patched.setattr(RollCalendar, "key_through", lambda *_: "another roll calendar")
+        ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    by_rolls = rewritten(cached)
+
+    assert by_sessions == by_rolls == {"bars/2026-03", "rsi/2026-03"}
+
+
+@ff.feature(outputs={"peek": "price"})
+def month_end_peek(bars: pl.LazyFrame) -> pl.Expr:
+    month = pl.col("trade_date").dt.month()
+    return pl.when(month != month.shift(-1)).then(pl.col("close").shift(-1))
+
+
+def test_a_partition_holds_what_its_own_dates_give_even_to_a_feature_that_reads_ahead() -> None:
+    # The leakage audit: a month evaluated past its end for the warm-up check kept the next
+    # month's first close in its last row for a feature that reads ahead, which a month computed
+    # alone, or a store cut at that close, does not hold. The month keeps what its own dates give.
+    write_minutes(SPRING)
+    window = ("2026-01-05", "2026-04-30")
+    together = ff.features.compute({"peek": month_end_peek()}, "ES", "5m", *window).collect()
+    shutil.rmtree(cache_folder())
+    march = ff.features.compute({"peek": month_end_peek()}, "ES", "5m", "2026-03-02", "2026-03-31")
+
+    last_of_march = together.filter(pl.col("trade_date") == date(2026, 3, 31)).tail(1)
+    assert last_of_march.get_column("peek").to_list() == [None]
+    assert together.filter(pl.col("trade_date").dt.month() == 3).equals(march.collect())
+
+
+def test_a_file_another_computation_wrote_under_another_key_is_computed_again() -> None:
+    # The leakage audit: two processes writing one partition at once can leave the index naming
+    # one key and the file holding another's values; the file carries its key, which a read
+    # compares.
+    store = write_minutes(SPRING[:1])
+    window = ("2026-01-05", "2026-02-27")
+    ff.features.compute({"rsi": rsi(n=14)}, "ES", "5m", *window).collect()
+    (february,) = cache_folder().glob("synthetic/ES/5m/rsi-*/2026-02.parquet")
+    old_values = february.read_bytes()
+    partition = Partition(dataset=MINUTES, contract="ESH2026", key=YearMonth(year=2026, month=2))
+    rows = store.scan_partition(partition).collect()
+    store.write_partition(partition, rows.with_columns(close=pl.col("close") + TICK))
+    fresh = ff.features.compute({"rsi": rsi(n=14)}, "ES", "5m", *window).collect()
+    february.write_bytes(old_values)
+
+    served = ff.features.compute({"rsi": rsi(n=14)}, "ES", "5m", *window).collect()
+
+    assert served.equals(fresh)
+    assert february.read_bytes() != old_values
+
+
+def test_a_store_cut_at_a_close_gives_what_the_whole_store_gives_before_it(
+    tmp_path: Path,
+) -> None:
+    # The leakage audit's truncation check: the store cut at the close of a month's last session,
+    # and of the session the front rolls at, gives every value the whole store gives before the
+    # cut, its months read back from the cache the whole store filled.
+    write_minutes(SPRING)
+    whole = ff.features.compute(SLOTS, "ES", "5m", "2026-01-05", "2026-04-30").collect()
+
+    for cut in (date(2026, 2, 27), date(2026, 3, 12)):
+        held = tuple(
+            Listing(
+                each.contract,
+                each.instrument_id,
+                (each.trades[0], min(each.trades[1], cut)),
+                each.leads,
+            )
+            for each in SPRING
+            if each.trades[0] <= cut
+        )
+        with pytest.MonkeyPatch.context() as patched:
+            patched.setenv("FEFAT_DATA_DIR", str(tmp_path / f"cut-{cut}"))
+            write_minutes(held)
+            computed = ff.features.compute(SLOTS, "ES", "5m", "2026-01-05", cut).collect()
+
+        assert computed.equals(whole.filter(pl.col("trade_date") <= cut)), cut

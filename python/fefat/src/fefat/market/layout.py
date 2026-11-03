@@ -19,7 +19,7 @@ import added (`fefat.market.saved_instruments`). What the files hold is `fefat.m
 """
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import PurePosixPath
@@ -133,6 +133,11 @@ class YearMonth(FrozenModel):
 
     def __str__(self) -> str:
         return f"{self.year:04d}-{self.month:02d}"
+
+    def days(self) -> tuple[date, date]:
+        """The month's first and last day."""
+        following = date(self.year + self.month // 12, self.month % 12 + 1, 1)
+        return date(self.year, self.month, 1), following - timedelta(days=1)
 
     def overlaps(self, start: date, end: date) -> bool:
         """Whether any day of the month lies in `[start, end]`."""
