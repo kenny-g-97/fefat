@@ -145,3 +145,51 @@ def test_the_lint_reads_quantile_bins_peaks_and_a_helper_inside_a_lambda() -> No
         (LintRule.CENTRED_WINDOW, line("peak_max")),
         (LintRule.NAME_READ_OUTSIDE, line("doubled(closes)")),
     ]
+
+
+@ff.feature(outputs={"read": "other"})
+def reads_files(bars: pl.LazyFrame) -> pl.LazyFrame:
+    daily = ff.market.load("ES", "1d", "2026-02-02", "2026-02-20")
+    events = pl.scan_parquet("events.parquet")
+    with open("levels.txt") as levels:
+        level = float(levels.read())
+    joined = bars.join(daily, on="trade_date").join(events, on="trade_date")
+    return joined.select("ts_close", read=pl.col("close") * level)
+
+
+def test_a_feature_reading_data_itself_fails_its_validation_where_its_code_reads_it() -> None:
+    # The leakage audit: data a feature loads itself is never cut, so the lint names each read,
+    # the store's, a Polars reader's, and a file's, and a finding of it fails a validation.
+    def line(text: str) -> int:
+        (number,) = [n for n, each in enumerate(reads_files.code.splitlines(), 1) if text in each]
+        return number
+
+    found = lint(reads_files)
+
+    assert [(finding.rule, finding.line) for finding in found] == [
+        (LintRule.READS_DATA, line("ff.market.load")),
+        (LintRule.READS_DATA, line("pl.scan_parquet")),
+        (LintRule.READS_DATA, line("open(")),
+    ]
+    assert all(each.rule.fails_validation and not each.rule.looks_ahead for each in found)
+
+
+@ff.feature(warmup=20, outputs={"windowed": "other"})
+def windowed(bars: pl.LazyFrame) -> pl.Expr:
+    month = pl.col("contract").str.tail(4)
+    highest = pl.col("high").rolling_map(lambda window: window.max(), window_size=20)
+    widest = pl.concat_list("open", "close").list.eval(pl.element().max())
+    stacked = pl.concat_list("open", "close").list.reverse()
+    filled = pl.col("close").fill_null(strategy="mean")
+    return highest + widest.list.first() + stacked.list.first() + filled + month.cast(pl.Int64)
+
+
+def test_the_lint_leaves_each_rows_own_values_and_a_windows_function_to_the_cuts() -> None:
+    # The leakage audit: a method of a namespace of each row's own values and an aggregate inside a
+    # rolling window's function or a list's eval read nothing ahead, while a fill of nulls with the
+    # whole column's mean reads every bar (the ponytail review).
+    found = [(finding.rule, finding.source) for finding in lint(windowed)]
+
+    assert found == [
+        (LintRule.FULL_SAMPLE, 'filled = pl.col("close").fill_null(strategy="mean")'),
+    ]

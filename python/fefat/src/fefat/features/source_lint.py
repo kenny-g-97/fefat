@@ -1,24 +1,23 @@
 """The leak detector's lint (step 3.4, `02-engine-and-data.md` §6, D-12): a reading of a feature's
-source, its decorator included, that flags the usual ways of reading ahead before any data is
-cut, each finding with its line, counted from the decorator's, the line's text, and why.
+source, its decorator included, that warns of the usual ways of reading ahead, each finding with
+its line, counted from the decorator's, the line's text, and why.
 
     for finding in ff.features.lint(next_close):
         print(finding)  # line 3: return pl.col("close").shift(-1): a negative shift reads ...
 
-It flags a negative shift or difference; a backward fill or an interpolation; a centred rolling
-window or a peak; an aggregate over the whole frame, such as the normalisation, scaling, rank,
-quantile bins, or sort of a column over the full sample, or its last value; an aggregate over a partition, such as a
-session's `.over("trade_date")`, read before the partition ends; an as-of join forward or to the
-nearest row, or keyed on `ts_open`; and a reversed column. An aggregate inside a group-by's
-`agg` and one over a rolling window are left to the cuts, which see whether the group or the
-window has ended. It also warns of what the content hash leaves out (`BACKLOG.md`): a name the
-feature reads that is neither its own, the SDK's, Polars', nor the standard library's, such as a
-helper or a constant defined beside it, and a default its decorator does not write as a literal,
-a parameter that may have been chosen on the full sample; a warning never fails a validation.
-
-The lint reads the text alone: a shift by a parameter that is negative, a leak in a helper, and
-an aggregate under another name pass it, and the cuts of `fefat.features.validation` find what
-the values show."""
+It warns of a negative shift or difference, a backward fill or an interpolation, a centred window
+or a peak, an aggregate over the whole frame (a normalisation, a scaling, a rank, quantile bins,
+the last value, a fill of nulls with the mean) or over a partition such as `.over("trade_date")`,
+an as-of join forward, to the nearest row, or on `ts_open`, and a reversed column. A method of a
+namespace of each row's own values, such as `.str`, and an aggregate of a group-by, a rolling
+window, a `rolling_map`, or a list's `eval` are left to the cuts. These are warnings: the cuts and
+the start check of `fefat.features.validation` judge the values. One finding fails a validation:
+data the feature reads itself, with `load`, `compute`, `open`, or a reader such as
+`pl.scan_parquet`, which the cuts never cut and the cache's key never pins. The lint also warns of
+what the hash leaves out (`BACKLOG.md`): a name read from outside the feature, the SDK, Polars, and
+the standard library, and a default not written as a literal, which may have been chosen on the
+full sample. It reads the feature's own text alone: a shift by a negative parameter, a leak in a
+helper, and an aggregate under another name pass it."""
 
 import ast
 import inspect
@@ -33,8 +32,8 @@ from fefat.market.schema import FrozenModel
 
 
 class LintRule(StrEnum):
-    """What a finding of the lint is: a way of reading ahead, or a warning of what the content
-    hash leaves out (`looks_ahead`)."""
+    """What a finding of the lint is: a way of reading ahead (`looks_ahead`), a read of data the
+    detector cannot cut (`fails_validation`), or a warning of what the content hash leaves out."""
 
     NEGATIVE_SHIFT = "negative_shift"
     BACKWARD_FILL = "backward_fill"
@@ -44,16 +43,25 @@ class LintRule(StrEnum):
     REVERSED = "reversed"
     FORWARD_JOIN = "forward_join"
     JOIN_ON_OPEN = "join_on_open"
+    READS_DATA = "reads_data"
     NAME_READ_OUTSIDE = "name_read_outside"
     NON_LITERAL_DEFAULT = "non_literal_default"
 
     @property
     def looks_ahead(self) -> bool:
-        """Whether the rule finds a way of reading ahead, which fails a validation, rather than
-        something the hash leaves out."""
-        return self not in (LintRule.NAME_READ_OUTSIDE, LintRule.NON_LITERAL_DEFAULT)
+        """Whether the rule warns of a way of reading ahead."""
+        return self not in _NOT_AHEAD
+
+    @property
+    def fails_validation(self) -> bool:
+        """Whether a finding of the rule fails a validation: data the feature reads itself, which
+        the cuts never cut, so that they cannot vouch for its values."""
+        return self is LintRule.READS_DATA
 
 
+_NOT_AHEAD = frozenset(
+    {LintRule.READS_DATA, LintRule.NAME_READ_OUTSIDE, LintRule.NON_LITERAL_DEFAULT}
+)
 _WHY = {
     LintRule.NEGATIVE_SHIFT: "a negative shift or difference reads the bars after each row; "
     "shift by a positive number of bars, such as shift(1), to read the bars before it (D-12).",
@@ -67,13 +75,16 @@ _WHY = {
     "the full sample does; use a rolling, a cumulative (cum_*), or an exponential (ewm_*) window.",
     LintRule.PARTITION_AGGREGATE: "an aggregate over a partition, such as a session's "
     '.over("trade_date"), reads the partition\'s later rows before it ends; use a cumulative '
-    "form, such as cum_max().over(...), or the partition before, shifted by one.",
+    "form, such as cum_max().over(...), or read it once the partition has ended.",
     LintRule.REVERSED: "a reversed column, or a cumulative function run in reverse, reads each "
     "row's later bars; run it forward.",
     LintRule.FORWARD_JOIN: "an as-of join forward or to the nearest row reads the first row at or "
     "after each row's close; join backward, the default, which reads the last row at or before it.",
     LintRule.JOIN_ON_OPEN: "an as-of join on ts_open sees a bar from its open, while it is in "
     "progress; join on ts_close, when a bar is available (D-43).",
+    LintRule.READS_DATA: "the feature reads data itself, which the leak detector never cuts and "
+    "the feature cache's key never pins, so neither can vouch for its values; declare what it "
+    "reads as an input: another feature, instrument, or timeframe.",
 }
 _AGGREGATES = frozenset(
     {
@@ -110,14 +121,23 @@ _AGGREGATES = frozenset(
 they are given."""
 _SHIFTS = frozenset({"diff", "pct_change", "shift"})
 _BACKWARD_FILLS = frozenset({"backward_fill", "interpolate", "interpolate_by"})
+_SAMPLE_FILLS = frozenset({"max", "mean", "min"})
+"""The strategies of `fill_null` that fill with a statistic of the rows given."""
 _PEAKS = frozenset({"peak_max", "peak_min"})
 """Methods that compare each row with the rows on both sides of it."""
-_PER_ROW = frozenset({"arr", "list"})
+_PER_ROW = frozenset({"arr", "bin", "cat", "dt", "list", "meta", "name", "str", "struct"})
+"""Namespaces whose methods work on each row's own values, such as `.list.max()`."""
 _GROUPINGS = frozenset({"group_by", "group_by_dynamic", "rolling"})
 """Frame methods whose aggregates reduce each group, as `agg` does: `group_by("trade_date").max()`."""
-"""Namespaces whose aggregates reduce each row's own values, such as `.list.max()`."""
+_PER_WINDOW = frozenset({"agg", "eval", "map_elements", "rolling_map"})
+"""Methods whose arguments' aggregates reduce a group, a window, a list, or an element."""
 _OF_NUMBERS = frozenset({"math", "statistics"})
 """Modules of the standard library whose aggregates reduce Python's own numbers."""
+_READERS = frozenset({"compute", "load", "open"})
+"""Methods that read data: `ff.market.load`, `ff.features.compute`, `json.load`, `Path.open`."""
+_NAMED_READERS = frozenset({"load", "open"})
+"""Functions called by their name that read data, such as Python's `open`."""
+_READER_PREFIXES = ("read_", "scan_")
 _PLATFORM = frozenset({"builtins", "fefat", "polars"})
 
 
@@ -150,30 +170,30 @@ def lint(definition: FeatureDef) -> tuple[LintFinding, ...]:
 
 
 def _reading_ahead(statement: ast.stmt, lines: list[str]) -> Iterator[LintFinding]:
-    """The findings of reading ahead in the function's body, its decorator left to
-    `_written_defaults`."""
+    """The findings of reading ahead, and of reading data, in the function's body, its decorator
+    left to `_written_defaults`."""
     body = statement.body if isinstance(statement, ast.FunctionDef) else []
-    calls = [
-        node
-        for each in body
-        for node in ast.walk(each)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-    ]
+    calls = [node for each in body for node in ast.walk(each) if isinstance(node, ast.Call)]
     over = _inside(_receiver(call) for call in calls if _method(call) == "over")
     windowed = _inside(_receiver(call) for call in calls if _method(call) == "rolling")
-    grouped = _inside(
+    within = _inside(
         argument
         for call in calls
-        if _method(call) == "agg"
+        if _method(call) in _PER_WINDOW
         for argument in [*call.args, *(keyword.value for keyword in call.keywords)]
     )
     for call in calls:
-        for rule in _rules_of(call, over, windowed | grouped):
+        for rule in _rules_of(call, over, windowed | within):
             yield _finding(rule, _line_of(call), lines, _WHY[rule])
 
 
 def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Iterator[LintRule]:
-    method = _method(call)
+    method = _called(call)
+    readers = _READERS if isinstance(call.func, ast.Attribute) else _NAMED_READERS
+    if method in readers or method.startswith(_READER_PREFIXES):
+        yield LintRule.READS_DATA
+    if not isinstance(call.func, ast.Attribute) or _on_each_row(call):
+        return
     keywords = {keyword.arg: keyword.value for keyword in call.keywords}
     if method in _SHIFTS and _negative(call.args[0] if call.args else keywords.get("n")):
         yield LintRule.NEGATIVE_SHIFT
@@ -187,7 +207,10 @@ def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Ite
         yield LintRule.REVERSED
     if method == "join_asof":
         yield from _join_rules(keywords)
-    if method in _AGGREGATES and _of_a_column(call) and id(call) not in left_to_the_cuts:
+    aggregates = method in _AGGREGATES or (
+        method == "fill_null" and _text(keywords.get("strategy", _second(call))) in _SAMPLE_FILLS
+    )
+    if aggregates and _of_a_column(call) and id(call) not in left_to_the_cuts:
         yield LintRule.PARTITION_AGGREGATE if id(call) in over else LintRule.FULL_SAMPLE
 
 
@@ -207,20 +230,28 @@ def _method(call: ast.Call) -> str:
     return call.func.attr if isinstance(call.func, ast.Attribute) else ""
 
 
+def _called(call: ast.Call) -> str:
+    """The name a call calls: a method's, or a function's called by its name, as `open`."""
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    return _method(call)
+
+
 def _receiver(call: ast.Call) -> ast.expr:
     """What a method is called on: `close` in `close.max()`."""
     return call.func.value if isinstance(call.func, ast.Attribute) else call.func
 
 
+def _on_each_row(call: ast.Call) -> bool:
+    """Whether a method belongs to a namespace of each row's own values, such as `.str.tail(4)`."""
+    receiver = _receiver(call)
+    return isinstance(receiver, ast.Attribute) and receiver.attr in _PER_ROW
+
+
 def _of_a_column(call: ast.Call) -> bool:
-    """Whether an aggregate's receiver is a column or a frame, not a namespace of each row's own
-    values, a frame's groups, which the cuts judge as `agg`'s, nor a module of Python's numbers,
-    such as `statistics`."""
-    if not isinstance(call.func, ast.Attribute):
-        return False
-    receiver = call.func.value
-    if isinstance(receiver, ast.Attribute):
-        return receiver.attr not in _PER_ROW
+    """Whether an aggregate's receiver is a column or a frame, not a frame's groups, which the
+    cuts judge as `agg`'s, nor a module of Python's numbers, such as `statistics`."""
+    receiver = _receiver(call)
     if isinstance(receiver, ast.Call):
         return _method(receiver) not in _GROUPINGS
     return not (isinstance(receiver, ast.Name) and receiver.id in _OF_NUMBERS)
@@ -250,7 +281,7 @@ def _true(node: ast.expr | None) -> bool:
 
 
 def _line_of(call: ast.Call) -> int:
-    """The line of a method call's name, where a chain over several lines writes it."""
+    """The line of a call's name, where a chain over several lines writes it."""
     end = call.func.end_lineno
     return call.lineno if end is None else end
 
@@ -334,7 +365,10 @@ def _written_defaults(statement: ast.stmt, lines: list[str]) -> Iterator[LintFin
         return
     for key, value in zip(written.keys, written.values, strict=True):
         if not _literal(value):
-            yield _default_finding(_text(key) or ast.unparse(value), value, lines)
+            name = _text(key)
+            yield _default_finding(
+                f"**{ast.unparse(value)}" if name is None else name, value, lines
+            )
 
 
 def _keyword(call: ast.Call, name: str) -> ast.expr | None:

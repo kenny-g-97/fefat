@@ -1,9 +1,9 @@
 """Evaluating the partitions of the feature cache that a computation lacks (`fefat.features.cache`,
 step 3.3): each feature from its own warm-up, its slot's graph alone (`FeatureGraph.of_slot`), over
 the bars each instrument's source gives (`SeriesSource.signal_bars`); and the check that a feature
-read from two starts gives the same values (`check_warmups`, `first_difference`), which refuses a
+read from two starts gives the same values (`check_warmups`, `compare_values`), which refuses a
 feature that remembers more than its warm-up, with the comparison the leak detector reads too
-(`compare_values`, step 3.4)."""
+(step 3.4)."""
 
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
@@ -151,7 +151,7 @@ def _require_agreement(
     if read is None or read.is_empty():
         return
     held = frames[(folder.path, other.name)]
-    difference = first_difference(read.drop("trade_date"), held, folder.outputs())
+    difference = compare_values(read.drop("trade_date"), held, folder.outputs()).difference
     if difference is not None:
         starts = (done.starts[folder.path], folder.graph.lead_in(sessions, other.first))
         raise ValueError(_disagreement(folder, starts, difference))
@@ -193,14 +193,6 @@ def compare_values(read: pl.DataFrame, held: pl.DataFrame, outputs: Iterable[str
         for output in names
     }
     return Comparison(min(found, key=lambda each: each.ts_close, default=None), compared)
-
-
-def first_difference(
-    read: pl.DataFrame, held: pl.DataFrame, outputs: Iterable[str]
-) -> Difference | None:
-    """Where two computations of a feature's `outputs` on the same rows first differ
-    (`compare_values`); None where they agree."""
-    return compare_values(read, held, outputs).difference
 
 
 def _first_apart(joined: pl.DataFrame, output: str) -> Difference | None:

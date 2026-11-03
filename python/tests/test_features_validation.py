@@ -19,6 +19,7 @@ from fefat.features import TimeframeInput, ValidationReport
 from fefat.features.cuts import CutKind
 from fefat.features.examples import rsi
 from fefat.features.source_lint import LintRule
+from fefat.features.validation_report import FeatureRead
 from fefat.market.api import SeriesSource
 from fefat.reference.units import instant_nanoseconds
 from generated_minutes import FEBRUARY_WINDOW, february_store
@@ -126,22 +127,73 @@ def test_the_cuts_fall_at_every_kind_of_instant_and_repeat_with_their_seed() -> 
     assert again.cuts == report.cuts
     assert other.cuts != report.cuts
     assert report.passed, report.summary()
+    # The step and ponytail reviews: the report keeps what drew its cuts, so that it repeats.
+    read = FeatureRead(name="rsi", hash=rsi.hash, parameters={"n": 14})
+    assert (report.reads, report.stops, report.random_cuts) == ((read,), 24, 16)
 
 
-def test_a_warmup_longer_than_the_data_before_a_cut_compares_nothing_and_fails() -> None:
+def test_a_warmup_longer_than_the_data_compares_nothing_and_fails() -> None:
     # The amendment: a spliced series' first session has no front, so the store's bars start on
-    # 2026-02-03, whose 1,380 minutes hold fewer than the 1,500 bars RSI(60) needs: a window from
-    # it compares no value at its close, and fails, while the cuts from the next close pass.
-    report = ff.features.validate(rsi(n=60), "ES", "1m", "2026-02-03", "2026-02-06", seed=SEED)
+    # 2026-02-03, and to the session after the window's last, 02-09, they hold 6,900 minutes, fewer
+    # than the 7,500 bars RSI(300) needs: no cut and not the start check compares a value, and the
+    # report fails rather than pass on nothing.
+    report = ff.features.validate(rsi(n=300), "ES", "1m", "2026-02-03", "2026-02-06", seed=SEED)
 
-    first = report.first_failure()
-    assert first is not None
-    assert first.instant == instant_nanoseconds("2026-02-03T22:00:00Z")
-    assert (first.compared, first.difference) == ({"rsi": 0}, None)
-    assert "no value of rsi to compare" in str(first)
-    after = instant_nanoseconds("2026-02-04T22:00:00Z")
-    assert all(cut.passed for cut in report.cuts if cut.instant >= after)
+    assert report.uncompared() == ["rsi"]
+    assert not report.failing_cuts()
     assert not report.passed
+    assert "values: no value of rsi compared at any cut or by the start check" in (report.summary())
+
+
+@ff.feature(outputs={"roll_close": "price"})
+def roll_close(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.when(pl.col("roll_flag")).then(pl.col("close")).forward_fill()
+
+
+def test_an_output_null_until_the_roll_passes_with_its_values_compared_after_it() -> None:
+    # The code review and the leakage audit: an output null for whole sessions by design compares
+    # nothing at the cuts before its first value, which decide nothing alone, and the cuts after
+    # the roll at the open of 2026-02-19 compare its values, so the report passes.
+    report = ff.features.validate(roll_close(), "ES", "1m", *FEBRUARY_WINDOW, seed=SEED)
+
+    assert any(cut.compared == {"roll_close": 0} for cut in report.cuts)
+    assert report.passed, report.summary()
+
+
+def test_a_start_the_data_does_not_let_move_checks_nothing_and_fails() -> None:
+    # The ponytail review: at the store's first session, 2026-02-03, the warm-up before the
+    # window's middle trade date starts where the whole range does, so the start check compares
+    # the feature with itself; it fails rather than pass on nothing.
+    report = ff.features.validate(previous_close(), "ES", "1m", "2026-02-03", "2026-02-05")
+
+    check = report.start_check
+    assert (check.whole_from, check.later_from) == (date(2026, 2, 3), date(2026, 2, 3))
+    assert not check.passed
+    assert "the start did not move, since the data begins on 2026-02-03" in str(check)
+    assert not report.passed
+
+
+@ff.feature(outputs={"session_close": "price"})
+def session_close_from_the_store(bars: pl.LazyFrame) -> pl.LazyFrame:
+    daily = ff.market.load("ES", "1d", "2026-02-02", "2026-02-20")
+    closes = daily.select("trade_date", session_close="close")
+    joined = bars.join(closes, on="trade_date", how="left", maintain_order="left")
+    return joined.select("ts_close", "session_close")
+
+
+def test_a_feature_reading_data_itself_fails_where_the_cuts_cannot_see_it() -> None:
+    # The leakage audit: a feature that loads the store itself reads what the cuts never cut, so
+    # each session's close sits on its every row and every cut agrees; the lint reads the load and
+    # fails the report.
+    report = ff.features.validate(
+        session_close_from_the_store(), "ES", "1m", *FEBRUARY_WINDOW, seed=SEED
+    )
+
+    assert not report.failing_cuts()
+    assert report.start_check.passed
+    assert [finding.rule for finding in report.lint] == [LintRule.READS_DATA]
+    assert not report.passed
+    assert report.summary().splitlines()[0].endswith("FAILED")
 
 
 def test_the_detector_loads_each_grid_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,6 +260,7 @@ def test_stops_caps_the_stops_drawn_beside_the_four_always_cut() -> None:
     # cuts at, and no more.
     report = ff.features.validate(previous_close(), "ES", "1m", *FEBRUARY_WINDOW, stops=0)
 
+    assert report.stops == 0
     kinds = {kind for cut in report.cuts for kind in cut.kinds}
     closes = [cut.instant for cut in report.cuts if CutKind.SESSION_CLOSE in cut.kinds]
     assert {CutKind.WEEKEND, CutKind.HOLIDAY_HALT} <= kinds

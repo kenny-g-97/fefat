@@ -21,7 +21,8 @@ from fefat.features.inputs import (
     TradesInput,
 )
 from fefat.features.source_lint import lint
-from fefat.features.validation import ValidationReport, validate
+from fefat.features.validation import validate
+from fefat.features.validation_report import ValidationReport
 from fefat.features.versions import FeatureVersion, load, save
 
 __all__ = [
