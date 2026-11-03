@@ -5,7 +5,8 @@ A root's datasets come from one provider: the one named; the only one that holds
 where several hold a product of the catalog, the first of its recommended sources whose presets
 hold it, Databento first for the catalog's futures. `origin` narrows them to imported or synced
 data. A provider's datasets of a root hold dated contracts or one continuous series, never
-both. A load builds its bars from the finest data the provider holds, or the fidelity named
+both. A load builds each trade date's bars from the finest data the provider holds for that
+date (`signal_bar_eras`, D-71), or every date's from the fidelity named
 (`fefat.market.fidelity`): trades, then bars by their timeframe, finest first, none coarser
 than the bars asked for; bars coarser than a minute are an import's finest data, which fill
 backtests at their own fidelity. The roll calendar reads the 1-minute bars, or else the finest
@@ -14,12 +15,13 @@ backtest builds its signal bars from the data `signal_source` names (step 2.12).
 """
 
 from datetime import date
+from itertools import groupby
 
 import polars as pl
 
 from fefat.market.catalog import CATALOG, Catalog
 from fefat.market.coverage import session_datasets
-from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
+from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, FidelityEra, TickFidelity
 from fefat.market.layout import Dataset, DatasetOrigin, SeriesKind, YearMonth
 from fefat.market.schema import BarSchemaName, SchemaKind, Timeframe
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
@@ -182,8 +184,55 @@ def signal_source(
     ]
     if not building:
         return held[0][0]
-    covered = [_trade_dates_held(store, dataset, dates) for _, dataset in building]
+    covered = [len(_trade_dates_held(store, dataset, dates)) for _, dataset in building]
     return building[covered.index(max(covered))][0]
+
+
+def signal_bar_eras(
+    store: Store,
+    datasets: dict[str, Dataset],
+    timeframe: Timeframe,
+    dates: tuple[date, date],
+    contract: str | None = None,
+) -> tuple[FidelityEra, ...]:
+    """The levels signal bars of `timeframe` are built from on the trade dates from `dates`'
+    first to its last (D-71): each trade date the trades or bars held hold, of one `contract`
+    where it is named, from the finest of those that build the timeframe, in eras of dates in a
+    row on one level, as a run names the levels it fills on (D-64). So a date's bars never
+    depend on the dates after it, as a level chosen over a whole window made them (the leakage
+    audit of the Phase 2 exit). A timeframe finer than every level, or one that none builds, is
+    refused."""
+    finest: dict[date, TickFidelity | Timeframe] = {}
+    for level, dataset in reversed(_building(datasets, timeframe)):
+        finest |= dict.fromkeys(_trade_dates_held(store, dataset, dates, contract), level)
+    dated = sorted(finest.items())
+    return tuple(_era(list(run)) for _, run in groupby(dated, key=lambda pair: pair[1]))
+
+
+def _building(
+    datasets: dict[str, Dataset], timeframe: Timeframe
+) -> list[tuple[TickFidelity | Timeframe, Dataset]]:
+    """The trades and bars held that build bars of `timeframe`, finest first."""
+    held = _finest_first(datasets)
+    if not held:
+        named = ", ".join(sorted(datasets)) or "none"
+        raise ValueError(f"Expected trades or bars to build signal bars from, got {named}.")
+    root = held[0][1].root
+    _no_coarser_than(held[0], timeframe, root)
+    building = [(level, dataset) for level, dataset in held if _builds(level, timeframe)]
+    if not building:
+        named = ", ".join(str(level) for level, _ in held)
+        raise ValueError(
+            f"Expected trades, or bars whose length divides {timeframe}, of {root} to build its "
+            f"{timeframe} bars from, got {named}."
+        )
+    return building
+
+
+def _era(run: list[tuple[date, TickFidelity | Timeframe]]) -> FidelityEra:
+    """The era of `run`, trade dates in a row with their one level."""
+    (first, level), (last, _) = run[0], run[-1]
+    return FidelityEra(first=first, last=last, trade_dates=len(run), fidelity=level)
 
 
 def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
@@ -194,24 +243,31 @@ def _builds(level: TickFidelity | Timeframe, timeframe: Timeframe) -> bool:
     return timeframe.nominal_seconds() % level.nominal_seconds() == 0
 
 
-def _trade_dates_held(store: Store, dataset: Dataset, dates: tuple[date, date]) -> int:
-    """How many trade dates of the window from `dates`' first to its last the dataset holds: the
-    keys of its partitions where it keeps a file per trade date, else the trade dates of its
-    bars in the window, so that a stretch without records between two counts for nothing."""
+def _trade_dates_held(
+    store: Store, dataset: Dataset, dates: tuple[date, date], contract: str | None = None
+) -> set[date]:
+    """The trade dates of the window from `dates`' first to its last that the dataset holds, of
+    one `contract` where it is named: the keys of its partitions where it keeps a file per trade
+    date, else the trade dates of its bars in the window, so that a stretch without records
+    between two holds none."""
     first, last = dates
-    partitions = [file.partition for file in store.list_partitions(dataset)]
+    partitions = [
+        file.partition
+        for file in store.list_partitions(dataset)
+        if contract is None or file.partition.contract == contract
+    ]
     by_date = {partition.key for partition in partitions if isinstance(partition.key, date)}
     if by_date:
-        return sum(first <= key <= last for key in by_date)
+        return {key for key in by_date if first <= key <= last}
     in_window = [
         store.scan_partition(partition).select("trade_date")
         for partition in partitions
         if not isinstance(partition.key, YearMonth) or partition.key.overlaps(first, last)
     ]
     if not in_window:
-        return 0
+        return set()
     held = pl.concat(in_window).filter(pl.col("trade_date").is_between(first, last))
-    return held.select(pl.col("trade_date").n_unique()).collect().item()
+    return set(held.select(pl.col("trade_date").unique()).collect().to_series().to_list())
 
 
 def _finest_first(

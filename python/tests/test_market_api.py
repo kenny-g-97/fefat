@@ -1,3 +1,4 @@
+import os
 import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -7,6 +8,8 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import fefat
+import gen_fixtures
+from fefat.config import resolve_paths
 from fefat.market import instruments
 from fefat.market.api import DATASETS_COLUMNS, SIGNAL_BAR_COLUMNS, datasets, load, roll_calendar
 from fefat.market.calendar import sessions_of
@@ -365,3 +368,24 @@ def test_a_root_load_without_bars_in_its_window_is_refused(fixtures_as_data: Non
     # an empty frame; a notebook then computed over nothing without an error.
     with pytest.raises(ValueError, match="Expected bars of ES from 2026-03-16 to 2026-03-18"):
         load("ES", "1m", "2026-03-16", "2026-03-18", fidelity="1m")
+    # Step 3.2: without a fidelity, no level holds a date of the window, so no dataset is read.
+    with pytest.raises(ValueError, match="Expected bars of ES from 2026-03-16 to 2026-03-18"):
+        load("ES", "1m", "2026-03-16", "2026-03-18")
+
+
+def test_a_load_builds_each_trade_date_from_the_finest_level_that_holds_it() -> None:
+    # D-71: ESH2026's 1-minute bars cover 2026-03-02 to 03-13 and its trades start on 03-10, so
+    # the bars build the dates before 03-10 and the trades the dates from it, where a load once
+    # built every date from the finest data held and gave no bars before the trades began.
+    synthetic = resolve_paths(os.environ).data_dir / "synthetic"
+    dates = ["--dates", "2026-03-02..2026-03-13", "--contracts", "ESH2026"]
+    assert gen_fixtures.main(["--out", str(synthetic), *dates, "--ticks-from", "2026-03-10"]) == 0
+
+    bars = load("ES", "5m", "2026-03-03", "2026-03-13").collect()
+
+    minutes = load("ES", "5m", "2026-03-03", "2026-03-13", fidelity="1m").collect()
+    trades = load("ES", "5m", "2026-03-10", "2026-03-13", fidelity="trades").collect()
+    before = pl.col("trade_date") < date(2026, 3, 10)
+    assert bars.get_column("trade_date").unique().len() == 9
+    assert_frame_equal(bars.filter(before), minutes.filter(before))
+    assert_frame_equal(bars.filter(~before), trades)
