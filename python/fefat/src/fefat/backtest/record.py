@@ -12,8 +12,9 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from fefat.backtest.metrics import FidelityEra, Metrics
-from fefat.backtest.run_config import AppliedRunConfig, FidelityText
+from fefat.backtest.metrics import Metrics
+from fefat.backtest.run_config import AppliedRunConfig
+from fefat.market.fidelity import FidelityEra, FidelityText
 from fefat.market.instruments import InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason

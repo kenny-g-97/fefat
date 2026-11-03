@@ -9,13 +9,12 @@ run's record names every value it ran under:
 """
 
 from decimal import Decimal
-from typing import Annotated
 
-from pydantic import BeforeValidator, Field, PlainSerializer, field_validator
+from pydantic import Field, field_validator
 
 from fefat.market.contracts import parse_contract_name
 from fefat.market.fees import TABLES
-from fefat.market.fidelity import TickFidelity, parse_fidelity
+from fefat.market.fidelity import FidelityText, TickFidelity
 from fefat.market.instruments import InstrumentKind
 from fefat.market.schema import FrozenModel, Timeframe
 from fefat.reference.settings import (
@@ -27,13 +26,6 @@ from fefat.reference.settings import (
     SlippageTicks,
     default_slippage_ticks,
 )
-
-FidelityText = Annotated[
-    TickFidelity | Timeframe,
-    BeforeValidator(parse_fidelity),
-    PlainSerializer(str, return_type=str),
-]
-"""A fidelity as a field written as its text, `trades` or `1m`, and read back from it."""
 
 DEFAULT_FEE_TABLES = {
     InstrumentKind.FUTURES: "retail-default",

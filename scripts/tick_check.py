@@ -50,7 +50,6 @@ from fefat.backtest.fidelity_classes import (
     classify,
 )
 from fefat.backtest.fidelity_summary import FidelitySummary, summarise
-from fefat.backtest.metrics import FidelityEra
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.backtest.runs import run_key
 from fefat.config import FefatPaths, resolve_paths
@@ -60,7 +59,7 @@ from fefat.market.calendar import SessionTable
 from fefat.market.engine_cache_index import engine_cache_status
 from fefat.market.engine_units import micro_units
 from fefat.market.fees import TABLES
-from fefat.market.fidelity import TickFidelity
+from fefat.market.fidelity import FidelityEra, TickFidelity
 from fefat.market.layout import Dataset, Partition, PartitionRequest
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe, parse_schema_name

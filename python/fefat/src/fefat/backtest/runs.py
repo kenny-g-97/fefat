@@ -35,7 +35,7 @@ from fefat.backtest.artifacts import (
 )
 from fefat.backtest.explain import Explanation, explain
 from fefat.backtest.fidelity import CheckedRun, PeriodRun, fidelity_check_of
-from fefat.backtest.metrics import FidelityEra, Metrics
+from fefat.backtest.metrics import Metrics
 from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
     EngineVersions,
@@ -50,6 +50,7 @@ from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
 from fefat.market.engine_units import micro_units, money_text
+from fefat.market.fidelity import FidelityEra
 from fefat.strategy.signal_strategy import SignalStrategy
 
 DAILY = "1d"

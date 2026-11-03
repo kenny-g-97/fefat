@@ -10,7 +10,6 @@ from decimal import Decimal
 
 from fefat.backtest.metrics import (
     FidelityCheck,
-    FidelityEra,
     FidelityRerun,
     Metrics,
     PeriodOutcome,
@@ -18,7 +17,7 @@ from fefat.backtest.metrics import (
 )
 from fefat.backtest.record import RunRecord
 from fefat.market.calendar import counted
-from fefat.market.fidelity import fidelity_in_words
+from fefat.market.fidelity import FidelityEra, fidelity_in_words
 
 _NO_CHECK = (
     "No fidelity check: {why}, so nothing finer measures the error of the coarser days; it "
