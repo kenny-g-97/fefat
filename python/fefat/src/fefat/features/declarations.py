@@ -23,9 +23,10 @@ from fefat.features.inputs import (
     InstrumentInput,
     OutputKind,
     TimeframeInput,
+    TradesInput,
 )
 
-INPUT_KINDS = (FeatureInput, InstrumentInput, TimeframeInput, DatasetInput)
+INPUT_KINDS = (FeatureInput, InstrumentInput, TimeframeInput, DatasetInput, TradesInput)
 _INPUTS_BY_NAME = {kind.__name__: kind for kind in INPUT_KINDS}
 
 

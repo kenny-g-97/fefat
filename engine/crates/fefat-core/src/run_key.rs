@@ -16,12 +16,13 @@ use crate::strategy_spec::StrategySpec;
 pub struct Version(pub u32);
 
 /// Bumped for any change of what a run produces that changes neither its fills nor the layout of
-/// its artifacts: 8 since step 2.12, whose runs record the fidelity era of each trade date and
-/// their fidelity check, and build their signal bars from the level that covers their window,
-/// after 7 of step 2.11, whose runs record their metrics in `run.json`, and 6 of step 2.10, whose
-/// run key covers the run's settings and whose runs record their trades, their equity at each
-/// decision, and each fill's trade date.
-pub const ENGINE_VERSION: Version = Version(8);
+/// its artifacts: 9 since step 3.2, whose runs build each trade date's signal bars from the finest
+/// level stored for it, record those levels' eras in `run.json`, and read their features' warm-up
+/// from before their window, after 8 of step 2.12, whose runs record the fidelity era of each
+/// trade date and their fidelity check, 7 of step 2.11, whose runs record their metrics in
+/// `run.json`, and 6 of step 2.10, whose run key covers the run's settings and whose runs record
+/// their trades, their equity at each decision, and each fill's trade date.
+pub const ENGINE_VERSION: Version = Version(9);
 /// Bumped when fills change (`02` §8), with the builder's approval and the goldens regenerated.
 pub const FILL_MODEL_VERSION: Version = Version(1);
 /// Bumped when the layout of a run's artifacts changes: 2 since step 2.13, whose runs store each

@@ -30,7 +30,6 @@ import polars as pl
 from fefat.backtest.explain import pinned_snapshots
 from fefat.backtest.metrics import (
     FidelityCheck,
-    FidelityEra,
     FidelityRerun,
     FillPriceDifference,
     PeriodOutcome,
@@ -41,7 +40,7 @@ from fefat.backtest.record import Window
 from fefat.backtest.run_inputs import engine_cache_folder
 from fefat.config import resolve_paths
 from fefat.market.engine_units import micro_units, money_text
-from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, TickFidelity
+from fefat.market.fidelity import ONE_MINUTE, ONE_SECOND, FidelityEra, TickFidelity
 from fefat.market.schema import Timeframe
 from fefat.market.store import Store
 from fefat.reference.settings import Replay

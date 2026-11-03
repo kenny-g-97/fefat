@@ -1,7 +1,8 @@
-"""What a backtest reads (step 2.10): its signal bars, as `load` gives them from the 1-minute
-bars, 1-second bars, or trades that cover the most of its window, the finest of equals, so
-that they cover the window where finer data covers part of it (step 2.12), with the warnings
-`load` raises, and its signal frame, checked as both engines read it; a snapshot of each dataset of
+"""What a backtest reads (step 2.10): its signal bars, as `load` gives them, each trade date's
+from the finest level that holds it, whose eras the run records, read from as many sessions before
+its window as its features' warm-up needs, with the bars of the other grids they read (step 3.2),
+with the warnings the loads raise, and its signal frame on its window, checked as both engines read
+it; a snapshot of each dataset of
 its provider over its window (ADR-0019), whose hashes key the run; the engine cache of the months
 it replays, built from the same files (D-56); the fronts it trades and the rolls between them, as
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
@@ -10,7 +11,6 @@ engine reads, every setting applied (D-51), with the config of its rerun at one 
 slippage and its exchange's time zone, which its metrics read (step 2.11)."""
 
 import json
-import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -21,11 +21,11 @@ import polars as pl
 
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
+from fefat.backtest.run_signals import signal_frame
 from fefat.config import FefatPaths
-from fefat.market.api import load, parse_trade_date, roll_calendar
+from fefat.market.api import parse_trade_date, roll_calendar
 from fefat.market.calendar import SessionTable, counted
-from fefat.market.contracts import parse_contract_name
-from fefat.market.dataset_choice import provider_datasets, signal_source
+from fefat.market.dataset_choice import provider_datasets, signal_bar_eras
 from fefat.market.engine_cache import build_cache_months, level_of
 from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
 from fefat.market.engine_units import (
@@ -35,7 +35,7 @@ from fefat.market.engine_units import (
     price_text,
 )
 from fefat.market.fees import TABLES, CryptoFee, FuturesFee
-from fefat.market.fidelity import TickFidelity
+from fefat.market.fidelity import FidelityEra, TickFidelity
 from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import Dataset, PartitionRequest, YearMonth
 from fefat.market.roll_decisions import RollReason
@@ -78,7 +78,7 @@ class RunInputs:
     window: Window
     warnings: tuple[str, ...]
     time_zone: str
-    signal_source: TickFidelity | Timeframe
+    signal_bar_eras: tuple[FidelityEra, ...]
 
     def spec_json(self) -> str:
         return json.dumps(self.spec.document())
@@ -152,14 +152,12 @@ def run_inputs(
     market = _market(strategy.instrument, config.provider, paths)
     applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
-    held = {str(dataset.schema_name): dataset for dataset in market.datasets}
-    source = signal_source(market.store, held, Timeframe.parse(strategy.timeframe), dates)
-    bars, loaded = _bars(strategy, dates, market.provider, source, applied.contract)
+    produced = signal_frame(strategy, market.sessions, market.provider, dates, applied.contract)
+    signals = produced.signals
     spec = strategy.to_spec()
-    signals = strategy.signals(bars).collect()
     require_named_columns(spec.execution, signals.columns)
     window = _window(signals)
-    snapshots = _snapshots(market, window)
+    snapshots = _snapshots(market, produced.first_read, window)
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)
     engine_config = _engine_config(market, applied, signals, snapshots, window, rolls)
@@ -177,9 +175,9 @@ def run_inputs(
         fee_table=_fee_table_record(applied.fee_table, market.instrument.root),
         rolls=tuple(_roll_record(roll) for roll in rolls),
         window=window,
-        warnings=(*loaded, *_features_below_a_tick(spec, signals, parameters.tick)),
+        warnings=(*produced.warnings, *_features_below_a_tick(spec, signals, parameters.tick)),
         time_zone=market.sessions.time_zone(),
-        signal_source=source,
+        signal_bar_eras=_signal_bar_eras(market, strategy, window, signals),
     )
 
 
@@ -234,30 +232,24 @@ def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
     return min((level_of(dataset) for dataset in datasets), key=rank)
 
 
-def _bars(
-    strategy: SignalStrategy,
-    dates: tuple[date, date],
-    provider: str,
-    source: TickFidelity | Timeframe,
-    contract: str | None,
-) -> tuple[pl.DataFrame, tuple[str, ...]]:
-    """The strategy's signal bars from `dates`' start to its end, as `load` gives them from
-    `source`, of the root's fronts or of the one `contract`, and the warnings it raised, which
-    the run's record keeps."""
-    root, timeframe = strategy.instrument, strategy.timeframe
-    symbol = root if contract is None else _contract_of(root, contract)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        bars = load(symbol, timeframe, *dates, fidelity=source, provider=provider)
-        frame = bars.collect()
-    return frame, tuple(str(warning.message) for warning in caught)
-
-
-def _contract_of(root: str, contract: str) -> str:
-    contract_root, _ = parse_contract_name(contract)
-    if contract_root != root:
-        raise ValueError(f"Expected a contract of {root}, the strategy's root, got {contract}.")
-    return contract
+def _signal_bar_eras(
+    market: _Market, strategy: SignalStrategy, window: Window, signals: pl.DataFrame
+) -> tuple[FidelityEra, ...]:
+    """The levels the window's signal bars were built from, each trade date's as `load` chose it
+    for the contract the signal frame holds that day (`signal_bar_eras`), in eras; the dates
+    its features' warm-up reads before the window are keyed by the snapshots alone."""
+    held = {str(dataset.schema_name): dataset for dataset in market.datasets}
+    timeframe = Timeframe.parse(strategy.timeframe)
+    contracts = signals.select("trade_date", "contract").unique()
+    dates = (window.start, window.end)
+    eras = signal_bar_eras(market.store, held, timeframe, dates, contracts)
+    if not eras:
+        named = ", ".join(contracts.get_column("contract").unique().sort())
+        raise ValueError(
+            f"Expected trades or bars of {named} on a trade date from {window.start} to "
+            f"{window.end}, got none: the window holds the empty buckets after the data before it."
+        )
+    return eras
 
 
 def _window(signals: pl.DataFrame) -> Window:
@@ -267,11 +259,11 @@ def _window(signals: pl.DataFrame) -> Window:
     return Window(start=first, end=last)
 
 
-def _snapshots(market: _Market, window: Window) -> tuple[Snapshot, ...]:
-    """A snapshot of each dataset of the provider over the window, from the session before its
-    start, which `load` reads, and of a perpetual's funding; a dataset without a partition in
-    the window is not read."""
-    lead_in = market.sessions.preceding(window.start).trade_date
+def _snapshots(market: _Market, first: date, window: Window) -> tuple[Snapshot, ...]:
+    """A snapshot of each dataset of the provider to the window's end from the session before
+    `first`, the first trade date of the bars the run read, which `load` reads from, and of a
+    perpetual's funding; a dataset without a partition in that range is not read."""
+    lead_in = market.sessions.preceding(first).trade_date
     datasets = list(market.datasets)
     if market.instrument.kind is InstrumentKind.PERPETUAL:
         datasets.append(_funding_dataset(market))

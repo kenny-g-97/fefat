@@ -39,6 +39,10 @@ def test_the_report_prints_the_metrics_split_by_era_and_the_fidelity_checks_delt
         "  2026-03-03 to 2026-03-09     5 trade dates  1m",
         "  2026-03-10 to 2026-03-13     4 trade dates  trades",
     ]
+    # Step 3.2: each trade date's signal bars come from its finest level, in eras of their own.
+    assert "signal bars built from each trade date's finest data." in lines[1]
+    signal_bars = lines.index("Signal bars")
+    assert lines[signal_bars + 1 : signal_bars + 3] == lines[eras + 1 : eras + 3]
     # Step 2.13: the mix of path fidelities keeps the order each first closed, so run.json is the
     # same on every run (D-11).
     assert [str(path.fidelity) for path in run.record.path_fidelities] == ["1m", "trades"]

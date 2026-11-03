@@ -18,7 +18,6 @@ waits for fill exports.
 from fefat.backtest.fidelity import fidelity_check
 from fefat.backtest.metrics import (
     FidelityCheck,
-    FidelityEra,
     FidelityRerun,
     PeriodOutcome,
     RefusedCheck,
@@ -40,6 +39,7 @@ from fefat.backtest.schemas import (
     TRADE_PATHS,
     TRADES,
 )
+from fefat.market.fidelity import FidelityEra
 
 __all__ = [
     "ARTIFACT_SCHEMAS",

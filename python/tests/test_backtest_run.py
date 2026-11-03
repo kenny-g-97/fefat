@@ -21,6 +21,7 @@ import pytest
 
 import fefat as ff
 import fefat.backtest.run_inputs as run_inputs
+import fefat.backtest.run_signals as run_signals
 from fefat.backtest import ARTIFACT_SCHEMAS, Run, RunConfig, RunRecord
 from fefat.backtest.artifacts import read_artifact, write_run
 from fefat.backtest.metrics import Metrics
@@ -242,7 +243,7 @@ def test_the_warnings_load_raises_are_in_the_record_and_raised_on_every_call(
         warnings.warn("a warning of load", UserWarning, stacklevel=2)
         return ff.market.load(*arguments, **keywords)
 
-    monkeypatch.setattr(run_inputs, "load", warning_load)
+    monkeypatch.setattr(run_signals, "load", warning_load)
 
     with pytest.warns(UserWarning, match="a warning of load"):
         run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
@@ -406,3 +407,20 @@ def test_the_breakdowns_label_each_trade_by_its_entry_in_the_exchanges_time_zone
         "trades": every
     }
     assert {year: group.trades for year, group in breakdowns.year.items()} == {2026: every}
+
+
+def test_a_run_whose_window_no_level_holds_a_date_of_is_refused_before_it_runs() -> None:
+    # The code review: with ES's 1-minute bars of 2026-03-06 gone, a run of ESH2026 alone on
+    # 03-06 holds its grid's empty buckets after the close of 03-05 and no data, so it has no era
+    # of signal bars to record; it is refused before the engine runs.
+    store_with("ohlcv-1m")
+    store = Store(resolve_paths(os.environ).data_dir)
+    for file in store.list_partitions():
+        if file.partition.dataset.root == "ES":
+            rows = store.scan_partition(file.partition).collect()
+            friday = pl.col("trade_date") == date(2026, 3, 6)
+            store.write_partition(file.partition, rows.filter(~friday))
+    one_contract = RunConfig(contract="ESH2026")
+
+    with pytest.raises(ValueError, match="Expected trades or bars of ESH2026 on a trade date from"):
+        ff.backtest.run(breakout(), "2026-03-06", "2026-03-06", one_contract)

@@ -1,3 +1,4 @@
+import os
 import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -7,6 +8,8 @@ import pytest
 from polars.testing import assert_frame_equal
 
 import fefat
+import gen_fixtures
+from fefat.config import resolve_paths
 from fefat.market import instruments
 from fefat.market.api import DATASETS_COLUMNS, SIGNAL_BAR_COLUMNS, datasets, load, roll_calendar
 from fefat.market.calendar import sessions_of
@@ -365,3 +368,62 @@ def test_a_root_load_without_bars_in_its_window_is_refused(fixtures_as_data: Non
     # an empty frame; a notebook then computed over nothing without an error.
     with pytest.raises(ValueError, match="Expected bars of ES from 2026-03-16 to 2026-03-18"):
         load("ES", "1m", "2026-03-16", "2026-03-18", fidelity="1m")
+    # Step 3.2: without a fidelity, no level holds a date of the window, so no dataset is read.
+    with pytest.raises(ValueError, match="Expected bars of ES from 2026-03-16 to 2026-03-18"):
+        load("ES", "1m", "2026-03-16", "2026-03-18")
+
+
+def test_a_load_builds_each_trade_date_from_the_finest_level_that_holds_it() -> None:
+    # D-71: ESH2026's 1-minute bars cover 2026-03-02 to 03-13 and its trades start on 03-10, so
+    # the bars build the dates before 03-10 and the trades the dates from it, where a load once
+    # built every date from the finest data held and gave no bars before the trades began.
+    synthetic = resolve_paths(os.environ).data_dir / "synthetic"
+    dates = ["--dates", "2026-03-02..2026-03-13", "--contracts", "ESH2026"]
+    assert gen_fixtures.main(["--out", str(synthetic), *dates, "--ticks-from", "2026-03-10"]) == 0
+
+    bars = load("ES", "5m", "2026-03-03", "2026-03-13").collect()
+
+    minutes = load("ES", "5m", "2026-03-03", "2026-03-13", fidelity="1m").collect()
+    trades = load("ES", "5m", "2026-03-10", "2026-03-13", fidelity="trades").collect()
+    before = pl.col("trade_date") < date(2026, 3, 10)
+    assert bars.get_column("trade_date").unique().len() == 9
+    assert_frame_equal(bars.filter(before), minutes.filter(before))
+    assert_frame_equal(bars.filter(~before), trades)
+
+
+def test_a_date_no_level_holds_has_the_same_rows_in_a_window_ending_on_it_and_one_past_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The leakage audit of step 3.2: with ESH2026's 1-minute bars of 2026-03-06 removed, a window
+    # ending on 03-06 once stopped its grid at the bars' last date and a window running past it
+    # gave 03-06 zero-volume rows; both give them, as the fidelity named gives them.
+    store = Store(data_folder_with(monkeypatch, tmp_path, "ohlcv-1m"))
+    for file in store.list_partitions():
+        rows = store.scan_partition(file.partition).collect()
+        store.write_partition(file.partition, rows.filter(pl.col("trade_date") != MARCH_6))
+
+    ending = load("ESH2026", "5m", "2026-03-05", "2026-03-06").collect()
+    running_past = load("ESH2026", "5m", "2026-03-05", "2026-03-09").collect()
+
+    named = load("ESH2026", "5m", "2026-03-05", "2026-03-06", fidelity="1m").collect()
+    assert ending.filter(pl.col("trade_date") == MARCH_6).height == BUCKETS_OF_FIVE_MINUTES
+    assert ending.equals(running_past.filter(pl.col("trade_date") <= MARCH_6))
+    assert ending.equals(named)
+
+
+def test_a_spliced_load_builds_each_trade_date_from_the_finest_level_its_front_holds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The step review: ESH2026 is the front on 2026-03-06, so ESM2026's trades of that day build
+    # none of the series' bars. With ESH2026's trades of 03-06 gone, the date takes its front's
+    # 1-minute bars, where it once took the trades and gave the front a session of empty buckets.
+    data_folder_with(monkeypatch, tmp_path, "trades", "ohlcv-1m")
+    front = tmp_path / "synthetic" / "trades" / "root=ES" / "contract=ESH2026"
+    shutil.rmtree(front / "date=2026-03-06")
+
+    bars = load("ES", "5m", "2026-03-06", "2026-03-06").collect()
+
+    minutes = load("ES", "5m", "2026-03-06", "2026-03-06", fidelity="1m").collect()
+    assert bars.get_column("contract").unique().to_list() == ["ESH2026"]
+    assert bars.get_column("volume").equals(minutes.get_column("volume"))
+    assert bars.get_column("zero_volume").sum() < BUCKETS_OF_FIVE_MINUTES

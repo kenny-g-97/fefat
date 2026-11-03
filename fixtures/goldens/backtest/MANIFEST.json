@@ -1,7 +1,7 @@
 {
   "command": "uv run python scripts/golden_backtest.py --write fixtures/goldens/backtest/MANIFEST.json",
   "versions": {
-    "engine": 8,
+    "engine": 9,
     "fill_model": 1,
     "artifact_schema": 2
   },
@@ -48,7 +48,7 @@
     "fixtures_manifest_sha256": "0fd2a9ba5be14693150f17e7e5a755cd3095407739014c3916312f09b0b3d2af"
   },
   "outputs": {
-    "run_key": "29ecbfeb5e98d1b75f20a86fbe607530c9e75441623cc29b1f77c31dfbde3ecd",
+    "run_key": "22e64bf837e8b4f553e462931898095e55a903ea46f6ab3f953b7bbf4a44a7c2",
     "artifacts": {
       "fills": "601a549375a45176124e88c9770b771f88ce124b1f0a499eab3aa1e8026b311d",
       "orders": "23e3c6bb65b52743bef824fd8002b2234baab6755a4093c863e636e0e1abe661",

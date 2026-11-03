@@ -59,15 +59,17 @@ class FeatureInput(FrozenModel):
 
 
 class InstrumentInput(FrozenModel):
-    """Another instrument's signal bars, such as MNQ's for a feature of MES."""
+    """Another instrument's signal bars at the feature's timeframe, such as MNQ's for a feature
+    of MES, each column suffixed with its root, as `close_MNQ`, with `staleness_MNQ`, the
+    nanoseconds from that bar's close, joined as of each row's close (step 3.2)."""
 
     kind: Literal["instrument"] = "instrument"
     root: str = Field(min_length=1)
 
 
 class TimeframeInput(FrozenModel):
-    """The bars of a higher timeframe, such as `15m` for a feature of 5-minute bars, each visible
-    from its close (step 3.2)."""
+    """The timeframe of the bars the feature is evaluated on, such as `15m` for a feature that a
+    strategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2)."""
 
     kind: Literal["timeframe"] = "timeframe"
     timeframe: Annotated[str, AfterValidator(_timeframe_text)]
@@ -80,7 +82,15 @@ class DatasetInput(FrozenModel):
     name: str = Field(min_length=1)
 
 
+class TradesInput(FrozenModel):
+    """The instrument's prints of each bucket of the feature's bars, aggregated and available at
+    the bucket's close, reserved for step 3.6, which builds it for cumulative delta."""
+
+    kind: Literal["trades"] = "trades"
+
+
 DeclaredInput = Annotated[
-    FeatureInput | InstrumentInput | TimeframeInput | DatasetInput, Field(discriminator="kind")
+    FeatureInput | InstrumentInput | TimeframeInput | DatasetInput | TradesInput,
+    Field(discriminator="kind"),
 ]
 """An input a feature declares beside its bars, which every feature reads first."""

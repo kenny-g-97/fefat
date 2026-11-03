@@ -16,13 +16,15 @@ The function takes the bars first, `load`'s signal bars (`SIGNAL_BAR_COLUMNS`) a
 then its parameters by name, each annotated with its type, their defaults in `params` and never
 in the signature, so that the decorator, which the hashed source includes, holds them. It returns
 one Polars expression for its one output, or a mapping of its outputs' names to expressions, over
-the bars' rows. A value at a row reads only bars closed by that row's `ts_close` (D-12): no
+the bars' rows, or a frame of `ts_close` and its outputs on the bars' rows, for a join or a
+group-by (step 3.2). A value at a row reads only bars closed by that row's `ts_close` (D-12): no
 negative shift, backward fill, or centred window, which the lint of step 3.4 finds.
 
 `outputs` names each output with its kind (`OutputKind`), one output named after the function
 and of kind `other` when it is left out. `inputs` declares what the feature reads beside the
-bars: other features, by their `FeatureDef`, and `InstrumentInput`, `TimeframeInput`, and
-`DatasetInput`, which the runtime of step 3.2 evaluates. `warmup` is the number of bars before
+bars: other features, by their `FeatureDef`, `InstrumentInput`, and `TimeframeInput`, which the
+runtime evaluates (`fefat.features.runtime`), and `DatasetInput` and `TradesInput`, reserved for
+Phase 10 and step 3.6. `warmup` is the number of bars before
 the feature's values mean what they say, or a lambda of its parameters, such as
 `lambda n: 10 * n`. All three are written in the decorator, whose text the hash covers
 (`fefat.features.declarations`); a helper the function calls is not versioned with it

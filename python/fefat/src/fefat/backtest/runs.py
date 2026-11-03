@@ -35,7 +35,7 @@ from fefat.backtest.artifacts import (
 )
 from fefat.backtest.explain import Explanation, explain
 from fefat.backtest.fidelity import CheckedRun, PeriodRun, fidelity_check_of
-from fefat.backtest.metrics import FidelityEra, Metrics
+from fefat.backtest.metrics import Metrics
 from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
     EngineVersions,
@@ -50,6 +50,7 @@ from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
 from fefat.market.engine_units import micro_units, money_text
+from fefat.market.fidelity import FidelityEra
 from fefat.strategy.signal_strategy import SignalStrategy
 
 DAILY = "1d"
@@ -161,7 +162,7 @@ def run(
         saved = Run.open(folder)
     else:
         cache_paths = inputs.cache_paths(paths)
-        saved = _ran(inputs, cache_paths, tuple(strategy.features), folder, key, frame_hash)
+        saved = _ran(inputs, cache_paths, strategy.feature_columns(), folder, key, frame_hash)
     for warning in saved.record.warnings:
         warnings.warn(warning, UserWarning, stacklevel=2)
     return saved
@@ -210,7 +211,7 @@ def _ran(
         instrument=_instrument_record(inputs),
         datasets=inputs.datasets,
         signal_frame_hash=frame_hash,
-        signal_source=inputs.signal_source,
+        signal_bar_eras=inputs.signal_bar_eras,
         config=inputs.config,
         fee_table=inputs.fee_table,
         rolls=inputs.rolls,

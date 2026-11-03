@@ -29,7 +29,7 @@ import fefat_engine
 import polars as pl
 from pydantic import Field
 
-from fefat.backtest.run_config import FidelityText
+from fefat.market.fidelity import FidelityEra, FidelityText
 from fefat.market.schema import FrozenModel
 from fefat.reference.orders import OrderRole, PositionSide
 from fefat.strategy.exits import Weekday
@@ -216,16 +216,6 @@ class Robustness(FrozenModel):
     expectancy: float
     pnl_at_plus_one_tick: Decimal
     fragile_to_slippage: bool
-
-
-class FidelityEra(FrozenModel):
-    """Trade dates in a row that a run filled on one level (`02` §1.6): the finest each held at
-    or coarser than the run's fidelity (D-58)."""
-
-    first: date
-    last: date
-    trade_dates: int = Field(ge=1)
-    fidelity: FidelityText
 
 
 class PeriodOutcome(FrozenModel):

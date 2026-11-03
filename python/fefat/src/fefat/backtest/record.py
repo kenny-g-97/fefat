@@ -3,8 +3,9 @@ versions, its strategy, its window, its instrument, each dataset it read with th
 under and the hash of its snapshot, the signal frame's hash, its settings with every default
 applied, its fee table, the rolls it crossed, the config the engine read, the warnings, a summary
 of its end, and, from step 2.11, its metrics; from step 2.12, the fidelity era of each trade
-date, in place of the fills by fidelity, and the data its signal bars were built from; and, from
-step 2.13, the mix of its trades' path fidelities."""
+date, in place of the fills by fidelity; from step 2.13, the mix of its trades' path
+fidelities; and, from step 3.2, the era of each trade date's signal bars, the level each was
+built from."""
 
 from datetime import date
 from decimal import Decimal
@@ -12,8 +13,9 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from fefat.backtest.metrics import FidelityEra, Metrics
-from fefat.backtest.run_config import AppliedRunConfig, FidelityText
+from fefat.backtest.metrics import Metrics
+from fefat.backtest.run_config import AppliedRunConfig
+from fefat.market.fidelity import FidelityEra, FidelityText
 from fefat.market.instruments import InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
@@ -123,7 +125,7 @@ class RunRecord(FrozenModel):
     instrument: InstrumentRecord
     datasets: tuple[DatasetRecord, ...] = Field(min_length=1)
     signal_frame_hash: Hash
-    signal_source: FidelityText
+    signal_bar_eras: tuple[FidelityEra, ...] = Field(min_length=1)
     config: AppliedRunConfig
     fee_table: FeeTableRecord
     rolls: tuple[RollRecord, ...]
