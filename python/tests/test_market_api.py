@@ -389,3 +389,23 @@ def test_a_load_builds_each_trade_date_from_the_finest_level_that_holds_it() -> 
     assert bars.get_column("trade_date").unique().len() == 9
     assert_frame_equal(bars.filter(before), minutes.filter(before))
     assert_frame_equal(bars.filter(~before), trades)
+
+
+def test_a_date_no_level_holds_has_the_same_rows_in_a_window_ending_on_it_and_one_past_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The leakage audit of step 3.2: with ESH2026's 1-minute bars of 2026-03-06 removed, a window
+    # ending on 03-06 once stopped its grid at the bars' last date and a window running past it
+    # gave 03-06 zero-volume rows; both give them, as the fidelity named gives them.
+    store = Store(data_folder_with(monkeypatch, tmp_path, "ohlcv-1m"))
+    for file in store.list_partitions():
+        rows = store.scan_partition(file.partition).collect()
+        store.write_partition(file.partition, rows.filter(pl.col("trade_date") != MARCH_6))
+
+    ending = load("ESH2026", "5m", "2026-03-05", "2026-03-06").collect()
+    running_past = load("ESH2026", "5m", "2026-03-05", "2026-03-09").collect()
+
+    named = load("ESH2026", "5m", "2026-03-05", "2026-03-06", fidelity="1m").collect()
+    assert ending.filter(pl.col("trade_date") == MARCH_6).height == BUCKETS_OF_FIVE_MINUTES
+    assert ending.equals(running_past.filter(pl.col("trade_date") <= MARCH_6))
+    assert ending.equals(named)

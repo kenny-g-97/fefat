@@ -66,15 +66,19 @@ def gridded_bars(
     """The bars of `timeframe` on the session grid of the trade dates `dates` span, with the
     columns of `CONTRACT_BAR_COLUMNS`: each span's dates built from its dataset, up to the end of
     its data; given the roll `calendar`, the rows of each session's front only, which a spliced
-    load keeps, instead of every contract's on every session; none without spans."""
+    load keeps, instead of every contract's on every session; none without spans. The grid runs
+    to the end of `dates` or of the data, whichever comes first, so that a date no level holds
+    has the rows any window holding it gives."""
     if not spans:
         return pl.DataFrame(schema=CONTRACT_BAR_COLUMNS)
     first, last = dates
+    data_ends = {span.dataset: _end_of_data(store, span.dataset) for span in spans}
+    ends = [min(sessions.following(span.last).open, data_ends[span.dataset]) for span in spans]
+    received_until = min(sessions.following(last).open, max(data_ends.values()))
     windows = [_rows(store, span, contract) for span in spans]
     contracts = contracts_by_instrument(
         pl.concat(window.select("instrument_id", "contract") for window in windows)
     )
-    ends = [_received_until(store, span, sessions) for span in spans]
     bars = pl.concat(
         _bars_of(window.drop("contract"), span.dataset, timeframe, sessions, end)
         for window, span, end in zip(windows, spans, ends, strict=True)
@@ -83,7 +87,7 @@ def gridded_bars(
     if calendar is not None:
         _require_fronts_for(bars, calendar)
         fronts = _fronts_with_their_lead_in(calendar, contracts)
-    grid = session_grid(bars, timeframe, sessions, ends[-1], first, last, rows_for=fronts)
+    grid = session_grid(bars, timeframe, sessions, received_until, first, last, rows_for=fronts)
     held_back = [
         pl.col("trade_date").is_between(span.first, span.last) & (pl.col("ts_close") > end)
         for span, end in zip(spans, ends, strict=True)
@@ -105,14 +109,13 @@ def _rows(store: Store, span: SourceSpan, contract: str | None) -> pl.DataFrame:
     return rows.collect()
 
 
-def _received_until(store: Store, span: SourceSpan, sessions: SessionTable) -> int:
-    """The instant by which the span's records are all in hand: the open of the session after
-    its last trade date, or before it the end of its dataset's data, after which a bucket is
-    held back (D-43, D-45)."""
-    coverage = dataset_coverage(store, span.dataset)
+def _end_of_data(store: Store, dataset: Dataset) -> int:
+    """The instant by which every record of the dataset is in hand, after which a bucket is held
+    back (D-43, D-45)."""
+    coverage = dataset_coverage(store, dataset)
     if coverage is None:
-        raise ValueError(f"Expected partitions of {span.dataset.relative_folder()}, got none.")
-    return min(sessions.following(span.last).open, coverage.received_until)
+        raise ValueError(f"Expected partitions of {dataset.relative_folder()}, got none.")
+    return coverage.received_until
 
 
 def _bars_of(

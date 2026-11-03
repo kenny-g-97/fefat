@@ -6,7 +6,7 @@ carried through the graph and read from before the window."""
 
 import dataclasses
 import re
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -21,7 +21,7 @@ from fefat.features import (
     TradesInput,
 )
 from fefat.features.examples import atr, rsi
-from fefat.features.runtime import FeatureGraph, Grid
+from fefat.features.runtime import FeatureGraph, Grid, load_inputs
 from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import sessions_of
@@ -93,6 +93,11 @@ def rsi_15m(bars: pl.LazyFrame) -> pl.Expr:
 @ff.feature(inputs=[InstrumentInput(root="BTCUSDT-PERP")], outputs={"btc_age": "other"})
 def btc_age(bars: pl.LazyFrame) -> pl.Expr:
     return pl.col("staleness_BTCUSDT-PERP")
+
+
+@ff.feature(inputs=[InstrumentInput(root="ES")], outputs={"es_age": "other"})
+def es_age(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("staleness_ES")
 
 
 @ff.feature(inputs=[TradesInput()], outputs={"delta": "other"})
@@ -259,6 +264,21 @@ def test_a_graph_the_runtime_cannot_evaluate_is_refused(
         FeatureGraph.of(slots, "ES", FIVE)
 
 
+def test_another_instruments_bars_that_are_not_one_series_of_raw_prices_are_refused() -> None:
+    # The leakage audit of the step: a back-adjusted import's prices hold the gaps of every later
+    # roll (D-09, D-49), and contracts stacked one after another read a later close as the bar
+    # before, so another instrument's bars are held to what the reader's own are held to.
+    es = bars([100, 101, 102], 5)
+    adjusted = bars([180, 181, 182], 5).with_columns(close_raw=pl.lit(None, pl.Int64))
+    stacked = pl.concat([bars([180, 181], 5), bars([170, 171], 5)])
+    graph = FeatureGraph.of({"nq": nq_close()}, "ES", FIVE)
+
+    with pytest.raises(ValueError, match="for NQ that feature nq_close reads, got a back-adj"):
+        graph.evaluate({graph.signal_grid: es, Grid("NQ", FIVE): adjusted})
+    with pytest.raises(ValueError, match="Expected the bars of NQ that feature nq_close reads as"):
+        graph.evaluate({graph.signal_grid: es, Grid("NQ", FIVE): stacked})
+
+
 def test_bars_a_feature_reads_but_not_given_are_refused() -> None:
     graph = FeatureGraph.of({"nq": nq_close()}, "ES", FIVE)
 
@@ -393,3 +413,39 @@ def test_a_run_reads_its_strategys_features_as_compute_gives_them() -> None:
     columns = ["ts_close", "rsi", "rsi_15m"]
     assert run.signals.select(columns).equals(computed.select(columns))
     assert run.signals.get_column("rsi").null_count() == 0
+
+
+def test_another_calendars_bars_are_the_same_in_a_window_ending_on_a_date_and_one_past_it() -> None:
+    # The leakage audit of the step: bitcoin's trade date 2026-03-08 is the UTC day, and ES's
+    # session of 03-09 opens at 22:00 UTC that day, so its rows from 22:05 read ES's bars of
+    # 03-09, which a window ending on 03-08 once left unread, reading ES's Friday instead.
+    store_with("ohlcv-1m")
+    graph = FeatureGraph.of({"es_age": es_age()}, "BTCUSDT-PERP", FIVE)
+    sunday_evening = int(datetime(2026, 3, 8, 22, tzinfo=UTC).timestamp()) // 60
+    btc = bars([1] * 24, 5, start=sunday_evening)
+
+    sunday = date(2026, 3, 8)
+    ending = graph.evaluate({graph.signal_grid: btc, **load_inputs(graph, (sunday, sunday))})
+    past = load_inputs(graph, (date(2026, 3, 8), date(2026, 3, 9)))
+    running_past = graph.evaluate({graph.signal_grid: btc, **past})
+
+    assert ending.equals(running_past)
+    assert ending.get_column("es_age").to_list() == [0] * 24
+
+
+def test_cutting_every_input_at_an_instant_leaves_every_earlier_value_as_it_was() -> None:
+    # D-12 on the fixtures: the 5-minute and 15-minute bars of ES and bitcoin's bars cut at
+    # instants through 2026-03-05 to 03-09, each at its own closes, give every row before the
+    # cut the values the whole range gives.
+    store_with("trades", "ohlcv-1s", "ohlcv-1m")
+    slots = {"rsi": rsi(n=14), "rsi_15m": rsi_15m(), "btc_age": btc_age(), **CHAIN}
+    graph = FeatureGraph.of(slots, "ES", FIVE)
+    dates = (date(2026, 3, 5), date(2026, 3, 9))
+    signal = ff.market.load("ES", "5m", *dates).collect()
+    inputs = {graph.signal_grid: signal, **load_inputs(graph, dates)}
+    whole = graph.evaluate(inputs)
+    closes = signal.get_column("ts_close")
+
+    for cut in [*closes.gather_every(7).to_list(), closes.max()]:
+        before = {grid: frame.filter(pl.col("ts_close") <= cut) for grid, frame in inputs.items()}
+        assert graph.evaluate(before).equals(whole.filter(pl.col("ts_close") <= cut)), cut

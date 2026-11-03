@@ -40,7 +40,7 @@ class FeatureSpec:
         definition = self.definition
         _require_the_bars_alone(definition)
         frame = bars.lazy()
-        _require_one_series_of_raw_prices(frame, definition.name)
+        require_one_series_of_raw_prices(frame, f"feature {definition.name}")
         returned = definition.function(frame, **dict(self.parameters))
         if isinstance(returned, pl.DataFrame | pl.LazyFrame):
             raise ValueError(
@@ -62,7 +62,7 @@ class FeatureSpec:
         null."""
         definition = self.definition
         bars = frame.lazy()
-        _require_one_series_of_raw_prices(bars, definition.name)
+        require_one_series_of_raw_prices(bars, f"feature {definition.name}")
         returned = definition.function(bars, **dict(self.parameters))
         values = _values(definition, bars, returned)
         schema = _schema_of(definition, values)
@@ -87,8 +87,9 @@ def _require_the_bars_alone(definition: "FeatureDef") -> None:
         )
 
 
-def _require_one_series_of_raw_prices(bars: pl.LazyFrame, name: str) -> None:
-    """Refuse bars a feature would read across in error, since it reads the row above as the bar
+def require_one_series_of_raw_prices(bars: pl.LazyFrame, owner: str) -> None:
+    """Refuse bars a feature would read across in error, `owner`'s, such as "feature rsi" or
+    "MNQ that feature spread reads", since it reads the row above as the bar
     before: bars that are not one series, their closes strictly increasing, such as the contracts
     `load(continuous=False)` stacks, whose next contract's first rows would read the last rows of
     the one before, days later; and a back-adjusted import's, whose prices hold the gaps of rolls
@@ -99,13 +100,13 @@ def _require_one_series_of_raw_prices(bars: pl.LazyFrame, name: str) -> None:
     found = bars.select(**checks).collect().row(0, named=True)
     if found["back"]:
         raise ValueError(
-            f"Expected the bars of feature {name} as one series, their closes strictly "
+            f"Expected the bars of {owner} as one series, their closes strictly "
             "increasing, got a close at or before the one above it, as load(continuous=False) "
             "stacks contracts: load the root spliced, or one contract."
         )
     if found.get("adjusted"):
         raise ValueError(
-            f"Expected bars with raw closes for feature {name}, got a back-adjusted import, whose "
+            f"Expected bars with raw closes for {owner}, got a back-adjusted import, whose "
             "prices hold the gaps of rolls after them (D-09, D-49)."
         )
 

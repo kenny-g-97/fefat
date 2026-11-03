@@ -1,10 +1,13 @@
 """The joins that give a feature its inputs (`fefat.features.runtime`, step 3.2): each input as of
 each row's close, backward on `ts_close`, so a row sees a bar from its close on and never while
-it is in progress, and nothing before an input's first bar (D-12)."""
+it is in progress, and nothing before an input's first bar (D-12); another instrument's bars
+held, as the reader's own are, to one series of raw prices (D-09, D-49)."""
 
 from collections.abc import Sequence
 
 import polars as pl
+
+from fefat.features.evaluation import require_one_series_of_raw_prices
 
 
 def with_feature(frame: pl.DataFrame, read: pl.DataFrame, reader: str) -> pl.DataFrame:
@@ -19,7 +22,9 @@ def with_instrument(
 ) -> pl.DataFrame:
     """`frame` with the columns of another instrument's bars that the feature `reader` reads,
     each suffixed with its `root`, as of each row's close, and `staleness_<root>`, the
-    nanoseconds from that bar's close to the row's; null before its first bar."""
+    nanoseconds from that bar's close to the row's; null before its first bar. Bars that are not
+    one series of raw prices are refused: a back-adjusted import's hold the gaps of later rolls."""
+    require_one_series_of_raw_prices(other.lazy(), f"{root} that feature {reader} reads")
     suffixed = other.select(pl.all().name.suffix(f"_{root}"))
     closed, staleness = f"ts_close_{root}", f"staleness_{root}"
     _require_apart(frame, [*suffixed.columns, staleness], reader)

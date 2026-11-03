@@ -221,9 +221,10 @@ def load_inputs(
 ) -> dict[Grid, pl.DataFrame]:
     """The bars of each grid the graph reads but its signal grid, as `load` gives them for the
     trade dates `dates` span: its instrument's at other timeframes from `provider`, where it is
-    named, of one `contract` where a run reads one, and another instrument's from the trade date
-    before the first in that instrument's calendar, whose session may open before the first
-    row's close, each from its own default provider."""
+    named, of one `contract` where a run reads one, and another instrument's, from its own
+    default provider, from the trade date before the first to the one after the last in that
+    instrument's calendar, whose sessions may open before the first row's close and before the
+    last row's, so that no row's value depends on the window's end."""
     paths = resolve_paths(os.environ)
     first, last = dates
     loaded = {}
@@ -236,8 +237,9 @@ def load_inputs(
             loaded[grid] = load(symbol, timeframe, first, last, provider=provider).collect()
             continue
         sessions = instrument_table(paths.data_dir).sessions_of(grid.root, paths.cache_dir)
-        earlier = sessions.preceding(first).trade_date
-        loaded[grid] = load(grid.root, timeframe, earlier, last).collect()
+        earlier, later = sessions.preceding(first), sessions.following(last)
+        dates_read = (earlier.trade_date, later.trade_date)
+        loaded[grid] = load(grid.root, timeframe, *dates_read).collect()
     return loaded
 
 
