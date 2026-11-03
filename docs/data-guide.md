@@ -262,6 +262,6 @@ databento MES 5m rsi(n=14) 3fa0c2d1: 12 partitions, 2025-01-01 to 2025-12-31, 1.
 - the provider, the product, the timeframe, and the feature with its parameters, or `bars` for the signal bars, then the start of its folder's key, which tells two versions of a feature apart;
 - its partitions, the days they span, their size, and the day a computation last read one.
 
-Pruning leaves a file another program holds open, such as a notebook reading it, which Windows will not remove: it names the file, exits with 1, and keeps that partition until you close the program and prune again.
+Pruning leaves a file another program holds open, such as a notebook reading it, which Windows will not remove: it names the file, exits with 1, and keeps that partition until you close the program and prune again. Likewise a computation that cannot write a file another program holds open warns you, gives its values all the same, and writes the file the next time.
 
 **A feature that remembers more than its warm-up is refused.** When one computation fills months that follow each other, each month is also worked out one session past its end, and a feature's values there must match those the next month gives from its own warm-up. A feature that never forgets, such as a running total, or whose declared warm-up is too short, stops with a message that names it and its warm-up, rather than leaving months whose first values differ from a computation of the whole range.
