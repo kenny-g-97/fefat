@@ -18,13 +18,15 @@ each column suffixed with the root, such as `close_MNQ`, with `staleness_MNQ`, t
 from that bar's close to the row's. Each input is joined as of the row's `ts_close`, backward,
 so a row sees a bar from its close on, never while it is in progress, and holds null before an
 input's first bar (D-12). A feature's outputs are null on the rows of its warm-up: its own, after
-the most that the features it reads need, counted on its grid. `compute` reads the bars from as
-many sessions before `start` as the largest warm-up needs, counted back by the session table, so
-the window's first row has every value where the data reaches back so far, and cuts its result
-to the window. A feature read by another is one of the features given, found by its content
-hash, so each one's parameters are named once; the features form a graph without cycles. A
-feature of one output gives its slot's column, and one of several `<slot>_<output>` columns.
-The trades input waits for step 3.6 and the dataset input for Phase 10.
+the most that the features it reads need, counted on its grid. A graph is evaluated over bars
+read from as many sessions before a window as the largest warm-up needs, counted back by the
+session table (`FeatureGraph.lead_in`), so the window's first row has every value where the data
+reaches back so far; `compute` does so for each partition of the feature cache, each slot apart
+(`FeatureGraph.of_slot`, `fefat.features.cache`, step 3.3). A feature read by another is one of
+the features given, found by its content hash, so each one's parameters are named once; the
+features form a graph without cycles. A feature of one output gives its slot's column, and one of
+several `<slot>_<output>` columns. The trades input waits for step 3.6 and the dataset input for
+Phase 10.
 """
 
 import os
@@ -49,7 +51,7 @@ from fefat.features.inputs import (
     TimeframeInput,
     TradesInput,
 )
-from fefat.market.api import SIGNAL_BAR_COLUMNS, load, parse_trade_date
+from fefat.market.api import SIGNAL_BAR_COLUMNS, load
 from fefat.market.calendar import Session, SessionTable
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
@@ -150,6 +152,39 @@ class FeatureGraph:
     def signal_grid(self) -> Grid:
         return Grid(self.root, self.timeframe)
 
+    def of_slot(self, slot: str) -> "FeatureGraph":
+        """The graph of the one slot `slot` with the features it reads, as this graph evaluates
+        them, which the feature cache evaluates and keys apart (`fefat.features.cache`)."""
+        node = self.slots[slot]
+        read: dict[_Node, None] = {}
+        pending = [node]
+        while pending:
+            current = pending.pop()
+            if current not in read:
+                read[current] = None
+                pending.extend(self.reads[current])
+        return FeatureGraph(
+            root=self.root,
+            timeframe=self.timeframe,
+            slots=MappingProxyType({slot: node}),
+            reads=MappingProxyType({each: self.reads[each] for each in read}),
+            order=tuple(each for each in self.order if each in read),
+            warmups=MappingProxyType({each: self.warmups[each] for each in read}),
+        )
+
+    def grid_dates(
+        self, grid: Grid, dates: tuple[date, date], sessions: SessionTable
+    ) -> tuple[date, date]:
+        """The trade dates the bars of `grid` are read for, for the graph's window from `dates`'
+        first to its last: the window, on the graph's instrument; and on another, from the trade
+        date before the first to the one after the last in its calendar, `sessions`, whose
+        sessions may open before the first row's close and before the last row's, so that no
+        row's value depends on the window's end."""
+        if grid.root == self.root:
+            return dates
+        first, last = dates
+        return sessions.preceding(first).trade_date, sessions.following(last).trade_date
+
     def grids(self) -> tuple[Grid, ...]:
         """Every grid the graph reads, the signal grid first: its features' grids and the other
         instruments they read."""
@@ -223,13 +258,11 @@ def load_inputs(
     contract: str | None = None,
 ) -> dict[Grid, pl.DataFrame]:
     """The bars of each grid the graph reads but its signal grid, as `load` gives them for the
-    trade dates `dates` span: its instrument's at other timeframes from `provider`, where it is
-    named, of one `contract` where a run reads one, and another instrument's, from its own
-    default provider, from the trade date before the first to the one after the last in that
-    instrument's calendar, whose sessions may open before the first row's close and before the
-    last row's, so that no row's value depends on the window's end."""
+    trade dates `dates` span (`FeatureGraph.grid_dates`): its instrument's at other timeframes
+    from `provider`, where it is named, of one `contract` where a run reads one, and another
+    instrument's from its own default provider, for the graph's `evaluate` or a strategy's
+    `signals` over bars a notebook loads."""
     paths = resolve_paths(os.environ)
-    first, last = dates
     loaded = {}
     for grid in graph.grids():
         if grid == graph.signal_grid:
@@ -237,38 +270,12 @@ def load_inputs(
         timeframe = str(grid.timeframe)
         if grid.root == graph.root:
             symbol = grid.root if contract is None else contract
-            loaded[grid] = load(symbol, timeframe, first, last, provider=provider).collect()
+            loaded[grid] = load(symbol, timeframe, *dates, provider=provider).collect()
             continue
         sessions = instrument_table(paths.data_dir).sessions_of(grid.root, paths.cache_dir)
-        earlier, later = sessions.preceding(first), sessions.following(last)
-        dates_read = (earlier.trade_date, later.trade_date)
-        loaded[grid] = load(grid.root, timeframe, *dates_read).collect()
+        read = graph.grid_dates(grid, dates, sessions)
+        loaded[grid] = load(grid.root, timeframe, *read).collect()
     return loaded
-
-
-def compute(
-    specs: Mapping[str, FeatureSpec],
-    instrument: str,
-    timeframe: str,
-    start: str | date,
-    end: str | date,
-    *,
-    provider: str | None = None,
-) -> pl.LazyFrame:
-    """`load`'s signal bars of the root `instrument` of `timeframe` on the trade dates from
-    `start` to `end` from `provider`, as `load` names it, each with the columns of the features
-    of `specs` by slot (`slot_columns`), the graph they form evaluated over bars read from
-    before `start` for their warm-up (module docstring)."""
-    first, last = parse_trade_date(start, "start"), parse_trade_date(end, "end")
-    graph = FeatureGraph.of(specs, instrument, Timeframe.parse(timeframe))
-    paths = resolve_paths(os.environ)
-    sessions = instrument_table(paths.data_dir).sessions_of(instrument, paths.cache_dir)
-    lead_in = graph.lead_in(sessions, first)
-    bars = load(instrument, timeframe, lead_in, last, provider=provider).collect()
-    inputs = {graph.signal_grid: bars, **load_inputs(graph, (lead_in, last), provider)}
-    values = graph.evaluate(inputs).drop("ts_close")
-    whole = pl.concat([bars, values], how="horizontal")
-    return whole.filter(pl.col("trade_date") >= first).lazy()
 
 
 def clashing(columns: Sequence[str], reserved: Iterable[str]) -> list[str]:
