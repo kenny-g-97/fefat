@@ -167,6 +167,22 @@ def test_a_feature_without_source_is_refused() -> None:
             id="warmup-of-another-parameter",
         ),
         pytest.param(
+            cell(
+                '@ff.feature(params={"n": 3}, warmup=lambda n: K * n)',
+                "bars: pl.LazyFrame, n: int",
+                before="K = 10\n\n\n",
+            ),
+            "Expected the warm-up of feature gap to read its parameters alone, got K, whose "
+            "values its version would miss.",
+            id="warmup-reading-a-name-from-elsewhere",
+        ),
+        pytest.param(
+            cell("@ff.feature()", "bars: pl.LazyFrame, n: 'Missing'"),
+            "Expected the annotations of feature gap to name types Python can find, got: name "
+            "'Missing' is not defined.",
+            id="annotation-of-no-type",
+        ),
+        pytest.param(
             cell("@ff.feature(warmup=2.5)"),
             "Expected the warm-up of feature gap as a whole number of bars, at least 0, or a "
             "lambda of its parameters, got 2.5.",
@@ -247,10 +263,42 @@ def test_a_declaration_its_version_could_not_keep_is_refused(source: str, refusa
         features_of_cell(source)
 
 
+def test_definitions_of_one_content_are_equal_and_hash_alike() -> None:
+    first = features_of_cell(GAP, "first cell")["gap"]
+    again = features_of_cell(GAP, "second cell")["gap"]
+    other = features_of_cell(GAP.replace(" - ", " + "))["gap"]
+
+    assert first == again
+    assert first != other
+    assert len({first, again, other}) == 2
+    assert len({first(n=3), first(n=3), first(n=4)}) == 2
+
+
+def test_a_warmup_that_fails_is_refused_naming_the_feature() -> None:
+    gap = features_of_cell(GAP.replace("lambda n: n", "lambda n: 100 // n"))["gap"]
+    expected = (
+        "Expected the warm-up of feature gap, lambda n: 100 // n, to give a number of bars with "
+        "gap_parameters(n=0), got ZeroDivisionError('integer division or modulo by zero')."
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        gap(n=0)
+
+
 def test_outputs_written_as_none_are_the_default_output() -> None:
     gap = features_of_cell(cell("@ff.feature(outputs=None)"))["gap"]
 
     assert gap.outputs == {"gap": OutputKind.OTHER}
+
+
+def test_output_kinds_written_as_members_of_their_enum_are_kept() -> None:
+    written = cell('@ff.feature(outputs={"gap": ff.features.OutputKind.PRICE_DISTANCE})')
+
+    gap = features_of_cell(written)["gap"]
+    saved = ff.features.save(gap)
+
+    assert gap.outputs == {"gap": OutputKind.PRICE_DISTANCE}
+    assert ff.features.load("gap", saved.version) == saved
 
 
 def test_calling_a_feature_binds_its_parameters_and_their_warmup() -> None:
@@ -455,10 +503,33 @@ def test_a_feature_in_a_slot_reads_the_bars_alone() -> None:
     source = cell("@ff.feature()").replace('pl.col("close")', 'pl.col("close") > pl.col("mean")')
     features = {"mean": pl.col("close").rolling_mean(3), "gap": features_of_cell(source)["gap"]()}
     bars = ff.market.load("ES", "5m", "2026-03-05", "2026-03-06")
-    expected = 'Expected the expressions of feature gap to evaluate over the bars, got: unable to find column "mean"'
+    expected = (
+        "Expected the expressions of feature gap to evaluate over the bars, got: unable to find "
+        'column "mean"'
+    )
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         strategy(features).signals(bars)
+
+
+def test_a_feature_in_a_slot_reads_the_bars_alone_through_a_selector() -> None:
+    """A selector by type would also match an earlier slot's column in the frame so far."""
+    store_with("ohlcv-1m")
+    source = """\
+import polars.selectors as cs
+
+
+@ff.feature(outputs={"flags": "count"})
+def flags(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.sum_horizontal(cs.boolean())
+"""
+    flags = features_of_cell(source)["flags"]()
+    features = {"up": pl.col("close") > pl.col("open"), "flags": flags}
+    bars = ff.market.load("ES", "5m", "2026-03-05", "2026-03-06").collect()
+
+    in_the_slot = strategy(features).signals(bars).collect()["flags"]
+
+    assert in_the_slot.to_list() == flags.evaluate(bars).collect()["flags"].to_list()
 
 
 def test_a_feature_of_several_outputs_waits_for_step_3_2_in_a_strategy_slot() -> None:

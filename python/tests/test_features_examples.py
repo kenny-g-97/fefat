@@ -249,3 +249,22 @@ def test_a_stop_reads_the_example_atr_in_the_bars_units() -> None:
     assert run.trades.height > 0
     assert (run.trades["atr_at_entry"] > TICK).all()
     assert not [str(w.message) for w in caught if "below one tick" in str(w.message)]
+
+
+def test_a_stop_reading_a_feature_in_its_warmup_refuses_the_run() -> None:
+    """A feature's slot is null on the rows of its declared warm-up, and F-RND-01 refuses a run
+    whose exit rule reads a missing feature, so an entry the ATR does not gate inside its 140
+    bars refuses the run. Step 3.2 reads the warm-up from before the window (BACKLOG.md),
+    which will change this test."""
+    store_with("ohlcv-1m")
+    rising = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"atr": atr(n=14)},
+        long_entry=pl.col("close") > pl.col("open"),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(atr=1.5), sizing=ff.Fixed(1)),
+    )
+
+    with pytest.raises(ValueError, match="Expected the feature atr above zero, got null"):
+        ff.backtest.run(rising, "2026-03-05", "2026-03-09")

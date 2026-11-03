@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import IO, Any
 
 import pytest
 
@@ -159,37 +158,30 @@ def test_a_version_not_saved_is_named_when_it_is_missing() -> None:
 
 
 def test_a_version_whose_write_fails_leaves_no_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A half-written version would block every later save of its name, which reads it."""
+    """A half-written version would block every later save of its name, which reads it: the
+    record is written beside its place, flushed, and only then linked into place."""
     gap = features_of_cell(GAP)["gap"]
-    opened = Path.open
 
-    class FullDisk:
-        """A new file that takes no bytes, as on a full disk."""
-
-        def __init__(self, created: IO[Any]) -> None:
-            self.created = created
-
-        def __enter__(self) -> "FullDisk":
-            return self
-
-        def __exit__(self, *raised: object) -> None:
-            self.created.close()
-
-        def write(self, content: bytes) -> int:
-            raise OSError(28, "No space left on device")
-
-    def open_on_a_full_disk(path: Path, mode: str = "r", *rest: Any, **options: Any) -> Any:
-        file = opened(path, mode, *rest, **options)
-        return FullDisk(file) if mode == "xb" else file
+    def on_a_full_disk(path: Path, content: bytes) -> int:
+        raise OSError(28, "No space left on device")
 
     with monkeypatch.context() as full_disk:
-        full_disk.setattr(Path, "open", open_on_a_full_disk)
+        full_disk.setattr(Path, "write_bytes", on_a_full_disk)
         with pytest.raises(OSError, match="No space left on device"):
             ff.features.save(gap)
 
     assert folder("gap").is_dir()
-    assert not (folder("gap") / "v1.json").exists()
+    assert list(folder("gap").iterdir()) == []
     assert ff.features.save(gap).version == 1
+
+
+@pytest.mark.parametrize("name", ["../gap", "gap/../../other", "C:gap", ""])
+def test_a_name_that_is_no_feature_name_reads_nothing(name: str) -> None:
+    ff.features.save(features_of_cell(GAP)["gap"])
+    expected = f"Expected a feature's name, a Python identifier, got {name!r}."
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        ff.features.load(name, 1)
 
 
 def test_a_version_another_process_saved_first_is_never_replaced(
@@ -207,11 +199,23 @@ def test_a_version_another_process_saved_first_is_never_replaced(
     assert ff.features.load("gap", 1) == first
 
 
+def test_a_record_renamed_and_moved_under_another_name_is_refused() -> None:
+    """The name a record states is the name of the function its code defines."""
+    ff.features.save(features_of_cell(GAP)["gap"])
+    folder("other").mkdir()
+    record = (folder("gap") / "v1.json").read_bytes()
+    (folder("other") / "v1.json").write_bytes(record.replace(b'"name": "gap"', b'"name": "other"'))
+
+    with pytest.raises(ValueError, match="the file was changed after it was written"):
+        ff.features.load("other", 1)
+
+
 def test_a_record_moved_under_another_name_is_refused() -> None:
     ff.features.save(features_of_cell(GAP)["gap"])
     folder("other").mkdir()
     shutil.copy(folder("gap") / "v1.json", folder("other") / "v1.json")
-    expected = f"Expected version 1 of feature other in {folder('other') / 'v1.json'}, got version 1 of feature gap."
+    path = folder("other") / "v1.json"
+    expected = f"Expected version 1 of feature other in {path}, got version 1 of feature gap."
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         ff.features.load("other", 1)

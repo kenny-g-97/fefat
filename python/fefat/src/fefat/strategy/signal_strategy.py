@@ -7,7 +7,10 @@ Polars expressions over the signal bars, `load`'s frame, and an execution templa
     strategy = ff.SignalStrategy(
         instrument="ES",
         timeframe="5m",
-        features={"mean": pl.col("close").rolling_mean(20), "rsi": rsi(n=14)},
+        features={
+            "mean": pl.col("close").rolling_mean(20),
+            "rsi": rsi(n=14),
+        },
         long_entry=pl.col("close") > pl.col("mean"),
         short_entry=pl.lit(False),
         execution=ff.Execution(
@@ -150,11 +153,11 @@ class SignalStrategy(FrozenModel):
 
 def _feature_column(
     signal_bars: pl.DataFrame, name: str, feature: pl.Expr | FeatureSpec
-) -> pl.Expr:
+) -> pl.Expr | pl.Series:
     """The feature in the slot `name` as a column: an expression as it is, over the bars and the
-    features before it; and a feature's one output as its spec gives it over the bars alone,
-    since what else it reads it declares (step 3.2), a NaN made null and the rows of its declared
-    warm-up null, a value it cannot give yet (step 3.1)."""
+    features before it; and a feature's one output as its spec gives it, evaluated over the bars
+    alone, since what else it reads it declares (step 3.2), a NaN made null and the rows of its
+    declared warm-up null, a value it cannot give yet (step 3.1)."""
     if isinstance(feature, pl.Expr):
         return feature.alias(name)
     outputs = list(feature.definition.outputs)
@@ -164,7 +167,8 @@ def _feature_column(
             f"with {', '.join(outputs)}: several outputs wait for the runtime of step 3.2."
         )
     column = feature.expressions(signal_bars)[outputs[0]]
-    return pl.when(pl.int_range(pl.len()) >= feature.warmup).then(column).alias(name)
+    warmed = pl.when(pl.int_range(pl.len()) >= feature.warmup).then(column)
+    return signal_bars.select(warmed.alias(name)).to_series()
 
 
 def _with_raw_prices(bars: pl.DataFrame) -> pl.DataFrame:

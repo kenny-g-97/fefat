@@ -8,10 +8,11 @@ these files (`01-architecture.md` §4 and §5).
     version = ff.features.save(rsi)
     ff.features.load("rsi", version.version)
 
-A version's file is only ever created: a second process saving under the same name at the same
-moment is refused, to save again, rather than replacing the first. A Pydantic release that writes
-the JSON schema of the same parameters otherwise gives unchanged code a new version; a version
-saved before still loads, since its hash is worked out again from the schema it keeps."""
+A version's file is only ever created, whole: written beside its place, flushed, and linked in, so
+a second process saving under the same number at the same moment is refused, to save again,
+rather than replacing the first, and a crash never leaves half a record. A Pydantic release that
+writes the JSON schema of the same parameters otherwise gives unchanged code a new version; a
+version saved before still loads, since its hash is worked out again from the schema it keeps."""
 
 import os
 import re
@@ -26,7 +27,7 @@ from fefat.features.declarations import inputs_as_written, written_declarations
 from fefat.features.definition import FeatureDef, content_hash
 from fefat.features.inputs import DeclaredInput, OutputKind
 from fefat.market.schema import FrozenModel
-from fefat.market.store_files import parsed_json
+from fefat.market.store_files import create_atomically, json_writer, parsed_json
 
 _VERSION_FILE = re.compile(r"v([1-9][0-9]*)\.json")
 
@@ -102,44 +103,40 @@ def load(name: str, version: int) -> FeatureVersion:
 
 
 def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> None:
-    """Refuse a record whose outputs, inputs, or warm-up are not those its code's decorator
-    writes, which the hash covers through that text alone."""
+    """Refuse a record whose name, outputs, inputs, or warm-up are not those its code writes,
+    which the hash covers through that text alone."""
     written = written_declarations(record.name, record.code)
     if (
-        record.outputs == written.outputs
+        record.name == written.name
+        and record.outputs == written.outputs
         and inputs_as_written(record.inputs, written.inputs)
         and record.warmup == written.warmup
     ):
         return
     raise ValueError(
-        f"Expected the outputs, inputs, and warm-up in {path} as its code's decorator writes them, "
-        "got others: the file was changed after it was written."
+        f"Expected the name, outputs, inputs, and warm-up in {path} as its code writes them, got "
+        "others: the file was changed after it was written."
     )
 
 
 def _create(path: Path, record: FeatureVersion) -> None:
-    """Write `record` to a new file at `path`: a version another process saved there first is
-    refused, never replaced (D-11), and a file this write leaves half-written is removed, since
-    every later save of the name reads it."""
-    content = record.model_dump_json(indent=2).encode() + b"\n"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Write `record` whole to a new file at `path` (`create_atomically`): a version another
+    process saved there first is refused, never replaced (D-11), and none is ever seen
+    half-written, since every later save of the name reads it."""
     try:
-        created = path.open("xb")
+        create_atomically(path, json_writer(record))
     except FileExistsError as error:
         raise ValueError(
             f"Expected to save version {record.version} of feature {record.name} as a new file, "
             f"got {path} saved by another process first: save it again."
         ) from error
-    try:
-        with created:
-            created.write(content)
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
 
 
 def _folder(name: str) -> Path:
-    """The folder of the feature `name`'s versions in the workspace."""
+    """The folder of the feature `name`'s versions in the workspace, refused unless `name` is a
+    feature's, a Python identifier, so that no name reaches outside the folder of features."""
+    if not name.isidentifier():
+        raise ValueError(f"Expected a feature's name, a Python identifier, got {name!r}.")
     return resolve_paths(os.environ).features_dir / name
 
 

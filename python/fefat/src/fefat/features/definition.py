@@ -36,7 +36,7 @@ import textwrap
 import typing
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from types import MappingProxyType
+from types import FunctionType, MappingProxyType
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
 
@@ -55,12 +55,12 @@ _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONL
 _PARAMETERS_CONFIG = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class FeatureDef:
     """A feature's definition (the module docstring): its function, its normalised source, the
     model of its parameters, the inputs it declares beside the bars, its outputs with their kinds,
-    its warm-up and the warm-up as its decorator writes it, and its content hash. Call it with
-    parameters for a `FeatureSpec`."""
+    its warm-up and the warm-up as its decorator writes it, and its content hash, by which two
+    definitions are equal. Call it with parameters for a `FeatureSpec`."""
 
     name: str
     function: Callable[..., object]
@@ -71,6 +71,12 @@ class FeatureDef:
     warmup: int | Callable[..., object]
     written_warmup: int | str
     hash: str
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, FeatureDef) and other.hash == self.hash
+
+    def __hash__(self) -> int:
+        return hash(self.hash)
 
     @property
     def parameter_schema(self) -> dict[str, typing.Any]:
@@ -96,14 +102,23 @@ class FeatureDef:
             for name, field in self.parameter_model.model_fields.items()
         )
         reason = first["msg"].rstrip(".")
-        return f"Expected the parameters of feature {self.name} as {{{expected}}}, got {got}: {reason}."
+        return (
+            f"Expected the parameters of feature {self.name} as {{{expected}}}, got {got}: "
+            f"{reason}."
+        )
 
     def _warmup_bars(self, parameters: BaseModel) -> int:
         """The warm-up of the feature with `parameters`, in bars."""
         if not callable(self.warmup):
             return self.warmup
         read = inspect.signature(self.warmup).parameters
-        bars = self.warmup(**{name: getattr(parameters, name) for name in read})
+        try:
+            bars = self.warmup(**{name: getattr(parameters, name) for name in read})
+        except Exception as error:
+            raise ValueError(
+                f"Expected the warm-up of feature {self.name}, {self.written_warmup}, to give a "
+                f"number of bars with {parameters!r}, got {error!r}."
+            ) from error
         if isinstance(bars, bool) or not isinstance(bars, int) or bars < 0:
             raise ValueError(
                 f"Expected the warm-up of feature {self.name} as a whole number of bars, at least "
@@ -187,7 +202,13 @@ def _parameter_model(
             f"Expected params to name parameters of feature {name}, got {', '.join(unknown)}, "
             "which its signature lacks."
         )
-    hints = typing.get_type_hints(function, include_extras=True)
+    try:
+        hints = typing.get_type_hints(function, include_extras=True)
+    except NameError as error:
+        raise ValueError(
+            f"Expected the annotations of feature {name} to name types Python can find, got: "
+            f"{error}."
+        ) from error
     fields: dict[str, typing.Any] = {
         each.name: _field(name, each, hints, params) for each in signature[1:]
     }
@@ -299,6 +320,12 @@ def _checked_warmup(
                 f"Expected the warm-up of feature {name} to read its parameters "
                 f"({', '.join(model.model_fields)}), got {', '.join(unknown)}."
             )
+        outside = _names_read_outside(warmup)
+        if outside:
+            raise ValueError(
+                f"Expected the warm-up of feature {name} to read its parameters alone, got "
+                f"{', '.join(outside)}, whose values its version would miss."
+            )
         return warmup
     if isinstance(warmup, bool) or not isinstance(warmup, int) or warmup < 0:
         raise ValueError(
@@ -306,3 +333,12 @@ def _checked_warmup(
             f"lambda of its parameters, got {warmup!r}."
         )
     return warmup
+
+
+def _names_read_outside(warmup: Callable[..., object]) -> list[str]:
+    """The names a warm-up function reads from outside its parameters, a global or a closure's
+    value, which the decorator's text does not hold; a builtin such as `max` is part of Python."""
+    if not isinstance(warmup, FunctionType):
+        return []
+    read = inspect.getclosurevars(warmup)
+    return sorted({*read.nonlocals, *read.globals})
