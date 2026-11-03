@@ -95,7 +95,7 @@ from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
 from fefat.market.signal_grid import SourceSpan, front_contracts, gridded_bars, source_spans
 from fefat.market.status import DATASET_COLUMNS, dataset_status
-from fefat.market.store import Store
+from fefat.market.store import ListedStore, Store
 
 SIGNAL_BAR_COLUMNS = pl.Schema({**CONTINUOUS_COLUMNS, "zero_volume": pl.Boolean})
 """The columns `load` returns, whatever the mode: a bar's, its contract, its raw close, the
@@ -201,9 +201,10 @@ def series_source(
     """What `load` reads the bars of `root_or_symbol` from, `continuous`, `provider`, and
     `origin` taken as `load` takes them: built once, it gives the bars of many windows
     (`SeriesSource.signal_bars`), as the feature cache reads a window's partitions
-    (`fefat.features.cache`)."""
+    (`fefat.features.cache`), each dataset listed once, as the store held it then
+    (`ListedStore`)."""
     paths = resolve_paths(os.environ)
-    store = Store(paths.data_dir)
+    store = ListedStore(paths.data_dir)
     table = instrument_table(paths.data_dir)
     root, contract = _root_and_contract(root_or_symbol, table)
     instrument = table.get(root)

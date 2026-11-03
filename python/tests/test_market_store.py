@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import date
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
@@ -21,7 +21,7 @@ from fefat.market.layout import (
 )
 from fefat.market.raw_manifest import BatchJob, RawFile, RawManifest
 from fefat.market.schema import SchemaKind, parse_schema_name
-from fefat.market.store import Store
+from fefat.market.store import ListedStore, PartitionFile, Store
 from fefat.market.store_files import DIGEST_SUFFIX, FileDigestRecord
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -176,6 +176,39 @@ def test_listing_one_dataset_lists_its_partitions_and_no_others() -> None:
         if file.partition.dataset == ES_TRADES.dataset
     )
     assert len(files) == 6
+
+
+def test_a_listed_store_lists_a_dataset_once_until_it_writes_a_partition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 3.3: listing years of files is most of a month's load, which load and the feature
+    # cache read through a store that keeps each dataset's listing.
+    store = ListedStore(tmp_path)
+    store.write_dataset_metadata(ES_TRADES.dataset, ES_SIZE)
+    store.write_partition(
+        TRADES_OF_MARCH_5, FIXTURE_STORE.scan_partition(TRADES_OF_MARCH_5).collect()
+    )
+    listings: list[Path] = []
+    listed = Store._partition_files  # pyright: ignore[reportPrivateUsage]
+
+    def counted(self: Store, folder: Path) -> Iterator[PartitionFile]:
+        listings.append(folder)
+        return listed(self, folder)
+
+    monkeypatch.setattr(Store, "_partition_files", counted)
+    first = store.list_partitions(ES_TRADES.dataset)
+    again = store.snapshot(ES_TRADES)
+    store.write_partition(
+        TRADES_OF_MARCH_6, FIXTURE_STORE.scan_partition(TRADES_OF_MARCH_6).collect()
+    )
+    after = store.list_partitions(ES_TRADES.dataset)
+
+    assert len(first) == 1
+    assert [digest.path for digest in again.partitions] == [
+        TRADES_OF_MARCH_5.relative_path().as_posix()
+    ]
+    assert len(after) == 2
+    assert len(listings) == 2
 
 
 def test_the_raw_and_reports_folders_beside_the_providers_hold_no_dataset(tmp_path: Path) -> None:

@@ -281,6 +281,28 @@ class Store:
         return frame
 
 
+class ListedStore(Store):
+    """A `Store` that lists each dataset's partitions once and keeps the listing, for a reader of
+    many windows of a store that does not change meanwhile, as `load` and the feature cache read
+    one (`fefat.market.api.series_source`): listing a dataset of years of files is most of the
+    time a month's load takes. A partition written through it lists the store again."""
+
+    def __init__(self, folder: Path) -> None:
+        super().__init__(folder)
+        self._listings: dict[Dataset, tuple[PartitionFile, ...]] = {}
+
+    def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
+        if dataset is None:
+            return super().list_partitions()
+        if dataset not in self._listings:
+            self._listings[dataset] = super().list_partitions(dataset)
+        return self._listings[dataset]
+
+    def write_partition(self, partition: Partition, frame: pl.DataFrame) -> PartitionFile:
+        self._listings.clear()
+        return super().write_partition(partition, frame)
+
+
 def _sorted_by_path(files: Iterable[PartitionFile]) -> tuple[PartitionFile, ...]:
     return tuple(sorted(files, key=lambda file: file.partition.relative_path().as_posix()))
 
