@@ -251,7 +251,7 @@ fefat cache features --prune                      remove what no computation use
 fefat cache features --prune --older-than 7       remove what no computation used for 7 days
 ```
 
-The cache lives in `<FEFAT_HOME>\cache\features\<provider>\<product>\<timeframe>\`: a folder `bars` of the signal bars, and a folder for each feature with its parameters. Each is split as your store is, a file for each month of 1-minute bars, such as `2025-10.parquet`, and one for each trade date of trades or 1-second bars, such as `2026-09-22.parquet`, with an `index.json` that names each file's key and when a computation last used it. A file is read back while what it was worked out from is unchanged: the digests of your store's files, the product's calendar and roll calendar, the feature's code and parameters, and FEFAT's own code. Anything else works it out again, so importing a new month computes that month alone, and a corrected file computes the months that read it. The cache can be deleted at any time.
+The cache lives in `<FEFAT_HOME>\cache\features\<provider>\<product>\<timeframe>\`: a folder `bars` of the signal bars, and a folder for each feature with its parameters. Each is split as your store is, a file for each month of 1-minute bars, such as `2025-10.parquet`, and one for each trade date of trades or 1-second bars, such as `2026-09-22.parquet`, with an `index.json` that names each file's key and when a computation last used it. A file is read back while what it was worked out from is unchanged: the digests of your store's files, the product's calendar and roll calendar, the feature's code and parameters, and FEFAT's own code. Anything else works it out again, so importing a new month of 1-minute bars, or a new trade date of trades, computes that file alone, and a corrected file computes the months that read it. An import kept in one file per contract, such as 5-minute bars, is read whole for every month, so a change to it computes the product's whole cache again. A partition a computation reads is marked as used, to the hour. The cache can be deleted at any time.
 
 A line reads:
 
@@ -261,5 +261,7 @@ databento MES 5m rsi(n=14) 3fa0c2d1: 12 partitions, 2025-01-01 to 2025-12-31, 1.
 
 - the provider, the product, the timeframe, and the feature with its parameters, or `bars` for the signal bars, then the start of its folder's key, which tells two versions of a feature apart;
 - its partitions, the days they span, their size, and the day a computation last read one.
+
+Pruning leaves a file another program holds open, such as a notebook reading it, which Windows will not remove: it names the file, exits with 1, and keeps that partition until you close the program and prune again.
 
 **A feature that remembers more than its warm-up is refused.** When one computation fills months that follow each other, each month is also worked out one session past its end, and a feature's values there must match those the next month gives from its own warm-up. A feature that never forgets, such as a running total, or whose declared warm-up is too short, stops with a message that names it and its warm-up, rather than leaving months whose first values differ from a computation of the whole range.
