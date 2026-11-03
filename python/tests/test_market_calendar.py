@@ -685,6 +685,27 @@ def test_a_new_polars_version_builds_a_new_session_table(
     assert len(cached_tables(tmp_path)) == 2
 
 
+def test_a_session_tables_key_is_the_one_its_file_is_named_by(tmp_path: Path) -> None:
+    # Step 3.3: the feature cache keys its partitions by the session table's key, which a
+    # changed holiday changes, as it names another file.
+    calendar = BUILT_IN[EQUITY_INDEX]
+    changed = Calendar(
+        name=calendar.name,
+        hours=calendar.hours,
+        holidays=(
+            *calendar.holidays,
+            EarlyClose(day=date(2026, 3, 6), closes_at=time(12), source=A_SOURCE),
+        ),
+    )
+
+    table = sessions_of(calendar, tmp_path)
+
+    assert [path.name for path in cached_tables(tmp_path)] == [
+        f"cme-equity-index-{table.key}.parquet"
+    ]
+    assert sessions_of(changed, tmp_path).key != table.key
+
+
 def test_an_instant_outside_every_session_takes_the_latest_session_opened_before_it(
     tables: dict[CalendarId, SessionTable],
 ) -> None:

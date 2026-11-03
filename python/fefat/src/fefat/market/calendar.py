@@ -19,6 +19,7 @@ folder. The built-in calendars are `fefat.market.builtin_calendars`:
 
 import hashlib
 from datetime import UTC, date, datetime, timedelta
+from functools import cached_property
 from pathlib import Path
 from typing import Self
 
@@ -108,6 +109,13 @@ class SessionTable:
     def __repr__(self) -> str:
         first, last = self._span()
         return f"SessionTable({self._calendar.name!r}, {self._sessions.height} sessions, {first} to {last})"
+
+    @cached_property
+    def key(self) -> str:
+        """The key `sessions_of` names the table's file by: its calendar with its holidays, this
+        module's source, and the Polars version, so that two tables of one key hold the same
+        sessions, as the feature cache's keys read it (`fefat.features.cache`)."""
+        return _cache_key(self._calendar)
 
     def session(self, trade_date: date) -> Session:
         """The session of `trade_date`; a date without one is refused with the reason."""
