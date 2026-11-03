@@ -47,8 +47,37 @@ A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions ov
 | `execution` | the execution template below |
 
 - Prices in the columns are whole numbers of billionths of a point, like the bars' prices: `close - 4 * 250_000_000` is four MES ticks below the close.
-- A feature must be prefix-invariant: its value at a bar may depend only on that bar and the bars before it. Use `shift(1)` to read the bar before; never `shift(-1)`, a centred window, a backward fill, or a rank or a normalisation over the whole sample (D-12). Phase 3 brings `@ff.feature` and a leak detector that checks this; until then, a feature is a plain expression.
+- A feature must be prefix-invariant: its value at a bar may depend only on that bar and the bars before it. Use `shift(1)` to read the bar before; never `shift(-1)`, a centred window, a backward fill, or a rank or a normalisation over the whole sample (D-12). A feature written with `@ff.feature` takes a slot as an expression does, and the leak detector below checks it.
 - A feature name may not repeat a column of the bars or of the signal frame.
+
+## The leak detector
+
+`ff.features.validate` checks that a feature never reads ahead: its values before any instant must not change when the data after that instant is removed. Run it on a feature with its parameters, an instrument, a timeframe, and a window of trade dates of at least two sessions, with `reads=` the features it reads, as `ff.features.compute` takes them:
+
+```python
+report = ff.features.validate(next_close(), "MES", "5m", "2026-09-09", "2026-09-23")
+report.passed           # False
+report.first_failure()  # the first cut that changed a value, with the row and both values
+print(report.summary())
+```
+
+It loads the bars the feature reads once, from its warm-up before the window to one session past it, and computes the feature over them. Then it cuts every input at many instants and computes the feature again on what is left: a bar is kept while it has closed by the cut, so a bar still in progress, of the signal bars or of a higher timeframe the feature reads, is left out, as a load holds back a bar the data has not finished. The cuts fall at each session's close or a holiday's halt, a nanosecond after it, inside the break or over the weekend, a nanosecond before the next open and at it, at a roll's open and the new front's first bar, inside a higher timeframe's bar and at its close, and at bars drawn from a seed the report records, so that a validation repeats. Every cut lies at or after the close of the window's first session, and one past the end of every input, which removes nothing, is left out.
+
+- **The cuts.** The window's values before each cut must be the whole range's: integers and Booleans exactly, and floats within 1e-9 of the output's largest magnitude among the rows compared, since averages computed over different lengths can differ in their last digits. A cut that compares no value of an output fails too, as when a warm-up longer than the data before it leaves none.
+- **The start check.** The detector computes the window again from the warm-up before its middle trade date and requires the same values from that date on. A feature that remembers more than its declared warm-up, such as a running total or a slow average, fails it. The roll calendar keeps its anchor, so the prices are the same from either start.
+- **The lint** reads the feature's code and names each line that reads ahead, with why: a negative shift or difference, a backward fill or an interpolation, a centred window, an aggregate over the whole frame (a mean, a maximum, a rank, the last value) or over a session that has not ended (`.over("trade_date")`), a reversed column, and an as-of join forward, to the nearest row, or on `ts_open`. A finding of these fails the report. It also warns, without failing it, of a helper or a constant the feature reads from outside its own code, and of a default not written as a number or a text, since the feature's hash covers neither.
+
+A report passes when every cut and the start check agree and the lint finds nothing that reads ahead. It is kept beside the feature's versions, `validations/<hash>.json`, the latest of each version. The tests plant twenty-five leaks and keep twenty-five clean features under `python/tests/features/leaks/`.
+
+What the detector cannot catch:
+
+- a wrong availability time in the data, since it cuts each record at the time the data says it became available;
+- revised data, since it reads one vintage of the store;
+- parameters chosen on the full sample, such as a threshold picked after looking at the whole history, which change no value it compares;
+- a leak in rows or branches its cuts never reach, such as one on a weekday the window lacks;
+- a memory longer than the declared warm-up but within the whole sessions every computation reads before a window, which the start check reads too.
+
+A feature that passes is prefix-invariant on these data at these cuts, not proven so.
 
 ## The execution template
 
