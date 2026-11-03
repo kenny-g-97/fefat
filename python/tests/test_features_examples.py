@@ -69,14 +69,15 @@ def test_rsi_is_the_mean_rise_over_the_mean_fall_by_its_definition() -> None:
     assert all(0 <= value <= 100 for value in measured)
 
 
-def test_rsi_warms_up_for_ten_times_its_bars() -> None:
-    bars = pl.DataFrame({"ts_close": range(200), "close": [5_000 * POINT] * 200})
+def test_rsi_warms_up_for_twenty_one_times_its_bars() -> None:
+    # Step 3.3, your choice: the weight left to the bars before 21 times n falls below 1e-9.
+    bars = pl.DataFrame({"ts_close": range(400), "close": [5_000 * POINT] * 400})
 
     frame = rsi(n=14).evaluate(bars).collect()
 
-    assert rsi(n=14).warmup == 140
-    assert frame["warmup"].sum() == 140
-    assert frame["rsi"].null_count() == 200
+    assert rsi(n=14).warmup == atr(n=14).warmup == 294
+    assert frame["warmup"].sum() == 294
+    assert frame["rsi"].null_count() == 400
 
 
 def test_atr_averages_the_true_range_in_the_bars_units() -> None:
@@ -200,10 +201,10 @@ def test_the_examples_take_their_slots_in_a_signal_strategy() -> None:
         {"rsi": pl.Float64, "atr": pl.Float64, "cash": pl.Boolean}
     )
     assert signals.select(pl.col("rsi", "atr").is_nan().sum()).row(0) == (0, 0)
-    assert signals.head(140).select(pl.col("rsi", "atr").null_count()).row(0) == (140, 140)
-    assert signals.slice(140).select(pl.col("rsi", "atr").null_count()).row(0) == (0, 0)
+    assert signals.head(294).select(pl.col("rsi", "atr").null_count()).row(0) == (294, 294)
+    assert signals.slice(294).select(pl.col("rsi", "atr").null_count()).row(0) == (0, 0)
     assert signals["long_entry"].sum() > 0
-    assert not signals.head(140)["long_entry"].any()
+    assert not signals.head(294)["long_entry"].any()
 
 
 def test_the_examples_refuse_contracts_stacked_one_after_another() -> None:
@@ -253,11 +254,12 @@ def test_a_stop_reads_the_example_atr_in_the_bars_units() -> None:
 
 def rising() -> ff.SignalStrategy:
     """A long on every rising 5-minute bar of ES, with a stop of 1.5 ATRs, which the ATR does
-    not gate."""
+    not gate: ATR(13), whose 273 bars fit in the fixtures' one session with a front before
+    2026-03-09, 276 bars, where ATR(14) needs 294."""
     return ff.SignalStrategy(
         instrument="ES",
         timeframe="5m",
-        features={"atr": atr(n=14)},
+        features={"atr": atr(n=13)},
         long_entry=pl.col("close") > pl.col("open"),
         short_entry=pl.lit(False),
         execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(atr=1.5), sizing=ff.Fixed(1)),
@@ -268,7 +270,7 @@ def test_a_stop_reading_a_feature_in_its_warmup_refuses_the_run() -> None:
     """A feature's slot is null on the rows of its declared warm-up, and F-RND-01 refuses a run
     whose exit rule reads a missing feature. A run reads the warm-up from the sessions before
     its window (step 3.2), but the fixtures' first front trades on 2026-03-06, so a run from
-    03-05 has no bars before it, and an entry inside the ATR's 140 bars refuses it."""
+    03-05 has no bars before it, and an entry inside the ATR's 273 bars refuses it."""
     store_with("ohlcv-1m")
 
     with pytest.raises(ValueError, match="Expected the feature atr above zero, got null"):
@@ -276,7 +278,7 @@ def test_a_stop_reading_a_feature_in_its_warmup_refuses_the_run() -> None:
 
 
 def test_a_run_reads_its_features_warmup_from_the_sessions_before_its_window() -> None:
-    """BACKLOG.md: a run from 2026-03-09 reads the ATR's 140 bars from the Friday before, so its
+    """BACKLOG.md: a run from 2026-03-09 reads the ATR's 273 bars from the Friday before, so its
     first rows have the ATR the stop reads, where they had none and refused the run."""
     store_with("ohlcv-1m")
 

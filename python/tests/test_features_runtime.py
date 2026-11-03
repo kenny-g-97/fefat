@@ -292,16 +292,16 @@ def test_bars_a_feature_reads_but_not_given_are_refused() -> None:
 
 
 def test_the_lead_in_counts_back_the_sessions_that_hold_a_warmup(tmp_path: Path) -> None:
-    # ES's session holds 276 five-minute buckets, so ATR(14)'s 140 bars before a Monday lie in
-    # the Friday before it, ATR(30)'s 300 reach the Thursday, and no warm-up reads none.
+    # ES's session holds 276 five-minute buckets, so ATR(13)'s 273 bars before a Monday lie in
+    # the Friday before it, ATR(14)'s 294 reach the Thursday, and no warm-up reads none.
     sessions = sessions_of(instruments.get("ES").session_calendar(), tmp_path)
     monday = date(2026, 3, 9)
 
     def lead_in(slots: dict[str, ff.features.FeatureSpec]) -> date:
         return FeatureGraph.of(slots, "ES", FIVE).lead_in(sessions, monday)
 
-    assert lead_in({"atr": atr(n=14)}) == date(2026, 3, 6)
-    assert lead_in({"atr": atr(n=30)}) == date(2026, 3, 5)
+    assert lead_in({"atr": atr(n=13)}) == date(2026, 3, 6)
+    assert lead_in({"atr": atr(n=14)}) == date(2026, 3, 5)
     assert lead_in({"close_15m": close_15m()}) == date(2026, 3, 6)
     assert lead_in({}) == monday
 
@@ -340,11 +340,11 @@ def test_compute_of_a_chain_of_three_features_gives_the_values_worked_out_direct
 
 
 def test_warmups_carried_through_the_graph_leave_no_null_or_nan_in_the_window() -> None:
-    # Done means 3: ATR(14) needs 140 bars and the chain 3, so a window from 2026-03-09 reads
+    # Done means 3: ATR(13) needs 273 bars and the chain 3, so a window from 2026-03-09 reads
     # them from the Friday before; a window from 03-06 has no session before it with a front,
     # so its first rows have no ATR, null and never NaN.
     store_with("ohlcv-1m")
-    slots = {**CHAIN, "atr": atr(n=14)}
+    slots = {**CHAIN, "atr": atr(n=13)}
     columns = ["step", "swing", "blend", "atr"]
 
     monday = ff.features.compute(slots, "ES", "5m", "2026-03-09", "2026-03-09").collect()
@@ -353,20 +353,20 @@ def test_warmups_carried_through_the_graph_leave_no_null_or_nan_in_the_window() 
     assert monday.height == 276
     assert monday.select(pl.col(columns).null_count()).row(0) == (0, 0, 0, 0)
     assert friday.select(pl.col("atr").is_nan().sum()).item() == 0
-    assert friday.select(pl.col("atr").null_count()).item() == 140
+    assert friday.select(pl.col("atr").null_count()).item() == 273
     assert friday.filter(pl.col("trade_date") == date(2026, 3, 9)).equals(monday)
 
 
 def test_a_fifteen_minute_rsi_on_five_minute_bars_changes_only_at_its_closes() -> None:
-    # The step's check on the fixtures: RSI(14) of the 15-minute bars, read on the 5-minute grid,
+    # The step's check on the fixtures: RSI(7) of the 15-minute bars, read on the 5-minute grid,
     # is the value of the last 15-minute bar closed by each row's close.
     store_with("ohlcv-1m")
-    slots = {"rsi": rsi(n=14), "rsi_15m": rsi_15m()}
+    slots = {"rsi": rsi(n=7), "rsi_15m": rsi_15m()}
 
     computed = ff.features.compute(slots, "ES", "5m", "2026-03-09", "2026-03-09").collect()
 
     fifteen = ff.market.load("ES", "15m", "2026-03-05", "2026-03-09")
-    own = rsi(n=14).evaluate(fifteen).collect()
+    own = rsi(n=7).evaluate(fifteen).collect()
     expected = own.select("ts_close", rsi_15m=pl.when(~pl.col("warmup")).then(pl.col("rsi")))
     joined = computed.select("ts_close").join_asof(expected, on="ts_close", strategy="backward")
     assert computed.get_column("rsi_15m").equals(joined.get_column("rsi_15m"))
@@ -402,7 +402,7 @@ def test_a_run_reads_its_strategys_features_as_compute_gives_them() -> None:
     # D-71: a feature previewed alone and the same feature inside a run see the same bars, read
     # from as far before the window, so they give the same values.
     store_with("ohlcv-1m")
-    slots = {"rsi": rsi(n=14), "rsi_15m": rsi_15m()}
+    slots = {"rsi": rsi(n=7), "rsi_15m": rsi_15m()}
     strategy = ff.SignalStrategy(
         instrument="ES",
         timeframe="5m",
@@ -443,7 +443,7 @@ def test_cutting_every_input_at_an_instant_leaves_every_earlier_value_as_it_was(
     # instants through 2026-03-05 to 03-09, each at its own closes, give every row before the
     # cut the values the whole range gives.
     store_with("trades", "ohlcv-1s", "ohlcv-1m")
-    slots = {"rsi": rsi(n=14), "rsi_15m": rsi_15m(), "btc_age": btc_age(), **CHAIN}
+    slots = {"rsi": rsi(n=7), "rsi_15m": rsi_15m(), "btc_age": btc_age(), **CHAIN}
     graph = FeatureGraph.of(slots, "ES", FIVE)
     dates = (date(2026, 3, 5), date(2026, 3, 9))
     signal = ff.market.load("ES", "5m", *dates).collect()
