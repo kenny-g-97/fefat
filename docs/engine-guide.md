@@ -184,7 +184,7 @@ The units are the store's: prices in billionths of a point, money in millionths 
 
 | File | Holds | From Python |
 | --- | --- | --- |
-| `run.json` | the run's record: `run_id`, `run_key`, the engine's `versions`, the `strategy` document and its features, the `window`, the `instrument`, the `datasets` read with their snapshots, the `signal_frame_hash`, the `signal_source`, every setting in `config`, the `fee_table`, the `rolls`, the `engine_config`, the `fidelity_eras`, the `path_fidelities`, its `warnings`, the `summary`, and the `metrics` | `run.record`, `run.metrics`, `run.report()` |
+| `run.json` | the run's record: `run_id`, `run_key`, the engine's `versions`, the `strategy` document and its features, the `window`, the `instrument`, the `datasets` read with their snapshots, the `signal_frame_hash`, the `signal_bar_eras`, the level each era of its signal bars' trade dates was built from, every setting in `config`, the `fee_table`, the `rolls`, the `engine_config`, the `fidelity_eras`, the `path_fidelities`, its `warnings`, the `summary`, and the `metrics` | `run.record`, `run.metrics`, `run.report()` |
 | `fills.parquet` | each fill: its order and role (`entry`, `stop`, `target_1`, an exit reason, or a roll's leg), side, lots, time, price, the rule that priced it, its fidelity, maker or taker, its slippage ticks, its flags, its fee, the cash it moved, its contract, and its trade date | `run.fills` |
 | `orders.parquet` | every order in its last state: its kind, price, lots, role, when it was placed and became active, its OCO group, the entry it belongs to, and its state | `run.orders` |
 | `log.parquet` | the event log: each placement, activation, move, cancellation, and fill, with its order and its rule | `run.log` |
