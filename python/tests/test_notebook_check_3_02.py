@@ -24,6 +24,7 @@ def test_the_check_notebook_shows_a_fifteen_minute_rsi_changing_only_at_its_clos
     assert "changes only at 15-minute closes: True" in printed
     rsi_15m = check["around"].get_column("rsi_15m").to_list()
     assert len(rsi_15m) == 6
+    assert None not in rsi_15m
     assert rsi_15m[0] == rsi_15m[1] != rsi_15m[2] == rsi_15m[3] == rsi_15m[4] != rsi_15m[5]
     bitcoin = "BTCUSDT-PERP: 0 rows read a bar of the same close, 276 an older bar, the oldest"
     assert any(line.startswith(bitcoin) for line in printed)

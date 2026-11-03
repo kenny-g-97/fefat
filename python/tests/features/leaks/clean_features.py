@@ -2,7 +2,8 @@
 each reading only bars closed by its row's close and declaring the warm-up it needs: the examples,
 averages and deviations over past bars, session-anchored running values, a session's open and
 opening range, the session before, a forward fill, a backward as-of join, a higher timeframe's last
-closed bar, another timeframe's and another instrument's features through the runtime, and counts.
+closed bar, another timeframe's features, another instrument on the same calendar and one on
+another, bitcoin's, whose trade dates are UTC days, through the runtime, and counts.
 They run where the planted features do (`planted_leaks`)."""
 
 from dataclasses import dataclass
@@ -142,9 +143,9 @@ def up_bars_today(bars: pl.LazyFrame) -> pl.Expr:
     return (pl.col("close") > pl.col("open")).cast(pl.UInt32).cum_sum().over("trade_date")
 
 
-@ff.feature(params={"n": 20}, warmup=lambda n: n, outputs={"median": "price"})
-def rolling_median(bars: pl.LazyFrame, n: int) -> pl.Expr:
-    return pl.col("close").rolling_median(window_size=n)
+@ff.feature(warmup=1, inputs=[InstrumentInput(root="BTCUSDT-PERP")], outputs={"btc_wait": "other"})
+def bitcoin_staleness(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("staleness_BTCUSDT-PERP")
 
 
 CLEAN = (
@@ -172,6 +173,6 @@ CLEAN = (
     Clean(nq_spread()),
     Clean(true_range()),
     Clean(up_bars_today()),
-    Clean(rolling_median()),
+    Clean(bitcoin_staleness()),
 )
 """The clean features, each with what it reads."""

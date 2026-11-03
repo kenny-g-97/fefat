@@ -22,6 +22,7 @@ from fefat.market.store import Store
 
 FIXTURES = Store(Path(__file__).resolve().parents[2] / "fixtures")
 MINUTES = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
+BITCOIN = Dataset(provider="synthetic", schema_name=MINUTES.schema_name, root="BTCUSDT-PERP")
 MINUTE = 60_000_000_000
 TICK = 250_000_000
 
@@ -69,6 +70,12 @@ FEBRUARY_NQ = (
     listing("NQM2026", 3102, ("2026-02-02", "2026-02-20"), ("2026-02-18", "2026-02-20")),
 )
 """NQ over the same trade dates, a second instrument on ES's calendar."""
+
+FEBRUARY_BITCOIN = (
+    listing("BTCUSDT-PERP", 3201, ("2026-02-01", "2026-02-21"), ("2026-02-01", "2026-02-21")),
+)
+"""Bitcoin's perpetual over the same weeks, every UTC day a trade date: an instrument on another
+calendar."""
 QUIET = 0.3
 """The share of minutes the leak detector's stores leave without trades (step 3.4)."""
 FEBRUARY_WINDOW = ("2026-02-11", "2026-02-19")
@@ -78,25 +85,29 @@ warm-up and before one more session, holding a weekend, Presidents' Day's halt, 
 
 @contextmanager
 def february_store(folder: Path) -> Iterator[None]:
-    """`FEFAT_HOME` and `FEFAT_DATA_DIR` in `folder`, holding ES's and NQ's February bars with a
-    `QUIET` share of their minutes empty, for as long as the block runs: the store the leak
-    detector's suites share (step 3.4)."""
+    """`FEFAT_HOME` and `FEFAT_DATA_DIR` in `folder`, holding ES's, NQ's, and bitcoin's February
+    bars with a `QUIET` share of their minutes empty, for as long as the block runs: the store the
+    leak detector's suites share (step 3.4)."""
     with pytest.MonkeyPatch.context() as patched:
         patched.setenv("FEFAT_HOME", str(folder / "fefat-home"))
         patched.setenv("FEFAT_DATA_DIR", str(folder / "fefat-data"))
         write_minutes(FEBRUARY, quiet=QUIET)
         write_minutes(FEBRUARY_NQ, root="NQ", quiet=QUIET)
+        write_minutes(FEBRUARY_BITCOIN, root=BITCOIN.root, quiet=QUIET, like=BITCOIN)
         yield
 
 
-def write_minutes(listings: tuple[Listing, ...], *, root: str = "ES", quiet: float = 0.0) -> Store:
+def write_minutes(
+    listings: tuple[Listing, ...], *, root: str = "ES", quiet: float = 0.0, like: Dataset = MINUTES
+) -> Store:
     """The 1-minute bars of `listings`, contracts of `root`, in `FEFAT_DATA_DIR`, a partition a
     contract-month, each close a step of up to four ticks from the one before, drawn from a hash
-    of its row, and a `quiet` share of the minutes, drawn alike, without a bar."""
+    of its row, and a `quiet` share of the minutes, drawn alike, without a bar; the dataset
+    described as the fixtures' dataset `like` is, its lot and its origin."""
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
     dataset = Dataset(provider=MINUTES.provider, schema_name=MINUTES.schema_name, root=root)
-    store.write_dataset_metadata(dataset, FIXTURES.dataset_metadata(MINUTES))
+    store.write_dataset_metadata(dataset, FIXTURES.dataset_metadata(like))
     sessions = sessions_of(instruments.get(root).session_calendar(), paths.cache_dir)
     for each in listings:
         bars = minutes_of(each, sessions.between(*each.trades), quiet)
