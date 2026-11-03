@@ -21,20 +21,25 @@ and those of the features it reads, each with its timeframe; and, for each instr
 provider, the symbol, the session table's key, the roll calendar's rows through the last date
 read, and each of the provider's datasets by its snapshot over the dates read, which pins each
 store partition by the SHA-256 its `part.digest.json` keeps (D-56), with where its data ends,
-which holds a bucket back (D-43). The bars' key reads the session before the partition, as
-`load` reads it. Each folder's `index.json` keeps its partitions' keys, sizes, and last use
-(`fefat.features.cache_index`, `fefat.features.cache_folders`).
+which holds a bucket back (D-43) and ends a load's grid, even for a dataset without data in the
+dates read. The bars' key reads the session before the partition, as `load` reads it. Each
+folder's `index.json` keeps its partitions' keys, sizes, and last use, to the hour, and each file
+carries its key, read back only under it (`fefat.features.cache_index`,
+`fefat.features.cache_folders`). Data a store keeps in one file per contract, an import's
+coarser bars, is pinned whole in every partition's key, so a change to it computes them all.
 
-Where one computation evaluates partitions that follow each other, each is evaluated one
+Where one computation evaluates partitions that follow each other, each is also evaluated one
 session past its end, and a feature's values there must agree with those the next partition
 gives from its own warm-up: exactly for integers and Booleans, and for floats within 1e-9 of the
 output's largest magnitude among them (`fefat.features.cache_evaluation`). A feature that
 remembers more than its warm-up is refused, rather than cached with edges that differ from a
-computation of the whole range. A partition computed alone is not checked; the leak
-detector's start-invariance check (step 3.4) is.
+computation of the whole range. What a partition keeps comes from its own dates alone, never
+from that longer evaluation. A partition computed alone is not checked; the leak detector's
+start-invariance check (step 3.4) is.
 
 A run reads its features' values through the cache too (`cached_slots`), so that a feature
-previewed alone and the same feature in a backtest give the same values.
+previewed alone and the same feature in a backtest give the same values, and another
+instrument a feature reads, without bars over the dates read, is refused, as `load` refuses it.
 """
 
 import dataclasses
@@ -43,18 +48,12 @@ import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from itertools import product
 from pathlib import Path
 
 import polars as pl
 
 from fefat.config import resolve_paths
-from fefat.features.cache_evaluation import (
-    Evaluation,
-    disagreement,
-    evaluated_features,
-    first_difference,
-)
+from fefat.features.cache_evaluation import Evaluation, check_warmups, evaluated_features
 from fefat.features.cache_folders import CacheFolder, FeatureFolder, bars_folder, feature_folder
 from fefat.features.cache_index import (
     FEATURE_CACHE_FOLDER_NAME,
@@ -174,7 +173,7 @@ def cached_window(
         )
     warned = [
         *_warnings(signal, graph.timeframe, dates, levels),
-        *_inputs_warnings(graph, sources, dates),
+        *_inputs_warnings(graph, sources, (graph.lead_in(signal.sessions, dates[0]), dates[1])),
     ]
     cache_dir = resolve_paths(os.environ).cache_dir
     folder = cache_dir / FEATURE_CACHE_FOLDER_NAME / signal.provider / signal.symbol
@@ -186,8 +185,9 @@ def _inputs_warnings(
     graph: FeatureGraph, sources: Mapping[str, SeriesSource], dates: tuple[date, date]
 ) -> list[str]:
     """What `load` warns of the datasets of each other instrument the graph reads, over the
-    trade dates it reads them for (`FeatureGraph.grid_dates`); an instrument without bars
-    there is refused, as `load` refused it when a window read it whole (step 3.2)."""
+    trade dates it reads them for (`FeatureGraph.grid_dates`) from `dates`, a window from its
+    first date's warm-up, as a run's lead-in starts; an instrument without bars there is
+    refused, as `load` refused it when a window read it whole (step 3.2)."""
     warned: list[str] = []
     for grid in graph.grids():
         if grid.root == graph.root:
@@ -258,8 +258,18 @@ class _Computation:
         for name, done in evaluations.items():
             frames.update({(path, name): frame for path, frame in done.frames.items()})
         held = {place: _present(frame, place) for place, frame in frames.items()}
-        self._check(evaluations, held)
-        self._write(folders, keys, held, computed)
+        check_warmups(evaluations, self._partitions, self._features, held, self._signal.sessions)
+        # shortcut: Windows refuses to replace a file another process is reading, and a file
+        # left unwritten is computed again next time; serialize writers with Phase 4's jobs.
+        try:
+            self._write(folders, keys, held, computed)
+        except PermissionError as error:
+            warnings.warn(
+                f"Expected to keep the values computed in the feature cache, got {error}; the "
+                "next computation computes them again.",
+                UserWarning,
+                stacklevel=4,
+            )
         return self._assembled(held)
 
     def _key(self, folder: CacheFolder, partition: CachePartition) -> str:
@@ -270,14 +280,10 @@ class _Computation:
     def _evaluations(
         self, missing: Sequence[CachePartition], frames: Mapping[Place, pl.DataFrame | None]
     ) -> dict[str, Evaluation]:
-        """Each partition lacking a frame evaluated, past its end where the next lacks one too;
-        `load`'s warnings come once from `compute`, not once a partition."""
-        evaluations = {}
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            for partition in missing:
-                evaluations[partition.name] = self._evaluated(partition, missing, frames)
-        return evaluations
+        """Each partition lacking a frame evaluated, past its end where the next lacks one too."""
+        return {
+            partition.name: self._evaluated(partition, missing, frames) for partition in missing
+        }
 
     def _evaluated(
         self,
@@ -289,7 +295,9 @@ class _Computation:
         computed: dict[Path, pl.DataFrame] = {}
         if bars is None:
             dates = (partition.first, partition.last)
-            bars = self._signal.signal_bars(self._graph.timeframe, dates).filter(partition.holds())
+            with warnings.catch_warnings(action="ignore"):  # `compute` gives `load`'s once
+                bars = self._signal.signal_bars(self._graph.timeframe, dates)
+            bars = bars.filter(partition.holds())
             computed[self._bars.path] = bars
         lacking = [
             folder for folder in self._features if frames[(folder.path, partition.name)] is None
@@ -305,40 +313,6 @@ class _Computation:
         if any(other.holds_day(following) for other in missing):
             return following
         return partition.last
-
-    def _check(
-        self, evaluations: Mapping[str, Evaluation], frames: Mapping[Place, pl.DataFrame]
-    ) -> None:
-        """Refuse a feature whose values one partition read past its end differ from those the
-        partition holding them gives from its own warm-up (module docstring)."""
-        for (name, done), other in product(evaluations.items(), self._partitions):
-            if other.name == name or other.name not in evaluations:
-                continue
-            for folder in self._features:
-                self._require_agreement(folder, done, other, frames)
-
-    def _require_agreement(
-        self,
-        folder: FeatureFolder,
-        done: Evaluation,
-        other: CachePartition,
-        frames: Mapping[Place, pl.DataFrame],
-    ) -> None:
-        """Refuse the folder's feature where its values one evaluation read on the trade dates
-        of `other` differ from those `other` holds."""
-        beyond = done.beyond.get(folder.path)
-        read = None if beyond is None else beyond.filter(other.holds())
-        if read is None or read.is_empty():
-            return
-        held = frames[(folder.path, other.name)]
-        difference = first_difference(read.drop("trade_date"), held, folder.outputs())
-        if difference is not None:
-            starts = (done.starts[folder.path], self._start_of(folder, other))
-            raise ValueError(disagreement(folder, starts, difference))
-
-    def _start_of(self, folder: FeatureFolder, partition: CachePartition) -> date:
-        """The trade date the folder's feature is read from for the partition."""
-        return folder.graph.lead_in(self._signal.sessions, partition.first)
 
     def _write(
         self,
@@ -375,7 +349,9 @@ class _Computation:
                 values.rename(columns), on="ts_close", how="left", maintain_order="left"
             )
         first = self._partitions[0]
-        starts = [self._start_of(folder, first) for folder in self._features]
+        starts = [
+            folder.graph.lead_in(self._signal.sessions, first.first) for folder in self._features
+        ]
         return CachedWindow(bars, slots, min(starts, default=first.first), ())
 
 

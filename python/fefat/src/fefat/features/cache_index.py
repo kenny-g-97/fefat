@@ -78,7 +78,7 @@ class CachedFeature(FrozenModel):
 class FeatureCacheIndex(FrozenModel):
     """A folder's `index.json`: the provider, symbol, and timeframe of the signal bars; the
     feature whose values the folder holds, None for the folder of the signal bars, and the
-    features it reads, in the order they are evaluated; and each partition by its name, such as
+    features it reads, sorted, whatever order the slots came in; and each partition by its name, such as
     `2026-03` or `2026-03-05`."""
 
     provider: str
@@ -202,10 +202,10 @@ def _pruned(folder: Path, used_after: datetime, pruned: PrunedCache) -> PrunedCa
     for path in folder.glob("*.parquet"):
         if path.stem not in partitions:
             _unlinked(path, held)
-    if index is not None and kept:
-        write_cache_index(folder, index.with_partitions(kept))
-    else:
+    if index is None or not kept:
         _unlinked(folder / INDEX_FILE_NAME, held)
+    elif kept != partitions:
+        _rewritten(folder, index.with_partitions(kept), held)
     gone = [partition for name, partition in partitions.items() if name not in kept]
     return PrunedCache(
         removed=pruned.removed + len(gone),
@@ -214,6 +214,15 @@ def _pruned(folder: Path, used_after: datetime, pruned: PrunedCache) -> PrunedCa
         kept_bytes=pruned.kept_bytes + sum(partition.size_bytes for partition in kept.values()),
         held=(*pruned.held, *held),
     )
+
+
+def _rewritten(folder: Path, index: FeatureCacheIndex, held: list[Path]) -> None:
+    """Write the folder's index; one another program holds open stays as it was, added to
+    `held`, and names partitions that a computation then finds missing and computes."""
+    try:
+        write_cache_index(folder, index)
+    except OSError:
+        held.append(folder / INDEX_FILE_NAME)
 
 
 def _unlinked(path: Path, held: list[Path]) -> bool:

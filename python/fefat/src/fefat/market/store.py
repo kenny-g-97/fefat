@@ -170,17 +170,12 @@ class Store:
         """Write the dataset's `dataset.json`, replacing any earlier one in one step."""
         write_atomically(self._folder / dataset.metadata_path(), json_writer(metadata))
 
-    def snapshot(
-        self, request: PartitionRequest, among: Iterable[PartitionFile] | None = None
-    ) -> Snapshot:
+    def snapshot(self, request: PartitionRequest) -> Snapshot:
         """Pin the dataset's metadata and the partitions the request selects by their content,
         taking a partition's digest from beside its file while it describes the file
         (`fefat.market.store_files`), hashing the file otherwise, and writing nothing; metadata
-        that does not parse is refused, so a run never pins a size unit it cannot read. The
-        partitions are selected `among` a listing of the dataset taken before
-        (`list_partitions`), where it is given, so that many snapshots of one dataset list its
-        folder once."""
-        return self._snapshot(request, current_digest, among)
+        that does not parse is refused, so a run never pins a size unit it cannot read."""
+        return self._snapshot(request, current_digest)
 
     def record_digests(self, request: PartitionRequest) -> Snapshot:
         """`snapshot`, recording beside each partition the digest it had to compute, so that
@@ -229,10 +224,8 @@ class Store:
                 partition=Partition.from_relative_path(relative), size_bytes=path.stat().st_size
             )
 
-    def _selected(
-        self, request: PartitionRequest, among: Iterable[PartitionFile] | None = None
-    ) -> tuple[PartitionFile, ...]:
-        listed = self.list_partitions(request.dataset) if among is None else among
+    def _selected(self, request: PartitionRequest) -> tuple[PartitionFile, ...]:
+        listed = self.list_partitions(request.dataset)
         selected = _sorted_by_path(file for file in listed if request.selects(file.partition))
         if not selected:
             raise ValueError(
@@ -245,12 +238,10 @@ class Store:
         self,
         request: PartitionRequest,
         digest_of: Callable[[Path], FileDigestRecord],
-        among: Iterable[PartitionFile] | None = None,
     ) -> Snapshot:
         self.dataset_metadata(request.dataset)
         partitions = tuple(
-            self._pin(file.partition.relative_path(), digest_of)
-            for file in self._selected(request, among)
+            self._pin(file.partition.relative_path(), digest_of) for file in self._selected(request)
         )
         return Snapshot.of(request, self._pin(request.dataset.metadata_path(), hashed), partitions)
 

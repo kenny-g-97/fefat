@@ -5,6 +5,7 @@ grid. Each holds its index as read (`fefat.features.cache_index`) and reads a pa
 while its key is the one given."""
 
 import hashlib
+import io
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,9 +43,10 @@ class CacheFolder:
         if held is None or held.key != key or not path.is_file():
             return None
         try:
-            if pl.read_parquet_metadata(path).get(KEY_METADATA) != key:
+            content = path.read_bytes()
+            if pl.read_parquet_metadata(io.BytesIO(content)).get(KEY_METADATA) != key:
                 return None
-            return pl.read_parquet(path)
+            return pl.read_parquet(io.BytesIO(content))
         except (OSError, pl.exceptions.PolarsError):
             return None
 
@@ -86,7 +88,12 @@ def feature_folder(
     sub = graph.of_slot(slot)
     node = sub.slots[slot]
     feature = _cached_feature(node.spec, node.timeframe)
-    reads = tuple(_cached_feature(read.spec, read.timeframe) for read in sub.order if read != node)
+    reads = tuple(
+        sorted(
+            (_cached_feature(read.spec, read.timeframe) for read in sub.order if read != node),
+            key=lambda each: each.model_dump_json(),
+        )
+    )
     described = [each.model_dump(mode="json") for each in (*reads, feature)]
     identity = f"values on {graph.timeframe} {json.dumps(described, sort_keys=True)}"
     path = folder / f"{feature.name}-{hashlib.sha256(identity.encode()).hexdigest()[:16]}"

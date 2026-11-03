@@ -91,7 +91,7 @@ def test_a_run_across_a_roll_builds_its_roll_calendar_once(
         built.append(volume_rolls(*arguments))
         return built[-1]
 
-    monkeypatch.setattr("fefat.market.api.volume_rolls", counted_rolls)
+    monkeypatch.setattr("fefat.market.roll_calendars.volume_rolls", counted_rolls)
 
     run = ff.backtest.run(breakout(), "2026-03-06", "2026-03-09")
 

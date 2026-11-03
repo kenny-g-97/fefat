@@ -125,10 +125,9 @@ class PartitionKeys:
         self._pins: dict[tuple[str, date, date], tuple[str, ...]] = {}
 
     def of_bars(self, root: str, timeframe: Timeframe, partition: CachePartition) -> str:
-        """The key of the partition's signal bars of `root`, which `load` reads from the session
-        before the partition's first day."""
-        sessions = self._sources[root].sessions
-        reads = {root: (sessions.preceding(partition.first).trade_date, partition.last)}
+        """The key of the partition's signal bars of `root`, over the trade dates `load` reads
+        for them (`SeriesSource.dates_read`)."""
+        reads = {root: self._sources[root].dates_read((partition.first, partition.last))}
         return self._key(f"bars {timeframe}", partition, reads)
 
     def of_values(self, graph: FeatureGraph, identity: str, partition: CachePartition) -> str:
@@ -138,13 +137,13 @@ class PartitionKeys:
 
     def reads(self, graph: FeatureGraph, partition: CachePartition) -> dict[str, tuple[date, date]]:
         """The trade dates each instrument's bars are read for, to evaluate the graph on the
-        partition from its warm-up, `load`'s session before each range included."""
+        partition from its warm-up, as `load` reads them (`SeriesSource.dates_read`)."""
         start = graph.lead_in(self._sources[graph.root].sessions, partition.first)
         reads: dict[str, tuple[date, date]] = {}
         for grid in graph.grids():
-            sessions = self._sources[grid.root].sessions
-            first, last = graph.grid_dates(grid, (start, partition.last), sessions)
-            first = sessions.preceding(first).trade_date
+            source = self._sources[grid.root]
+            window = graph.grid_dates(grid, (start, partition.last), source.sessions)
+            first, last = source.dates_read(window)
             known = reads.get(grid.root, (first, last))
             reads[grid.root] = (min(known[0], first), max(known[1], last))
         return reads
@@ -167,34 +166,41 @@ class PartitionKeys:
         if place not in self._pins:
             source = self._sources[root]
             rolls = "none" if source.calendar is None else source.calendar.key_through(last)
-            until = source.sessions.preceding(last + timedelta(days=1)).close
+            opened = source.sessions.session(first).open
+            closed = source.sessions.preceding(last + timedelta(days=1)).close
             folders = sorted(source.datasets.values(), key=_folder)
             self._pins[place] = (
                 f"{source.provider} {source.symbol} sessions {source.sessions.key} rolls {rolls}",
-                *(self._pin(source, dataset, (first, last), until) for dataset in folders),
+                *(self._pin(source, each, (first, last), (opened, closed)) for each in folders),
             )
         return self._pins[place]
 
     def _pin(
-        self, source: SeriesSource, dataset: Dataset, dates: tuple[date, date], until: int
+        self,
+        source: SeriesSource,
+        dataset: Dataset,
+        dates: tuple[date, date],
+        read: tuple[int, int],
     ) -> str:
-        """The dataset's snapshot over `dates`, and the instant by which its data is in hand,
-        after which a bucket is held back (D-43), capped at `until`, the close of the last
-        session read, by which every bucket read has closed, so that a month whose data is
-        whole keeps its key as later data comes."""
+        """The dataset's snapshot over `dates`, none where it holds no partition of them, and
+        the instant by which its data is in hand, after which a bucket is held back (D-43): every
+        dataset's, since a load's grid runs to the end of the data of every dataset that builds
+        its bars (`gridded_bars`), taken between `read`, the open of the first session read and
+        the close of the last, beyond which an end moves no bucket read, so that a month whose
+        data is whole keeps its key as later data comes."""
+        opened, closed = read
+        end = min(max(self._end_of(source, dataset), opened), closed)
         listing = source.store.list_partitions(dataset)
         request = PartitionRequest(dataset=dataset, start=dates[0], end=dates[1])
         if not any(request.selects(file.partition) for file in listing):
-            return f"{_folder(dataset)} none"
-        snapshot = source.store.snapshot(request, among=listing)
-        return f"{snapshot.sha256} until {min(self._end_of(source, dataset), until)}"
+            return f"{_folder(dataset)} none until {end}"
+        return f"{source.store.snapshot(request).sha256} until {end}"
 
     def _end_of(self, source: SeriesSource, dataset: Dataset) -> int:
+        """Where the dataset's data ends, 0 without partitions, as `gridded_bars` takes it."""
         if dataset not in self._ends:
             coverage = dataset_coverage(source.store, dataset)
-            if coverage is None:
-                raise ValueError(f"Expected partitions of {_folder(dataset)}, got none.")
-            self._ends[dataset] = coverage.received_until
+            self._ends[dataset] = 0 if coverage is None else coverage.received_until
         return self._ends[dataset]
 
 

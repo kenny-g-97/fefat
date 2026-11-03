@@ -136,20 +136,6 @@ def test_a_snapshot_changes_when_the_size_unit_of_its_dataset_changes(tmp_path: 
     assert store.snapshot(ES_TRADES).sha256 != before.sha256
 
 
-def test_a_snapshot_among_a_listing_taken_before_is_the_one_the_store_gives(
-    tmp_path: Path,
-) -> None:
-    # Step 3.3: the feature cache lists a dataset once and takes many snapshots among it.
-    store = store_with_the_es_trades(tmp_path)
-    listing = store.list_partitions(ES_TRADES.dataset)
-    march_6 = date(2026, 3, 6)
-    one_day = PartitionRequest(dataset=ES_TRADES.dataset, start=march_6, end=march_6)
-
-    assert store.snapshot(ES_TRADES, among=listing) == store.snapshot(ES_TRADES)
-    assert store.snapshot(one_day, among=listing) == store.snapshot(one_day)
-    assert len(store.snapshot(one_day, among=listing).partitions) == 1
-
-
 def test_a_snapshot_pins_each_files_sha256_and_hashes_its_request_with_their_listing() -> None:
     snapshot = FIXTURE_STORE.snapshot(ES_TRADES)
     files = sorted((snapshot.metadata, *snapshot.partitions), key=lambda file: file.path)

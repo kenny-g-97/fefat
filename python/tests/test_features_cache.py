@@ -10,9 +10,11 @@ import os
 import random
 import shutil
 import time
+import warnings
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -23,7 +25,7 @@ from polars.testing import assert_frame_equal
 import fefat as ff
 import gen_fixtures
 from fefat.config import resolve_paths
-from fefat.features import InstrumentInput
+from fefat.features import InstrumentInput, cache_evaluation
 from fefat.features.cache_index import (
     PrunedCache,
     prune_feature_cache,
@@ -518,6 +520,60 @@ def test_a_computation_read_back_within_the_hour_writes_no_index() -> None:
     assert renewed.partitions["2026-03"].last_used > hours_ago + timedelta(hours=1)
 
 
+def test_a_computation_whose_write_another_program_refuses_gives_its_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The ponytail review: Windows refuses to replace a file another process is reading; the
+    # computation still gives its values, warns that it kept none, and leaves its partitions to
+    # the next one, which writes them.
+    store_with("ohlcv-1m")
+    window = ("2026-03-06", "2026-03-09")
+    replace = Path.replace
+
+    def held_open(path: Path, target: str | Path) -> Path:
+        if cache_folder() in Path(target).parents:
+            raise PermissionError("[WinError 5] Access is denied")
+        return replace(path, target)
+
+    with monkeypatch.context() as patched, pytest.warns(UserWarning, match="Expected to keep"):
+        patched.setattr(Path, "replace", held_open)
+        unwritten = ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+    left = [path for path in cache_folder().rglob("*") if path.is_file()]
+    computed = ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
+
+    assert unwritten.equals(computed)
+    assert left == []
+    assert set(written()) == {"bars/2026-03", "rsi/2026-03"}
+
+
+def test_pruning_keeps_an_index_another_program_holds_and_names_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The ponytail review: an index Windows refuses to replace stays as it was, named among the
+    # files held, and pruning goes on past it; an index whose partitions all stay is not written.
+    store_with("ohlcv-1m")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    (folder,) = cache_folder().glob("synthetic/ES/5m/rsi-*")
+    index = read_cache_index(folder)
+    assert index is not None
+    march = index.partitions["2026-03"]
+    february = march.model_copy(update={"last_used": march.last_used - timedelta(days=60)})
+    write_cache_index(folder, index.with_partitions({"2026-02": february, "2026-03": march}))
+    shutil.copy(folder / "2026-03.parquet", folder / "2026-02.parquet")
+
+    def held_open(*_: object) -> None:
+        raise PermissionError("[WinError 5] Access is denied")
+
+    with monkeypatch.context() as patched:
+        patched.setattr("fefat.features.cache_index.write_cache_index", held_open)
+        pruned = prune_feature_cache(
+            resolve_paths(os.environ).cache_dir, timedelta(days=30), datetime.now(UTC)
+        )
+
+    assert (pruned.removed, pruned.kept, pruned.held) == (1, 2, (folder / "index.json",))
+    assert not (folder / "2026-02.parquet").exists()
+
+
 def test_another_instrument_without_bars_where_a_feature_reads_it_is_refused() -> None:
     # The step review: each partition reads another instrument for its own dates, where a
     # window read it whole and refused it without bars (step 3.2); the fixtures' bitcoin trades
@@ -572,6 +628,7 @@ def test_a_changed_session_table_or_roll_calendar_computes_each_partition_again(
         patched.setattr(SessionTable, "key", "another calendar")
         ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
     by_sessions = rewritten(cached)
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", *window).collect()
     cached = written()
     with monkeypatch.context() as patched:
         patched.setattr(RollCalendar, "key_through", lambda *_: "another roll calendar")
@@ -649,3 +706,160 @@ def test_a_store_cut_at_a_close_gives_what_the_whole_store_gives_before_it(
             computed = ff.features.compute(SLOTS, "ES", "5m", "2026-01-05", cut).collect()
 
         assert computed.equals(whole.filter(pl.col("trade_date") <= cut)), cut
+
+
+def test_trades_after_a_stretch_without_data_compute_the_month_before_them_again() -> None:
+    # The ponytail review: a load's grid runs to the end of every dataset that builds its bars,
+    # so trades imported for April give the stretch after bitcoin's last 1-minute bars in March
+    # its rows; March's key names where each dataset's data ends, even one without data in
+    # March, while an end that stays before March's first session leaves the key as it was.
+    store_with("ohlcv-1m")
+    store = Store(resolve_paths(os.environ).data_dir)
+    trades = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("trades"), root="BTCUSDT-PERP"
+    )
+    store.write_dataset_metadata(trades, FIXTURES.dataset_metadata(trades))
+    saturday = date(2026, 3, 7)
+    rows = FIXTURES.scan_partition(
+        Partition(dataset=trades, contract="BTCUSDT-PERP", key=saturday)
+    ).collect()
+
+    def trades_on(day: date) -> None:
+        moved = (day - saturday).days * 86_400_000_000_000
+        shifted = rows.with_columns(pl.col("ts_recv") + moved, pl.col("ts_event") + moved)
+        store.write_partition(Partition(dataset=trades, contract="BTCUSDT-PERP", key=day), shifted)
+
+    trades_on(date(2026, 2, 10))
+    slots, window = {"change": change()}, ("2026-03-07", "2026-03-20")
+    before = ff.features.compute(slots, "BTCUSDT-PERP", "5m", *window).collect()
+    cached = written()
+    trades_on(date(2026, 2, 11))
+    ff.features.compute(slots, "BTCUSDT-PERP", "5m", *window).collect()
+    earlier = rewritten(cached)
+    trades_on(date(2026, 4, 10))
+    after = ff.features.compute(slots, "BTCUSDT-PERP", "5m", *window).collect()
+    shutil.rmtree(cache_folder())
+    fresh = ff.features.compute(slots, "BTCUSDT-PERP", "5m", *window).collect()
+
+    assert before.get_column("trade_date").max() == saturday
+    assert earlier == set()
+    assert after.equals(fresh)
+    assert after.get_column("trade_date").max() == date(2026, 3, 20)
+
+
+def test_a_bucket_held_back_at_the_end_of_the_data_comes_back_with_the_data_after_it() -> None:
+    # The ponytail review: a month whose data ends inside its last bucket holds the bucket back
+    # (D-43), and data that comes later, in another file, completes it: the month's key names
+    # where the data ends, so the month computes again and gains its last bar.
+    first_months = (
+        SPRING[0],
+        listing("ESM2026", 1003, ("2026-02-23", "2026-03-31"), ("2026-03-11", "2026-03-31")),
+    )
+    store = write_minutes(first_months)
+    march = Partition(dataset=MINUTES, contract="ESM2026", key=YearMonth(year=2026, month=3))
+    rows = store.scan_partition(march).collect()
+    store.write_partition(march, rows.filter(pl.col("ts_open") < pl.col("ts_open").max() - MINUTE))
+    window = ("2026-03-02", "2026-03-31")
+    before = ff.features.compute(SLOTS, "ES", "5m", *window).collect()
+    cached = written()
+    write_minutes(
+        (listing("ESM2026", 1003, ("2026-04-01", "2026-04-30"), ("2026-04-01", "2026-04-30")),)
+    )
+
+    after = ff.features.compute(SLOTS, "ES", "5m", *window).collect()
+
+    assert "bars/2026-03" in rewritten(cached)
+    assert after.height == before.height + 1
+    assert after.filter(pl.col("ts_close") > before.get_column("ts_close").max()).height == 1
+
+
+def test_a_daily_warmup_of_hundreds_of_sessions_is_counted_back_in_milliseconds() -> None:
+    # The ponytail review: each partition counts its features' warm-up back a session at a time
+    # on every computation, read back too, and a session found by filtering the whole session
+    # table made a daily RSI's 294 sessions a tenth of a second a partition.
+    paths = resolve_paths(os.environ)
+    sessions = sessions_of(instruments.get("ES").session_calendar(), paths.cache_dir)
+    graph = FeatureGraph.of({"rsi": rsi(n=14)}, "ES", Timeframe.parse("1d"))
+    sessions.preceding(date(2026, 3, 9))
+
+    began = time.perf_counter()
+    start = graph.lead_in(sessions, date(2026, 3, 9))
+    took = time.perf_counter() - began
+
+    assert sessions.between(start, date(2026, 3, 6)).height == 294
+    assert took < 0.05
+
+
+def test_the_warmup_check_compares_each_partition_with_the_next_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The ponytail review: the check compared each partition evaluated with every other, a
+    # filter each, which grows with the square of the months a first computation fills; each
+    # is compared with the partitions holding the dates it read past its own alone.
+    write_minutes(SPRING)
+    compared: list[str] = []
+    require_agreement = cache_evaluation._require_agreement
+
+    def counted(*arguments: Any) -> None:
+        compared.append(arguments[2].name)
+        require_agreement(*arguments)
+
+    monkeypatch.setattr(cache_evaluation, "_require_agreement", counted)
+    ff.features.compute(SLOTS, "ES", "5m", "2026-01-05", "2026-04-30").collect()
+
+    assert sorted(compared) == [month for month in ("2026-02", "2026-03", "2026-04") for _ in SLOTS]
+
+
+@ff.feature(inputs=[change, rsi], outputs={"rsi_change": "ratio"})
+def rsi_change(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("rsi") * pl.col("change")
+
+
+def test_a_features_folder_is_the_same_whatever_order_the_slots_come_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The ponytail review: a feature reading two that do not read each other named them in the
+    # order its graph evaluated them, which followed the slots', so a backtest listing its
+    # features in another order than a notebook computed them again in a folder of their own.
+    store_with("ohlcv-1m")
+    window = ("2026-03-06", "2026-03-09")
+    first = {"both": rsi_change(), "change": change(), "rsi": rsi(n=7)}
+    ff.features.compute(first, "ES", "5m", *window).collect()
+    monkeypatch.setattr(market_api, "gridded_bars", refused)
+
+    again = {"change": change(), "rsi": rsi(n=7), "both": rsi_change()}
+    ff.features.compute(again, "ES", "5m", *window).collect()
+
+    assert len(list(cache_folder().glob("synthetic/ES/5m/rsi_change-*"))) == 1
+
+
+@ff.feature(warmup=1, inputs=[InstrumentInput(root="BTCUSDT-PERP")], outputs={"btc_wait": "other"})
+def btc_wait(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("staleness_BTCUSDT-PERP")
+
+
+def test_a_preview_checks_another_instruments_bars_from_its_warmup_as_a_run_does() -> None:
+    # The ponytail review: a run checks another instrument's bars from its warm-up's start, as
+    # step 3.2's preview did, and a preview from the window's start refused what the run read;
+    # the fixtures' bitcoin trades on Saturday 2026-03-07 alone, after ES's Friday session,
+    # which a warm-up of one bar reaches from Monday.
+    store_with("ohlcv-1m")
+
+    frame = ff.features.compute({"wait": btc_wait()}, "ES", "5m", "2026-03-09", "2026-03-09")
+
+    assert frame.collect().get_column("wait").drop_nulls().len() > 0
+
+
+@ff.feature(outputs={"noisy": "price"})
+def noisy_close(bars: pl.LazyFrame) -> pl.Expr:
+    warnings.warn("a warning of the feature's own code", UserWarning, stacklevel=2)
+    return pl.col("close")
+
+
+def test_a_features_own_warnings_reach_the_notebook() -> None:
+    # The ponytail review: the cache hid every warning while it evaluated features, a feature's
+    # own and Polars' among them, to keep `load`'s from coming once a partition.
+    store_with("ohlcv-1m")
+
+    with pytest.warns(UserWarning, match="a warning of the feature's own code"):
+        ff.features.compute({"noisy": noisy_close()}, "ES", "5m", "2026-03-06", "2026-03-09")

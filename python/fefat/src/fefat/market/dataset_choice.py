@@ -194,6 +194,12 @@ def signal_bar_levels(
     return dict(sorted(finest.items()))
 
 
+def building_datasets(datasets: dict[str, Dataset], timeframe: Timeframe) -> list[Dataset]:
+    """The trades and bars held that build bars of `timeframe`, finest first: those whose
+    ends end a load's grid, whichever of them a window reaches (`gridded_bars`)."""
+    return [dataset for _, dataset in _building(datasets, timeframe)]
+
+
 def _building(
     datasets: dict[str, Dataset], timeframe: Timeframe
 ) -> list[tuple[TickFidelity | Timeframe, Dataset]]:

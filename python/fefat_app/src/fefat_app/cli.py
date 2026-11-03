@@ -146,7 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profiles.add_argument("name", nargs="?", help="a preset or saved profile to print as YAML")
     profiles.set_defaults(run=print_the_profiles)
-    cache = commands.add_parser("cache", help="the engine's cache of the market data in your store")
+    cache = commands.add_parser("cache", help="the engine's and the features' caches")
     add_the_cache_commands(cache)
     return parser
 

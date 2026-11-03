@@ -1,12 +1,14 @@
 """Evaluating the partitions of the feature cache that a computation lacks (`fefat.features.cache`,
 step 3.3): each feature from its own warm-up, its slot's graph alone (`FeatureGraph.of_slot`), over
 the bars each instrument's source gives (`SeriesSource.signal_bars`); and the check that a feature
-read from two starts gives the same values (`first_difference`), which refuses a feature that
-remembers more than its warm-up."""
+read from two starts gives the same values (`check_warmups`, `first_difference`), which refuses a
+feature that remembers more than its warm-up."""
 
+import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
+from itertools import product
 from pathlib import Path
 
 import polars as pl
@@ -15,7 +17,7 @@ from fefat.features.cache_folders import FeatureFolder
 from fefat.features.cache_keys import CachePartition
 from fefat.features.runtime import FeatureGraph, Grid, InputBars, slot_columns
 from fefat.market.api import SeriesSource
-from fefat.market.calendar import counted, utc_text
+from fefat.market.calendar import SessionTable, counted, utc_text
 
 TOLERANCE = 1e-9
 """How far apart two float values of a feature read from two starts may lie, relative to the
@@ -75,12 +77,13 @@ def _inputs(
     """The bars of every grid the graphs read, each from its instrument's source, for the
     window `dates` (`FeatureGraph.grid_dates`)."""
     grids = dict.fromkeys(grid for graph in graphs for grid in graph.grids())
-    return {
-        grid: sources[grid.root].signal_bars(
-            grid.timeframe, graphs[0].grid_dates(grid, dates, sources[grid.root].sessions)
-        )
-        for grid in grids
-    }
+    with warnings.catch_warnings(action="ignore"):  # `compute` gives `load`'s once
+        return {
+            grid: sources[grid.root].signal_bars(
+                grid.timeframe, graphs[0].grid_dates(grid, dates, sources[grid.root].sessions)
+            )
+            for grid in grids
+        }
 
 
 def _cut(
@@ -105,6 +108,50 @@ def _outputs(graph: FeatureGraph, inputs: InputBars) -> pl.DataFrame:
     named = {column: output for output, column in slot_columns(slot, node.spec).items()}
     values = graph.evaluate(inputs).rename(named)
     return pl.concat([inputs[graph.signal_grid].select("trade_date"), values], how="horizontal")
+
+
+def check_warmups(
+    evaluations: Mapping[str, Evaluation],
+    partitions: Sequence[CachePartition],
+    folders: Sequence[FeatureFolder],
+    frames: Mapping[tuple[Path, str], pl.DataFrame],
+    sessions: SessionTable,
+) -> None:
+    """Refuse a feature whose values one evaluation read past its partition differ from those
+    the partition holding them gives from its own warm-up (`fefat.features.cache`, module
+    docstring): each evaluation is compared with the evaluated partitions holding the trade
+    dates it read past its own alone, the next session's and a month's left-out dates."""
+    for name, done in evaluations.items():
+        days = {day for each in done.beyond.values() for day in each.get_column("trade_date")}
+        others = [
+            other
+            for other in partitions
+            if other.name != name
+            and other.name in evaluations
+            and any(other.holds_day(day) for day in days)
+        ]
+        for other, folder in product(others, folders):
+            _require_agreement(folder, done, other, frames, sessions)
+
+
+def _require_agreement(
+    folder: FeatureFolder,
+    done: Evaluation,
+    other: CachePartition,
+    frames: Mapping[tuple[Path, str], pl.DataFrame],
+    sessions: SessionTable,
+) -> None:
+    """Refuse the folder's feature where its values one evaluation read on the trade dates of
+    `other` differ from those `other` holds, read from its own warm-up."""
+    beyond = done.beyond.get(folder.path)
+    read = None if beyond is None else beyond.filter(other.holds())
+    if read is None or read.is_empty():
+        return
+    held = frames[(folder.path, other.name)]
+    difference = first_difference(read.drop("trade_date"), held, folder.outputs())
+    if difference is not None:
+        starts = (done.starts[folder.path], folder.graph.lead_in(sessions, other.first))
+        raise ValueError(_disagreement(folder, starts, difference))
 
 
 def first_difference(read: pl.DataFrame, held: pl.DataFrame, outputs: Iterable[str]) -> str | None:
@@ -133,7 +180,7 @@ def first_difference(read: pl.DataFrame, held: pl.DataFrame, outputs: Iterable[s
     return None
 
 
-def disagreement(folder: FeatureFolder, starts: tuple[date, date], difference: str) -> str:
+def _disagreement(folder: FeatureFolder, starts: tuple[date, date], difference: str) -> str:
     node = folder.graph.slots[folder.slot]
     warmup = counted(folder.graph.warmups[node], "bar")
     ours, theirs = starts

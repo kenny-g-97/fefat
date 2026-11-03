@@ -13,10 +13,11 @@ import gen_fixtures
 from fefat.config import resolve_paths
 from fefat.market import instruments
 from fefat.market.api import DATASETS_COLUMNS, SIGNAL_BAR_COLUMNS, datasets, load, roll_calendar
-from fefat.market.calendar import sessions_of
+from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.catalog import CATALOG, RollRule
 from fefat.market.continuous import RollCalendar, volume_rolls
-from fefat.market.layout import Dataset, PartitionRequest
+from fefat.market.instruments import InstrumentTable
+from fefat.market.layout import Dataset, Partition, PartitionRequest
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import write_quality_report
 from fefat.market.schema import parse_schema_name
@@ -162,7 +163,7 @@ def test_loads_build_a_roll_calendar_once_while_its_bars_keep_their_stamp(
         built.append(volume_rolls(*arguments))
         return built[-1]
 
-    monkeypatch.setattr("fefat.market.api.volume_rolls", counted_rolls)
+    monkeypatch.setattr("fefat.market.roll_calendars.volume_rolls", counted_rolls)
     load("ES", "5m", "2026-03-06", "2026-03-09")
     load("ES", "15m", "2026-03-09", "2026-03-09")
     rolls = roll_calendar("ES").rolls()
@@ -190,7 +191,7 @@ def test_a_continuous_load_of_a_product_whose_roll_rule_load_does_not_apply_is_r
     )
     products = (*CATALOG.products, by_open_interest)
     monkeypatch.setattr(
-        "fefat.market.api.CATALOG", CATALOG.model_copy(update={"products": products})
+        "fefat.market.roll_calendars.CATALOG", CATALOG.model_copy(update={"products": products})
     )
 
     with pytest.raises(ValueError, match="Expected the roll rule volume for ES"):
@@ -467,3 +468,57 @@ def test_the_kept_roll_calendar_gives_a_copy_of_its_rows() -> None:
     rows[0, "adj_offset"] = 999
 
     assert roll_calendar("ES").rows.item(0, "adj_offset") == 0
+
+
+def test_a_stretch_no_dataset_holds_has_the_rows_any_window_holding_it_gives(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The leakage audit of step 3.3: bitcoin's 1-minute bars end with 2026-03-07 and its trades
+    # start on 03-10. A window ending on 03-08 held the stretch between them back, while one that
+    # reached the trades gave it empty buckets, so a date's rows depended on the window's end.
+    store = Store(data_folder_with(monkeypatch, tmp_path, "ohlcv-1m", "trades"))
+    trades = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("trades"), root="BTCUSDT-PERP"
+    )
+    saturday = Partition(dataset=trades, contract="BTCUSDT-PERP", key=date(2026, 3, 7))
+    later = 3 * 24 * 3_600_000_000_000
+    rows = store.scan_partition(saturday).collect()
+    tuesday = Partition(dataset=trades, contract="BTCUSDT-PERP", key=date(2026, 3, 10))
+    store.write_partition(
+        tuesday, rows.with_columns(pl.col("ts_recv") + later, pl.col("ts_event") + later)
+    )
+    shutil.rmtree((store.folder / saturday.relative_path()).parent)
+
+    ending = load("BTCUSDT-PERP", "5m", "2026-03-07", "2026-03-08").collect()
+    past = load("BTCUSDT-PERP", "5m", "2026-03-07", "2026-03-10").collect()
+
+    assert ending.equals(past.filter(pl.col("trade_date") <= date(2026, 3, 8)))
+    sunday = ending.filter(pl.col("trade_date") == date(2026, 3, 8))
+    assert sunday.height == 288
+    assert sunday.get_column("zero_volume").all()
+
+
+def test_a_kept_roll_calendar_is_built_again_for_another_instrument_or_session_table(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The ponytail review: the kept calendar's stamp names the instrument, whose last trade rule
+    # forces rolls, and the session table, beside the bars it reads.
+    data_folder_with(monkeypatch, tmp_path, "ohlcv-1m")
+    built: list[RollCalendar] = []
+
+    def counted_rolls(*arguments: Any) -> RollCalendar:
+        built.append(volume_rolls(*arguments))
+        return built[-1]
+
+    monkeypatch.setattr("fefat.market.roll_calendars.volume_rolls", counted_rolls)
+    roll_calendar("ES")
+    roll_calendar("ES")
+    another_es = instruments.get("ES").model_copy(update={"sources": ("another source",)})
+    with monkeypatch.context() as patched:
+        patched.setattr(InstrumentTable, "get", lambda *_, **__: another_es)
+        roll_calendar("ES")
+    with monkeypatch.context() as patched:
+        patched.setattr(SessionTable, "key", "another session table")
+        roll_calendar("ES")
+
+    assert len(built) == 3
