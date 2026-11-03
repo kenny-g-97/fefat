@@ -147,11 +147,12 @@ class SignalStrategy(FrozenModel):
         they declare in `inputs` (`fefat.features.runtime.load_inputs`), and its rows those of
         the trade dates from `start` on, where it is given, the bars before it read for the
         features' warm-up, which the expressions read too, so that an expression's first values
-        in the window follow the warm-up the strategy's `FeatureSpec`s need. A null signal, as where a feature has no value yet, is no signal, and a
-        null `wake` wakes; each price column becomes raw prices of its row's contract, its values
-        less the row's `adj_offset` (D-09). A back-adjusted import (D-49), a price that is not a
-        whole number of units, and, with a market entry, a bar with both entry signals are
-        refused, and the frame is checked as the engine reads it (`validated_signal_frame`)."""
+        in the window follow the warm-up the strategy's `FeatureSpec`s need. A null signal, as
+        where a feature has no value yet, is no signal, and a null `wake` wakes; each price
+        column becomes raw prices of its row's contract, its values less the row's `adj_offset`
+        (D-09). A back-adjusted import (D-49), a price that is not a whole number of units, and,
+        with a market entry, a bar with both entry signals are refused, and the frame is checked
+        as the engine reads it (`validated_signal_frame`)."""
         frame = signal_bars = _with_raw_prices(bars.lazy().collect())
         graph = self.feature_graph()
         computed = graph.evaluate({**inputs, graph.signal_grid: signal_bars})
