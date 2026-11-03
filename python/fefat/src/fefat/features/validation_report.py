@@ -3,9 +3,9 @@ cut compared, the start check, and the lint's findings, kept as JSON beside the 
 (`fefat.features.versions.validation_file`), with its verdict and the words that explain it.
 
 A report passes when no cut changed a value before it, the start check moved the start and
-agreed, each output had values compared at one cut or by the start check at least
-(`MINIMUM_COMPARED`), and the lint found no data the feature reads itself; the lint's other
-findings are warnings, which a report that passes shows as `PASSED WITH WARNINGS`."""
+agreed, each output had values compared at one cut at least (`MINIMUM_COMPARED`), and the lint
+found no data a feature reads itself or holds from outside it; the lint's other findings are
+warnings, which a report that passes shows as `PASSED WITH WARNINGS`."""
 
 from collections.abc import Mapping
 from datetime import date, datetime
@@ -18,9 +18,9 @@ from fefat.market.calendar import utc_text
 from fefat.market.schema import FrozenModel
 
 MINIMUM_COMPARED = 1
-"""The values of each output, non-null on both sides, that the cuts and the start check must have
-compared, at one of them at least: below it the report fails, so that a warm-up longer than the
-data compares nothing and passes nothing (D-71)."""
+"""The values of each output, non-null on both sides, that the cuts must have compared, at one
+of them at least: below it the report fails, so that a warm-up longer than the data compares
+nothing and passes nothing (D-71)."""
 
 
 class CutResult(FrozenModel):
@@ -131,10 +131,12 @@ class ValidationReport(FrozenModel):
         return failing[0] if failing else None
 
     def uncompared(self) -> list[str]:
-        """The outputs no cut and not the start check compared a value of, as when a warm-up
-        longer than the data leaves none."""
-        counts = [self.start_check.compared, *(cut.compared for cut in self.cuts)]
-        return _missing({output: max(each[output] for each in counts) for output in counts[0]})
+        """The outputs no cut compared a value of, as when a warm-up longer than the data leaves
+        none; the start check, which reads the same data after each cut, does not count."""
+        outputs = self.start_check.compared
+        return _missing(
+            {output: max(cut.compared[output] for cut in self.cuts) for output in outputs}
+        )
 
     def summary(self) -> str:
         """The report in words: the verdict, the first failing cut, the start check, the outputs
@@ -148,9 +150,8 @@ class ValidationReport(FrozenModel):
         )
         missing = self.uncompared()
         never = (
-            f"values: no value of {', '.join(missing)} compared at any cut or by the start check, "
-            "as a warm-up longer than the data leaves none; validate a window with more data "
-            "before it"
+            f"values: no value of {', '.join(missing)} compared at any cut, as a warm-up longer "
+            "than the data leaves none; validate a window with more data before it"
         )
         found = [f"lint: {finding}" for finding in self.lint] or ["lint: no finding"]
         return "\n".join(

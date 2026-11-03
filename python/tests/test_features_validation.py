@@ -7,7 +7,7 @@ versions. The planted and clean suites are `python/tests/features/leaks/`."""
 
 import os
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import polars as pl
@@ -19,7 +19,7 @@ from fefat.features import TimeframeInput, ValidationReport
 from fefat.features.cuts import CutKind
 from fefat.features.examples import rsi
 from fefat.features.source_lint import LintRule
-from fefat.features.validation_report import FeatureRead
+from fefat.features.validation_report import CutResult, FeatureRead, StartCheck
 from fefat.market.api import SeriesSource
 from fefat.reference.units import instant_nanoseconds
 from generated_minutes import FEBRUARY_WINDOW, february_store
@@ -97,13 +97,14 @@ def test_a_leak_inside_a_feature_of_a_higher_timeframe_fails_while_its_bar_is_in
     # The amendment and the step review: every input is cut at its own availability, so a
     # 15-minute bar in progress at a cut is held back, and a feature reading the next 15-minute
     # close through the feature it reads fails each cut inside a 15-minute bar, though its own
-    # source, which the lint reads, reads nothing ahead.
+    # source reads nothing ahead; the lint warns of the feature it reads.
     report = ff.features.validate(
         next_15m_close(), "ES", "1m", *FEBRUARY_WINDOW, reads=[next_close()], seed=SEED
     )
 
     inside = [cut for cut in report.cuts if CutKind.HIGHER_TIMEFRAME_LAST_BAR in cut.kinds]
-    assert report.lint == ()
+    warned = [(finding.feature, finding.rule) for finding in report.lint]
+    assert warned == [("next_close", LintRule.NEGATIVE_SHIFT)]
     assert inside
     assert not any(cut.passed for cut in inside)
 
@@ -142,7 +143,7 @@ def test_a_warmup_longer_than_the_data_compares_nothing_and_fails() -> None:
     assert report.uncompared() == ["rsi"]
     assert not report.failing_cuts()
     assert not report.passed
-    assert "values: no value of rsi compared at any cut or by the start check" in (report.summary())
+    assert "values: no value of rsi compared at any cut, as a warm-up longer" in (report.summary())
 
 
 @ff.feature(outputs={"roll_close": "price"})
@@ -194,6 +195,92 @@ def test_a_feature_reading_data_itself_fails_where_the_cuts_cannot_see_it() -> N
     assert [finding.rule for finding in report.lint] == [LintRule.READS_DATA]
     assert not report.passed
     assert report.summary().splitlines()[0].endswith("FAILED")
+
+
+@ff.feature(inputs=[session_close_from_the_store], outputs={"wrapped": "price"})
+def wrapped(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("session_close")
+
+
+def test_data_a_feature_it_reads_loads_itself_fails_too() -> None:
+    # The leakage audit, second round: the lint reads every feature the validated one reads,
+    # whose data the cuts never cut either.
+    report = ff.features.validate(
+        wrapped(), "ES", "1m", *FEBRUARY_WINDOW, reads=[session_close_from_the_store()], seed=SEED
+    )
+
+    found = [(finding.feature, finding.rule) for finding in report.lint]
+    assert found == [("session_close_from_the_store", LintRule.READS_DATA)]
+    assert not report.passed
+
+
+def test_a_frame_a_notebook_loaded_outside_the_feature_fails() -> None:
+    # The leakage audit, second round: a frame a cell loaded before, which a feature joins, holds
+    # data the cuts never cut, as a load in the feature does.
+    closes = ff.market.load("ES", "1d", "2026-02-02", "2026-02-20")
+    closes = closes.select("trade_date", session_close="close").collect()
+
+    @ff.feature(outputs={"session_close": "price"})
+    def joined_close(bars: pl.LazyFrame) -> pl.LazyFrame:
+        joined = bars.join(closes.lazy(), on="trade_date", how="left", maintain_order="left")
+        return joined.select("ts_close", "session_close")
+
+    report = ff.features.validate(joined_close(), "ES", "1m", *FEBRUARY_WINDOW, seed=SEED)
+
+    assert not report.failing_cuts()
+    assert [finding.rule for finding in report.lint] == [LintRule.READS_DATA]
+    assert not report.passed
+
+
+@ff.feature(outputs={"nothing": "ratio"})
+def nothing(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.lit(None, dtype=pl.Float64)
+
+
+def test_an_output_no_cut_compares_a_value_of_fails_the_report_alone() -> None:
+    # The leakage audit, second round: an output null everywhere agrees at every cut and in the
+    # start check, which moves, so the minimum of values compared alone fails the report.
+    report = ff.features.validate(nothing(), "ES", "1m", *FEBRUARY_WINDOW, seed=SEED)
+
+    assert not report.failing_cuts()
+    assert report.start_check.passed
+    assert report.lint == ()
+    assert report.uncompared() == ["nothing"]
+    assert not report.passed
+
+
+def test_values_the_start_check_alone_compared_leave_an_output_uncompared() -> None:
+    # The leakage audit, second round: the start check reads the same data after each cut as the
+    # whole range, so it cannot see a look-ahead, and values it alone compared count for nothing.
+    cut = CutResult(instant=0, kinds=(CutKind.RANDOM,), compared={"x": 0}, difference=None)
+    check = StartCheck(
+        whole_from=date(2026, 2, 3),
+        later_from=date(2026, 2, 4),
+        compared_from=date(2026, 2, 5),
+        compared={"x": 1_380},
+        difference=None,
+    )
+    report = ValidationReport(
+        feature="x",
+        hash="0" * 64,
+        parameters={},
+        reads=(),
+        instrument="ES",
+        timeframe="1m",
+        provider="synthetic",
+        start=date(2026, 2, 3),
+        end=date(2026, 2, 6),
+        seed=SEED,
+        stops=0,
+        random_cuts=0,
+        cuts=(cut,),
+        start_check=check,
+        lint=(),
+        created_at=datetime(2026, 11, 3, tzinfo=UTC),
+    )
+
+    assert report.uncompared() == ["x"]
+    assert not report.passed
 
 
 def test_the_detector_loads_each_grid_once(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,9 +1,9 @@
 """The leak detector's lint (step 3.4, `02-engine-and-data.md` §6, D-12): a reading of a feature's
 source, its decorator included, that warns of the usual ways of reading ahead, each finding with
-its line, counted from the decorator's, the line's text, and why.
+the feature's name, its line, counted from the decorator's, the line's text, and why.
 
     for finding in ff.features.lint(next_close):
-        print(finding)  # line 3: return pl.col("close").shift(-1): a negative shift reads ...
+        print(finding)  # line 3 of next_close: return pl.col("close").shift(-1): a negative ...
 
 It warns of a negative shift or difference, a backward fill or an interpolation, a centred window
 or a peak, an aggregate over the whole frame (a normalisation, a scaling, a rank, quantile bins,
@@ -12,22 +12,27 @@ an as-of join forward, to the nearest row, or on `ts_open`, and a reversed colum
 namespace of each row's own values, such as `.str`, and an aggregate of a group-by, a rolling
 window, a `rolling_map`, or a list's `eval` are left to the cuts. These are warnings: the cuts and
 the start check of `fefat.features.validation` judge the values. One finding fails a validation:
-data the feature reads itself, with `load`, `compute`, `open`, or a reader such as
-`pl.scan_parquet`, which the cuts never cut and the cache's key never pins. The lint also warns of
-what the hash leaves out (`BACKLOG.md`): a name read from outside the feature, the SDK, Polars, and
-the standard library, and a default not written as a literal, which may have been chosen on the
-full sample. It reads the feature's own text alone: a shift by a negative parameter, a leak in a
-helper, and an aggregate under another name pass it."""
+data the feature reads itself, with `load`, `compute`, `open`, `roll_calendar`, a store's `read`
+or `scan`, or a reader such as `pl.scan_parquet`, or holds from outside it, a frame a notebook
+cell loaded or a reader bound to another name, which the cuts never cut and the cache's key never
+pins. The lint also warns of what the hash leaves out (`BACKLOG.md`): a name read from outside
+the feature, the SDK, Polars, and the standard library, and a default not written as a literal,
+which may have been chosen on the full sample. It reads the feature's own text alone: a shift by
+a negative parameter, a leak in a helper, and an aggregate under another name pass it."""
 
 import ast
 import inspect
 import sys
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from enum import StrEnum
 from types import FunctionType
 
+import polars as pl
+
 from fefat.features.declarations import feature_call
 from fefat.features.definition import FeatureDef
+from fefat.features.source_names import names_read_outside
 from fefat.market.schema import FrozenModel
 
 
@@ -87,7 +92,7 @@ _WHY = {
     "reads as an input: another feature, instrument, or timeframe.",
 }
 _AGGREGATES = frozenset(
-    {
+    [
         "arg_max",
         "arg_min",
         "arg_sort",
@@ -115,7 +120,7 @@ _AGGREGATES = frozenset(
         "unique",
         "value_counts",
         "var",
-    }
+    ]
 )
 """Methods that reduce a column to one value, or rank, sort, bin, or count it, over the rows
 they are given."""
@@ -133,43 +138,61 @@ _PER_WINDOW = frozenset({"agg", "eval", "map_elements", "rolling_map"})
 """Methods whose arguments' aggregates reduce a group, a window, a list, or an element."""
 _OF_NUMBERS = frozenset({"math", "statistics"})
 """Modules of the standard library whose aggregates reduce Python's own numbers."""
-_READERS = frozenset({"compute", "load", "open"})
-"""Methods that read data: `ff.market.load`, `ff.features.compute`, `json.load`, `Path.open`."""
-_NAMED_READERS = frozenset({"load", "open"})
+_READERS = frozenset(
+    {"compute", "load", "open", "read", "roll_calendar", "scan", "series_source", "signal_bars"}
+)
+"""Methods that read data, such as `ff.market.load`, `ff.features.compute`, and a store's `scan`."""
+_NAMED_READERS = frozenset({"compute", "load", "open", "roll_calendar", "series_source"})
 """Functions called by their name that read data, such as Python's `open`."""
 _READER_PREFIXES = ("read_", "scan_")
 _PLATFORM = frozenset({"builtins", "fefat", "polars"})
 
 
 class LintFinding(FrozenModel):
-    """A finding of the lint: its rule, the line of the feature's source it is on, counted from
-    its decorator's, 1, the line's text, and why it reads ahead or what the hash leaves out."""
+    """A finding of the lint: its rule, the feature whose source it reads, the line it is on,
+    counted from the feature's decorator's, 1, the line's text, and why it reads ahead, reads
+    data, or what the hash leaves out."""
 
     rule: LintRule
+    feature: str
     line: int
     source: str
     explanation: str
 
     def __str__(self) -> str:
-        return f"line {self.line}: {self.source}: {self.explanation}"
+        return f"line {self.line} of {self.feature}: {self.source}: {self.explanation}"
+
+
+@dataclass(frozen=True)
+class _Source:
+    """A feature's name and the lines of its normalised source, which findings quote."""
+
+    name: str
+    lines: list[str]
+
+    def finding(self, rule: LintRule, line: int, explanation: str) -> LintFinding:
+        text = self.lines[line - 1].strip()
+        return LintFinding(
+            rule=rule, feature=self.name, line=line, source=text, explanation=explanation
+        )
 
 
 def lint(definition: FeatureDef) -> tuple[LintFinding, ...]:
     """The findings of the lint in `definition`'s source, by line (module docstring)."""
     statement = ast.parse(definition.code).body[0]
-    lines = definition.code.splitlines()
+    source = _Source(definition.name, definition.code.splitlines())
     found = {
         (each.line, each.rule, each.explanation): each
         for each in (
-            *_reading_ahead(statement, lines),
-            *_names_read_outside(definition, statement, lines),
-            *_written_defaults(statement, lines),
+            *_reading_ahead(statement, source),
+            *_names_read_outside(definition, statement, source),
+            *_written_defaults(statement, source),
         )
     }
     return tuple(found[key] for key in sorted(found))
 
 
-def _reading_ahead(statement: ast.stmt, lines: list[str]) -> Iterator[LintFinding]:
+def _reading_ahead(statement: ast.stmt, source: _Source) -> Iterator[LintFinding]:
     """The findings of reading ahead, and of reading data, in the function's body, its decorator
     left to `_written_defaults`."""
     body = statement.body if isinstance(statement, ast.FunctionDef) else []
@@ -184,7 +207,7 @@ def _reading_ahead(statement: ast.stmt, lines: list[str]) -> Iterator[LintFindin
     )
     for call in calls:
         for rule in _rules_of(call, over, windowed | within):
-            yield _finding(rule, _line_of(call), lines, _WHY[rule])
+            yield source.finding(rule, _line_of(call), _WHY[rule])
 
 
 def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Iterator[LintRule]:
@@ -195,11 +218,10 @@ def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Ite
     if not isinstance(call.func, ast.Attribute) or _on_each_row(call):
         return
     keywords = {keyword.arg: keyword.value for keyword in call.keywords}
+    strategy = _text(keywords.get("strategy", _second(call)))
     if method in _SHIFTS and _negative(call.args[0] if call.args else keywords.get("n")):
         yield LintRule.NEGATIVE_SHIFT
-    if method in _BACKWARD_FILLS or (
-        method == "fill_null" and _text(keywords.get("strategy", _second(call))) == "backward"
-    ):
+    if method in _BACKWARD_FILLS or (method == "fill_null" and strategy == "backward"):
         yield LintRule.BACKWARD_FILL
     if _true(keywords.get("center")) or method in _PEAKS:
         yield LintRule.CENTRED_WINDOW
@@ -207,9 +229,7 @@ def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Ite
         yield LintRule.REVERSED
     if method == "join_asof":
         yield from _join_rules(keywords)
-    aggregates = method in _AGGREGATES or (
-        method == "fill_null" and _text(keywords.get("strategy", _second(call))) in _SAMPLE_FILLS
-    )
+    aggregates = method in _AGGREGATES or (method == "fill_null" and strategy in _SAMPLE_FILLS)
     if aggregates and _of_a_column(call) and id(call) not in left_to_the_cuts:
         yield LintRule.PARTITION_AGGREGATE if id(call) in over else LintRule.FULL_SAMPLE
 
@@ -286,55 +306,37 @@ def _line_of(call: ast.Call) -> int:
     return call.lineno if end is None else end
 
 
-def _finding(rule: LintRule, line: int, lines: list[str], explanation: str) -> LintFinding:
-    return LintFinding(
-        rule=rule, line=line, source=lines[line - 1].strip(), explanation=explanation
-    )
-
-
 def _names_read_outside(
-    definition: FeatureDef, statement: ast.stmt, lines: list[str]
+    definition: FeatureDef, statement: ast.stmt, source: _Source
 ) -> Iterator[LintFinding]:
-    """A warning for each name the function's body reads, lambdas included, that it does not bind
-    itself and that is neither the SDK's, Polars', nor the standard library's: a helper's code
-    and a constant's value, which the hash leaves out (`BACKLOG.md`)."""
+    """A finding for each name the function's body reads, lambdas included, that it does not bind
+    itself: data, or a reader of data, which fails a validation, and a helper or a constant that
+    is neither the SDK's, Polars', nor the standard library's, whose code or value the hash leaves
+    out (`BACKLOG.md`)."""
     function = definition.function
     if not isinstance(function, FunctionType) or not isinstance(statement, ast.FunctionDef):
         return
-    outside = {**function.__globals__, **inspect.getclosurevars(function).nonlocals}
-    for name, line in sorted(_names_read(statement).items()):
-        if name not in outside or _of_the_platform(outside[name]):
-            continue
-        explanation = (
-            f"{name} is defined outside the feature, its SDK, Polars, and Python's standard "
-            "library, so its code or value is not in the feature's hash: a change to it changes "
-            "no version, and the feature cache reads back the values it gave before; write it "
-            "in the feature, or make it a parameter."
-        )
-        yield _finding(LintRule.NAME_READ_OUTSIDE, line, lines, explanation)
+    for name, line, value in names_read_outside(function, statement):
+        if isinstance(value, pl.DataFrame | pl.LazyFrame | pl.Series) or _a_reader(value):
+            yield source.finding(LintRule.READS_DATA, line, f"{name}: {_WHY[LintRule.READS_DATA]}")
+        elif not _of_the_platform(value):
+            explanation = (
+                f"{name} is defined outside the feature, its SDK, Polars, and Python's standard "
+                "library, so its code or value is not in the feature's hash: a change to it "
+                "changes no version, and the feature cache reads back the values it gave before; "
+                "write it in the feature, or make it a parameter."
+            )
+            yield source.finding(LintRule.NAME_READ_OUTSIDE, line, explanation)
 
 
-def _names_read(statement: ast.FunctionDef) -> dict[str, int]:
-    """The names the body reads and does not bind, by the first line reading each: its own
-    parameters, its lambdas', and what it assigns are its own."""
-    nodes = [node for each in statement.body for node in ast.walk(each)]
-    functions = [statement, *(node for node in nodes if isinstance(node, ast.Lambda))]
-    bound = {argument.arg for each in functions for argument in _parameters(each.args)}
-    bound |= {
-        node.id
-        for node in nodes
-        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load)
-    }
-    read: dict[str, int] = {}
-    for node in nodes:
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id not in bound:
-            read[node.id] = min(read.get(node.id, node.lineno), node.lineno)
-    return read
-
-
-def _parameters(arguments: ast.arguments) -> list[ast.arg]:
-    starred = [each for each in (arguments.vararg, arguments.kwarg) if each is not None]
-    return [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, *starred]
+def _a_reader(value: object) -> bool:
+    """Whether `value` is a function of the SDK, Polars, or the standard library that reads data,
+    whatever name it is bound to, such as `fetch` for `fefat.market.load`."""
+    name = getattr(value, "__name__", None)
+    if not inspect.isroutine(value) or not isinstance(name, str):
+        return False
+    reads = name in _READERS or name.startswith(_READER_PREFIXES)
+    return reads and _of_the_platform(value)
 
 
 def _of_the_platform(value: object) -> bool:
@@ -352,7 +354,7 @@ def _of_the_platform(value: object) -> bool:
     return root in _PLATFORM or root in sys.stdlib_module_names
 
 
-def _written_defaults(statement: ast.stmt, lines: list[str]) -> Iterator[LintFinding]:
+def _written_defaults(statement: ast.stmt, source: _Source) -> Iterator[LintFinding]:
     """A warning for each default the decorator's `params` does not write as a literal, and for
     `params` bound to a name: a default worked out when the feature is defined, such as a
     quantile of the closes, is a parameter chosen on the full sample (`BACKLOG.md`)."""
@@ -361,14 +363,13 @@ def _written_defaults(statement: ast.stmt, lines: list[str]) -> Iterator[LintFin
     if written is None:
         return
     if not isinstance(written, ast.Dict):
-        yield _default_finding("params", written, lines)
+        yield _default_finding("params", written, source)
         return
     for key, value in zip(written.keys, written.values, strict=True):
         if not _literal(value):
             name = _text(key)
-            yield _default_finding(
-                f"**{ast.unparse(value)}" if name is None else name, value, lines
-            )
+            default = f"**{ast.unparse(value)}" if name is None else name
+            yield _default_finding(default, value, source)
 
 
 def _keyword(call: ast.Call, name: str) -> ast.expr | None:
@@ -383,10 +384,10 @@ def _literal(node: ast.expr) -> bool:
     return True
 
 
-def _default_finding(name: str, node: ast.expr, lines: list[str]) -> LintFinding:
+def _default_finding(name: str, node: ast.expr, source: _Source) -> LintFinding:
     explanation = (
         f"the default of {name} is not written as a literal, so the hash holds its name but not "
         "its value, and a default worked out from data when the feature is defined, such as a "
         "quantile of the closes, is a parameter chosen on the full sample; write the value."
     )
-    return _finding(LintRule.NON_LITERAL_DEFAULT, node.lineno, lines, explanation)
+    return source.finding(LintRule.NON_LITERAL_DEFAULT, node.lineno, explanation)

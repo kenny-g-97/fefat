@@ -24,8 +24,8 @@ that a feature that remembers more than its warm-up, such as a running total, fa
 calendar keeps its anchor, the dataset's first whole session, whatever the start (D-45). A start
 the data does not let move, as at the store's first session, checks nothing and fails, as an
 output whose values no cut compares does, so that a warm-up longer than the data passes nothing.
-The lint's findings warn, but one: a feature that reads data itself, which the cuts never cut,
-fails. The random cuts come from `seed`, drawn when it is None, and the report records it with
+The lint reads the feature and the features it reads; its findings warn, but one: data a feature
+reads itself, or holds from outside it, which the cuts never cut, fails. The random cuts come from `seed`, drawn when it is None, and the report records it with
 the numbers of stops and random cuts and the features read, so that a validation repeats (D-11).
 The report is kept beside the feature's versions, the latest of each content hash
 (`fefat.features.versions.validation_file`), for the database of Phase 4.
@@ -35,7 +35,8 @@ says it became available, and bars a later record of their trade date would buil
 level (`BACKLOG.md`); revised data, since it reads one vintage; parameters chosen on the full
 sample, which change no value it compares, though the lint warns of a default not written as a
 literal; a leak in rows or branches its cuts never reach, or in a helper the feature calls, whose
-code the lint does not read; and a memory longer than the declared warm-up but inside the whole
+code the lint does not read; a statistic over the whole frame or a session that the window's data
+settle before every cut, such as a maximum reached early, of which the lint warns; and a memory longer than the declared warm-up but inside the whole
 sessions every computation reads before a window, which the start check reads too (`BACKLOG.md`).
 A feature that passes is prefix-invariant on these data at these cuts, not proven so."""
 
@@ -49,7 +50,7 @@ from fefat.features.cache_evaluation import compare_values, slot_outputs
 from fefat.features.cuts import Cut, cuts_of
 from fefat.features.evaluation import FeatureSpec
 from fefat.features.runtime import FeatureGraph, Grid, InputBars
-from fefat.features.source_lint import lint
+from fefat.features.source_lint import LintFinding, lint
 from fefat.features.validation_report import CutResult, FeatureRead, StartCheck, ValidationReport
 from fefat.features.versions import validation_file
 from fefat.market.api import SeriesSource, parse_trade_date, series_source
@@ -105,7 +106,7 @@ def validate(
         random_cuts=random_cuts,
         cuts=_compared_cuts(graph, inputs, window, cuts, outputs),
         start_check=_start_check(graph, inputs, sources, window, outputs),
-        lint=lint(spec.definition),
+        lint=_graph_lint(graph),
         created_at=datetime.now(UTC),
     )
     write_atomically(validation_file(report.feature, report.hash), json_writer(report))
@@ -146,6 +147,15 @@ def _window(graph: FeatureGraph, inputs: InputBars, dates: tuple[date, date]) ->
             f"so that the start check can move the window's start, got {days}."
         )
     return window
+
+
+def _graph_lint(graph: FeatureGraph) -> tuple[LintFinding, ...]:
+    """The lint's findings in the validated feature's source, then in those of the features it
+    reads, which the cuts evaluate with it: data one of them reads itself is never cut either."""
+    definitions = {
+        node.spec.definition.hash: node.spec.definition for node in reversed(graph.order)
+    }
+    return tuple(finding for definition in definitions.values() for finding in lint(definition))
 
 
 def _graph_of(

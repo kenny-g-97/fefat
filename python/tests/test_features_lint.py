@@ -57,7 +57,9 @@ def test_the_lint_explains_each_way_of_reading_ahead_with_its_line_in_under_a_se
     ]
     assert all(finding.rule.looks_ahead for finding in findings)
     first = findings[0]
-    assert str(first) == (f"line {first.line}: ahead = close.shift(-1): {first.explanation}")
+    assert str(first) == (
+        f"line {first.line} of everything: ahead = close.shift(-1): {first.explanation}"
+    )
     assert "shift(1)" in first.explanation
     assert took < 1.0
 
@@ -147,19 +149,26 @@ def test_the_lint_reads_quantile_bins_peaks_and_a_helper_inside_a_lambda() -> No
     ]
 
 
+fetch = ff.market.load
+
+
 @ff.feature(outputs={"read": "other"})
 def reads_files(bars: pl.LazyFrame) -> pl.LazyFrame:
     daily = ff.market.load("ES", "1d", "2026-02-02", "2026-02-20")
     events = pl.scan_parquet("events.parquet")
+    rolls = ff.market.roll_calendar("ES").rolls().lazy()
+    weekly = fetch("ES", "1d", "2026-02-02", "2026-02-20").select("trade_date", week="close")
     with open("levels.txt") as levels:
         level = float(levels.read())
     joined = bars.join(daily, on="trade_date").join(events, on="trade_date")
+    joined = joined.join(rolls, on="trade_date", how="left").join(weekly, on="trade_date")
     return joined.select("ts_close", read=pl.col("close") * level)
 
 
 def test_a_feature_reading_data_itself_fails_its_validation_where_its_code_reads_it() -> None:
-    # The leakage audit: data a feature loads itself is never cut, so the lint names each read,
-    # the store's, a Polars reader's, and a file's, and a finding of it fails a validation.
+    # The leakage audit, two rounds: data a feature loads itself is never cut, so the lint names
+    # each read, the store's, a Polars reader's, the roll calendar's, a file's, and a reader bound
+    # to another name, and a finding of it fails a validation.
     def line(text: str) -> int:
         (number,) = [n for n, each in enumerate(reads_files.code.splitlines(), 1) if text in each]
         return number
@@ -169,7 +178,10 @@ def test_a_feature_reading_data_itself_fails_its_validation_where_its_code_reads
     assert [(finding.rule, finding.line) for finding in found] == [
         (LintRule.READS_DATA, line("ff.market.load")),
         (LintRule.READS_DATA, line("pl.scan_parquet")),
+        (LintRule.READS_DATA, line("roll_calendar")),
+        (LintRule.READS_DATA, line("fetch(")),
         (LintRule.READS_DATA, line("open(")),
+        (LintRule.READS_DATA, line("levels.read()")),
     ]
     assert all(each.rule.fails_validation and not each.rule.looks_ahead for each in found)
 
