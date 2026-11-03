@@ -100,6 +100,11 @@ def es_age(bars: pl.LazyFrame) -> pl.Expr:
     return pl.col("staleness_ES")
 
 
+@ff.feature(warmup=12, outputs={"upper": "price", "lower": "price"})
+def band(bars: pl.LazyFrame) -> dict[str, pl.Expr]:
+    return {"upper": pl.col("high").rolling_max(12), "lower": pl.col("low").rolling_min(12)}
+
+
 @ff.feature(inputs=[TradesInput()], outputs={"delta": "other"})
 def delta(bars: pl.LazyFrame) -> pl.Expr:
     return pl.col("close")
@@ -449,3 +454,24 @@ def test_cutting_every_input_at_an_instant_leaves_every_earlier_value_as_it_was(
     for cut in [*closes.gather_every(7).to_list(), closes.max()]:
         before = {grid: frame.filter(pl.col("ts_close") <= cut) for grid, frame in inputs.items()}
         assert graph.evaluate(before).equals(whole.filter(pl.col("ts_close") <= cut)), cut
+
+
+def test_a_run_keeps_a_column_for_each_output_of_a_feature_at_each_entry() -> None:
+    # The code review: a slot of a feature of several outputs fills `<slot>_<output>` columns,
+    # which the run's trades carry at entry and its record names, where the slot's name alone
+    # was read and the run could not be saved.
+    store_with("ohlcv-1m")
+    strategy = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"band": band()},
+        long_entry=pl.col("close") >= pl.col("band_upper"),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(ticks=12), sizing=ff.Fixed(1)),
+    )
+
+    run = ff.backtest.run(strategy, "2026-03-06", "2026-03-09")
+
+    assert run.trades.height > 0
+    assert {"band_upper_at_entry", "band_lower_at_entry"} <= set(run.trades.columns)
+    assert run.record.strategy.features == ("band_upper", "band_lower")

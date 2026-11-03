@@ -32,6 +32,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from fractions import Fraction
+from functools import cached_property
 from graphlib import CycleError, TopologicalSorter
 from math import ceil, floor
 from types import MappingProxyType
@@ -85,15 +86,16 @@ class _Node:
     def name(self) -> str:
         return self.spec.definition.name
 
+    @cached_property
     def _key(self) -> tuple[str, str, str]:
         parameters = self.spec.parameters.model_dump_json()
         return (self.spec.definition.hash, parameters, str(self.timeframe))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, _Node) and other._key() == self._key()
+        return isinstance(other, _Node) and other._key == self._key
 
     def __hash__(self) -> int:
-        return hash(self._key())
+        return hash(self._key)
 
 
 def slot_columns(slot: str, spec: FeatureSpec) -> dict[str, str]:
@@ -269,13 +271,18 @@ def compute(
     return whole.filter(pl.col("trade_date") >= first).lazy()
 
 
+def clashing(columns: Sequence[str], reserved: Iterable[str]) -> list[str]:
+    """The `columns` named twice or named as one of the `reserved` columns, sorted."""
+    twice = {column for column in columns if columns.count(column) > 1}
+    return sorted(twice | (set(columns) & set(reserved)))
+
+
 def _require_columns_apart(slots: Mapping[str, FeatureSpec]) -> None:
     """Refuse slots whose columns meet each other's or the bars'."""
     columns = [
         column for slot, spec in slots.items() for column in slot_columns(slot, spec).values()
     ]
-    twice = {column for column in columns if columns.count(column) > 1}
-    taken = sorted(twice | (set(columns) & set(SIGNAL_BAR_COLUMNS)))
+    taken = clashing(columns, SIGNAL_BAR_COLUMNS)
     if taken:
         raise ValueError(
             "Expected the features' columns apart from each other's and from the bars' columns, "

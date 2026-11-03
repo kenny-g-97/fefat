@@ -162,7 +162,7 @@ def run(
         saved = Run.open(folder)
     else:
         cache_paths = inputs.cache_paths(paths)
-        saved = _ran(inputs, cache_paths, tuple(strategy.features), folder, key, frame_hash)
+        saved = _ran(inputs, cache_paths, strategy.feature_columns(), folder, key, frame_hash)
     for warning in saved.record.warnings:
         warnings.warn(warning, UserWarning, stacklevel=2)
     return saved

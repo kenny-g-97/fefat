@@ -143,8 +143,7 @@ def front_contracts(calendar: RollCalendar) -> pl.DataFrame:
     """The contract whose bars a spliced load gives on each trade date (`trade_date` and
     `contract`): the session's front, and on a first session without one, the contract that
     became the front after it, whose rows lead in to its first."""
-    fronts = calendar.rows.select("trade_date", "contract")
-    lead_in = fronts.with_columns(trade_date=pl.col("trade_date").shift(1)).drop_nulls()
+    fronts, lead_in = _fronts_and_lead_in(calendar)
     return pl.concat([fronts, lead_in.join(fronts, on="trade_date", how="anti")])
 
 
@@ -152,14 +151,20 @@ def _fronts_with_their_lead_in(calendar: RollCalendar, contracts: pl.DataFrame) 
     """The sessions and instruments a spliced load grids: each session's front, and each front
     on the session before it took over, so that a new front's rows on its first day start at
     the open when it traded the session before, whatever day a window starts."""
-    fronts = calendar.rows.select("trade_date", "contract")
-    lead_in = fronts.with_columns(trade_date=pl.col("trade_date").shift(1)).drop_nulls()
+    fronts, lead_in = _fronts_and_lead_in(calendar)
     return (
         pl.concat([fronts, lead_in])
         .unique()
         .join(contracts, on="contract")
         .select("trade_date", "instrument_id")
     )
+
+
+def _fronts_and_lead_in(calendar: RollCalendar) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Each session's front (`trade_date` and `contract`), and each front on the session before
+    it took over."""
+    fronts = calendar.rows.select("trade_date", "contract")
+    return fronts, fronts.with_columns(trade_date=pl.col("trade_date").shift(1)).drop_nulls()
 
 
 def _require_fronts_for(bars: pl.DataFrame, calendar: RollCalendar) -> None:

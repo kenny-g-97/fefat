@@ -31,7 +31,7 @@ import polars as pl
 from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator
 
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.runtime import NO_INPUTS, FeatureGraph, InputBars, slot_columns
+from fefat.features.runtime import NO_INPUTS, FeatureGraph, InputBars, clashing, slot_columns
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted, utc_text
 from fefat.market.schema import FrozenModel, Timeframe
@@ -101,8 +101,7 @@ class SignalStrategy(FrozenModel):
         columns = [
             column for name, feature in features.items() for column in _columns(name, feature)
         ]
-        twice = {column for column in columns if columns.count(column) > 1}
-        taken = sorted(twice | (set(columns) & frame_columns))
+        taken = clashing(columns, frame_columns)
         if taken:
             raise ValueError(
                 "Expected feature names apart from the bars' and the signal frame's columns and "

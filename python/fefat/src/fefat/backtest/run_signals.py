@@ -19,14 +19,14 @@ from fefat.strategy.signal_strategy import SignalStrategy
 
 @dataclass(frozen=True)
 class SignalFrame:
-    """A run's signal frame on its window, the warnings its loads raised, and `warmup_from`, the
-    trade date its features' warm-up reaches back to from the frame's first trade date, that
-    date itself without a warm-up, so that the data a run reads keys it whatever start it was
-    given before its first bar."""
+    """A run's signal frame on its window, the warnings its loads raised, and `first_read`, the
+    first trade date of the bars it read, its window's first or the first its features' warm-up
+    reached, so that the snapshots pin what it read whatever start it was given before its first
+    bar."""
 
     signals: pl.DataFrame
     warnings: tuple[str, ...]
-    warmup_from: date
+    first_read: date
 
 
 def signal_frame(
@@ -44,14 +44,11 @@ def signal_frame(
     first = graph.lead_in(sessions, start)
     bars, inputs, loaded = _bars(strategy, graph, (first, end), provider, contract)
     signals = strategy.signals(bars, inputs, start=start).collect()
-    if signals.is_empty():
+    first_read = bars.get_column("trade_date").min()
+    if signals.is_empty() or not isinstance(first_read, date):
         named = strategy.instrument if contract is None else contract
         raise ValueError(f"Expected bars of {named} from {start} to {end} in the store, got none.")
-    first_traded = signals.get_column("trade_date").min()
-    if not isinstance(first_traded, date):
-        raise ValueError(f"Expected the trade dates of the signal frame, got {first_traded!r}.")
-    warmup_from = graph.lead_in(sessions, first_traded)
-    return SignalFrame(signals=signals, warnings=loaded, warmup_from=warmup_from)
+    return SignalFrame(signals=signals, warnings=loaded, first_read=first_read)
 
 
 def _bars(

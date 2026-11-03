@@ -157,7 +157,7 @@ def run_inputs(
     spec = strategy.to_spec()
     require_named_columns(spec.execution, signals.columns)
     window = _window(signals)
-    snapshots = _snapshots(market, produced.warmup_from, window)
+    snapshots = _snapshots(market, produced.first_read, window)
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)
     engine_config = _engine_config(market, applied, signals, snapshots, window, rolls)
@@ -242,7 +242,14 @@ def _signal_bar_eras(
     timeframe = Timeframe.parse(strategy.timeframe)
     contracts = signals.select("trade_date", "contract").unique()
     dates = (window.start, window.end)
-    return signal_bar_eras(market.store, held, timeframe, dates, contracts)
+    eras = signal_bar_eras(market.store, held, timeframe, dates, contracts)
+    if not eras:
+        named = ", ".join(contracts.get_column("contract").unique().sort())
+        raise ValueError(
+            f"Expected trades or bars of {named} on a trade date from {window.start} to "
+            f"{window.end}, got none: the window holds the empty buckets after the data before it."
+        )
+    return eras
 
 
 def _window(signals: pl.DataFrame) -> Window:
@@ -254,9 +261,8 @@ def _window(signals: pl.DataFrame) -> Window:
 
 def _snapshots(market: _Market, first: date, window: Window) -> tuple[Snapshot, ...]:
     """A snapshot of each dataset of the provider to the window's end from the session before
-    `first`, the window's start or where its features' warm-up reaches back to, which `load`
-    reads from, and of a perpetual's funding; a dataset without a partition in that range is not
-    read."""
+    `first`, the first trade date of the bars the run read, which `load` reads from, and of a
+    perpetual's funding; a dataset without a partition in that range is not read."""
     lead_in = market.sessions.preceding(first).trade_date
     datasets = list(market.datasets)
     if market.instrument.kind is InstrumentKind.PERPETUAL:
