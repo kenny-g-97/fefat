@@ -72,7 +72,7 @@ def _decorated(name: str, code: str) -> tuple[str, dict[str | None, ast.expr]]:
     decorators; a feature made without it, or whose declarations it unpacks from a mapping, is
     refused."""
     statement = ast.parse(code).body[0]
-    call = _feature_call(statement)
+    call = feature_call(statement)
     if call is None or not isinstance(statement, ast.FunctionDef):
         raise ValueError(
             f"Expected feature {name} defined with def under its decorator, @ff.feature(...), "
@@ -86,7 +86,7 @@ def _decorated(name: str, code: str) -> tuple[str, dict[str | None, ast.expr]]:
     return statement.name, {keyword.arg: keyword.value for keyword in call.keywords}
 
 
-def _feature_call(statement: ast.stmt) -> ast.Call | None:
+def feature_call(statement: ast.stmt) -> ast.Call | None:
     """The `@feature(...)` call among a function's decorators, or None."""
     if not isinstance(statement, ast.FunctionDef):
         return None
