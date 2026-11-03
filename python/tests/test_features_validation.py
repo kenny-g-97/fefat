@@ -165,6 +165,15 @@ def test_a_validation_is_kept_beside_the_versions_by_its_hash() -> None:
     assert ff.features.load("previous_close", saved.version).hash == report.hash
 
 
+def test_a_cut_where_the_store_ends_removes_nothing_and_is_left_out() -> None:
+    # The store ends at the close of 2026-02-20: the cuts at and after that close remove nothing,
+    # so the report lists none of them, and every cut it lists fails a feature reading ahead.
+    report = ff.features.validate(next_close(), "ES", "1m", "2026-02-18", "2026-02-20", seed=SEED)
+
+    assert max(cut.instant for cut in report.cuts) < instant_nanoseconds("2026-02-20T22:00:00Z")
+    assert report.failing_cuts() == report.cuts
+
+
 def test_a_window_of_one_trade_date_is_refused() -> None:
     with pytest.raises(ValueError, match="Expected bars of ES on two trade dates"):
         ff.features.validate(previous_close(), "ES", "1m", "2026-02-11", "2026-02-11")

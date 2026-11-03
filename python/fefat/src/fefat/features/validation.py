@@ -10,8 +10,9 @@ and `validate` checks it on the data, beside the lint's reading of its source
 
 `validate` loads the bars of every grid the feature reads once, from the warm-up before the
 window's first trade date to one session past its last, as `compute` reads them, and evaluates the
-feature on them whole. It then cuts every input at each instant `fefat.features.cuts` gives, a bar
-kept while its `ts_close` is at or before the cut, so that a bar in progress at the cut, of the
+feature on them whole. It then cuts every input at each instant `fefat.features.cuts` gives, but
+one past the end of every input, which removes nothing, a bar kept while its `ts_close` is at or
+before the cut, so that a bar in progress at the cut, of the
 signal bars or of a higher timeframe the feature reads, is held back as `load` holds back a bar
 closing after the end of its data (D-43), and evaluates the feature on what is left. The values
 of the window's rows before each cut must be the whole range's: integers and Booleans exactly,
@@ -288,13 +289,17 @@ def _compared_cuts(
 ) -> tuple[CutResult, ...]:
     """Each cut compared: every input cut at it, the feature evaluated on what is left, once for
     cuts that leave the same bars, and its values on the window's rows before the cut compared
-    with the whole range's."""
+    with the whole range's; a cut after every input's last bar, where the store ends, removes
+    nothing and is left out."""
     closes = [frame.get_column("ts_close") for frame in inputs.values()]
+    whole = tuple(each.len() for each in closes)
     kept: tuple[int, ...] = ()
     values = window
     compared = []
     for cut in cuts:
         rows = tuple(int(each.search_sorted(cut.instant, side="right")) for each in closes)
+        if rows == whole:
+            continue
         if rows != kept:
             kept = rows
             heads = zip(inputs.items(), rows, strict=True)
