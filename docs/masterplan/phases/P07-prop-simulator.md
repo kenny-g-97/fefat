@@ -6,7 +6,7 @@
 
 **Depends on.** Phase 6 in the written order. Steps 7.1–7.8 and 7.12 need only the SDK and the run artifacts from Phase 2, including the trade paths every run stores since step 2.13; 7.9–7.11 and 7.13 need the app (Phase 6). If you move this phase earlier at a kickoff, amend 7.1's `Depends on` line.
 
-**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `frontend-design` with `web/DESIGN.md` for 7.9–7.11 and 7.13.
+**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `frontend-design` and `unslop` with `web/DESIGN.md` for 7.9–7.11 and 7.13.
 
 **Open decisions for the kickoff.** The first three plans to encode (suggested: Topstep Trading Combine → XFA, My Funded Futures Rapid or Pro, Tradeify Growth or Select); the bankroll and horizon defaults; whether you trade micros or minis in evaluations; which other platforms' trade logs to import first (for example NinjaTrader, Sierra Chart, TradeStation, or TradingView strategy-tester exports).
 

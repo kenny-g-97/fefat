@@ -6,7 +6,7 @@
 
 **Depends on.** Phase 10 in the written order. If you move this phase earlier at a kickoff: 11.1–11.4 need only Phase 5; 11.5 needs the prop simulator (P7); 11.7 needs the agent (P8); event-strategy sweeps in 11.1 need P9 — amend the `Depends on` lines accordingly.
 
-**Skills.** `backtest-expert` for every step — this phase is the skill's methodology made into tools (plateaus over peaks, walk-forward, stress, trial counting); `frontend-design` with `web/DESIGN.md` for the pages.
+**Skills.** `backtest-expert` for every step — this phase is the skill's methodology made into tools (plateaus over peaks, walk-forward, stress, trial counting); `frontend-design` and `unslop` with `web/DESIGN.md` for the pages.
 
 **Open decisions for the kickoff.** The locked holdout period (the latest 12 months is natural and matches the tick-fidelity year); the default study budget (time) before confirmation; which strategy to use as the running example.
 

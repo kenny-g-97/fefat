@@ -160,6 +160,7 @@ def skills_for(step_id: str) -> list[str]:
 def test_engine_steps_load_the_backtest_skill_and_ui_steps_the_frontend_skill() -> None:
     assert "backtest-expert" in skills_for("2.6")
     assert "frontend-design:frontend-design" in skills_for("5.9")
+    assert "unslop" in skills_for("5.9")
     assert skills_for("0.5") == ["software-design-principles"]
 
 
