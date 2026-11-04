@@ -10,7 +10,7 @@ their order, and a feature of several outputs fills a column for each, `<slot>_<
 | Indicator | Call, with its defaults | Outputs (kind) | Warm-up in bars | TA-Lib |
 | --- | --- | --- | --- | --- |
 | Simple moving average | `sma(n=20)` | `sma` (price) | n - 1 | SMA |
-| Exponential moving average | `ema(n=20)` | `ema` (price) | 25 n | EMA |
+| Exponential moving average | `ema(n=20)` | `ema` (price) | 13 n | EMA |
 | Weighted moving average | `wma(n=20)` | `wma` (price) | n - 1 | WMA |
 | MACD | `macd(fast=12, slow=26, signal=9)` | `macd`, `signal`, `histogram` (price_distance) | 25 times the longest | MACD |
 | Relative strength index | `rsi(n=14)` | `rsi` (ratio, 0 to 100) | 25 n | RSI |
@@ -25,14 +25,16 @@ their order, and a feature of several outputs fills a column for each, `<slot>_<
 | Z-score | `z_score(n=20)` | `z_score` (ratio) | n - 1 | (close - SMA) / STDDEV |
 | Bollinger bands | `bollinger(n=20, deviations=2.0)` | `middle`, `upper`, `lower` (price), `band_width`, `percent_b` (ratio) | n - 1 | BBANDS |
 | Donchian channels | `donchian(n=20)` | `upper`, `lower`, `middle` (price) | n - 1 | MAX, MIN |
-| Keltner channels | `keltner(n=20, atr_n=10, multiplier=2.0)` | `middle`, `upper`, `lower` (price) | 25 times the longest | EMA and ATR |
+| Keltner channels | `keltner(n=20, atr_n=10, multiplier=2.0)` | `middle`, `upper`, `lower` (price) | 13 n or 25 atr_n, the longer | EMA and ATR |
 
 TA-Lib's seeding is reproduced exactly: an exponential average starts from the simple average of
 its first values, as EMA, MACD, RSI, ATR, ADX, and Keltner's do, where Polars' `ewm_mean` would
 start from the first value alone, and every output is null until TA-Lib's first value. An
-exponential average never forgets those first bars, so its warm-up is 25 times its period, after
-which they weigh less than 4e-11, and ADX's, smoothed twice, 50 times; values from any start then
-agree within the 1e-9 the feature cache and the leak detector allow (D-73, D-74). Where TA-Lib
+exponential average never forgets those first bars, so its warm-up is the bars after which they
+weigh less than 4e-11: 25 times the period of Wilder's averages, in RSI and ATR, 13 times an
+EMA's, which forgets twice as fast, 25 times MACD's longest, whose difference of two averages
+magnifies what they keep, and 50 times ADX's, smoothed twice. Values from any start then agree
+within the 1e-9 the feature cache and the leak detector allow (D-73, D-74). Where TA-Lib
 divides by zero, as the RSI of closes that have not moved, the stochastic of a flat range, or the
 rate of change after a close of zero, it gives 0 or 50 and these give null, as do the
 stochastic's averages over such a bar, while ADX skips one, as TA-Lib's does. `round_down_to_tick`

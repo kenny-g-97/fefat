@@ -59,7 +59,7 @@ def donchian(bars: pl.LazyFrame, n: BarCount) -> dict[str, pl.Expr]:
 
 @feature(
     params={"n": 20, "atr_n": 10, "multiplier": 2.0},
-    warmup=lambda n, atr_n: 25 * max(n, atr_n),
+    warmup=lambda n, atr_n: max(13 * n, 25 * atr_n),
     outputs={"middle": "price", "upper": "price", "lower": "price"},
 )
 def keltner(

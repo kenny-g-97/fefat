@@ -13,7 +13,7 @@ def sma(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     return pl.col("close").rolling_mean(n)
 
 
-@feature(params={"n": 20}, warmup=lambda n: 25 * n, outputs={"ema": "price"})
+@feature(params={"n": 20}, warmup=lambda n: 13 * n, outputs={"ema": "price"})
 def ema(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     """The exponential moving average of the closes, TA-Lib's EMA: seeded with the simple
     average of the first `n` closes, then each close weighing 2 / (n + 1) against it."""

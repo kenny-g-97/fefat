@@ -148,6 +148,19 @@ def test_a_root_saved_in_the_data_folder_rounds_to_its_own_tick() -> None:
     assert rounded.row(0) == (4_500_200_000_000, 4_500_300_000_000)
 
 
+def test_a_price_below_zero_rounds_down_away_from_zero_and_up_toward_it() -> None:
+    # The ponytail review: crude oil traded below zero in April 2020, where rounding toward
+    # zero would put a short's stop on the wrong side of the price asked.
+    price = pl.lit(-37_631_000_000.0)
+
+    rounded = pl.select(
+        down=ff.indicators.round_down_to_tick(price, "CL"),
+        up=ff.indicators.round_up_to_tick(price, "CL"),
+    )
+
+    assert rounded.row(0) == (-37_640_000_000, -37_630_000_000)
+
+
 FLAT = pl.DataFrame(
     {
         "ts_close": range(1, 101),

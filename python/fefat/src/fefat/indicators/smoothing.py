@@ -1,8 +1,9 @@
 """The exponential average of the indicators (step 3.5), seeded where TA-Lib seeds it. It
-remembers its first bars, a little less with each bar, so an indicator built on one declares 25
-times its period as its warm-up, after which those bars weigh less than 4e-11, well inside the
-1e-9 within which the feature cache and the leak detector take two evaluations as equal (D-73,
-D-74, D-75)."""
+remembers its first bars, a little less with each bar, so an indicator built on one declares as
+its warm-up the bars after which they weigh less than 4e-11, well inside the 1e-9 within which
+the feature cache and the leak detector take two evaluations as equal (D-73, D-74, D-75): 25
+times its period for Wilder's average, which weighs each bar 1 / n, and 13 times for an EMA,
+which weighs it 2 / (n + 1) and so forgets twice as fast."""
 
 import polars as pl
 
