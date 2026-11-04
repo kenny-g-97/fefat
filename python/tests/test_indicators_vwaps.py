@@ -10,10 +10,13 @@ import polars as pl
 import pytest
 
 import fefat as ff
+from fefat.features.runtime import FeatureGraph
+from fefat.market.schema import Timeframe
 from session_bars import bar, flagged_sessions, frame, traded, values_of
 
 POINT, TICK = 1_000_000_000, 250_000_000
 FRIDAY, MONDAY = date(2026, 3, 6), date(2026, 3, 9)
+FIVE = Timeframe.parse("5m")
 
 
 def test_the_session_vwap_weighs_each_bars_vwap_or_typical_price_and_resets_each_session() -> None:
@@ -95,6 +98,7 @@ def test_the_distance_from_the_vwap_counts_atrs_and_the_instruments_ticks() -> N
     read = pl.DataFrame(
         {
             "ts_close": [1, 2],
+            "contract": ["ESH2026", "ESM2026"],
             "close": [5_000 * POINT + 2 * TICK, 4_999 * POINT],
             "session_vwap": [5_000.0 * POINT, 5_000.0 * POINT],
             "atr": [2.0 * POINT, 0.0],
@@ -104,3 +108,22 @@ def test_the_distance_from_the_vwap_counts_atrs_and_the_instruments_ticks() -> N
     distance = ff.indicators.distance_from_vwap("ES").outputs_over(read).collect()
 
     assert distance.select("atrs", "ticks").rows() == [(0.25, 2.0), (None, -4.0)]
+    expected = "Expected the bars of MES, whose tick the distance counts in, got contract ESH2026."
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        ff.indicators.distance_from_vwap("MES").outputs_over(read)
+
+
+def test_an_anchor_the_clock_skips_on_a_trade_date_is_refused_naming_the_feature() -> None:
+    # A calendar trading on Sundays, as bitcoin's does, meets Chicago's clock change of
+    # 2026-03-08, which skips 02:30 there: F-TIM-05 refuses such a local time.
+    bars = frame(traded(date(2026, 3, 7), "08:00", 10), traded(date(2026, 3, 8), "08:00", 11))
+    graph = FeatureGraph.of(
+        {"cash_vwap": ff.indicators.session_vwap(anchor="02:30")}, "BTCUSDT-PERP", FIVE
+    )
+    expected = (
+        "Expected feature session_vwap to evaluate over the bars of BTCUSDT-PERP 5m, got: datetime "
+        "'2026-03-08 02:30:00' is non-existent in time zone 'America/Chicago'"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        graph.evaluate({graph.signal_grid: bars})

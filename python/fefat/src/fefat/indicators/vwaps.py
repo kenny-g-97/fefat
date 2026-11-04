@@ -69,5 +69,18 @@ def distance_from_vwap(bars: pl.LazyFrame, instrument: str) -> dict[str, pl.Expr
     distance = pl.col("close") - pl.col("session_vwap")
     return {
         "atrs": pl.when(pl.col("atr") > 0).then(distance / pl.col("atr")),
-        "ticks": distance / instrument_tick(instrument),
+        "ticks": distance / _tick_of(bars, instrument),
     }
+
+
+def _tick_of(bars: pl.LazyFrame, instrument: str) -> int:
+    """The tick of the root `instrument`, refused unless each contract of `bars` is one of it,
+    whose name starts with its root, as `ESM2026` does, or is it, as a perpetual's does."""
+    contracts = bars.select(pl.col("contract").unique()).collect().get_column("contract")
+    foreign = contracts.filter(~contracts.str.starts_with(instrument)).sort()
+    if not foreign.is_empty():
+        raise ValueError(
+            f"Expected the bars of {instrument}, whose tick the distance counts in, got contract "
+            f"{foreign.item(0)}."
+        )
+    return instrument_tick(instrument)

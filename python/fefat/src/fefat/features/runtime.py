@@ -311,7 +311,14 @@ class FeatureGraph:
             if isinstance(declared, TradesInput):
                 prints = _bars_of(inputs, PrintsGrid(self.root, node.timeframe), node.name)
                 frame = with_side_volumes(frame, prints, node.name)
-        outputs = node.spec.outputs_over(frame).collect()
+        try:
+            outputs = node.spec.outputs_over(frame).collect()
+        except pl.exceptions.PolarsError as error:
+            grid = Grid(self.root, node.timeframe).described
+            raise ValueError(
+                f"Expected feature {node.name} to evaluate over the {grid}, got: "
+                f"{str(error).splitlines()[0]}"
+            ) from error
         first = self._first_warm_row(node, bars, [warm_from[each] for each in self.reads[node]])
         warm = pl.int_range(pl.len()) >= first
         masked = outputs.with_columns(
