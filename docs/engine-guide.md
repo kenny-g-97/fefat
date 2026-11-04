@@ -61,7 +61,7 @@ report.first_failure()  # the first cut that changed a value, with the row and b
 print(report.summary())
 ```
 
-It loads the bars the feature reads once, from its warm-up before the window to one session past it, and computes the feature over them. Then it cuts every input at many instants and computes the feature again on what is left: a bar is kept while it has closed by the cut, so a bar still in progress, of the signal bars or of a higher timeframe the feature reads, is left out, as a load holds back a bar the data has not finished. The cuts fall at each session's close or a holiday's halt, a nanosecond after it, inside the break or over the weekend, a nanosecond before the next open and at it, at a roll's open and the new front's first bar, inside a higher timeframe's bar and at its close, and at bars drawn from a seed the report records, so that a validation repeats. Every cut lies at or after the close of the window's first session, and one past the end of every input, which removes nothing, is left out.
+It loads the bars the feature reads once, from its warm-up before the window to one session past it, and computes the feature over them. Then it cuts every input at many instants and computes the feature again on what is left: a bar is kept while it has closed by the cut, so a bar still in progress, of the signal bars or of a higher timeframe the feature reads, is left out, as a load holds back a bar the data has not finished. The prints a feature reads by side are cut the same way, a bucket's kept while it has closed by the cut. The cuts fall at each session's close or a holiday's halt, a nanosecond after it, inside the break or over the weekend, a nanosecond before the next open and at it, at a roll's open and the new front's first bar, inside a higher timeframe's bar and at its close, and at bars drawn from a seed the report records, so that a validation repeats. Every cut lies at or after the close of the window's first session, and one past the end of every input, which removes nothing, is left out.
 
 - **The cuts.** The window's values before each cut must be the whole range's: integers and Booleans exactly, and floats within 1e-9 of the output's largest magnitude among the rows compared, since averages computed over different lengths can differ in their last digits. Each cut counts the values it compared. A cut before an output's first value, early in a window or before a level set on rare bars only, compares none and decides nothing alone, but an output that no cut compares a value of fails the report: a warm-up longer than the data passes nothing.
 - **The start check.** The detector computes the window again from the warm-up before its middle trade date and requires the same values from that date on. A feature that remembers more than its declared warm-up, such as a running total or a slow average, fails it. The roll calendar keeps its anchor, so the prices are the same from either start. Where the data does not let the start move, as at the store's first session, the check fails: validate a window with more data before its middle.
@@ -105,6 +105,30 @@ stop_price=ff.indicators.round_down_to_tick(pl.col("low") - pl.col("atr") / 2, "
 - **Keltner channels** are the EMA of the closes with channels of ATRs, as charts draw them today.
 
 The tests compare every indicator with TA-Lib on a random walk and on the fixtures, and every indicator passes the leak detector.
+
+### The session's indicators
+
+These read the trading session: `session_vwap`, `weekly_vwap`, `vwap_since`, and `distance_from_vwap`; `opening_range`, `previous_session`, `session_high_low`, `time_since_open`, and `bars_since`; `relative_volume` and `cumulative_delta`; `realised_volatility`; and `swings`. `help(ff.indicators)` lists each with its parameters, outputs, and warm-up.
+
+```python
+features={
+    "vwap": ff.indicators.session_vwap(),
+    "cash_vwap": ff.indicators.session_vwap(anchor="08:30"),
+    "opening": ff.indicators.opening_range(minutes=30, anchor="08:30"),
+    "before": ff.indicators.previous_session(),
+}
+```
+
+- **Where a session starts.** By default an indicator starts at the session's open, the open every trade date and bar take: 17:00 Chicago the evening before, for CME's equity index. `anchor="08:30"` starts it at a local time of day instead, in the `time_zone` you give, `America/Chicago` by default, on the trade date's own day, as the execution template reads a time. A time of the evening falls after that day's close, so start an evening session at its open, the default.
+- **What a session is.** A session is its trade date's bars on the grid, which leaves halts out, and the session before is the trade date before it in the calendar: Friday's for the Tuesday after Presidents' Day. A bar without trades holds the close before it, which no trade in it made, so the VWAPs weigh it at nothing and the levels leave it out.
+- **The VWAPs** weigh each bar's own vwap by its volume, or its typical price, the mean of its high, low, and close, where your data has no vwap, as imported 1-minute bars have none. `vwap_since(flag)` starts at the last bar a Boolean column of the bars flags, such as `roll_flag`, and forgets it after the sessions you give.
+- **The opening range** is the high and low of the bars that traded wholly inside its window. It appears on the first bar opening once the window has closed, never inside it.
+- **Relative volume** is a bar's volume against the mean volume at the same local time of day over the sessions before it, never its own or a later one.
+- **Cumulative delta** is the volume bought less the volume sold by aggressors, in each bar and in the session so far. It reads your prints' aggressor sides through the trades input: each bucket's volume bought, sold, and of no side, available at the bucket's close, as a bar is. Prints of no side, such as an opening auction's, are left out. A session whose prints carry no side, as IBKR's do, has no delta at all, never zero, and neither has a trade date without prints. With bars alone it is empty.
+- **Swings.** A bar's high is a swing high when it stands above the `n` highs before it and the `n` after it, which only the `n`-th bar after it can show. The swing is flagged on that bar, with its price, and no later bar takes it back.
+- **Realised volatility** is the square root of the summed squared log returns of the last `n` closes, not annualised.
+
+Some indicators remember whole sessions: the session before, the week so far, relative volume. They declare a warm-up in sessions, `warmup_sessions`, beside their warm-up in bars, and FEFAT reads that many sessions before your window on any timeframe. A feature of your own does the same: `@ff.feature(warmup_sessions=1, ...)`. Its values count from where the features it reads have their first values: its whole sessions first, then its bars.
 
 ## The execution template
 
