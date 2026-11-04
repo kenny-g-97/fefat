@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import FunctionType, MappingProxyType
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, create_model
 
 from fefat.features.declarations import (
     INPUT_KINDS,
@@ -51,6 +51,13 @@ from fefat.features.declarations import (
 from fefat.features.evaluation import FeatureSpec
 from fefat.features.inputs import DeclaredInput, FeatureInput, OutputKind
 from fefat.market.api import SIGNAL_BAR_COLUMNS
+from fefat.market.calendar import counted
+
+BarCount = typing.Annotated[int, Field(ge=1)]
+"""A number of bars, at least one, as a moving average's or a range's."""
+TwoOrMoreBars = typing.Annotated[int, Field(ge=2)]
+"""A number of bars, at least two, as a standard deviation's or a directional index's, which a
+single bar leaves without a value."""
 
 _RESERVED_OUTPUTS = frozenset({"ts_close", "warmup", *SIGNAL_BAR_COLUMNS})
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
@@ -85,14 +92,35 @@ class FeatureDef:
         """The JSON schema of the feature's parameters: their types and defaults."""
         return self.parameter_model.model_json_schema()
 
-    def __call__(self, **parameters: object) -> FeatureSpec:
-        """The feature with `parameters`, the defaults filling those left out, validated
-        strictly: `rsi(n="14")` is refused, never read as 14."""
+    def __call__(self, *values: object, **parameters: object) -> FeatureSpec:
+        """The feature with its parameters, given in their order as `values`, such as
+        `atr(14)`, or by name, the defaults filling those left out, validated strictly:
+        `rsi(n="14")` is refused, never read as 14."""
         try:
-            bound = self.parameter_model(**parameters)
+            bound = self.parameter_model(**self._named(values, parameters))
         except ValidationError as error:
             raise ValueError(self._refusal(error)) from error
         return FeatureSpec(definition=self, parameters=bound, warmup=self._warmup_bars(bound))
+
+    def _named(
+        self, values: tuple[object, ...], parameters: dict[str, object]
+    ) -> dict[str, object]:
+        """The parameters given in their order, `values`, by name, beside those given by name."""
+        names = list(self.parameter_model.model_fields)
+        if len(values) > len(names):
+            raise ValueError(
+                f"Expected at most {counted(len(names), 'parameter')} of feature {self.name} in "
+                f"its order ({', '.join(names)}), got {len(values)}: "
+                f"{', '.join(map(repr, values))}."
+            )
+        in_order = dict(zip(names, values, strict=False))
+        twice = sorted(set(in_order) & set(parameters))
+        if twice:
+            raise ValueError(
+                f"Expected each parameter of feature {self.name} once, got {', '.join(twice)} in "
+                "its order and by name."
+            )
+        return {**in_order, **parameters}
 
     def _refusal(self, error: ValidationError) -> str:
         """The first problem of `error` in words: the parameters expected, what came, and why."""

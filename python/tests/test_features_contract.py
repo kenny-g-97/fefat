@@ -310,6 +310,35 @@ def test_calling_a_feature_binds_its_parameters_and_their_warmup() -> None:
     assert gap(n=7).warmup == 7
 
 
+def test_parameters_may_be_given_in_their_order_as_the_indicators_are_written() -> None:
+    # Step 3.5: `ff.indicators.atr(14)`, as 02 section 5 and the step write it, is atr(n=14).
+    gap = features_of_cell(GAP)["gap"]
+
+    assert gap(7) == gap(n=7)
+    assert gap(7).warmup == 7
+    assert dict(features_of_cell(CHANNEL)["channel"](4).parameters) == {"n": 4}
+
+
+@pytest.mark.parametrize(
+    ("values", "parameters", "refusal"),
+    [
+        ((5, 6), {}, "Expected at most 1 parameter of feature gap in its order (n), got 2: 5, 6."),
+        (
+            (5,),
+            {"n": 6},
+            "Expected each parameter of feature gap once, got n in its order and by name.",
+        ),
+    ],
+)
+def test_more_values_than_parameters_or_a_parameter_given_twice_is_refused(
+    values: tuple[object, ...], parameters: dict[str, object], refusal: str
+) -> None:
+    gap = features_of_cell(GAP)["gap"]
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        gap(*values, **parameters)
+
+
 @pytest.mark.parametrize(
     ("parameters", "refusal"),
     [
