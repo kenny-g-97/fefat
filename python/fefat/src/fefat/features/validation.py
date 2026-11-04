@@ -14,7 +14,11 @@ feature on them whole. It then cuts every input at each instant `fefat.features.
 one past the end of every input, which removes nothing, a bar kept while its `ts_close` is at or
 before the cut, so that a bar in progress at the cut, of the signal bars or of a higher timeframe
 the feature reads, is held back as `load` holds back a bar closing after the end of its data
-(D-43), and evaluates the feature on what is left. The values of the window's rows before each cut
+(D-43), and evaluates the feature on what is left. The trades input is cut alike, a bucket's prints
+by side kept while its `ts_close` is at or before the cut (step 3.6): cutting the prints at their
+`ts_recv` and building the buckets again holds a bucket in progress back, as the bar's, so both
+keep the same buckets, and the five instants around a stop differ only by prints received in the
+break, which lie in no bucket of the grid (`fefat.market.aggressor`). The values of the window's rows before each cut
 must be the whole range's: integers and Booleans exactly, floats within 1e-9 of the output's
 largest finite magnitude among the rows compared, nulls alike
 (`fefat.features.cache_evaluation.compare_values`). The start check evaluates the feature again
@@ -49,7 +53,7 @@ import polars as pl
 from fefat.features.cache_evaluation import compare_values, slot_outputs
 from fefat.features.cuts import Cut, cuts_of
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.runtime import FeatureGraph, Grid, InputBars
+from fefat.features.runtime import FeatureGraph, Grid, InputBars, PrintsGrid
 from fefat.features.source_lint import LintFinding, lint
 from fefat.features.validation_report import CutResult, FeatureRead, StartCheck, ValidationReport
 from fefat.features.versions import validation_file
@@ -177,14 +181,15 @@ def _sources_of(graph: FeatureGraph, provider: str | None) -> dict[str, SeriesSo
 def _loaded(
     graph: FeatureGraph, sources: Mapping[str, SeriesSource], dates: tuple[date, date]
 ) -> dict[Grid, pl.DataFrame]:
-    """The bars of every grid the graph reads for the window `dates`, each read once; a grid
-    without bars there is refused, as `load` refuses one."""
+    """The frame of every grid the graph reads for the window `dates`, each read once: its bars,
+    a grid without bars there refused, as `load` refuses one, or its prints by side, none where
+    the provider holds no prints, which the feature reads as null."""
     loaded = {}
     for grid in graph.grids():
         source = sources[grid.root]
         read = graph.grid_dates(grid, dates, source.sessions)
-        bars = source.signal_bars(grid.timeframe, read)
-        if bars.is_empty():
+        bars = grid.frame_from(source, read)
+        if bars.is_empty() and not isinstance(grid, PrintsGrid):
             raise ValueError(
                 f"Expected bars of {grid} from {read[0]} to {read[1]} in the store, got none."
             )
@@ -199,7 +204,9 @@ def _higher_timeframes(graph: FeatureGraph, inputs: InputBars) -> list[pl.DataFr
     return [
         frame.select("trade_date", "ts_close")
         for grid, frame in inputs.items()
-        if grid.root == graph.root and grid.timeframe.nominal_seconds() > seconds
+        if grid.root == graph.root
+        and not isinstance(grid, PrintsGrid)
+        and grid.timeframe.nominal_seconds() > seconds
     ]
 
 

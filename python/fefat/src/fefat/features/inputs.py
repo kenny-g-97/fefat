@@ -83,8 +83,9 @@ class DatasetInput(FrozenModel):
 
 
 class TradesInput(FrozenModel):
-    """The instrument's prints of each bucket of the feature's bars, aggregated and available at
-    the bucket's close, reserved for step 3.6, which builds it for cumulative delta."""
+    """The instrument's prints of each bucket of the feature's bars by aggressor side, available
+    at the bucket's close, as `buy_volume`, `sell_volume`, and `unknown_side_volume`, null where
+    no prints are in hand (step 3.6, `fefat.market.aggressor`), as cumulative delta reads them."""
 
     kind: Literal["trades"] = "trades"
 

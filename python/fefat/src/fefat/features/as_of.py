@@ -1,13 +1,15 @@
 """The joins that give a feature its inputs (`fefat.features.runtime`, step 3.2): each input as of
 each row's close, backward on `ts_close`, so a row sees a bar from its close on and never while
 it is in progress, and nothing before an input's first bar (D-12); another instrument's bars
-held, as the reader's own are, to one series of raw prices (D-09, D-49)."""
+held, as the reader's own are, to one series of raw prices (D-09, D-49); and the prints of each
+bucket by side on the row of that bucket, available at its close as its bar is (step 3.6)."""
 
 from collections.abc import Sequence
 
 import polars as pl
 
 from fefat.features.evaluation import require_one_series_of_raw_prices
+from fefat.market.aggressor import VOLUME_COLUMNS
 
 
 def with_feature(frame: pl.DataFrame, values: pl.DataFrame, reader: str) -> pl.DataFrame:
@@ -31,6 +33,16 @@ def with_instrument(
     _require_apart(frame, [*suffixed.columns, staleness], reader)
     joined = frame.join_asof(suffixed, left_on="ts_close", right_on=closed, strategy="backward")
     return joined.with_columns((pl.col("ts_close") - pl.col(closed)).alias(staleness))
+
+
+def with_side_volumes(frame: pl.DataFrame, volumes: pl.DataFrame, reader: str) -> pl.DataFrame:
+    """`frame` with the volume bought, sold, and of no known side of the prints of each row's
+    bucket, which the feature `reader` reads (`fefat.market.aggressor`): the bucket of the same
+    close on the same grid, null where none is in hand, on a trade date without prints or in a
+    bucket held back."""
+    _require_apart(frame, VOLUME_COLUMNS, reader)
+    by_close = volumes.select("ts_close", *VOLUME_COLUMNS)
+    return frame.join(by_close, on="ts_close", how="left", maintain_order="left")
 
 
 def _require_apart(frame: pl.DataFrame, columns: Sequence[str], reader: str) -> None:

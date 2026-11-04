@@ -21,9 +21,9 @@ from fefat.features import (
     TradesInput,
 )
 from fefat.features.examples import atr, rsi
-from fefat.features.runtime import FeatureGraph, Grid, load_inputs
+from fefat.features.runtime import FeatureGraph, Grid, PrintsGrid, load_inputs
 from fefat.market import instruments
-from fefat.market.api import SIGNAL_BAR_COLUMNS
+from fefat.market.api import SIGNAL_BAR_COLUMNS, series_source
 from fefat.market.calendar import sessions_of
 from fefat.market.schema import Timeframe
 from notebook_runs import store_with
@@ -105,9 +105,9 @@ def band(bars: pl.LazyFrame) -> dict[str, pl.Expr]:
     return {"upper": pl.col("high").rolling_max(12), "lower": pl.col("low").rolling_min(12)}
 
 
-@ff.feature(inputs=[TradesInput()], outputs={"delta": "other"})
+@ff.feature(inputs=[TradesInput()], outputs={"delta": "count"})
 def delta(bars: pl.LazyFrame) -> pl.Expr:
-    return pl.col("close")
+    return pl.col("buy_volume") - pl.col("sell_volume")
 
 
 @ff.feature(inputs=[DatasetInput(name="cot")], outputs={"positioning": "other"})
@@ -241,11 +241,6 @@ def test_a_cycle_of_features_is_refused_with_the_features_in_it() -> None:
             "its parameters, got",
         ),
         (
-            {"delta": delta()},
-            "Expected inputs the runtime evaluates, got the trades input of feature delta, whose "
-            "prints by bucket wait for step 3.6.",
-        ),
-        (
             {"positioning": positioning()},
             "Expected inputs the runtime evaluates, got the dataset input cot of feature "
             "positioning, reserved for Phase 10.",
@@ -289,6 +284,46 @@ def test_bars_a_feature_reads_but_not_given_are_refused() -> None:
 
     with pytest.raises(ValueError, match="Expected the bars of NQ 5m that nq_close reads, got"):
         graph.evaluate({graph.signal_grid: bars([1, 2], 5)})
+
+
+def test_a_feature_reads_the_prints_of_each_of_its_buckets_by_side() -> None:
+    # Step 3.6: the trades input joins each bucket's volumes by side on the row of its close, 0
+    # in a bucket without prints of a date whose prints are held, and null where none are in
+    # hand, as on a trade date without prints; and it is refused where it is not given.
+    five = bars([10, 11, 12, 13], 5)
+    graph = FeatureGraph.of({"delta": delta()}, "ES", FIVE)
+    prints = pl.DataFrame(
+        {
+            "ts_close": [5 * MINUTE, 10 * MINUTE, 15 * MINUTE],
+            "buy_volume": [3, 0, 2],
+            "sell_volume": [1, 0, 5],
+            "unknown_side_volume": [4, 0, 0],
+        }
+    )
+
+    values = graph.evaluate({graph.signal_grid: five, PrintsGrid("ES", FIVE): prints})
+
+    assert graph.grids() == (Grid("ES", FIVE), PrintsGrid("ES", FIVE))
+    assert values["delta"].to_list() == [2, 0, -3, None]
+    expected = "Expected the prints by side of ES 5m that delta reads, got bars of ES 5m"
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        graph.evaluate({graph.signal_grid: five})
+
+
+def test_compute_and_validate_read_the_prints_by_side_of_the_fixtures() -> None:
+    # Step 3.6: the feature cache and the leak detector load the trades input as a run does,
+    # each date's prints of its front, and cut it at each instant as they cut the bars.
+    store_with("trades", "ohlcv-1m")
+    window = ("2026-03-06", "2026-03-09")
+
+    computed = ff.features.compute({"delta": delta()}, "ES", "5m", *window).collect()
+    report = ff.features.validate(delta(), "ES", "5m", *window, seed=3)
+
+    volumes = series_source("ES").side_volumes(FIVE, (date(2026, 3, 6), date(2026, 3, 9)))
+    by_hand = volumes.select("ts_close", delta=pl.col("buy_volume") - pl.col("sell_volume"))
+    assert computed.select("ts_close", "delta").equals(by_hand)
+    assert report.passed, report.summary()
+    assert min(count for cut in report.cuts for count in cut.compared.values()) > 0
 
 
 def test_the_lead_in_counts_back_the_sessions_that_hold_a_warmup(tmp_path: Path) -> None:
