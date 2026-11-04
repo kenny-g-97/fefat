@@ -1,0 +1,240 @@
+"""`fefat.indicators` beside its goldens (step 3.5): the module docstring's table names every
+indicator with its parameters and outputs (Done means 3); levels are prices and distances price
+distances, in the bars' 1e-9 units, so that `ff.Stop(atr=1.5)` reads `atr(14)` (the amendment);
+a price worked out from features rounds down or up to the tick and so passes F-RND-01 as a
+column price; and a division by zero, where TA-Lib gives 0 or 50, gives null."""
+
+import os
+import re
+import warnings
+
+import polars as pl
+import pytest
+
+import fefat as ff
+from fefat.config import resolve_paths
+from fefat.features import FeatureDef, FeatureSpec, OutputKind
+from fefat.market.saved_instruments import save_instrument
+from fefat.strategy.exits import StopRule
+from notebook_runs import store_with
+from test_market_saved_instruments import a_new_product
+
+TICK = 250_000_000
+"""ES's tick in the bars' 1e-9 units of price."""
+DEFINITIONS = [
+    definition
+    for name in ff.indicators.__all__
+    if isinstance(definition := getattr(ff.indicators, name), FeatureDef)
+]
+
+
+def call_text(spec: FeatureSpec) -> str:
+    parameters = ", ".join(f"{name}={value!r}" for name, value in dict(spec.parameters).items())
+    return f"{spec.definition.name}({parameters})"
+
+
+def test_the_module_docstring_has_a_row_for_each_indicator_with_its_parameters() -> None:
+    # Done means 3: each indicator's row writes its call with its defaults, and its outputs,
+    # each followed by its kind in brackets, as `upper` (price) or `rsi` (ratio, 0 to 100).
+    rows = [line for line in (ff.indicators.__doc__ or "").splitlines() if line.startswith("| ")]
+
+    assert len(DEFINITIONS) == 17
+    for definition in DEFINITIONS:
+        call = f"`{call_text(definition())}`"
+        row = next((row for row in rows if call in row), None)
+        assert row is not None, f"Expected a row of the table for {call}, got none"
+        outputs = row.split(" | ")[2]
+        for output, kind in definition.outputs.items():
+            assert f"`{output}`" in outputs, f"{call}: {output} missing from its row"
+            written = re.search(r"\((\w+)", outputs.split(f"`{output}`", 1)[1])
+            assert written is not None and written.group(1) == kind.value, f"{call}: {output}"
+
+
+def test_levels_are_prices_and_distances_are_price_distances() -> None:
+    # The amendment: moving averages, bands, and channels are levels, ATR, the true range, and
+    # the standard deviation distances, both in the bars' 1e-9 units of price.
+    kinds = {
+        f"{each.name}.{output}": kind
+        for each in DEFINITIONS
+        for output, kind in each.outputs.items()
+    }
+    levels = ["sma.sma", "ema.ema", "wma.wma", "keltner.middle", "keltner.upper", "keltner.lower"]
+    levels += [
+        f"{band}.{line}"
+        for band in ("bollinger", "donchian")
+        for line in ("middle", "upper", "lower")
+    ]
+    distances = ["atr.atr", "true_range.true_range", "standard_deviation.standard_deviation"]
+
+    assert {kinds[output] for output in levels} == {OutputKind.PRICE}
+    assert {kinds[output] for output in distances} == {OutputKind.PRICE_DISTANCE}
+
+
+def rising(stop: StopRule, stop_price: pl.Expr | None = None) -> ff.SignalStrategy:
+    """A long on every rising 5-minute bar of ES with `stop`, and the indicators' ATR(11), whose
+    275 bars of warm-up fit in the fixtures' one session before 2026-03-09."""
+    return ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"atr": ff.indicators.atr(11)},
+        long_entry=pl.col("close") > pl.col("open"),
+        short_entry=pl.lit(False),
+        stop_price=stop_price,
+        execution=ff.Execution(entry=ff.Market(), stop=stop, sizing=ff.Fixed(1)),
+    )
+
+
+def test_a_stop_of_atrs_reads_the_indicators_atr_in_the_bars_units() -> None:
+    # The amendment: ff.Stop(atr=1.5) reads ff.indicators.atr as the template reads an ATR
+    # worked out from load's frame, above a tick, so no run warns of one below it.
+    store_with("ohlcv-1m")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        run = ff.backtest.run(rising(stop=ff.Stop(atr=1.5)), "2026-03-09", "2026-03-09")
+
+    assert run.signals.get_column("atr").null_count() == 0
+    assert run.trades.height > 0
+    assert (run.trades["atr_at_entry"] > TICK).all()
+    assert not [str(w.message) for w in caught if "below one tick" in str(w.message)]
+
+
+def test_a_stop_at_the_low_less_half_an_atr_runs_once_rounded_down_to_the_tick() -> None:
+    # The amendment: F-RND-01 refuses a column price off the tick, so the stop at the bar's low
+    # less half an ATR is refused until the indicators' rounding puts it on the tick.
+    store_with("ohlcv-1m")
+    stop = pl.col("low") - pl.col("atr") / 2
+    window = ("2026-03-09", "2026-03-09")
+
+    with pytest.raises(ValueError, match=re.escape("Expected stop_price in whole 1e-9 units")):
+        ff.backtest.run(rising(stop=ff.Stop(column=True), stop_price=stop), *window)
+    rounded = ff.indicators.round_down_to_tick(stop, "ES")
+    run = ff.backtest.run(rising(stop=ff.Stop(column=True), stop_price=rounded), *window)
+
+    entries = run.signals.filter(pl.col("long_entry"))
+    assert run.trades.height > 0
+    assert entries.get_column("stop_price").dtype == pl.Int64
+    assert (entries.get_column("stop_price") % TICK == 0).all()
+
+
+def test_a_price_rounds_down_or_up_to_the_tick_and_a_price_on_it_stays() -> None:
+    # A float a hair below or above a tick, as arithmetic leaves it, stays on that tick, and a
+    # value that is no finite number, as a division by zero gives, is null.
+    on_tick = 4_500 * 1_000_000_000 + 3 * TICK
+    floats = [on_tick - 0.0004, on_tick + 0.0004, on_tick + 1.0, None, float("inf"), float("nan")]
+    prices = pl.DataFrame({"price": floats})
+
+    rounded = prices.select(
+        down=ff.indicators.round_down_to_tick(pl.col("price"), "ES"),
+        up=ff.indicators.round_up_to_tick(pl.col("price"), "ES"),
+    )
+
+    assert rounded.schema == pl.Schema({"down": pl.Int64, "up": pl.Int64})
+    assert rounded.get_column("down").to_list() == [on_tick, on_tick, on_tick, None, None, None]
+    assert rounded.get_column("up").to_list() == [on_tick, on_tick, on_tick + TICK, *[None] * 3]
+
+
+def test_a_root_saved_in_the_data_folder_rounds_to_its_own_tick() -> None:
+    # The code review: the rounding reads the instruments a run reads, the trader's saved ones
+    # too, whose tick here is 0.1.
+    save_instrument(resolve_paths(os.environ).data_dir, a_new_product(tick_size="0.1"))
+    price = pl.lit(4_500_250_000_000)
+
+    rounded = pl.select(
+        down=ff.indicators.round_down_to_tick(price, "XES"),
+        up=ff.indicators.round_up_to_tick(price, "XES"),
+    )
+
+    assert rounded.row(0) == (4_500_200_000_000, 4_500_300_000_000)
+
+
+def test_a_price_below_zero_rounds_down_away_from_zero_and_up_toward_it() -> None:
+    # The ponytail review: crude oil traded below zero in April 2020, where rounding toward
+    # zero would put a short's stop on the wrong side of the price asked.
+    price = pl.lit(-37_631_000_000.0)
+
+    rounded = pl.select(
+        down=ff.indicators.round_down_to_tick(price, "CL"),
+        up=ff.indicators.round_up_to_tick(price, "CL"),
+    )
+
+    assert rounded.row(0) == (-37_640_000_000, -37_630_000_000)
+
+
+FLAT = pl.DataFrame(
+    {
+        "ts_close": range(1, 101),
+        "open": [5_000 * TICK] * 100,
+        "high": [5_000 * TICK] * 100,
+        "low": [5_000 * TICK] * 100,
+        "close": [5_000 * TICK] * 100,
+        "volume": pl.Series([0] * 100, dtype=pl.UInt64),
+    }
+)
+"""A market that has not moved: every bar flat at one price."""
+
+
+@pytest.mark.parametrize(
+    ("spec", "output"),
+    [
+        (ff.indicators.rsi(14), "rsi"),
+        (ff.indicators.stochastic(), "percent_k"),
+        (ff.indicators.adx(), "plus_di"),
+        (ff.indicators.z_score(), "z_score"),
+        (ff.indicators.bollinger(), "percent_b"),
+    ],
+    ids=lambda each: each if isinstance(each, str) else call_text(each),
+)
+def test_a_division_by_zero_gives_null_where_talib_gives_0_or_50(
+    spec: FeatureSpec, output: str
+) -> None:
+    values = spec.evaluate(FLAT).collect().get_column(output)
+
+    assert values.null_count() == FLAT.height
+
+
+@pytest.mark.parametrize(
+    ("spec", "output", "closes", "nulls"),
+    [
+        (ff.indicators.roc(1), "roc", [0, TICK] * 50, 51),
+        (ff.indicators.bollinger(2), "band_width", [-TICK, TICK] * 50, 100),
+    ],
+    ids=["roc after a close of zero", "band width around an average of zero"],
+)
+def test_a_division_by_a_price_of_zero_gives_null_never_an_infinity(
+    spec: FeatureSpec, output: str, closes: list[int], nulls: int
+) -> None:
+    # The code review: a series through zero, as an adjusted crude oil's can be, divides the
+    # rate of change by a close of zero and the band width by an average of zero.
+    bars = FLAT.with_columns(close=pl.Series(closes)).with_columns(
+        open=pl.col("close"), high=pl.col("close"), low=pl.col("close")
+    )
+
+    values = spec.evaluate(bars).collect().get_column(output)
+
+    assert values.null_count() == nulls
+    assert values.drop_nulls().is_finite().all()
+
+
+def test_a_macd_whose_fast_period_is_not_below_its_slow_one_is_refused() -> None:
+    refusal = "Expected the fast period of macd below its slow one, got fast=26 and slow=12."
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        ff.indicators.macd(26, 12).evaluate(FLAT)
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        ff.indicators.standard_deviation,
+        ff.indicators.z_score,
+        ff.indicators.bollinger,
+        ff.indicators.adx,
+    ],
+    ids=lambda definition: definition.name,
+)
+def test_a_period_of_one_bar_is_refused_where_it_leaves_no_value(definition: FeatureDef) -> None:
+    # The step review: over one bar the deviation is 0 on every row, the z-score and %b null on
+    # every row, and the directional indicators have no bars to sum before their first value.
+    with pytest.raises(ValueError, match=re.escape("got n=1: Input should be greater than or")):
+        definition(1)

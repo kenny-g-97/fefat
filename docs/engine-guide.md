@@ -80,6 +80,32 @@ What the detector cannot catch:
 
 A feature that passes is prefix-invariant on these data at these cuts, not proven so.
 
+## The indicators
+
+`ff.indicators` holds the common indicators as features, each giving the numbers TA-Lib gives: the moving averages `sma`, `ema`, and `wma`, `macd`, `rsi`, `stochastic`, `roc`, `momentum`, `adx` with `plus_di` and `minus_di`, `obv`, `true_range`, `atr`, `standard_deviation`, `z_score`, and `bollinger`, `donchian`, and `keltner`. `help(ff.indicators)` prints a table of each with its parameters, its outputs, and its warm-up. Each takes its parameters by name or in their order, and fills a slot of a strategy as any feature does:
+
+```python
+features={
+    "rsi": ff.indicators.rsi(14),
+    "atr": ff.indicators.atr(14),
+    "band": ff.indicators.bollinger(n=20, deviations=2.0),
+}
+```
+
+An indicator of several outputs fills a column for each, the slot's name and the output's, such as `band_upper` and `band_percent_b`. Levels, the averages, bands, and channels, are prices, and distances, ATR, the true range, and the standard deviation, are distances of price, both in the bars' units, so `ff.Stop(atr=1.5)` reads the `atr` slot as it is. A price the signal frame gives, such as a stop at the bar's low less half an ATR, must lie on the tick, and `round_down_to_tick` or `round_up_to_tick` puts it there:
+
+```python
+stop_price=ff.indicators.round_down_to_tick(pl.col("low") - pl.col("atr") / 2, "MES")
+```
+
+- **Seeding.** An exponential average, in EMA, MACD, RSI, ATR, ADX, and Keltner channels, starts from the simple average of its first values, as TA-Lib's does, so the first values are TA-Lib's too, and every output is null until TA-Lib's first value.
+- **Warm-up.** The warm-up is the number of bars an indicator needs before its values mean what they say, and FEFAT reads that many before your window. An exponential average never quite forgets its first bars, so its warm-up is 13 times its period for an EMA, EMA(20)'s 260 bars, 25 times for the averages of RSI and ATR, and 50 times for ADX's: a session or two of 5-minute bars, but 2,600 sessions, ten years, for a daily EMA(200), which leaves it null on a shorter history. On daily bars take an SMA, or a shorter period.
+- **Divisions by zero.** Where TA-Lib gives 0 or 50, as for the RSI of closes that have not moved or the stochastic of a flat range, these give no value, which a strategy reads as no signal.
+- **OBV** is on-balance volume over the last `n` bars, the volume of the bars that closed up less that of those that closed down, since the running total charts draw depends on where your data starts.
+- **Keltner channels** are the EMA of the closes with channels of ATRs, as charts draw them today.
+
+The tests compare every indicator with TA-Lib on a random walk and on the fixtures, and every indicator passes the leak detector.
+
 ## The execution template
 
 `ff.Execution` says how the strategy enters on its signals, how each entry leaves, and what filters entries.

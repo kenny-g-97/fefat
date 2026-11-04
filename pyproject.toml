@@ -30,6 +30,7 @@ dev = [
     "pyright",
     "pytest",
     "ruff",
+    "ta-lib>=0.8.3",
     "tzdata",
 ]
 
