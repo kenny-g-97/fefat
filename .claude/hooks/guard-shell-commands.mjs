@@ -98,7 +98,7 @@ const JAVASCRIPT_RUNNERS = new Set(["pnpm", "npm", "npx", "yarn", "vitest", "bun
 const GOLDEN_ENVIRONMENT =
   /\b(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\s*=|\bsetx\s+(INSTA_UPDATE|INSTA_FORCE_PASS|UPDATE_GOLDENS|UPDATE_SNAPSHOTS)\b/i;
 const GUARDRAIL_PATH =
-  /(^|\/)\.claude(\/skills)?\/?$|(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(apple-design|backtest-expert|designing-architecture|software-design-principles)(\/|$)/;
+  /(^|\/)\.claude(\/skills)?\/?$|(^|\/)\.claude\/(settings(\.local)?\.json$|hooks(\/|$))|(^|\/)\.claude\/skills\/(apple-design|backtest-expert|designing-architecture|software-design-principles|unslop)(\/|$)/;
 const READING_PROGRAMS = new Set([
   "cat", "head", "tail", "less", "more", "rg", "grep", "ls", "dir", "wc", "diff", "file", "stat", "tree",
   "echo", "type", "get-content", "gc", "get-childitem", "gci", "select-string", "sls", "test-path",

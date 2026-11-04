@@ -243,6 +243,7 @@
       "Edit(./.claude/skills/designing-architecture/**)",
       "Edit(./.claude/skills/software-design-principles/**)",
       "Edit(./.claude/skills/apple-design/**)",
+      "Edit(./.claude/skills/unslop/**)",
       "Edit(./fixtures/goldens/**)"
     ],
     "deny": [

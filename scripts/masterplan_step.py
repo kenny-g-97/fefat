@@ -79,7 +79,7 @@ PHASE_PROMPT_WIDTH = 400
 BACKTEST_PHASES = frozenset({2, 7, 11})
 AGENT_PHASE = 8
 SKILL_NAMES_PATTERN = re.compile(
-    r"backtest-expert|engine-golden|engine-accuracy-reviewer|frontend-design"
+    r"backtest-expert|engine-golden|engine-accuracy-reviewer|frontend-design|unslop"
     r"|software-design-principles|designing-architecture|claude-api"
 )
 BACKTEST_PATTERN = re.compile(
@@ -529,6 +529,12 @@ def suggest_skills(step: MasterplanStep) -> list[SkillSuggestion]:
             SkillSuggestion(
                 "frontend-design:frontend-design",
                 "the step touches web/; read web/DESIGN.md first (08 section 5)",
+            )
+        )
+        suggestions.append(
+            SkillSuggestion(
+                "unslop",
+                "its audit and checklist over the step's screens before the reviewers (08 section 5)",
             )
         )
     if GOLDEN_PATTERN.search(text):

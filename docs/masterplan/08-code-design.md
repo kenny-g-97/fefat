@@ -7,7 +7,7 @@ Written 2026-10-09, before step 0.2 scaffolds the repository, by applying four s
 | Any new module, crate, package, or seam | `designing-architecture` | the pattern, the dependency rule, the folder layout (§1, §2) |
 | Any code: `engine/`, `python/`, `web/`, `scripts/` | `software-design-principles` | names, fail-fast errors, types for states, injected dependencies, small units (§3) |
 | Engine, results, research, prop, agent analysis steps | `backtest-expert` | what a trustworthy backtest must show and how FEFAT reports it (§4) |
-| Any step that touches `web/` | `frontend-design` | the visual design, built from `web/DESIGN.md` (§5) |
+| Any step that touches `web/` | `frontend-design`, `unslop` | the visual design, built from `web/DESIGN.md`; unslop's direction and exact values, and its audit and checklist at the end of every UI step (§5) |
 
 ## 1. The architecture decision
 
@@ -142,7 +142,7 @@ The skill's core — find strategies that break the least, spend most of the tim
 4. **Regime breakdown** (steps 2.11 and 11.4): results by volatility tercile and by trend state of the instrument itself, next to the year breakdown; the equity-market numbers in the skill (VIX bands, market-cap slippage tables) do not transfer to futures and crypto and are not used.
 5. **A record of abandoned ideas** (step 5.5, backlog until then): a strategy can be marked abandoned with the breaking point and the lesson, following the skill's case-study framework, so the library keeps the failures too.
 
-## 5. Frontend design: how the `frontend-design` skill is used
+## 5. Frontend design: how the `frontend-design` and `unslop` skills are used
 
 Decision D-28: every screen is designed with the `frontend-design` skill, from one design system that step 4.3 creates and later steps extend. Without this, each UI step would produce the generic defaults the skill warns about (cream backgrounds, identical rounded cards, eyebrow labels, arrows on every button), and FEFAT would look like a template rather than a trading research tool.
 
@@ -152,6 +152,7 @@ Decision D-28: every screen is designed with the `frontend-design` skill, from o
 4. **The quality floor** is unchanged and checked by `ui-verifier`: every page works at 390 px without horizontal scroll, keyboard focus is visible, reduced motion is respected, contrast passes, one deliberate motion at most per screen.
 5. **Phase exits of UI phases** (P4, P5, P6, P7, P8, P12) run the `design-critique` and `accessibility-review` skills from the installed `design` plugin over the main pages; findings become steps or backlog items.
 6. **The design review** (D-34): the `design-reviewer` subagent reviews every UI step's diff and screenshots, and the main pages at the exits of UI phases, through the `apple-design` skill: feedback on press, interruptible motion that starts from the current value, enter and exit along the same path, materials and depth, tracking and leading by size, reduced motion and transparency, and Apple's eight design principles. It reviews and never builds: the `frontend-design` skill and `web/DESIGN.md` decide the look, the brief's own words win over both skills, and a conflict becomes a proposed edit to `web/DESIGN.md`, not a finding.
+7. **Unslop** (D-77, 2026-11-04): the `unslop` skill (`.claude/skills/unslop/`, by Damir Sokolovsky, CC BY 4.0, committed verbatim) is the second design skill of every step that touches `web/`. Step 4.3 opens `web/DESIGN.md` with the skill's direction in its five lines (product, character, world, moments, signature) and takes its exact values as the tokens' defaults where the brief does not decide: a 4 px spacing scale, one tinted neutral ramp with three text roles and one accent, weights 400 to 600 with hierarchy from size and colour, sentence case, tabular figures in one format, nested radii, named transitions on one easing curve, and quiet chrome with the colour in the charts and the figures, which is what a research terminal read for hours needs. Every later UI step ends with the skill's audit (`references/signs.md`) and its checklist over the step's screens, and fixes every sign before the `ui-verifier` and `design-reviewer` run; the exits of UI phases run the audit over the main pages beside item 5. Precedence: the brief's own words, then `web/DESIGN.md`, then unslop's values, then `frontend-design`'s defaults; `apple-design` stays the reviewer's lens. The skill's story video and site snapshot scripts (Playwright and ffmpeg) are not part of the process.
 
 ## 6. Deliberately not adopted
 

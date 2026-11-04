@@ -24,6 +24,8 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-11-01 — The tick engine gets a check on real prints (D-67): you pull sessions of MNQZ2026 ticks and IBKR's 1-minute bars from TWS with a puller of your own outside the repository, import them as the provider `ibkr`, and the new step 2.16 holds the reference engine and the Rust engine to identical fills on them, rebuilds the bars, and classifies the tick-versus-minute fill differences; 2026-09-21 is in the store, 09-22 and 09-23 follow. No existing step changed.
 - 2026-11-02 — The Phase 2 exit (D-70, pull request #43): you signed off D-69's readings and 30 undated rows of the fill specification, prints stamped to the second are now stored at the end of their second, which your IBKR sessions were imported again under, so the tick check's `bar_boundary` is gone; the phase-wide reviews' fixes (a run builds its fronts' cache months alone, the signal source counts the trade dates a level holds, huge spans of minutes, the equity a decision reads before a roll's legs, a saved run's rerun refused on data imported since, notebooks and errors without prices, more skips refused in CI); the mutation run recorded; the upgrade step; and the retro in `CLAUDE.md`, the step skill, and the masterplan and engine rules. Step 2.2 and step 2.16 gain an Amendment each; no unstarted step changed.
 - 2026-11-02 — Phase 3 kickoff (D-71, pull request #44): the indicator lists as written, no notebook code to port, session-aware features reset at the calendar's open with a local time of day as the option, and an order decided inside a coarser bar waiting for the next bar, which the engine takes at the first step that changes its fill rules; every Phase 3 step reconciled with the code of Phases 1 and 2, the data on this PC, and the Phase 2 exit's reviews (an Amendment under each step, and the phase's conventions in its header), the backlog items aimed at the kickoff written into steps 3.1 to 3.5 and 3.7 and the rest retargeted; step 3.6 depends on 3.4 as well, and the leakage-auditor reviews 3.3. No step ID changed.
+- 2026-11-04 — A portfolio backtest joins Phase 7 (D-76): two or more backtest files, strategies or instruments, merge on one timeline into one backtest file that the replay, the Monte Carlo, the ranking, and the pages take unchanged, with the portfolio's own analysis (combined metrics, members' shares, correlation, positions open at once). New steps 7.12 and 7.13; `03-prop-simulator.md` §4.7; step 8.1 now depends on 7.13; the backlog's portfolio item became the steps, and an engine run of several strategies on shared capital took its place.
+- 2026-11-04 — The `unslop` skill (Damir Sokolovsky, CC BY 4.0) joined `frontend-design` as the design skill of every step that touches `web/` (D-77): step 4.3 opens `web/DESIGN.md` with its direction and takes its exact values where the brief is silent, every UI step ends with its audit and checklist before the reviewers, and the exits of UI phases run the audit over the main pages. No step renumbered; the skill is committed verbatim under `.claude/skills/unslop/`, and edits of it ask.
 
 ## Steps
 
@@ -111,6 +113,8 @@ Phase kickoffs and exits are tracked in the second table.
 | 7.9 | Rule-set and prop-strategy pages | P7 | todo | | | |
 | 7.10 | Backtest files, simulation launch, results pages | P7 | todo | | | |
 | 7.11 | More presets, end to end | P7 | todo | | | |
+| 7.12 | Portfolio backtest file and analysis | P7 | todo | | | |
+| 7.13 | Portfolio page | P7 | todo | | | |
 | 8.1 | Runtime spike: tool loop, streaming, append-only transcript, caching, compaction | P8 | todo | | | |
 | 8.2 | Sessions, API key storage, usage ledger, budgets, settings page | P8 | todo | | | |
 | 8.3 | Tool registry and read tools | P8 | todo | | | |
@@ -197,7 +201,7 @@ Phase kickoffs and exits are tracked in the second table.
 | App on the phone over Tailscale | 4.6 | deferred (D-54) |
 | Web MVP | 5.13 | |
 | Feature lab and builder | 6.9 | |
-| Prop simulator on saved backtests and imported trade logs | 7.11 | |
+| Prop simulator on saved backtests, imported trade logs, and portfolios of them | 7.13 | |
 | In-app agent | 8.11 | |
 | Event strategies | 9.6 | |
 | Alternative data | 10.7 | |
