@@ -1,6 +1,6 @@
 """Indicators (step 3.5, `02-engine-and-data.md` §6, D-75): the common indicators as features,
-each a `FeatureDef` of Polars expressions over the signal bars that declares its warm-up and
-gives TA-Lib's values, its seeding included. Levels (`price`) and distances (`price_distance`)
+each a `FeatureDef` built from Polars expressions over the signal bars that declares its warm-up
+and gives TA-Lib's values, its seeding included. Levels (`price`) and distances (`price_distance`)
 are in the bars' 1e-9 units of price, so that `ff.Stop(atr=1.5)` reads `atr(14)` as it reads a
 distance worked out from the bars; ratios carry no unit. Each takes its parameters by name or in
 their order, and a feature of several outputs fills a column for each, `<slot>_<output>`.
@@ -33,9 +33,10 @@ start from the first value alone, and every output is null until TA-Lib's first 
 exponential average never forgets those first bars, so its warm-up is 25 times its period, after
 which they weigh less than 1e-11, and ADX's, smoothed twice, 50 times; values from any start then
 agree within the 1e-9 the feature cache and the leak detector allow (D-73, D-74). Where TA-Lib
-divides by zero, as the RSI of closes that have not moved or the stochastic of a flat range, it
-gives 0 or 50 and these give null. `round_down_to_tick` and `round_up_to_tick` put a price worked
-out from them on the instrument's tick (F-RND-01)."""
+divides by zero, as the RSI of closes that have not moved, the stochastic of a flat range, or the
+rate of change after a close of zero, it gives 0 or 50 and these give null, as do the
+stochastic's averages over such a bar, while ADX skips one, as TA-Lib's does. `round_down_to_tick`
+and `round_up_to_tick` put a price worked out from them on the instrument's tick (F-RND-01)."""
 
 from fefat.indicators.averages import ema, macd, sma, wma
 from fefat.indicators.bands import bollinger, donchian, keltner

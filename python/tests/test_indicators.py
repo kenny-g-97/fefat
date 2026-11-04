@@ -4,6 +4,7 @@ distances, in the bars' 1e-9 units, so that `ff.Stop(atr=1.5)` reads `atr(14)` (
 a price worked out from features rounds down or up to the tick and so passes F-RND-01 as a
 column price; and a division by zero, where TA-Lib gives 0 or 50, gives null."""
 
+import os
 import re
 import warnings
 
@@ -11,9 +12,12 @@ import polars as pl
 import pytest
 
 import fefat as ff
+from fefat.config import resolve_paths
 from fefat.features import FeatureDef, FeatureSpec, OutputKind
+from fefat.market.saved_instruments import save_instrument
 from fefat.strategy.exits import StopRule
 from notebook_runs import store_with
+from test_market_saved_instruments import a_new_product
 
 TICK = 250_000_000
 """ES's tick in the bars' 1e-9 units of price."""
@@ -112,9 +116,11 @@ def test_a_stop_at_the_low_less_half_an_atr_runs_once_rounded_down_to_the_tick()
 
 
 def test_a_price_rounds_down_or_up_to_the_tick_and_a_price_on_it_stays() -> None:
-    # A float a hair below or above a tick, as arithmetic leaves it, stays on that tick.
+    # A float a hair below or above a tick, as arithmetic leaves it, stays on that tick, and a
+    # value that is no finite number, as a division by zero gives, is null.
     on_tick = 4_500 * 1_000_000_000 + 3 * TICK
-    prices = pl.DataFrame({"price": [on_tick - 0.0004, on_tick + 0.0004, on_tick + 1.0, None]})
+    floats = [on_tick - 0.0004, on_tick + 0.0004, on_tick + 1.0, None, float("inf"), float("nan")]
+    prices = pl.DataFrame({"price": floats})
 
     rounded = prices.select(
         down=ff.indicators.round_down_to_tick(pl.col("price"), "ES"),
@@ -122,8 +128,22 @@ def test_a_price_rounds_down_or_up_to_the_tick_and_a_price_on_it_stays() -> None
     )
 
     assert rounded.schema == pl.Schema({"down": pl.Int64, "up": pl.Int64})
-    assert rounded.get_column("down").to_list() == [on_tick, on_tick, on_tick, None]
-    assert rounded.get_column("up").to_list() == [on_tick, on_tick, on_tick + TICK, None]
+    assert rounded.get_column("down").to_list() == [on_tick, on_tick, on_tick, None, None, None]
+    assert rounded.get_column("up").to_list() == [on_tick, on_tick, on_tick + TICK, *[None] * 3]
+
+
+def test_a_root_saved_in_the_data_folder_rounds_to_its_own_tick() -> None:
+    # The code review: the rounding reads the instruments a run reads, the trader's saved ones
+    # too, whose tick here is 0.1.
+    save_instrument(resolve_paths(os.environ).data_dir, a_new_product(tick_size="0.1"))
+    price = pl.lit(4_500_250_000_000)
+
+    rounded = pl.select(
+        down=ff.indicators.round_down_to_tick(price, "XES"),
+        up=ff.indicators.round_up_to_tick(price, "XES"),
+    )
+
+    assert rounded.row(0) == (4_500_200_000_000, 4_500_300_000_000)
 
 
 FLAT = pl.DataFrame(
@@ -145,7 +165,6 @@ FLAT = pl.DataFrame(
         (ff.indicators.rsi(14), "rsi"),
         (ff.indicators.stochastic(), "percent_k"),
         (ff.indicators.adx(), "plus_di"),
-        (ff.indicators.adx(), "adx"),
         (ff.indicators.z_score(), "z_score"),
         (ff.indicators.bollinger(), "percent_b"),
     ],
@@ -157,6 +176,29 @@ def test_a_division_by_zero_gives_null_where_talib_gives_0_or_50(
     values = spec.evaluate(FLAT).collect().get_column(output)
 
     assert values.null_count() == FLAT.height
+
+
+@pytest.mark.parametrize(
+    ("spec", "output", "closes", "nulls"),
+    [
+        (ff.indicators.roc(1), "roc", [0, TICK] * 50, 51),
+        (ff.indicators.bollinger(2), "band_width", [-TICK, TICK] * 50, 100),
+    ],
+    ids=["roc after a close of zero", "band width around an average of zero"],
+)
+def test_a_division_by_a_price_of_zero_gives_null_never_an_infinity(
+    spec: FeatureSpec, output: str, closes: list[int], nulls: int
+) -> None:
+    # The code review: a series through zero, as an adjusted crude oil's can be, divides the
+    # rate of change by a close of zero and the band width by an average of zero.
+    bars = FLAT.with_columns(close=pl.Series(closes)).with_columns(
+        open=pl.col("close"), high=pl.col("close"), low=pl.col("close")
+    )
+
+    values = spec.evaluate(bars).collect().get_column(output)
+
+    assert values.null_count() == nulls
+    assert values.drop_nulls().is_finite().all()
 
 
 def test_a_macd_whose_fast_period_is_not_below_its_slow_one_is_refused() -> None:

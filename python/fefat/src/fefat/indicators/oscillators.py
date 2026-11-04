@@ -1,7 +1,8 @@
 """Oscillators and momentum (step 3.5): RSI, the stochastic, the rate of change and momentum,
 the average directional index with its directional indicators, and on-balance volume, as TA-Lib
 computes them. Where TA-Lib divides by zero and gives 0 or 50, as the RSI of closes that have not
-moved, these give null: no value, which a strategy reads as no signal."""
+moved, these give null: no value, which a strategy reads as no signal, as do the stochastic's
+averages over such a bar, while ADX skips one, as TA-Lib's does."""
 
 from typing import Annotated
 
@@ -47,9 +48,10 @@ def stochastic(
 
 @feature(params={"n": 10}, warmup=lambda n: n, outputs={"roc": "ratio"})
 def roc(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
-    """The rate of change of the close over `n` bars in percent, TA-Lib's ROC."""
-    close = pl.col("close")
-    return 100 * (close / close.shift(n) - 1)
+    """The rate of change of the close over `n` bars in percent, TA-Lib's ROC; null after a
+    close of zero, which TA-Lib gives as 0."""
+    close, before = pl.col("close"), pl.col("close").shift(n)
+    return pl.when(before != 0).then(100 * (close / before - 1))
 
 
 @feature(params={"n": 10}, warmup=lambda n: n, outputs={"momentum": "price_distance"})
@@ -71,9 +73,11 @@ def adx(bars: pl.LazyFrame, n: Annotated[int, Field(ge=2)]) -> pl.LazyFrame:
     -DI are 100 times their averages over the true range's, each seeded from the sum of its first
     n - 1 values and then weighing each 1 / n, from bar `n` on. ADX averages 100 |+DI - -DI| /
     (+DI + -DI) alike, seeded with the simple average of its first `n` values, from bar 2n - 1
-    on. Its two stages of smoothing forget more slowly than one, hence a warm-up of 50 n. It is
-    worked out in stages on the bars' frame, each computed once, where expressions nested in one
-    another would compute the averages again in each."""
+    on; a bar without direction, both indicators 0 or null, counts as 0 in the seed and leaves
+    ADX as it was after it, as TA-Lib skips it. Its two stages of smoothing forget more slowly
+    than one, hence a warm-up of 50 n. It is worked out in stages on the bars' frame, each
+    computed once, where expressions nested in one another would compute the averages again in
+    each."""
     up, down = pl.col("high").diff(), -pl.col("low").diff()
     averages = {
         name: exponential_average(pl.col(name), 1 / n, pl.col(name).rolling_sum(n - 1) / n, n - 1)
@@ -91,8 +95,9 @@ def adx(bars: pl.LazyFrame, n: Annotated[int, Field(ge=2)]) -> pl.LazyFrame:
     )
     plus_di, minus_di = pl.col("plus_di"), pl.col("minus_di")
     index = (100 * ((plus_di - minus_di).abs() / (plus_di + minus_di))).fill_nan(None)
+    seed = pl.col("index").fill_null(0).rolling_mean(n)
     averaged = indicators.with_columns(index=index).with_columns(
-        adx=exponential_average(pl.col("index"), 1 / n, pl.col("index").rolling_mean(n), 2 * n - 1)
+        adx=exponential_average(pl.col("index"), 1 / n, seed, 2 * n - 1).forward_fill()
     )
     return averaged.select("ts_close", "adx", "plus_di", "minus_di")
 

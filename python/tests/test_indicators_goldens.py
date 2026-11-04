@@ -253,6 +253,32 @@ def test_each_output_is_talib_s_from_its_first_value(
             assert_matches(f"{name}, {output}", ours.get_column(output), theirs)
 
 
+def flat_start(bars: pl.DataFrame, rows: int) -> pl.DataFrame:
+    """`bars` after `rows` flat bars at their first open, as an illiquid session can open."""
+    price = bars.item(0, "open")
+    flat = pl.DataFrame(
+        {
+            "ts_close": MINUTE * np.arange(1, rows + 1),
+            **{column: np.full(rows, price) for column in ("open", "high", "low", "close")},
+            "volume": np.zeros(rows, dtype=np.uint64),
+        }
+    )
+    return pl.concat([flat, bars.with_columns(pl.col("ts_close") + rows * MINUTE)])
+
+
+def test_adx_counts_and_holds_a_bar_without_direction_as_talib_does(
+    frames: dict[str, pl.DataFrame],
+) -> None:
+    # The code review: on bars that start flat the directional index has no value, which
+    # TA-Lib counts as 0 in ADX's seed and skips after it, holding ADX, as adx does.
+    bars = flat_start(frames["random walk"].head(3_000), 40)
+    prices = Prices.of(bars)
+
+    ours = indicators.adx(14).evaluate(bars).collect().get_column("adx")
+
+    assert_matches("a flat start, adx", ours, talib.ADX(prices.high, prices.low, prices.close, 14))
+
+
 @pytest.mark.parametrize("golden", GOLDENS, ids=lambda golden: call_text(golden.spec))
 def test_no_output_is_null_or_nan_once_the_warmup_has_passed(
     golden: Golden, frames: dict[str, pl.DataFrame]

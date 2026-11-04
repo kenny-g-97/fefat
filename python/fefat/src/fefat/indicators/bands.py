@@ -28,7 +28,8 @@ def bollinger(bars: pl.LazyFrame, n: BarCount, deviations: Multiple) -> dict[str
     """Bollinger bands, TA-Lib's BBANDS with a simple average: the simple average of the last `n`
     closes, and bands `deviations` standard deviations of those closes, a population's, above and
     below it; the band width, the bands' distance over the average; and %b, where the close lies
-    between the bands, 0 at the lower and 1 at the upper, null where the closes have not moved."""
+    between the bands, 0 at the lower and 1 at the upper, null where the closes have not moved, as
+    the band width is where the average is zero."""
     close = pl.col("close")
     middle = close.rolling_mean(n)
     offset = deviations * close.rolling_std(n, ddof=0)
@@ -37,7 +38,7 @@ def bollinger(bars: pl.LazyFrame, n: BarCount, deviations: Multiple) -> dict[str
         "middle": middle,
         "upper": upper,
         "lower": lower,
-        "band_width": (upper - lower) / middle,
+        "band_width": pl.when(middle != 0).then((upper - lower) / middle),
         "percent_b": (close - lower) / (upper - lower),
     }
 
