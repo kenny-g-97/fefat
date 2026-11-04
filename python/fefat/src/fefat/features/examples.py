@@ -9,16 +9,11 @@ library's indicators, matched to TA-Lib; these show the contract.
 """
 
 from datetime import time
-from typing import Annotated
 
 import polars as pl
-from pydantic import Field
 
-from fefat.features.definition import feature
+from fefat.features.definition import BarCount, feature
 from fefat.market.calendar_definition import LocalTime, TimeZoneName
-
-BarCount = Annotated[int, Field(ge=1)]
-"""A number of bars, at least one, as a moving average's or a range's."""
 
 
 @feature(params={"n": 14}, warmup=lambda n: 25 * n, outputs={"rsi": "ratio"})

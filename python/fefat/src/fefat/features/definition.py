@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import FunctionType, MappingProxyType
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, create_model
 
 from fefat.features.declarations import (
     INPUT_KINDS,
@@ -52,6 +52,9 @@ from fefat.features.evaluation import FeatureSpec
 from fefat.features.inputs import DeclaredInput, FeatureInput, OutputKind
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted
+
+BarCount = typing.Annotated[int, Field(ge=1)]
+"""A number of bars, at least one, as a moving average's or a range's."""
 
 _RESERVED_OUTPUTS = frozenset({"ts_close", "warmup", *SIGNAL_BAR_COLUMNS})
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
