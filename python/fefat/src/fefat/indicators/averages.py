@@ -40,7 +40,9 @@ def macd(
     `slow` bars, both seeded on the slow average's first bar, the fast one with the simple
     average of the `fast` closes up to it; its signal, the exponential average of MACD over
     `signal` bars, seeded with the simple average of its first `signal` values; and the
-    histogram, MACD less its signal, all three from the signal's first value on."""
+    histogram, MACD less its signal, all three from the signal's first value on. A fast period
+    at or above the slow one is refused when the feature is evaluated, where TA-Lib swaps them,
+    since a feature's parameters are each checked alone when it is called."""
     if fast >= slow:
         raise ValueError(
             f"Expected the fast period of macd below its slow one, got fast={fast} and slow={slow}."

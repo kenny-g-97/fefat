@@ -11,10 +11,10 @@ from fefat.market.schema import FrozenModel, Timeframe
 
 
 class OutputKind(StrEnum):
-    """What an output's values are (D-71), which the leak detector's tolerance (step 3.4) and the
-    golden tests (step 3.5) read. A `price` (a level, such as a moving average) and a
-    `price_distance` (such as an ATR) are in the bars' 1e-9 units, the units in which the
-    execution template reads them (F-RND-01, D-60), never in points."""
+    """What an output's values are (D-71), which its column must admit and its version keeps; the
+    leak detector compares values by their column's type. A `price` (a level, such as a moving
+    average) and a `price_distance` (such as an ATR) are in the bars' 1e-9 units, the units in
+    which the execution template reads them (F-RND-01, D-60), never in points."""
 
     PRICE = "price"
     PRICE_DISTANCE = "price_distance"

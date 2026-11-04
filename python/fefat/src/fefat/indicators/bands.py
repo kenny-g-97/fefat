@@ -6,8 +6,9 @@ from typing import Annotated
 import polars as pl
 from pydantic import Field
 
-from fefat.features.definition import BarCount, feature
-from fefat.indicators.smoothing import exponential_average, true_ranges
+from fefat.features.definition import BarCount, TwoOrMoreBars, feature
+from fefat.indicators.ranges import true_ranges
+from fefat.indicators.smoothing import exponential_average
 
 Multiple = Annotated[float, Field(gt=0)]
 """A multiple of a distance, above zero, as a band's width in standard deviations or ATRs."""
@@ -24,7 +25,7 @@ Multiple = Annotated[float, Field(gt=0)]
         "percent_b": "ratio",
     },
 )
-def bollinger(bars: pl.LazyFrame, n: BarCount, deviations: Multiple) -> dict[str, pl.Expr]:
+def bollinger(bars: pl.LazyFrame, n: TwoOrMoreBars, deviations: Multiple) -> dict[str, pl.Expr]:
     """Bollinger bands, TA-Lib's BBANDS with a simple average: the simple average of the last `n`
     closes, and bands `deviations` standard deviations of those closes, a population's, above and
     below it; the band width, the bands' distance over the average; and %b, where the close lies

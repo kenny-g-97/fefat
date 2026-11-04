@@ -279,6 +279,38 @@ def test_adx_counts_and_holds_a_bar_without_direction_as_talib_does(
     assert_matches("a flat start, adx", ours, talib.ADX(prices.high, prices.low, prices.close, 14))
 
 
+def flat_stretch(bars: pl.DataFrame, after: int, rows: int) -> pl.DataFrame:
+    """`bars` with the `rows` bars after the row `after` flat at its close, as the session grid
+    fills the buckets of a thin market's quiet minutes."""
+    price = bars.item(after, "close")
+    flat = pl.int_range(pl.len()).is_between(after + 1, after + rows)
+    return bars.with_columns(
+        pl.when(flat).then(price).otherwise(pl.col(name)).alias(name)
+        for name in ("open", "high", "low", "close")
+    )
+
+
+@pytest.mark.parametrize("golden", GOLDENS, ids=lambda golden: call_text(golden.spec))
+def test_after_a_flat_stretch_each_output_is_talib_s_again(
+    golden: Golden, frames: dict[str, pl.DataFrame]
+) -> None:
+    # The step review: forty flat bars inside a moving market leave an output null only on the
+    # bars that divide by zero, where TA-Lib gives 0 or 50, and on the windows that read them,
+    # within the indicator's warm-up after the stretch; everywhere else it is TA-Lib's.
+    bars = flat_stretch(frames["random walk"].head(3_000), 1_000, 40)
+    ours = golden.spec.evaluate(bars).collect()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected = golden.expected(Prices.of(bars))
+
+    for output, theirs in expected.items():
+        missing = ours.get_column(output).is_null().to_numpy()
+        only_here = np.flatnonzero(missing & ~np.isnan(theirs))
+        if only_here.size:
+            assert 1_000 < only_here.min() <= only_here.max() <= 1_040 + golden.spec.warmup
+        compared = np.where(missing, np.nan, theirs)
+        assert_matches(f"a flat stretch, {output}", ours.get_column(output), compared)
+
+
 @pytest.mark.parametrize("golden", GOLDENS, ids=lambda golden: call_text(golden.spec))
 def test_no_output_is_null_or_nan_once_the_warmup_has_passed(
     golden: Golden, frames: dict[str, pl.DataFrame]

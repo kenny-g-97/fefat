@@ -1,8 +1,8 @@
-"""What the indicators share (step 3.5): an exponential average seeded where TA-Lib seeds it, and
-each bar's true range. An exponential average remembers its first bars, a little less with each
-bar, so an indicator built on one declares 25 times its period as its warm-up, after which those
-bars weigh less than 1e-11, well inside the 1e-9 within which the feature cache and the leak
-detector take two evaluations as equal (D-73, D-74, D-75)."""
+"""The exponential average of the indicators (step 3.5), seeded where TA-Lib seeds it. It
+remembers its first bars, a little less with each bar, so an indicator built on one declares 25
+times its period as its warm-up, after which those bars weigh less than 4e-11, well inside the
+1e-9 within which the feature cache and the leak detector take two evaluations as equal (D-73,
+D-74, D-75)."""
 
 import polars as pl
 
@@ -16,11 +16,3 @@ def exponential_average(values: pl.Expr, alpha: float, seed: pl.Expr, first: int
     row = pl.int_range(pl.len())
     seeded = pl.when(row == first).then(seed).when(row > first).then(values)
     return seeded.cast(pl.Float64).ewm_mean(alpha=alpha, adjust=False, ignore_nulls=True)
-
-
-def true_ranges() -> pl.Expr:
-    """Each bar's true range, its high less its low, widened to the close before it, as TA-Lib's
-    TRANGE: null on the first bar, which has no close before it."""
-    previous = pl.col("close").shift(1)
-    widened = pl.max_horizontal("high", previous) - pl.min_horizontal("low", previous)
-    return pl.when(previous.is_not_null()).then(widened)

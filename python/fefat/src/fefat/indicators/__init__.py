@@ -31,7 +31,7 @@ TA-Lib's seeding is reproduced exactly: an exponential average starts from the s
 its first values, as EMA, MACD, RSI, ATR, ADX, and Keltner's do, where Polars' `ewm_mean` would
 start from the first value alone, and every output is null until TA-Lib's first value. An
 exponential average never forgets those first bars, so its warm-up is 25 times its period, after
-which they weigh less than 1e-11, and ADX's, smoothed twice, 50 times; values from any start then
+which they weigh less than 4e-11, and ADX's, smoothed twice, 50 times; values from any start then
 agree within the 1e-9 the feature cache and the leak detector allow (D-73, D-74). Where TA-Lib
 divides by zero, as the RSI of closes that have not moved, the stochastic of a flat range, or the
 rate of change after a close of zero, it gives 0 or 50 and these give null, as do the

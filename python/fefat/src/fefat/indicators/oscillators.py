@@ -4,13 +4,11 @@ computes them. Where TA-Lib divides by zero and gives 0 or 50, as the RSI of clo
 moved, these give null: no value, which a strategy reads as no signal, as do the stochastic's
 averages over such a bar, while ADX skips one, as TA-Lib's does."""
 
-from typing import Annotated
-
 import polars as pl
-from pydantic import Field
 
-from fefat.features.definition import BarCount, feature
-from fefat.indicators.smoothing import exponential_average, true_ranges
+from fefat.features.definition import BarCount, TwoOrMoreBars, feature
+from fefat.indicators.ranges import true_ranges
+from fefat.indicators.smoothing import exponential_average
 
 
 @feature(params={"n": 14}, warmup=lambda n: 25 * n, outputs={"rsi": "ratio"})
@@ -66,7 +64,7 @@ def momentum(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
     warmup=lambda n: 50 * n,
     outputs={"adx": "ratio", "plus_di": "ratio", "minus_di": "ratio"},
 )
-def adx(bars: pl.LazyFrame, n: Annotated[int, Field(ge=2)]) -> pl.LazyFrame:
+def adx(bars: pl.LazyFrame, n: TwoOrMoreBars) -> pl.LazyFrame:
     """Wilder's average directional index and its directional indicators, TA-Lib's ADX,
     PLUS_DI, and MINUS_DI. A bar's upward move, its high above the high before it, counts when it
     outdoes its downward move, its low below the low before it, and the other way round; +DI and

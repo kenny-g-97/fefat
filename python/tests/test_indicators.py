@@ -34,8 +34,8 @@ def call_text(spec: FeatureSpec) -> str:
 
 
 def test_the_module_docstring_has_a_row_for_each_indicator_with_its_parameters() -> None:
-    # Done means 3: each indicator's row writes its call with its defaults, its outputs, and
-    # their kinds.
+    # Done means 3: each indicator's row writes its call with its defaults, and its outputs,
+    # each followed by its kind in brackets, as `upper` (price) or `rsi` (ratio, 0 to 100).
     rows = [line for line in (ff.indicators.__doc__ or "").splitlines() if line.startswith("| ")]
 
     assert len(DEFINITIONS) == 17
@@ -43,9 +43,11 @@ def test_the_module_docstring_has_a_row_for_each_indicator_with_its_parameters()
         call = f"`{call_text(definition())}`"
         row = next((row for row in rows if call in row), None)
         assert row is not None, f"Expected a row of the table for {call}, got none"
+        outputs = row.split(" | ")[2]
         for output, kind in definition.outputs.items():
-            assert f"`{output}`" in row, f"{call}: {output} missing from its row"
-            assert kind.value in row, f"{call}: the kind {kind} missing from its row"
+            assert f"`{output}`" in outputs, f"{call}: {output} missing from its row"
+            written = re.search(r"\((\w+)", outputs.split(f"`{output}`", 1)[1])
+            assert written is not None and written.group(1) == kind.value, f"{call}: {output}"
 
 
 def test_levels_are_prices_and_distances_are_price_distances() -> None:
@@ -206,3 +208,20 @@ def test_a_macd_whose_fast_period_is_not_below_its_slow_one_is_refused() -> None
 
     with pytest.raises(ValueError, match=re.escape(refusal)):
         ff.indicators.macd(26, 12).evaluate(FLAT)
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        ff.indicators.standard_deviation,
+        ff.indicators.z_score,
+        ff.indicators.bollinger,
+        ff.indicators.adx,
+    ],
+    ids=lambda definition: definition.name,
+)
+def test_a_period_of_one_bar_is_refused_where_it_leaves_no_value(definition: FeatureDef) -> None:
+    # The step review: over one bar the deviation is 0 on every row, the z-score and %b null on
+    # every row, and the directional indicators have no bars to sum before their first value.
+    with pytest.raises(ValueError, match=re.escape("got n=1: Input should be greater than or")):
+        definition(1)

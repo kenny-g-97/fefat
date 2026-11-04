@@ -55,6 +55,9 @@ from fefat.market.calendar import counted
 
 BarCount = typing.Annotated[int, Field(ge=1)]
 """A number of bars, at least one, as a moving average's or a range's."""
+TwoOrMoreBars = typing.Annotated[int, Field(ge=2)]
+"""A number of bars, at least two, as a standard deviation's or a directional index's, which a
+single bar leaves without a value."""
 
 _RESERVED_OUTPUTS = frozenset({"ts_close", "warmup", *SIGNAL_BAR_COLUMNS})
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)

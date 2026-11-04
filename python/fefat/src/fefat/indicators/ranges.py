@@ -5,8 +5,16 @@ TA-Lib computes them."""
 
 import polars as pl
 
-from fefat.features.definition import BarCount, feature
-from fefat.indicators.smoothing import exponential_average, true_ranges
+from fefat.features.definition import BarCount, TwoOrMoreBars, feature
+from fefat.indicators.smoothing import exponential_average
+
+
+def true_ranges() -> pl.Expr:
+    """Each bar's true range, its high less its low, widened to the close before it, as TA-Lib's
+    TRANGE: null on the first bar, which has no close before it."""
+    previous = pl.col("close").shift(1)
+    widened = pl.max_horizontal("high", previous) - pl.min_horizontal("low", previous)
+    return pl.when(previous.is_not_null()).then(widened)
 
 
 @feature(warmup=1, outputs={"true_range": "price_distance"})
@@ -26,13 +34,13 @@ def atr(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
 
 
 @feature(params={"n": 20}, warmup=lambda n: n - 1, outputs={"standard_deviation": "price_distance"})
-def standard_deviation(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
+def standard_deviation(bars: pl.LazyFrame, n: TwoOrMoreBars) -> pl.Expr:
     """The standard deviation of the last `n` closes as a population's, TA-Lib's STDDEV."""
     return pl.col("close").rolling_std(n, ddof=0)
 
 
 @feature(params={"n": 20}, warmup=lambda n: n - 1, outputs={"z_score": "ratio"})
-def z_score(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
+def z_score(bars: pl.LazyFrame, n: TwoOrMoreBars) -> pl.Expr:
     """How many standard deviations the close lies above the simple average of the last `n`
     closes, TA-Lib's SMA and STDDEV, below it when negative; null where the closes have not
     moved."""
