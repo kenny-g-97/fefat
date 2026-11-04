@@ -1,12 +1,12 @@
 # Phase 7 — Prop simulator
 
-**Goal.** The prop-firm simulator from `03-prop-simulator.md`: rules as dated, sourced data; an account state machine with a Python reference; replay of an existing backtest file — a saved FEFAT run or a trade log imported from another platform — through the rules and your prop strategy, never re-running the trading strategy; Monte Carlo with a cash ledger; and the pages to run and read it all.
+**Goal.** The prop-firm simulator from `03-prop-simulator.md`: rules as dated, sourced data; an account state machine with a Python reference; replay of an existing backtest file — a saved FEFAT run or a trade log imported from another platform — through the rules and your prop strategy, never re-running the trading strategy; Monte Carlo with a cash ledger; a portfolio of several backtest files, strategies and instruments on one timeline, with its own analysis (steps 7.12 and 7.13, added 2026-11-04, D-76); and the pages to run and read it all.
 
-**You get.** Pick a saved backtest, prop rules, and a prop strategy, and get pass probabilities, payouts, costs, and a plan ranking in seconds — without re-running anything.
+**You get.** Pick a saved backtest, or a portfolio of several, prop rules, and a prop strategy, and get pass probabilities, payouts, costs, and a plan ranking in seconds — without re-running anything.
 
-**Depends on.** Phase 6 in the written order. Steps 7.1–7.8 need only the SDK and the run artifacts from Phase 2, including the trade paths every run stores since step 2.13; 7.9–7.11 need the app (Phase 6). If you move this phase earlier at a kickoff, amend 7.1's `Depends on` line.
+**Depends on.** Phase 6 in the written order. Steps 7.1–7.8 and 7.12 need only the SDK and the run artifacts from Phase 2, including the trade paths every run stores since step 2.13; 7.9–7.11 and 7.13 need the app (Phase 6). If you move this phase earlier at a kickoff, amend 7.1's `Depends on` line.
 
-**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `frontend-design` with `web/DESIGN.md` for 7.9–7.11.
+**Skills.** `backtest-expert` and `software-design-principles` for every step: the account state machine and the replay are backtest code, and the skill's sample-size and friction rules apply to the Monte Carlo and the plan ranking; `frontend-design` with `web/DESIGN.md` for 7.9–7.11 and 7.13.
 
 **Open decisions for the kickoff.** The first three plans to encode (suggested: Topstep Trading Combine → XFA, My Funded Futures Rapid or Pro, Tradeify Growth or Select); the bankroll and horizon defaults; whether you trade micros or minis in evaluations; which other platforms' trade logs to import first (for example NinjaTrader, Sierra Chart, TradeStation, or TradingView strategy-tester exports).
 
@@ -433,8 +433,84 @@ Not in this step: anything else.
 
 - If a firm's pages have changed since the research, encode what the page says today and note the change in the preset's sources.
 
+### 7.12 Portfolio backtest file and analysis
+
+Depends on: 7.8 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer · Security: no · Model hint: hard
+
+#### Purpose
+
+Several strategies on several instruments as one backtest: saved runs and imported trade logs combine on one timeline into a backtest file the replay, the Monte Carlo, and the ranking take unchanged, with the analysis a portfolio needs.
+
+#### Prerequisites
+
+- Step 7.8 merged.
+
+#### Prompt
+
+```text
+Masterplan step 7.12 — Portfolio backtest file and analysis.
+
+Read docs/masterplan/03-prop-simulator.md §4 and §6. Implement `BacktestFile.portfolio(members, multipliers)` in `fefat.prop` and `fefat-prop`: two or more backtest files (saved runs or imported trade logs, any mix of strategies and instruments, a size multiplier each, 1 by default) merged on one timeline into one backtest file of the same tables (`trades`, `fills`, `trade_paths`, the funding payments, each instrument's specification and fee table), every row naming its member, so that `replay`, `simulate`, `monte_carlo`, and `rank_plans` take a portfolio as they take one run. Fills and minute marks carry their own instants and interleave exactly; inside a minute the members' extremes have no known order, so the replay orders them worst for the account under each rule, as it does a bar's `possible_adverse` points, and the result's fidelity names the portfolio's coarsest member and says that the order across members is a bound. A firm's contract limit counts the members' open lots together; a member's own limits, if any, stay out. Add `fefat.prop.portfolio_report(file)`: the portfolio's metrics from `fefat-metrics` over the combined daily profit and loss, as a run's are; each member's share of the profit and of the drawdown; the correlation of the members' daily profit and loss; the number of positions open at once over time with its maximum; and the days on which one member's trades were cut by a rule another member's loss triggered, once replayed. Update the Python reference account machine to read a portfolio file.
+
+Tests: a portfolio of one member replays exactly as the member alone; two members whose trades never overlap in time give the member replays summed, trade for trade; member order never changes a result; replay of the merged compact paths equals the reference fed with the two members' interleaved full-resolution paths on generated tapes; and the conservative order never reports a plain pass that the interleaved full paths fail, over randomised pairs. Refuse a member without trade paths, members on different reference capitals unless multipliers are given, and a multiplier that is not a positive number, with errors that say "Expected …, got …".
+
+Not in this step: pages (7.13); a strategy that reads the portfolio's state while it runs (the engine runs one strategy on one instrument; `BACKLOG.md`).
+```
+
+#### Done means
+
+1. The equality, summation, order, and reference tests pass; the conservative-bound test passes over randomised pairs.
+2. `monte_carlo` and `rank_plans` run on a portfolio of two synthetic runs on different instruments without a code path of their own, and the result names the bound.
+3. `portfolio_report` gives the combined metrics, the members' shares, the correlation table, and the open-at-once count on the same portfolio, and a notebook cell shows them.
+
+#### Your checks
+
+- In a notebook, combine two of your saved runs on different instruments, read the correlation of their daily profit and loss and the combined drawdown against each member's own, then run the three presets on the portfolio and on each member and compare the pass probabilities: diversification should show, and never a pass the members' own replays would refuse.
+
+#### If it fails
+
+- If the two-member sum test fails on the equity between trades, a member's open profit is being marked on the other member's minute marks; mark every member at every merged minute boundary.
+
+### 7.13 Portfolio page
+
+Depends on: 7.12, 7.11 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+
+#### Purpose
+
+Build a portfolio from your saved runs and trade logs in the app, read its analysis, and simulate it like any backtest file.
+
+#### Prerequisites
+
+- Steps 7.12 and 7.11 merged.
+
+#### Prompt
+
+```text
+Masterplan step 7.13 — Portfolio page.
+
+Implement `POST /v1/prop/portfolios` (two or more backtest files with a multiplier each, saved as a backtest file of kind `portfolio` that `GET /v1/prop/backtest-files` lists with its members) and `GET /v1/prop/portfolios/{id}/report` (7.12's `portfolio_report`). In the backtest-files list, add a "Combine" action that picks several files, shows their instruments, ranges, and fidelities side by side with the multiplier fields, warns where ranges do not overlap, and saves the portfolio; build the portfolio page: the combined equity curve over each member's (ECharts, one accent for the portfolio, the members in neutral steps), the members' shares, the correlation table, the open-at-once chart, and the fidelity badge with the bound note; its "Simulate prop accounts" action opens 7.10's launch dialog unchanged. Extend the end-to-end flow and docs/demo-prop.md with the portfolio, and docs/prop-guide.md with what a portfolio file is, what the order bound means, and what it does not model.
+
+Playwright: combine the two seeded runs, read the correlation table, launch a small simulation on the portfolio and read its ranking.
+
+Not in this step: new analysis; rebalancing or weights that change over time.
+```
+
+#### Done means
+
+1. Playwright passes on both projects with screenshots.
+2. Every number on the portfolio page equals the SDK's `portfolio_report` for the same file (contract test), and the simulation's numbers equal `monte_carlo` on it.
+3. `docs/prop-guide.md` and `docs/demo-prop.md` cover the portfolio.
+
+#### Your checks
+
+- Combine two of your runs, read the correlation and the combined drawdown, then simulate the portfolio under the three presets from its page and compare the ranking with each member's own.
+
+#### If it fails
+
+- Members on different time zones or sessions must still align on instants, never on local times; if the equity curve shows steps at a member's session boundary, the merge keyed on trade dates instead of timestamps.
+
 ## Phase exit
 
 ```text
-/phase-exit 7 — Run the exit procedure for Phase 7: clean-clone suite; engine-accuracy-reviewer over the phase diff; /code-review ultra on fefat-prop if the budget allows (otherwise high); mutation testing on fefat-prop with the kill rate recorded; demo = docs/demo-prop.md; retro; backlog groomed; tag phase-7.
+/phase-exit 7 — Run the exit procedure for Phase 7: clean-clone suite; engine-accuracy-reviewer over the phase diff; /code-review ultra on fefat-prop if the budget allows (otherwise high); mutation testing on fefat-prop with the kill rate recorded; demo = docs/demo-prop.md, the portfolio flow included; retro; backlog groomed; tag phase-7.
 ```

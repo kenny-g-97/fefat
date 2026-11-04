@@ -18,7 +18,7 @@
 
 ### 8.1 Runtime spike: tool loop, streaming, append-only transcript, caching, compaction
 
-Depends on: 7.11 · Plan mode: required · Reviews: step-reviewer, code-review · Security: yes · Model hint: hard
+Depends on: 7.13 · Plan mode: required · Reviews: step-reviewer, code-review · Security: yes · Model hint: hard
 
 #### Purpose
 

@@ -10,7 +10,7 @@ The simulator answers one question: _given this backtest, which prop plan and wh
 | Prop strategy | The account-management decisions: accounts over time, sizing per stage, payouts and reinvestment, trade allocation (`PropStrategySpec` in the code) | Presets or your own (§5) |
 | Backtest file | An existing backtest with its full trade log and, for full precision, each trade's intrabar path | A saved FEFAT run, or a trade log imported from another platform (§4) |
 
-Because the strategy is never re-run, a simulation of thousands of account lifetimes takes seconds, and the same backtest can be tested against any number of firms and prop strategies. One backtest file feeds one simulation; combining several backtests in one account (a portfolio) is a backlog item.
+Because the strategy is never re-run, a simulation of thousands of account lifetimes takes seconds, and the same backtest can be tested against any number of firms and prop strategies. One backtest file feeds one simulation, and a portfolio of several backtests, strategies or instruments, is itself a backtest file (§4.7, steps 7.12 and 7.13).
 
 ## 2. Rules as data
 
@@ -116,7 +116,7 @@ Every result states its fidelity. Tests require the conservative treatments neve
 - **Strategy reactions to account state.** After a forced cut, the backtest's later trades are taken as recorded (unless the account is locked or failed); a strategy that would have behaved differently after a lockout or a forced exit is approximated. Results count the trades that followed a forced cut on the same day.
 - **Order-book effects.** Forced liquidations are priced at the path's price plus slippage; larger sizes do not change fill prices beyond the configured slippage.
 - **News windows.** Not checked in the first release; results for firms with news rules say so (backlog).
-- **Several backtests in one account.** One backtest file per simulation in the first release (backlog).
+- **Several backtests in one account.** A portfolio backtest file (§4.7) merges them on one timeline; inside a minute the order of the members' extremes is unknown, and the replay takes the worst for each rule, a bound the result names.
 
 These limits are shown as a note on every result.
 
@@ -125,6 +125,10 @@ These limits are shown as a note on every result.
 - The Python reference account machine (`fefat/reference/prop.py`) is the oracle.
 - Replay of compact paths must equal the reference fed with test-only full-resolution paths (every tick while in a position), with forced liquidations priced the same way in both, on generated tapes, fills, sizes, and rule sets.
 - Every preset's worked examples pass in both implementations.
+
+### 4.7 Portfolio backtest file
+
+Added 2026-11-04 (D-76, steps 7.12 and 7.13). A portfolio is two or more backtest files, saved runs or imported trade logs, any mix of strategies and instruments, each with a size multiplier (1 by default), merged on one timeline into one backtest file of the same tables, every row naming its member, so that the replay, the Monte Carlo, the plan ranking, and the pages take it as they take one run; the strategies are never re-run together (D-25), so a strategy cannot react to another's loss, and an engine run of several strategies on shared capital stays in the backlog. Fills and minute marks carry their own instants and interleave exactly. Inside a minute the members' extremes have no known order, so the replay orders them worst for the account under each rule, as it does a bar's `possible_adverse` points (§4.2); the result's fidelity names the portfolio's coarsest member and says that the order across members is a bound. A firm's contract limit counts the members' open lots together. The portfolio's own analysis, `portfolio_report`: the metrics of `fefat-metrics` over the combined daily profit and loss, each member's share of the profit and of the drawdown, the correlation of the members' daily profit and loss, the number of positions open at once, and, once replayed, the days on which one member's trades were cut by a rule another member's loss triggered. A portfolio of one member replays exactly as the member alone, and members whose trades never overlap give the member replays summed.
 
 ## 5. Prop strategy
 
@@ -148,7 +152,7 @@ Correlation between accounts is structural, not a parameter: all accounts consum
 
 - Rule-set library: presets with status, as-of date, sources; custom rule sets; version history.
 - Prop-strategy builder: the four dimensions as forms, with presets ("one conservative evaluation", "two staggered evaluations", "five-account copier").
-- Backtest files: your saved runs (each ready for prop simulation) and imported trade logs, with their path fidelity; an import dialog for trade logs from other platforms.
+- Backtest files: your saved runs (each ready for prop simulation) and imported trade logs, with their path fidelity; an import dialog for trade logs from other platforms; a Combine action that saves several as a portfolio (§4.7), and the portfolio page with the combined equity over the members', their shares, the correlation table, the open-at-once chart, and the bound note.
 - Simulation launch: pick a backtest file, rule sets, a prop strategy, horizon, number of paths, and seed; feasibility flags are shown before launch.
 - Results: account timelines (one lane per account: evaluation, funded, payouts, failure), cash curves with bands, outcome distributions, failure reasons, the plan ranking table, the feasibility flags, and the path-fidelity badge with the replay notes.
 
