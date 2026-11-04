@@ -1,7 +1,7 @@
 """Distances of price (step 3.5): the true range, the average true range, and the standard
 deviation of the closes, in the bars' 1e-9 units of price, the units in which the execution
 template reads a distance (`ff.Stop(atr=1.5)`, F-RND-01), and the z-score of the close, as
-TA-Lib computes them."""
+TA-Lib computes them; and the realised volatility of the closes' log returns (step 3.6)."""
 
 import polars as pl
 
@@ -46,3 +46,13 @@ def z_score(bars: pl.LazyFrame, n: TwoOrMoreBars) -> pl.Expr:
     moved."""
     close = pl.col("close")
     return (close - close.rolling_mean(n)) / close.rolling_std(n, ddof=0)
+
+
+@feature(params={"n": 20}, warmup=lambda n: n, outputs={"realised_volatility": "ratio"})
+def realised_volatility(bars: pl.LazyFrame, n: BarCount) -> pl.Expr:
+    """The realised volatility of the last `n` bars: the square root of the sum of the squares of
+    their log returns, close to close, not annualised; null where a close is not above zero, as a
+    spliced crude oil's can be, whose return has no logarithm."""
+    close, previous = pl.col("close"), pl.col("close").shift(1)
+    returns = pl.when((close > 0) & (previous > 0)).then((close / previous).log())
+    return returns.pow(2).rolling_sum(n).sqrt()
