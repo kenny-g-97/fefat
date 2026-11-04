@@ -113,6 +113,29 @@ def test_the_distance_from_the_vwap_counts_atrs_and_the_instruments_ticks() -> N
         ff.indicators.distance_from_vwap("MES").outputs_over(read)
 
 
+def test_the_distance_counts_in_the_tick_of_the_bars_own_root_never_one_it_starts_with() -> None:
+    # The reviews: spot bitcoin's root starts its perpetual's, whose tick is ten times its own,
+    # so its perpetual's bars measured in spot ticks are refused; the perpetual's own pass.
+    read = pl.DataFrame(
+        {
+            "ts_close": [1],
+            "contract": ["BTCUSDT-PERP"],
+            "close": [70_001 * POINT],
+            "session_vwap": [70_000.0 * POINT],
+            "atr": [10.0 * POINT],
+        }
+    )
+    expected = (
+        "Expected the bars of BTCUSDT, whose tick the distance counts in, got contract "
+        "BTCUSDT-PERP."
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        ff.indicators.distance_from_vwap("BTCUSDT").outputs_over(read)
+    perpetual = ff.indicators.distance_from_vwap("BTCUSDT-PERP").outputs_over(read).collect()
+    assert perpetual.get_column("ticks").to_list() == [10.0]
+
+
 def test_an_anchor_the_clock_skips_on_a_trade_date_is_refused_naming_the_feature() -> None:
     # A calendar trading on Sundays, as bitcoin's does, meets Chicago's clock change of
     # 2026-03-08, which skips 02:30 there: F-TIM-05 refuses such a local time.

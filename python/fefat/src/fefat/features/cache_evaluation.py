@@ -16,7 +16,8 @@ import polars as pl
 
 from fefat.features.cache_folders import FeatureFolder
 from fefat.features.cache_keys import CachePartition
-from fefat.features.runtime import FeatureGraph, Grid, InputBars, slot_columns
+from fefat.features.grids import Grid, InputBars
+from fefat.features.runtime import FeatureGraph, slot_columns
 from fefat.market.api import SeriesSource
 from fefat.market.calendar import SessionTable, utc_text
 from fefat.market.schema import FrozenModel

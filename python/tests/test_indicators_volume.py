@@ -11,7 +11,8 @@ import polars as pl
 import pytest
 
 import fefat as ff
-from fefat.features.runtime import FeatureGraph, PrintsGrid
+from fefat.features.grids import PrintsGrid
+from fefat.features.runtime import FeatureGraph
 from fefat.market.schema import Timeframe
 from notebook_runs import SYNTHETIC, store_with
 from session_bars import FIVE_MINUTES, chicago, frame, traded, values_of
@@ -23,8 +24,10 @@ VOLUMES = [(10, 20), (30, 40), (50, 60), (70, 80), (90, 100)]
 
 
 def sessions_of_volume(volumes: list[tuple[int, int]]) -> pl.DataFrame:
-    """A session for each pair of `volumes`, from 2026-03-02 on, of two bars at 08:30 and 08:35."""
-    days = [date(2026, 3, day) for day in range(2, 7)]
+    """A session for each pair of `volumes`, of two bars at 08:30 and 08:35 Chicago, on the trade
+    dates of 2026-03-04 to 03-10, across the clock change of 03-08, after which 08:30 Chicago is
+    13:30 UTC, no longer 14:30: a bar's time of day is Chicago's, never UTC's."""
+    days = [date(2026, 3, day) for day in (4, 5, 6, 9, 10)]
     return frame(
         *(
             traded(day, clock, 100, volume)

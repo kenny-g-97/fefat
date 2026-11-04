@@ -53,7 +53,8 @@ import polars as pl
 from fefat.features.cache_evaluation import compare_values, slot_outputs
 from fefat.features.cuts import Cut, cuts_of
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.runtime import FeatureGraph, Grid, InputBars, PrintsGrid
+from fefat.features.grids import Grid, InputBars, PrintsGrid
+from fefat.features.runtime import FeatureGraph
 from fefat.features.source_lint import LintFinding, lint
 from fefat.features.validation_report import CutResult, FeatureRead, StartCheck, ValidationReport
 from fefat.features.versions import validation_file

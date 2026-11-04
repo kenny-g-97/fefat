@@ -4,6 +4,8 @@ cut compares values of each output, the start check agrees from the window's mid
 the declared warm-up enough, and the lint finds nothing (D-12, D-74). Those whose defaults the
 store cannot validate are validated apart, each for the reason `VALIDATED_APART` gives."""
 
+from pathlib import Path
+
 import pytest
 
 import fefat as ff
@@ -27,8 +29,15 @@ DEFINITIONS = [
 INDICATORS = [definition for definition in DEFINITIONS if definition.name not in VALIDATED_APART]
 
 
-def test_the_indicators_validated_apart_are_indicators() -> None:
+def test_the_indicators_validated_apart_are_validated_where_their_reasons_say() -> None:
+    # The step review: an indicator left out here keeps its leak check only while the module
+    # its reason names still validates it.
+    tests = Path(__file__).resolve().parents[2]
     assert set(VALIDATED_APART) <= {definition.name for definition in DEFINITIONS}
+    for name, reason in VALIDATED_APART.items():
+        module = reason.rsplit(": ", 1)[1]
+        (path,) = tests.rglob(f"{module}.py")
+        assert f"ff.indicators.{name}(" in path.read_text(encoding="utf-8"), (name, module)
 
 
 @pytest.mark.parametrize("indicator", INDICATORS, ids=lambda definition: definition.name)

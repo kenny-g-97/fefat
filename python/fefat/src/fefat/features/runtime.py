@@ -35,7 +35,6 @@ bucket's prints are all in hand, and null where none are, on a trade date withou
 bucket held back (`fefat.market.aggressor`, D-78). The dataset input waits for Phase 10.
 """
 
-import os
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -47,9 +46,9 @@ from types import MappingProxyType
 
 import polars as pl
 
-from fefat.config import resolve_paths
 from fefat.features.as_of import with_feature, with_instrument, with_side_volumes
 from fefat.features.evaluation import FeatureSpec, first_warm_row
+from fefat.features.grids import Grid, InputBars, PrintsGrid, grid_frame
 from fefat.features.inputs import (
     DatasetInput,
     FeatureInput,
@@ -57,52 +56,9 @@ from fefat.features.inputs import (
     TimeframeInput,
     TradesInput,
 )
-from fefat.market.api import SIGNAL_BAR_COLUMNS, SeriesSource, load, series_source
+from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import Session, SessionTable, counted
-from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
-
-
-@dataclass(frozen=True)
-class Grid:
-    """An instrument's signal bars of one timeframe: the rows a feature is evaluated on, or the
-    bars of another instrument it reads."""
-
-    root: str
-    timeframe: Timeframe
-
-    def __str__(self) -> str:
-        return f"{self.root} {self.timeframe}"
-
-    @property
-    def described(self) -> str:
-        """What the grid's frame holds, in words."""
-        return f"bars of {self}"
-
-    def frame_from(self, source: SeriesSource, dates: tuple[date, date]) -> pl.DataFrame:
-        """The grid's frame from `source`, its instrument's, on the trade dates `dates` spans."""
-        return source.signal_bars(self.timeframe, dates)
-
-
-@dataclass(frozen=True)
-class PrintsGrid(Grid):
-    """An instrument's prints by aggressor side in each bucket of one timeframe's grid
-    (`fefat.market.aggressor`), which a feature declaring `TradesInput` reads; never equal to the
-    `Grid` of its bars."""
-
-    @property
-    def described(self) -> str:
-        return f"prints by side of {self}"
-
-    def frame_from(self, source: SeriesSource, dates: tuple[date, date]) -> pl.DataFrame:
-        return source.side_volumes(self.timeframe, dates)
-
-
-InputBars = Mapping[Grid, pl.DataFrame]
-"""The frame of each grid a graph reads: its bars as `load` gives them, or its prints by side."""
-
-NO_INPUTS: InputBars = MappingProxyType({})
-"""No bars beside a strategy's signal bars."""
 
 
 @dataclass(frozen=True, eq=False)
@@ -284,7 +240,7 @@ class FeatureGraph:
         warm_from: dict[_Node, int | None] = {}
         for node in self.order:
             values[node], warm_from[node] = self._values_of(node, inputs, values, warm_from)
-        frame = _bars_of(inputs, self.signal_grid, "the strategy").select("ts_close")
+        frame = grid_frame(inputs, self.signal_grid, "the strategy").select("ts_close")
         for slot, node in self.slots.items():
             renamed = values[node].rename(slot_columns(slot, node.spec))
             frame = frame.join_asof(renamed, on="ts_close", strategy="backward")
@@ -299,17 +255,17 @@ class FeatureGraph:
     ) -> tuple[pl.DataFrame, int | None]:
         """`ts_close` and the node's outputs on its grid, null on the rows of its warm-up, and the
         close of its first row past it, None where none is."""
-        bars = _bars_of(inputs, Grid(self.root, node.timeframe), node.name)
+        bars = grid_frame(inputs, Grid(self.root, node.timeframe), node.name)
         frame = bars
         dependencies = iter(self.reads[node])
         for declared in node.spec.definition.inputs:
             if isinstance(declared, FeatureInput):
                 frame = with_feature(frame, values[next(dependencies)], node.name)
             if isinstance(declared, InstrumentInput):
-                other = _bars_of(inputs, Grid(declared.root, node.timeframe), node.name)
+                other = grid_frame(inputs, Grid(declared.root, node.timeframe), node.name)
                 frame = with_instrument(frame, other, declared.root, node.name)
             if isinstance(declared, TradesInput):
-                prints = _bars_of(inputs, PrintsGrid(self.root, node.timeframe), node.name)
+                prints = grid_frame(inputs, PrintsGrid(self.root, node.timeframe), node.name)
                 frame = with_side_volumes(frame, prints, node.name)
         try:
             outputs = node.spec.outputs_over(frame).collect()
@@ -339,37 +295,6 @@ class FeatureGraph:
         return first_warm_row(
             bars, max(known, default=None), spec.warmup_sessions, spec.warmup, owner
         )
-
-
-def load_inputs(
-    graph: FeatureGraph,
-    dates: tuple[date, date],
-    provider: str | None = None,
-    *,
-    contract: str | None = None,
-) -> dict[Grid, pl.DataFrame]:
-    """The frame of each grid the graph reads but its signal grid, for the trade dates `dates`
-    span (`FeatureGraph.grid_dates`): its instrument's bars at other timeframes, as `load` gives
-    them, and its prints by side, from `provider`, where it is named, of one `contract` where a
-    run reads one, and another instrument's bars from its own default provider, for the graph's
-    `evaluate` or a strategy's `signals` over bars a notebook loads."""
-    paths = resolve_paths(os.environ)
-    loaded = {}
-    for grid in graph.grids():
-        if grid == graph.signal_grid:
-            continue
-        timeframe = str(grid.timeframe)
-        symbol = grid.root if contract is None else contract
-        if isinstance(grid, PrintsGrid):
-            loaded[grid] = grid.frame_from(series_source(symbol, provider=provider), dates)
-            continue
-        if grid.root == graph.root:
-            loaded[grid] = load(symbol, timeframe, *dates, provider=provider).collect()
-            continue
-        sessions = instrument_table(paths.data_dir).sessions_of(grid.root, paths.cache_dir)
-        read = graph.grid_dates(grid, dates, sessions)
-        loaded[grid] = load(grid.root, timeframe, *read).collect()
-    return loaded
 
 
 def clashing(columns: Sequence[str], reserved: Iterable[str]) -> list[str]:
@@ -496,14 +421,3 @@ def _fewest_buckets(session: Session, timeframe: Timeframe) -> int:
     halted = sum(halt.end - halt.start for halt in session.halts)
     open_for = session.close - session.open - halted
     return max(1, floor(open_for / timeframe.nominal_nanoseconds()))
-
-
-def _bars_of(inputs: InputBars, grid: Grid, reader: str) -> pl.DataFrame:
-    bars = inputs.get(grid)
-    if bars is None:
-        held = ", ".join(each.described for each in inputs) or "none"
-        raise ValueError(
-            f"Expected the {grid.described} that {reader} reads, got {held}: "
-            "ff.features.compute and ff.backtest.run load them."
-        )
-    return bars

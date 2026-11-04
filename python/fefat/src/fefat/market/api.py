@@ -215,8 +215,9 @@ class SeriesSource:
     def side_volumes(self, timeframe: Timeframe, dates: tuple[date, date]) -> pl.DataFrame:
         """The volume of the prints of each bucket of `timeframe` by aggressor side on the trade
         dates `dates` spans that the provider's trades hold, each date's of the contract whose
-        bars it gives (`counted`), held back from the end of the trades, with the columns of
-        `SIDE_VOLUME_COLUMNS` (`fefat.market.aggressor`): none without trades."""
+        bars it gives (`counted`), held back before the bucket of the trades' first print and
+        from their end, with the columns of `SIDE_VOLUME_COLUMNS` (`fefat.market.aggressor`):
+        none without trades."""
         trades = self.datasets.get("trades")
         coverage = None if trades is None else dataset_coverage(self.store, trades)
         if trades is None or coverage is None:
@@ -236,7 +237,8 @@ class SeriesSource:
         prints = pl.concat(self.store.scan_partition(each).select(PRINT_COLUMNS) for each in read)
         until = min(self.sessions.following(last).open, coverage.received_until)
         held = sorted({each.key for each in read if isinstance(each.key, date)})
-        return side_volumes(prints.collect(), timeframe, self.sessions, held, until)
+        in_hand = (coverage.received_from, until)
+        return side_volumes(prints.collect(), timeframe, self.sessions, held, in_hand)
 
 
 def series_source(

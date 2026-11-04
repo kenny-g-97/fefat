@@ -32,17 +32,21 @@ def test_a_datasets_coverage_runs_from_its_first_trade_date_to_its_last(tmp_path
     contracts = ("ESH2026", "ESM2026")
     last_trades = [FIXTURES.scan_partition(es_trades(contract, MARCH_9)) for contract in contracts]
     last_received = pl.concat(last_trades).select(pl.col("ts_recv").max()).collect().item()
+    first_trades = [FIXTURES.scan_partition(es_trades(contract, MARCH_5)) for contract in contracts]
+    first_received = pl.concat(first_trades).select(pl.col("ts_recv").min()).collect().item()
 
     assert dataset_coverage(FIXTURES, es("ohlcv-1m")) == DatasetCoverage(
         contracts=("ESH2026", "ESM2026"),
         first_trade_date=MARCH_5,
         last_trade_date=MARCH_9,
+        received_from=utc(2026, 3, 4, 23),
         received_until=utc(2026, 3, 9, 21),
     )
     assert dataset_coverage(FIXTURES, es("trades")) == DatasetCoverage(
         contracts=("ESH2026", "ESM2026"),
         first_trade_date=MARCH_5,
         last_trade_date=MARCH_9,
+        received_from=first_received,
         received_until=last_received + 1,
     )
     assert dataset_coverage(Store(tmp_path), es("trades")) is None

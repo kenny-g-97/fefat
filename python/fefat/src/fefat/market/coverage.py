@@ -22,12 +22,14 @@ SESSION_KINDS = frozenset({SchemaKind.TRADES, SchemaKind.TBBO, SchemaKind.OHLCV}
 
 class DatasetCoverage(FrozenModel):
     """What a dataset of trades, TBBO, or bars holds: its contracts, its first and last trade
-    date, and `received_until`, the instant by which every record was received (a bar's
-    `ts_close`, a tick's `ts_recv` and a nanosecond)."""
+    date, `received_from`, the instant of its first record (a bar's `ts_open`, a tick's
+    `ts_recv`), before which no record is in hand, and `received_until`, the instant by which
+    every record was received (a bar's `ts_close`, a tick's `ts_recv` and a nanosecond)."""
 
     contracts: tuple[str, ...]
     first_trade_date: date
     last_trade_date: date
+    received_from: int
     received_until: int
 
 
@@ -51,9 +53,11 @@ def dataset_coverage(store: Store, dataset: Dataset) -> DatasetCoverage | None:
     keys = sorted({str(partition.key) for partition in partitions if partition.key is not None})
     end_keys = {keys[0], keys[-1]} if keys else set[str]()
     ends = [partition for partition in partitions if not keys or str(partition.key) in end_keys]
-    first, last, received_until = (
+    first, last, received_from, received_until = (
         pl.concat([_partition_span(store, partition) for partition in ends])
-        .select(pl.col("first").min(), pl.col("last").max(), pl.col("end").max())
+        .select(
+            pl.col("first").min(), pl.col("last").max(), pl.col("start").min(), pl.col("end").max()
+        )
         .collect()
         .row(0)
     )
@@ -61,15 +65,23 @@ def dataset_coverage(store: Store, dataset: Dataset) -> DatasetCoverage | None:
         contracts=tuple(sorted({partition.contract for partition in partitions})),
         first_trade_date=first,
         last_trade_date=last,
+        received_from=received_from,
         received_until=received_until,
     )
 
 
 def _partition_span(store: Store, partition: Partition) -> pl.LazyFrame:
-    """A partition's first and last trade date and the instant its last record was received."""
+    """A partition's first and last trade date, the instant of its first record, and the
+    instant its last record was received."""
     rows = store.scan_partition(partition)
     if partition.dataset.schema_name.kind is SchemaKind.OHLCV:
         dates = pl.col("trade_date")
-        return rows.select(first=dates.min(), last=dates.max(), end=pl.col("ts_close").max())
+        return rows.select(
+            first=dates.min(),
+            last=dates.max(),
+            start=pl.col("ts_open").min(),
+            end=pl.col("ts_close").max(),
+        )
     key = pl.lit(partition.key, dtype=pl.Date)
-    return rows.select(first=key, last=key, end=pl.col("ts_recv").max() + 1)
+    received = pl.col("ts_recv")
+    return rows.select(first=key, last=key, start=received.min(), end=received.max() + 1)

@@ -21,7 +21,8 @@ from fefat.features import (
     TradesInput,
 )
 from fefat.features.examples import atr, rsi
-from fefat.features.runtime import FeatureGraph, Grid, PrintsGrid, load_inputs
+from fefat.features.grids import Grid, PrintsGrid, load_inputs
+from fefat.features.runtime import FeatureGraph
 from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS, series_source
 from fefat.market.calendar import sessions_of
@@ -308,6 +309,18 @@ def test_a_feature_reads_the_prints_of_each_of_its_buckets_by_side() -> None:
     expected = "Expected the prints by side of ES 5m that delta reads, got bars of ES 5m"
     with pytest.raises(ValueError, match=re.escape(expected)):
         graph.evaluate({graph.signal_grid: five})
+
+
+def test_a_trades_input_without_trades_warns_that_its_volumes_are_null() -> None:
+    # The ponytail review: a provider holding bars alone gives a trades input no prints, so its
+    # volumes are null on every row, which a computation, and so a run's record, warns of.
+    store_with("ohlcv-1m")
+
+    with pytest.warns(UserWarning, match="synthetic holds no trades of ES: the trades input of"):
+        computed = ff.features.compute({"delta": delta()}, "ES", "5m", "2026-03-06", "2026-03-09")
+
+    values = computed.collect()
+    assert values.get_column("delta").null_count() == values.height > 0
 
 
 def test_compute_and_validate_read_the_prints_by_side_of_the_fixtures() -> None:

@@ -16,7 +16,7 @@ from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.schema import Timeframe
 from notebook_runs import store_with
 
-SECOND, MINUTE = 1_000_000_000, 60_000_000_000
+SECOND, MINUTE, DAY = 1_000_000_000, 60_000_000_000, 86_400_000_000_000
 FIVE = Timeframe.parse("5m")
 FRIDAY, MONDAY = date(2026, 3, 6), date(2026, 3, 9)
 
@@ -53,7 +53,7 @@ def test_a_bucket_holds_the_volume_of_its_prints_by_side(sessions: SessionTable)
         (closed + 400_000_000, 6, "B"),
     )
 
-    volumes = side_volumes(prints, FIVE, sessions, [FRIDAY], sessions.following(FRIDAY).open)
+    volumes = side_volumes(prints, FIVE, sessions, [FRIDAY], (0, sessions.following(FRIDAY).open))
 
     assert volumes.schema == SIDE_VOLUME_COLUMNS
     assert volumes.height == 276
@@ -67,16 +67,33 @@ def test_a_bucket_closing_after_the_prints_in_hand_is_held_back(sessions: Sessio
     opened = sessions.session(FRIDAY).open
     prints = tape((opened + MINUTE, 2, "B"), (opened + 6 * MINUTE, 4, "A"))
 
-    volumes = side_volumes(prints, FIVE, sessions, [FRIDAY], opened + 7 * MINUTE)
+    volumes = side_volumes(prints, FIVE, sessions, [FRIDAY], (0, opened + 7 * MINUTE))
 
     assert volumes.get_column("ts_close").to_list() == [opened + 5 * MINUTE]
     assert volumes_of(volumes) == [(2, 0, 0)]
 
 
+def test_a_bucket_closing_before_the_first_print_in_hand_is_held_back(
+    sessions: SessionTable,
+) -> None:
+    # The leakage audit: prints that start an hour into the session, as a file downloaded by
+    # UTC day starts at its dataset's first session, leave the buckets before the first print's
+    # unknown, not empty, as the bars give none there; the bucket holding it is the first.
+    opened = sessions.session(FRIDAY).open
+    first = opened + 65 * MINUTE
+    prints = tape((first, 3, "B"))
+
+    volumes = side_volumes(prints, FIVE, sessions, [FRIDAY], (first, opened + DAY))
+
+    assert volumes.get_column("ts_open").min() == first
+    assert volumes_of(volumes.head(1)) == [(3, 0, 0)]
+    assert volumes.height == 276 - 13
+
+
 def test_a_date_held_without_prints_has_empty_buckets_and_none_held_has_no_rows(
     sessions: SessionTable,
 ) -> None:
-    until = sessions.following(FRIDAY).open
+    until = (0, sessions.following(FRIDAY).open)
 
     held = side_volumes(tape(), FIVE, sessions, [FRIDAY], until)
     none = side_volumes(tape(), FIVE, sessions, [], until)

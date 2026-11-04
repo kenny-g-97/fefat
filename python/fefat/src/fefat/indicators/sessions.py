@@ -27,14 +27,14 @@ def opening_range(
 ) -> dict[str, pl.Expr]:
     """The high, the low, and the width of the bars that traded wholly inside the `minutes` from
     the session's open, or from the local time of day `anchor` in `time_zone` on the trade date's
-    own day, given from the first bar opening at or after the window's end, so once the window has
-    closed, and null before it and where no bar traded inside it."""
+    own day, given from the bar closing at the window's end, when its last bar has closed, and
+    null on the bars closing before it and where no bar traded inside it."""
     start = session_start(anchor, time_zone)
     end = start + minutes * 60_000_000_000
     inside = (pl.col("ts_open") >= start) & (pl.col("ts_close") <= end) & (pl.col("volume") > 0)
     high = pl.when(inside).then(pl.col("high")).cum_max().forward_fill().over("trade_date")
     low = pl.when(inside).then(pl.col("low")).cum_min().forward_fill().over("trade_date")
-    closed = pl.col("ts_open") >= end
+    closed = pl.col("ts_close") >= end
     return {
         "range_high": pl.when(closed).then(high),
         "range_low": pl.when(closed).then(low),

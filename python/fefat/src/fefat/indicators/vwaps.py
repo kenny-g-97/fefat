@@ -12,6 +12,7 @@ from fefat.indicators.anchors import bar_price, flagged, session_start, within_s
 from fefat.indicators.ranges import atr
 from fefat.indicators.ticks import instrument_tick
 from fefat.market.calendar_definition import LocalTime, TimeZoneName
+from fefat.market.contracts import parse_contract_name
 
 
 def volume_weighted(volume: pl.Expr, partition: pl.Expr | str) -> pl.Expr:
@@ -74,13 +75,23 @@ def distance_from_vwap(bars: pl.LazyFrame, instrument: str) -> dict[str, pl.Expr
 
 
 def _tick_of(bars: pl.LazyFrame, instrument: str) -> int:
-    """The tick of the root `instrument`, refused unless each contract of `bars` is one of it,
-    whose name starts with its root, as `ESM2026` does, or is it, as a perpetual's does."""
-    contracts = bars.select(pl.col("contract").unique()).collect().get_column("contract")
-    foreign = contracts.filter(~contracts.str.starts_with(instrument)).sort()
-    if not foreign.is_empty():
+    """The tick of the root `instrument`, refused unless each contract of `bars` is one of it: a
+    contract named after it, as `ESM2026` is, or it, as a perpetual is, never another root that
+    starts with it, as `BTCUSDT-PERP` does with spot's `BTCUSDT`."""
+    contracts = bars.select(pl.col("contract").unique().sort()).collect().get_column("contract")
+    foreign = [each for each in contracts if _root_of(each) != instrument]
+    if foreign:
         raise ValueError(
             f"Expected the bars of {instrument}, whose tick the distance counts in, got contract "
-            f"{foreign.item(0)}."
+            f"{foreign[0]}."
         )
     return instrument_tick(instrument)
+
+
+def _root_of(contract: str) -> str:
+    """The root a contract's name gives, or the name itself, as a perpetual's or a spot pair's."""
+    try:
+        root, _ = parse_contract_name(contract)
+    except ValueError:
+        return contract
+    return root

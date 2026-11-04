@@ -69,6 +69,7 @@ from fefat.features.cache_keys import (
     held_levels,
 )
 from fefat.features.evaluation import FeatureSpec
+from fefat.features.grids import PrintsGrid
 from fefat.features.runtime import FeatureGraph, slot_columns
 from fefat.market.api import SeriesSource, parse_trade_date, series_source
 from fefat.market.dataset_choice import dataset_warnings, source_dataset
@@ -187,9 +188,17 @@ def _inputs_warnings(
     """What `load` warns of the datasets of each other instrument the graph reads, over the
     trade dates it reads them for (`FeatureGraph.grid_dates`) from `dates`, a window from its
     first date's warm-up, as a run's lead-in starts; an instrument without bars there is
-    refused, as `load` refused it when a window read it whole (step 3.2)."""
+    refused, as `load` refused it when a window read it whole (step 3.2). A trades input whose
+    provider holds no trades reads no prints, which is warned of (step 3.6)."""
     warned: list[str] = []
     for grid in graph.grids():
+        if isinstance(grid, PrintsGrid) and "trades" not in sources[grid.root].datasets:
+            source = sources[grid.root]
+            warned.append(
+                f"{source.provider} holds no trades of {source.symbol}: the trades input of a "
+                "feature reads no prints, and its volumes by side are null on every row; name "
+                "the provider that holds them"
+            )
         if grid.root == graph.root:
             continue
         source = sources[grid.root]

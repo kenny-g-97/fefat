@@ -24,7 +24,7 @@ from pydantic import Field
 
 from fefat.market.calendar_definition import known_time_zone
 from fefat.market.importers.profiles import ColumnName, ImportProfile, PriceUnit, TimestampForm
-from fefat.market.schema import FrozenModel
+from fefat.market.schema import AggressorSide, FrozenModel
 
 _NANO = 1_000_000_000
 _DECIMAL_TEXT = r"^([+-]?[0-9]+)(?:\.([0-9]{1,9}))?$"
@@ -32,7 +32,7 @@ _AVERAGE_TEXT = r"^([+-]?[0-9]+)(?:\.([0-9]{1,9})[0-9]*)?$"
 """An average's decimals, of which the first nine are kept, as the TWS API's floats write more."""
 _INTEGER_TEXT = r"^[+-]?[0-9]+$"
 _ZONE_NAME_AFTER_A_TIME = r"\s+([A-Za-z]+/[A-Za-z0-9_+\-/]+)$"
-_SIDES = ("A", "B", "N")
+_SIDES = tuple(AggressorSide)
 _UNIT_NANOSECONDS = {
     TimestampForm.UNIX_SECONDS: _NANO,
     TimestampForm.UNIX_MILLISECONDS: 1_000_000,
