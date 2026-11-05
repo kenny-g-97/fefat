@@ -50,6 +50,10 @@ def _timeframe_text(text: str) -> str:
     return text
 
 
+TimeframeText = Annotated[str, AfterValidator(_timeframe_text)]
+"""A timeframe as text, such as `15m`, refused unless it reads as one."""
+
+
 class FeatureInput(FrozenModel):
     """Another feature the feature reads, by its name and its content hash; with the
     `parameters` it reads it with, where its reader binds them, as a combination does, else those
@@ -77,7 +81,7 @@ class TimeframeInput(FrozenModel):
     strategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2)."""
 
     kind: Literal["timeframe"] = "timeframe"
-    timeframe: Annotated[str, AfterValidator(_timeframe_text)]
+    timeframe: TimeframeText
 
 
 class DatasetInput(FrozenModel):

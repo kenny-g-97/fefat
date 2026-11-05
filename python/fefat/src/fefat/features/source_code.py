@@ -38,6 +38,11 @@ def from_source(code: str, reads: Sequence[FeatureDef] = ()) -> FeatureDef:
     `reads` (module docstring)."""
     statement = _one_feature(code)
     namespace = _namespace(reads)
+    if statement.name in namespace:
+        raise ValueError(
+            f"Expected a feature named apart from the names its code reads, got {statement.name}, "
+            "which its code would then read as the feature itself."
+        )
     unbound = sorted(set(names_read(statement)) - set(namespace) - set(dir(builtins)))
     if unbound:
         raise ValueError(

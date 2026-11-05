@@ -24,6 +24,7 @@ from typing import Any
 from pydantic import Field
 
 from fefat.config import resolve_paths
+from fefat.features.combinations import Combination
 from fefat.features.declarations import inputs_as_written, written_declarations
 from fefat.features.definition import FeatureDef, content_hash
 from fefat.features.inputs import DeclaredInput, OutputKind
@@ -38,8 +39,9 @@ class FeatureVersion(FrozenModel):
     """A saved version of a feature, as its file keeps it: its name and number, its content
     hash, its normalised source, its parameter schema, the inputs it declares beside the bars,
     its outputs with their kinds, its warm-ups in bars and in sessions, each a number or the
-    lambda its decorator writes, none in sessions in a version saved before step 3.6, and when it
-    was saved."""
+    lambda its decorator writes, none in sessions in a version saved before step 3.6, when it
+    was saved, and, from step 3.7, a combination's description, from which its code was
+    generated (`fefat.features.combine`)."""
 
     name: str = Field(min_length=1)
     version: int = Field(ge=1)
@@ -51,6 +53,7 @@ class FeatureVersion(FrozenModel):
     warmup: int | str
     warmup_sessions: int | str = 0
     created_at: datetime
+    combination: Combination | None = None
 
     def content_hash(self) -> str:
         """The hash its code, the features it reads, and its parameter schema give."""
@@ -77,6 +80,7 @@ def save(definition: FeatureDef) -> FeatureVersion:
         warmup=definition.written_warmup,
         warmup_sessions=definition.written_warmup_sessions,
         created_at=datetime.now(UTC),
+        combination=definition.combination,
     )
     _create(folder / f"v{record.version}.json", record)
     return record

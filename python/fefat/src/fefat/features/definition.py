@@ -57,6 +57,9 @@ from fefat.features.registry import register
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted
 
+if typing.TYPE_CHECKING:
+    from fefat.features.combinations import Combination
+
 BarCount = typing.Annotated[int, Field(ge=1)]
 """A number of bars, at least one, as a moving average's or a range's."""
 TwoOrMoreBars = typing.Annotated[int, Field(ge=2)]
@@ -74,8 +77,9 @@ _PARAMETERS_CONFIG = ConfigDict(frozen=True, extra="forbid", strict=True)
 class FeatureDef:
     """A feature's definition (the module docstring): its function, its normalised source, the
     model of its parameters, the inputs it declares beside the bars, its outputs with their kinds,
-    its warm-ups in bars and in sessions, each also as its decorator writes it, and its content
-    hash, by which two definitions are equal. Call it with parameters for a `FeatureSpec`."""
+    its warm-ups in bars and in sessions, each also as its decorator writes it, its content hash,
+    by which two definitions are equal, and a combination's description, which the hash leaves
+    out (`fefat.features.combine`). Call it with parameters for a `FeatureSpec`."""
 
     name: str
     function: Callable[..., object]
@@ -88,6 +92,7 @@ class FeatureDef:
     warmup_sessions: int | Callable[..., object]
     written_warmup_sessions: int | str
     hash: str
+    combination: "Combination | None" = None
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, FeatureDef) and other.hash == self.hash

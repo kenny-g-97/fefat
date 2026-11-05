@@ -8,8 +8,10 @@ values before each cut of the data unchanged by the data after it (`fefat.featur
 and `lint` reads its source for the usual ways of reading ahead (`fefat.features.source_lint`);
 `fefat.features.examples` holds RSI, ATR, and a flag of a window of the trading day."""
 
+from fefat.features import combine
 from fefat.features.cache import compute
 from fefat.features.cache_index import cache_status
+from fefat.features.combinations import Combination
 from fefat.features.definition import FeatureDef, feature
 from fefat.features.evaluation import FeatureSpec
 from fefat.features.inputs import (
@@ -27,6 +29,7 @@ from fefat.features.validation_report import ValidationReport
 from fefat.features.versions import FeatureVersion, load, save
 
 __all__ = [
+    "Combination",
     "DatasetInput",
     "FeatureDef",
     "FeatureInput",
@@ -38,6 +41,7 @@ __all__ = [
     "TradesInput",
     "ValidationReport",
     "cache_status",
+    "combine",
     "compute",
     "feature",
     "from_source",
