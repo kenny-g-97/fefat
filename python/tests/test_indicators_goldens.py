@@ -204,6 +204,10 @@ GOLDENS = [
         indicators.z_score(20),
         lambda p: {"z_score": (p.close - talib.SMA(p.close, 20)) / talib.STDDEV(p.close, 20, 1)},
     ),
+    Golden(
+        indicators.z_score(10),
+        lambda p: {"z_score": (p.close - talib.SMA(p.close, 10)) / talib.STDDEV(p.close, 10, 1)},
+    ),
     Golden(indicators.bollinger(20, 2.0), bollinger(20, 2.0)),
     Golden(indicators.bollinger(10, 1.5), bollinger(10, 1.5)),
     Golden(indicators.donchian(20), donchian(20)),
