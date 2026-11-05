@@ -27,7 +27,7 @@ from fefat.market import instruments
 from fefat.market.api import SIGNAL_BAR_COLUMNS, series_source
 from fefat.market.calendar import sessions_of
 from fefat.market.schema import Timeframe
-from notebook_runs import store_with
+from notebook_runs import features_of_cell, store_with
 
 MINUTE = 60_000_000_000
 FIVE, FIFTEEN = Timeframe.parse("5m"), Timeframe.parse("15m")
@@ -74,6 +74,30 @@ def blend(bars: pl.LazyFrame) -> pl.Expr:
 @ff.feature(inputs=[rsi], outputs={"stretched": "ratio"})
 def stretched(bars: pl.LazyFrame) -> pl.Expr:
     return pl.col("rsi") - 50
+
+
+@ff.feature(outputs={"scaled": "price"})
+def scaled(bars: pl.LazyFrame, factor: int) -> pl.Expr:
+    return pl.col("close") * factor
+
+
+@ff.feature(inputs=[scaled], outputs={"scaled_twice": "price"})
+def scaled_twice(bars: pl.LazyFrame) -> pl.Expr:
+    return 2 * pl.col("scaled")
+
+
+SPREAD = """\
+@ff.feature(
+    inputs=[
+        ff.features.FeatureInput(name="sma", hash="{hash}", parameters={{"n": 2}}, alias="sma_2"),
+        ff.features.FeatureInput(name="sma", hash="{hash}", parameters={{"n": 3}}, alias="sma_3"),
+    ],
+    outputs={{"spread": "price_distance"}},
+)
+def spread(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("sma_2") - pl.col("sma_3")
+"""
+"""A feature reading one feature twice, each with the parameters its decorator binds."""
 
 
 @ff.feature(outputs={"highest_before": "price"})
@@ -175,6 +199,34 @@ def test_a_chain_of_three_features_runs_in_order_with_its_warmups_carried() -> N
     assert graph.lead_in_bars() == 3
 
 
+def test_a_feature_read_but_not_given_is_read_with_its_defaults() -> None:
+    # BACKLOG.md, step 3.7: a feature another reads needs no slot of its own, which would give it
+    # a column too; without one it is read with its defaults, as this process defined it.
+    signal = bars([100, 103, 101, 106, 110, 108], 5)
+    alone = FeatureGraph.of({"swing": swing()}, "ES", FIVE)
+    beside = FeatureGraph.of({"swing": swing(), "step": step()}, "ES", FIVE)
+
+    values = alone.evaluate({alone.signal_grid: signal})
+
+    assert values.columns == ["ts_close", "swing"]
+    assert values["swing"].to_list() == [None, None, 1, 3, 9, 2]
+    assert values["swing"].equals(beside.evaluate({beside.signal_grid: signal})["swing"])
+
+
+def test_a_feature_reads_another_with_the_parameters_it_binds_under_an_alias() -> None:
+    # Step 3.7: a reader's decorator may bind the parameters of each feature it reads, which its
+    # hash then covers, as a combination's does, and name the columns it reads them under, so it
+    # reads one feature twice; a slot of the same feature keeps its own parameters.
+    spread = features_of_cell(SPREAD.format(hash=ff.indicators.sma.hash))["spread"]
+    graph = FeatureGraph.of({"spread": spread(), "sma": ff.indicators.sma(4)}, "ES", FIVE)
+
+    values = graph.evaluate({graph.signal_grid: bars([10, 12, 14, 16, 18, 20], 5)})
+
+    assert values.columns == ["ts_close", "spread", "sma"]
+    assert values["spread"].to_list() == [None, None, 1.0, 1.0, 1.0, 1.0]
+    assert values["sma"].to_list() == [None, None, None, 13.0, 15.0, 17.0]
+
+
 def test_a_feature_read_on_a_higher_timeframe_is_evaluated_there() -> None:
     # swing is given once, by its slot, and evaluated on both grids: the 15-minute grid's
     # swing reads the 15-minute grid's step, never the 5-minute one's, and its warm-up of 2
@@ -232,9 +284,10 @@ def test_a_cycle_of_features_is_refused_with_the_features_in_it() -> None:
     ("slots", "refusal"),
     [
         (
-            {"swing": swing()},
-            "Expected the feature step that swing reads among the features given, once with its "
-            "parameters, got none: give it a slot, such as step(...).",
+            {"scaled_twice": scaled_twice()},
+            "Expected the feature scaled that scaled_twice reads among the features given, once "
+            "with its parameters, got none, and no default of factor: give it a slot, such as "
+            "scaled(...).",
         ),
         (
             {"fast": rsi(n=7), "slow": rsi(n=14), "stretched": stretched()},

@@ -53,6 +53,7 @@ from fefat.features.declarations import (
 )
 from fefat.features.evaluation import FeatureSpec
 from fefat.features.inputs import DeclaredInput, FeatureInput, OutputKind
+from fefat.features.registry import register
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted
 
@@ -196,7 +197,7 @@ def feature(
         declared = tuple(_declared(name, each) for each in inputs)
         written = written_declarations(name, code)
         _require_inputs_as_written(name, declared, written)
-        return FeatureDef(
+        definition = FeatureDef(
             name=name,
             function=function,
             code=code,
@@ -209,6 +210,8 @@ def feature(
             written_warmup_sessions=written.warmup_sessions,
             hash=content_hash(code, declared, model.model_json_schema()),
         )
+        register(definition)
+        return definition
 
     return define
 
