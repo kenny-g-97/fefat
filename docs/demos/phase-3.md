@@ -11,7 +11,7 @@ What the exit changes on your PC: the feature cache under `%LOCALAPPDATA%\FEFAT\
    It ends with `OK` after the masterplan checker, in under a minute. Since the exit it runs whole on this PC: ruff leaves out the untracked `.agents\` and `.codex\` folders, which belong to another tool, where every step of the phase ran the recipe's lines one by one.
 
 3. **Run every test.** Run `just test`; it takes about eleven minutes.
-   Three lines matter: `2668 passed` from pytest, `All 274 hook cases passed.` from the Claude Code guards, and the `test result: ok.` lines of the Rust tests, 267 in all. No line says `FAILED`.
+   Three lines matter: `2670 passed` from pytest, `All 274 hook cases passed.` from the Claude Code guards, and the `test result: ok.` lines of the Rust tests, 267 in all. No line says `FAILED`.
 
 4. **The features notebook.** Open `notebooks/03-features.ipynb` in VS Code, pick the `.venv` kernel (Python 3.12) at the top right, and click _Run All_; it takes a few seconds. Each markdown cell says what its code cell should print; the ones to watch, with what they printed on your store at the exit:
    - the setup prints `MES 5-minute bars from 2026-06-24 to 2026-09-23` and the hash of `close_location`, the feature the notebook writes;
