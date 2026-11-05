@@ -136,6 +136,35 @@ class SignalStrategy(FrozenModel):
             execution=self.execution,
         )
 
+    def signal_document(self) -> dict[str, object]:
+        """The strategy as a run's request keys it (`fefat.backtest.requests`, step 3.7): its
+        specification's document; each slot in its order, a feature by its name, content hash,
+        and parameters, or an expression as Polars writes it; and each signal's expression, None
+        where it is left out. Polars refuses an expression that calls a Python function where it
+        cannot write it, with its `ComputeError`."""
+        return {
+            "spec": self.to_spec().document(),
+            "features": [_slot_document(slot, feature) for slot, feature in self.features.items()],
+            "signals": {
+                name: None if expression is None else _expression_text(expression)
+                for name, expression in self._signal_expressions().items()
+            },
+        }
+
+    def _signal_expressions(self) -> dict[str, pl.Expr | None]:
+        return {
+            "long_entry": self.long_entry,
+            "short_entry": self.short_entry,
+            "long_exit": self.long_exit,
+            "short_exit": self.short_exit,
+            "entry_price": self.entry_price,
+            "stop_price": self.stop_price,
+            "target_price": self.target_price,
+            "trail_ref": self.trail_ref,
+            "size_mult": self.size_mult,
+            "wake": self.wake,
+        }
+
     def signals(
         self,
         bars: pl.DataFrame | pl.LazyFrame,
@@ -212,6 +241,26 @@ class SignalStrategy(FrozenModel):
             "short_exit": self.short_exit.fill_null(False),
         }
         return signals | {name: column for name, column in optional.items() if column is not None}
+
+
+def _slot_document(slot: str, feature: pl.Expr | FeatureSpec) -> dict[str, object]:
+    """A slot as the strategy's signal document writes it (`SignalStrategy.signal_document`)."""
+    if isinstance(feature, pl.Expr):
+        return {"slot": slot, "kind": "expression", "expression": _expression_text(feature)}
+    definition = feature.definition
+    parameters = feature.parameters.model_dump(mode="json")
+    return {
+        "slot": slot,
+        "kind": "feature",
+        "name": definition.name,
+        "hash": definition.hash,
+        "parameters": parameters,
+    }
+
+
+def _expression_text(expression: pl.Expr) -> str:
+    """An expression as Polars writes it, the same text for two expressions built alike."""
+    return expression.meta.serialize(format="json")
 
 
 def _columns(name: str, feature: pl.Expr | FeatureSpec) -> list[str]:

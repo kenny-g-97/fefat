@@ -11,12 +11,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
 
+import fefat_engine
 from pydantic import Field, JsonValue
 
 from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.market.fidelity import FidelityEra, FidelityText
-from fefat.market.instruments import InstrumentKind
+from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
 from fefat.market.schema import FrozenModel
@@ -32,6 +33,15 @@ class EngineVersions(FrozenModel):
     engine: int = Field(ge=1)
     fill_model: int = Field(ge=1)
     artifact_schema: int = Field(ge=1)
+
+    @classmethod
+    def running(cls) -> "EngineVersions":
+        """The versions of the engine this process runs (`fefat_engine`)."""
+        return cls(
+            engine=fefat_engine.ENGINE_VERSION,
+            fill_model=fefat_engine.FILL_MODEL_VERSION,
+            artifact_schema=fefat_engine.ARTIFACT_SCHEMA_VERSION,
+        )
 
 
 class FeaturePin(FrozenModel):
@@ -72,6 +82,17 @@ class InstrumentRecord(FrozenModel):
     tick_size: Decimal
     point_value: Decimal
     lot_step: Decimal
+
+    @classmethod
+    def of(cls, instrument: Instrument) -> "InstrumentRecord":
+        return cls(
+            root=instrument.root,
+            kind=instrument.kind,
+            currency=str(instrument.currency),
+            tick_size=instrument.tick_size,
+            point_value=instrument.point_value,
+            lot_step=instrument.lot_step,
+        )
 
 
 class DatasetRecord(FrozenModel):

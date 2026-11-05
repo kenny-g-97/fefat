@@ -133,16 +133,25 @@ class PartitionKeys:
     def of_values(self, graph: FeatureGraph, identity: str, partition: CachePartition) -> str:
         """The key of the values on the partition of the feature of `graph`, a slot's graph
         (`FeatureGraph.of_slot`), whose features with their parameters `identity` names."""
-        return self._key(identity, partition, self.reads(graph, partition))
+        reads = self.reads(graph, (partition.first, partition.last))
+        return self._key(identity, partition, reads)
 
-    def reads(self, graph: FeatureGraph, partition: CachePartition) -> dict[str, tuple[date, date]]:
+    def pins(self, graph: FeatureGraph, dates: tuple[date, date]) -> tuple[str, ...]:
+        """What the bars of each instrument the graph reads are read from, to evaluate it on the
+        trade dates `dates` spans from its warm-up (`reads`), each instrument's pins as the keys
+        of its partitions name them, which a run's request keys (`fefat.backtest.requests`)."""
+        reads = self.reads(graph, dates)
+        return tuple(line for root in sorted(reads) for line in self._pins_of(root, *reads[root]))
+
+    def reads(self, graph: FeatureGraph, dates: tuple[date, date]) -> dict[str, tuple[date, date]]:
         """The trade dates each instrument's bars are read for, to evaluate the graph on the
-        partition from its warm-up, as `load` reads them (`SeriesSource.dates_read`)."""
-        start = graph.lead_in(self._sources[graph.root].sessions, partition.first)
+        trade dates `dates` spans from its warm-up, as `load` reads them
+        (`SeriesSource.dates_read`)."""
+        start = graph.lead_in(self._sources[graph.root].sessions, dates[0])
         reads: dict[str, tuple[date, date]] = {}
         for grid in graph.grids():
             source = self._sources[grid.root]
-            window = graph.grid_dates(grid, (start, partition.last), source.sessions)
+            window = graph.grid_dates(grid, (start, dates[1]), source.sessions)
             first, last = source.dates_read(window)
             known = reads.get(grid.root, (first, last))
             reads[grid.root] = (min(known[0], first), max(known[1], last))
