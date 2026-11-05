@@ -20,8 +20,6 @@ from dataclasses import dataclass
 import polars as pl
 
 from fefat.features.label_columns import LABEL_PREFIX, NEXT_OPEN
-from fefat.features.label_columns import is_label_column as is_label_column
-from fefat.features.label_columns import reads_ahead as reads_ahead
 
 SESSION = ("contract", "trade_date")
 """What a label stays within: one contract's trade date."""
