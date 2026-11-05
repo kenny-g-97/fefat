@@ -36,7 +36,7 @@ A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions ov
 | --- | --- |
 | `instrument` | the root it trades, such as `MES`; a run follows the roll calendar's front contracts unless `RunConfig.contract` names one |
 | `timeframe` | the signal bars whose closes decide, such as `5m`: a count, then `s`, `m`, `h`, or `d` |
-| `features` | a mapping of names to expressions, each evaluated in turn over the bars and the features before it; every trade records each feature's value at its entry as `<feature>_at_entry` |
+| `features` | a mapping of names to expressions, each evaluated in turn over the bars and the features before it, and to features with their parameters, such as `ff.indicators.rsi(14)`, a combination, or `ff.features.ref("rsi", version=1, n=14)` from your library; every trade records each feature's value at its entry as `<feature>_at_entry` |
 | `long_entry`, `short_entry` | the entry signals, a boolean expression each; a null counts as false |
 | `long_exit`, `short_exit` | the exit signals, false by default; they close the position while `signal_exit` is on |
 | `entry_price` | the price of a limit or stop entry at the column, for `Limit(column=True)` and `StopEntry(column=True)` |
@@ -129,6 +129,68 @@ features={
 - **Realised volatility** is the square root of the summed squared log returns of the last `n` closes, not annualised.
 
 Some indicators remember whole sessions: the session before, the week so far, relative volume. They declare a warm-up in sessions, `warmup_sessions`, beside their warm-up in bars, and FEFAT reads that many sessions before your window on any timeframe. A feature of your own does the same: `@ff.feature(warmup_sessions=1, ...)`. Its values count from where the features it reads have their first values: its whole sessions first, then its bars.
+
+## Combining features
+
+`ff.features.combine` builds a feature from others without writing its code: arithmetic, comparisons and logic, windows over the last bars, normalisations, a higher timeframe, and spreads across instruments. Python's operators join them too, so the stretch of RSI(14) from its mean over ten bars is one line:
+
+```python
+from fefat.features import combine
+
+rsi = ff.indicators.rsi
+rsi_stretch = combine.define("rsi_stretch", rsi(14) - combine.rolling_mean(rsi(14), 10))
+print(rsi_stretch.code)
+features={"stretch": rsi_stretch()}
+```
+
+`define` writes the feature's code from the combination, then builds the feature from that code, so a combination is a feature as any other: its hash covers its code, `ff.features.validate` checks it, `ff.features.save` versions it, and a strategy reads it in a slot. The code names each feature it reads with its parameters, every default filled in, so the combination needs no slot of `rsi(14)` beside it. Its warm-up is the bars its windows need, counted after the warm-ups of the features it reads. A term is a feature with its parameters, one output of a feature of several, `combine.output(ff.indicators.bollinger(), "upper")`, a column of the bars by its name, `"close"`, or of another instrument's, `combine.column("close", instrument="MNQ")`, or a number, a price in the bars' billionths of a point.
+
+| Combinator | Gives |
+| --- | --- |
+| `add`, `subtract`, `multiply`, `divide`, or `+`, `-`, `*`, `/` | the sum, the difference, the product, in floats, and the quotient, null where the divisor is 0 |
+| `ratio_to(a, b)` | how far `a` lies from `b` as a share of `b`, `(a - b) / b`, as the return of the close from its VWAP |
+| `greater_than(a, b)`, or `a > b`, `a < b` | whether `a` is above `b`, or below it |
+| `crosses_above(a, b)`, `crosses_below(a, b)` | whether `a` is above `b` on the bar and was at or below it on the bar before, or the reverse |
+| `and_`, `or_`, `not_`, or `&`, `\|`, `~` | the logic of flags |
+| `rolling_mean`, `rolling_std`, `rolling_min`, `rolling_max` of a term and `n` | over its last `n` bars, the standard deviation the population's, as the indicators' |
+| `rolling_rank(term, n)` | its rank among its last `n` bars, from 1 for the lowest, ties at their highest |
+| `percent_rank(term, n)`, `z_score(term, n)` | where it lies among its last `n` bars, from 0 to 1, and how many standard deviations from their mean, null where they have not moved |
+| `lag(term, n=1)` | the term `n` bars before |
+| `scaled_by_atr(term, n=14)` | a distance of price in ATRs, the term over `ff.indicators.atr(n)` |
+| `at_timeframe(term, "15m")` | the term on the bars of another timeframe, each value from its bar's close, as a feature of its own named `<name>_15m` |
+
+A spread across instruments is a difference of two columns, `combine.subtract("close", combine.column("close", instrument="MNQ"))`, each instrument's bar as of the same close. A combination of constants alone, a window over constants, and the logic of what is not a flag are refused when the combination is defined.
+
+### The description of a combination
+
+`rsi_stretch.combination` is the combination's description, which its version keeps beside its code and from which the code was written, so that the feature builder of Phase 6 shows it and edits it. `rsi_stretch.combination.model_dump(mode="json")` writes it as JSON, and `pydantic.TypeAdapter(ff.features.Combination).validate_python(...)` reads it back, from which `combine.define` writes the same code with the same hash. It is a tree of objects, each with a `kind`:
+
+| `kind` | Fields | Code written |
+| --- | --- | --- |
+| `constant` | `value`, a number or `true` or `false` | `pl.lit(value)` |
+| `column` | `column`, one of `open`, `high`, `low`, `close`, `vwap`, `volume`, and `trade_count`; `instrument`, another root, or null | `pl.col("close")`, or `pl.col("close_MNQ")` of another instrument, which the feature declares as an input; the volume and the number of trades as signed integers |
+| `feature` | `name`, `hash`, `parameters`, and `output`, one of the feature's outputs | the feature declared as an input with its parameters, read as `pl.col("rsi")`, or under an alias, `ema_1` and `ema_2`, where two features read give columns of one name |
+| `add`, `subtract`, `multiply`, `divide`, `ratio_to`, `greater_than`, `crosses_above`, `crosses_below`, `and`, `or` | `left` and `right`, each a term | `left + right` and the like; a division in `pl.when(right != 0)`; a cross as `(left > right) & (left.shift(1) <= right.shift(1))` |
+| `not` | `of`, a flag | `~of` |
+| `rolling_mean`, `rolling_std`, `rolling_min`, `rolling_max`, `rolling_rank`, `percent_rank`, `z_score`, `lag` | `of`, a term, and `n`, the number of bars, two at least for `rolling_std`, `rolling_rank`, `percent_rank`, and `z_score` | `of.rolling_mean(n)` and the like, `of.shift(n)` for a lag |
+| `at_timeframe` | `of`, a term, and `timeframe`, such as `15m` | a feature of its own on that timeframe's bars, which the combination reads, or, at the top, the combination's own timeframe input |
+
+The output's kind follows from its terms: a flag for a comparison or logic, a ratio for `ratio_to`, a percent rank, a z-score, or a quotient of two prices, a count for a rank, a distance of price for a difference of two prices, a price for a price moved by a distance, and `other` otherwise. The code depends on the description alone, its parameters written in order of their names, so the same description gives the same version in every session.
+
+### Library features in a strategy
+
+`ff.features.ref` reads a saved feature back by its name and version with its parameters, and fills a slot as any feature does; `ff.features.library()` lists the saved versions:
+
+```python
+ff.features.save(rsi_stretch)  # also saves the rsi it reads
+ff.features.library()  # name, version, hash, created_at, and whether it is a combination
+features={
+    "stretch": ff.features.ref("rsi_stretch", version=1),
+    "rsi": ff.features.ref("rsi", version=1, n=14),
+}
+```
+
+A feature this session defined is read as it is; one saved in another session is built again from its code, with the features it reads, which works for a combination and for a feature whose code reads only FEFAT, Polars, and its parameters. A feature that calls a helper of your own, whose code its version does not keep, is refused: define it again in a cell that imports the helper. Every run saves the features its slots read and names each one's version in `run.json`, under `strategy.feature_versions`. The run's key covers the values a feature gives, not its version, so a new version with the same values reads the run its first version made, and that run names the first version.
 
 ## The execution template
 
@@ -244,6 +306,7 @@ Every run is also rerun at one more tick of slippage, which `run.metrics.pnl_at_
 Fills follow [the fill specification](spec/fill-semantics.md), which the Python reference engine implements rule by rule and the Rust engine matches exactly. In brief:
 
 - **Decisions at bar closes.** The strategy decides at each signal bar's close, and its orders become active the latency later. Nothing acts on a record before it was received ([F-CLK](spec/fill-semantics.md#3-clock-and-order-of-events-f-clk), [F-ACT](spec/fill-semantics.md#4-activation-f-act)).
+- **Decisions inside a coarser bar.** A strategy whose timeframe is not a whole number of the bars a trade date fills on, such as 90-second bars on a date filling on 1-minute bars, decides inside a bar, and an order placed there fills at that bar's open, a price from before the decision. The run warns of it, in its record and its report, and so does the fidelity check's rerun at 1 minute, until a fill-model version has such an order wait for the next bar (D-71).
 - **The finest data, day by day.** Each trade date fills on its finest level at or coarser than the run's fidelity: trades, TBBO, 1-second, or 1-minute bars ([order type by fidelity](spec/fill-semantics.md#17-order-type-by-fidelity)). The run records each date's level as its fidelity eras.
 - **Market orders** fill at the next price after their activation, plus the slippage ticks ([F-MKT](spec/fill-semantics.md#5-market-orders-f-mkt)).
 - **Stops** trigger when the market trades at or through them, and fill at the stop plus the slippage ticks, or at the first price past it after a gap, whichever is worse ([F-STP](spec/fill-semantics.md#6-stop-market-orders-f-stp), [gaps](spec/fill-semantics.md#9-gaps)).
@@ -258,13 +321,13 @@ Every fill records the rule that priced it, which `run.explain` prints.
 
 ## Reading a run folder
 
-Each run is saved in `%LOCALAPPDATA%\FEFAT\workspaces\default\artifacts\runs\<run key>\`, under `FEFAT_HOME` wherever you moved it. The folder's name is the run key, a hash of the strategy's document, its signal frame, the snapshots of the data it read, its settings, and the engine's versions, so a change to any of them makes a new run and a repeated run reads the old one. A run saved by another version of the engine is refused by name; delete its folder to run it again. `ff.backtest.Run.open(folder)` opens a saved run.
+Each run is saved in `%LOCALAPPDATA%\FEFAT\workspaces\default\artifacts\runs\<run key>\`, under `FEFAT_HOME` wherever you moved it. The folder's name is the run key, a hash of the strategy's document, its signal frame, the snapshots of the data it read, its settings, and the engine's versions, so a change to any of them makes a new run and a repeated run reads the old one. Beside the runs, `requests\` keeps what each run was asked: the strategy, its window, its settings, and the data it reads, so that a run asked again opens the saved run at once, without loading its bars or evaluating its signals. A run saved by another version of the engine is refused by name; delete its folder to run it again. `ff.backtest.Run.open(folder)` opens a saved run.
 
 The units are the store's: prices in billionths of a point, money in millionths of the account's currency, and instants in nanoseconds since 1970-01-01, UTC.
 
 | File | Holds | From Python |
 | --- | --- | --- |
-| `run.json` | the run's record: `run_id`, `run_key`, the engine's `versions`, the `strategy` document and its features, the `window`, the `instrument`, the `datasets` read with their snapshots, the `signal_frame_hash`, the `signal_bar_eras`, the level each era of its signal bars' trade dates was built from, every setting in `config`, the `fee_table`, the `rolls`, the `engine_config`, the `fidelity_eras`, the `path_fidelities`, its `warnings`, the `summary`, and the `metrics` | `run.record`, `run.metrics`, `run.report()` |
+| `run.json` | the run's record: `run_id`, `run_key`, the engine's `versions`, the `strategy` document, its features' columns, and the version of each feature its slots read, `feature_versions`, the `window`, the `instrument`, the `datasets` read with their snapshots, the `signal_frame_hash`, the `signal_bar_eras`, the level each era of its signal bars' trade dates was built from, every setting in `config`, the `fee_table`, the `rolls`, the `engine_config`, the `fidelity_eras`, the `path_fidelities`, its `warnings`, which `run.report()` prints too, the `summary`, and the `metrics` | `run.record`, `run.metrics`, `run.report()` |
 | `fills.parquet` | each fill: its order and role (`entry`, `stop`, `target_1`, an exit reason, or a roll's leg), side, lots, time, price, the rule that priced it, its fidelity, maker or taker, its slippage ticks, its flags, its fee, the cash it moved, its contract, and its trade date | `run.fills` |
 | `orders.parquet` | every order in its last state: its kind, price, lots, role, when it was placed and became active, its OCO group, the entry it belongs to, and its state | `run.orders` |
 | `log.parquet` | the event log: each placement, activation, move, cancellation, and fill, with its order and its rule | `run.log` |
