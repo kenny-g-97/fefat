@@ -11,6 +11,7 @@ import os
 import polars as pl
 
 from fefat.config import resolve_paths
+from fefat.market.contracts import parse_contract_name
 from fefat.market.engine_units import instrument_parameters
 from fefat.market.saved_instruments import instrument_table
 
@@ -40,3 +41,27 @@ def instrument_tick(instrument: str) -> int:
     among those a run reads: the static table's and those saved in the data folder."""
     table = instrument_table(resolve_paths(os.environ).data_dir)
     return instrument_parameters(table.get(instrument)).tick
+
+
+def bars_tick(bars: pl.LazyFrame, instrument: str, reader: str) -> int:
+    """The tick of the root `instrument` that `reader`, such as "the distance", counts in,
+    refused unless each contract of `bars` is one of it: a contract named after it, as `ESM2026`
+    is, or it, as a perpetual is, never another root that starts with it, as `BTCUSDT-PERP` does
+    with spot's `BTCUSDT`."""
+    contracts = bars.select(pl.col("contract").unique().sort()).collect().get_column("contract")
+    foreign = [each for each in contracts if _root_of(each) != instrument]
+    if foreign:
+        raise ValueError(
+            f"Expected the bars of {instrument}, whose tick {reader} counts in, got contract "
+            f"{foreign[0]}."
+        )
+    return instrument_tick(instrument)
+
+
+def _root_of(contract: str) -> str:
+    """The root a contract's name gives, or the name itself, as a perpetual's or a spot pair's."""
+    try:
+        root, _ = parse_contract_name(contract)
+    except ValueError:
+        return contract
+    return root

@@ -21,7 +21,7 @@ from collections.abc import Iterable, Sequence
 import polars as pl
 
 from fefat.analytics.events import EventStudy, event_study_of
-from fefat.analytics.labels import NEXT_OPEN, Label, forward_returns, is_label_column
+from fefat.analytics.labels import NEXT_OPEN, Label, forward_returns, reads_ahead
 from fefat.analytics.quantiles import QuantileReturns, quantile_returns_of
 from fefat.analytics.rank_correlation import (
     Correlations,
@@ -30,8 +30,9 @@ from fefat.analytics.rank_correlation import (
     information_coefficient_of,
 )
 from fefat.analytics.trials import Trials
-from fefat.indicators.ticks import instrument_tick
-from fefat.market.calendar import utc_text
+from fefat.features.evaluation import require_one_series_of_raw_prices
+from fefat.indicators.ticks import bars_tick
+from fefat.market.calendar import counted
 from fefat.reference.orders import PositionSide
 
 BAR_COLUMNS = pl.Schema(
@@ -68,8 +69,14 @@ class FeatureStudy:
         if resamples < 1:
             raise ValueError(f"Expected at least 1 resample for the intervals, got {resamples}.")
         self._bootstrap = (resamples, seed)
-        self._tick = instrument_tick(instrument)
+        self._tick = bars_tick(bars.lazy(), instrument, "the study")
         self._frame = forward_returns(bars.lazy(), self.horizons, self._tick).collect()
+        if self._frame.get_column(self._labels[0].column).is_null().all():
+            raise ValueError(
+                f"Expected bars with a forward return over {counted(self.horizons[0], 'bar')} "
+                "within their trade date, got none: study bars of which a trade date holds "
+                "several, such as 5-minute bars, at horizons shorter than a session."
+            )
         self._examined: set[tuple[str, int]] = set()
 
     @property
@@ -137,7 +144,7 @@ class FeatureStudy:
     def _column(self, feature: str) -> pl.DataType:
         """The type of the column `feature`, refused where the frame has none or it reads ahead,
         a label's or the entries'."""
-        if feature not in self._frame.columns or is_label_column(feature) or feature == NEXT_OPEN:
+        if feature not in self._frame.columns or reads_ahead(feature):
             raise ValueError(
                 f"Expected a feature among the study's columns, its labels and {NEXT_OPEN} "
                 f"apart, got {feature}."
@@ -172,7 +179,8 @@ class FeatureStudy:
 
 
 def _require_signal_bars(bars: pl.DataFrame) -> None:
-    """Refuse a frame that is not signal bars of one contract each trade date in time order."""
+    """Refuse a frame that is not signal bars of one contract each trade date in time order,
+    with raw closes."""
     wrong = [name for name, dtype in BAR_COLUMNS.items() if bars.schema.get(name) != dtype]
     if wrong:
         got = [
@@ -196,12 +204,7 @@ def _require_signal_bars(bars: pl.DataFrame) -> None:
             "Expected one contract each trade date, a continuous series or one contract's bars, "
             f"got {crowded.item(0, 'contracts')} on {crowded.item(0, 'trade_date')}."
         )
-    backward = bars.filter(pl.col("ts_close").diff() <= 0)
-    if not backward.is_empty():
-        raise ValueError(
-            "Expected the bars in time order, each closing after the one before, got one "
-            f"closing at {utc_text(backward.item(0, 'ts_close'))} after a later one."
-        )
+    require_one_series_of_raw_prices(bars.lazy(), "the feature study")
 
 
 def _labels_of(horizons: Sequence[int]) -> tuple[Label, ...]:

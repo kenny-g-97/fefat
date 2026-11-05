@@ -32,6 +32,12 @@ def is_label_column(name: str) -> bool:
     return name.startswith(LABEL_PREFIX)
 
 
+def reads_ahead(name: str) -> bool:
+    """Whether `name` is a column the labels add, each of which reads the future: a label's, or
+    the entries', `next_open`."""
+    return name == NEXT_OPEN or is_label_column(name)
+
+
 @dataclass(frozen=True)
 class Label:
     """The forward return over `horizon` bars, in ticks, held in the column `column`."""

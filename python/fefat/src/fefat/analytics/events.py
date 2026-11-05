@@ -4,7 +4,8 @@ position on the way, its maximum adverse and favourable excursions (MAE and MFE)
 
 An event is a bar where the flag turns true: true there and not on the bar before in its trade
 date, so that a flag that stays true for several bars is one event, as one entry, and the
-events' returns do not count one move again and again. Each event enters at its bar's next
+events' returns do not count one move again and again; a bar with no trade after it in its
+trade date, which no order could enter on, is none. Each event enters at its bar's next
 tradable open and is followed for `horizon` bars, as the labels are (`fefat.analytics.labels`):
 the path is the mean and median forward return after 1, 2, ... `horizon` bars, and the
 excursions those of the events still held after `horizon` bars within their trade date.
@@ -37,6 +38,8 @@ EXCURSION_COLUMNS = pl.Schema(
 """A row per statistic of the events' excursions, in ticks, each 0 or more."""
 EXCURSION_QUANTILES = {"p10": 0.1, "p25": 0.25, "median": 0.5, "p75": 0.75, "p90": 0.9}
 """The quantiles of the excursions given beside their mean."""
+EVENT_INPUTS = ("contract", "trade_date", "high", "low", "zero_volume", NEXT_OPEN)
+"""The columns of the study's frame an event study reads beside the flag."""
 
 
 @dataclass(frozen=True)
@@ -96,9 +99,13 @@ def event_study_of(
         ((exit_open(after) - pl.col(NEXT_OPEN)) * sign / tick_units).alias(f"after_{after}")
         for after in range(1, horizon + 1)
     ]
+    # shortcut: the path shifts every bar's entry once for each bar count up to the horizon,
+    # some 800 MB for 60 one-minute bars over five years; gather them at the events alone then.
+    flagged = labelled.lazy().select(*EVENT_INPUTS, flag=pl.col(feature))
+    entered = onsets("flag") & pl.col(NEXT_OPEN).is_not_null()
     at_events = (
-        excursions(labelled.lazy(), horizon, tick_units)
-        .with_columns(*moves, event=onsets(feature))
+        excursions(flagged, horizon, tick_units)
+        .with_columns(*moves, event=entered)
         .filter("event")
         .collect()
     )

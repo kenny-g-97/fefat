@@ -64,9 +64,9 @@ def test_a_planted_feature_has_a_significant_ic_and_a_random_feature_has_not() -
     unrelated = study.information_coefficient("random")
 
     first = by_horizon(planted.by_horizon, 1).row(0, named=True)
-    means = dict(planted.by_horizon.select("horizon", "mean_ic").iter_rows())
+    means = dict(planted.by_horizon.select("horizon", "mean_coefficient").iter_rows())
     assert first["days"] == DAYS
-    assert first["mean_ic"] > 0.2
+    assert first["mean_coefficient"] > 0.2
     assert first["t_statistic"] > 3
     assert means[1] > means[5] > means[20]
     assert planted.by_year.get_column("year").unique().sort().to_list() == [2025, 2026]
@@ -125,13 +125,41 @@ def test_quantile_returns_rise_with_the_planted_feature() -> None:
     random_means = unrelated.get_column("mean_ticks").to_list()
     assert planted.get_column("quantile").to_list() == [1, 2, 3, 4, 5]
     assert means == sorted(means)
-    assert planted.item(4, "ci_low_ticks") > 0
-    assert planted.item(0, "ci_high_ticks") < 0
+    assert planted.item(4, "interval_low_ticks") > 0
+    assert planted.item(0, "interval_high_ticks") < 0
     assert abs(random_means[-1] - random_means[0]) < spread / 4
     assert planted.get_column("bars").sum() == DAYS * (BARS - 2)
     assert again.equals(study.quantile_returns("planted").frame)
     assert reseeded.get_column("mean_ticks").equals(again.get_column("mean_ticks"))
-    assert not reseeded.get_column("ci_low_ticks").equals(again.get_column("ci_low_ticks"))
+    assert not reseeded.get_column("interval_low_ticks").equals(
+        again.get_column("interval_low_ticks")
+    )
+
+
+def test_a_quantile_on_few_trade_dates_has_no_interval() -> None:
+    # The code review: a quantile whose bars fall on two trade dates is missing from about one
+    # draw in eight, whose means a narrower interval would leave out; it gets none.
+    rare = pl.when(pl.col("trade_date") <= FIRST_DATE + timedelta(days=1)).then(10.0).otherwise(0.0)
+    study = FeatureStudy(planted_bars().with_columns(rare=rare), "ES")
+
+    returns = study.quantile_returns("rare")
+
+    intervals = returns.frame.select("quantile", "interval_low_ticks", "interval_high_ticks")
+    assert intervals.filter(pl.col("quantile") == 5).null_count().row(0) == (0, 3, 3)
+    assert intervals.filter(pl.col("quantile") == 1).null_count().row(0) == (0, 0, 0)
+    assert "interval none to none" in returns.report()
+
+
+def test_a_feature_named_like_a_column_the_analyses_add_is_studied_as_any() -> None:
+    # The code review: a feature named quantile, or a flag named mae_ticks, kept its values.
+    renamed = planted_bars().rename({"planted": "quantile"})
+    flags = flagged_bars().rename({"signal": "mae_ticks"})
+
+    quantiles = FeatureStudy(renamed, "ES").quantile_returns("quantile").frame
+    events = FeatureStudy(flags, "ES", horizons=(1, 2)).event_study("mae_ticks", PositionSide.LONG)
+
+    assert quantiles.equals(FeatureStudy(planted_bars(), "ES").quantile_returns("planted").frame)
+    assert events.path.rows() == [(1, 2, 1.5, 1.5), (2, 2, 3.0, 3.0)]
 
 
 def test_correlations_cluster_the_features_that_say_the_same() -> None:
@@ -153,7 +181,8 @@ def test_correlations_cluster_the_features_that_say_the_same() -> None:
 
 def flagged_bars() -> pl.DataFrame:
     """One trade date of eight bars of ES, opens in ticks, each high a tick above its open and
-    each low a tick below, and the flag `signal` true on the first two bars and the fourth."""
+    each low a tick below, and the flag `signal` true on the first two bars, the fourth, and the
+    last, after which no bar trades."""
     opens = [100, 102, 101, 105, 104, 108, 107, 110]
     return pl.DataFrame(
         {
@@ -164,7 +193,7 @@ def flagged_bars() -> pl.DataFrame:
             "high": [(opened + 1) * TICK for opened in opens],
             "low": [(opened - 1) * TICK for opened in opens],
             "zero_volume": [False] * 8,
-            "signal": [True, True, False, True, False, False, False, False],
+            "signal": [True, True, False, True, False, False, False, True],
         }
     )
 
@@ -172,7 +201,7 @@ def flagged_bars() -> pl.DataFrame:
 def test_an_event_study_follows_each_event_and_its_excursions() -> None:
     # Two events, the first bar and the fourth, entering at 102 and 104 ticks: after one bar at
     # 101 and 108, after two at 105 and 107; held two bars, they reach 105 and 109 and fall to
-    # 100 and 103, their exits included.
+    # 100 and 103, their exits included. The flag on the last bar has no bar to enter on.
     study = FeatureStudy(flagged_bars(), "ES", horizons=(1, 2))
 
     long = study.event_study("signal", PositionSide.LONG, horizon=2)
@@ -221,22 +250,38 @@ FIRST_NAN = pl.when(pl.int_range(pl.len()) == 0).then(float("nan")).otherwise("p
 
 
 @pytest.mark.parametrize(
-    ("bars", "refusal"),
+    ("bars", "instrument", "refusal"),
     [
-        (planted_bars().drop("zero_volume"), "got no zero_volume"),
-        (planted_bars().with_columns(pl.col("open").cast(pl.Float64)), "got open as Float64"),
+        (planted_bars().drop("zero_volume"), "ES", "got no zero_volume"),
+        (planted_bars().with_columns(pl.col("open").cast(pl.Float64)), "ES", "got open as Float64"),
         (
             planted_bars().with_columns(contract=ALTERNATE_CONTRACTS),
+            "ES",
             "Expected one contract each trade date, .* got 2 on 2025-12-12",
         ),
-        (planted_bars().reverse(), "Expected the bars in time order"),
+        (planted_bars().reverse(), "ES", "as one series, their closes strictly increasing"),
+        (
+            planted_bars().with_columns(close_raw=pl.lit(None, dtype=pl.Int64)),
+            "ES",
+            "got a back-adjusted import",
+        ),
+        (
+            planted_bars(),
+            "BTCUSDT-PERP",
+            "Expected the bars of BTCUSDT-PERP, whose tick the study counts in, got contract ESH2026",
+        ),
+        (
+            planted_bars().group_by("trade_date", maintain_order=True).first(),
+            "ES",
+            "Expected bars with a forward return over 1 bar within their trade date, got none",
+        ),
     ],
 )
 def test_a_study_refuses_a_frame_of_other_than_signal_bars(
-    bars: pl.DataFrame, refusal: str
+    bars: pl.DataFrame, instrument: str, refusal: str
 ) -> None:
     with pytest.raises(ValueError, match=refusal):
-        FeatureStudy(bars, "ES")
+        FeatureStudy(bars, instrument)
 
 
 def test_a_study_refuses_what_it_cannot_judge() -> None:

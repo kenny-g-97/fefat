@@ -31,11 +31,16 @@ from fefat.analytics.labels import Label
 from fefat.analytics.trials import Trials
 from fefat.market.calendar import counted
 
-IC_COLUMNS = pl.Schema(
-    {"horizon": pl.Int64, "days": pl.UInt32, "mean_ic": pl.Float64, "t_statistic": pl.Float64}
+COEFFICIENT_COLUMNS = pl.Schema(
+    {
+        "horizon": pl.Int64,
+        "days": pl.UInt32,
+        "mean_coefficient": pl.Float64,
+        "t_statistic": pl.Float64,
+    }
 )
 """A row per horizon: the trade dates with a coefficient, their mean, and its t-statistic."""
-IC_BY_YEAR_COLUMNS = pl.Schema({"year": pl.Int32, **IC_COLUMNS})
+COEFFICIENT_BY_YEAR_COLUMNS = pl.Schema({"year": pl.Int32, **COEFFICIENT_COLUMNS})
 """The same, a row per calendar year of the trade dates and horizon."""
 CLUSTER_COLUMNS = pl.Schema({"feature": pl.String, "cluster": pl.Int64})
 """A row per feature: its cluster, numbered from 1, the largest first."""
@@ -46,8 +51,9 @@ REDUNDANT = 0.7
 @dataclass(frozen=True)
 class InformationCoefficient:
     """The daily rank information coefficient of `feature`: `by_horizon` with the columns of
-    `IC_COLUMNS`, the decay from one horizon to the next, `by_year` with those of
-    `IC_BY_YEAR_COLUMNS`, and the trials the study had examined."""
+    `COEFFICIENT_COLUMNS`, a row per horizon, whose fall from the shorter to the longer is the
+    decay, `by_year` with those of `COEFFICIENT_BY_YEAR_COLUMNS`, and the trials the study had
+    examined."""
 
     feature: str
     by_horizon: pl.DataFrame
@@ -115,13 +121,13 @@ def information_coefficient_of(
     each of `labels`."""
     daily = (
         pl.concat(_daily_coefficients(labelled, feature, label) for label in labels)
-        .filter(pl.col("ic").is_finite())
+        .filter(pl.col("coefficient").is_finite())
         .with_columns(year=pl.col("trade_date").dt.year())
     )
     return InformationCoefficient(
         feature,
-        _summary(daily, ["horizon"]).cast(IC_COLUMNS),
-        _summary(daily, ["year", "horizon"]).cast(IC_BY_YEAR_COLUMNS),
+        _summary(daily, ["horizon"]).cast(COEFFICIENT_COLUMNS),
+        _summary(daily, ["year", "horizon"]).cast(COEFFICIENT_BY_YEAR_COLUMNS),
         trials,
     )
 
@@ -165,7 +171,7 @@ def _daily_coefficients(labelled: pl.DataFrame, feature: str, label: Label) -> p
     return (
         paired.with_columns(score=_standard_rank(feature) * _standard_rank(label.column))
         .group_by("trade_date")
-        .agg(ic=pl.col("score").mean())
+        .agg(coefficient=pl.col("score").mean())
         .with_columns(horizon=pl.lit(label.horizon, dtype=pl.Int64))
     )
 
@@ -179,12 +185,12 @@ def _standard_rank(column: str) -> pl.Expr:
 
 def _summary(daily: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
     """The days, the mean coefficient, and its t-statistic of each group of `keys`."""
-    coefficient = pl.col("ic")
+    coefficient = pl.col("coefficient")
     return (
         daily.group_by(keys)
         .agg(
             days=pl.len(),
-            mean_ic=coefficient.mean(),
+            mean_coefficient=coefficient.mean(),
             t_statistic=coefficient.mean() / coefficient.std() * pl.len().sqrt(),
         )
         .sort(keys)
@@ -213,7 +219,7 @@ def _clusters(features: Sequence[str], linked: Iterable[tuple[str, str]]) -> dic
 def _coefficient_line(row: Mapping[str, Any]) -> str:
     return (
         f"{counted(row['horizon'], 'bar'):>8} ahead  {counted(row['days'], 'trade date'):>16}  "
-        f"mean {row['mean_ic']:+.3f}  t {_signed(row['t_statistic'])}"
+        f"mean {row['mean_coefficient']:+.3f}  t {_signed(row['t_statistic'])}"
     )
 
 

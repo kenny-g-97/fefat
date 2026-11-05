@@ -7,7 +7,10 @@ never take (D-12), is how analytics sort a feature's values once they are known,
 here feeds a strategy. A bucket's mean is that of its labels at each horizon. Its interval comes
 from drawing whole trade dates with replacement, `resamples` times from a seed, so that the bars
 of one day, whose returns overlap and move together, stay together: the 2.5 % and 97.5 %
-quantiles of the means of the draws bound its 95 % interval.
+quantiles of the means of the draws bound its 95 % interval. A bucket whose bars fall on so few
+trade dates that some draws hold none of them has no interval. Each interval is 95 % on its own,
+so among the fifteen of five quantiles at three horizons one that leaves 0 by chance alone is
+more likely than not: read the pattern across the quantiles, not one interval.
 """
 
 from collections.abc import Mapping, Sequence
@@ -28,8 +31,8 @@ QUANTILE_COLUMNS = pl.Schema(
         "feature_low": pl.Float64,
         "feature_high": pl.Float64,
         "mean_ticks": pl.Float64,
-        "ci_low_ticks": pl.Float64,
-        "ci_high_ticks": pl.Float64,
+        "interval_low_ticks": pl.Float64,
+        "interval_high_ticks": pl.Float64,
     }
 )
 """A row per horizon and quantile: the bars with a label, the feature's range in the bucket, and
@@ -54,7 +57,8 @@ class QuantileReturns:
         """The table as text, a block per horizon, and the trials line."""
         lines = [
             f"Forward returns by quantile of {self.feature}, in ticks: each quantile's mean and "
-            f"its 95 % interval from {self.resamples:,} day-block resamples"
+            f"its 95 % interval from {self.resamples:,} day-block resamples, each interval on "
+            "its own, none where some draws hold none of the quantile's trade dates"
         ]
         for (horizon,), rows in self.frame.group_by("horizon", maintain_order=True):
             lines.append(f"  {counted(int(horizon), 'bar')} ahead")
@@ -72,11 +76,14 @@ def quantile_returns_of(
 ) -> QuantileReturns:
     """The quantile returns of `feature` in `labelled`, the study's frame, at each of `labels`,
     with intervals from `bootstrap`, its number of resamples and its seed."""
-    bucketed = labelled.filter(pl.col(feature).is_not_null()).with_columns(
-        quantile=_bucket(feature, quantiles)
+    bucketed = labelled.filter(pl.col(feature).is_not_null()).select(
+        "trade_date",
+        *(label.column for label in labels),
+        value=pl.col(feature),
+        quantile=_bucket(feature, quantiles),
     )
     ranges = bucketed.group_by("quantile").agg(
-        feature_low=pl.col(feature).min(), feature_high=pl.col(feature).max()
+        feature_low=pl.col("value").min(), feature_high=pl.col("value").max()
     )
     by_day = _returns_by_day(bucketed, labels)
     means = by_day.group_by("horizon", "quantile").agg(
@@ -118,7 +125,10 @@ def _returns_by_day(bucketed: pl.DataFrame, labels: Sequence[Label]) -> pl.DataF
 
 def _day_block_intervals(by_day: pl.DataFrame, resamples: int, seed: int) -> pl.DataFrame:
     """The 95 % interval of each quantile's mean at each horizon from `resamples` draws of the
-    trade dates with replacement, each as many dates as the study holds, drawn from `seed`."""
+    trade dates with replacement, each as many dates as the study holds, drawn from `seed`, and
+    none where some draws hold none of the quantile's dates."""
+    # shortcut: every draw joins its day's sums at once, some 600 MB at ten years of trade dates
+    # and 1,000 resamples; draw in chunks of resamples once studies span decades or share a job.
     days = by_day.select(pl.col("trade_date").unique().sort()).with_row_index("day")
     count = days.height
     draws = pl.select(
@@ -132,9 +142,10 @@ def _day_block_intervals(by_day: pl.DataFrame, resamples: int, seed: int) -> pl.
         mean=pl.col("ticks").sum() / pl.col("bars").sum()
     )
     low, high = INTERVAL
+    every_draw = pl.len() == resamples
     return means.group_by("horizon", "quantile").agg(
-        ci_low_ticks=pl.col("mean").quantile(low, "linear"),
-        ci_high_ticks=pl.col("mean").quantile(high, "linear"),
+        interval_low_ticks=pl.when(every_draw).then(pl.col("mean").quantile(low, "linear")),
+        interval_high_ticks=pl.when(every_draw).then(pl.col("mean").quantile(high, "linear")),
     )
 
 
@@ -142,8 +153,8 @@ def _quantile_line(row: Mapping[str, Any]) -> str:
     return (
         f"    quantile {row['quantile']}  {row['feature_low']:>9.4g} to "
         f"{row['feature_high']:<9.4g} {counted(row['bars'], 'bar'):>12}  "
-        f"mean {_ticks(row['mean_ticks'])}  interval {_ticks(row['ci_low_ticks'])} to "
-        f"{_ticks(row['ci_high_ticks'])}"
+        f"mean {_ticks(row['mean_ticks'])}  interval {_ticks(row['interval_low_ticks'])} to "
+        f"{_ticks(row['interval_high_ticks'])}"
     )
 
 

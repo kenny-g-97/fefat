@@ -20,7 +20,7 @@ from fefat.analytics import (
 )
 from fefat.analytics.events import EVENT_PATH_COLUMNS, EXCURSION_COLUMNS
 from fefat.analytics.quantiles import QUANTILE_COLUMNS
-from fefat.analytics.rank_correlation import CLUSTER_COLUMNS, IC_BY_YEAR_COLUMNS
+from fefat.analytics.rank_correlation import CLUSTER_COLUMNS, COEFFICIENT_BY_YEAR_COLUMNS
 from fefat.backtest import RunConfig
 from fefat.backtest.schemas import ARTIFACT_SCHEMAS
 from fefat.features.combinations import TERMS
@@ -159,7 +159,7 @@ def test_every_analysis_of_a_feature_study_and_every_column_of_its_frames_is_nam
     fields = [field.name for result in results for field in dataclasses.fields(result)]
     schemas = (
         QUANTILE_COLUMNS,
-        IC_BY_YEAR_COLUMNS,
+        COEFFICIENT_BY_YEAR_COLUMNS,
         CLUSTER_COLUMNS,
         EVENT_PATH_COLUMNS,
         EXCURSION_COLUMNS,

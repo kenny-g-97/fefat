@@ -8,7 +8,7 @@ never feed a strategy (`fefat.analytics.labels`).
 """
 
 from fefat.analytics.events import EventStudy
-from fefat.analytics.labels import LABEL_PREFIX, Label, forward_returns, is_label_column
+from fefat.analytics.labels import Label
 from fefat.analytics.quantiles import QuantileReturns
 from fefat.analytics.rank_correlation import Correlations, InformationCoefficient
 from fefat.analytics.study import FeatureStudy
@@ -16,7 +16,6 @@ from fefat.analytics.trials import Trials
 from fefat.reference.orders import PositionSide
 
 __all__ = [
-    "LABEL_PREFIX",
     "Correlations",
     "EventStudy",
     "FeatureStudy",
@@ -25,6 +24,4 @@ __all__ = [
     "PositionSide",
     "QuantileReturns",
     "Trials",
-    "forward_returns",
-    "is_label_column",
 ]

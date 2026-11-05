@@ -12,6 +12,8 @@ from pydantic import ValidationError
 
 import fefat as ff
 from fefat.analytics.labels import Label, excursions, forward_returns, is_label_column
+from fefat.features.grids import Grid
+from fefat.market.schema import Timeframe
 
 TICK = 250_000_000
 MONDAY, TUESDAY = date(2026, 1, 5), date(2026, 1, 6)
@@ -150,6 +152,7 @@ def strategy(**fields: object) -> ff.SignalStrategy:
             {"long_entry": pl.col("close") > pl.col("open") + pl.col("forward_return_1")},
             "the label column forward_return_1 read by long_entry",
         ),
+        ({"entry_price": pl.col("next_open")}, "the label column next_open read by entry_price"),
     ],
 )
 def test_a_strategy_refuses_a_label(fields: dict[str, object], refused: str) -> None:
@@ -157,3 +160,28 @@ def test_a_strategy_refuses_a_label(fields: dict[str, object], refused: str) -> 
     # or reads one.
     with pytest.raises(ValidationError, match=f"{refused}: a label reads the future"):
         strategy(**fields)
+
+
+@ff.feature(outputs={"peek": "flag"})
+def peek(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("forward_return_1") > 0
+
+
+def test_a_strategy_refuses_bars_that_hold_a_label() -> None:
+    # The leakage audit: a selector, a feature's own code, and a copy that skips validation all
+    # read a label they never name, so bars holding one are refused before anything reads them.
+    signal_bars = bars(SESSIONS).with_columns(
+        close=pl.col("open"), close_raw=pl.col("open"), adj_offset=pl.lit(0, dtype=pl.Int64)
+    )
+    labelled = forward_returns(signal_bars, (1,), TICK)
+    readers = [
+        strategy(long_entry=pl.col("^forward_return_1$") > 0),
+        strategy(features={"peek": peek()}, long_entry=pl.col("peek")),
+        strategy().model_copy(update={"long_entry": pl.col("forward_return_1") > 0}),
+    ]
+
+    for reader in readers:
+        with pytest.raises(ValueError, match="the label column next_open in the bars: a label"):
+            reader.signals(labelled)
+    with pytest.raises(ValueError, match="in the bars of NQ 5m: a label reads the future"):
+        strategy().signals(signal_bars, {Grid("NQ", Timeframe.parse("5m")): labelled.collect()})
