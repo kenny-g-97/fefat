@@ -11,6 +11,8 @@ import fefat as ff
 from fefat.features import examples
 from fefat.features.examples import atr, in_session_window, rsi
 from fefat.features.source_lint import LintFinding, LintRule, lint
+from fefat.market.api import series_source
+from fefat.market.schema import Timeframe
 
 SESSION_START = date(2026, 3, 9)
 
@@ -184,6 +186,21 @@ def test_a_feature_reading_data_itself_fails_its_validation_where_its_code_reads
         (LintRule.READS_DATA, line("levels.read()")),
     ]
     assert all(each.rule.fails_validation and not each.rule.looks_ahead for each in found)
+
+
+@ff.feature(outputs={"bought": "count"})
+def reads_prints(bars: pl.LazyFrame) -> pl.LazyFrame:
+    source = series_source("ES")
+    held = source.side_volumes(Timeframe.parse("5m"), (date(2026, 3, 9), date(2026, 3, 9)))
+    return bars.join(held.lazy(), on="ts_close").select("ts_close", bought="buy_volume")
+
+
+def test_a_feature_reading_prints_itself_fails_its_validation() -> None:
+    # Step 3.6: the prints by side a feature reads are cut as its trades input; read by the
+    # feature itself, they are never cut.
+    found = {(finding.rule, finding.line) for finding in lint(reads_prints)}
+
+    assert found == {(LintRule.READS_DATA, 3), (LintRule.READS_DATA, 4)}
 
 
 @ff.feature(warmup=20, outputs={"windowed": "other"})

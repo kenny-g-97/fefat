@@ -1,8 +1,9 @@
 """What a feature's decorator writes (step 3.1, D-71): a version keeps the feature's source, the
 `@feature(...)` call included, and its hash covers that text, the hashes of the features it reads,
-and its parameter schema. So the outputs, the inputs other than features, and the warm-up are
-written in the call as literals, and one bound to a name defined elsewhere is refused, since it
-would change no hash; `load` holds a saved record's declarations to its code the same way.
+and its parameter schema. So the outputs, the inputs other than features, and the warm-ups, in
+bars and in sessions (step 3.6, D-78), are written in the call as literals, and one bound to a
+name defined elsewhere is refused, since it would change no hash; `load` holds a saved record's
+declarations to its code the same way.
 
     @ff.feature(
         params={"n": 14},
@@ -15,6 +16,7 @@ would change no hash; `load` holds a saved record's declarations to its code the
 import ast
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 from fefat.features.inputs import (
     DatasetInput,
@@ -30,16 +32,36 @@ INPUT_KINDS = (FeatureInput, InstrumentInput, TimeframeInput, DatasetInput, Trad
 _INPUTS_BY_NAME = {kind.__name__: kind for kind in INPUT_KINDS}
 
 
+class WarmupUnit(StrEnum):
+    """What a feature's warm-up counts (D-78): bars of its grid, its `warmup`, or whole sessions,
+    its `warmup_sessions`, as for the session before or the week so far."""
+
+    BARS = "bars"
+    SESSIONS = "sessions"
+
+    @property
+    def keyword(self) -> str:
+        """The decorator's keyword that declares it."""
+        return "warmup" if self is WarmupUnit.BARS else "warmup_sessions"
+
+    @property
+    def label(self) -> str:
+        """How a message names it."""
+        return "warm-up" if self is WarmupUnit.BARS else "session warm-up"
+
+
 @dataclass(frozen=True)
 class WrittenDeclarations:
     """What a feature's source writes: the name its `def` gives, and the declarations of its
     `@feature(...)` call: its outputs with their kinds, its inputs, each the input it writes or
-    None where it names a feature, and its warm-up, a number of bars or the text of a lambda."""
+    None where it names a feature, and its warm-ups, in bars and in sessions, each a number or the
+    text of a lambda."""
 
     name: str
     outputs: Mapping[str, str]
     inputs: tuple[DeclaredInput | None, ...]
     warmup: int | str
+    warmup_sessions: int | str
 
 
 def written_declarations(name: str, code: str) -> WrittenDeclarations:
@@ -47,12 +69,16 @@ def written_declarations(name: str, code: str) -> WrittenDeclarations:
     writes; the defaults where it writes none: one output named after the feature of kind
     `other`, no inputs, and no warm-up."""
     defined, keywords = _decorated(name, code)
-    outputs, inputs, warmup = (keywords.get(key) for key in ("outputs", "inputs", "warmup"))
+    outputs, inputs = keywords.get("outputs"), keywords.get("inputs")
+    warmups = {
+        unit: _written_warmup(name, code, keywords.get(unit.keyword), unit) for unit in WarmupUnit
+    }
     return WrittenDeclarations(
         name=defined,
         outputs={name: "other"} if outputs is None else _written_outputs(name, outputs),
         inputs=() if inputs is None else _written_inputs(name, inputs),
-        warmup=0 if warmup is None else _written_warmup(name, code, warmup),
+        warmup=warmups[WarmupUnit.BARS],
+        warmup_sessions=warmups[WarmupUnit.SESSIONS],
     )
 
 
@@ -189,9 +215,11 @@ def _input_kind(callee: ast.expr) -> type[DeclaredInput] | None:
     return None
 
 
-def _written_warmup(name: str, code: str, node: ast.expr) -> int | str:
-    """The warm-up the call writes: a number of bars, or the text of a lambda of the feature's
-    parameters. One bound to a name defined elsewhere is refused."""
+def _written_warmup(name: str, code: str, node: ast.expr | None, unit: WarmupUnit) -> int | str:
+    """The warm-up in `unit` the call writes: none where it writes none, a number, or the text of
+    a lambda of the feature's parameters. One bound to a name defined elsewhere is refused."""
+    if node is None:
+        return 0
     if isinstance(node, ast.Lambda):
         segment = ast.get_source_segment(code, node)
         if segment is not None:
@@ -199,6 +227,6 @@ def _written_warmup(name: str, code: str, node: ast.expr) -> int | str:
     if isinstance(node, ast.Constant) and isinstance(node.value, int):
         return node.value
     raise ValueError(
-        f"Expected the warm-up of feature {name} written in its decorator, as a number of bars or "
-        f"a lambda of its parameters, got {ast.unparse(node)}."
+        f"Expected the {unit.label} of feature {name} written in its decorator, as a number of "
+        f"{unit} or a lambda of its parameters, got {ast.unparse(node)}."
     )

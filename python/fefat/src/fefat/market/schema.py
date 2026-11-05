@@ -47,6 +47,15 @@ class SchemaKind(StrEnum):
     FUNDING = "funding"
 
 
+class AggressorSide(StrEnum):
+    """The side a print's aggressor took, as the trades' `side` column writes it: `B` bought,
+    `A` sold, and `N` none known, as an opening auction's prints or IBKR's."""
+
+    BUY = "B"
+    SELL = "A"
+    UNKNOWN = "N"
+
+
 class TimeUnit(StrEnum):
     """The unit of a bar timeframe, as the schema name writes it."""
 
@@ -171,8 +180,8 @@ _TRADES_COLUMNS = pl.Schema(
         "sequence": pl.UInt32,
     }
 )
-"""One row per trade print, available at `ts_recv`. `side` is the aggressor (`A` sells, `B`
-buys, `N` none), and `size` counts the dataset's size unit."""
+"""One row per trade print, available at `ts_recv`. `side` is the aggressor (`AggressorSide`:
+`A` sells, `B` buys, `N` none), and `size` counts the dataset's size unit."""
 
 _TBBO_COLUMNS = pl.Schema(
     {

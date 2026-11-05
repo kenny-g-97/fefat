@@ -22,13 +22,15 @@ negative shift, backward fill, or centred window, which the lint of step 3.4 fin
 
 `outputs` names each output with its kind (`OutputKind`), one output named after the function
 and of kind `other` when it is left out. `inputs` declares what the feature reads beside the
-bars: other features, by their `FeatureDef`, `InstrumentInput`, and `TimeframeInput`, which the
-runtime evaluates (`fefat.features.runtime`), and `DatasetInput` and `TradesInput`, reserved for
-Phase 10 and step 3.6. `warmup` is the number of bars before
-the feature's values mean what they say, or a lambda of its parameters, such as
-`lambda n: 10 * n`. All three are written in the decorator, whose text the hash covers
-(`fefat.features.declarations`); a helper the function calls is not versioned with it
-(`BACKLOG.md`).
+bars: other features, by their `FeatureDef`, `InstrumentInput`, `TimeframeInput`, and
+`TradesInput`, which the runtime evaluates (`fefat.features.runtime`), and `DatasetInput`,
+reserved for Phase 10. `warmup` is the number of bars before the feature's values mean what they
+say, or a lambda of its parameters, such as `lambda n: 10 * n`, and `warmup_sessions` the number
+of whole sessions before them, as a feature reading the session before declares one (step 3.6,
+D-78): its values mean what they say once, from where the features it reads have their first
+values, that many whole sessions and then its bars have passed. All of them are written in the
+decorator, whose text the hash covers (`fefat.features.declarations`); a helper the function calls
+is not versioned with it (`BACKLOG.md`).
 """
 
 import hashlib
@@ -44,6 +46,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError,
 
 from fefat.features.declarations import (
     INPUT_KINDS,
+    WarmupUnit,
     WrittenDeclarations,
     inputs_as_written,
     written_declarations,
@@ -58,6 +61,8 @@ BarCount = typing.Annotated[int, Field(ge=1)]
 TwoOrMoreBars = typing.Annotated[int, Field(ge=2)]
 """A number of bars, at least two, as a standard deviation's or a directional index's, which a
 single bar leaves without a value."""
+SessionCount = typing.Annotated[int, Field(ge=1)]
+"""A number of whole sessions, at least one, as an average over the sessions before reads."""
 
 _RESERVED_OUTPUTS = frozenset({"ts_close", "warmup", *SIGNAL_BAR_COLUMNS})
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
@@ -68,8 +73,8 @@ _PARAMETERS_CONFIG = ConfigDict(frozen=True, extra="forbid", strict=True)
 class FeatureDef:
     """A feature's definition (the module docstring): its function, its normalised source, the
     model of its parameters, the inputs it declares beside the bars, its outputs with their kinds,
-    its warm-up and the warm-up as its decorator writes it, and its content hash, by which two
-    definitions are equal. Call it with parameters for a `FeatureSpec`."""
+    its warm-ups in bars and in sessions, each also as its decorator writes it, and its content
+    hash, by which two definitions are equal. Call it with parameters for a `FeatureSpec`."""
 
     name: str
     function: Callable[..., object]
@@ -79,6 +84,8 @@ class FeatureDef:
     outputs: Mapping[str, OutputKind]
     warmup: int | Callable[..., object]
     written_warmup: int | str
+    warmup_sessions: int | Callable[..., object]
+    written_warmup_sessions: int | str
     hash: str
 
     def __eq__(self, other: object) -> bool:
@@ -100,7 +107,12 @@ class FeatureDef:
             bound = self.parameter_model(**self._named(values, parameters))
         except ValidationError as error:
             raise ValueError(self._refusal(error)) from error
-        return FeatureSpec(definition=self, parameters=bound, warmup=self._warmup_bars(bound))
+        return FeatureSpec(
+            definition=self,
+            parameters=bound,
+            warmup=self._bound_warmup(WarmupUnit.BARS, bound),
+            warmup_sessions=self._bound_warmup(WarmupUnit.SESSIONS, bound),
+        )
 
     def _named(
         self, values: tuple[object, ...], parameters: dict[str, object]
@@ -137,42 +149,50 @@ class FeatureDef:
             f"{reason}."
         )
 
-    def _warmup_bars(self, parameters: BaseModel) -> int:
-        """The warm-up of the feature with `parameters`, in bars."""
-        if not callable(self.warmup):
-            return self.warmup
-        read = inspect.signature(self.warmup).parameters
+    def _bound_warmup(self, unit: WarmupUnit, parameters: BaseModel) -> int:
+        """The warm-up of the feature in `unit` with `parameters`."""
+        declared, written = (
+            (self.warmup, self.written_warmup)
+            if unit is WarmupUnit.BARS
+            else (self.warmup_sessions, self.written_warmup_sessions)
+        )
+        if not callable(declared):
+            return declared
+        read = inspect.signature(declared).parameters
         try:
-            bars = self.warmup(**{name: getattr(parameters, name) for name in read})
+            count = declared(**{name: getattr(parameters, name) for name in read})
         except Exception as error:
             raise ValueError(
-                f"Expected the warm-up of feature {self.name}, {self.written_warmup}, to give a "
-                f"number of bars with {parameters!r}, got {error!r}."
+                f"Expected the {unit.label} of feature {self.name}, {written}, to give a number "
+                f"of {unit} with {parameters!r}, got {error!r}."
             ) from error
-        if isinstance(bars, bool) or not isinstance(bars, int) or bars < 0:
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
             raise ValueError(
-                f"Expected the warm-up of feature {self.name} as a whole number of bars, at least "
-                f"0, got {bars!r} from {self.written_warmup} with {parameters!r}."
+                f"Expected the {unit.label} of feature {self.name} as a whole number of {unit}, at "
+                f"least 0, got {count!r} from {written} with {parameters!r}."
             )
-        return bars
+        return count
 
 
 def feature(
     *,
     params: Mapping[str, object] | None = None,
     warmup: int | Callable[..., object] = 0,
+    warmup_sessions: int | Callable[..., object] = 0,
     inputs: Sequence[FeatureDef | DeclaredInput] = (),
     outputs: Mapping[str, str] | None = None,
 ) -> Callable[[Callable[..., object]], FeatureDef]:
     """Define a feature (the module docstring): `params` gives its parameters' defaults, `warmup`
-    its warm-up in bars or as a lambda of its parameters, `inputs` what it reads beside the bars,
-    and `outputs` its outputs with their kinds, the last three written in the decorator."""
+    its warm-up in bars and `warmup_sessions` in whole sessions, each a number or a lambda of its
+    parameters, `inputs` what it reads beside the bars, and `outputs` its outputs with their
+    kinds, all but `params` written in the decorator."""
 
     def define(function: Callable[..., object]) -> FeatureDef:
         name = function.__name__
         code = _source(function)
         model = _parameter_model(name, function, {} if params is None else params)
-        checked_warmup = _checked_warmup(name, warmup, model)
+        checked_warmup = _checked_warmup(name, WarmupUnit.BARS, warmup, model)
+        checked_sessions = _checked_warmup(name, WarmupUnit.SESSIONS, warmup_sessions, model)
         declared = tuple(_declared(name, each) for each in inputs)
         written = written_declarations(name, code)
         _require_inputs_as_written(name, declared, written)
@@ -185,6 +205,8 @@ def feature(
             outputs=_outputs(name, {name: OutputKind.OTHER} if outputs is None else outputs),
             warmup=checked_warmup,
             written_warmup=written.warmup,
+            warmup_sessions=checked_sessions,
+            written_warmup_sessions=written.warmup_sessions,
             hash=content_hash(code, declared, model.model_json_schema()),
         )
 
@@ -339,28 +361,28 @@ def _outputs(name: str, declared: Mapping[str, str]) -> Mapping[str, OutputKind]
 
 
 def _checked_warmup(
-    name: str, warmup: int | Callable[..., object], model: type[BaseModel]
+    name: str, unit: WarmupUnit, warmup: int | Callable[..., object], model: type[BaseModel]
 ) -> int | Callable[..., object]:
-    """`warmup` once it is a whole number of bars, at least 0, or a function of the feature's
+    """`warmup` once it is a whole number of `unit`, at least 0, or a function of the feature's
     parameters alone."""
     if callable(warmup):
         unknown = sorted(set(inspect.signature(warmup).parameters) - set(model.model_fields))
         if unknown:
             raise ValueError(
-                f"Expected the warm-up of feature {name} to read its parameters "
+                f"Expected the {unit.label} of feature {name} to read its parameters "
                 f"({', '.join(model.model_fields)}), got {', '.join(unknown)}."
             )
         outside = _names_read_outside(warmup)
         if outside:
             raise ValueError(
-                f"Expected the warm-up of feature {name} to read its parameters alone, got "
+                f"Expected the {unit.label} of feature {name} to read its parameters alone, got "
                 f"{', '.join(outside)}, whose values its version would miss."
             )
         return warmup
     if isinstance(warmup, bool) or not isinstance(warmup, int) or warmup < 0:
         raise ValueError(
-            f"Expected the warm-up of feature {name} as a whole number of bars, at least 0, or a "
-            f"lambda of its parameters, got {warmup!r}."
+            f"Expected the {unit.label} of feature {name} as a whole number of {unit}, at least "
+            f"0, or a lambda of its parameters, got {warmup!r}."
         )
     return warmup
 

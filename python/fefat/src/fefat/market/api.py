@@ -78,10 +78,12 @@ from datetime import date, datetime
 import polars as pl
 
 from fefat.config import resolve_paths
+from fefat.market.aggressor import PRINT_COLUMNS, SIDE_VOLUME_COLUMNS, side_volumes
 from fefat.market.calendar import SessionTable
 from fefat.market.catalog import CATALOG
 from fefat.market.continuous import CONTINUOUS_COLUMNS, RollCalendar
 from fefat.market.contracts import parse_contract_name
+from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import (
     building_datasets,
     dataset_warnings,
@@ -209,6 +211,34 @@ class SeriesSource:
             unspliced = _unspliced(gridded, self.series)
             return _signal_bars(unspliced, first, last, ("contract", "ts_open"))
         return _signal_bars(self.calendar.continuous_bars(gridded), first, last, ("ts_open",))
+
+    def side_volumes(self, timeframe: Timeframe, dates: tuple[date, date]) -> pl.DataFrame:
+        """The volume of the prints of each bucket of `timeframe` by aggressor side on the trade
+        dates `dates` spans that the provider's trades hold, each date's of the contract whose
+        bars it gives (`counted`), held back before the bucket of the trades' first print and
+        from their end, with the columns of `SIDE_VOLUME_COLUMNS` (`fefat.market.aggressor`):
+        none without trades."""
+        trades = self.datasets.get("trades")
+        coverage = None if trades is None else dataset_coverage(self.store, trades)
+        if trades is None or coverage is None:
+            return pl.DataFrame(schema=SIDE_VOLUME_COLUMNS)
+        first, last = dates
+        counted = self.counted(dates)
+        fronts = None if counted is None else set(counted.select("trade_date", "contract").rows())
+        read = [
+            file.partition
+            for file in self.store.list_partitions(trades)
+            if isinstance(file.partition.key, date)
+            and first <= file.partition.key <= last
+            and (fronts is None or (file.partition.key, file.partition.contract) in fronts)
+        ]
+        if not read:
+            return pl.DataFrame(schema=SIDE_VOLUME_COLUMNS)
+        prints = pl.concat(self.store.scan_partition(each).select(PRINT_COLUMNS) for each in read)
+        until = min(self.sessions.following(last).open, coverage.received_until)
+        held = sorted({each.key for each in read if isinstance(each.key, date)})
+        in_hand = (coverage.received_from, until)
+        return side_volumes(prints.collect(), timeframe, self.sessions, held, in_hand)
 
 
 def series_source(

@@ -16,9 +16,10 @@ import polars as pl
 
 from fefat.features.cache_folders import FeatureFolder
 from fefat.features.cache_keys import CachePartition
-from fefat.features.runtime import FeatureGraph, Grid, InputBars, slot_columns
+from fefat.features.grids import Grid, InputBars
+from fefat.features.runtime import FeatureGraph, slot_columns
 from fefat.market.api import SeriesSource
-from fefat.market.calendar import SessionTable, counted, utc_text
+from fefat.market.calendar import SessionTable, utc_text
 from fefat.market.schema import FrozenModel
 
 TOLERANCE = 1e-9
@@ -76,13 +77,13 @@ def evaluated_features(
 def _inputs(
     graphs: Sequence[FeatureGraph], sources: Mapping[str, SeriesSource], dates: tuple[date, date]
 ) -> dict[Grid, pl.DataFrame]:
-    """The bars of every grid the graphs read, each from its instrument's source, for the
-    window `dates` (`FeatureGraph.grid_dates`)."""
+    """The frame of every grid the graphs read, each from its instrument's source, for the
+    window `dates` (`FeatureGraph.grid_dates`): its bars, or its prints by side."""
     grids = dict.fromkeys(grid for graph in graphs for grid in graph.grids())
     with warnings.catch_warnings(action="ignore"):  # `compute` gives `load`'s once
         return {
-            grid: sources[grid.root].signal_bars(
-                grid.timeframe, graphs[0].grid_dates(grid, dates, sources[grid.root].sessions)
+            grid: grid.frame_from(
+                sources[grid.root], graphs[0].grid_dates(grid, dates, sources[grid.root].sessions)
             )
             for grid in grids
         }
@@ -218,11 +219,10 @@ def _first_apart(joined: pl.DataFrame, output: str) -> Difference | None:
 
 def _disagreement(folder: FeatureFolder, starts: tuple[date, date], difference: Difference) -> str:
     node = folder.graph.slots[folder.slot]
-    warmup = counted(folder.graph.warmups[node], "bar")
     ours, theirs = starts
     return (
         f"Expected feature {node.name} to give the same values read from {ours} as from "
         f"{theirs}, where its warm-up starts, got {difference}: it remembers more than its "
-        f"warm-up of {warmup} of {node.timeframe}, so a partition of the cache would differ from "
-        "a computation of the whole range; declare a longer warm-up."
+        f"warm-up of {folder.graph.warmup_text(node)}, so a partition of the cache would differ "
+        "from a computation of the whole range; declare a longer warm-up."
     )

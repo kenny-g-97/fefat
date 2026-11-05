@@ -37,8 +37,9 @@ _CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
 class FeatureVersion(FrozenModel):
     """A saved version of a feature, as its file keeps it: its name and number, its content
     hash, its normalised source, its parameter schema, the inputs it declares beside the bars,
-    its outputs with their kinds, its warm-up in bars or as the lambda its decorator writes, and
-    when it was saved."""
+    its outputs with their kinds, its warm-ups in bars and in sessions, each a number or the
+    lambda its decorator writes, none in sessions in a version saved before step 3.6, and when it
+    was saved."""
 
     name: str = Field(min_length=1)
     version: int = Field(ge=1)
@@ -48,6 +49,7 @@ class FeatureVersion(FrozenModel):
     inputs: tuple[DeclaredInput, ...]
     outputs: dict[str, OutputKind]
     warmup: int | str
+    warmup_sessions: int | str = 0
     created_at: datetime
 
     def content_hash(self) -> str:
@@ -73,6 +75,7 @@ def save(definition: FeatureDef) -> FeatureVersion:
         inputs=definition.inputs,
         outputs=dict(definition.outputs),
         warmup=definition.written_warmup,
+        warmup_sessions=definition.written_warmup_sessions,
         created_at=datetime.now(UTC),
     )
     _create(folder / f"v{record.version}.json", record)
@@ -105,7 +108,7 @@ def load(name: str, version: int) -> FeatureVersion:
 
 
 def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> None:
-    """Refuse a record whose name, outputs, inputs, or warm-up are not those its code writes,
+    """Refuse a record whose name, outputs, inputs, or warm-ups are not those its code writes,
     which the hash covers through that text alone."""
     written = written_declarations(record.name, record.code)
     if (
@@ -113,10 +116,11 @@ def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> Non
         and record.outputs == written.outputs
         and inputs_as_written(record.inputs, written.inputs)
         and record.warmup == written.warmup
+        and record.warmup_sessions == written.warmup_sessions
     ):
         return
     raise ValueError(
-        f"Expected the name, outputs, inputs, and warm-up in {path} as its code writes them, got "
+        f"Expected the name, outputs, inputs, and warm-ups in {path} as its code writes them, got "
         "others: the file was changed after it was written."
     )
 

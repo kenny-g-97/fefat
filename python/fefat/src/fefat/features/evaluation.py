@@ -7,7 +7,8 @@ to a frame of `ts_close`, its outputs, and its warm-up flag.
     spec.evaluate(bars)  # ts_close, rsi, and warmup, true on the first 294 rows
 
 A value a feature cannot give yet is null, never NaN, which `SignalStrategy.signals()` refuses
-(D-53); the rows inside the declared warm-up keep the values the feature gives there, flagged.
+(D-53); the rows inside the declared warm-up keep the values the feature gives there, flagged:
+its whole sessions first, then its bars (`first_warm_row`, D-78).
 The bars are one series, as `load` gives a root spliced or one contract, never the contracts
 `load(continuous=False)` stacks, and never a back-adjusted import. A feature that reads inputs
 beside the bars is evaluated by the runtime of step 3.2 (`fefat.features.runtime`), which gives
@@ -27,11 +28,13 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    """A feature's definition with its parameters, validated, and the warm-up they give in bars."""
+    """A feature's definition with its parameters, validated, and the warm-ups they give, in bars
+    and in whole sessions."""
 
     definition: "FeatureDef"
     parameters: BaseModel
     warmup: int
+    warmup_sessions: int
 
     def expressions(self, bars: pl.DataFrame | pl.LazyFrame) -> dict[str, pl.Expr]:
         """The feature's outputs over `bars`, `load`'s signal bars, as expressions named after
@@ -72,9 +75,44 @@ class FeatureSpec:
 
     def evaluate(self, bars: pl.DataFrame | pl.LazyFrame) -> pl.LazyFrame:
         """The feature over `bars` as a frame on their rows: `ts_close`, its outputs, and
-        `warmup`, true on the rows its declared warm-up counts."""
+        `warmup`, true on the rows its declared warm-up counts, its sessions then its bars."""
         _require_the_bars_alone(self.definition)
-        return self.outputs_over(bars).with_columns(warmup=pl.int_range(pl.len()) < self.warmup)
+        frame = bars.lazy()
+        first = self.warmup
+        if self.warmup_sessions:
+            held = [name for name in ("ts_close", "trade_date") if name in frame.collect_schema()]
+            rows = frame.select(held).collect()
+            owner = f"feature {self.definition.name}"
+            first = first_warm_row(rows, None, self.warmup_sessions, self.warmup, owner)
+        return self.outputs_over(frame).with_columns(warmup=pl.int_range(pl.len()) < first)
+
+
+def first_warm_row(
+    rows: pl.DataFrame, read_from: int | None, sessions: int, bars: int, owner: str
+) -> int:
+    """The first of `rows`, a feature's bars in order with their `ts_close` and, where `sessions`
+    is above 0, their `trade_date`, at which the values of `owner` mean what they say (D-78): from
+    the first row closing at or after `read_from`, where the features it reads have their first
+    values, or from the first row where None, `sessions` whole sessions on, a session whole where
+    its first row lies at or after that row, then `bars` rows on; the number of rows where they
+    hold none."""
+    start = 0 if read_from is None else int(rows["ts_close"].search_sorted(read_from, "left"))
+    if sessions:
+        start = _after_whole_sessions(rows, start, sessions, owner)
+    return min(start + bars, rows.height)
+
+
+def _after_whole_sessions(rows: pl.DataFrame, start: int, sessions: int, owner: str) -> int:
+    """The first row of the session `sessions` whole sessions after the first that opens at or
+    after row `start`; the number of rows where they hold fewer."""
+    if "trade_date" not in rows.columns:
+        raise ValueError(
+            f"Expected trade_date in the bars of {owner}, whose warm-up counts sessions, got none."
+        )
+    dates = rows.get_column("trade_date")
+    opens = (dates != dates.shift(1)).fill_null(True).arg_true()
+    whole = opens.filter(opens >= start)
+    return int(whole[sessions]) if whole.len() > sessions else rows.height
 
 
 def _require_the_bars_alone(definition: "FeatureDef") -> None:

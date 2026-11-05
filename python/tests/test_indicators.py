@@ -33,14 +33,25 @@ def call_text(spec: FeatureSpec) -> str:
     return f"{spec.definition.name}({parameters})"
 
 
+def written_call(definition: FeatureDef) -> str:
+    """The call a row of the table writes: each parameter in its order, a required one by its
+    name, as `vwap_since(flag, sessions=1)`, and the others with their defaults."""
+    fields = definition.parameter_model.model_fields.items()
+    parameters = [
+        name if field.is_required() else f"{name}={field.default!r}" for name, field in fields
+    ]
+    return f"{definition.name}({', '.join(parameters)})"
+
+
 def test_the_module_docstring_has_a_row_for_each_indicator_with_its_parameters() -> None:
-    # Done means 3: each indicator's row writes its call with its defaults, and its outputs,
-    # each followed by its kind in brackets, as `upper` (price) or `rsi` (ratio, 0 to 100).
+    # Done means 3 of step 3.5, and the indicators of step 3.6: each indicator's row writes its
+    # call with its defaults, and its outputs, each followed by its kind in brackets, as `upper`
+    # (price) or `rsi` (ratio, 0 to 100).
     rows = [line for line in (ff.indicators.__doc__ or "").splitlines() if line.startswith("| ")]
 
-    assert len(DEFINITIONS) == 17
+    assert len(DEFINITIONS) == 30
     for definition in DEFINITIONS:
-        call = f"`{call_text(definition())}`"
+        call = f"`{written_call(definition)}`"
         row = next((row for row in rows if call in row), None)
         assert row is not None, f"Expected a row of the table for {call}, got none"
         outputs = row.split(" | ")[2]

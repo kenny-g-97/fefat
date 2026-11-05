@@ -139,7 +139,17 @@ _PER_WINDOW = frozenset({"agg", "eval", "map_elements", "rolling_map"})
 _OF_NUMBERS = frozenset({"math", "statistics"})
 """Modules of the standard library whose aggregates reduce Python's own numbers."""
 _READERS = frozenset(
-    {"compute", "load", "open", "read", "roll_calendar", "scan", "series_source", "signal_bars"}
+    {
+        "compute",
+        "load",
+        "open",
+        "read",
+        "roll_calendar",
+        "scan",
+        "series_source",
+        "side_volumes",
+        "signal_bars",
+    }
 )
 """Methods that read data, such as `ff.market.load`, `ff.features.compute`, and a store's `scan`."""
 _NAMED_READERS = frozenset({"compute", "load", "open", "roll_calendar", "series_source"})

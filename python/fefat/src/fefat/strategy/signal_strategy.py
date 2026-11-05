@@ -31,7 +31,8 @@ import polars as pl
 from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator
 
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.runtime import NO_INPUTS, FeatureGraph, InputBars, clashing, slot_columns
+from fefat.features.grids import NO_INPUTS, InputBars
+from fefat.features.runtime import FeatureGraph, clashing, slot_columns
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted, utc_text
 from fefat.market.schema import FrozenModel, Timeframe
@@ -144,7 +145,7 @@ class SignalStrategy(FrozenModel):
     ) -> pl.LazyFrame:
         """The signal frame of `bars`, `load`'s frame of the strategy's signal bars
         (`fefat.strategy.signal_frame`), its `FeatureSpec`s reading the bars of the other grids
-        they declare in `inputs` (`fefat.features.runtime.load_inputs`), and its rows those of
+        they declare in `inputs` (`fefat.features.grids.load_inputs`), and its rows those of
         the trade dates from `start` on, where it is given, the bars before it read for the
         features' warm-up, which the expressions read too, so that an expression's first values
         in the window follow the warm-up the strategy's `FeatureSpec`s need. A null signal, as
