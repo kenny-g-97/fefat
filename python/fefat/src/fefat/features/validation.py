@@ -265,11 +265,11 @@ def _start_check(
     week or month resets agrees from that date alone (module docstring)."""
     days = window.get_column("trade_date").unique().sort().to_list()
     middle = len(days) // 2
-    checks = [
-        _start_check_from(graph, inputs, sources, window, outputs, day)
-        for day in days[middle : middle + 2]
-    ]
-    return next((check for check in checks if not check.passed), checks[0])
+    first = _start_check_from(graph, inputs, sources, window, outputs, days[middle])
+    if not first.passed or middle + 1 == len(days):
+        return first
+    second = _start_check_from(graph, inputs, sources, window, outputs, days[middle + 1])
+    return first if second.passed else second
 
 
 def _start_check_from(

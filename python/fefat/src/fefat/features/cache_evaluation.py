@@ -181,10 +181,10 @@ class Difference(FrozenModel):
             return "a value against null" if second is None else "null against a value"
         if isinstance(first, bool) or isinstance(second, bool):
             return f"{first} against {second}"
-        larger = max(abs(first), abs(second))
-        if not math.isfinite(larger) or larger == 0:
-            return "two values that differ"
-        return f"two values apart by {abs(first - second) / larger:.1e} of the larger"
+        if math.isfinite(first) and math.isfinite(second) and first != second:
+            larger = max(abs(first), abs(second))
+            return f"two values apart by {abs(first - second) / larger:.1e} of the larger"
+        return "two values that differ"
 
 
 @dataclass(frozen=True)

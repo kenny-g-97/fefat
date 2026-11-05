@@ -16,6 +16,7 @@ import pytest
 import fefat as ff
 from fefat.config import resolve_paths
 from fefat.features import TimeframeInput, ValidationReport
+from fefat.features.cache_evaluation import Difference
 from fefat.features.cuts import CutKind
 from fefat.features.examples import rsi
 from fefat.features.source_lint import LintRule
@@ -403,3 +404,19 @@ def test_a_weekly_memory_without_its_warmup_fails_the_start_check() -> None:
     assert check.compared_from == date(2026, 2, 18)
     assert "so the feature remembers more than its warm-up" in str(check)
     assert not report.passed
+
+
+def test_a_difference_says_how_far_apart_two_values_lie_without_quoting_either() -> None:
+    # The security review of the Phase 3 exit, and the code review of its fixes: the words of a
+    # difference quote no value, which can be a price, and treat a value that is no finite number
+    # alike whichever side it is on.
+    nan, inf = float("nan"), float("inf")
+
+    def apart(value: float | bool | None, against: float | bool | None) -> str:
+        return Difference(output="x", ts_close=0, value=value, against=against).apart()
+
+    assert apart(5.0, None) == "a value against null"
+    assert apart(None, 5.0) == "null against a value"
+    assert apart(110.0, 100.0) == "two values apart by 9.1e-02 of the larger"
+    assert apart(5.0, nan) == apart(nan, 5.0) == apart(inf, 5.0) == "two values that differ"
+    assert apart(True, False) == "True against False"

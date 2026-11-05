@@ -6,14 +6,15 @@ instant, never a trade date.
 The adversarial cuts come from the session table and the roll calendar: at each stop of trading
 (`fefat.market.trading_stops`), a session's close or a holiday's halt, then a nanosecond after it,
 inside its break, or over the weekend when the break holds one, a nanosecond before the next open,
-at it, and at the close of the first signal bar after it, inside the session, which the cuts at
-a stop keep whole or not at all; at each roll's open and at the close of the new front's first
-bar; and on each higher timeframe a feature reads, one signal bar before a bar of it closes,
-while it is in progress, and at its close. Random cuts fall at the closes of signal bars, and the
-stops kept where a window holds more than asked for are drawn, from one seed, so that a
-validation repeats (D-11). Every cut lies at or after the close of the window's first session,
-so that each compares a session of values at least: a feature whose warm-up reaches past the
-data then compares nothing at its first cuts, and fails."""
+at it, and at the close of the first signal bar after it, the first of the session that opens
+there where it holds bars, which the cuts at a stop keep whole or not at all; at each roll's
+open and at the close of the new front's first bar; and on each higher timeframe a feature
+reads, one signal bar before a bar of it closes, while it is in progress, and at its close.
+Random cuts fall at the closes of signal bars, and the stops kept where a window holds more than
+asked for are drawn, from one seed, so that a validation repeats (D-11). Every cut lies at or
+after the close of the window's first session, so that each compares a session of values at
+least: a feature whose warm-up reaches past the data then compares nothing at its first cuts,
+and fails."""
 
 import random
 from collections.abc import Iterator, Sequence

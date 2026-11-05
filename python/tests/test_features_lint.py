@@ -256,11 +256,19 @@ def reads_a_page(bars: pl.LazyFrame) -> pl.Expr:
     return pl.col("ts_close").is_in([int(line) for line in lines]).cast(pl.Int64)
 
 
+@ff.feature(outputs={"listed": "count"})
+def imports_its_reader(bars: pl.LazyFrame) -> pl.Expr:
+    from sqlite3 import connect
+
+    rows = connect(":memory:").execute("select 1").fetchall()
+    return pl.col("ts_close").is_in([row[0] for row in rows]).cast(pl.Int64)
+
+
 def test_data_read_through_the_standard_library_fails_a_validation() -> None:
     # The leakage audit of the Phase 3 exit: a database or a web page the feature reads is never
     # cut, as a file it opens is not, and its readers are the standard library's.
-    for feature in (reads_a_database, reads_a_page):
-        assert [finding.rule for finding in lint(feature)] == [LintRule.READS_DATA]
+    for feature in (reads_a_database, reads_a_page, imports_its_reader):
+        assert {finding.rule for finding in lint(feature)} == {LintRule.READS_DATA}
 
 
 @ff.feature(outputs={"ahead": "other"})
@@ -279,3 +287,25 @@ def test_the_labels_under_another_name_fail_a_validation() -> None:
     # so one imported under another name, and `exit_open`, passed it.
     for feature in (ahead_under_another_name, exit_ahead):
         assert [finding.rule for finding in lint(feature)] == [LintRule.READS_LABELS]
+
+
+held_levels = pl.DataFrame({"trade_date": [date(2026, 3, 6)], "level": [1.0]})
+"""A frame a notebook cell loaded, which a feature holds from outside it."""
+
+
+@ff.feature(outputs={"read": "other"})
+def holds_a_frame_its_helper_names(bars: pl.LazyFrame) -> pl.LazyFrame:
+    def doubled(held_levels: pl.Expr) -> pl.Expr:
+        return held_levels * 2
+
+    joined = bars.join(held_levels.lazy(), on="trade_date", how="left")
+    return joined.select("ts_close", read=doubled(pl.col("level")))
+
+
+def test_a_helpers_parameter_hides_no_read_of_the_body() -> None:
+    # The code review of the Phase 3 exit's fixes: a parameter of a function the body defines
+    # bound its name for the whole body, so the body's own read of a frame held from outside
+    # under that name passed the lint.
+    found = [(finding.rule, finding.line) for finding in lint(holds_a_frame_its_helper_names)]
+
+    assert found == [(LintRule.READS_DATA, 6)]

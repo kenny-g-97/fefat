@@ -549,3 +549,7 @@ def test_terms_compared_with_equals_are_refused_where_they_join_a_combination() 
     with pytest.raises(ValueError, match="== and != compare terms as Python objects"):
         _ = (close != opened) & (close > opened)
     assert (combine.constant(True) | (close > opened)).left == combine.constant(True)
+    # The code review of the exit's fixes: a flag given where no == was written is told
+    # how to write one.
+    with pytest.raises(ValueError, match="got True: a bare flag is refused"):
+        combine.and_(close > opened, True)

@@ -72,7 +72,7 @@ What the exit changes on your PC: the feature cache under `%LOCALAPPDATA%\FEFAT\
     (close == high) | (close > opened)
     ```
 
-    It stops with `ValueError: Expected a term of a combination, got False: == and != compare terms as Python objects, not bar by bar`. Before the exit it gave a combination whose first condition was gone, so a candle closing at its high was never found.
+    It stops with `ValueError: Expected a term of a combination, got False: a bare flag is refused, since == and != compare terms as Python objects, not bar by bar`. Before the exit it gave a combination whose first condition was gone, so a candle closing at its high was never found.
 
 13. **Exit check: the reviewers are still read-only.** Start a new Claude Code session and type: _Run the step-reviewer subagent and ask it to run `printf probe`, then report what happened._
     The reviewer reports `Reviewers are read-only: "printf probe" is not on the read-only list.`: the hook knows the agent as a reviewer and checks its every command.

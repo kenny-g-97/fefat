@@ -213,9 +213,9 @@ def term_of(value: object) -> Term:
         return value
     if isinstance(value, bool):
         raise ValueError(
-            f"Expected a term of a combination, got {value}: == and != compare terms as Python "
-            "objects, not bar by bar, so write the comparison with > and <, and a flag the same on "
-            "every bar as combine.constant(True)."
+            f"Expected a term of a combination, got {value}: a bare flag is refused, since == "
+            "and != compare terms as Python objects, not bar by bar, and give one; write the "
+            "comparison with > and <, and a flag the same on every bar as combine.constant(True)."
         )
     if isinstance(value, FeatureSpec):
         return feature_output(value)
