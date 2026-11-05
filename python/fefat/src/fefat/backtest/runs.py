@@ -39,6 +39,7 @@ from fefat.backtest.metrics import Metrics
 from fefat.backtest.metrics_inputs import friction_tested, metrics_inputs_json, parameters_of
 from fefat.backtest.record import (
     EngineVersions,
+    FeaturePin,
     InstrumentRecord,
     PathFidelity,
     RunRecord,
@@ -49,6 +50,8 @@ from fefat.backtest.report import report_text
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
+from fefat.features.evaluation import FeatureSpec
+from fefat.features.versions import save
 from fefat.market.engine_units import micro_units, money_text
 from fefat.market.fidelity import FidelityEra
 from fefat.strategy.signal_strategy import SignalStrategy
@@ -161,8 +164,12 @@ def run(
     if (folder / RECORD_FILE).is_file():
         saved = Run.open(folder)
     else:
-        cache_paths = inputs.cache_paths(paths)
-        saved = _ran(inputs, cache_paths, strategy.feature_columns(), folder, key, frame_hash)
+        written = StrategyRecord(
+            spec=inputs.spec.document(),
+            features=strategy.feature_columns(),
+            feature_versions=_pins(strategy),
+        )
+        saved = _ran(inputs, inputs.cache_paths(paths), written, folder, key, frame_hash)
     for warning in saved.record.warnings:
         warnings.warn(warning, UserWarning, stacklevel=2)
     return saved
@@ -175,16 +182,34 @@ def run_key(inputs: RunInputs, frame_hash: str) -> str:
     return fefat_engine.run_key(inputs.spec_json(), frame_hash, partitions, inputs.config_json())
 
 
+def _pins(strategy: SignalStrategy) -> tuple[FeaturePin, ...]:
+    """The version of each feature the strategy's slots read, each saved in the library where it
+    is not yet (step 3.7), so that the run's record names it as the library keeps it."""
+    return tuple(
+        _pin(slot, feature)
+        for slot, feature in strategy.features.items()
+        if isinstance(feature, FeatureSpec)
+    )
+
+
+def _pin(slot: str, feature: FeatureSpec) -> FeaturePin:
+    saved = save(feature.definition)
+    parameters = feature.parameters.model_dump(mode="json")
+    return FeaturePin(
+        slot=slot, name=saved.name, version=saved.version, hash=saved.hash, parameters=parameters
+    )
+
+
 def _ran(
     inputs: RunInputs,
     cache_paths: tuple[Path, ...],
-    features: tuple[str, ...],
+    strategy: StrategyRecord,
     folder: Path,
     key: str,
     frame_hash: str,
 ) -> Run:
     """The run of `inputs` through the engine over its fronts' caches in `cache_paths`, its
-    artifacts and record written to `folder`."""
+    artifacts and record, which names `strategy`, written to `folder`."""
     caches = [str(path) for path in cache_paths]
     replay = str(inputs.config.replay)
     outputs = fefat_engine.run_signal_backtest(
@@ -192,7 +217,7 @@ def _ran(
     )
     engine = {name: pl.DataFrame(outputs[name]) for name in ENGINE_TABLES}
     capital = micro_units(inputs.config.capital)
-    artifacts = artifacts_of(engine, inputs.signals, features, inputs.parameters, capital)
+    artifacts = artifacts_of(engine, inputs.signals, strategy.features, inputs.parameters, capital)
     summary = outputs["summary"]
     eras = tuple(FidelityEra.model_validate(era) for era in summary["eras"])
     itself = PeriodRun(inputs.config.fidelity, engine["trades"], engine["equity"], eras)
@@ -206,7 +231,7 @@ def _ran(
             fill_model=fefat_engine.FILL_MODEL_VERSION,
             artifact_schema=fefat_engine.ARTIFACT_SCHEMA_VERSION,
         ),
-        strategy=StrategyRecord(spec=inputs.spec.document(), features=features),
+        strategy=strategy,
         window=inputs.window,
         instrument=_instrument_record(inputs),
         datasets=inputs.datasets,

@@ -4,14 +4,14 @@ under and the hash of its snapshot, the signal frame's hash, its settings with e
 applied, its fee table, the rolls it crossed, the config the engine read, the warnings, a summary
 of its end, and, from step 2.11, its metrics; from step 2.12, the fidelity era of each trade
 date, in place of the fills by fidelity; from step 2.13, the mix of its trades' path
-fidelities; and, from step 3.2, the era of each trade date's signal bars, the level each was
-built from."""
+fidelities; from step 3.2, the era of each trade date's signal bars, the level each was built
+from; and, from step 3.7, the version of each feature its strategy's slots read."""
 
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
@@ -34,11 +34,26 @@ class EngineVersions(FrozenModel):
     artifact_schema: int = Field(ge=1)
 
 
+class FeaturePin(FrozenModel):
+    """A feature a strategy reads in a slot, pinned as the library keeps it (step 3.7): the slot,
+    the feature's name, the number and content hash of its saved version, and the parameters the
+    slot binds."""
+
+    slot: str
+    name: str
+    version: int = Field(ge=1)
+    hash: Sha256
+    parameters: dict[str, JsonValue]
+
+
 class StrategyRecord(FrozenModel):
-    """The strategy's specification as its document writes it, and the names of its features."""
+    """The strategy's specification as its document writes it, the names of its features'
+    columns, and, from step 3.7, the version of each feature its slots read, none for a plain
+    expression or in a record written before."""
 
     spec: dict[str, Any]
     features: tuple[str, ...]
+    feature_versions: tuple[FeaturePin, ...] = ()
 
 
 class Window(FrozenModel):
