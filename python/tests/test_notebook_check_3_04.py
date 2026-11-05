@@ -29,7 +29,9 @@ def test_the_check_notebook_fails_a_feature_reading_ahead_and_passes_it_reading_
         " fail, the first at 2026-02-06T22:00:00Z (session_close): neighbour_close at "
         in (printed[2])
     )
-    assert printed[2].endswith("with the data after the cut and None without it")
+    assert printed[2].endswith(
+        "with the data after the cut against without it: a value against null"
+    )
     assert printed[3].startswith("start check from 2026-02-13, read from 2026-02-06 and from")
     lint = 'lint: line 3 of neighbour_close: return pl.col("close").shift(-1): a negative'
     assert printed[4].startswith(lint)

@@ -79,9 +79,12 @@ def test_a_report_names_the_first_failing_cut_and_row_of_a_planted_leak() -> Non
     assert summary[0].endswith(f"seed {SEED}: FAILED")
     assert summary[1].startswith(
         f"cuts: {len(report.cuts)} of {len(report.cuts)} fail, the first at "
-        "2026-02-11T22:00:00Z (session_close): next_close at 2026-02-11T22:00:00Z is "
-        f"{at_the_close} with the data after the cut and None without it"
+        "2026-02-11T22:00:00Z (session_close): next_close at 2026-02-11T22:00:00Z differs, with "
+        "the data after the cut against without it: a value against null"
     )
+    # The security review of the Phase 3 exit: the report keeps both values, which the app shows
+    # (step 6.4), and its words quote neither, since a feature's values can be prices (D-21).
+    assert str(at_the_close) not in report.summary()
     assert [finding.rule for finding in report.lint] == [LintRule.NEGATIVE_SHIFT]
     assert summary[-1] == f"lint: {report.lint[0]}"
 

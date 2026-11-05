@@ -364,8 +364,8 @@ def _raw_price(frame: pl.DataFrame, name: str) -> pl.Expr:
         off = frame.filter(~price.is_finite() | (price != price.floor()))
         if not off.is_empty():
             raise ValueError(
-                f"Expected {name} in whole 1e-9 units, got {off.item(0, name)} on "
-                f"{counted(off.height, 'bar')}, the first closing at "
+                f"Expected {name} in whole 1e-9 units, got a fraction of a unit, or no finite "
+                f"value, on {counted(off.height, 'bar')}, the first closing at "
                 f"{utc_text(off.item(0, 'ts_close'))}: round it to the instrument's tick."
             )
     elif not dtype.is_integer():

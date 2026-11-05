@@ -44,8 +44,8 @@ class CutResult(FrozenModel):
         found = self.difference
         if found is not None:
             return (
-                f"{at}: {found.output} at {utc_text(found.ts_close)} is {found.value} with the "
-                f"data after the cut and {found.against} without it"
+                f"{at}: {found.output} at {utc_text(found.ts_close)} differs, with the data after "
+                f"the cut against without it: {found.apart()}"
             )
         return f"{at}: {_agreement(self.compared)}"
 
@@ -77,8 +77,8 @@ class StartCheck(FrozenModel):
             )
         if found is not None:
             return (
-                f"{read}: {found.output} at {utc_text(found.ts_close)} is {found.value} against "
-                f"{found.against}, so the feature remembers more than its warm-up"
+                f"{read}: {found.output} at {utc_text(found.ts_close)} differs: {found.apart()}, "
+                "so the feature remembers more than its warm-up"
             )
         return f"{read}: {_agreement(self.compared)}"
 
@@ -151,7 +151,8 @@ class ValidationReport(FrozenModel):
         missing = self.uncompared()
         never = (
             f"values: no value of {', '.join(missing)} compared at any cut, as a warm-up longer "
-            "than the data leaves none; validate a window with more data before it"
+            "than the data leaves none, or an input without data, such as prints without a side; "
+            "validate a window with more data before it, or with data in every input"
         )
         found = [f"lint: {finding}" for finding in self.lint] or ["lint: no finding"]
         return "\n".join(
