@@ -149,16 +149,21 @@ def ref(name: str, *, version: int, **parameters: object) -> FeatureSpec:
 
 def definition_of(record: FeatureVersion) -> FeatureDef:
     """The definition of the saved version `record`: this process's of its hash, or else the one
-    its code and the features it reads build again, kept as this process's (module docstring)."""
+    its code and the features it reads build again, kept as this process's (module docstring);
+    those its decorator names by name are given to its code, and those it writes as inputs, as a
+    combination does, are found by the runtime among this process's."""
     defined = registered(record.hash)
     if defined is not None:
         return defined
-    reads = [
-        saved_definition(declared.name, declared.hash, record.name)
-        for declared in record.inputs
-        if isinstance(declared, FeatureInput)
-    ]
-    built = from_source(record.code, reads)
+    written = written_declarations(record.name, record.code).inputs
+    named = []
+    for declared, literal in zip(record.inputs, written, strict=True):
+        if not isinstance(declared, FeatureInput):
+            continue
+        read = saved_definition(declared.name, declared.hash, record.name)
+        if literal is None:
+            named.append(read)
+    built = from_source(record.code, named)
     if built.hash != record.hash:
         raise ValueError(
             f"Expected the code of version {record.version} of feature {record.name} to give its "

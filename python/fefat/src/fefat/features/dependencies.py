@@ -123,7 +123,8 @@ def _read_spec(reader: str, declared: FeatureInput, slots: Sequence[FeatureSpec]
     """The feature `declared` with the parameters `reader` binds, else that of its one slot
     among `slots`, else its defaults."""
     if declared.parameters is not None:
-        return _bound(reader, declared, _definition_of(reader, declared, slots))
+        definition = _definition_of(reader, declared, slots)
+        return _bound(reader, declared.name, declared.parameters, definition)
     if len(slots) == 1:
         return slots[0]
     definition = None if slots else registered(declared.hash)
@@ -153,14 +154,17 @@ def _definition_of(
     return definition
 
 
-def _bound(reader: str, declared: FeatureInput, definition: "FeatureDef") -> FeatureSpec:
-    """`definition` with the parameters `reader` binds for it, refused where they are not its."""
+def _bound(
+    reader: str, name: str, parameters: Mapping[str, object], definition: "FeatureDef"
+) -> FeatureSpec:
+    """`definition`, of the feature `name`, with the `parameters` `reader` binds for it, refused
+    where they are not its."""
     try:
-        return definition(**(declared.parameters or {}))
+        return definition(**parameters)
     except ValueError as error:
         raise ValueError(
-            f"Expected the parameters feature {reader} binds for the feature {declared.name} it "
-            f"reads among that feature's, got: {error}"
+            f"Expected the parameters feature {reader} binds for the feature {name} it reads "
+            f"among that feature's, got: {error}"
         ) from error
 
 

@@ -363,3 +363,18 @@ def test_the_library_lists_each_saved_version_by_name_then_number() -> None:
     assert listed.get_column("hash").to_list() == [
         ff.features.load("gap", number).hash for number in (1, 2)
     ]
+
+
+def test_a_combination_named_as_the_feature_it_reads_is_built_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A smoothed RSI saved as a version of rsi: its code names the feature it reads in a
+    # literal input, so building it again binds no name its own would shadow.
+    smoothed = combine.define("rsi", combine.rolling_mean(ff.indicators.rsi(14), 3))
+    saved = ff.features.save(smoothed)
+    monkeypatch.setattr(registry, "_DEFINED", dict(INDICATORS))
+
+    read = ff.features.ref("rsi", version=saved.version)
+
+    assert saved.version == 2
+    assert read.definition.hash == smoothed.hash
