@@ -20,10 +20,14 @@ def names_read_outside(
 
 def names_read(statement: ast.FunctionDef) -> dict[str, int]:
     """The names the body reads and does not bind, by the first line reading each: its own
-    parameters, its lambdas', and what it assigns are its own."""
+    parameters, the functions and lambdas it defines with theirs, and what it assigns are its
+    own."""
     nodes = [node for each in statement.body for node in ast.walk(each)]
-    functions = [statement, *(node for node in nodes if isinstance(node, ast.Lambda))]
+    defined = [node for node in nodes if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)]
+    lambdas = [node for node in nodes if isinstance(node, ast.Lambda)]
+    functions = [statement, *defined, *lambdas]
     bound = {argument.arg for each in functions for argument in _parameters(each.args)}
+    bound |= {node.name for node in defined}
     bound |= {
         node.id
         for node in nodes
