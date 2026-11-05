@@ -36,6 +36,7 @@ from fefat.backtest.artifacts import (
     read_record,
     write_run,
 )
+from fefat.backtest.decision_bars import inside_bar_warnings
 from fefat.backtest.explain import Explanation, explain
 from fefat.backtest.fidelity import CheckedRun, PeriodRun, fidelity_check_of
 from fefat.backtest.metrics import Metrics
@@ -58,6 +59,7 @@ from fefat.features.evaluation import FeatureSpec
 from fefat.features.versions import save
 from fefat.market.engine_units import micro_units, money_text
 from fefat.market.fidelity import FidelityEra
+from fefat.market.schema import Timeframe
 from fefat.strategy.signal_strategy import SignalStrategy
 
 DAILY = "1d"
@@ -262,7 +264,11 @@ def _ran(
         engine_config=inputs.engine_config,
         fidelity_eras=eras,
         path_fidelities=_path_fidelities(artifacts["trades"]),
-        warnings=(*inputs.warnings, *_engine_warnings(engine["log"], inputs)),
+        warnings=(
+            *inputs.warnings,
+            *_engine_warnings(engine["log"], inputs),
+            *inside_bar_warnings(Timeframe.parse(inputs.spec.timeframe), eras, check),
+        ),
         summary=RunSummary(
             fills=engine["fills"].height,
             ambiguous_fills=summary["ambiguous_fills"],
