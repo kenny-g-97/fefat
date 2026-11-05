@@ -1,6 +1,6 @@
 # The engine, for your strategies
 
-How you write a signal strategy, run it, and read what the run saved, written for you as the trader using FEFAT on this PC. `notebooks/02-engine-tutorial.ipynb` runs every part of it on your own data. The rules that price every fill are in [the fill specification](spec/fill-semantics.md); the design behind the engine is in `docs/masterplan/02-engine-and-data.md` §2 to §7, and its measured speed in `docs/validation/benchmarks.md`.
+How you write a signal strategy, run it, and read what the run saved, written for you as the trader using FEFAT on this PC. `notebooks/02-engine-tutorial.ipynb` runs every part of it on your own data, and `notebooks/03-features.ipynb` the features, from writing one to judging it. The rules that price every fill are in [the fill specification](spec/fill-semantics.md); the design behind the engine is in `docs/masterplan/02-engine-and-data.md` §2 to §7, and its measured speed in `docs/validation/benchmarks.md`.
 
 ## A strategy in one cell
 
@@ -49,6 +49,28 @@ A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions ov
 - Prices in the columns are whole numbers of billionths of a point, like the bars' prices: `close - 4 * 250_000_000` is four MES ticks below the close.
 - A feature must be prefix-invariant: its value at a bar may depend only on that bar and the bars before it. Use `shift(1)` to read the bar before; never `shift(-1)`, a centred window, a backward fill, or a rank or a normalisation over the whole sample (D-12). A feature written with `@ff.feature` takes a slot as an expression does, and the leak detector below checks it.
 - A feature name may not repeat a column of the bars or of the signal frame.
+
+## Writing a feature
+
+A feature is a function of the signal bars, written with `@ff.feature`, that returns a Polars expression, or one for each of its outputs, on the bars' rows. `ff.features.compute` gives the bars of a window with a column for each feature, as a run reads them:
+
+```python
+@ff.feature(params={"n": 20}, warmup=lambda n: n - 1, outputs={"close_location": "ratio"})
+def close_location(bars: pl.LazyFrame, n: int) -> pl.Expr:
+    highest, lowest = pl.col("high").rolling_max(n), pl.col("low").rolling_min(n)
+    return pl.when(highest > lowest).then((pl.col("close") - lowest) / (highest - lowest))
+
+slots = {"close_location": close_location(), "rsi": ff.indicators.rsi(14)}
+frame = ff.features.compute(slots, "MES", "5m", "2026-06-01", "2026-09-30").collect()
+```
+
+- **Parameters** are declared with their defaults in `params` and annotated in the function. Calling the feature, `close_location(n=30)`, gives it with its parameters, for a slot or for `compute`, and refuses a value of the wrong type.
+- **Warm-up.** `warmup` is the number of bars before its first value means what it says, a number or a function of the parameters, and `warmup_sessions` the whole sessions it remembers. FEFAT reads that many before your window, and a value inside the warm-up is null.
+- **Inputs.** `inputs` declares what else the feature reads: another feature, read by its output's name, another instrument's bars, a higher timeframe, or the prints by side, each joined as of the bar's close, so that only what has closed is visible.
+- **Outputs** each have a kind: `price` and `price_distance` in the bars' 1e-9 units, `ratio`, `count`, `flag`, or `other`.
+- **Its hash** covers its code, the features it reads, and its parameters' schema: change one character and it is another feature. `ff.features.save` keeps a version of it in your library.
+
+`compute` keeps each feature's values in the feature cache under `FEFAT_HOME`, by partition of the data, so a second call over the same window reads them back instead of computing them again, which `notebooks/03-features.ipynb` times; `ff.features.cache_status()` lists what the cache holds. A new release of FEFAT's own code computes everything once more.
 
 ## The leak detector
 
@@ -191,6 +213,40 @@ features={
 ```
 
 A feature this session defined is read as it is; one saved in another session is built again from its code, with the features it reads, which works for a combination and for a feature whose code reads only FEFAT, Polars, and its parameters. A feature that calls a helper of your own, whose code its version does not keep, is refused: define it again in a cell that imports the helper. A run the engine runs saves the features its slots read and names each one's version in `run.json`, under `strategy.feature_versions`. The run's key covers the values a feature gives, not its version, so a new version with the same values reads the run its first version made, and that run names the first version.
+
+## Judging a feature
+
+`ff.analytics` says how well a feature foretells the returns after it, before you write a strategy around it. A study takes the frame `compute` gives, with any columns of your own, the root, and the horizons in bars:
+
+```python
+frame = ff.features.compute(slots, "MES", "5m", "2026-06-01", "2026-09-30").collect()
+frame = frame.with_columns(oversold=pl.col("rsi") < 30)
+study = ff.analytics.FeatureStudy(frame, "MES", horizons=(1, 5, 20))
+print(study.quantile_returns("close_location").report())
+study.information_coefficient("close_location").by_horizon
+study.correlations(["close_location", "rsi"]).matrix
+study.event_study("oversold", ff.analytics.PositionSide.LONG, horizon=20).path
+print(study.trials.line())
+```
+
+**The forward returns.** The study labels each bar with what a market order decided at its close makes when held h bars: it buys at the open of the first bar with trades after it, where that order fills, and sells at the open after the bar h bars on, found alike, in ticks of the instrument. Both are prices of the forward-anchored series, so a roll's gap is no return, and a label stays within its trade date, so the last bars of each session have none at the longer horizons. These labels, the columns `forward_return_1` and the like, each an `ff.analytics.Label`, read the future, so they are never features: a strategy refuses a `Label` in a slot, a slot named like a label's column, and any expression that reads one.
+
+Each analysis gives Polars frames and a `report()` that prints them as text and ends with the trials line.
+
+| Analysis | Frames and their columns | How to read it |
+| --- | --- | --- |
+| `quantile_returns(feature, quantiles=5)` | `frame`: `horizon`, `quantile`, `bars`, `feature_low`, `feature_high`, `mean_ticks`, `ci_low_ticks`, `ci_high_ticks` | each quantile's mean return at each horizon with its 95 % interval; an edge shows as means that move in order, with intervals at the ends that leave 0 |
+| `information_coefficient(feature)` | `by_horizon`: `horizon`, `days`, `mean_ic`, `t_statistic`; `by_year`: `year` and the same | each trade date's share of the feature's rank correlation with the returns after it, both ranked among all the bars studied, its mean over the dates, close to Spearman's correlation over all the bars, and its t-statistic, each day one piece of evidence, by horizon, whose fall is the decay, and by year |
+| `correlations(features)` | `matrix`: `feature` and a column per feature; `clusters`: `feature`, `cluster` | the features' rank correlations over the bars where both have values, and their clusters: features correlated at 0.7 or more either way, joined by single linkage, which say much the same |
+| `event_study(feature, side, horizon)` | `path`: `bars_after`, `events`, `mean_ticks`, `median_ticks`; `excursions`: `statistic`, `mae_ticks`, `mfe_ticks` | what follows the bars where a flag turns true, for a long or a short: the mean and median return after each bar up to `horizon`, and the spread of how far the price went against the position and for it while held |
+
+- **Units.** Every return is in ticks: a round trip costs a tick or two on index futures, so a mean of a third of a tick pays nothing.
+- **The intervals** come from resampling whole trade dates, since the bars of a day move together: `FeatureStudy(..., resamples=1000, seed=0)`, where more resamples give steadier bounds and the same seed the same ones.
+- **Why the ranks span the whole study.** A persistent feature, such as an RSI or where the close lies in its range, ranked against its own day's returns alone, leans towards a negative coefficient even on a random walk, a bias of short samples that grows with the horizon; ranked among all the bars, it shows none, while each day still counts as one piece of evidence.
+- **An event** is a bar where the flag turns true: a flag that stays true for several bars is one event, as it would be one entry.
+- **The trials counter.** `study.trials`, a `Trials`, counts each feature and horizon the study has compared: the quantile table and the information coefficient at each of the study's horizons, and an event study at each bar up to its `horizon`; a correlation of features compares no return and counts nothing. Its line gives the t-statistic that keeps 5 % significance across all those comparisons, Bonferroni's bound, which rises the more you look. A new study starts again from zero, so keep one study for one line of research, and note the count beside any result you keep.
+
+What the analytics cannot tell you is whether a strategy built on the feature pays after its fills and costs, which a backtest says, or whether its edge holds on data it has not seen, which a holdout says.
 
 ## The execution template
 
