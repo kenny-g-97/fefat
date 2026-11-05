@@ -111,12 +111,13 @@ def load_inputs(
     run reads one, and another instrument's bars from the same provider where it holds them
     (`input_provider`), for the graph's `evaluate` or a strategy's `signals` over bars a
     notebook loads."""
+    others = [grid for grid in graph.grids() if grid != graph.signal_grid]
+    if not others:
+        return {}
     paths = resolve_paths(os.environ)
     signal = series_source(graph.root if contract is None else contract, provider=provider)
     loaded = {}
-    for grid in graph.grids():
-        if grid == graph.signal_grid:
-            continue
+    for grid in others:
         timeframe = str(grid.timeframe)
         if isinstance(grid, PrintsGrid):
             loaded[grid] = grid.frame_from(signal, dates)

@@ -14,7 +14,8 @@ import polars as pl
 
 from fefat.backtest.record import DatasetRecord, Window
 from fefat.config import FefatPaths
-from fefat.features.grids import Grid, input_provider
+from fefat.features.cache_keys import PartitionKeys
+from fefat.features.grids import input_sources
 from fefat.features.runtime import FeatureGraph
 from fefat.market.api import series_source
 from fefat.market.calendar import SessionTable
@@ -84,17 +85,19 @@ def input_snapshots(
     market: Market, graph: FeatureGraph, dates: tuple[date, date]
 ) -> tuple[Snapshot, ...]:
     """A snapshot of the datasets of each other instrument the graph's features read
-    (`InstrumentInput`), over the trade dates they are read for from `dates`, the first trade
-    date the run read and its window's end, from the session before, as `load` and the feature
-    cache read them, from the provider the cache reads them from (`input_provider`, step 3.7)."""
-    snapshots: list[Snapshot] = []
-    for root in sorted({grid.root for grid in graph.grids()} - {graph.root}):
-        provider = input_provider(market.store, root, market.provider)
-        source = series_source(root, provider=provider)
-        read = graph.grid_dates(Grid(root, graph.timeframe), dates, source.sessions)
-        datasets = source.datasets.values()
-        snapshots += _snapshots_within(market.store, datasets, source.dates_read(read))
-    return tuple(snapshots)
+    (`InstrumentInput`, step 3.7), over the trade dates the feature cache reads them for to
+    evaluate the graph on the trade dates `dates` spans from its warm-up (`PartitionKeys.reads`),
+    from the provider it reads them from (`input_sources`)."""
+    if all(grid.root == graph.root for grid in graph.grids()):
+        return ()
+    signal = series_source(graph.root, provider=market.provider)
+    others = input_sources(graph, signal)
+    read = PartitionKeys({graph.root: signal, **others}).reads(graph, dates)
+    return tuple(
+        snapshot
+        for root, source in others.items()
+        for snapshot in _snapshots_within(market.store, source.datasets.values(), read[root])
+    )
 
 
 def _snapshots_within(

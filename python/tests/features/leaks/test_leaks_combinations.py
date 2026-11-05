@@ -37,7 +37,7 @@ COMBINATIONS = {
     "a_higher_timeframe_inside": combine.subtract("close", combine.at_timeframe(SMA, "1h")),
     "scaled_by_atr": combine.scaled_by_atr(combine.subtract("close", SMA), 14),
     "spread_across_instruments": combine.subtract(
-        "close", combine.column("close", instrument="NQ")
+        "close_raw", combine.column("close_raw", instrument="NQ")
     ),
     "rsi_stretch": RSI - combine.rolling_mean(RSI, 10),
 }

@@ -19,13 +19,15 @@ arithmetic (`add`, `subtract`, `multiply`, `divide`, `ratio_to`), comparisons an
 (`rolling_mean`, `rolling_std`, `rolling_min`, `rolling_max`, `rolling_rank`, `lag`),
 normalisations (`percent_rank`, `z_score`, `scaled_by_atr`), a higher timeframe
 (`at_timeframe`), and spreads across instruments, such as
-`subtract(column("close"), column("close", instrument="NQ"))`. A feature a combination reads is
+`subtract(column("close_raw"), column("close_raw", instrument="NQ"))`, of the contracts' own
+closes, where two continuous series' closes would differ by their rolls' gaps (D-09). A feature a combination reads is
 named in its code with its parameters, its defaults filled in, so that the combination needs no
 slot of it, and is found among those this process defined or else in the library
 (`ff.features.ref`); an `at_timeframe` inside a combination is a feature of its own,
-`<name>_<timeframe>`, which the combination reads."""
+`<name>_at_<timeframe>`, which the combination reads."""
 
 import dataclasses
+import keyword
 
 from fefat.features.combination_code import combination_code
 from fefat.features.combinations import (
@@ -167,10 +169,9 @@ def lag(term: Operand, n: int = 1) -> Window:
 
 
 def scaled_by_atr(term: Operand, n: int = 14) -> BinaryOperation:
-    """`term` in ATRs of `n` bars, a distance of price over `ff.indicators.atr(n)`."""
-    from fefat.indicators.ranges import (
-        atr,
-    )  # the indicators are defined as features of this package
+    """`term` in ATRs of `n` bars, a distance of price over `ff.indicators.atr(n)`, imported
+    when called, since the indicators are features of this package."""
+    from fefat.indicators.ranges import atr
 
     return divide(term, atr(n))
 
@@ -183,7 +184,10 @@ def at_timeframe(term: Operand, timeframe: str) -> AtTimeframe:
 
 def define(name: str, term: Operand) -> FeatureDef:
     """The feature `name` that `term` describes (module docstring), registered as this process's
-    definition of its hash with its description."""
+    definition of its hash with its description; a name that is no Python identifier, which the
+    code's function takes, is refused."""
+    if not name.isidentifier() or keyword.iskeyword(name):
+        raise ValueError(f"Expected a combination's name, a Python identifier, got {name!r}.")
     return _defined(name, _completed(term_of(term)), {name}, {})
 
 
@@ -212,15 +216,19 @@ def _defined(
 def _lowered(name: str, term: Term, used: set[str], nested: dict[str, FeatureOutput]) -> Term:
     """`term` with each `at_timeframe` below its top a feature the combination `name` reads."""
     if isinstance(term, AtTimeframe):
-        return term.model_copy(update={"of": _below(name, term.of, used, nested)})
-    return _below(name, term, used, nested)
+        return term.model_copy(update={"of": _with_nested_features(name, term.of, used, nested)})
+    return _with_nested_features(name, term, used, nested)
 
 
-def _below(name: str, term: Term, used: set[str], nested: dict[str, FeatureOutput]) -> Term:
+def _with_nested_features(
+    name: str, term: Term, used: set[str], nested: dict[str, FeatureOutput]
+) -> Term:
+    """`term` with each `at_timeframe` in it a feature of its own that the combination `name`
+    reads (`_lowered`)."""
     if isinstance(term, AtTimeframe):
         described = term.model_dump_json()
         if described not in nested:
-            feature_name = _apart(f"{name}_{term.timeframe}", used)
+            feature_name = _apart(f"{name}_at_{term.timeframe}", used)
             feature = _defined(feature_name, term, used, nested)
             nested[described] = FeatureOutput(
                 name=feature.name, hash=feature.hash, parameters={}, output=feature.name
@@ -229,7 +237,8 @@ def _below(name: str, term: Term, used: set[str], nested: dict[str, FeatureOutpu
     children = children_of(term)
     if not children:
         return term
-    return with_children(term, tuple(_below(name, child, used, nested) for child in children))
+    lowered = (_with_nested_features(name, child, used, nested) for child in children)
+    return with_children(term, tuple(lowered))
 
 
 def _apart(name: str, used: set[str]) -> str:

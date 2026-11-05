@@ -45,5 +45,6 @@ def test_the_check_notebook_builds_validates_saves_and_runs_a_combination(
     assert "  rsi_stretch version 1, a combination" in printed
     assert "The run names the versions your library keeps: PASSED" in printed
     assert "The second run opened the first: PASSED" in printed
+    assert "Its request names the saved run: PASSED" in printed
     assert check["run"].record.summary.trades > 0
     assert [pin.slot for pin in check["pins"]] == ["stretch", "rsi"]

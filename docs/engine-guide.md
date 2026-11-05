@@ -157,9 +157,9 @@ features={"stretch": rsi_stretch()}
 | `percent_rank(term, n)`, `z_score(term, n)` | where it lies among its last `n` bars, from 0 to 1, and how many standard deviations from their mean, null where they have not moved |
 | `lag(term, n=1)` | the term `n` bars before |
 | `scaled_by_atr(term, n=14)` | a distance of price in ATRs, the term over `ff.indicators.atr(n)` |
-| `at_timeframe(term, "15m")` | the term on the bars of another timeframe, each value from its bar's close, as a feature of its own named `<name>_15m` |
+| `at_timeframe(term, "15m")` | the term on the bars of another timeframe, each value from its bar's close, as a feature of its own named `<name>_at_15m` |
 
-A spread across instruments is a difference of two columns, `combine.subtract("close", combine.column("close", instrument="MNQ"))`, each instrument's bar as of the same close. A combination of constants alone, a window over constants, and the logic of what is not a flag are refused when the combination is defined.
+A spread across instruments is a difference of two columns, each instrument's bar as of the same close: `combine.subtract("close_raw", combine.column("close_raw", instrument="MNQ"))` is the spread of the contracts' own closes, as quoted. A continuous series' `close` moves each contract by the gaps of its rolls, so a spread of two `close` columns is off by the difference of the two series' moves, which changes where either rolls. A combination of constants alone, a window over constants, and the logic of what is not a flag are refused when the combination is defined.
 
 ### The description of a combination
 
@@ -168,7 +168,7 @@ A spread across instruments is a difference of two columns, `combine.subtract("c
 | `kind` | Fields | Code written |
 | --- | --- | --- |
 | `constant` | `value`, a number or `true` or `false` | `pl.lit(value)` |
-| `column` | `column`, one of `open`, `high`, `low`, `close`, `vwap`, `volume`, and `trade_count`; `instrument`, another root, or null | `pl.col("close")`, or `pl.col("close_MNQ")` of another instrument, which the feature declares as an input; the volume and the number of trades as signed integers |
+| `column` | `column`, one of `open`, `high`, `low`, `close`, `close_raw`, `vwap`, `volume`, and `trade_count`; `instrument`, another root, or null | `pl.col("close")`, or `pl.col("close_MNQ")` of another instrument, which the feature declares as an input; the volume and the number of trades as signed integers |
 | `feature` | `name`, `hash`, `parameters`, and `output`, one of the feature's outputs | the feature declared as an input with its parameters, read as `pl.col("rsi")`, or under an alias, `ema_1` and `ema_2`, where two features read give columns of one name |
 | `add`, `subtract`, `multiply`, `divide`, `ratio_to`, `greater_than`, `crosses_above`, `crosses_below`, `and`, `or` | `left` and `right`, each a term | `left + right` and the like; a division in `pl.when(right != 0)`; a cross as `(left > right) & (left.shift(1) <= right.shift(1))` |
 | `not` | `of`, a flag | `~of` |
@@ -190,7 +190,7 @@ features={
 }
 ```
 
-A feature this session defined is read as it is; one saved in another session is built again from its code, with the features it reads, which works for a combination and for a feature whose code reads only FEFAT, Polars, and its parameters. A feature that calls a helper of your own, whose code its version does not keep, is refused: define it again in a cell that imports the helper. Every run saves the features its slots read and names each one's version in `run.json`, under `strategy.feature_versions`. The run's key covers the values a feature gives, not its version, so a new version with the same values reads the run its first version made, and that run names the first version.
+A feature this session defined is read as it is; one saved in another session is built again from its code, with the features it reads, which works for a combination and for a feature whose code reads only FEFAT, Polars, and its parameters. A feature that calls a helper of your own, whose code its version does not keep, is refused: define it again in a cell that imports the helper. A run the engine runs saves the features its slots read and names each one's version in `run.json`, under `strategy.feature_versions`. The run's key covers the values a feature gives, not its version, so a new version with the same values reads the run its first version made, and that run names the first version.
 
 ## The execution template
 

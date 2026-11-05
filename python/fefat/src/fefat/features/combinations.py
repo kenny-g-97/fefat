@@ -30,8 +30,9 @@ from fefat.features.evaluation import FeatureSpec
 from fefat.features.inputs import TimeframeText
 from fefat.market.schema import FrozenModel
 
-BarColumn = Literal["open", "high", "low", "close", "vwap", "volume", "trade_count"]
-"""A column of the bars a combination reads: a price, or the volume or number of trades."""
+BarColumn = Literal["open", "high", "low", "close", "close_raw", "vwap", "volume", "trade_count"]
+"""A column of the bars a combination reads: a price, the close of a continuous series moved by
+its rolls' gaps (D-09) or `close_raw`, the contract's own, or the volume or number of trades."""
 BinaryKind = Literal[
     "add",
     "subtract",

@@ -101,6 +101,27 @@ def spread(bars: pl.LazyFrame) -> pl.Expr:
     return pl.col("sma_2") - pl.col("sma_3")
 """
 """A feature reading one feature twice, each with the parameters its decorator binds."""
+GONE = "0" * 64
+"""The content hash of a feature this process never defined."""
+UNDEFINED = features_of_cell(
+    f"""\
+@ff.feature(
+    inputs=[ff.features.FeatureInput(name="gone", hash="{GONE}")],
+    outputs={{"reads_gone": "price"}},
+)
+def reads_gone(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("gone")
+
+
+@ff.feature(
+    inputs=[ff.features.FeatureInput(name="gone", hash="{GONE}", parameters={{"n": 2}})],
+    outputs={{"binds_gone": "price"}},
+)
+def binds_gone(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("gone")
+"""
+)
+"""Two features reading one no process defined, one with the parameters it binds."""
 
 
 @ff.feature(outputs={"highest_before": "price"})
@@ -291,6 +312,17 @@ def test_a_cycle_of_features_is_refused_with_the_features_in_it() -> None:
             "Expected the feature scaled that scaled_twice reads among the features given, once "
             "with its parameters, got none, and no default of factor: give it a slot, such as "
             "scaled(...).",
+        ),
+        (
+            {"reads_gone": UNDEFINED["reads_gone"]()},
+            "Expected the feature gone that reads_gone reads among the features given, once with "
+            "its parameters, got none: give it a slot, such as gone(...).",
+        ),
+        (
+            {"binds_gone": UNDEFINED["binds_gone"]()},
+            "Expected the feature gone that binds_gone reads, 000000000000, defined in this "
+            "process, got none: define it, or read it from the library with "
+            "ff.features.ref('gone', version=...).",
         ),
         (
             {"fast": rsi(n=7), "slow": rsi(n=14), "stretched": stretched()},
@@ -602,3 +634,17 @@ def test_a_run_keeps_a_column_for_each_output_of_a_feature_at_each_entry() -> No
     assert run.trades.height > 0
     assert {"band_upper_at_entry", "band_lower_at_entry"} <= set(run.trades.columns)
     assert run.record.strategy.features == ("band_upper", "band_lower")
+
+
+def test_load_inputs_of_a_graph_reading_its_signal_grid_alone_reads_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The code review: a notebook's strategy whose features read the signal grid alone opens no
+    # store to load the other grids it does not read.
+    def refused(*_: object, **__: object) -> object:
+        raise AssertionError("Expected nothing read, got the store opened")
+
+    monkeypatch.setattr("fefat.features.grids.series_source", refused)
+    graph = FeatureGraph.of({"step": step()}, "ES", FIVE)
+
+    assert load_inputs(graph, (date(2026, 3, 6), date(2026, 3, 9))) == {}

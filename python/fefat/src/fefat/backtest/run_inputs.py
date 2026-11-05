@@ -153,7 +153,7 @@ def run_inputs(
     window = _window(signals)
     snapshots = (
         *snapshots_of(market, produced.first_read, window),
-        *input_snapshots(market, strategy.feature_graph(), (produced.first_read, window.end)),
+        *input_snapshots(market, strategy.feature_graph(), (window.start, window.end)),
     )
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)

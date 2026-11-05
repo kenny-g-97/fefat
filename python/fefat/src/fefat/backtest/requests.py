@@ -15,9 +15,10 @@ dates read from the features' warm-up on, as the feature cache's keys pin them
 the SDK's code with the Polars version (`runtime_key`); and the engine's versions. A request is
 kept after every run that did not find it, also one whose run key found a saved run, so that a
 version of a feature whose values are the same maps to the run its first version made. A
-strategy with an expression Polars cannot write keys no request and runs as before; a request
-file that cannot be read, or names a run no longer saved, is no lookup, and the run keeps it
-again."""
+strategy with an expression that calls a Python function, as `map_elements` does, keys no
+request and runs as before, since Polars writes such a function by its name alone where it writes
+it at all; a request file that cannot be read, or names a run no longer saved, is no lookup, and
+the run keeps it again."""
 
 import hashlib
 import json
@@ -26,7 +27,6 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-import polars as pl
 from pydantic import ValidationError
 
 from fefat.backtest.artifacts import RECORD_FILE
@@ -55,7 +55,7 @@ class RunRequest(FrozenModel):
     config: AppliedRunConfig
     instrument: InstrumentRecord
     pins: tuple[str, ...]
-    code: str
+    sdk_key: Sha256
     versions: EngineVersions
 
     def key(self) -> str:
@@ -81,10 +81,10 @@ def request_of(
     paths: FefatPaths,
 ) -> RunRequest | None:
     """The request of a run of `strategy` on the trade dates from `start` to `end` under
-    `config` (module docstring); None where Polars cannot write one of its expressions."""
-    try:
-        document = strategy.signal_document()
-    except pl.exceptions.ComputeError:
+    `config` (module docstring); None where an expression of it calls a Python function, whose
+    code no request could hold (`SignalStrategy.signal_document`)."""
+    document = strategy.signal_document()
+    if document is None:
         return None
     market = market_of(strategy.instrument, config.provider, paths)
     applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
@@ -101,7 +101,7 @@ def request_of(
         config=applied,
         instrument=InstrumentRecord.of(market.instrument),
         pins=(*keys.pins(graph, (window.start, window.end)), *(each.sha256 for each in read)),
-        code=runtime_key(),
+        sdk_key=runtime_key(),
         versions=EngineVersions.running(),
     )
 

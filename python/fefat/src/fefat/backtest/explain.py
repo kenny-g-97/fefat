@@ -230,22 +230,21 @@ def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
 
 
 def _require_no_dataset_since(store: Store, record: RunRecord) -> None:
-    """Refuse a dataset of trades, TBBO, or bars of the run's provider and root with partitions
-    in the run's dates that its record does not name, an import since the run, which the engine
-    cache a rerun builds would read."""
-    provider, root = record.config.provider, record.instrument.root
-    own = [dataset for dataset in record.datasets if dataset.root == root]
-    first = min(dataset.first for dataset in own)
-    last = max(dataset.last for dataset in own)
-    named = {dataset.schema_name for dataset in own}
+    """Refuse a dataset of trades, TBBO, or bars of a provider and root the run read, its own or
+    another instrument's its features read (step 3.7), with partitions in the dates it read them
+    for that its record does not name: an import since the run, which the engine cache a rerun
+    builds, or its features, would read."""
+    read: dict[tuple[str, str], list[DatasetRecord]] = {}
+    for named in record.datasets:
+        read.setdefault((named.provider, named.root), []).append(named)
     for dataset in session_datasets(store):
-        if (dataset.provider, dataset.root) != (provider, root):
+        held = read.get((dataset.provider, dataset.root), [])
+        if not held or str(dataset.schema_name) in {each.schema_name for each in held}:
             continue
+        first, last = min(each.first for each in held), max(each.last for each in held)
         request = PartitionRequest(dataset=dataset, start=first, end=last)
-        listed = store.list_partitions(dataset)
-        if str(dataset.schema_name) not in named and any(
-            request.selects(file.partition) for file in listed
-        ):
+        if any(request.selects(file.partition) for file in store.list_partitions(dataset)):
+            root, provider = dataset.root, dataset.provider
             raise ValueError(
                 f"Expected the store's data of {root} as the run read it, got "
                 f"{dataset.schema_name} of {root} from {provider} in the run's dates, which it "

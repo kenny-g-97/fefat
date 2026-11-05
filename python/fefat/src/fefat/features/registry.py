@@ -3,8 +3,9 @@
 own (`fefat.features.dependencies`), and `ff.features.ref` finds a saved version's definition
 without running its code again (`fefat.features.versions`). Two definitions of one hash have one
 normalised source, so the last kept differs from the one before only in the description of a
-combination (`fefat.features.combine`), which the hash leaves out; a table of immutable values by
-their identity, as `linecache` keeps sources by file."""
+combination (`fefat.features.combine`), which the hash leaves out, and one without a description
+never takes the place of one with it; a table of immutable values by their identity, as
+`linecache` keeps sources by file."""
 
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,12 @@ _DEFINED: dict[str, "FeatureDef"] = {}
 
 
 def register(definition: "FeatureDef") -> None:
-    """Keep `definition` as the one of its content hash."""
+    """Keep `definition` as the one of its content hash, unless it has no description of a
+    combination where the one kept has, as when a combination's code is built again
+    (`ff.features.from_source`): the same feature, which keeps its description."""
+    kept = _DEFINED.get(definition.hash)
+    if kept is not None and kept.combination is not None and definition.combination is None:
+        return
     _DEFINED[definition.hash] = definition
 
 

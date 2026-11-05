@@ -155,24 +155,44 @@ def definition_of(record: FeatureVersion) -> FeatureDef:
     defined = registered(record.hash)
     if defined is not None:
         return defined
-    written = written_declarations(record.name, record.code).inputs
-    named = []
-    for declared, literal in zip(record.inputs, written, strict=True):
+    written = written_declarations(record.name, record.code).input_names
+    named = {}
+    for declared, name in zip(record.inputs, written, strict=True):
         if not isinstance(declared, FeatureInput):
             continue
         read = saved_definition(declared.name, declared.hash, record.name)
-        if literal is None:
-            named.append(read)
+        if name is not None:
+            named[name] = read
     built = from_source(record.code, named)
-    if built.hash != record.hash:
-        raise ValueError(
-            f"Expected the code of version {record.version} of feature {record.name} to give its "
-            f"hash {record.hash[:12]} again, got {built.hash[:12]}: its parameter schema changed "
-            "with a release of the libraries, so save the feature again as a new version."
-        )
+    _require_its_hash(record, built)
     described = dataclasses.replace(built, combination=record.combination)
     register(described)
     return described
+
+
+def _require_its_hash(record: FeatureVersion, built: FeatureDef) -> None:
+    """Refuse a definition built again from `record`'s code that gives another hash: one whose
+    code names a feature of the SDK, such as `ff.indicators.atr`, that is now another version,
+    or whose parameters' schema a release of the libraries writes otherwise."""
+    if built.hash == record.hash:
+        return
+    begun = f"Expected the code of version {record.version} of feature {record.name}"
+    changed = [
+        declared.name
+        for declared, read in zip(record.inputs, built.inputs, strict=True)
+        if isinstance(declared, FeatureInput) and declared != read
+    ]
+    if changed:
+        raise ValueError(
+            f"{begun} to read the features its version read, got another {', '.join(changed)}, "
+            "which its code names where no version is pinned: define it again, so that it reads "
+            "the features it reads now, and save it as a new version."
+        )
+    raise ValueError(
+        f"{begun} to give its hash {record.hash[:12]} again, got {built.hash[:12]}: its "
+        "parameter schema changed with a release of the libraries, so save the feature again as "
+        "a new version."
+    )
 
 
 def saved_definition(name: str, content_hash: str, reader: str) -> FeatureDef:

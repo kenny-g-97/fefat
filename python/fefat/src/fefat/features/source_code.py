@@ -10,7 +10,8 @@ text, which `inspect.getsource` reads otherwise.
 The text runs with the names a feature's code may read bound: `ff`, `features`, `pl`, `feature`,
 the input kinds, `OutputKind`, and the parameter types, `BarCount`, `TwoOrMoreBars`,
 `SessionCount`, `MinuteCount`, `Multiple`, `LocalTime`, `TimeZoneName`, `Annotated`, and `Field`,
-with the features its decorator names given as `reads`; its text is kept in `linecache` under a
+with the features its decorator names given as `reads`, by the names it writes for them, such as
+`{"base": base}`; its text is kept in `linecache` under a
 name of its own, as ipykernel keeps a cell's. A body that reads any other name, such as a helper
 the feature calls, which its version does not keep, is refused before it runs (`BACKLOG.md`), as
 is a text that is not one function under its `@feature(...)` call."""
@@ -19,7 +20,8 @@ import ast
 import builtins
 import hashlib
 import linecache
-from collections.abc import Sequence
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Annotated, Any
 
 import polars as pl
@@ -32,10 +34,13 @@ from fefat.features.source_names import names_read
 from fefat.market.calendar import counted
 from fefat.market.calendar_definition import LocalTime, TimeZoneName
 
+NO_READS: Mapping[str, FeatureDef] = MappingProxyType({})
+"""No features read by name."""
 
-def from_source(code: str, reads: Sequence[FeatureDef] = ()) -> FeatureDef:
+
+def from_source(code: str, reads: Mapping[str, FeatureDef] = NO_READS) -> FeatureDef:
     """The feature `code` defines, with the features its decorator names by name given in
-    `reads` (module docstring)."""
+    `reads` under those names (module docstring)."""
     statement = _one_feature(code)
     namespace = _namespace(reads)
     if statement.name in namespace:
@@ -84,9 +89,11 @@ def _one_feature(code: str) -> ast.FunctionDef:
     )
 
 
-def _namespace(reads: Sequence[FeatureDef]) -> dict[str, Any]:
-    """The names a feature's code may read (module docstring), and the features `reads`."""
-    import fefat  # the SDK, which a feature's code names `ff`, imports this package first
+def _namespace(reads: Mapping[str, FeatureDef]) -> dict[str, Any]:
+    """The names a feature's code may read (module docstring), and the features `reads`; the SDK,
+    which a feature's code names `ff`, and the indicators' parameter types are imported when
+    called, since both import this package first."""
+    import fefat
     from fefat.indicators.bands import Multiple
     from fefat.indicators.sessions import MinuteCount
 
@@ -106,5 +113,5 @@ def _namespace(reads: Sequence[FeatureDef]) -> dict[str, Any]:
         "TimeZoneName": TimeZoneName,
         "Annotated": Annotated,
         "Field": Field,
-        **{read.name: read for read in reads},
+        **reads,
     }

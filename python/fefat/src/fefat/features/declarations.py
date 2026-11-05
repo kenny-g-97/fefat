@@ -54,12 +54,14 @@ class WarmupUnit(StrEnum):
 class WrittenDeclarations:
     """What a feature's source writes: the name its `def` gives, and the declarations of its
     `@feature(...)` call: its outputs with their kinds, its inputs, each the input it writes or
-    None where it names a feature, and its warm-ups, in bars and in sessions, each a number or the
-    text of a lambda."""
+    None where it names a feature, the name it writes for each, where it names a feature by a
+    bare name, such as `base`, else None (step 3.7), and its warm-ups, in bars and in sessions,
+    each a number or the text of a lambda."""
 
     name: str
     outputs: Mapping[str, str]
     inputs: tuple[DeclaredInput | None, ...]
+    input_names: tuple[str | None, ...]
     warmup: int | str
     warmup_sessions: int | str
 
@@ -77,6 +79,7 @@ def written_declarations(name: str, code: str) -> WrittenDeclarations:
         name=defined,
         outputs={name: "other"} if outputs is None else _written_outputs(name, outputs),
         inputs=() if inputs is None else _written_inputs(name, inputs),
+        input_names=() if inputs is None else _written_names(inputs),
         warmup=warmups[WarmupUnit.BARS],
         warmup_sessions=warmups[WarmupUnit.SESSIONS],
     )
@@ -179,6 +182,14 @@ def _written_inputs(name: str, node: ast.expr) -> tuple[DeclaredInput | None, ..
             f"{ast.unparse(node)}."
         )
     return tuple(_written_input(name, each) for each in node.elts)
+
+
+def _written_names(node: ast.expr) -> tuple[str | None, ...]:
+    """The bare name each input of a literal list writes, such as `base`, else None, as for
+    `ff.indicators.atr` or an input with literal values; none where it is no list."""
+    if not isinstance(node, ast.List | ast.Tuple):
+        return ()
+    return tuple(each.id if isinstance(each, ast.Name) else None for each in node.elts)
 
 
 def _written_input(name: str, node: ast.expr) -> DeclaredInput | None:

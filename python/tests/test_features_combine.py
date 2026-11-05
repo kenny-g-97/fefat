@@ -18,7 +18,7 @@ from hypothesis import strategies as st
 from pydantic import TypeAdapter
 
 import fefat as ff
-from fefat.features import Combination, FeatureSpec, TimeframeInput, combine
+from fefat.features import Combination, FeatureSpec, TimeframeInput, combine, registry
 from fefat.features.combinations import FeatureOutput, Operand, Term, Window, feature_output
 from fefat.features.grids import Grid
 from fefat.features.runtime import FeatureGraph
@@ -219,7 +219,7 @@ def test_a_higher_timeframe_is_a_feature_on_its_bars_seen_from_their_closes() ->
     assert alone.to_list() == [None] * 8 + [105.0, 105.0, 105.0, 108.0]
     assert alone.equals(graph.evaluate(frames)["sma_15m"])
     assert read.to_list() == [None] * 8 + [3.0, 4.0, 5.0, 3.0]
-    assert 'name="from_hourly_15m"' in inside.code
+    assert 'name="from_hourly_at_15m"' in inside.code
 
 
 def test_a_spread_across_instruments_reads_the_other_close_as_of_each_close() -> None:
@@ -401,3 +401,36 @@ def test_a_window_reads_two_bars_at_least_where_one_leaves_no_value() -> None:
     assert Window(kind="lag", of=combine.column("close"), n=1).n == 1
     with pytest.raises(ValueError, match="Expected a z_score over two bars at least"):
         Window(kind="z_score", of=combine.column("close"), n=1)
+
+
+def test_a_spread_of_raw_closes_is_the_spread_as_quoted() -> None:
+    # The code review: a continuous series' close moves each contract by its rolls' gaps, so two
+    # instruments' closes differ by the difference of their offsets; their raw closes do not.
+    es = bars([100, 101, 102]).with_columns(close=pl.col("close") + 10)
+    nq = bars([200, 201, 202]).with_columns(close=pl.col("close") + 50)
+    raw = combine.subtract("close_raw", combine.column("close_raw", instrument="NQ"))
+    adjusted = combine.subtract("close", combine.column("close", instrument="NQ"))
+    frames = {Grid("ES", FIVE): es, Grid("NQ", FIVE): nq}
+
+    assert evaluated(raw, frames)["combined"].to_list() == [-100, -100, -100]
+    assert evaluated(adjusted, frames)["combined"].to_list() == [-140, -140, -140]
+
+
+def test_a_combinations_name_must_be_a_python_identifier() -> None:
+    # The code review: the name becomes the function the code defines.
+    for name in ("rsi stretch", "class", "2nd"):
+        expected = f"Expected a combination's name, a Python identifier, got {name!r}."
+        with pytest.raises(ValueError, match=re.escape(expected)):
+            combine.define(name, combine.add("close", 1))
+
+
+def test_a_combination_keeps_its_description_when_its_code_is_built_again() -> None:
+    # The code review: building a combination's code again, as from_source does, defines the
+    # same hash without a description, which must not drop the one the process keeps.
+    stretch = combine.define("kept", combine.rolling_mean("close", 3) - combine.lag("close", 1))
+
+    ff.features.from_source(stretch.code)
+
+    kept = registry.registered(stretch.hash)
+    assert kept is not None
+    assert kept.combination == stretch.combination

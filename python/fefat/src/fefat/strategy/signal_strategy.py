@@ -47,6 +47,8 @@ from fefat.strategy.signal_frame import (
 from fefat.strategy.spec import Execution, InstrumentRoot, MarketEntry, StrategySpec, TimeframeText
 
 _CARRIED_COLUMNS = ("ts_close", "trade_date", "contract", "adj_offset")
+_PYTHON_FUNCTION = ".python_udf("
+"""How Polars writes a call of a Python function in an expression's text."""
 _BAR_COLUMNS_READ = pl.Schema(
     {
         "ts_close": pl.Int64,
@@ -136,18 +138,26 @@ class SignalStrategy(FrozenModel):
             execution=self.execution,
         )
 
-    def signal_document(self) -> dict[str, object]:
+    def signal_document(self) -> dict[str, object] | None:
         """The strategy as a run's request keys it (`fefat.backtest.requests`, step 3.7): its
         specification's document; each slot in its order, a feature by its name, content hash,
         and parameters, or an expression as Polars writes it; and each signal's expression, None
-        where it is left out. Polars refuses an expression that calls a Python function where it
-        cannot write it, with its `ComputeError`."""
+        where it is left out. None where an expression calls a Python function, as `map_elements`
+        does, which Polars writes only through cloudpickle, a function of a module by its name
+        alone, so that a document would miss an edit of its code."""
+        signals = self._signal_expressions()
+        expressions = [
+            *(feature for feature in self.features.values() if isinstance(feature, pl.Expr)),
+            *(expression for expression in signals.values() if expression is not None),
+        ]
+        if any(_PYTHON_FUNCTION in str(expression) for expression in expressions):
+            return None
         return {
             "spec": self.to_spec().document(),
             "features": [_slot_document(slot, feature) for slot, feature in self.features.items()],
             "signals": {
                 name: None if expression is None else _expression_text(expression)
-                for name, expression in self._signal_expressions().items()
+                for name, expression in signals.items()
             },
         }
 

@@ -61,7 +61,7 @@ def test_an_indicator_without_helpers_is_built_from_its_code() -> None:
 def test_a_feature_that_reads_another_by_its_name_is_built_with_the_definition_given() -> None:
     defined = features_of_cell(READER)
 
-    built = ff.features.from_source(defined["lifted"].code, reads=[defined["base"]])
+    built = ff.features.from_source(defined["lifted"].code, reads={"base": defined["base"]})
 
     assert built.hash == defined["lifted"].hash
     with pytest.raises(ValueError, match=re.escape("got: name 'base' is not defined: give the")):

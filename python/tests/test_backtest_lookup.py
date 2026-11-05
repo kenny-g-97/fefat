@@ -11,6 +11,7 @@ from typing import Any
 
 import polars as pl
 import pytest
+from polars.expr.meta import ExprMetaNameSpace
 
 import fefat as ff
 import fefat.backtest.runs as runs
@@ -168,19 +169,26 @@ def test_a_feature_version_whose_values_agree_finds_the_run_of_the_first(
     assert len(requests_kept()) == 2
 
 
-def test_a_strategy_whose_expression_polars_cannot_write_runs_without_its_request() -> None:
-    # A Python function in an expression: Polars writes it only with cloudpickle, which the
-    # SDK does not install; then no request is kept, and the run runs as before.
+def test_a_strategy_that_calls_a_python_function_runs_without_its_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The code review: Polars writes a Python function only with cloudpickle, and then a
+    # function of a module by its name alone, so an edit of its code would leave the request as
+    # it was; a strategy calling Python keys no request, here even where Polars writes the
+    # function, and runs as before.
     store_with("ohlcv-1m")
     strategy = breakout_entering(
         (pl.col("close") > pl.col("highest")).map_elements(bool, return_dtype=pl.Boolean)
     )
-    request = request_of(strategy, *WINDOW, RunConfig(), resolve_paths(os.environ))
+    with monkeypatch.context() as written:
+        written.setattr(ExprMetaNameSpace, "serialize", lambda *_, **__: "my_signals.rule")
+        request = request_of(strategy, *WINDOW, RunConfig(), resolve_paths(os.environ))
 
     with pytest.warns(UserWarning):
         run = ff.backtest.run(strategy, *WINDOW)
 
-    assert len(requests_kept()) == (0 if request is None else 1)
+    assert request is None
+    assert requests_kept() == []
     assert run.record.summary.trades > 0
 
 

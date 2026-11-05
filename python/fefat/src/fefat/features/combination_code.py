@@ -52,7 +52,7 @@ from fefat.features.inputs import OutputKind
 from fefat.features.runtime import slot_columns
 
 _INTEGER_COLUMNS = frozenset({"volume", "trade_count"})
-_PRICE_COLUMNS = frozenset({"open", "high", "low", "close", "vwap"})
+_PRICE_COLUMNS = frozenset({"open", "high", "low", "close", "close_raw", "vwap"})
 _OPERATORS = {"add": "+", "subtract": "-", "greater_than": ">", "and": "&", "or": "|"}
 _FLAGS = frozenset({"greater_than", "crosses_above", "crosses_below", "and", "or"})
 _LEVELS = frozenset({OutputKind.PRICE, OutputKind.PRICE_DISTANCE})

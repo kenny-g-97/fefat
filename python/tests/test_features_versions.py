@@ -378,3 +378,52 @@ def test_a_combination_named_as_the_feature_it_reads_is_built_again(
 
     assert saved.version == 2
     assert read.definition.hash == smoothed.hash
+
+
+RENAMED = """\
+@ff.feature(params={"n": 2})
+def base(bars: pl.LazyFrame, n: int) -> pl.Expr:
+    return pl.col("close").rolling_mean(n)
+
+
+smoothed = base
+
+
+@ff.feature(inputs=[smoothed], outputs={"lifted": "price"})
+def lifted(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("base") + 1
+"""
+"""A feature whose decorator names the feature it reads by another name."""
+
+
+def test_a_feature_reading_another_under_another_name_is_built_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The code review: the features a decorator names are bound under the names it writes.
+    defined = features_of_cell(RENAMED)
+    ff.features.save(defined["lifted"])
+    monkeypatch.setattr(registry, "_DEFINED", dict(INDICATORS))
+
+    read = ff.features.ref("lifted", version=1)
+
+    assert read.definition.hash == defined["lifted"].hash
+
+
+def test_a_feature_whose_code_now_reads_another_version_names_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The code review: a decorator naming an SDK's feature, `ff.indicators.sma`, reads today's
+    # SDK, so where its SMA changed, building the version again reads another SMA, which the
+    # refusal names rather than blaming the parameter schema.
+    reader = features_of_cell(
+        '@ff.feature(inputs=[ff.indicators.sma], outputs={"above": "price"})\n'
+        "def above(bars: pl.LazyFrame) -> pl.Expr:\n"
+        '    return pl.col("sma") + 1\n'
+    )["above"]
+    ff.features.save(reader)
+    other = features_of_cell(GAP.replace("def gap", "def sma").replace('"gap"', '"sma"'))["sma"]
+    monkeypatch.setattr(registry, "_DEFINED", dict(INDICATORS))
+    monkeypatch.setattr(ff.indicators, "sma", other)
+
+    with pytest.raises(ValueError, match="to read the features its version read, got another sma"):
+        ff.features.ref("above", version=1)
