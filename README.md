@@ -8,7 +8,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 ## Status
 
-The build is in Phase 0 (foundations). It follows the masterplan in [docs/masterplan](docs/masterplan/README.md): one step per Claude Code session and one pull request per step, starting from [Phase 0](docs/masterplan/phases/P00-foundations.md). Progress is tracked in [PROGRESS.md](docs/masterplan/PROGRESS.md), and the decisions behind the design are recorded in [docs/adr](docs/adr/), one record per decision marked ADR in the [decision log](docs/masterplan/DECISIONS.md).
+The build follows the masterplan in [docs/masterplan](docs/masterplan/README.md): one step per Claude Code session and one pull request per step, from [Phase 0](docs/masterplan/phases/P00-foundations.md) on. Progress is tracked in [PROGRESS.md](docs/masterplan/PROGRESS.md), and the decisions behind the design are recorded in [docs/adr](docs/adr/), one record per decision marked ADR in the [decision log](docs/masterplan/DECISIONS.md).
 
 The original idea is in [raw_app_idea.txt](raw_app_idea.txt).
 
