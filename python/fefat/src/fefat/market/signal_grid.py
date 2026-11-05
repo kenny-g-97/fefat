@@ -6,7 +6,7 @@ window holding it gives; each dataset's dates up to the end of its data, where a
 complete is held back (D-43); and, given a roll calendar, the rows of each session's front."""
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from typing import NamedTuple
 
 import polars as pl
@@ -16,7 +16,7 @@ from fefat.market.calendar import SessionTable
 from fefat.market.continuous import RollCalendar
 from fefat.market.continuous_check import contracts_by_instrument
 from fefat.market.coverage import dataset_coverage
-from fefat.market.dataset_choice import signal_bar_eras, source_dataset
+from fefat.market.dataset_choice import signal_bar_eras, signal_bar_levels, source_dataset
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import Dataset, PartitionRequest
 from fefat.market.roll_decisions import CONTRACT_BAR_COLUMNS
@@ -93,7 +93,7 @@ def gridded_bars(
     )
     fronts = None
     if calendar is not None:
-        _require_fronts_for(bars, calendar)
+        require_fronts_through(store, building, timeframe, dates, calendar)
         fronts = _fronts_with_their_lead_in(calendar, contracts)
     grid = session_grid(bars, timeframe, sessions, received_until, first, last, rows_for=fronts)
     within = grid.filter(~_past_their_data(spans, ends))
@@ -170,17 +170,29 @@ def _fronts_and_lead_in(calendar: RollCalendar) -> tuple[pl.DataFrame, pl.DataFr
     return fronts, fronts.with_columns(trade_date=pl.col("trade_date").shift(1)).drop_nulls()
 
 
-def _require_fronts_for(bars: pl.DataFrame, calendar: RollCalendar) -> None:
-    """Refuse bars of sessions after the roll calendar's last, whose fronts no 1-minute bars
-    decided, as finer data that runs past the 1-minute bars gives: splicing would drop them."""
-    decided = calendar.rows.get_column("trade_date")
-    beyond = bars.get_column("trade_date")
-    if not decided.is_empty():
-        beyond = beyond.filter(beyond > decided.max())
-    if beyond.is_empty():
+def require_fronts_through(
+    store: Store,
+    building: Sequence[Dataset],
+    timeframe: Timeframe,
+    dates: tuple[date, date],
+    calendar: RollCalendar,
+) -> None:
+    """Refuse trades or bars of `building` on trade dates `dates` spans after the roll calendar's
+    last, whose fronts no 1-minute bars decided, as finer data that runs past the 1-minute bars
+    gives: splicing would drop them, and a level chosen for each date's front holds none of them
+    (`signal_bar_levels`), so `load` and `compute` would end the window before them unsaid."""
+    decided: list[date] = calendar.rows.get_column("trade_date").to_list()
+    last = max(decided, default=None)
+    after = dates[0] if last is None else max(dates[0], last + timedelta(days=1))
+    if after > dates[1]:
         return
-    through = "no session" if decided.is_empty() else f"{decided.max()}"
+    held = signal_bar_levels(
+        store, {str(each.schema_name): each for each in building}, timeframe, (after, dates[1])
+    )
+    if not held:
+        return
+    through = "no session" if last is None else f"{last}"
     raise ValueError(
         f"Expected 1-minute bars of {calendar.root} that decide the front contracts through "
-        f"{beyond.max()}, got fronts through {through}."
+        f"{max(held)}, got fronts through {through}."
     )

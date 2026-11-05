@@ -73,8 +73,9 @@ from fefat.features.grids import PrintsGrid, input_sources
 from fefat.features.runtime import FeatureGraph, slot_columns
 from fefat.market.api import SeriesSource, parse_trade_date, series_source
 from fefat.market.calendar import SessionTable
-from fefat.market.dataset_choice import dataset_warnings, source_dataset
+from fefat.market.dataset_choice import building_datasets, dataset_warnings, source_dataset
 from fefat.market.schema import Timeframe
+from fefat.market.signal_grid import require_fronts_through
 from fefat.market.store_files import write_atomically
 
 Place = tuple[Path, str]
@@ -165,6 +166,9 @@ def cached_window(
     refuses one."""
     signal = series_source(graph.root if contract is None else contract, provider=provider)
     sources = {graph.root: signal, **input_sources(graph, signal)}
+    if signal.calendar is not None:
+        building = building_datasets(signal.datasets, graph.timeframe)
+        require_fronts_through(signal.store, building, graph.timeframe, dates, signal.calendar)
     levels = held_levels(signal, graph.timeframe, dates)
     partitions = cache_partitions(signal, graph.timeframe, dates, levels)
     if not partitions:
