@@ -20,6 +20,10 @@ Polars expressions over the signal bars, `load`'s frame, and an execution templa
     )
     strategy.to_spec().document_json()  # the document the builder, the SDK, and the engine share
     strategy.signals(ff.market.load("ES", "5m", "2026-03-05", "2026-03-09"))  # its signal frame
+
+A forward return of `fefat.analytics`, a `Label`, reads the future and never feeds a strategy
+(`02-engine-and-data.md` §6, D-12): a strategy refuses one in a slot, a slot named like a label's
+column, and an expression of a slot or a signal that reads one.
 """
 
 from collections.abc import Mapping
@@ -28,8 +32,9 @@ from types import MappingProxyType
 from typing import Annotated
 
 import polars as pl
-from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator
+from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator, model_validator
 
+from fefat.analytics.labels import Label, is_label_column
 from fefat.features.evaluation import FeatureSpec
 from fefat.features.grids import NO_INPUTS, InputBars
 from fefat.features.runtime import FeatureGraph, clashing, slot_columns
@@ -60,6 +65,10 @@ _PYTHON_CALLS = (
 )
 """How Polars prints the calls of an expression that run a Python function: `map_elements`,
 `map_batches`, `rolling_map`, and the folds and reductions of `pl.fold` and `pl.reduce`."""
+_LABEL_REFUSED = (
+    "Expected features and the bars' columns in a strategy, got {what}: a label reads the "
+    "future, so it never feeds a strategy (02-engine-and-data.md §6)."
+)
 _BAR_COLUMNS_READ = pl.Schema(
     {
         "ts_close": pl.Int64,
@@ -105,6 +114,22 @@ class SignalStrategy(FrozenModel):
     size_mult: pl.Expr | None = None
     wake: pl.Expr | None = None
     execution: Execution
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_labels(cls, fields: object) -> object:
+        """Refuse a label in a slot and an expression that reads one, before the fields' own
+        checks, whose message for a `Label` in a slot would not say why."""
+        if not isinstance(fields, dict):
+            return fields
+        slots = fields.get("features")
+        if isinstance(slots, Mapping):
+            for slot, feature in slots.items():
+                _refuse_label_slot(slot, feature)
+        for name, value in fields.items():
+            if isinstance(value, pl.Expr):
+                _refuse_label_reads(name, value)
+        return fields
 
     @field_validator("features")
     @classmethod
@@ -250,6 +275,26 @@ class SignalStrategy(FrozenModel):
             "short_exit": self.short_exit.fill_null(False),
         }
         return signals | {name: column for name, column in optional.items() if column is not None}
+
+
+def _refuse_label_slot(slot: object, feature: object) -> None:
+    """Refuse a `Label` in the slot, a slot named like a label's column, and an expression in
+    it that reads one."""
+    if isinstance(feature, Label):
+        what = f"the label {feature.column} in the slot {slot}"
+        raise ValueError(_LABEL_REFUSED.format(what=what))
+    if isinstance(slot, str) and is_label_column(slot):
+        raise ValueError(_LABEL_REFUSED.format(what=f"a label's name for the slot {slot}"))
+    if isinstance(feature, pl.Expr):
+        _refuse_label_reads(f"the feature {slot}", feature)
+
+
+def _refuse_label_reads(reader: str, expression: pl.Expr) -> None:
+    """Refuse an expression that reads a label's column, by the columns Polars says it reads."""
+    labels = [column for column in expression.meta.root_names() if is_label_column(column)]
+    if labels:
+        what = f"the label column {labels[0]} read by {reader}"
+        raise ValueError(_LABEL_REFUSED.format(what=what))
 
 
 def _slot_document(slot: str, feature: pl.Expr | FeatureSpec) -> dict[str, object]:
