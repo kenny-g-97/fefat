@@ -1,18 +1,25 @@
 """Feature versions of step 3.1 (D-71, D-11): `save` writes a feature's record to
 `<FEFAT_HOME>/workspaces/default/features/<name>/v<n>.json`, `n` from 1 per name, and returns the
 version its hash already has; `load` reads it back with the same hash and refuses a record its
-content no longer gives."""
+content no longer gives; from step 3.7, `ref` reads a saved version back by name and number as a
+feature with its parameters, built again from the library where this process never defined it,
+`library` lists the saved versions, and `save` saves first the features a feature reads."""
 
 import os
 import re
 import shutil
 from pathlib import Path
 
+import polars as pl
 import pytest
 
 import fefat as ff
 from fefat.config import resolve_paths
-from fefat.features import FeatureInput, InstrumentInput, OutputKind
+from fefat.features import FeatureDef, FeatureInput, InstrumentInput, OutputKind, combine, registry
+from fefat.features.definition import content_hash
+from fefat.features.runtime import FeatureGraph
+from fefat.features.versions import LIBRARY_COLUMNS
+from fefat.market.schema import Timeframe
 from notebook_runs import features_of_cell
 
 GAP = """\
@@ -219,3 +226,140 @@ def test_a_record_moved_under_another_name_is_refused() -> None:
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         ff.features.load("other", 1)
+
+
+READER = """\
+@ff.feature(params={"n": 2})
+def base(bars: pl.LazyFrame, n: int) -> pl.Expr:
+    return pl.col("close").rolling_mean(n)
+
+
+@ff.feature(inputs=[base], outputs={"lifted": "price"})
+def lifted(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("base") + 1
+"""
+"""A feature reading another by its name, as a notebook cell defines them."""
+INDICATORS = {
+    definition.hash: definition
+    for name in ff.indicators.__all__
+    if isinstance(definition := getattr(ff.indicators, name), FeatureDef)
+}
+"""The definitions a session holds once it imports fefat: the indicators'."""
+BARS = pl.DataFrame(
+    {"ts_close": [1, 2, 3, 4, 5], "close": [10, 13, 11, 16, 12], "close_raw": [10, 13, 11, 16, 12]}
+)
+
+
+def test_a_saved_feature_is_read_back_by_name_and_version_with_its_parameters() -> None:
+    # Step 3.7: the feature a strategy names as ff.features.ref("rsi", version=..., n=14).
+    saved = ff.features.save(ff.indicators.rsi)
+
+    read = ff.features.ref("rsi", version=saved.version, n=7)
+
+    assert read.definition == ff.indicators.rsi
+    assert read.parameters.model_dump() == {"n": 7}
+    assert ff.features.ref("rsi", version=saved.version).parameters.model_dump() == {"n": 14}
+    with pytest.raises(FileNotFoundError, match="Expected version 2 of feature rsi"):
+        ff.features.ref("rsi", version=2)
+
+
+def test_saving_a_feature_saves_first_the_features_it_reads() -> None:
+    defined = features_of_cell(READER)
+
+    ff.features.save(defined["lifted"])
+
+    assert ff.features.library().select("name", "version").rows() == [("base", 1), ("lifted", 1)]
+
+
+def test_a_feature_another_session_saved_is_built_again_from_the_library(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A session that never ran the cell reads the feature and the one it reads from their code.
+    defined = features_of_cell(READER)
+    ff.features.save(defined["lifted"])
+    monkeypatch.setattr(registry, "_DEFINED", dict(INDICATORS))
+
+    read = ff.features.ref("lifted", version=1)
+
+    assert read.definition.hash == defined["lifted"].hash
+    assert read.definition is not defined["lifted"]
+    assert registry.registered(defined["base"].hash) is not None
+    graph = FeatureGraph.of({"lifted": read}, "ES", Timeframe.parse("5m"))
+    assert graph.evaluate({graph.signal_grid: BARS})["lifted"].to_list() == [
+        None,
+        12.5,
+        13.0,
+        14.5,
+        15.0,
+    ]
+
+
+def test_a_saved_combination_is_built_again_with_its_description(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rsi = ff.indicators.rsi
+    stretch = combine.define("rsi_stretch", rsi(14) - combine.rolling_mean(rsi(14), 10))
+    saved = ff.features.save(stretch)
+    monkeypatch.setattr(registry, "_DEFINED", dict(INDICATORS))
+
+    read = ff.features.ref("rsi_stretch", version=saved.version)
+
+    assert read.definition.hash == stretch.hash
+    assert read.definition.combination == stretch.combination
+    assert ff.features.library().filter(pl.col("combined")).get_column("name").to_list() == [
+        "rsi_stretch"
+    ]
+
+
+def test_a_feature_read_that_is_neither_defined_nor_saved_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    defined = features_of_cell(READER)
+    ff.features.save(defined["lifted"])
+    shutil.rmtree(folder("base"))
+    monkeypatch.setattr(registry, "_DEFINED", {})
+    refusal = (
+        f"Expected the feature base {defined['base'].hash[:12]} that lifted reads defined in this "
+        "process or saved in the library, got neither: define it, or save it with "
+        "ff.features.save."
+    )
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        ff.features.ref("lifted", version=1)
+
+
+def test_a_version_whose_code_no_longer_gives_its_hash_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The module docstring: a Pydantic release that writes the parameters' schema otherwise
+    # leaves a version's file loading under its hash while its code builds another.
+    saved = ff.features.save(features_of_cell(GAP)["gap"])
+    schema = {**saved.parameter_schema, "description": "written by another release"}
+    drifted = saved.model_copy(
+        update={"parameter_schema": schema, "hash": content_hash(saved.code, saved.inputs, schema)}
+    )
+    (folder("gap") / "v1.json").write_text(drifted.model_dump_json(indent=2), encoding="utf-8")
+    monkeypatch.setattr(registry, "_DEFINED", {})
+
+    assert ff.features.load("gap", 1).hash == drifted.hash
+    with pytest.raises(ValueError, match="save the feature again as a new version"):
+        ff.features.ref("gap", version=1)
+
+
+def test_the_library_lists_each_saved_version_by_name_then_number() -> None:
+    assert ff.features.library().is_empty()
+    assert ff.features.library().schema == LIBRARY_COLUMNS
+    ff.features.save(features_of_cell(GAP)["gap"])
+    ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
+    report_only = folder("validated") / "validations"
+    report_only.mkdir(parents=True)
+
+    listed = ff.features.library()
+
+    assert listed.select("name", "version", "combined").rows() == [
+        ("gap", 1, False),
+        ("gap", 2, False),
+    ]
+    assert listed.get_column("hash").to_list() == [
+        ff.features.load("gap", number).hash for number in (1, 2)
+    ]

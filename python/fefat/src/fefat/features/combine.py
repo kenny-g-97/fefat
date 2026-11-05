@@ -21,8 +21,9 @@ normalisations (`percent_rank`, `z_score`, `scaled_by_atr`), a higher timeframe
 (`at_timeframe`), and spreads across instruments, such as
 `subtract(column("close"), column("close", instrument="NQ"))`. A feature a combination reads is
 named in its code with its parameters, its defaults filled in, so that the combination needs no
-slot of it, and is found among those this process defined; an `at_timeframe` inside a
-combination is a feature of its own, `<name>_<timeframe>`, which the combination reads."""
+slot of it, and is found among those this process defined or else in the library
+(`ff.features.ref`); an `at_timeframe` inside a combination is a feature of its own,
+`<name>_<timeframe>`, which the combination reads."""
 
 import dataclasses
 
@@ -47,8 +48,9 @@ from fefat.features.combinations import (
 )
 from fefat.features.definition import FeatureDef
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.registry import register, registered
+from fefat.features.registry import register
 from fefat.features.source_code import from_source
+from fefat.features.versions import saved_definition
 
 
 def column(name: str, instrument: str | None = None) -> Column:
@@ -254,15 +256,9 @@ def _completed(term: Term) -> Term:
 
 
 def _definition_of(term: FeatureOutput) -> FeatureDef:
-    """The definition of the feature `term` reads, of its name, among those this process
-    defined."""
-    definition = registered(term.hash)
-    if definition is None:
-        raise ValueError(
-            f"Expected the feature {term.name} {term.hash[:12]} that a combination reads defined "
-            "in this process, got none: define it, or read it from the library with "
-            f"ff.features.ref({term.name!r}, version=...)."
-        )
+    """The definition of the feature `term` reads, of its name, this process's or the library's
+    (`saved_definition`)."""
+    definition = saved_definition(term.name, term.hash, "a combination")
     if definition.name != term.name:
         raise ValueError(
             f"Expected the feature of hash {term.hash[:12]} named {term.name}, got "

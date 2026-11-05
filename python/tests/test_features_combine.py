@@ -380,7 +380,7 @@ UNKNOWN = FeatureOutput(name="gone", hash="0" * 64, parameters={}, output="gone"
         pytest.param(
             lambda: combine.define("unknown", combine.add(UNKNOWN, 1)),
             f"Expected the feature gone {'0' * 12} that a combination reads defined in this "
-            "process, got none",
+            "process or saved in the library, got neither",
             id="unknown-feature",
         ),
         pytest.param(

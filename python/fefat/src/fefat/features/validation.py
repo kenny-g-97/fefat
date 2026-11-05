@@ -83,7 +83,9 @@ def validate(
     are the features it reads, each with its parameters, as `compute` takes them in slots; the
     stops of trading cut at are at most `stops`, but never fewer than the first and the last, a
     weekend, and a holiday halt where the window holds them, and `random_cuts` closes are drawn
-    from `seed`. The report is kept beside the feature's versions."""
+    from `seed`. The report is kept beside the feature's versions and names each feature the
+    graph read with its parameters, those `reads` gave and those the feature binds or reads with
+    their defaults (step 3.7)."""
     first, last = _window_dates(start, end, stops, random_cuts)
     graph = _graph_of(spec, reads, instrument, Timeframe.parse(timeframe))
     sources = _sources_of(graph, provider)
@@ -100,7 +102,7 @@ def validate(
         feature=spec.definition.name,
         hash=spec.definition.hash,
         parameters=spec.parameters.model_dump(mode="json"),
-        reads=tuple(_read(each) for each in reads),
+        reads=tuple(_read(node.spec) for node in graph.order if node != graph.slots[_SLOT]),
         instrument=instrument,
         timeframe=str(graph.timeframe),
         provider=signal.provider,

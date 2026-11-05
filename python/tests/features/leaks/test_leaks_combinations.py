@@ -7,6 +7,7 @@ import pytest
 
 import fefat as ff
 from fefat.features import combine
+from fefat.features.validation_report import FeatureRead
 from generated_minutes import FEBRUARY_WINDOW
 
 SEED = 3
@@ -52,3 +53,13 @@ def test_a_combination_of_each_kind_passes_the_leak_detector(kind: str) -> None:
     assert report.passed, report.summary()
     assert min(count for cut in report.cuts for count in cut.compared.values()) > 0
     assert report.lint == ()
+
+
+def test_the_report_of_a_combination_names_the_features_it_read() -> None:
+    # A report repeats (D-11): it names RSI(14), which the combination reads without being given.
+    definition = combine.define("rsi_stretch", COMBINATIONS["rsi_stretch"])
+
+    report = ff.features.validate(definition(), "ES", "5m", *FEBRUARY_WINDOW, seed=SEED)
+
+    rsi = ff.indicators.rsi
+    assert report.reads == (FeatureRead(name="rsi", hash=rsi.hash, parameters={"n": 14}),)
