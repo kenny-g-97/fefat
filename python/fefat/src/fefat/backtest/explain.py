@@ -209,9 +209,10 @@ def _fidelity(fills: Sequence[FillView], trade_id: int) -> TickFidelity | Timefr
 
 
 def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
-    """A snapshot of each dataset the run read, by schema, refused unless it is the one the
-    run's record pins, and refused when the store holds trades or bars of the run's provider in
-    its dates that the run did not read: the data changed since the run otherwise.
+    """A snapshot of each dataset of the run's instrument that the run read, by schema, refused
+    unless it is the one the run's record pins, as is one of another instrument its features read
+    (step 3.7), and refused when the store holds trades or bars of the run's provider in its
+    dates that the run did not read: the data changed since the run otherwise.
     `fidelity_check` reruns a saved run on the data this guards too."""
     snapshots = {}
     for dataset in record.datasets:
@@ -222,7 +223,8 @@ def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
                 f"it, snapshot {dataset.snapshot[:12]}, got {snapshot.sha256[:12]}: the data "
                 "changed since the run, so run it again first."
             )
-        snapshots[dataset.schema_name] = snapshot
+        if dataset.root == record.instrument.root:
+            snapshots[dataset.schema_name] = snapshot
     _require_no_dataset_since(store, record)
     return snapshots
 
@@ -231,10 +233,11 @@ def _require_no_dataset_since(store: Store, record: RunRecord) -> None:
     """Refuse a dataset of trades, TBBO, or bars of the run's provider and root with partitions
     in the run's dates that its record does not name, an import since the run, which the engine
     cache a rerun builds would read."""
-    first = min(dataset.first for dataset in record.datasets)
-    last = max(dataset.last for dataset in record.datasets)
-    named = {dataset.schema_name for dataset in record.datasets}
     provider, root = record.config.provider, record.instrument.root
+    own = [dataset for dataset in record.datasets if dataset.root == root]
+    first = min(dataset.first for dataset in own)
+    last = max(dataset.last for dataset in own)
+    named = {dataset.schema_name for dataset in own}
     for dataset in session_datasets(store):
         if (dataset.provider, dataset.root) != (provider, root):
             continue

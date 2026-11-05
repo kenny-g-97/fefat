@@ -69,7 +69,7 @@ from fefat.features.cache_keys import (
     held_levels,
 )
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.grids import PrintsGrid
+from fefat.features.grids import PrintsGrid, input_sources
 from fefat.features.runtime import FeatureGraph, slot_columns
 from fefat.market.api import SeriesSource, parse_trade_date, series_source
 from fefat.market.dataset_choice import dataset_warnings, source_dataset
@@ -163,8 +163,7 @@ def cached_window(
     and kept there otherwise (module docstring); a window without bars is refused, as `load`
     refuses one."""
     signal = series_source(graph.root if contract is None else contract, provider=provider)
-    others = sorted({grid.root for grid in graph.grids()} - {graph.root})
-    sources = {graph.root: signal, **{root: series_source(root) for root in others}}
+    sources = {graph.root: signal, **input_sources(graph, signal)}
     levels = held_levels(signal, graph.timeframe, dates)
     partitions = cache_partitions(signal, graph.timeframe, dates, levels)
     if not partitions:

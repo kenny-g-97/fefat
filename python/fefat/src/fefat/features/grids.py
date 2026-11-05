@@ -15,8 +15,10 @@ import polars as pl
 
 from fefat.config import resolve_paths
 from fefat.market.api import SeriesSource, load, series_source
+from fefat.market.coverage import session_datasets
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
+from fefat.market.store import Store
 
 if TYPE_CHECKING:
     from fefat.features.runtime import FeatureGraph
@@ -77,6 +79,25 @@ def grid_frame(inputs: InputBars, grid: Grid, reader: str) -> pl.DataFrame:
     return frame
 
 
+def input_provider(store: Store, root: str, provider: str) -> str | None:
+    """The provider of another instrument's bars that a feature reads, `root`'s, where the
+    signal bars come from `provider`: that provider where it holds the root, else None, the
+    root's default as `load` chooses it (step 3.7, `BACKLOG.md`), so that a root several
+    providers hold is read from the signal instrument's."""
+    held = {dataset.provider for dataset in session_datasets(store) if dataset.root == root}
+    return provider if provider in held else None
+
+
+def input_sources(graph: "FeatureGraph", signal: SeriesSource) -> dict[str, SeriesSource]:
+    """What `load` reads each other instrument the graph reads from, by root, where its signal
+    bars come from `signal` (`input_provider`)."""
+    others = sorted({grid.root for grid in graph.grids()} - {graph.root})
+    return {
+        root: series_source(root, provider=input_provider(signal.store, root, signal.provider))
+        for root in others
+    }
+
+
 def load_inputs(
     graph: "FeatureGraph",
     dates: tuple[date, date],
@@ -87,22 +108,24 @@ def load_inputs(
     """The frame of each grid the graph reads but its signal grid, for the trade dates `dates`
     span (`FeatureGraph.grid_dates`): its instrument's bars at other timeframes, as `load` gives
     them, and its prints by side, from `provider`, where it is named, of one `contract` where a
-    run reads one, and another instrument's bars from its own default provider, for the graph's
-    `evaluate` or a strategy's `signals` over bars a notebook loads."""
+    run reads one, and another instrument's bars from the same provider where it holds them
+    (`input_provider`), for the graph's `evaluate` or a strategy's `signals` over bars a
+    notebook loads."""
     paths = resolve_paths(os.environ)
+    signal = series_source(graph.root if contract is None else contract, provider=provider)
     loaded = {}
     for grid in graph.grids():
         if grid == graph.signal_grid:
             continue
         timeframe = str(grid.timeframe)
-        symbol = grid.root if contract is None else contract
         if isinstance(grid, PrintsGrid):
-            loaded[grid] = grid.frame_from(series_source(symbol, provider=provider), dates)
+            loaded[grid] = grid.frame_from(signal, dates)
             continue
         if grid.root == graph.root:
-            loaded[grid] = load(symbol, timeframe, *dates, provider=provider).collect()
+            loaded[grid] = load(signal.symbol, timeframe, *dates, provider=provider).collect()
             continue
         sessions = instrument_table(paths.data_dir).sessions_of(grid.root, paths.cache_dir)
         read = graph.grid_dates(grid, dates, sessions)
-        loaded[grid] = load(grid.root, timeframe, *read).collect()
+        chosen = input_provider(signal.store, grid.root, signal.provider)
+        loaded[grid] = load(grid.root, timeframe, *read, provider=chosen).collect()
     return loaded

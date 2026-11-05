@@ -5,7 +5,9 @@ instrument's bars joined as of each close with their staleness, and each feature
 carried through the graph and read from before the window."""
 
 import dataclasses
+import os
 import re
+import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -13,6 +15,7 @@ import polars as pl
 import pytest
 
 import fefat as ff
+from fefat.config import resolve_paths
 from fefat.features import (
     DatasetInput,
     FeatureInput,
@@ -374,6 +377,29 @@ def test_a_trades_input_without_trades_warns_that_its_volumes_are_null() -> None
 
     values = computed.collect()
     assert values.get_column("delta").null_count() == values.height > 0
+
+
+def test_another_instrument_is_read_from_the_signal_instruments_provider_where_it_holds_it() -> (
+    None
+):
+    # BACKLOG.md, step 3.7: a root two providers hold, neither the catalog's recommended source,
+    # was refused with a request to name a provider that nothing could pass; the signal
+    # instrument's provider is read where it holds the root, by every path that reads it.
+    store_with("ohlcv-1m")
+    data_dir = resolve_paths(os.environ).data_dir
+    shutil.copytree(data_dir / "synthetic", data_dir / "imported")
+    window = ("2026-03-06", "2026-03-09")
+    graph = FeatureGraph.of({"btc_age": btc_age()}, "ES", FIVE)
+
+    computed = ff.features.compute(
+        {"btc_age": btc_age()}, "ES", "5m", *window, provider="synthetic"
+    )
+    loaded = load_inputs(graph, (date(2026, 3, 6), date(2026, 3, 9)), provider="synthetic")
+    report = ff.features.validate(btc_age(), "ES", "5m", *window, provider="synthetic", seed=3)
+
+    assert computed.collect().get_column("btc_age").drop_nulls().len() > 0
+    assert not loaded[Grid("BTCUSDT-PERP", FIVE)].is_empty()
+    assert report.provider == "synthetic"
 
 
 def test_compute_and_validate_read_the_prints_by_side_of_the_fixtures() -> None:

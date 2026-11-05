@@ -53,7 +53,7 @@ import polars as pl
 from fefat.features.cache_evaluation import compare_values, slot_outputs
 from fefat.features.cuts import Cut, cuts_of
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.grids import Grid, InputBars, PrintsGrid
+from fefat.features.grids import Grid, InputBars, PrintsGrid, input_sources
 from fefat.features.runtime import FeatureGraph
 from fefat.features.source_lint import LintFinding, lint
 from fefat.features.validation_report import CutResult, FeatureRead, StartCheck, ValidationReport
@@ -175,10 +175,9 @@ def _graph_of(
 
 def _sources_of(graph: FeatureGraph, provider: str | None) -> dict[str, SeriesSource]:
     """What `load` reads each instrument of the graph from: its root from `provider`, another
-    instrument from its own default, as `compute` reads them."""
-    others = sorted({grid.root for grid in graph.grids()} - {graph.root})
+    instrument from the same provider where it holds it, as `compute` reads them."""
     signal = series_source(graph.root, provider=provider)
-    return {graph.root: signal, **{root: series_source(root) for root in others}}
+    return {graph.root: signal, **input_sources(graph, signal)}
 
 
 def _loaded(

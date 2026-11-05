@@ -26,6 +26,7 @@ from fefat.backtest import ARTIFACT_SCHEMAS, Run, RunConfig, RunRecord
 from fefat.backtest.artifacts import read_artifact, write_run
 from fefat.backtest.metrics import Metrics
 from fefat.config import resolve_paths
+from fefat.features import InstrumentInput
 from fefat.market.continuous import RollCalendar, volume_rolls
 from fefat.market.fidelity import TickFidelity
 from fefat.market.layout import DatasetOrigin, Partition
@@ -445,3 +446,32 @@ def test_a_run_whose_window_no_level_holds_a_date_of_is_refused_before_it_runs()
 
     with pytest.raises(ValueError, match="Expected trades or bars of ESH2026 on a trade date from"):
         ff.backtest.run(breakout(), "2026-03-06", "2026-03-06", one_contract)
+
+
+@ff.feature(inputs=[InstrumentInput(root="BTCUSDT-PERP")], outputs={"btc_close": "price"})
+def btc_close(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("close_BTCUSDT-PERP")
+
+
+def test_a_run_pins_and_names_the_data_of_another_instrument_a_feature_reads() -> None:
+    # BACKLOG.md, step 3.7: another instrument's bars that a feature reads keyed a run only
+    # through its signal frame's hash, and run.json neither named nor pinned them, nor could
+    # explain check them; explain still reads the run's own instrument's data alone. The
+    # 1-minute bars alone, one partition a month, since BTC's close stays its Saturday's on ES's
+    # Monday, which a trade date's partition of the feature cache would refuse to remember.
+    store_with("ohlcv-1m")
+    strategy = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="5m",
+        features={"highest": pl.col("close").rolling_max(12).shift(1), "btc_close": btc_close()},
+        long_entry=pl.col("close") > pl.col("highest"),
+        short_entry=pl.lit(False),
+        execution=breakout().execution,
+    )
+
+    run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
+
+    named = {(dataset.root, dataset.schema_name) for dataset in run.record.datasets}
+    assert named == {("BTCUSDT-PERP", "ohlcv-1m"), ("ES", "ohlcv-1m")}
+    entry = run.trades.row(0, named=True)["entry_order"]
+    assert run.explain(entry).fills
