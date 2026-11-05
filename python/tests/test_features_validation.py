@@ -354,3 +354,49 @@ def test_stops_caps_the_stops_drawn_beside_the_four_always_cut() -> None:
     assert closes[0] == instant_nanoseconds("2026-02-11T22:00:00Z")
     assert closes[-1] == instant_nanoseconds("2026-02-19T22:00:00Z")
     assert len(closes) == 3
+
+
+@ff.feature(outputs={"range_high": "price"})
+def opening_high_from_the_open(bars: pl.LazyFrame) -> pl.LazyFrame:
+    opened = pl.col("ts_open").first().over("trade_date")
+    window = bars.filter(pl.col("ts_close") <= opened + 1_800_000_000_000)
+    highs = window.group_by("trade_date").agg(range_high=pl.col("high").max())
+    joined = bars.join(highs, on="trade_date", how="left", maintain_order="left")
+    return joined.select("ts_close", "range_high")
+
+
+def test_an_opening_windows_look_ahead_fails_at_the_first_bar_after_a_stop() -> None:
+    # The leakage audit of the Phase 3 exit: the cuts at a stop keep each session whole or not at
+    # all, so a feature showing its opening half hour's high from the session's first bar passed
+    # every cut but a random one inside that half hour; the first bar after each stop is cut too.
+    window = ("2026-02-11", "2026-02-18")
+    report = ff.features.validate(
+        opening_high_from_the_open(), "ES", "1m", *window, seed=SEED, random_cuts=0
+    )
+
+    first = report.first_failure()
+    assert first is not None, report.summary()
+    assert CutKind.FIRST_BAR in first.kinds
+    assert not report.passed
+
+
+@ff.feature(outputs={"weekly_vwap": "price"})
+def weekly_vwap_without_warmup(bars: pl.LazyFrame) -> pl.Expr:
+    week, volume = pl.col("trade_date").dt.truncate("1w"), pl.col("volume").cast(pl.Float64)
+    traded = (pl.col("close").cast(pl.Float64) * volume).cum_sum().over(week)
+    return traded / volume.cum_sum().over(week)
+
+
+def test_a_weekly_memory_without_its_warmup_fails_the_start_check() -> None:
+    # The leakage audit of the Phase 3 exit: the window's middle trade date, 2026-02-17, opens its
+    # week, so an average over the week that declares no warm-up gave the same values from either
+    # start; the start check also starts a session later.
+    report = ff.features.validate(
+        weekly_vwap_without_warmup(), "ES", "5m", *FEBRUARY_WINDOW, seed=SEED
+    )
+
+    check = report.start_check
+    assert not check.passed, report.summary()
+    assert check.compared_from == date(2026, 2, 18)
+    assert "so the feature remembers more than its warm-up" in str(check)
+    assert not report.passed

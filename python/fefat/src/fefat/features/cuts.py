@@ -6,13 +6,14 @@ instant, never a trade date.
 The adversarial cuts come from the session table and the roll calendar: at each stop of trading
 (`fefat.market.trading_stops`), a session's close or a holiday's halt, then a nanosecond after it,
 inside its break, or over the weekend when the break holds one, a nanosecond before the next open,
-and at it; at each roll's open and at the close of the new front's first bar; and on each higher
-timeframe a feature reads, one signal bar before a bar of it closes, while it is in progress, and
-at its close. Random cuts fall at the closes of signal bars, and the stops kept where a window
-holds more than asked for are drawn, from one seed, so that a validation repeats (D-11). Every
-cut lies at or after the close of the window's first session, so that each compares a session of
-values at least: a feature whose warm-up reaches past the data then compares nothing at its first
-cuts, and fails."""
+at it, and at the close of the first signal bar after it, inside the session, which the cuts at
+a stop keep whole or not at all; at each roll's open and at the close of the new front's first
+bar; and on each higher timeframe a feature reads, one signal bar before a bar of it closes,
+while it is in progress, and at its close. Random cuts fall at the closes of signal bars, and the
+stops kept where a window holds more than asked for are drawn, from one seed, so that a
+validation repeats (D-11). Every cut lies at or after the close of the window's first session,
+so that each compares a session of values at least: a feature whose warm-up reaches past the
+data then compares nothing at its first cuts, and fails."""
 
 import random
 from collections.abc import Iterator, Sequence
@@ -39,6 +40,7 @@ class CutKind(StrEnum):
     WEEKEND = "weekend"
     BEFORE_OPEN = "before_open"
     AT_OPEN = "at_open"
+    FIRST_BAR = "first_bar"
     ROLL_OPEN = "roll_open"
     ROLL_FIRST_BAR = "roll_first_bar"
     HIGHER_TIMEFRAME_LAST_BAR = "higher_timeframe_last_bar"
@@ -75,7 +77,7 @@ def cuts_of(
     later = window.filter(pl.col("trade_date") > days[0])
     found: dict[int, list[CutKind]] = {}
     instants = [
-        *_at_stops(_kept_stops(sessions, days, floor, chooser, stops), sessions),
+        *_at_stops(_kept_stops(sessions, days, floor, chooser, stops), sessions, window),
         *_at_rolls(window, sessions, [day for day in roll_days if day in days]),
         *(each for frame in higher for each in _at_higher_bars(frame, later, chooser)),
         *((close, CutKind.RANDOM) for close in _drawn(later, chooser, random_cuts)),
@@ -110,8 +112,9 @@ def _kept_stops(
 
 
 def _at_stops(
-    kept: Sequence[tuple[date, TradingStop]], sessions: SessionTable
+    kept: Sequence[tuple[date, TradingStop]], sessions: SessionTable, window: pl.DataFrame
 ) -> Iterator[tuple[int, CutKind]]:
+    signal_closes = window.get_column("ts_close")
     for day, stop in kept:
         closes = stop.start == sessions.session(day).close
         yield stop.start, CutKind.SESSION_CLOSE if closes else CutKind.HOLIDAY_HALT
@@ -122,6 +125,9 @@ def _at_stops(
         )
         yield stop.resumes - 1, CutKind.BEFORE_OPEN
         yield stop.resumes, CutKind.AT_OPEN
+        first = signal_closes.filter(signal_closes > stop.resumes).min()
+        if isinstance(first, int):
+            yield first, CutKind.FIRST_BAR
 
 
 def _at_rolls(
