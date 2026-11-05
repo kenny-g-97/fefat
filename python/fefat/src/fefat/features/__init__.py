@@ -20,6 +20,7 @@ from fefat.features.inputs import (
     TimeframeInput,
     TradesInput,
 )
+from fefat.features.source_code import from_source
 from fefat.features.source_lint import lint
 from fefat.features.validation import validate
 from fefat.features.validation_report import ValidationReport
@@ -39,6 +40,7 @@ __all__ = [
     "cache_status",
     "compute",
     "feature",
+    "from_source",
     "lint",
     "load",
     "save",
