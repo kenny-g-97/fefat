@@ -26,6 +26,7 @@ One line per item: what, why, where it came from. Claude Code adds items here in
 
 ## Engineering
 
+- **Return the repository to private** — public since 2026-11-05 so that CI costs nothing (D-80); once the web MVP of step 5.13 makes the app usable for you alone, set the repository private again on GitHub, and first cut CI's minutes below the free plan's 2,000 a month: drop the run on the push to `main` (a pull request run already tests the merge) or the Windows job of pull requests (`just test` runs on Windows before every pull request), and set a $0 Actions budget so that runs stop at the quota instead of billing; then update `07-tools-and-costs.md`'s CI row. Target: the Phase 5 exit. Source: the GitHub Actions usage email of 2026-11-05 (D-80).
 - **Container-based executor** — if FEFAT ever runs untrusted code for other people. Source: `01-architecture.md` §10.
 - **Credential store and `fefat secrets`** — `fefat_app/credentials.py` over `keyring` (the Windows credential store) and a `fefat secrets set|get|list` CLI that never prints values left step 1.6 with the download (D-38); the first step that needs a key (a connector, Phase 4's login, or the Anthropic key of 8.2) adds them, with a test that no key lands on disk in plaintext. Source: D-38.
 - **macOS and Linux credential stores** — `keyring` backends beyond Windows. Needed by P14 for macOS.

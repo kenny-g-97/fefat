@@ -1,6 +1,6 @@
 # Phase 2 demo: the backtest engine
 
-What Phase 2 built, shown in about forty minutes without reading code. Run everything in PowerShell from the repository folder, `C:\Users\kenji\Documents\AlgoTrading_app\FEFAT`, on `main` after the exit pull request is merged: `git switch main`, then `git pull --ff-only`, then `just setup` once, since the exit moved the lockfiles. Actions 1 to 3 are the everyday commands, 4 and 5 the engine on your own MES data, 6 to 8 the validation reports, and 9 to 12 check what the exit changed. Only action 5 prints prices of your data, on your screen, as it is meant to; nothing it prints is committed.
+What Phase 2 built, shown in about forty minutes without reading code. Run everything in PowerShell from the repository folder, `C:\Users\<you>\Documents\AlgoTrading_app\FEFAT`, on `main` after the exit pull request is merged: `git switch main`, then `git pull --ff-only`, then `just setup` once, since the exit moved the lockfiles. Actions 1 to 3 are the everyday commands, 4 and 5 the engine on your own MES data, 6 to 8 the validation reports, and 9 to 12 check what the exit changed. Only action 5 prints prices of your data, on your screen, as it is meant to; nothing it prints is committed.
 
 1. **Check the tools.** Run `just doctor`.
    It prints the table of eleven tools, each `OK` with its version, and ends with `All 11 tools OK on Windows (AMD64).` `cargo-mutants 27.1.0` is the tool Phase 2 added.
