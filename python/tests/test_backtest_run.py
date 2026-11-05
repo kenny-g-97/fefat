@@ -514,3 +514,17 @@ def test_a_run_of_a_daily_ema_of_200_sessions_reads_back_to_the_session_tables_s
 
     assert run.signals.get_column("trend").null_count() == run.signals.height
     assert run.trades.height == 0
+
+
+def test_a_contract_run_reads_another_instruments_data_for_its_contract_alone() -> None:
+    # The code review of the Phase 3 exit: the snapshots of another instrument a feature reads
+    # built the run's root as a spliced series, which a run of one contract never reads, so a
+    # store holding ES's trades alone refused the run for bars to splice ES's contracts from.
+    store_with("trades", "ohlcv-1m")
+    shutil.rmtree(resolve_paths(os.environ).data_dir / "synthetic" / "ohlcv-1m" / "root=ES")
+    one_contract = RunConfig(contract="ESH2026")
+
+    run = ff.backtest.run(breakout_reading_btc(), "2026-03-05", "2026-03-06", one_contract)
+
+    named = {(dataset.root, dataset.schema_name) for dataset in run.record.datasets}
+    assert named == {("BTCUSDT-PERP", "ohlcv-1m"), ("BTCUSDT-PERP", "trades"), ("ES", "trades")}

@@ -82,15 +82,16 @@ def snapshots_of(market: Market, first: date, window: Window) -> tuple[Snapshot,
 
 
 def input_snapshots(
-    market: Market, graph: FeatureGraph, dates: tuple[date, date]
+    market: Market, graph: FeatureGraph, dates: tuple[date, date], contract: str | None
 ) -> tuple[Snapshot, ...]:
     """A snapshot of the datasets of each other instrument the graph's features read
     (`InstrumentInput`, step 3.7), over the trade dates the feature cache reads them for to
     evaluate the graph on the trade dates `dates` spans from its warm-up (`PartitionKeys.reads`),
-    from the provider it reads them from (`input_sources`)."""
+    from the provider it reads them from (`input_sources`), for the one `contract` a run trades
+    where it names one, as the cache reads the run's own bars."""
     if all(grid.root == graph.root for grid in graph.grids()):
         return ()
-    signal = series_source(graph.root, provider=market.provider)
+    signal = series_source(graph.root if contract is None else contract, provider=market.provider)
     others = input_sources(graph, signal)
     read = PartitionKeys({graph.root: signal, **others}).reads(graph, dates)
     return tuple(
