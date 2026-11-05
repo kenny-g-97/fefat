@@ -4,8 +4,8 @@ cut compared, the start check, and the lint's findings, kept as JSON beside the 
 
 A report passes when no cut changed a value before it, the start check moved the start and
 agreed, each output had values compared at one cut at least (`MINIMUM_COMPARED`), and the lint
-found no data a feature reads itself or holds from outside it; the lint's other findings are
-warnings, which a report that passes shows as `PASSED WITH WARNINGS`."""
+found no data a feature reads itself or holds from outside it, and no label it computes; the
+lint's other findings are warnings, which a report that passes shows as `PASSED WITH WARNINGS`."""
 
 from collections.abc import Mapping
 from datetime import date, datetime
@@ -116,9 +116,9 @@ class ValidationReport(FrozenModel):
 
     @property
     def passed(self) -> bool:
-        reads_data = any(finding.rule.fails_validation for finding in self.lint)
+        fails = any(finding.rule.fails_validation for finding in self.lint)
         agrees = not self.failing_cuts() and self.start_check.passed
-        return agrees and not self.uncompared() and not reads_data
+        return agrees and not self.uncompared() and not fails
 
     def failing_cuts(self) -> tuple[CutResult, ...]:
         """The cuts that changed a value before them, in order of instant."""

@@ -29,9 +29,11 @@ a running total, fails it, even one whose memory the middle date's week resets; 
 calendar keeps its anchor, the dataset's first whole session, whatever the start (D-45). A start
 the data does not let move, as at the store's first session, checks nothing and fails, as an
 output whose values no cut compares does, so that a warm-up longer than the data passes nothing.
-The lint reads the feature and the features it reads; its findings warn, but one: data a feature
-reads itself, or holds from outside it, which the cuts never cut, fails. The random cuts come from `seed`, drawn when it is None, and the report records it with
-the numbers of stops and random cuts and the features read, so that a validation repeats (D-11).
+The lint reads the feature and the features it reads; its findings warn, but two fail: data a
+feature reads itself, or holds from outside it, which the cuts never cut, and the labels of
+`ff.analytics` it computes. The random cuts come from `seed`, drawn when it is None, and the
+report records it with the numbers of stops and random cuts and the features read, so that a
+validation repeats (D-11).
 The report is kept beside the feature's versions, the latest of each content hash
 (`fefat.features.versions.validation_file`), for the database of Phase 4.
 

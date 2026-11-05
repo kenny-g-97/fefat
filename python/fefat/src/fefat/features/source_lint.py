@@ -11,14 +11,16 @@ the last value, a fill of nulls with the mean) or over a partition such as `.ove
 an as-of join forward, to the nearest row, or on `ts_open`, and a reversed column. A method of a
 namespace of each row's own values, such as `.str`, and an aggregate of a group-by, a rolling
 window, a `rolling_map`, or a list's `eval` are left to the cuts. These are warnings: the cuts and
-the start check of `fefat.features.validation` judge the values. One finding fails a validation:
+the start check of `fefat.features.validation` judge the values. Two findings fail a validation:
 data the feature reads itself, with `load`, `compute`, `open`, `roll_calendar`, a store's `read`
-or `scan`, or a reader such as `pl.scan_parquet`, or holds from outside it, a frame a notebook
-cell loaded or a reader bound to another name, which the cuts never cut and the cache's key never
-pins. The lint also warns of what the hash leaves out (`BACKLOG.md`): a name read from outside
-the feature, the SDK, Polars, and the standard library, and a default not written as a literal,
-which may have been chosen on the full sample. It reads the feature's own text alone: a shift by
-a negative parameter, a leak in a helper, and an aggregate under another name pass it."""
+or `scan`, a reader such as `pl.scan_parquet`, or the standard library's `connect` and `urlopen`,
+or holds from outside it, a frame a notebook cell loaded or a reader bound to another name, which
+the cuts never cut and the cache's key never pins; and the labels of `ff.analytics` it computes,
+under any name, which read the future by design. The lint also warns of what the hash leaves out
+(`BACKLOG.md`): a name read from outside the feature, the SDK, Polars, and the standard library,
+and a default not written as a literal, which may have been chosen on the full sample. It reads
+the feature's own text alone: a shift by a negative parameter, a leak in a helper, and an
+aggregate under another name pass it."""
 
 import ast
 import inspect
@@ -146,6 +148,7 @@ _OF_NUMBERS = frozenset({"math", "statistics"})
 _READERS = frozenset(
     {
         "compute",
+        "connect",
         "load",
         "open",
         "read",
@@ -154,13 +157,14 @@ _READERS = frozenset(
         "series_source",
         "side_volumes",
         "signal_bars",
+        "urlopen",
     }
 )
 """Methods that read data, such as `ff.market.load`, `ff.features.compute`, and a store's `scan`."""
 _NAMED_READERS = frozenset({"compute", "load", "open", "roll_calendar", "series_source"})
 """Functions called by their name that read data, such as Python's `open`."""
 _READER_PREFIXES = ("read_", "scan_")
-_LABEL_MAKERS = frozenset({"excursions", "forward_returns"})
+_LABEL_MAKERS = frozenset({"excursions", "exit_open", "forward_returns"})
 """The functions of `fefat.analytics.labels` that compute columns reading the future."""
 _PLATFORM = frozenset({"builtins", "fefat", "polars"})
 
@@ -338,6 +342,9 @@ def _names_read_outside(
     for name, line, value in names_read_outside(function, statement):
         if isinstance(value, pl.DataFrame | pl.LazyFrame | pl.Series) or _a_reader(value):
             yield source.finding(LintRule.READS_DATA, line, f"{name}: {_WHY[LintRule.READS_DATA]}")
+        elif _a_label_maker(value):
+            why = _WHY[LintRule.READS_LABELS]
+            yield source.finding(LintRule.READS_LABELS, line, f"{name}: {why}")
         elif not _of_the_platform(value):
             explanation = (
                 f"{name} is defined outside the feature, its SDK, Polars, and Python's standard "
@@ -356,6 +363,13 @@ def _a_reader(value: object) -> bool:
         return False
     reads = name in _READERS or name.startswith(_READER_PREFIXES)
     return reads and _of_the_platform(value)
+
+
+def _a_label_maker(value: object) -> bool:
+    """Whether `value` is a function of `fefat.analytics.labels` that computes columns reading
+    the future, whatever name it is bound to."""
+    module, name = getattr(value, "__module__", None), getattr(value, "__name__", None)
+    return module == "fefat.analytics.labels" and name in _LABEL_MAKERS
 
 
 def _of_the_platform(value: object) -> bool:
