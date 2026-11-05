@@ -101,7 +101,8 @@ def quantile_returns_of(
 
 def _bucket(feature: str, quantiles: int) -> pl.Expr:
     """The quantile of each bar's value of `feature` among the values, from 1 for the lowest."""
-    return ((pl.col(feature).rank("min") - 1) * quantiles // pl.len() + 1).cast(pl.Int64)
+    rank = pl.col(feature).rank("min").cast(pl.Int64)
+    return (rank - 1) * quantiles // pl.len() + 1
 
 
 def _returns_by_day(bucketed: pl.DataFrame, labels: Sequence[Label]) -> pl.DataFrame:

@@ -19,23 +19,12 @@ from dataclasses import dataclass
 
 import polars as pl
 
-LABEL_PREFIX = "forward_return_"
-"""The names of the labels' columns: `forward_return_<h>` for a horizon of h bars."""
-NEXT_OPEN = "next_open"
-"""The column of each bar's entry: the open of the first bucket with volume after it."""
+from fefat.features.label_columns import LABEL_PREFIX, NEXT_OPEN
+from fefat.features.label_columns import is_label_column as is_label_column
+from fefat.features.label_columns import reads_ahead as reads_ahead
+
 SESSION = ("contract", "trade_date")
 """What a label stays within: one contract's trade date."""
-
-
-def is_label_column(name: str) -> bool:
-    """Whether `name` is the column of a label, `forward_return_<h>`."""
-    return name.startswith(LABEL_PREFIX)
-
-
-def reads_ahead(name: str) -> bool:
-    """Whether `name` is a column the labels add, each of which reads the future: a label's, or
-    the entries', `next_open`."""
-    return name == NEXT_OPEN or is_label_column(name)
 
 
 @dataclass(frozen=True)

@@ -17,8 +17,9 @@ from typing import Any
 
 import polars as pl
 
-from fefat.analytics.labels import NEXT_OPEN, SESSION, excursions, exit_open
+from fefat.analytics.labels import SESSION, excursions, exit_open
 from fefat.analytics.trials import Trials
+from fefat.features.label_columns import NEXT_OPEN
 from fefat.market.calendar import counted
 from fefat.reference.orders import PositionSide
 

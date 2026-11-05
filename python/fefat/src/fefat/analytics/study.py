@@ -21,7 +21,7 @@ from collections.abc import Iterable, Sequence
 import polars as pl
 
 from fefat.analytics.events import EventStudy, event_study_of
-from fefat.analytics.labels import NEXT_OPEN, Label, forward_returns, reads_ahead
+from fefat.analytics.labels import Label, forward_returns
 from fefat.analytics.quantiles import QuantileReturns, quantile_returns_of
 from fefat.analytics.rank_correlation import (
     Correlations,
@@ -31,6 +31,7 @@ from fefat.analytics.rank_correlation import (
 )
 from fefat.analytics.trials import Trials
 from fefat.features.evaluation import require_one_series_of_raw_prices
+from fefat.features.label_columns import NEXT_OPEN, reads_ahead
 from fefat.indicators.ticks import bars_tick
 from fefat.market.calendar import counted
 from fefat.reference.orders import PositionSide
@@ -43,10 +44,12 @@ BAR_COLUMNS = pl.Schema(
         "open": pl.Int64,
         "high": pl.Int64,
         "low": pl.Int64,
+        "close_raw": pl.Int64,
         "zero_volume": pl.Boolean,
     }
 )
-"""The columns of the signal bars a study reads, as `ff.market.load` gives them."""
+"""The columns of the signal bars a study reads, as `ff.market.load` gives them, the raw
+closes among them, which a back-adjusted import lacks."""
 
 
 class FeatureStudy:
@@ -66,14 +69,15 @@ class FeatureStudy:
         bars = frame.lazy().collect()
         _require_signal_bars(bars)
         self._labels = _labels_of(horizons)
-        if resamples < 1:
-            raise ValueError(f"Expected at least 1 resample for the intervals, got {resamples}.")
+        if type(resamples) is not int or resamples < 1:
+            raise ValueError(f"Expected a whole number of resamples from 1, got {resamples!r}.")
         self._bootstrap = (resamples, seed)
         self._tick = bars_tick(bars.lazy(), instrument, "the study")
         self._frame = forward_returns(bars.lazy(), self.horizons, self._tick).collect()
-        if self._frame.get_column(self._labels[0].column).is_null().all():
+        empty = [label for label in self._labels if self._frame[label.column].is_null().all()]
+        if empty:
             raise ValueError(
-                f"Expected bars with a forward return over {counted(self.horizons[0], 'bar')} "
+                f"Expected bars with a forward return over {counted(empty[0].horizon, 'bar')} "
                 "within their trade date, got none: study bars of which a trade date holds "
                 "several, such as 5-minute bars, at horizons shorter than a session."
             )
@@ -93,8 +97,8 @@ class FeatureStudy:
         """The mean forward return of each quantile of `feature` at each horizon, with its
         day-block interval (`fefat.analytics.quantiles`)."""
         self._require_values(feature)
-        if quantiles < 2:
-            raise ValueError(f"Expected at least 2 quantiles, got {quantiles}.")
+        if type(quantiles) is not int or quantiles < 2:
+            raise ValueError(f"Expected a whole number of quantiles from 2, got {quantiles!r}.")
         trials = self._examine(feature, self.horizons)
         return quantile_returns_of(
             self._frame, feature, self._labels, quantiles, self._bootstrap, trials
@@ -118,7 +122,7 @@ class FeatureStudy:
                 "names, got feature."
             )
         for feature in features:
-            self._require_numbers(feature)
+            self._require_values(feature)
         return correlations_of(self._frame, features, self.trials)
 
     def event_study(

@@ -185,3 +185,21 @@ def test_a_strategy_refuses_bars_that_hold_a_label() -> None:
             reader.signals(labelled)
     with pytest.raises(ValueError, match="in the bars of NQ 5m: a label reads the future"):
         strategy().signals(signal_bars, {Grid("NQ", Timeframe.parse("5m")): labelled.collect()})
+
+
+def test_no_feature_and_no_strategy_reads_values_built_on_a_label() -> None:
+    # The leakage audit's second pass: a feature evaluated by hand on labelled bars, labels
+    # handed to signals_with as a feature's values, and a slot whose columns a label's name
+    # names were each a way round the bars' check.
+    signal_bars = bars(SESSIONS).with_columns(
+        close=pl.col("open"), close_raw=pl.col("open"), adj_offset=pl.lit(0, dtype=pl.Int64)
+    )
+    labelled = forward_returns(signal_bars, (1, 2), TICK)
+    peeking = strategy(features={"peek": peek()}, long_entry=pl.col("peek"))
+
+    with pytest.raises(ValueError, match="in the bars of feature peek: a label reads the future"):
+        peek().evaluate(labelled)
+    with pytest.raises(ValueError, match="in the features' values: a label reads the future"):
+        peeking.signals_with(signal_bars, labelled.collect())
+    with pytest.raises(ValidationError, match="a label's name for the slot forward_return: a"):
+        strategy(features={"forward_return": ff.indicators.macd()})

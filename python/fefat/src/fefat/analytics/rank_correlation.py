@@ -191,7 +191,9 @@ def _summary(daily: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
         .agg(
             days=pl.len(),
             mean_coefficient=coefficient.mean(),
-            t_statistic=coefficient.mean() / coefficient.std() * pl.len().sqrt(),
+            t_statistic=pl.when(coefficient.std() > 0).then(
+                coefficient.mean() / coefficient.std() * pl.len().sqrt()
+            ),
         )
         .sort(keys)
     )

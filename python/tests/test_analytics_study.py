@@ -12,6 +12,7 @@ import polars as pl
 import pytest
 
 from fefat.analytics import FeatureStudy, PositionSide
+from fefat.analytics.labels import forward_returns
 
 TICK = 250_000_000
 FIRST_DATE = date(2025, 12, 12)
@@ -45,6 +46,7 @@ def planted_day(draw: random.Random, trade_date: date, number: int) -> pl.DataFr
             "open": [opened * TICK for opened in opens],
             "high": [(max(pair) + 1) * TICK for pair in zip(opens, closes, strict=True)],
             "low": [(min(pair) - 1) * TICK for pair in zip(opens, closes, strict=True)],
+            "close_raw": [closed * TICK for closed in closes],
             "zero_volume": [False] * BARS,
             "planted": planted,
             "twin": twin,
@@ -93,6 +95,7 @@ def random_walk(seed: int = 7, days: int = 65, bars: int = 276) -> pl.DataFrame:
                     "high": [(max(pair) + 1) * TICK for pair in zip(opens, closes, strict=True)],
                     "low": [(min(pair) - 1) * TICK for pair in zip(opens, closes, strict=True)],
                     "close": [closed * TICK for closed in closes],
+                    "close_raw": [closed * TICK for closed in closes],
                     "zero_volume": [False] * bars,
                 }
             )
@@ -150,6 +153,40 @@ def test_a_quantile_on_few_trade_dates_has_no_interval() -> None:
     assert "interval none to none" in returns.report()
 
 
+def test_many_quantiles_of_many_bars_reach_the_last_quantile() -> None:
+    # The second code review: the rank times the quantiles wrapped round in 32 bits from 4.3e9,
+    # here 99,999 times 50,000, and put the highest bars in a low quantile. The highest values
+    # open the series, so that their bars have a forward return.
+    count, per_day = 100_000, 2_500
+    position = pl.int_range(count)
+    walk = (position.hash(1) % 9).cast(pl.Int64) - 4
+    bars = pl.select(
+        ts_close=(position + 1) * 300 * 10**9,
+        trade_date=pl.lit(FIRST_DATE) + pl.duration(days=position // per_day),
+        contract=pl.lit("ESH2026"),
+        open=(20_000 + walk) * TICK,
+        zero_volume=pl.lit(False),
+        rank=(count - position).cast(pl.Float64),
+    ).with_columns(high=pl.col("open") + TICK, low=pl.col("open") - TICK, close_raw=pl.col("open"))
+    study = FeatureStudy(bars, "ES", horizons=(1,), resamples=1)
+
+    frame = study.quantile_returns("rank", quantiles=50_000).frame
+
+    assert frame.get_column("quantile").max() == 50_000
+    assert frame.filter(pl.col("quantile") == 50_000).item(0, "feature_low") == count - 1
+
+
+def test_identical_days_have_no_t_statistic() -> None:
+    # The second code review: days whose coefficients are all the same have no spread, so their
+    # mean over it is no number; the t-statistic is none, not infinite.
+    days = [planted_day(random.Random(0), FIRST_DATE + timedelta(days=day), day) for day in (0, 1)]
+
+    coefficient = FeatureStudy(pl.concat(days), "ES").information_coefficient("planted")
+
+    assert coefficient.by_horizon.get_column("days").to_list() == [2, 2, 2]
+    assert coefficient.by_horizon.get_column("t_statistic").null_count() == 3
+
+
 def test_a_feature_named_like_a_column_the_analyses_add_is_studied_as_any() -> None:
     # The code review: a feature named quantile, or a flag named mae_ticks, kept its values.
     renamed = planted_bars().rename({"planted": "quantile"})
@@ -192,6 +229,7 @@ def flagged_bars() -> pl.DataFrame:
             "open": [opened * TICK for opened in opens],
             "high": [(opened + 1) * TICK for opened in opens],
             "low": [(opened - 1) * TICK for opened in opens],
+            "close_raw": [opened * TICK for opened in opens],
             "zero_volume": [False] * 8,
             "signal": [True, True, False, True, False, False, False, True],
         }
@@ -261,6 +299,11 @@ FIRST_NAN = pl.when(pl.int_range(pl.len()) == 0).then(float("nan")).otherwise("p
         ),
         (planted_bars().reverse(), "ES", "as one series, their closes strictly increasing"),
         (
+            forward_returns(planted_bars().lazy(), (1,), TICK).collect(),
+            "ES",
+            "the label column next_open in the bars of the feature study: a label reads",
+        ),
+        (
             planted_bars().with_columns(close_raw=pl.lit(None, dtype=pl.Int64)),
             "ES",
             "got a back-adjusted import",
@@ -284,6 +327,15 @@ def test_a_study_refuses_a_frame_of_other_than_signal_bars(
         FeatureStudy(bars, instrument)
 
 
+def test_a_study_refuses_a_horizon_no_bar_reaches_and_resamples_that_are_no_count() -> None:
+    # The second code review: a horizon longer than every session gave no row and still counted
+    # as examined; a fraction of a resample or of a quantile is no count.
+    with pytest.raises(ValueError, match="forward return over 500 bars within their trade date"):
+        FeatureStudy(planted_bars(), "ES", horizons=(1, 5, 500))
+    with pytest.raises(ValueError, match=r"whole number of resamples from 1, got 2\.5"):
+        FeatureStudy(planted_bars(), "ES", resamples=2.5)  # pyright: ignore[reportArgumentType]
+
+
 def test_a_study_refuses_what_it_cannot_judge() -> None:
     bars = planted_bars().with_columns(
         flag=pl.col("planted") > 0, broken=FIRST_NAN, constant=pl.lit(1.0)
@@ -295,7 +347,12 @@ def test_a_study_refuses_what_it_cannot_judge() -> None:
         (lambda: study.information_coefficient("forward_return_1"), "labels and next_open apart"),
         (lambda: study.quantile_returns("flag"), "Expected the feature flag as numbers"),
         (lambda: study.quantile_returns("broken"), "Expected no NaN in the feature broken, got 1"),
-        (lambda: study.quantile_returns("planted", 1), "at least 2 quantiles"),
+        (lambda: study.quantile_returns("planted", 1), "whole number of quantiles from 2, got 1"),
+        (
+            lambda: study.quantile_returns("planted", 2.5),  # pyright: ignore[reportArgumentType]
+            "whole number of quantiles from 2, got 2.5",
+        ),
+        (lambda: study.correlations(["planted", "constant"]), "that differ .* got 1"),
         (lambda: study.information_coefficient("constant"), "that differ .* got 1"),
         (lambda: study.correlations(["planted"]), "two features or more"),
         (

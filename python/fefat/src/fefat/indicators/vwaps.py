@@ -74,5 +74,6 @@ def distance_from_vwap(bars: pl.LazyFrame, instrument: str) -> dict[str, pl.Expr
 
 
 def _tick_of(bars: pl.LazyFrame, instrument: str) -> int:
-    """The tick of the root `instrument` the distance counts in (`bars_tick`)."""
+    """The tick of the root `instrument` the distance counts in (`bars_tick`), kept as this
+    helper so that the feature's code, and so its hash, stay as step 3.6 wrote them."""
     return bars_tick(bars, instrument, "the distance")
