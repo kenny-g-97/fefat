@@ -5,7 +5,7 @@ Where the market data on this PC is and what it holds: paths, schemas, and range
 ## Folders
 
 - `FEFAT_DATA_DIR` is not set, so the store is the default `%LOCALAPPDATA%\FEFAT\data` (`fefat.config.resolve_paths`), which step 1.6's imports created.
-- Vendor files bought before the plan sit in `C:\Users\kenji\Documents\AlgoTrading_app\market_data\`, a sibling of the repository folder and outside git: Databento's under `Databento_data\`, NinjaTrader's export under `NT8_data\`. Step 1.6 copies them under `data/raw/` with manifest entries; the originals stay where they are.
+- Vendor files bought before the plan sit in `C:\Users\<you>\Documents\AlgoTrading_app\market_data\`, a sibling of the repository folder and outside git: Databento's under `Databento_data\`, NinjaTrader's export under `NT8_data\`. Step 1.6 copies them under `data/raw/` with manifest entries; the originals stay where they are.
 
 ## Databento batch downloads (2026-09-23)
 
@@ -63,14 +63,14 @@ Step 1.9 added each dataset's `origin` and `licence_scope` to its `dataset.json`
 
 ## NinjaTrader 8 export (2026-10-20)
 
-Your NinjaTrader 8 export of MNQ minute bars (Historical Data window, Export, interval Minute, data type Last), one `.txt` file per contract in `C:\Users\kenji\Documents\AlgoTrading_app\market_data\NT8_data\raw\`: 30 files of 1.8 to 5.4 MB, 139 MB in all, named `MNQ MM-YY.Last.txt` from `MNQ 03-20` to `MNQ 12-25`, exported on 2026-10-13.
+Your NinjaTrader 8 export of MNQ minute bars (Historical Data window, Export, interval Minute, data type Last), one `.txt` file per contract in `C:\Users\<you>\Documents\AlgoTrading_app\market_data\NT8_data\raw\`: 30 files of 1.8 to 5.4 MB, 139 MB in all, named `MNQ MM-YY.Last.txt` from `MNQ 03-20` to `MNQ 12-25`, exported on 2026-10-13.
 
 - Imported by step 1.10 on 2026-10-20 with `fefat data import file <file> --profile ninjatrader`, one file at a time: 27 contracts into `ninjatrader/ohlcv-1m/root=MNQ`, each original kept under `raw/user/<sha256>/`. Three files were refused for spurious bars in NinjaTrader's history, under a wrong cause (`BACKLOG.md`, bars in a break that no offset explains): `MNQ 12-20.Last.txt` (a corrupt week, 2020-10-18 to 10-23), `MNQ 03-24.Last.txt` (extra bars in the hour before the 2024-03-10 open), and `MNQ 03-25.Last.txt` (a bar in the minute before the 2025-03-09 open).
 - `fefat data status` reads MNQ from `ninjatrader` as 2019-05-06 to 2026-09-18, complete at 1-minute fidelity, quality flagged: 175 sessions without records, where the three refused contracts were the front month. `load("MNQ", …)` reads Databento's MNQ first, the catalog's recommended source.
 
 ## Interactive Brokers ticks and bars (2026-10-31)
 
-Sessions of MNQZ2026 pulled from your TWS with `C:\Users\kenji\Documents\Trading\Data\ibkr\pull_mnq_ticks.py` (`reqHistoricalTicks`, TRADES, about 1,000 prints a request, 12 s apart), one CSV of ticks per session, imported with the `ibkr-ticks` profile beside the script, and IBKR's own 1-minute bars of the same sessions, imported with the `ibkr` preset and `--time-zone UTC`, for step 2.16's check of the tick engine (D-67). `just tick-check` reads them and writes `docs/validation/ibkr-tick-check.md`.
+Sessions of MNQZ2026 pulled from your TWS with `C:\Users\<you>\Documents\Trading\Data\ibkr\pull_mnq_ticks.py` (`reqHistoricalTicks`, TRADES, about 1,000 prints a request, 12 s apart), one CSV of ticks per session, imported with the `ibkr-ticks` profile beside the script, and IBKR's own 1-minute bars of the same sessions, imported with the `ibkr` preset and `--time-zone UTC`, for step 2.16's check of the tick engine (D-67). `just tick-check` reads them and writes `docs/validation/ibkr-tick-check.md`.
 
 | Session | Prints | Quality | Bars rebuilt from the prints | Filled on |
 | --- | ---: | --- | --- | --- |

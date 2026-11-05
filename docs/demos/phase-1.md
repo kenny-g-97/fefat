@@ -1,6 +1,6 @@
 # Phase 1 demo: the market-data layer
 
-What Phase 1 built, shown in about twenty minutes without reading code. Run everything in PowerShell from the repository folder, `C:\Users\kenji\Documents\AlgoTrading_app\FEFAT`, on `main` after the exit pull request is merged: `git switch main`, then `git pull --ff-only`, then `just setup` once, since the exit moved the Rust pin and the lockfiles. Actions 1 to 4 are the everyday commands, 5 to 7 the data layer on your own store, and 8 to 10 check what the exit fixed. No action prints a price: the commands print counts, dates, and summaries only.
+What Phase 1 built, shown in about twenty minutes without reading code. Run everything in PowerShell from the repository folder, `C:\Users\<you>\Documents\AlgoTrading_app\FEFAT`, on `main` after the exit pull request is merged: `git switch main`, then `git pull --ff-only`, then `just setup` once, since the exit moved the Rust pin and the lockfiles. Actions 1 to 4 are the everyday commands, 5 to 7 the data layer on your own store, and 8 to 10 check what the exit fixed. No action prints a price: the commands print counts, dates, and summaries only.
 
 1. **Check the tools.** Run `just doctor`.
    It prints the table of ten tools, each `OK` with its version, and ends with `All 10 tools OK on Windows (AMD64).` rustc and cargo now show `1.99.1`, the version the engine pins since the exit; the first `cargo` run in `engine/` installed it.
@@ -30,7 +30,7 @@ What Phase 1 built, shown in about twenty minutes without reading code. Run ever
 8. **Exit check: a re-import with other arguments is refused, not passed over.** Run:
 
    ```text
-   uv run fefat data import file "C:\Users\kenji\Documents\AlgoTrading_app\market_data\NT8_data\raw\MNQ 09-26.Last.txt" --profile ninjatrader --contract MNQU2026
+   uv run fefat data import file "C:\Users\<you>\Documents\AlgoTrading_app\market_data\NT8_data\raw\MNQ 09-26.Last.txt" --profile ninjatrader --contract MNQU2026
    ```
 
    It stops with `fefat: Expected … to be imported as it was on 2026-10-20, import profile ninjatrader, got import profile ninjatrader, contract MNQU2026: a stored dataset never changes, so the first import stands.` Before the exit this printed `Nothing to import … it is imported already`, and a corrected time zone could never reach the store. Without `--contract` the command still says the file is imported already.

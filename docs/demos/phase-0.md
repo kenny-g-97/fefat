@@ -1,6 +1,6 @@
 # Phase 0 demo: the foundations
 
-What Phase 0 built, shown in about fifteen minutes without reading code. Run everything in PowerShell (or Git Bash) from the repository folder, `C:\Users\kenji\Documents\FEFAT`, on `main` after the exit pull request is merged: `git switch main`, then `git pull --ff-only`. Actions 1 to 5 are the everyday commands; 6 to 8 check what the exit fixed.
+What Phase 0 built, shown in about fifteen minutes without reading code. Run everything in PowerShell (or Git Bash) from the repository folder, `C:\Users\<you>\Documents\FEFAT`, on `main` after the exit pull request is merged: `git switch main`, then `git pull --ff-only`. Actions 1 to 5 are the everyday commands; 6 to 8 check what the exit fixed.
 
 1. **Check the tools.** Run `just doctor`.
    It prints a table of ten tools (git, gh, node, pnpm, uv, python 3.12, rustc, cargo, just, MSVC linker), each `OK` with its version, and ends with `All 10 tools OK on Windows (AMD64).` rustc and cargo show `1.99.0`, the version the engine pins.
