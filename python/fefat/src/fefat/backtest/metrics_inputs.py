@@ -22,7 +22,8 @@ from fefat.strategy.spec import Execution
 LARGE_DAILY_LOSS = Decimal("0.02")
 """The share of the capital a day must lose to be a large daily loss (D-63): 1,000 of 50,000."""
 TRIALS = 1
-"""The trials behind a run on its own; sweeps count theirs from Phase 3 (`02` §9)."""
+"""The trials behind a run on its own; the sweeps of Phase 11 count theirs (`02` §9, D-71),
+while the trials counter of `fefat.analytics` counts the features and horizons a study examined."""
 
 
 def metrics_inputs_json(
