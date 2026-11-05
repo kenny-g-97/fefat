@@ -4,19 +4,20 @@ under and the hash of its snapshot, the signal frame's hash, its settings with e
 applied, its fee table, the rolls it crossed, the config the engine read, the warnings, a summary
 of its end, and, from step 2.11, its metrics; from step 2.12, the fidelity era of each trade
 date, in place of the fills by fidelity; from step 2.13, the mix of its trades' path
-fidelities; and, from step 3.2, the era of each trade date's signal bars, the level each was
-built from."""
+fidelities; from step 3.2, the era of each trade date's signal bars, the level each was built
+from; and, from step 3.7, the version of each feature its strategy's slots read."""
 
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
 
-from pydantic import Field
+import fefat_engine
+from pydantic import Field, JsonValue
 
 from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.market.fidelity import FidelityEra, FidelityText
-from fefat.market.instruments import InstrumentKind
+from fefat.market.instruments import Instrument, InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
 from fefat.market.schema import FrozenModel
@@ -33,12 +34,36 @@ class EngineVersions(FrozenModel):
     fill_model: int = Field(ge=1)
     artifact_schema: int = Field(ge=1)
 
+    @classmethod
+    def running(cls) -> "EngineVersions":
+        """The versions of the engine this process runs (`fefat_engine`)."""
+        return cls(
+            engine=fefat_engine.ENGINE_VERSION,
+            fill_model=fefat_engine.FILL_MODEL_VERSION,
+            artifact_schema=fefat_engine.ARTIFACT_SCHEMA_VERSION,
+        )
+
+
+class FeaturePin(FrozenModel):
+    """A feature a strategy reads in a slot, pinned as the library keeps it (step 3.7): the slot,
+    the feature's name, the number and content hash of its saved version, and the parameters the
+    slot binds."""
+
+    slot: str
+    name: str
+    version: int = Field(ge=1)
+    hash: Sha256
+    parameters: dict[str, JsonValue]
+
 
 class StrategyRecord(FrozenModel):
-    """The strategy's specification as its document writes it, and the names of its features."""
+    """The strategy's specification as its document writes it, the names of its features'
+    columns, and, from step 3.7, the version of each feature its slots read, none for a plain
+    expression or in a record written before."""
 
     spec: dict[str, Any]
     features: tuple[str, ...]
+    feature_versions: tuple[FeaturePin, ...] = ()
 
 
 class Window(FrozenModel):
@@ -57,6 +82,17 @@ class InstrumentRecord(FrozenModel):
     tick_size: Decimal
     point_value: Decimal
     lot_step: Decimal
+
+    @classmethod
+    def of(cls, instrument: Instrument) -> "InstrumentRecord":
+        return cls(
+            root=instrument.root,
+            kind=instrument.kind,
+            currency=str(instrument.currency),
+            tick_size=instrument.tick_size,
+            point_value=instrument.point_value,
+            lot_step=instrument.lot_step,
+        )
 
 
 class DatasetRecord(FrozenModel):

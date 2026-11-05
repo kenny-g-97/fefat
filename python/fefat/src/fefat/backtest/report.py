@@ -1,7 +1,8 @@
 """A run's report as text (step 2.12, `02` §7), which `Run.report()` prints: the run, the
 eras of its signal bars' levels (step 3.2), the fidelity era of its trade dates, its trades split by the fidelity of their entry and, from step
 2.13, by the fidelity of their paths, its main metrics, and its fidelity check, the error bar of
-its days at lower fidelity, or why it has none.
+its days at lower fidelity, or why it has none, and from step 3.7 the warnings of its record,
+such as that of an order decided inside a coarser bar (D-71).
 
     run.report()
 """
@@ -41,8 +42,16 @@ def report_text(record: RunRecord) -> str:
             _paths_by_fidelity(record),
             _metrics(metrics),
             _check(metrics.fidelity_check, eras),
+            *_warnings(record),
         ]
     )
+
+
+def _warnings(record: RunRecord) -> list[str]:
+    """The warnings of the run's record (step 3.7), none where it holds none."""
+    if not record.warnings:
+        return []
+    return ["Warnings\n" + "\n".join(f"  {warning}" for warning in record.warnings)]
 
 
 def _heading(record: RunRecord) -> str:

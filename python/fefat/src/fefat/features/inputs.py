@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 import polars as pl
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, JsonValue
 
 from fefat.market.schema import FrozenModel, Timeframe
 
@@ -50,12 +50,21 @@ def _timeframe_text(text: str) -> str:
     return text
 
 
+TimeframeText = Annotated[str, AfterValidator(_timeframe_text)]
+"""A timeframe as text, such as `15m`, refused unless it reads as one."""
+
+
 class FeatureInput(FrozenModel):
-    """Another feature the feature reads, by its name and its content hash."""
+    """Another feature the feature reads, by its name and its content hash; with the
+    `parameters` it reads it with, where its reader binds them, as a combination does, else those
+    of the slot given for it, or its defaults; and under the columns of an `alias`, as a slot's,
+    where its reader names one, else under its outputs' names (step 3.7)."""
 
     kind: Literal["feature"] = "feature"
     name: str = Field(min_length=1)
     hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    parameters: dict[str, JsonValue] | None = None
+    alias: str | None = Field(default=None, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class InstrumentInput(FrozenModel):
@@ -72,7 +81,7 @@ class TimeframeInput(FrozenModel):
     strategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2)."""
 
     kind: Literal["timeframe"] = "timeframe"
-    timeframe: Annotated[str, AfterValidator(_timeframe_text)]
+    timeframe: TimeframeText
 
 
 class DatasetInput(FrozenModel):

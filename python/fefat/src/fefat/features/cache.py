@@ -69,9 +69,10 @@ from fefat.features.cache_keys import (
     held_levels,
 )
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.grids import PrintsGrid
+from fefat.features.grids import PrintsGrid, input_sources
 from fefat.features.runtime import FeatureGraph, slot_columns
 from fefat.market.api import SeriesSource, parse_trade_date, series_source
+from fefat.market.calendar import SessionTable
 from fefat.market.dataset_choice import dataset_warnings, source_dataset
 from fefat.market.schema import Timeframe
 from fefat.market.store_files import write_atomically
@@ -163,8 +164,7 @@ def cached_window(
     and kept there otherwise (module docstring); a window without bars is refused, as `load`
     refuses one."""
     signal = series_source(graph.root if contract is None else contract, provider=provider)
-    others = sorted({grid.root for grid in graph.grids()} - {graph.root})
-    sources = {graph.root: signal, **{root: series_source(root) for root in others}}
+    sources = {graph.root: signal, **input_sources(graph, signal)}
     levels = held_levels(signal, graph.timeframe, dates)
     partitions = cache_partitions(signal, graph.timeframe, dates, levels)
     if not partitions:
@@ -180,6 +180,26 @@ def cached_window(
     folder = cache_dir / FEATURE_CACHE_FOLDER_NAME / signal.provider / signal.symbol
     window = _Computation(graph, sources, partitions, folder / str(graph.timeframe)).window()
     return dataclasses.replace(window, warnings=tuple(dict.fromkeys(warned)))
+
+
+def first_date_read(graph: FeatureGraph, signal: SeriesSource, dates: tuple[date, date]) -> date:
+    """The first trade date a computation of the graph's slots on the trade dates `dates` spans,
+    from `signal`, reads: the lead-in of the first partition holding them, each slot's own
+    (`_first_read`), which a run's request pins (`fefat.backtest.requests`); `dates`' first for a
+    graph without slots, or a window the store holds no partition of."""
+    levels = held_levels(signal, graph.timeframe, dates)
+    partitions = cache_partitions(signal, graph.timeframe, dates, levels)
+    if not graph.slots or not partitions:
+        return dates[0]
+    return _first_read(graph, signal.sessions, partitions[0])
+
+
+def _first_read(graph: FeatureGraph, sessions: SessionTable, first: CachePartition) -> date:
+    """The first trade date the slots' values on the partition `first` are read from: each
+    slot's graph's lead-in before its first day (`FeatureGraph.of_slot`), its first day for a
+    graph without slots."""
+    starts = [graph.of_slot(slot).lead_in(sessions, first.first) for slot in graph.slots]
+    return min(starts, default=first.first)
 
 
 def _inputs_warnings(
@@ -357,11 +377,8 @@ class _Computation:
             slots = slots.join(
                 values.rename(columns), on="ts_close", how="left", maintain_order="left"
             )
-        first = self._partitions[0]
-        starts = [
-            folder.graph.lead_in(self._signal.sessions, first.first) for folder in self._features
-        ]
-        return CachedWindow(bars, slots, min(starts, default=first.first), ())
+        first = _first_read(self._graph, self._signal.sessions, self._partitions[0])
+        return CachedWindow(bars, slots, first, ())
 
 
 def _present(frame: pl.DataFrame | None, place: Place) -> pl.DataFrame:

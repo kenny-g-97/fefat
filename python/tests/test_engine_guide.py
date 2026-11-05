@@ -1,14 +1,17 @@
 """The engine guide (step 2.15) gives every option of the execution template a one-line meaning,
 names every option of its rules and every run setting, describes every file of a run folder, and
-links only to files and fill-rule sections that exist."""
+links only to files and fill-rule sections that exist; from step 3.7 it gives every kind of a
+combination's description a row with its fields."""
 
 import inspect
 import re
+import typing
 from pathlib import Path
 
 import fefat as ff
 from fefat.backtest import RunConfig
 from fefat.backtest.schemas import ARTIFACT_SCHEMAS
+from fefat.features.combinations import TERMS
 from fefat.market.fees import TABLES
 from fefat.reference.settings import LimitFill, Replay, RollHandling
 from fefat.strategy.exits import (
@@ -111,3 +114,26 @@ def test_every_link_into_the_fill_specification_names_one_of_its_sections() -> N
 
     assert links
     assert [link for link in links if link not in anchors] == []
+
+
+def test_every_kind_of_a_combinations_description_has_a_row_with_its_fields() -> None:
+    # Step 3.7, Done means 3: the description of a combination is documented for the builder of
+    # Phase 6, each kind in a row of the guide's table with every field its model holds.
+    heading = "### The description of a combination"
+    assert heading in guide_text()
+    section = guide_text().split(heading, 1)[1].split("\n#", 1)[0]
+    rows = re.findall(r"^\| ((?:`[a-z_]+`(?:, )?)+) \| ([^|]+) \|", section, re.MULTILINE)
+    documented = {kind: fields for kinds, fields in rows for kind in re.findall(r"`(\w+)`", kinds)}
+    kinds = {
+        kind: [field for field in model.model_fields if field != "kind"]
+        for model in TERMS
+        for kind in typing.get_args(model.model_fields["kind"].annotation)
+    }
+
+    assert [kind for kind in kinds if kind not in documented] == []
+    assert [
+        (kind, field)
+        for kind, fields in kinds.items()
+        for field in fields
+        if f"`{field}`" not in documented[kind]
+    ] == []

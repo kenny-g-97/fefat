@@ -2,8 +2,9 @@
 from the finest level that holds it, whose eras the run records, read from as many sessions before
 its window as its features' warm-up needs, with the bars of the other grids they read (step 3.2),
 with the warnings the loads raise, and its signal frame on its window, checked as both engines read
-it; a snapshot of each dataset of
-its provider over its window (ADR-0019), whose hashes key the run; the engine cache of the months
+it; a snapshot of each dataset of its provider over its window, and of each other instrument
+its features read (ADR-0019, `fefat.backtest.snapshots`), whose hashes key the run; the engine
+cache of the months
 it replays, built from the same files (D-56); the fronts it trades and the rolls between them, as
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
 perpetual's funding rates from the store (F-FND-01); its fee table (F-FEE-01); and the config the
@@ -11,7 +12,7 @@ engine reads, every setting applied (D-51), with the config of its rerun at one 
 slippage and its exchange's time zone, which its metrics read (step 2.11)."""
 
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -22,11 +23,20 @@ import polars as pl
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_signals import signal_frame
+from fefat.backtest.snapshots import (
+    Market,
+    dataset_record,
+    finest_level,
+    funding_rates,
+    input_snapshots,
+    market_of,
+    snapshots_of,
+)
 from fefat.config import FefatPaths
 from fefat.market.api import parse_trade_date, roll_calendar
-from fefat.market.calendar import SessionTable, counted
-from fefat.market.dataset_choice import provider_datasets, signal_bar_eras
-from fefat.market.engine_cache import build_cache_months, level_of
+from fefat.market.calendar import counted
+from fefat.market.dataset_choice import signal_bar_eras
+from fefat.market.engine_cache import build_cache_months
 from fefat.market.engine_cache_index import ENGINE_CACHE_FOLDER_NAME
 from fefat.market.engine_units import (
     InstrumentParameters,
@@ -35,12 +45,11 @@ from fefat.market.engine_units import (
     price_text,
 )
 from fefat.market.fees import TABLES, CryptoFee, FuturesFee
-from fefat.market.fidelity import FidelityEra, TickFidelity
-from fefat.market.instruments import Instrument, InstrumentKind
-from fefat.market.layout import Dataset, PartitionRequest, YearMonth
+from fefat.market.fidelity import FidelityEra
+from fefat.market.instruments import Instrument
+from fefat.market.layout import YearMonth
 from fefat.market.roll_decisions import RollReason
-from fefat.market.saved_instruments import instrument_table
-from fefat.market.schema import SchemaKind, Timeframe, parse_schema_name
+from fefat.market.schema import Timeframe
 from fefat.market.snapshot import Snapshot
 from fefat.market.store import Store
 from fefat.reference.costs import RunFees
@@ -52,7 +61,6 @@ from fefat.reference.run_documents import (
     settings_document,
     with_engine_columns,
 )
-from fefat.reference.tape import FundingRate, funding_rates_of
 from fefat.strategy.signal_frame import require_named_columns
 from fefat.strategy.signal_strategy import SignalStrategy
 from fefat.strategy.spec import StrategySpec
@@ -127,20 +135,6 @@ def engine_cache_folder(
     return paths.cache_dir / ENGINE_CACHE_FOLDER_NAME / provider / root
 
 
-@dataclass(frozen=True)
-class _Market:
-    """The store, the instrument, its session table, and the provider's datasets of it."""
-
-    store: Store
-    instrument: Instrument
-    sessions: SessionTable
-    datasets: tuple[Dataset, ...]
-
-    @property
-    def provider(self) -> str:
-        return self.datasets[0].provider
-
-
 def run_inputs(
     strategy: SignalStrategy,
     start: str | date,
@@ -149,15 +143,18 @@ def run_inputs(
     paths: FefatPaths,
 ) -> RunInputs:
     """Everything a run of `strategy` on the trade dates from `start` to `end` reads."""
-    market = _market(strategy.instrument, config.provider, paths)
-    applied = config.applied(_finest(market.datasets), market.instrument.kind, market.provider)
+    market = market_of(strategy.instrument, config.provider, paths)
+    applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
     produced = signal_frame(strategy, market.sessions, market.provider, dates, applied.contract)
     signals = produced.signals
     spec = strategy.to_spec()
     require_named_columns(spec.execution, signals.columns)
     window = _window(signals)
-    snapshots = _snapshots(market, produced.first_read, window)
+    snapshots = (
+        *snapshots_of(market, produced.first_read, window),
+        *input_snapshots(market, strategy.feature_graph(), (produced.first_read, window.end)),
+    )
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)
     engine_config = _engine_config(market, applied, signals, snapshots, window, rolls)
@@ -168,7 +165,7 @@ def run_inputs(
         fronts=fronts,
         engine_config=engine_config,
         partition_hashes=tuple(sorted(snapshot.sha256 for snapshot in snapshots)),
-        datasets=tuple(_dataset_record(market.store, snapshot) for snapshot in snapshots),
+        datasets=tuple(dataset_record(market.store, snapshot) for snapshot in snapshots),
         config=applied,
         instrument=market.instrument,
         parameters=parameters,
@@ -182,7 +179,7 @@ def run_inputs(
 
 
 def _engine_config(
-    market: _Market,
+    market: Market,
     applied: AppliedRunConfig,
     signals: pl.DataFrame,
     snapshots: tuple[Snapshot, ...],
@@ -204,36 +201,13 @@ def _engine_config(
         capital=micro_units(applied.capital),
         position=None,
         fees=RunFees.of_table(TABLES[applied.fee_table], root),
-        funding=_funding(market, snapshots, window),
+        funding=funding_rates(market, snapshots, window),
         rolls=rolls,
     )
 
 
-def _market(root: str, provider: str | None, paths: FefatPaths) -> _Market:
-    store = Store(paths.data_dir)
-    table = instrument_table(paths.data_dir)
-    datasets = provider_datasets(store, root, provider, origin=None)
-    return _Market(
-        store=store,
-        instrument=table.get(root),
-        sessions=table.sessions_of(root, paths.cache_dir),
-        datasets=tuple(datasets.values()),
-    )
-
-
-def _finest(datasets: Iterable[Dataset]) -> TickFidelity | Timeframe:
-    """The finest level the datasets hold: TBBO, then trades, then the shortest bars."""
-
-    def rank(level: TickFidelity | Timeframe) -> tuple[int, int]:
-        if isinstance(level, Timeframe):
-            return (2, level.nominal_nanoseconds())
-        return (0 if level is TickFidelity.TBBO else 1, 0)
-
-    return min((level_of(dataset) for dataset in datasets), key=rank)
-
-
 def _signal_bar_eras(
-    market: _Market, strategy: SignalStrategy, window: Window, signals: pl.DataFrame
+    market: Market, strategy: SignalStrategy, window: Window, signals: pl.DataFrame
 ) -> tuple[FidelityEra, ...]:
     """The levels the window's signal bars were built from, each trade date's as `load` chose it
     for the contract the signal frame holds that day (`signal_bar_eras`), in eras; the dates
@@ -259,67 +233,8 @@ def _window(signals: pl.DataFrame) -> Window:
     return Window(start=first, end=last)
 
 
-def _snapshots(market: _Market, first: date, window: Window) -> tuple[Snapshot, ...]:
-    """A snapshot of each dataset of the provider to the window's end from the session before
-    `first`, the first trade date of the bars the run read, which `load` reads from, and of a
-    perpetual's funding; a dataset without a partition in that range is not read."""
-    lead_in = market.sessions.preceding(first).trade_date
-    datasets = list(market.datasets)
-    if market.instrument.kind is InstrumentKind.PERPETUAL:
-        datasets.append(_funding_dataset(market))
-    snapshots = []
-    for dataset in datasets:
-        request = PartitionRequest(dataset=dataset, start=lead_in, end=window.end)
-        listed = market.store.list_partitions(dataset)
-        if any(request.selects(file.partition) for file in listed):
-            snapshots.append(market.store.snapshot(request))
-    return tuple(snapshots)
-
-
-def _funding_dataset(market: _Market) -> Dataset:
-    dataset = Dataset(
-        provider=market.provider,
-        schema_name=parse_schema_name("funding"),
-        root=market.instrument.root,
-    )
-    if not market.store.has_dataset_metadata(dataset):
-        raise ValueError(
-            f"Expected the funding rates of the perpetual {market.instrument.root} in the store "
-            f"({dataset.relative_folder().as_posix()}), got none: a run without them would "
-            "leave out what the position pays and receives (F-FND-01)."
-        )
-    return dataset
-
-
-def _funding(
-    market: _Market, snapshots: tuple[Snapshot, ...], window: Window
-) -> tuple[FundingRate, ...]:
-    """A perpetual's funding rates received from its first session's open until the open of the
-    session after its last, where `load`'s range ends (`02` §1.1); a window the store's funding
-    rates leave out is refused, as a perpetual without them is (`_funding_dataset`)."""
-    if market.instrument.kind is not InstrumentKind.PERPETUAL:
-        return ()
-    received = [
-        market.store.read(snapshot)
-        for snapshot in snapshots
-        if snapshot.request.dataset.schema_name.kind is SchemaKind.FUNDING
-    ]
-    opens = market.sessions.session(window.start).open
-    until = market.sessions.following(window.end).open
-    within = [
-        rows.filter(pl.col("ts_recv") >= opens, pl.col("ts_recv") < until) for rows in received
-    ]
-    if not any(rows.height for rows in within):
-        raise ValueError(
-            f"Expected the funding rates of the perpetual {market.instrument.root} received from "
-            f"{window.start} to {window.end} in the store, got none: a run without them would "
-            "leave out what the position pays and receives (F-FND-01)."
-        )
-    return funding_rates_of(pl.concat(within))
-
-
 def _fronts_and_rolls(
-    signals: pl.DataFrame, market: _Market, window: Window
+    signals: pl.DataFrame, market: Market, window: Window
 ) -> tuple[tuple[str, ...], tuple[RollRow, ...]]:
     """The contracts the run trades, in order, and the rolls between them that the roll calendar
     gives, those whose session opens after the window's first trade date and by its last."""
@@ -350,21 +265,6 @@ def _months(window: Window) -> list[YearMonth]:
         months.append(YearMonth(year=year, month=month))
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
     return months
-
-
-def _dataset_record(store: Store, snapshot: Snapshot) -> DatasetRecord:
-    """A dataset as a run's record names it, with the terms its pinned `dataset.json` gives."""
-    request, metadata = snapshot.request, store.pinned_metadata(snapshot)
-    return DatasetRecord(
-        provider=request.dataset.provider,
-        schema_name=str(request.dataset.schema_name),
-        root=request.dataset.root,
-        origin=metadata.origin,
-        licence_scope=metadata.licence_scope,
-        first=request.start,
-        last=request.end,
-        snapshot=snapshot.sha256,
-    )
 
 
 def _fee_table_record(name: str, root: str) -> FeeTableRecord:

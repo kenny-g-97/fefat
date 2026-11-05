@@ -24,7 +24,7 @@ from fefat.backtest.metrics import (
     running_drawdown,
 )
 from fefat.backtest.reconcile import reconcile
-from fefat.backtest.record import RunRecord
+from fefat.backtest.record import FeaturePin, RunRecord
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.runs import Run, run
 from fefat.backtest.schemas import (
@@ -53,6 +53,7 @@ __all__ = [
     "TRADES",
     "TRADE_PATHS",
     "AppliedRunConfig",
+    "FeaturePin",
     "FidelityCheck",
     "FidelityEra",
     "FidelityRerun",

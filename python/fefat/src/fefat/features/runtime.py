@@ -25,8 +25,10 @@ counted back by the session table at the fewest buckets each session holds, then
 one more where a feature counting sessions reads one whose first value may fall inside a session
 (`FeatureGraph.lead_in`), so the window's first row has every value where the data reaches back
 so far; `compute` does so for each partition of the feature cache, each slot apart
-(`FeatureGraph.of_slot`, `fefat.features.cache`, step 3.3). A feature read by another is one of
-the features given, found by its content hash, so each one's parameters are named once; the
+(`FeatureGraph.of_slot`, `fefat.features.cache`, step 3.3). A feature read by another is found by
+its content hash, with the parameters its reader binds, else the one given in a slot, else with
+its defaults (`fefat.features.dependencies`, step 3.7), and joined under its outputs' names, or
+under its alias's columns where its reader names one, so that a feature reads another twice; the
 features form a graph without cycles. A feature of one output gives its slot's column, and one of
 several `<slot>_<output>` columns. A feature declaring the trades input (`TradesInput`, step 3.6)
 reads the volume of its instrument's prints by aggressor side in each bucket of its grid,
@@ -39,50 +41,19 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from fractions import Fraction
-from functools import cached_property
-from graphlib import CycleError, TopologicalSorter
 from math import ceil, floor
 from types import MappingProxyType
 
 import polars as pl
 
 from fefat.features.as_of import with_feature, with_instrument, with_side_volumes
+from fefat.features.dependencies import FeatureNode, evaluation_order, nodes_read, timeframe_of
 from fefat.features.evaluation import FeatureSpec, first_warm_row
 from fefat.features.grids import Grid, InputBars, PrintsGrid, grid_frame
-from fefat.features.inputs import (
-    DatasetInput,
-    FeatureInput,
-    InstrumentInput,
-    TimeframeInput,
-    TradesInput,
-)
+from fefat.features.inputs import FeatureInput, InstrumentInput, TradesInput
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import Session, SessionTable, counted
 from fefat.market.schema import Timeframe
-
-
-@dataclass(frozen=True, eq=False)
-class _Node:
-    """A feature with its parameters, evaluated on its instrument's grid at `timeframe`; two
-    nodes are one where their feature, parameters, and timeframe are."""
-
-    spec: FeatureSpec
-    timeframe: Timeframe
-
-    @property
-    def name(self) -> str:
-        return self.spec.definition.name
-
-    @cached_property
-    def _key(self) -> tuple[str, str, str]:
-        parameters = self.spec.parameters.model_dump_json()
-        return (self.spec.definition.hash, parameters, str(self.timeframe))
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, _Node) and other._key == self._key
-
-    def __hash__(self) -> int:
-        return hash(self._key)
 
 
 def slot_columns(slot: str, spec: FeatureSpec) -> dict[str, str]:
@@ -103,24 +74,27 @@ class FeatureGraph:
 
     root: str
     timeframe: Timeframe
-    slots: Mapping[str, _Node]
-    reads: Mapping[_Node, tuple[_Node, ...]]
-    order: tuple[_Node, ...]
-    warmups: Mapping[_Node, int]
-    session_warmups: Mapping[_Node, int]
+    slots: Mapping[str, FeatureNode]
+    reads: Mapping[FeatureNode, tuple[FeatureNode, ...]]
+    order: tuple[FeatureNode, ...]
+    warmups: Mapping[FeatureNode, int]
+    session_warmups: Mapping[FeatureNode, int]
 
     @classmethod
     def of(
         cls, slots: Mapping[str, FeatureSpec], root: str, timeframe: Timeframe
     ) -> "FeatureGraph":
-        """The graph of the features in `slots` on the signal grid of `root` at `timeframe`;
-        columns that two slots share, a feature read but not given, and a cycle are refused."""
+        """The graph of the features in `slots` on the signal grid of `root` at `timeframe`, with
+        the features they read (`fefat.features.dependencies`); columns that two slots share, a
+        feature read that cannot be found, and a cycle are refused."""
         _require_columns_apart(slots)
-        nodes = {slot: _Node(spec, _timeframe_of(spec, timeframe)) for slot, spec in slots.items()}
-        reads = _reads(nodes.values(), _specs_by_hash(slots.values()))
-        order = _evaluation_order(reads)
-        warmups: dict[_Node, int] = {}
-        sessions: dict[_Node, int] = {}
+        nodes = {
+            slot: FeatureNode(spec, timeframe_of(spec, timeframe)) for slot, spec in slots.items()
+        }
+        reads = nodes_read(nodes.values(), slots.values())
+        order = evaluation_order(reads)
+        warmups: dict[FeatureNode, int] = {}
+        sessions: dict[FeatureNode, int] = {}
         for node in order:
             inherited = max(
                 (
@@ -151,7 +125,7 @@ class FeatureGraph:
         """The graph of the one slot `slot` with the features it reads, as this graph evaluates
         them, which the feature cache evaluates and keys apart (`fefat.features.cache`)."""
         node = self.slots[slot]
-        read: dict[_Node, None] = {}
+        read: dict[FeatureNode, None] = {}
         pending = [node]
         while pending:
             current = pending.pop()
@@ -222,7 +196,7 @@ class FeatureGraph:
             day = sessions.preceding(day).trade_date
         return day
 
-    def warmup_text(self, node: _Node) -> str:
+    def warmup_text(self, node: FeatureNode) -> str:
         """The most the node's warm-up may span, in words, as `350 bars of 5m` or `1 session of
         5m`."""
         bars, sessions = self.warmups[node], self.session_warmups[node]
@@ -236,8 +210,8 @@ class FeatureGraph:
         order over the bars of its grid in `inputs` with the inputs it declares, its outputs null
         on the rows of its warm-up, and each slot's joined as of the signal grid's closes under
         its columns (`slot_columns`)."""
-        values: dict[_Node, pl.DataFrame] = {}
-        warm_from: dict[_Node, int | None] = {}
+        values: dict[FeatureNode, pl.DataFrame] = {}
+        warm_from: dict[FeatureNode, int | None] = {}
         for node in self.order:
             values[node], warm_from[node] = self._values_of(node, inputs, values, warm_from)
         frame = grid_frame(inputs, self.signal_grid, "the strategy").select("ts_close")
@@ -248,25 +222,15 @@ class FeatureGraph:
 
     def _values_of(
         self,
-        node: _Node,
+        node: FeatureNode,
         inputs: InputBars,
-        values: Mapping[_Node, pl.DataFrame],
-        warm_from: Mapping[_Node, int | None],
+        values: Mapping[FeatureNode, pl.DataFrame],
+        warm_from: Mapping[FeatureNode, int | None],
     ) -> tuple[pl.DataFrame, int | None]:
         """`ts_close` and the node's outputs on its grid, null on the rows of its warm-up, and the
         close of its first row past it, None where none is."""
         bars = grid_frame(inputs, Grid(self.root, node.timeframe), node.name)
-        frame = bars
-        dependencies = iter(self.reads[node])
-        for declared in node.spec.definition.inputs:
-            if isinstance(declared, FeatureInput):
-                frame = with_feature(frame, values[next(dependencies)], node.name)
-            if isinstance(declared, InstrumentInput):
-                other = grid_frame(inputs, Grid(declared.root, node.timeframe), node.name)
-                frame = with_instrument(frame, other, declared.root, node.name)
-            if isinstance(declared, TradesInput):
-                prints = grid_frame(inputs, PrintsGrid(self.root, node.timeframe), node.name)
-                frame = with_side_volumes(frame, prints, node.name)
+        frame = self._with_inputs(node, bars, inputs, values)
         try:
             outputs = node.spec.outputs_over(frame).collect()
         except pl.exceptions.PolarsError as error:
@@ -283,8 +247,33 @@ class FeatureGraph:
         )
         return masked, bars.item(first, "ts_close") if first < bars.height else None
 
+    def _with_inputs(
+        self,
+        node: FeatureNode,
+        bars: pl.DataFrame,
+        inputs: InputBars,
+        values: Mapping[FeatureNode, pl.DataFrame],
+    ) -> pl.DataFrame:
+        """The node's `bars` with what it declares beside them, each joined as of the row's
+        close: the values of the features it reads, another instrument's bars, and its prints by
+        side."""
+        frame = bars
+        dependencies = iter(self.reads[node])
+        for declared in node.spec.definition.inputs:
+            if isinstance(declared, FeatureInput):
+                frame = with_feature(
+                    frame, _read_as(declared, next(dependencies), values), node.name
+                )
+            if isinstance(declared, InstrumentInput):
+                other = grid_frame(inputs, Grid(declared.root, node.timeframe), node.name)
+                frame = with_instrument(frame, other, declared.root, node.name)
+            if isinstance(declared, TradesInput):
+                prints = grid_frame(inputs, PrintsGrid(self.root, node.timeframe), node.name)
+                frame = with_side_volumes(frame, prints, node.name)
+        return frame
+
     def _first_warm_row(
-        self, node: _Node, bars: pl.DataFrame, read_from: Sequence[int | None]
+        self, node: FeatureNode, bars: pl.DataFrame, read_from: Sequence[int | None]
     ) -> int:
         """The node's first row past its warm-up, from the first row closing at or after the
         first values of the features it reads, `read_from`, each None where it has none."""
@@ -295,6 +284,17 @@ class FeatureGraph:
         return first_warm_row(
             bars, max(known, default=None), spec.warmup_sessions, spec.warmup, owner
         )
+
+
+def _read_as(
+    declared: FeatureInput, dependency: FeatureNode, values: Mapping[FeatureNode, pl.DataFrame]
+) -> pl.DataFrame:
+    """The values of the feature `declared` reads, under its outputs' names, or under the columns
+    of its alias (`slot_columns`) where its reader names one."""
+    read = values[dependency]
+    if declared.alias is None:
+        return read
+    return read.rename(slot_columns(declared.alias, dependency.spec))
 
 
 def clashing(columns: Sequence[str], reserved: Iterable[str]) -> list[str]:
@@ -316,89 +316,7 @@ def _require_columns_apart(slots: Mapping[str, FeatureSpec]) -> None:
         )
 
 
-def _timeframe_of(spec: FeatureSpec, reader: Timeframe) -> Timeframe:
-    """The timeframe of the grid `spec` is evaluated on: the one its `TimeframeInput` names, else
-    `reader`'s, the grid of the feature or strategy that reads it."""
-    named = [
-        declared.timeframe
-        for declared in spec.definition.inputs
-        if isinstance(declared, TimeframeInput)
-    ]
-    if len(named) > 1:
-        raise ValueError(
-            f"Expected at most one timeframe input of feature {spec.definition.name}, got "
-            f"{', '.join(named)}."
-        )
-    return Timeframe.parse(named[0]) if named else reader
-
-
-def _specs_by_hash(specs: Iterable[FeatureSpec]) -> dict[str, list[FeatureSpec]]:
-    """The specs given, apart, by their feature's content hash."""
-    found: dict[str, dict[str, FeatureSpec]] = {}
-    for spec in specs:
-        found.setdefault(spec.definition.hash, {})[spec.parameters.model_dump_json()] = spec
-    return {feature: list(apart.values()) for feature, apart in found.items()}
-
-
-def _reads(
-    nodes: Iterable[_Node], given: Mapping[str, Sequence[FeatureSpec]]
-) -> dict[_Node, tuple[_Node, ...]]:
-    """Each node reachable from `nodes` with the nodes it reads, in the order it declares them."""
-    reads: dict[_Node, tuple[_Node, ...]] = {}
-    pending = list(nodes)
-    while pending:
-        node = pending.pop()
-        if node in reads:
-            continue
-        _require_inputs_the_runtime_evaluates(node.spec)
-        inputs = tuple(
-            _Node(spec, _timeframe_of(spec, node.timeframe))
-            for spec in _read_specs(node.spec, given)
-        )
-        reads[node] = inputs
-        pending.extend(inputs)
-    return reads
-
-
-def _read_specs(spec: FeatureSpec, given: Mapping[str, Sequence[FeatureSpec]]) -> list[FeatureSpec]:
-    """The spec of each feature `spec` reads, the one given of its content hash."""
-    found = []
-    for declared in spec.definition.inputs:
-        if not isinstance(declared, FeatureInput):
-            continue
-        specs = given.get(declared.hash, ())
-        if len(specs) != 1:
-            got = "none" if not specs else ", ".join(repr(each.parameters) for each in specs)
-            raise ValueError(
-                f"Expected the feature {declared.name} that {spec.definition.name} reads among "
-                f"the features given, once with its parameters, got {got}: give it a slot, such "
-                f"as {declared.name}(...)."
-            )
-        found.append(specs[0])
-    return found
-
-
-def _require_inputs_the_runtime_evaluates(spec: FeatureSpec) -> None:
-    for declared in spec.definition.inputs:
-        if isinstance(declared, DatasetInput):
-            raise ValueError(
-                f"Expected inputs the runtime evaluates, got the dataset input {declared.name} of "
-                f"feature {spec.definition.name}, reserved for Phase 10."
-            )
-
-
-def _evaluation_order(reads: Mapping[_Node, tuple[_Node, ...]]) -> tuple[_Node, ...]:
-    """The nodes, each after the nodes it reads; a cycle is refused with its features."""
-    try:
-        return tuple(TopologicalSorter(reads).static_order())
-    except CycleError as error:
-        cycle = " -> ".join(node.name for node in error.args[1])
-        raise ValueError(
-            f"Expected the features to form a graph without cycles, got a cycle: {cycle}."
-        ) from error
-
-
-def _session_warmup(node: _Node, inherited_bars: int, inherited: Sequence[int]) -> int:
+def _session_warmup(node: FeatureNode, inherited_bars: int, inherited: Sequence[int]) -> int:
     """The most whole sessions the node's warm-up may span before its bars: its own, after the
     most the features it reads need, and one more where it counts sessions and those features
     have a warm-up in bars, whose first value may fall inside a session that is then not whole."""

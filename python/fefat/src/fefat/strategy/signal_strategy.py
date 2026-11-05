@@ -47,6 +47,19 @@ from fefat.strategy.signal_frame import (
 from fefat.strategy.spec import Execution, InstrumentRoot, MarketEntry, StrategySpec, TimeframeText
 
 _CARRIED_COLUMNS = ("ts_close", "trade_date", "contract", "adj_offset")
+# shortcut: an expression calling Python is found by the calls Polars prints for it, so a
+# new kind of call holding a Python function keys by what Polars writes of it; read the
+# expression's tree for its Python objects when Polars marks them.
+_PYTHON_CALLS = (
+    ".python_udf(",
+    ".rolling_map(",
+    ".fold(",
+    ".cum_fold(",
+    ".reduce(",
+    ".cum_reduce(",
+)
+"""How Polars prints the calls of an expression that run a Python function: `map_elements`,
+`map_batches`, `rolling_map`, and the folds and reductions of `pl.fold` and `pl.reduce`."""
 _BAR_COLUMNS_READ = pl.Schema(
     {
         "ts_close": pl.Int64,
@@ -136,6 +149,31 @@ class SignalStrategy(FrozenModel):
             execution=self.execution,
         )
 
+    def signal_document(self) -> dict[str, object] | None:
+        """The strategy as a run's request keys it (`fefat.backtest.requests`, step 3.7): its
+        specification's document; each slot in its order, a feature by its name, content hash,
+        and parameters, or an expression as Polars writes it; and the expression of each signal
+        field the strategy gives, every field of the model that holds one, so that a field added
+        later joins it. None where an expression calls a Python function, as `map_elements`
+        and `pl.fold` do, which Polars writes only through cloudpickle, a function of a module by
+        its name alone, so that a document would miss an edit of its code, and where Polars
+        cannot write an expression at all."""
+        signals = {name: value for name, value in self if isinstance(value, pl.Expr)}
+        expressions = [
+            *(feature for feature in self.features.values() if isinstance(feature, pl.Expr)),
+            *signals.values(),
+        ]
+        if any(call in str(expression) for expression in expressions for call in _PYTHON_CALLS):
+            return None
+        try:
+            return {
+                "spec": self.to_spec().document(),
+                "features": [_slot_document(slot, each) for slot, each in self.features.items()],
+                "signals": {name: _expression_text(each) for name, each in signals.items()},
+            }
+        except pl.exceptions.ComputeError:
+            return None
+
     def signals(
         self,
         bars: pl.DataFrame | pl.LazyFrame,
@@ -212,6 +250,26 @@ class SignalStrategy(FrozenModel):
             "short_exit": self.short_exit.fill_null(False),
         }
         return signals | {name: column for name, column in optional.items() if column is not None}
+
+
+def _slot_document(slot: str, feature: pl.Expr | FeatureSpec) -> dict[str, object]:
+    """A slot as the strategy's signal document writes it (`SignalStrategy.signal_document`)."""
+    if isinstance(feature, pl.Expr):
+        return {"slot": slot, "kind": "expression", "expression": _expression_text(feature)}
+    definition = feature.definition
+    parameters = feature.parameters.model_dump(mode="json")
+    return {
+        "slot": slot,
+        "kind": "feature",
+        "name": definition.name,
+        "hash": definition.hash,
+        "parameters": parameters,
+    }
+
+
+def _expression_text(expression: pl.Expr) -> str:
+    """An expression as Polars writes it, the same text for two expressions built alike."""
+    return expression.meta.serialize(format="json")
 
 
 def _columns(name: str, feature: pl.Expr | FeatureSpec) -> list[str]:

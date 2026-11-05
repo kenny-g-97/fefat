@@ -53,7 +53,7 @@ import polars as pl
 from fefat.features.cache_evaluation import compare_values, slot_outputs
 from fefat.features.cuts import Cut, cuts_of
 from fefat.features.evaluation import FeatureSpec
-from fefat.features.grids import Grid, InputBars, PrintsGrid
+from fefat.features.grids import InputBars, PrintsGrid, grid_frames, input_sources
 from fefat.features.runtime import FeatureGraph
 from fefat.features.source_lint import LintFinding, lint
 from fefat.features.validation_report import CutResult, FeatureRead, StartCheck, ValidationReport
@@ -83,13 +83,16 @@ def validate(
     are the features it reads, each with its parameters, as `compute` takes them in slots; the
     stops of trading cut at are at most `stops`, but never fewer than the first and the last, a
     weekend, and a holiday halt where the window holds them, and `random_cuts` closes are drawn
-    from `seed`. The report is kept beside the feature's versions."""
+    from `seed`. The report is kept beside the feature's versions and names each feature the
+    graph read with its parameters, those `reads` gave and those the feature binds or reads with
+    their defaults (step 3.7)."""
     first, last = _window_dates(start, end, stops, random_cuts)
     graph = _graph_of(spec, reads, instrument, Timeframe.parse(timeframe))
     sources = _sources_of(graph, provider)
     signal = sources[graph.root]
     lead = graph.lead_in(signal.sessions, first)
-    inputs = _loaded(graph, sources, (lead, signal.sessions.following(last).trade_date))
+    following = signal.sessions.following(last).trade_date
+    inputs = grid_frames(graph, sources, (lead, following), graph.grids())
     window = _window(graph, inputs, (first, last))
     drawn = random.randrange(2**32) if seed is None else seed
     higher = _higher_timeframes(graph, inputs)
@@ -100,7 +103,7 @@ def validate(
         feature=spec.definition.name,
         hash=spec.definition.hash,
         parameters=spec.parameters.model_dump(mode="json"),
-        reads=tuple(_read(each) for each in reads),
+        reads=_reads_of(graph),
         instrument=instrument,
         timeframe=str(graph.timeframe),
         provider=signal.provider,
@@ -132,6 +135,17 @@ def _window_dates(
             f"random_cuts={random_cuts}."
         )
     return first, last
+
+
+def _reads_of(graph: FeatureGraph) -> tuple[FeatureRead, ...]:
+    """Each feature the validated one reads with its parameters, once, whatever grids it is
+    read on, in the order the graph evaluates them."""
+    found: dict[str, FeatureRead] = {}
+    for node in graph.order:
+        if node != graph.slots[_SLOT]:
+            read = _read(node.spec)
+            found.setdefault(read.model_dump_json(), read)
+    return tuple(found.values())
 
 
 def _read(spec: FeatureSpec) -> FeatureRead:
@@ -173,29 +187,9 @@ def _graph_of(
 
 def _sources_of(graph: FeatureGraph, provider: str | None) -> dict[str, SeriesSource]:
     """What `load` reads each instrument of the graph from: its root from `provider`, another
-    instrument from its own default, as `compute` reads them."""
-    others = sorted({grid.root for grid in graph.grids()} - {graph.root})
+    instrument from the same provider where it holds it, as `compute` reads them."""
     signal = series_source(graph.root, provider=provider)
-    return {graph.root: signal, **{root: series_source(root) for root in others}}
-
-
-def _loaded(
-    graph: FeatureGraph, sources: Mapping[str, SeriesSource], dates: tuple[date, date]
-) -> dict[Grid, pl.DataFrame]:
-    """The frame of every grid the graph reads for the window `dates`, each read once: its bars,
-    a grid without bars there refused, as `load` refuses one, or its prints by side, none where
-    the provider holds no prints, which the feature reads as null."""
-    loaded = {}
-    for grid in graph.grids():
-        source = sources[grid.root]
-        read = graph.grid_dates(grid, dates, source.sessions)
-        bars = grid.frame_from(source, read)
-        if bars.is_empty() and not isinstance(grid, PrintsGrid):
-            raise ValueError(
-                f"Expected bars of {grid} from {read[0]} to {read[1]} in the store, got none."
-            )
-        loaded[grid] = bars
-    return loaded
+    return {graph.root: signal, **input_sources(graph, signal)}
 
 
 def _higher_timeframes(graph: FeatureGraph, inputs: InputBars) -> list[pl.DataFrame]:

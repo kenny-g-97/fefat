@@ -43,9 +43,7 @@ def signal_frame(
     start, end = dates
     graph = strategy.feature_graph()
     first = graph.lead_in(sessions, start)
-    symbol = (
-        strategy.instrument if contract is None else _contract_of(strategy.instrument, contract)
-    )
+    symbol = strategy.instrument if contract is None else contract_of(strategy.instrument, contract)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         bars = load(symbol, strategy.timeframe, first, end, provider=provider).collect()
@@ -62,7 +60,8 @@ def signal_frame(
     return SignalFrame(signals=signals, warnings=loaded, first_read=min(read))
 
 
-def _contract_of(root: str, contract: str) -> str:
+def contract_of(root: str, contract: str) -> str:
+    """`contract`, refused unless it is a contract of `root`, the strategy's."""
     contract_root, _ = parse_contract_name(contract)
     if contract_root != root:
         raise ValueError(f"Expected a contract of {root}, the strategy's root, got {contract}.")

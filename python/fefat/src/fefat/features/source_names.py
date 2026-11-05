@@ -14,11 +14,11 @@ def names_read_outside(
     """Each name the body of `function`, parsed as `statement`, reads from outside it, by name,
     with the first line reading it, counted as the statement's lines, and its value."""
     outside = {**function.__globals__, **inspect.getclosurevars(function).nonlocals}
-    read = _names_read(statement)
+    read = names_read(statement)
     return [(name, read[name], outside[name]) for name in sorted(read) if name in outside]
 
 
-def _names_read(statement: ast.FunctionDef) -> dict[str, int]:
+def names_read(statement: ast.FunctionDef) -> dict[str, int]:
     """The names the body reads and does not bind, by the first line reading each: its own
     parameters, its lambdas', and what it assigns are its own."""
     nodes = [node for each in statement.body for node in ast.walk(each)]
