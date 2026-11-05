@@ -8,6 +8,7 @@ run over each kind is `python/tests/features/leaks/test_leaks_combinations.py`."
 import json
 import math
 import re
+import typing
 from collections.abc import Callable
 from statistics import mean, pstdev
 
@@ -19,10 +20,18 @@ from pydantic import TypeAdapter
 
 import fefat as ff
 from fefat.features import Combination, FeatureSpec, TimeframeInput, combine, registry
-from fefat.features.combinations import FeatureOutput, Operand, Term, Window, feature_output
+from fefat.features.combinations import (
+    TERMS,
+    FeatureOutput,
+    Operand,
+    Term,
+    Window,
+    feature_output,
+)
 from fefat.features.grids import Grid
 from fefat.features.runtime import FeatureGraph
 from fefat.market.schema import Timeframe
+from notebook_runs import features_of_cell
 
 MINUTE = 60_000_000_000
 FIVE, FIFTEEN = Timeframe.parse("5m"), Timeframe.parse("15m")
@@ -434,3 +443,96 @@ def test_a_combination_keeps_its_description_when_its_code_is_built_again() -> N
     kept = registry.registered(stretch.hash)
     assert kept is not None
     assert kept.combination == stretch.combination
+
+
+COUNTER = """\
+@ff.feature(outputs={"counted": "count"})
+def counted(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("close").cum_count()
+"""
+"""A feature of a count Polars gives as an unsigned integer, as `bars_since` does."""
+
+
+@pytest.mark.parametrize(
+    ("term", "expected"),
+    [
+        pytest.param(
+            combine.subtract(combine.rolling_rank("close", 3), 3),
+            [None, None, -1, 0, -1, 0],
+            id="a-rank-less-a-number",
+        ),
+        pytest.param(
+            combine.subtract(combine.greater_than("close", 11), combine.greater_than("volume", 3)),
+            [-1, 1, -1, 1, 0, 0],
+            id="a-flag-less-a-flag",
+        ),
+        pytest.param(
+            combine.add(combine.greater_than("close", 11), 1),
+            [1, 2, 1, 2, 2, 2],
+            id="a-flag-and-one",
+        ),
+    ],
+)
+def test_arithmetic_of_ranks_and_flags_is_signed(term: Operand, expected: list[object]) -> None:
+    # The ponytail review: a rank is an unsigned integer in Polars, whose difference wraps, and
+    # Polars subtracts no flags, so both are read as signed integers in arithmetic.
+    assert evaluated(term)["combined"].to_list() == expected
+
+
+def test_a_count_a_feature_gives_is_read_as_a_signed_integer() -> None:
+    counter = features_of_cell(COUNTER)["counted"]
+
+    values = evaluated(combine.subtract(counter(), 5))["combined"]
+
+    assert values.to_list() == [-4, -3, -2, -1, 0, 1]
+
+
+@pytest.mark.parametrize(
+    ("term", "kind"),
+    [
+        pytest.param(combine.subtract("close", "open"), "price_distance", id="price-less-price"),
+        pytest.param(
+            combine.add("close", combine.subtract("high", "low")), "price", id="price-and-distance"
+        ),
+        pytest.param(combine.subtract("close", 1_000_000_000), "price", id="price-less-a-number"),
+        pytest.param(
+            combine.multiply(ff.indicators.atr(14), 2), "price_distance", id="twice-an-atr"
+        ),
+        pytest.param(combine.divide(ff.indicators.atr(14), 2), "price_distance", id="half-an-atr"),
+        pytest.param(combine.divide(2, ff.indicators.atr(14)), "other", id="a-number-over-an-atr"),
+        pytest.param(combine.divide("close", ff.indicators.sma(5)), "ratio", id="price-over-price"),
+        pytest.param(combine.subtract(100, ff.indicators.rsi(14)), "ratio", id="a-number-less-rsi"),
+        pytest.param(combine.add("volume", 1), "count", id="volume-and-one"),
+        pytest.param(combine.add("volume", 0.5), "other", id="volume-and-a-half"),
+        pytest.param(combine.rolling_mean("volume", 3), "other", id="mean-of-a-count"),
+        pytest.param(combine.rolling_std("close", 3), "price_distance", id="deviation-of-a-price"),
+        pytest.param(
+            combine.rolling_mean(combine.greater_than("close", 1), 3), "ratio", id="share-of-a-flag"
+        ),
+        pytest.param(combine.add(combine.greater_than("close", 1), 1), "other", id="flag-and-one"),
+        pytest.param(combine.lag(combine.greater_than("close", 1), 1), "flag", id="a-flag-before"),
+        pytest.param(combine.rolling_rank("close", 3), "count", id="rank"),
+        pytest.param(combine.percent_rank("close", 3), "ratio", id="percent-rank"),
+        pytest.param(combine.multiply("close", "volume"), "other", id="price-times-volume"),
+    ],
+)
+def test_the_kind_of_a_combination_follows_from_its_terms(term: Operand, kind: str) -> None:
+    definition = combine.define("kinded", term)
+
+    assert definition.outputs == {"kinded": ff.features.OutputKind(kind)}
+    evaluated(term)
+
+
+def test_a_term_tested_for_truth_is_refused() -> None:
+    # The ponytail review: Python's `and`, `or`, `not`, and a chained comparison test a term
+    # for truth, which would drop a condition without a word; Polars refuses it alike.
+    rsi = ff.indicators.rsi(14)
+    with pytest.raises(TypeError, match=re.escape("write (rsi > 30) & (rsi < 70)")):
+        _ = 30 < combine.rolling_mean(rsi, 3) < 70
+    with pytest.raises(TypeError, match="tested for truth"):
+        bool(combine.greater_than("close", 1))
+
+
+def test_every_model_of_a_term_is_one_term_of_reads() -> None:
+    # The ponytail review: a model added to the union of terms but not to TERMS would be refused.
+    assert typing.get_args(Term) == TERMS

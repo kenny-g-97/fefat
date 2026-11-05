@@ -10,8 +10,9 @@ feature by its name, content hash, and parameters, and its expressions as Polars
 (`SignalStrategy.signal_document`); the window asked for; the settings, every default applied;
 the instrument; for each instrument the features read, the provider, the symbol, the session
 table, the roll calendar, and each dataset's snapshot with where its data ends, over the trade
-dates read from the features' warm-up on, as the feature cache's keys pin them
-(`PartitionKeys.pins`), with the snapshots the run key reads, a perpetual's funding among them;
+dates from the first the run reads, the lead-in of the feature cache's first partition
+(`first_date_read`), as the cache's keys pin them (`PartitionKeys.pins`), with the snapshots the
+run key reads over those dates, a perpetual's funding among them;
 the SDK's code with the Polars version (`runtime_key`); and the engine's versions. A request is
 kept after every run that did not find it, also one whose run key found a saved run, so that a
 version of a feature whose values are the same maps to the run its first version made. A
@@ -35,6 +36,7 @@ from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_signals import contract_of
 from fefat.backtest.snapshots import finest_level, market_of, snapshots_of
 from fefat.config import FefatPaths
+from fefat.features.cache import first_date_read
 from fefat.features.cache_keys import PartitionKeys, runtime_key
 from fefat.features.grids import input_sources
 from fefat.market.api import parse_trade_date, series_source
@@ -94,13 +96,15 @@ def request_of(
     symbol = root if contract is None else contract_of(root, contract)
     signal = series_source(symbol, provider=market.provider)
     keys = PartitionKeys({graph.root: signal, **input_sources(graph, signal)})
-    read = snapshots_of(market, graph.lead_in(market.sessions, window.start), window)
+    lead_in = graph.lead_in(market.sessions, window.start)
+    first = min(lead_in, first_date_read(graph, signal, (lead_in, window.end)))
+    read = snapshots_of(market, first, window)
     return RunRequest(
         strategy=document,
         window=window,
         config=applied,
         instrument=InstrumentRecord.of(market.instrument),
-        pins=(*keys.pins(graph, (window.start, window.end)), *(each.sha256 for each in read)),
+        pins=(*keys.pins(graph, (first, window.end)), *(each.sha256 for each in read)),
         sdk_key=runtime_key(),
         versions=EngineVersions.running(),
     )

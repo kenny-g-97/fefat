@@ -47,8 +47,19 @@ from fefat.strategy.signal_frame import (
 from fefat.strategy.spec import Execution, InstrumentRoot, MarketEntry, StrategySpec, TimeframeText
 
 _CARRIED_COLUMNS = ("ts_close", "trade_date", "contract", "adj_offset")
-_PYTHON_FUNCTION = ".python_udf("
-"""How Polars writes a call of a Python function in an expression's text."""
+# shortcut: an expression calling Python is found by the calls Polars prints for it, so a
+# new kind of call holding a Python function keys by what Polars writes of it; read the
+# expression's tree for its Python objects when Polars marks them.
+_PYTHON_CALLS = (
+    ".python_udf(",
+    ".rolling_map(",
+    ".fold(",
+    ".cum_fold(",
+    ".reduce(",
+    ".cum_reduce(",
+)
+"""How Polars prints the calls of an expression that run a Python function: `map_elements`,
+`map_batches`, `rolling_map`, and the folds and reductions of `pl.fold` and `pl.reduce`."""
 _BAR_COLUMNS_READ = pl.Schema(
     {
         "ts_close": pl.Int64,
@@ -141,39 +152,27 @@ class SignalStrategy(FrozenModel):
     def signal_document(self) -> dict[str, object] | None:
         """The strategy as a run's request keys it (`fefat.backtest.requests`, step 3.7): its
         specification's document; each slot in its order, a feature by its name, content hash,
-        and parameters, or an expression as Polars writes it; and each signal's expression, None
-        where it is left out. None where an expression calls a Python function, as `map_elements`
-        does, which Polars writes only through cloudpickle, a function of a module by its name
-        alone, so that a document would miss an edit of its code."""
-        signals = self._signal_expressions()
+        and parameters, or an expression as Polars writes it; and the expression of each signal
+        field the strategy gives, every field of the model that holds one, so that a field added
+        later joins it. None where an expression calls a Python function, as `map_elements`
+        and `pl.fold` do, which Polars writes only through cloudpickle, a function of a module by
+        its name alone, so that a document would miss an edit of its code, and where Polars
+        cannot write an expression at all."""
+        signals = {name: value for name, value in self if isinstance(value, pl.Expr)}
         expressions = [
             *(feature for feature in self.features.values() if isinstance(feature, pl.Expr)),
-            *(expression for expression in signals.values() if expression is not None),
+            *signals.values(),
         ]
-        if any(_PYTHON_FUNCTION in str(expression) for expression in expressions):
+        if any(call in str(expression) for expression in expressions for call in _PYTHON_CALLS):
             return None
-        return {
-            "spec": self.to_spec().document(),
-            "features": [_slot_document(slot, feature) for slot, feature in self.features.items()],
-            "signals": {
-                name: None if expression is None else _expression_text(expression)
-                for name, expression in signals.items()
-            },
-        }
-
-    def _signal_expressions(self) -> dict[str, pl.Expr | None]:
-        return {
-            "long_entry": self.long_entry,
-            "short_entry": self.short_entry,
-            "long_exit": self.long_exit,
-            "short_exit": self.short_exit,
-            "entry_price": self.entry_price,
-            "stop_price": self.stop_price,
-            "target_price": self.target_price,
-            "trail_ref": self.trail_ref,
-            "size_mult": self.size_mult,
-            "wake": self.wake,
-        }
+        try:
+            return {
+                "spec": self.to_spec().document(),
+                "features": [_slot_document(slot, each) for slot, each in self.features.items()],
+                "signals": {name: _expression_text(each) for name, each in signals.items()},
+            }
+        except pl.exceptions.ComputeError:
+            return None
 
     def signals(
         self,

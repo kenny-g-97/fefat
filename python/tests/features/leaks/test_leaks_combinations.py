@@ -63,3 +63,16 @@ def test_the_report_of_a_combination_names_the_features_it_read() -> None:
 
     rsi = ff.indicators.rsi
     assert report.reads == (FeatureRead(name="rsi", hash=rsi.hash, parameters={"n": 14}),)
+
+
+def test_the_report_names_each_feature_read_once() -> None:
+    # The ponytail review: SMA(3) read on two grids is one feature read with its parameters.
+    sma = ff.indicators.sma(3)
+    definition = combine.define(
+        "twice_read", combine.subtract(sma, combine.at_timeframe(sma, "15m"))
+    )
+
+    report = ff.features.validate(definition(), "ES", "5m", *FEBRUARY_WINDOW, seed=SEED)
+
+    names = [read.name for read in report.reads]
+    assert sorted(names) == ["sma", "twice_read_at_15m"]

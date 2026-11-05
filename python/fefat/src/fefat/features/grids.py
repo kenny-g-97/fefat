@@ -4,8 +4,7 @@ of that grid, the frame each gives, and the frames a notebook loads to evaluate 
 strategy's signals (`load_inputs`), which `compute` and a run read through the feature cache
 instead."""
 
-import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from types import MappingProxyType
@@ -13,10 +12,8 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from fefat.config import resolve_paths
-from fefat.market.api import SeriesSource, load, series_source
+from fefat.market.api import SeriesSource, series_source
 from fefat.market.coverage import session_datasets
-from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import Timeframe
 from fefat.market.store import Store
 
@@ -114,19 +111,29 @@ def load_inputs(
     others = [grid for grid in graph.grids() if grid != graph.signal_grid]
     if not others:
         return {}
-    paths = resolve_paths(os.environ)
     signal = series_source(graph.root if contract is None else contract, provider=provider)
+    return grid_frames(graph, {graph.root: signal, **input_sources(graph, signal)}, dates, others)
+
+
+def grid_frames(
+    graph: "FeatureGraph",
+    sources: Mapping[str, SeriesSource],
+    dates: tuple[date, date],
+    grids: Sequence[Grid],
+) -> dict[Grid, pl.DataFrame]:
+    """The frame of each of `grids`, which the graph reads, for the window `dates`
+    (`FeatureGraph.grid_dates`), from its instrument's source in `sources`, each read once: its
+    bars, a grid without bars there refused, as `load` refuses one, or its prints by side, none
+    where the provider holds no prints, which a feature reads as null; the leak detector and
+    `load_inputs` read their grids alike."""
     loaded = {}
-    for grid in others:
-        timeframe = str(grid.timeframe)
-        if isinstance(grid, PrintsGrid):
-            loaded[grid] = grid.frame_from(signal, dates)
-            continue
-        if grid.root == graph.root:
-            loaded[grid] = load(signal.symbol, timeframe, *dates, provider=provider).collect()
-            continue
-        sessions = instrument_table(paths.data_dir).sessions_of(grid.root, paths.cache_dir)
-        read = graph.grid_dates(grid, dates, sessions)
-        chosen = input_provider(signal.store, grid.root, signal.provider)
-        loaded[grid] = load(grid.root, timeframe, *read, provider=chosen).collect()
+    for grid in grids:
+        source = sources[grid.root]
+        read = graph.grid_dates(grid, dates, source.sessions)
+        bars = grid.frame_from(source, read)
+        if bars.is_empty() and not isinstance(grid, PrintsGrid):
+            raise ValueError(
+                f"Expected bars of {grid} from {read[0]} to {read[1]} in the store, got none."
+            )
+        loaded[grid] = bars
     return loaded

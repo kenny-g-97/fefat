@@ -648,3 +648,24 @@ def test_load_inputs_of_a_graph_reading_its_signal_grid_alone_reads_nothing(
     graph = FeatureGraph.of({"step": step()}, "ES", FIVE)
 
     assert load_inputs(graph, (date(2026, 3, 6), date(2026, 3, 9))) == {}
+
+
+OTHER_STEP = """\
+@ff.feature(warmup=1, outputs={"step": "price_distance"})
+def step(bars: pl.LazyFrame) -> pl.Expr:
+    return pl.col("close").diff()
+"""
+"""Another version of `step`, as a cell run again after an edit defines it."""
+
+
+def test_a_feature_read_with_its_defaults_beside_a_slot_of_another_version_is_refused() -> None:
+    # The ponytail review: a reader defined before its dependency's cell ran again reads the
+    # old version, which a slot of the new one beside it would hide.
+    edited = features_of_cell(OTHER_STEP)["step"]
+    refusal = (
+        f"Expected the feature step that swing reads, {step.hash[:12]}, got another step in a "
+        f"slot, {edited.hash[:12]}"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        FeatureGraph.of({"swing": swing(), "step": edited()}, "ES", FIVE)

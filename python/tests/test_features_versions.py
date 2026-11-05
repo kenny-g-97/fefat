@@ -427,3 +427,20 @@ def test_a_feature_whose_code_now_reads_another_version_names_it(
 
     with pytest.raises(ValueError, match="to read the features its version read, got another sma"):
         ff.features.ref("above", version=1)
+
+
+TAGGED = """\
+@ff.feature(params={"name": "close"}, outputs={"tagged": "price"})
+def tagged(bars: pl.LazyFrame, name: str) -> pl.Expr:
+    return pl.col(name)
+"""
+"""A feature whose parameter is called `name`."""
+
+
+def test_a_feature_with_a_parameter_called_name_is_read_with_it() -> None:
+    # The ponytail review: ref's own name takes no keyword, so a parameter may be called so.
+    ff.features.save(features_of_cell(TAGGED)["tagged"])
+
+    read = ff.features.ref("tagged", version=1, name="open")
+
+    assert read.parameters.model_dump() == {"name": "open"}

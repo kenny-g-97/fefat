@@ -109,6 +109,13 @@ class _Operators:
     def __invert__(self) -> "Negation":
         return Negation(of=term_of(self))
 
+    def __bool__(self) -> bool:
+        raise TypeError(
+            "Expected the terms of a combination joined with &, |, and ~, got one tested for "
+            "truth, as Python's and, or, and not, and a chained comparison such as 30 < rsi < 70 "
+            "test it: write (rsi > 30) & (rsi < 70)."
+        )
+
 
 class Constant(FrozenModel, _Operators):
     """A number or a flag, the same on every bar; a price in the bars' 1e-9 units."""
@@ -191,6 +198,7 @@ Combination = Annotated[Term, Field(discriminator="kind")]
 Operand = Term | FeatureSpec | FeatureDef | str | bool | int | float
 """A term, or what `term_of` reads as one."""
 TERMS = (Constant, Column, FeatureOutput, BinaryOperation, Negation, Window, AtTimeframe)
+"""The models of `Term`, which `term_of` takes as terms, as a test holds them."""
 
 for _model in (BinaryOperation, Negation, Window, AtTimeframe):
     _model.model_rebuild()

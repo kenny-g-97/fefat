@@ -113,15 +113,18 @@ def _read_specs(spec: FeatureSpec, given: Mapping[str, Sequence[FeatureSpec]]) -
     """The spec of each feature `spec` reads (module docstring)."""
     reader = spec.definition.name
     return [
-        _read_spec(reader, declared, given.get(declared.hash, ()))
+        _read_spec(reader, declared, given)
         for declared in spec.definition.inputs
         if isinstance(declared, FeatureInput)
     ]
 
 
-def _read_spec(reader: str, declared: FeatureInput, slots: Sequence[FeatureSpec]) -> FeatureSpec:
+def _read_spec(
+    reader: str, declared: FeatureInput, given: Mapping[str, Sequence[FeatureSpec]]
+) -> FeatureSpec:
     """The feature `declared` with the parameters `reader` binds, else that of its one slot
-    among `slots`, else its defaults."""
+    among those `given`, else its defaults, beside no slot of another version of it."""
+    slots = given.get(declared.hash, ())
     if declared.parameters is not None:
         definition = _definition_of(reader, declared, slots)
         return _bound(reader, declared.name, declared.parameters, definition)
@@ -137,7 +140,29 @@ def _read_spec(reader: str, declared: FeatureInput, slots: Sequence[FeatureSpec]
             f"Expected the feature {declared.name} that {reader} reads among the features given, "
             f"once with its parameters, got {got}: give it a slot, such as {declared.name}(...)."
         )
+    _require_no_other_version(reader, declared, given)
     return definition()
+
+
+def _require_no_other_version(
+    reader: str, declared: FeatureInput, given: Mapping[str, Sequence[FeatureSpec]]
+) -> None:
+    """Refuse a feature read with its defaults beside a slot of another version of its name,
+    as a reader defined before that version's cell ran again reads the old one unseen."""
+    others = sorted(
+        {
+            spec.definition.hash[:12]
+            for specs in given.values()
+            for spec in specs
+            if spec.definition.name == declared.name
+        }
+    )
+    if others:
+        raise ValueError(
+            f"Expected the feature {declared.name} that {reader} reads, {declared.hash[:12]}, "
+            f"got another {declared.name} in a slot, {', '.join(others)}: define {reader} again, "
+            f"so that it reads the {declared.name} given, or give its own {declared.name} a slot."
+        )
 
 
 def _definition_of(

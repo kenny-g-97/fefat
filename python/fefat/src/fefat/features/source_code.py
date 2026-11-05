@@ -64,7 +64,7 @@ def from_source(code: str, reads: Mapping[str, FeatureDef] = NO_READS) -> Featur
         raise ValueError(
             f"Expected the names the decorator of feature {statement.name} reads among those its "
             f"code may read and the features given, got: {error}: give the features it reads by "
-            "name in reads."
+            "name in reads, or define it again where the names its decorator reads are bound."
         ) from error
     built = namespace[statement.name]
     if not isinstance(built, FeatureDef):

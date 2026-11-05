@@ -19,7 +19,12 @@ from fefat.backtest import RunConfig
 from fefat.backtest.requests import request_of
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
+from fefat.market import instruments
+from fefat.market.calendar import sessions_of
 from fefat.market.fidelity import ONE_MINUTE
+from fefat.market.layout import Partition, YearMonth
+from fefat.market.store import Store
+from generated_minutes import MINUTES, SPRING, minutes_of, write_minutes
 from notebook_runs import breakout, features_of_cell, store_with
 
 WINDOW = ("2026-03-05", "2026-03-09")
@@ -216,3 +221,107 @@ def long_btc() -> ff.SignalStrategy:
         long_exit=(utc.dt.hour() == 23) & (utc.dt.minute() == 0),
         execution=ff.Execution(entry=ff.Market(), sizing=ff.Fixed(0.1)),
     )
+
+
+def test_a_request_pins_the_data_the_feature_caches_first_partition_reads() -> None:
+    # The leakage audit: a month's partition of the feature cache is computed from the lead-in
+    # of the month's first day, before the window's own lead-in, so data changed there changes
+    # the run key and must change the request too.
+    write_minutes(SPRING)
+    paths = resolve_paths(os.environ)
+    strategy = breakout_on_sma()
+    config = RunConfig(fidelity=ONE_MINUTE)
+    before = request_of(strategy, "2026-03-04", "2026-03-06", config, paths)
+    hashes = run_inputs(strategy, "2026-03-04", "2026-03-06", config, paths).partition_hashes
+    rewrite_a_february_minute()
+
+    after = request_of(strategy, "2026-03-04", "2026-03-06", config, paths)
+
+    assert before is not None
+    assert after is not None
+    assert (
+        run_inputs(strategy, "2026-03-04", "2026-03-06", config, paths).partition_hashes != hashes
+    )
+    assert after.key() != before.key()
+
+
+@pytest.mark.parametrize(
+    "probe",
+    [
+        pytest.param(pl.col("close").rolling_map(lambda window: window.max(), 3), id="rolling_map"),
+        pytest.param(
+            pl.fold(pl.lit(0), lambda total, each: total + each, [pl.col("close")]), id="fold"
+        ),
+        pytest.param(
+            pl.cum_fold(pl.lit(0), lambda total, each: total + each, [pl.col("close")]),
+            id="cum_fold",
+        ),
+        pytest.param(
+            pl.reduce(lambda total, each: total + each, [pl.col("close"), pl.col("open")]),
+            id="reduce",
+        ),
+        pytest.param(
+            pl.cum_reduce(lambda total, each: total + each, [pl.col("close"), pl.col("open")]),
+            id="cum_reduce",
+        ),
+        pytest.param(
+            pl.col("close").map_batches(lambda closes: closes, return_dtype=pl.Int64),
+            id="map_batches",
+        ),
+    ],
+)
+def test_an_expression_of_any_python_function_keys_no_request(
+    probe: pl.Expr, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The leakage audit: Polars prints a fold, a reduce, or a rolling map without the name of a
+    # Python function, and refuses to write one without cloudpickle, which must leave the run
+    # to run, not refuse it.
+    store_with("ohlcv-1m")
+    strategy = breakout_probing(probe)
+    paths = resolve_paths(os.environ)
+    with monkeypatch.context() as written:
+        written.setattr(ExprMetaNameSpace, "serialize", lambda *_, **__: "rules.up")
+        assert request_of(strategy, *WINDOW, RunConfig(), paths) is None
+
+    assert request_of(strategy, *WINDOW, RunConfig(), paths) is None
+
+
+def breakout_on_sma() -> ff.SignalStrategy:
+    """The breakout of the fixtures with SMA(5) in a slot, which the feature cache computes."""
+    strategy = breakout()
+    return ff.SignalStrategy(
+        instrument=strategy.instrument,
+        timeframe=strategy.timeframe,
+        features={**strategy.features, "sma": ff.indicators.sma(5)},
+        long_entry=strategy.long_entry,
+        short_entry=strategy.short_entry,
+        execution=strategy.execution,
+    )
+
+
+def breakout_probing(probe: pl.Expr) -> ff.SignalStrategy:
+    """The breakout of the fixtures with `probe` in a slot of its own."""
+    strategy = breakout()
+    return ff.SignalStrategy(
+        instrument=strategy.instrument,
+        timeframe=strategy.timeframe,
+        features={**strategy.features, "probe": probe},
+        long_entry=strategy.long_entry,
+        short_entry=strategy.short_entry,
+        execution=strategy.execution,
+    )
+
+
+def rewrite_a_february_minute() -> None:
+    """ESH2026's February file of the SPRING store written again, one minute's volume one more."""
+    paths = resolve_paths(os.environ)
+    listed = SPRING[0]
+    sessions = sessions_of(instruments.get("ES").session_calendar(), paths.cache_dir)
+    february = minutes_of(listed, sessions.between(*listed.trades)).filter(
+        pl.col("trade_date").dt.strftime("%Y-%m") == "2026-02"
+    )
+    rows = february.with_columns(
+        volume=pl.when(pl.int_range(pl.len()) == 100).then(pl.col("volume") + 1).otherwise("volume")
+    )
+    partition = Partition(dataset=MINUTES, contract=listed.contract, key=YearMonth.parse("2026-02"))
+    Store(paths.data_dir).write_partition(partition, rows)

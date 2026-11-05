@@ -141,7 +141,7 @@ def load(name: str, version: int) -> FeatureVersion:
     return record
 
 
-def ref(name: str, *, version: int, **parameters: object) -> FeatureSpec:
+def ref(name: str, /, *, version: int, **parameters: object) -> FeatureSpec:
     """Version `version` of the saved feature `name` with `parameters`, its defaults filling
     those left out (module docstring)."""
     return definition_of(load(name, version))(**parameters)

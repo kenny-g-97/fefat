@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from fefat.features.definition import FeatureDef
 
 _DEFINED: dict[str, "FeatureDef"] = {}
+# shortcut: the table keeps every definition a session makes, its parameter model about
+# 11 KB, so a sweep defining 10,000 combinations holds 100 MB until the kernel restarts;
+# let it forget definitions no slot reads once sweeps of combinations arrive (Phase 11).
 
 
 def register(definition: "FeatureDef") -> None:

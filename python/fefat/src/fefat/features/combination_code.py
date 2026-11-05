@@ -22,9 +22,10 @@ own that the combination reads (`fefat.features.combine`). Its warm-up is the mo
 of windows in it needs before its first value: `n - 1` for a window, `n` for a lag, and one for a
 cross; and its output's kind is the one its operation gives (`output_kind`). A division is null
 where its divisor is 0, as the indicators' are; a standard deviation is the population's, as
-TA-Lib's is (D-75); the volume and the number of trades are read as signed integers, so that a
-difference of them goes below zero; and a product is of floats, since two prices in the bars'
-1e-9 units overflow 64-bit integers."""
+TA-Lib's is (D-75); the volume, the number of trades, a rank, a count a feature gives, and a
+flag in arithmetic are read as signed integers, so that a difference of them goes below zero,
+where Polars' unsigned integers wrap and its flags take no subtraction; and a product is of
+floats, since two prices in the bars' 1e-9 units overflow 64-bit integers."""
 
 import json
 from collections import Counter
@@ -175,6 +176,8 @@ def _scaled_kind(term: BinaryOperation, left: OutputKind, right: OutputKind) -> 
     if len(numbers) != 1 or (term.kind == "divide" and numbers[0] is term.left):
         return None
     kept = right if numbers[0] is term.left else left
+    if kept is OutputKind.FLAG:
+        return OutputKind.OTHER
     if term.kind in ("multiply", "divide"):
         return kept if kept in (*_LEVELS, OutputKind.RATIO) else OutputKind.OTHER
     if kept is OutputKind.COUNT and isinstance(numbers[0].value, float):
@@ -282,6 +285,7 @@ class _Expressions:
 
     def __init__(self, reads: Mapping[FeatureKey, _Read]) -> None:
         self._reads = reads
+        self._definitions = {key[0]: read.spec.definition for key, read in reads.items()}
 
     def bare(self, term: Term) -> str:
         """The expression of `term`, without parentheses around it."""
@@ -290,7 +294,10 @@ class _Expressions:
         if isinstance(term, Column):
             return _column(term)
         if isinstance(term, FeatureOutput):
-            return f"pl.col({json.dumps(self._reads[feature_key(term)].column(term.output))})"
+            read = self._reads[feature_key(term)]
+            column = f"pl.col({json.dumps(read.column(term.output))})"
+            counts = read.spec.definition.outputs[term.output] is OutputKind.COUNT
+            return f"{column}.cast(pl.Int64)" if counts else column
         if isinstance(term, Negation):
             return f"~{self.operand(term.of)}"
         if isinstance(term, Window):
@@ -312,15 +319,28 @@ class _Expressions:
         return f"({text})" if compound else text
 
     def _pair(self, term: BinaryOperation) -> str:
-        left, right = self.operand(term.left), self.operand(term.right)
+        if term.kind in _FLAGS:
+            return self._comparison(term)
+        left, right = self._number(term.left), self._number(term.right)
         if term.kind in _OPERATORS:
             return f"{left} {_OPERATORS[term.kind]} {right}"
         if term.kind == "multiply":
-            return f"{left}.cast(pl.Float64) * {right}"
+            return f"{self.operand(term.left)}.cast(pl.Float64) * {right}"
         if term.kind == "divide":
             return f"pl.when({right} != 0).then({left} / {right})"
-        if term.kind == "ratio_to":
-            return f"pl.when({right} != 0).then(({left} - {right}) / {right})"
+        return f"pl.when({right} != 0).then(({left} - {right}) / {right})"
+
+    def _number(self, term: Term) -> str:
+        """The expression of `term` as a number of arithmetic: a flag as a signed integer, since
+        Polars subtracts no flags."""
+        text = self.operand(term)
+        flagged = output_kind(term, self._definitions) is OutputKind.FLAG
+        return f"{text}.cast(pl.Int64)" if flagged else text
+
+    def _comparison(self, term: BinaryOperation) -> str:
+        left, right = self.operand(term.left), self.operand(term.right)
+        if term.kind in _OPERATORS:
+            return f"{left} {_OPERATORS[term.kind]} {right}"
         now, before = (">", "<=") if term.kind == "crosses_above" else ("<", ">=")
         earlier = f"{self._lagged(term.left)} {before} {self._lagged(term.right)}"
         return f"({left} {now} {right}) & ({earlier})"
@@ -335,7 +355,7 @@ class _Expressions:
         if term.kind == "rolling_std":
             return f"{of}.rolling_std({n}, ddof=0)"
         if term.kind == "rolling_rank":
-            return f'{of}.rolling_rank({n}, method="max")'
+            return f'{of}.rolling_rank({n}, method="max").cast(pl.Int64)'
         if term.kind == "percent_rank":
             return f'({of}.rolling_rank({n}, method="max") - 1) / {n - 1}'
         if term.kind == "z_score":
