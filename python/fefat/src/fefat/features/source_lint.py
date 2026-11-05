@@ -49,6 +49,7 @@ class LintRule(StrEnum):
     FORWARD_JOIN = "forward_join"
     JOIN_ON_OPEN = "join_on_open"
     READS_DATA = "reads_data"
+    READS_LABELS = "reads_labels"
     NAME_READ_OUTSIDE = "name_read_outside"
     NON_LITERAL_DEFAULT = "non_literal_default"
 
@@ -60,8 +61,9 @@ class LintRule(StrEnum):
     @property
     def fails_validation(self) -> bool:
         """Whether a finding of the rule fails a validation: data the feature reads itself, which
-        the cuts never cut, so that they cannot vouch for its values."""
-        return self is LintRule.READS_DATA
+        the cuts never cut, so that they cannot vouch for its values, and the labels of
+        `fefat.analytics`, which read the future by design."""
+        return self in {LintRule.READS_DATA, LintRule.READS_LABELS}
 
 
 _NOT_AHEAD = frozenset(
@@ -87,6 +89,9 @@ _WHY = {
     "after each row's close; join backward, the default, which reads the last row at or before it.",
     LintRule.JOIN_ON_OPEN: "an as-of join on ts_open sees a bar from its open, while it is in "
     "progress; join on ts_close, when a bar is available (D-43).",
+    LintRule.READS_LABELS: "the feature computes the labels of ff.analytics, the forward "
+    "returns, which read the future by design: judge a feature against them, never build one "
+    "from them.",
     LintRule.READS_DATA: "the feature reads data itself, which the leak detector never cuts and "
     "the feature cache's key never pins, so neither can vouch for its values; declare what it "
     "reads as an input: another feature, instrument, or timeframe.",
@@ -155,6 +160,8 @@ _READERS = frozenset(
 _NAMED_READERS = frozenset({"compute", "load", "open", "roll_calendar", "series_source"})
 """Functions called by their name that read data, such as Python's `open`."""
 _READER_PREFIXES = ("read_", "scan_")
+_LABEL_MAKERS = frozenset({"excursions", "forward_returns"})
+"""The functions of `fefat.analytics.labels` that compute columns reading the future."""
 _PLATFORM = frozenset({"builtins", "fefat", "polars"})
 
 
@@ -225,6 +232,8 @@ def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Ite
     readers = _READERS if isinstance(call.func, ast.Attribute) else _NAMED_READERS
     if method in readers or method.startswith(_READER_PREFIXES):
         yield LintRule.READS_DATA
+    if method in _LABEL_MAKERS:
+        yield LintRule.READS_LABELS
     if not isinstance(call.func, ast.Attribute) or _on_each_row(call):
         return
     keywords = {keyword.arg: keyword.value for keyword in call.keywords}

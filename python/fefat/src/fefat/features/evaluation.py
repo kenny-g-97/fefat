@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 import polars as pl
 from pydantic import BaseModel
 
+from fefat.features.label_columns import refuse_label_columns
+
 if TYPE_CHECKING:
     from fefat.features.definition import FeatureDef
 
@@ -130,8 +132,10 @@ def require_one_series_of_raw_prices(bars: pl.LazyFrame, owner: str) -> None:
     "MNQ that feature spread reads", since it reads the row above as the bar
     before: bars that are not one series, their closes strictly increasing, such as the contracts
     `load(continuous=False)` stacks, whose next contract's first rows would read the last rows of
-    the one before, days later; and a back-adjusted import's, whose prices hold the gaps of rolls
-    after them (D-09, D-49), as a signal strategy refuses them."""
+    the one before, days later; a back-adjusted import's, whose prices hold the gaps of rolls
+    after them (D-09, D-49), as a signal strategy refuses them; and bars that hold a column of
+    the labels of `fefat.analytics`, which read the future (`fefat.features.label_columns`)."""
+    refuse_label_columns(bars.collect_schema().names(), f"the bars of {owner}")
     checks = {"back": (pl.col("ts_close").diff() <= 0).any()}
     if "close_raw" in bars.collect_schema():
         checks["adjusted"] = pl.col("close_raw").is_null().any()

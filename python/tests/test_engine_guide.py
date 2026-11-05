@@ -1,14 +1,26 @@
 """The engine guide (step 2.15) gives every option of the execution template a one-line meaning,
 names every option of its rules and every run setting, describes every file of a run folder, and
 links only to files and fill-rule sections that exist; from step 3.7 it gives every kind of a
-combination's description a row with its fields."""
+combination's description a row with its fields, and from step 3.8 it names every analysis of
+a feature study, every field of their results, and every column of their frames."""
 
+import dataclasses
 import inspect
 import re
 import typing
 from pathlib import Path
 
 import fefat as ff
+from fefat.analytics import (
+    Correlations,
+    EventStudy,
+    FeatureStudy,
+    InformationCoefficient,
+    QuantileReturns,
+)
+from fefat.analytics.events import EVENT_PATH_COLUMNS, EXCURSION_COLUMNS
+from fefat.analytics.quantiles import QUANTILE_COLUMNS
+from fefat.analytics.rank_correlation import CLUSTER_COLUMNS, COEFFICIENT_BY_YEAR_COLUMNS
 from fefat.backtest import RunConfig
 from fefat.backtest.schemas import ARTIFACT_SCHEMAS
 from fefat.features.combinations import TERMS
@@ -137,3 +149,22 @@ def test_every_kind_of_a_combinations_description_has_a_row_with_its_fields() ->
         for field in fields
         if f"`{field}`" not in documented[kind]
     ] == []
+
+
+def test_every_analysis_of_a_feature_study_and_every_column_of_its_frames_is_named() -> None:
+    # Step 3.8: "Judging a feature" names what a study gives, for you and for the analytics page
+    # of step 6.5, which shows the same frames.
+    analyses = [name for name in vars(FeatureStudy) if not name.startswith("_")]
+    results = (QuantileReturns, InformationCoefficient, Correlations, EventStudy)
+    fields = [field.name for result in results for field in dataclasses.fields(result)]
+    schemas = (
+        QUANTILE_COLUMNS,
+        COEFFICIENT_BY_YEAR_COLUMNS,
+        CLUSTER_COLUMNS,
+        EVENT_PATH_COLUMNS,
+        EXCURSION_COLUMNS,
+    )
+    columns = [column for schema in schemas for column in schema]
+    types = ["FeatureStudy", "Label", "Trials", "PositionSide"]
+
+    assert unnamed([*analyses, *fields, *columns, *types]) == []

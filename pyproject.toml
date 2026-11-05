@@ -76,3 +76,9 @@ name = "The SDK never imports the app"
 type = "forbidden"
 source_modules = ["fefat"]
 forbidden_modules = ["fefat_app"]
+
+[[tool.importlinter.contracts]]
+name = "The analytics never import the strategies or the backtests, which import their labels"
+type = "forbidden"
+source_modules = ["fefat.analytics"]
+forbidden_modules = ["fefat.strategy", "fefat.backtest"]

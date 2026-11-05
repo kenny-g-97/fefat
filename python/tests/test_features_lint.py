@@ -8,6 +8,7 @@ from datetime import date
 import polars as pl
 
 import fefat as ff
+from fefat.analytics import labels
 from fefat.features import examples
 from fefat.features.examples import atr, in_session_window, rsi
 from fefat.features.source_lint import LintFinding, LintRule, lint
@@ -222,3 +223,19 @@ def test_the_lint_leaves_each_rows_own_values_and_a_windows_function_to_the_cuts
     assert found == [
         (LintRule.FULL_SAMPLE, 'filled = pl.col("close").fill_null(strategy="mean")'),
     ]
+
+
+@ff.feature(outputs={"ahead": "other"})
+def ahead(bars: pl.LazyFrame) -> pl.LazyFrame:
+    ticks = labels.forward_returns(bars, (1,), 250_000_000)
+    return ticks.select("ts_close", ahead=pl.col("forward_return_1"))
+
+
+def test_a_feature_that_computes_the_labels_fails_a_validation() -> None:
+    # The leakage audit of step 3.8: the labels read the future by design, so a feature built on
+    # them is refused, where its own text, the platform's, showed no shift.
+    findings = lint(ahead)
+
+    assert [finding.rule for finding in findings] == [LintRule.READS_LABELS]
+    assert LintRule.READS_LABELS.fails_validation
+    assert LintRule.READS_LABELS.looks_ahead
