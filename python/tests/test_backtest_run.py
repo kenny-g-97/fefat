@@ -494,3 +494,23 @@ def breakout_reading_btc() -> ff.SignalStrategy:
         short_entry=pl.lit(False),
         execution=breakout().execution,
     )
+
+
+def test_a_run_of_a_daily_ema_of_200_sessions_reads_back_to_the_session_tables_start() -> None:
+    # The Phase 3 exit's reviews: a run counts its features' warm-up back again from its lead-in,
+    # which for a daily EMA(200) passed the session table's first date, so every such run was
+    # refused before it read a bar; it now runs, the average null on the fixtures' three days.
+    store_with("ohlcv-1m")
+    trend = ff.SignalStrategy(
+        instrument="ES",
+        timeframe="1d",
+        features={"trend": ff.indicators.ema(200)},
+        long_entry=pl.col("trend").is_not_null() & (pl.col("close") > pl.col("trend")),
+        short_entry=pl.lit(False),
+        execution=breakout().execution,
+    )
+
+    run = ff.backtest.run(trend, "2026-03-05", "2026-03-09")
+
+    assert run.signals.get_column("trend").null_count() == run.signals.height
+    assert run.trades.height == 0
