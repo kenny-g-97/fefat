@@ -45,7 +45,8 @@ src = [
     "python/tests/external/src",
     "scripts",
 ]
-extend-exclude = [".claude"]
+# .agents and .codex hold other tools' files, untracked in a clone, which are not FEFAT's.
+extend-exclude = [".claude", ".agents", ".codex"]
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "UP", "B", "N", "SIM", "RUF"]
