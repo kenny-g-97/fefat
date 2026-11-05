@@ -2,13 +2,16 @@
 that flags the usual ways of reading ahead, each finding with its line and why (Done means 3), and
 warns of what the content hash leaves out (`BACKLOG.md`), in well under a second."""
 
+import sqlite3
 import time
 from datetime import date
+from urllib.request import urlopen
 
 import polars as pl
 
 import fefat as ff
 from fefat.analytics import labels
+from fefat.analytics.labels import forward_returns as returns_ahead
 from fefat.features import examples
 from fefat.features.examples import atr, in_session_window, rsi
 from fefat.features.source_lint import LintFinding, LintRule, lint
@@ -239,3 +242,70 @@ def test_a_feature_that_computes_the_labels_fails_a_validation() -> None:
     assert [finding.rule for finding in findings] == [LintRule.READS_LABELS]
     assert LintRule.READS_LABELS.fails_validation
     assert LintRule.READS_LABELS.looks_ahead
+
+
+@ff.feature(outputs={"listed": "count"})
+def reads_a_database(bars: pl.LazyFrame) -> pl.Expr:
+    rows = sqlite3.connect(":memory:").execute("select 1").fetchall()
+    return pl.col("ts_close").is_in([row[0] for row in rows]).cast(pl.Int64)
+
+
+@ff.feature(outputs={"listed": "count"})
+def reads_a_page(bars: pl.LazyFrame) -> pl.Expr:
+    lines = list(urlopen("http://localhost/events"))
+    return pl.col("ts_close").is_in([int(line) for line in lines]).cast(pl.Int64)
+
+
+@ff.feature(outputs={"listed": "count"})
+def imports_its_reader(bars: pl.LazyFrame) -> pl.Expr:
+    from sqlite3 import connect
+
+    rows = connect(":memory:").execute("select 1").fetchall()
+    return pl.col("ts_close").is_in([row[0] for row in rows]).cast(pl.Int64)
+
+
+def test_data_read_through_the_standard_library_fails_a_validation() -> None:
+    # The leakage audit of the Phase 3 exit: a database or a web page the feature reads is never
+    # cut, as a file it opens is not, and its readers are the standard library's.
+    for feature in (reads_a_database, reads_a_page, imports_its_reader):
+        assert {finding.rule for finding in lint(feature)} == {LintRule.READS_DATA}
+
+
+@ff.feature(outputs={"ahead": "other"})
+def ahead_under_another_name(bars: pl.LazyFrame) -> pl.LazyFrame:
+    ticks = returns_ahead(bars, (1,), 250_000_000)
+    return ticks.select("ts_close", ahead=pl.col("forward_return_1"))
+
+
+@ff.feature(outputs={"exit": "price"})
+def exit_ahead(bars: pl.LazyFrame) -> pl.Expr:
+    return labels.exit_open(5)
+
+
+def test_the_labels_under_another_name_fail_a_validation() -> None:
+    # The leakage audit of the Phase 3 exit: the lint knew the labels' makers by the name called,
+    # so one imported under another name, and `exit_open`, passed it.
+    for feature in (ahead_under_another_name, exit_ahead):
+        assert [finding.rule for finding in lint(feature)] == [LintRule.READS_LABELS]
+
+
+held_levels = pl.DataFrame({"trade_date": [date(2026, 3, 6)], "level": [1.0]})
+"""A frame a notebook cell loaded, which a feature holds from outside it."""
+
+
+@ff.feature(outputs={"read": "other"})
+def holds_a_frame_its_helper_names(bars: pl.LazyFrame) -> pl.LazyFrame:
+    def doubled(held_levels: pl.Expr) -> pl.Expr:
+        return held_levels * 2
+
+    joined = bars.join(held_levels.lazy(), on="trade_date", how="left")
+    return joined.select("ts_close", read=doubled(pl.col("level")))
+
+
+def test_a_helpers_parameter_hides_no_read_of_the_body() -> None:
+    # The code review of the Phase 3 exit's fixes: a parameter of a function the body defines
+    # bound its name for the whole body, so the body's own read of a frame held from outside
+    # under that name passed the lint.
+    found = [(finding.rule, finding.line) for finding in lint(holds_a_frame_its_helper_names)]
+
+    assert found == [(LintRule.READS_DATA, 6)]

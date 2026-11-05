@@ -379,11 +379,26 @@ def test_the_sdk_offers_the_data_api_as_ff_market() -> None:
     assert fefat.market.datasets is datasets
 
 
+@pytest.mark.parametrize(
+    "read",
+    [
+        pytest.param(
+            lambda: load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="trades"), id="trades"
+        ),
+        pytest.param(lambda: load("ES", "5m", "2026-03-06", "2026-03-09"), id="finest"),
+        pytest.param(
+            lambda: fefat.features.compute({}, "ES", "5m", "2026-03-06", "2026-03-09"),
+            id="compute",
+        ),
+    ],
+)
 def test_bars_of_sessions_no_one_minute_bars_decide_the_front_of_are_refused(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, read: Any
 ) -> None:
     # The copy's trades run to 2026-03-09 and its 1-minute bars stop with 03-06, so no front of
-    # 03-09 is decided: splicing would leave that session out.
+    # 03-09 is decided: splicing would leave that session out. The code review of the Phase 3
+    # exit: a load without a fidelity, and compute, which choose each date's level for its front,
+    # left it out without a word.
     store = Store(data_folder_with(monkeypatch, tmp_path, "trades", "ohlcv-1m"))
     for file in store.list_partitions():
         if str(file.partition.dataset.schema_name) == "ohlcv-1m":
@@ -391,7 +406,7 @@ def test_bars_of_sessions_no_one_minute_bars_decide_the_front_of_are_refused(
             store.write_partition(file.partition, rows.filter(pl.col("trade_date") <= MARCH_6))
 
     with pytest.raises(ValueError, match="through 2026-03-09, got fronts through 2026-03-06"):
-        load("ES", "5m", "2026-03-06", "2026-03-09", fidelity="trades")
+        read()
 
 
 def test_a_root_load_without_bars_in_its_window_is_refused(fixtures_as_data: None) -> None:

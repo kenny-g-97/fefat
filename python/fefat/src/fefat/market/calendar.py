@@ -120,15 +120,16 @@ class SessionTable:
 
     @cached_property
     def _trade_dates(self) -> list[date]:
-        """The table's trade dates in order, which `following` and `preceding` search by
-        bisection, since the feature cache counts warm-ups back a session at a time."""
+        """The table's trade dates in order, which `session`, `following`, and `preceding` search
+        by bisection, since the feature cache counts warm-ups back a session at a time and runs
+        read a session for each trade date."""
         return self._sessions.get_column("trade_date").to_list()
 
     def session(self, trade_date: date) -> Session:
         """The session of `trade_date`; a date without one is refused with the reason."""
-        found = self._sessions.filter(pl.col("trade_date") == trade_date)
-        if not found.is_empty():
-            return Session.model_validate(found.row(0, named=True))
+        index = bisect.bisect_left(self._trade_dates, trade_date)
+        if index < len(self._trade_dates) and self._trade_dates[index] == trade_date:
+            return Session.model_validate(self._sessions.row(index, named=True))
         self._require_within_the_span(pl.Series([trade_date], dtype=pl.Date))
         raise ValueError(
             f"Expected a trade date of {self._calendar.name}, got {trade_date}, "

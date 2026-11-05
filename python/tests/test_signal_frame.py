@@ -3,6 +3,7 @@ signals over `load`'s frame into the frame the engine reads, aligned to the sign
 with its prices as raw prices of each row's contract (D-09), and `validated_signal_frame` refuses
 a frame that breaks the contract (types, nulls, NaN, alignment)."""
 
+import re
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
@@ -122,8 +123,12 @@ def test_a_price_of_whole_units_as_a_float_is_read_as_an_integer() -> None:
 
 @pytest.mark.parametrize("price", [pl.col("close") - 0.5, pl.col("close") / 0.0])
 def test_a_price_off_whole_units_is_refused(price: pl.Expr) -> None:
-    with pytest.raises(ValueError, match=r"Expected stop_price in whole 1e-9 units"):
+    with pytest.raises(ValueError, match=r"Expected stop_price in whole 1e-9 units") as refused:
         strategy(stop_price=price).signals(signal_bars("5000.00"))
+
+    # The security review of the Phase 3 exit: the refusal quotes no price, which can be licensed
+    # data (D-21).
+    assert not re.search(r"\d{7,}", str(refused.value)), refused.value
 
 
 def test_a_null_signal_is_no_signal_and_a_null_wake_wakes() -> None:

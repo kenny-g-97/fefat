@@ -52,6 +52,7 @@ just dev      # local server and web dev server (from Phase 4)
 - Stay inside the step and put anything else in `docs/masterplan/BACKLOG.md`. If a step's assumption no longer holds, stop and propose an Amendment block instead of deviating silently.
 - A plan revision or setup change the builder asks for during a step (a skill, reviewer, plugin, or setting) goes in its own commit before the step's work, or its own `config/<slug>` pull request when it stands alone, with a `DECISIONS.md` entry when it decides something. The builder merges that pull request before the step's opens: two pull requests never wait on each other.
 - Every closing message, a step's or a side discussion's, names the next step and the line to type in a fresh session (`/step N.M`, or `/phase-exit N`), and which open pull request to merge first: the builder asks after every merge.
+- Two sessions can share this folder: check `git branch --show-current` before a push, a pull request, or a full test run; when another session moved HEAD, finish from a git worktree, and never stash or reset its work.
 - When an option costs money, recommend the free or local one first and give the paid one's monthly cost (D-01, D-30).
 - Each acceptance item gets a test that fails without the change, shown failing first.
 - Before the pull request: `just check`, `just test`, the `verify` skill, the `step-reviewer` subagent, `/code-review`, `/ponytail-review` (the ponytail plugin, D-32), the reviewers on the step's meta line, and `/security-review` when it says `Security: yes`.
@@ -94,6 +95,7 @@ Each is a decision in `docs/masterplan/DECISIONS.md`, with its record where it h
 
 - Commit, attach, or paste licensed market data. Real data lives outside the repository under `FEFAT_DATA_DIR` and is referenced by path only: code gets the folder from `fefat.config.resolve_paths` (default `<FEFAT_HOME>/data`), never from a hard-coded path. Only generated fixtures under `fixtures/synthetic/` are committed, and the commit guard refuses market-data files anywhere else (binary formats, archives, CSV and other text tables of prices, under any name), fixtures missing from their manifest, files over 25 MB, secrets, and notebooks with outputs, in every commit a push sends as well. Read aggregates (counts, statistics, a few sample rows) into the conversation, never raw data.
 - Commit secrets (`.env*`, API keys, certificates). Keys go in the operating system's credential store.
+- Put a local path or the Windows user name in a commit, a pull request, or a committed document while the repository is public (D-80, until the Phase 5 exit): grep the diff, the messages, and the pull request's body for them before every push.
 - Weaken, skip, or delete a test to make it pass, or change a scenario's expected value to match the code.
 - Commit on or push to `main`, force-push, pass `--no-verify`, or change `core.hooksPath`. The shell hook refuses all of these except the commit on `main`, before which it asks.
 - Merge a pull request: the builder merges, after running the step's checks.

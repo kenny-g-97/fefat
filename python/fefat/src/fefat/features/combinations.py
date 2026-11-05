@@ -206,16 +206,24 @@ for _model in (BinaryOperation, Negation, Window, AtTimeframe):
 
 def term_of(value: object) -> Term:
     """`value` as a term: a term; a feature of one output with its parameters; a feature with
-    its defaults; a column of the bars by its name; or a number or a flag."""
+    its defaults; a column of the bars by its name; or a number. A flag the same on every bar is
+    `combine.constant(True)`: a bare `True` or `False` is what `==` and `!=` give, which compare
+    two terms as Python objects, so it is refused rather than read as a constant."""
     if isinstance(value, TERMS):
         return value
+    if isinstance(value, bool):
+        raise ValueError(
+            f"Expected a term of a combination, got {value}: a bare flag is refused, since == "
+            "and != compare terms as Python objects, not bar by bar, and give one; write the "
+            "comparison with > and <, and a flag the same on every bar as combine.constant(True)."
+        )
     if isinstance(value, FeatureSpec):
         return feature_output(value)
     if isinstance(value, FeatureDef):
         return feature_output(value())
     if isinstance(value, str):
         return Column.model_validate({"column": value})
-    if isinstance(value, bool | int | float):
+    if isinstance(value, int | float):
         return Constant(value=value)
     raise ValueError(
         "Expected a term of a combination, a feature, a column of the bars, or a number, got "

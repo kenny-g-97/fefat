@@ -16,6 +16,7 @@ import pytest
 import fefat as ff
 from fefat.config import resolve_paths
 from fefat.features import TimeframeInput, ValidationReport
+from fefat.features.cache_evaluation import Difference
 from fefat.features.cuts import CutKind
 from fefat.features.examples import rsi
 from fefat.features.source_lint import LintRule
@@ -79,9 +80,12 @@ def test_a_report_names_the_first_failing_cut_and_row_of_a_planted_leak() -> Non
     assert summary[0].endswith(f"seed {SEED}: FAILED")
     assert summary[1].startswith(
         f"cuts: {len(report.cuts)} of {len(report.cuts)} fail, the first at "
-        "2026-02-11T22:00:00Z (session_close): next_close at 2026-02-11T22:00:00Z is "
-        f"{at_the_close} with the data after the cut and None without it"
+        "2026-02-11T22:00:00Z (session_close): next_close at 2026-02-11T22:00:00Z differs, with "
+        "the data after the cut against without it: a value against null"
     )
+    # The security review of the Phase 3 exit: the report keeps both values, which the app shows
+    # (step 6.4), and its words quote neither, since a feature's values can be prices (D-21).
+    assert str(at_the_close) not in report.summary()
     assert [finding.rule for finding in report.lint] == [LintRule.NEGATIVE_SHIFT]
     assert summary[-1] == f"lint: {report.lint[0]}"
 
@@ -354,3 +358,65 @@ def test_stops_caps_the_stops_drawn_beside_the_four_always_cut() -> None:
     assert closes[0] == instant_nanoseconds("2026-02-11T22:00:00Z")
     assert closes[-1] == instant_nanoseconds("2026-02-19T22:00:00Z")
     assert len(closes) == 3
+
+
+@ff.feature(outputs={"range_high": "price"})
+def opening_high_from_the_open(bars: pl.LazyFrame) -> pl.LazyFrame:
+    opened = pl.col("ts_open").first().over("trade_date")
+    window = bars.filter(pl.col("ts_close") <= opened + 1_800_000_000_000)
+    highs = window.group_by("trade_date").agg(range_high=pl.col("high").max())
+    joined = bars.join(highs, on="trade_date", how="left", maintain_order="left")
+    return joined.select("ts_close", "range_high")
+
+
+def test_an_opening_windows_look_ahead_fails_at_the_first_bar_after_a_stop() -> None:
+    # The leakage audit of the Phase 3 exit: the cuts at a stop keep each session whole or not at
+    # all, so a feature showing its opening half hour's high from the session's first bar passed
+    # every cut but a random one inside that half hour; the first bar after each stop is cut too.
+    window = ("2026-02-11", "2026-02-18")
+    report = ff.features.validate(
+        opening_high_from_the_open(), "ES", "1m", *window, seed=SEED, random_cuts=0
+    )
+
+    first = report.first_failure()
+    assert first is not None, report.summary()
+    assert CutKind.FIRST_BAR in first.kinds
+    assert not report.passed
+
+
+@ff.feature(outputs={"weekly_vwap": "price"})
+def weekly_vwap_without_warmup(bars: pl.LazyFrame) -> pl.Expr:
+    week, volume = pl.col("trade_date").dt.truncate("1w"), pl.col("volume").cast(pl.Float64)
+    traded = (pl.col("close").cast(pl.Float64) * volume).cum_sum().over(week)
+    return traded / volume.cum_sum().over(week)
+
+
+def test_a_weekly_memory_without_its_warmup_fails_the_start_check() -> None:
+    # The leakage audit of the Phase 3 exit: the window's middle trade date, 2026-02-17, opens its
+    # week, so an average over the week that declares no warm-up gave the same values from either
+    # start; the start check also starts a session later.
+    report = ff.features.validate(
+        weekly_vwap_without_warmup(), "ES", "5m", *FEBRUARY_WINDOW, seed=SEED
+    )
+
+    check = report.start_check
+    assert not check.passed, report.summary()
+    assert check.compared_from == date(2026, 2, 18)
+    assert "so the feature remembers more than its warm-up" in str(check)
+    assert not report.passed
+
+
+def test_a_difference_says_how_far_apart_two_values_lie_without_quoting_either() -> None:
+    # The security review of the Phase 3 exit, and the code review of its fixes: the words of a
+    # difference quote no value, which can be a price, and treat a value that is no finite number
+    # alike whichever side it is on.
+    nan, inf = float("nan"), float("inf")
+
+    def apart(value: float | bool | None, against: float | bool | None) -> str:
+        return Difference(output="x", ts_close=0, value=value, against=against).apart()
+
+    assert apart(5.0, None) == "a value against null"
+    assert apart(None, 5.0) == "null against a value"
+    assert apart(110.0, 100.0) == "two values apart by 9.1e-02 of the larger"
+    assert apart(5.0, nan) == apart(nan, 5.0) == apart(inf, 5.0) == "two values that differ"
+    assert apart(True, False) == "True against False"

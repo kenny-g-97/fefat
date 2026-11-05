@@ -536,3 +536,20 @@ def test_a_term_tested_for_truth_is_refused() -> None:
 def test_every_model_of_a_term_is_one_term_of_reads() -> None:
     # The ponytail review: a model added to the union of terms but not to TERMS would be refused.
     assert typing.get_args(Term) == TERMS
+
+
+def test_terms_compared_with_equals_are_refused_where_they_join_a_combination() -> None:
+    # The ponytail review of the Phase 3 exit: `==` and `!=` compare two terms as Python objects
+    # and give a bool, which joined a combination as a constant, so a candle closing at its high
+    # was false on every bar without a word; a flag the same on every bar is `constant(True)`.
+    close, high, opened = combine.column("close"), combine.column("high"), combine.column("open")
+
+    with pytest.raises(ValueError, match="== and != compare terms as Python objects"):
+        _ = (close == high) | (close > opened)
+    with pytest.raises(ValueError, match="== and != compare terms as Python objects"):
+        _ = (close != opened) & (close > opened)
+    assert (combine.constant(True) | (close > opened)).left == combine.constant(True)
+    # The code review of the exit's fixes: a flag given where no == was written is told
+    # how to write one.
+    with pytest.raises(ValueError, match="got True: a bare flag is refused"):
+        combine.and_(close > opened, True)

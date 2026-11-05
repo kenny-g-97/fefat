@@ -22,15 +22,18 @@ break, which lie in no bucket of the grid (`fefat.market.aggressor`). The values
 must be the whole range's: integers and Booleans exactly, floats within 1e-9 of the output's
 largest finite magnitude among the rows compared, nulls alike
 (`fefat.features.cache_evaluation.compare_values`). The start check evaluates the feature again
-from the warm-up before the window's middle trade date, each input read from its instrument's
-first bar after that start, and requires the values from that date on to be the whole range's, so
-that a feature that remembers more than its warm-up, such as a running total, fails it; the roll
+from the warm-up before the window's middle trade date, and before the trade date after it, each
+input read from its instrument's first bar after that start, and requires the values from that
+date on to be the whole range's, so that a feature that remembers more than its warm-up, such as
+a running total, fails it, even one whose memory the middle date's week resets; the roll
 calendar keeps its anchor, the dataset's first whole session, whatever the start (D-45). A start
 the data does not let move, as at the store's first session, checks nothing and fails, as an
 output whose values no cut compares does, so that a warm-up longer than the data passes nothing.
-The lint reads the feature and the features it reads; its findings warn, but one: data a feature
-reads itself, or holds from outside it, which the cuts never cut, fails. The random cuts come from `seed`, drawn when it is None, and the report records it with
-the numbers of stops and random cuts and the features read, so that a validation repeats (D-11).
+The lint reads the feature and the features it reads; its findings warn, but two fail: data a
+feature reads itself, or holds from outside it, which the cuts never cut, and the labels of
+`ff.analytics` it computes. The random cuts come from `seed`, drawn when it is None, and the
+report records it with the numbers of stops and random cuts and the features read, so that a
+validation repeats (D-11).
 The report is kept beside the feature's versions, the latest of each content hash
 (`fefat.features.versions.validation_file`), for the database of Phase 4.
 
@@ -257,11 +260,29 @@ def _start_check(
     window: pl.DataFrame,
     outputs: Sequence[str],
 ) -> StartCheck:
-    """The feature evaluated from the warm-up before the window's middle trade date, each input
-    read from its instrument's first bar after that start, and compared with the whole range from
-    that date on (module docstring)."""
+    """The start check from the window's middle trade date and from the one after it where the
+    window holds it: the first that fails, else the middle's, since a memory the middle date's
+    week or month resets agrees from that date alone (module docstring)."""
     days = window.get_column("trade_date").unique().sort().to_list()
-    compared_from = days[len(days) // 2]
+    middle = len(days) // 2
+    first = _start_check_from(graph, inputs, sources, window, outputs, days[middle])
+    if not first.passed or middle + 1 == len(days):
+        return first
+    second = _start_check_from(graph, inputs, sources, window, outputs, days[middle + 1])
+    return first if second.passed else second
+
+
+def _start_check_from(
+    graph: FeatureGraph,
+    inputs: InputBars,
+    sources: Mapping[str, SeriesSource],
+    window: pl.DataFrame,
+    outputs: Sequence[str],
+    compared_from: date,
+) -> StartCheck:
+    """The feature evaluated from the warm-up before `compared_from`, each input read from its
+    instrument's first bar after that start, and compared with the whole range from that date
+    on."""
     later = graph.lead_in(sources[graph.root].sessions, compared_from)
     shortened = {
         grid: frame.filter(

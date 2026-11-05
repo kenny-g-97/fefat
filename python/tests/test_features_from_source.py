@@ -80,6 +80,29 @@ def test_a_body_that_calls_a_helper_its_version_does_not_keep_is_refused() -> No
         ff.features.from_source(ff.indicators.rsi.code)
 
 
+INSIDE = """\
+@ff.feature(outputs={"doubled": "price"})
+def inside(bars: pl.LazyFrame) -> pl.Expr:
+    def doubled(column: str) -> pl.Expr:
+        return pl.col(column) * 2
+
+    return doubled("close")
+"""
+"""A feature whose helper is written in its own body, as the lint advises."""
+
+
+def test_a_helper_written_inside_the_body_is_the_features_own_code() -> None:
+    # The ponytail review of the Phase 3 exit: a function the body defines, and its parameters,
+    # counted as names read from outside it, so a version holding such a helper in its text
+    # could not be read back.
+    inside = features_of_cell(INSIDE)["inside"]
+
+    built = ff.features.from_source(inside.code)
+
+    assert built.hash == inside.hash
+    assert built().evaluate(BARS).collect().equals(inside().evaluate(BARS).collect())
+
+
 @pytest.mark.parametrize(
     "code",
     [

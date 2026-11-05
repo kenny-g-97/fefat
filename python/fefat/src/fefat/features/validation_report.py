@@ -4,8 +4,8 @@ cut compared, the start check, and the lint's findings, kept as JSON beside the 
 
 A report passes when no cut changed a value before it, the start check moved the start and
 agreed, each output had values compared at one cut at least (`MINIMUM_COMPARED`), and the lint
-found no data a feature reads itself or holds from outside it; the lint's other findings are
-warnings, which a report that passes shows as `PASSED WITH WARNINGS`."""
+found no data a feature reads itself or holds from outside it, and no label it computes; the
+lint's other findings are warnings, which a report that passes shows as `PASSED WITH WARNINGS`."""
 
 from collections.abc import Mapping
 from datetime import date, datetime
@@ -44,8 +44,8 @@ class CutResult(FrozenModel):
         found = self.difference
         if found is not None:
             return (
-                f"{at}: {found.output} at {utc_text(found.ts_close)} is {found.value} with the "
-                f"data after the cut and {found.against} without it"
+                f"{at}: {found.output} at {utc_text(found.ts_close)} differs, with the data after "
+                f"the cut against without it: {found.apart()}"
             )
         return f"{at}: {_agreement(self.compared)}"
 
@@ -77,8 +77,8 @@ class StartCheck(FrozenModel):
             )
         if found is not None:
             return (
-                f"{read}: {found.output} at {utc_text(found.ts_close)} is {found.value} against "
-                f"{found.against}, so the feature remembers more than its warm-up"
+                f"{read}: {found.output} at {utc_text(found.ts_close)} differs: {found.apart()}, "
+                "so the feature remembers more than its warm-up"
             )
         return f"{read}: {_agreement(self.compared)}"
 
@@ -116,9 +116,9 @@ class ValidationReport(FrozenModel):
 
     @property
     def passed(self) -> bool:
-        reads_data = any(finding.rule.fails_validation for finding in self.lint)
+        fails = any(finding.rule.fails_validation for finding in self.lint)
         agrees = not self.failing_cuts() and self.start_check.passed
-        return agrees and not self.uncompared() and not reads_data
+        return agrees and not self.uncompared() and not fails
 
     def failing_cuts(self) -> tuple[CutResult, ...]:
         """The cuts that changed a value before them, in order of instant."""
@@ -151,7 +151,8 @@ class ValidationReport(FrozenModel):
         missing = self.uncompared()
         never = (
             f"values: no value of {', '.join(missing)} compared at any cut, as a warm-up longer "
-            "than the data leaves none; validate a window with more data before it"
+            "than the data leaves none, or an input without data, such as prints without a side; "
+            "validate a window with more data before it, or with data in every input"
         )
         found = [f"lint: {finding}" for finding in self.lint] or ["lint: no finding"]
         return "\n".join(

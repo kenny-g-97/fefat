@@ -465,6 +465,17 @@ def test_the_lead_in_counts_back_the_sessions_that_hold_a_warmup(tmp_path: Path)
     assert lead_in({}) == monday
 
 
+def test_the_lead_in_stops_a_week_into_the_session_table(tmp_path: Path) -> None:
+    # The Phase 3 exit's reviews: the lead-in raised once a warm-up reached past the session
+    # table's first date, 2010-01-01, so a daily EMA(200), 2,600 sessions, could not be computed
+    # from before 2020; it stops a week in, where a load still reads the session before.
+    sessions = sessions_of(instruments.get("ES").session_calendar(), tmp_path)
+    graph = FeatureGraph.of({"trend": ff.indicators.ema(200)}, "ES", Timeframe.parse("1d"))
+
+    assert graph.lead_in(sessions, date(2015, 6, 1)) == date(2010, 1, 8)
+    assert graph.lead_in(sessions, date(2026, 3, 9)) > date(2015, 1, 1)
+
+
 CHAIN = {"step": step(), "swing": swing(), "blend": blend()}
 """The chain of three features, each with a warm-up of one bar after its inputs'."""
 

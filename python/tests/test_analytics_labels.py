@@ -11,8 +11,9 @@ import pytest
 from pydantic import ValidationError
 
 import fefat as ff
-from fefat.analytics.labels import Label, excursions, forward_returns, is_label_column
+from fefat.analytics.labels import Label, excursions, forward_returns
 from fefat.features.grids import Grid
+from fefat.features.label_columns import is_label_column
 from fefat.market.schema import Timeframe
 
 TICK = 250_000_000

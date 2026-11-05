@@ -39,7 +39,7 @@ bucket held back (`fefat.market.aggressor`, D-78). The dataset input waits for P
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from fractions import Fraction
 from math import ceil, floor
 from types import MappingProxyType
@@ -52,7 +52,7 @@ from fefat.features.evaluation import FeatureSpec, first_warm_row
 from fefat.features.grids import Grid, InputBars, PrintsGrid, grid_frame
 from fefat.features.inputs import FeatureInput, InstrumentInput, TradesInput
 from fefat.market.api import SIGNAL_BAR_COLUMNS
-from fefat.market.calendar import Session, SessionTable, counted
+from fefat.market.calendar import FIRST_SESSION_DATE, Session, SessionTable, counted
 from fefat.market.schema import Timeframe
 
 
@@ -63,6 +63,13 @@ def slot_columns(slot: str, spec: FeatureSpec) -> dict[str, str]:
     if len(outputs) == 1:
         return {outputs[0]: slot}
     return {output: f"{slot}_{output}" for output in outputs}
+
+
+LEAD_IN_FLOOR = timedelta(days=7)
+"""How far after the session tables' first date (`FIRST_SESSION_DATE`) a lead-in reaches back at
+most: the first trade date from a week in, so that a load still reads the session before it and a
+grid of another calendar, whose table starts that day too, the session before that, whatever
+holidays and weekend open the year (`SeriesSource.dates_read`, `FeatureGraph.grid_dates`)."""
 
 
 @dataclass(frozen=True)
@@ -186,13 +193,18 @@ class FeatureGraph:
         before it, counted back by the session table until they hold the bars `lead_in_bars`
         needs, at the fewest buckets each holds, then `lead_in_sessions` more, so that every slot
         has its value on the first row of `start` where the data reaches back so far (D-71,
-        D-78); `start` without a warm-up."""
+        D-78), and never past `LEAD_IN_FLOOR` after the table's first date, where a computation
+        of a feature whose warm-up reaches further starts with nulls instead of being refused;
+        `start` without a warm-up."""
+        floor = sessions.following(FIRST_SESSION_DATE + LEAD_IN_FLOOR - timedelta(days=1))
         needed, day = self.lead_in_bars(), start
-        while needed > 0:
+        while needed > 0 and day > floor.trade_date:
             session = sessions.preceding(day)
             needed -= _fewest_buckets(session, self.timeframe)
             day = session.trade_date
         for _ in range(self.lead_in_sessions()):
+            if day <= floor.trade_date:
+                break
             day = sessions.preceding(day).trade_date
         return day
 

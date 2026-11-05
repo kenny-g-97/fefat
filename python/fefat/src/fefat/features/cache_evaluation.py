@@ -5,6 +5,7 @@ read from two starts gives the same values (`check_warmups`, `compare_values`), 
 feature that remembers more than its warm-up, with the comparison the leak detector reads too
 (step 3.4)."""
 
+import math
 import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -160,7 +161,9 @@ def _require_agreement(
 
 class Difference(FrozenModel):
     """Where two computations of a feature's output on the same rows first differ: the output, the
-    row's close, and the value each gives, the first `value` and the second `against`."""
+    row's close, and the value each gives, the first `value` and the second `against`, which its
+    words never quote, since a feature's values can be prices of licensed data (D-21): a report
+    keeps them for the app to show (step 6.4)."""
 
     output: str
     ts_close: int
@@ -168,7 +171,20 @@ class Difference(FrozenModel):
     against: bool | int | float | None
 
     def __str__(self) -> str:
-        return f"{self.output} at {utc_text(self.ts_close)}: {self.value} against {self.against}"
+        return f"{self.output} at {utc_text(self.ts_close)}: {self.apart()}"
+
+    def apart(self) -> str:
+        """How the two values differ, in words that quote neither number: which one is null, or
+        how far apart they lie relative to the larger."""
+        first, second = self.value, self.against
+        if first is None or second is None:
+            return "a value against null" if second is None else "null against a value"
+        if isinstance(first, bool) or isinstance(second, bool):
+            return f"{first} against {second}"
+        if math.isfinite(first) and math.isfinite(second) and first != second:
+            larger = max(abs(first), abs(second))
+            return f"two values apart by {abs(first - second) / larger:.1e} of the larger"
+        return "two values that differ"
 
 
 @dataclass(frozen=True)

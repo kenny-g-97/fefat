@@ -8,6 +8,7 @@ by volume for a stretch so that the roll calendar rolls where they cross, or `ge
 
 import os
 import random
+import re
 import shutil
 import time
 import warnings
@@ -794,3 +795,16 @@ def test_a_features_own_warnings_reach_the_notebook() -> None:
 
     with pytest.warns(UserWarning, match="a warning of the feature's own code"):
         ff.features.compute({"noisy": noisy_close()}, "ES", "5m", "2026-03-06", "2026-03-09")
+
+
+def test_the_refusal_of_a_feature_remembering_more_quotes_no_value() -> None:
+    # The security review of the Phase 3 exit: a feature's values can be prices of licensed data,
+    # which no error carries (D-21), so the refusal says how far apart the two values lie instead.
+    write_minutes(SPRING)
+
+    with pytest.raises(ValueError, match="it remembers more than its warm-up") as refused:
+        ff.features.compute({"slow": slow_mean()}, "ES", "5m", "2026-01-05", "2026-03-31")
+
+    message = str(refused.value)
+    assert re.search(r"two values apart by \d\.\de-\d+ of the larger", message), message
+    assert not re.search(r"\d{7,}", message), message
