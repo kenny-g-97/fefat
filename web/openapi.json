@@ -1,0 +1,711 @@
+{
+  "components": {
+    "schemas": {
+      "ApiTokenIdentity": {
+        "description": "A request of an API token, by the token's name; it needs no CSRF token, since a browser\nnever sends a bearer token by itself.",
+        "properties": {
+          "kind": {
+            "const": "api_token",
+            "default": "api_token",
+            "title": "Kind",
+            "type": "string"
+          },
+          "token_name": {
+            "title": "Token Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token_name"
+        ],
+        "title": "ApiTokenIdentity",
+        "type": "object"
+      },
+      "AppSettings": {
+        "description": "The settings the page shows: the server's, from `config.toml`, and each secret's\nstate.",
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/SecretStatus"
+            },
+            "title": "Secrets",
+            "type": "array"
+          },
+          "server": {
+            "$ref": "#/components/schemas/Settings"
+          }
+        },
+        "required": [
+          "server",
+          "secrets"
+        ],
+        "title": "AppSettings",
+        "type": "object"
+      },
+      "FieldError": {
+        "description": "Where a request broke the API's schema and why, without the value it sent.",
+        "properties": {
+          "location": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "message",
+          "type"
+        ],
+        "title": "FieldError",
+        "type": "object"
+      },
+      "Health": {
+        "description": "The server answers.",
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "Health",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "description": "The password, set at `fefat up`'s first run or by `fefat password set`.",
+        "properties": {
+          "password": {
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "Problem": {
+        "description": "An error the API answered (RFC 9457), with the id of the request it ended.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "instance": {
+            "title": "Instance",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "request_id"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
+      "SecretName": {
+        "description": "The secrets FEFAT keeps, each the key of a service it calls: the agent's model provider\n(Phase 8) and a market data vendor (D-37). The list is closed, since a credential store\ncannot list what it holds; a step that calls another service adds its name.",
+        "enum": [
+          "anthropic",
+          "databento"
+        ],
+        "title": "SecretName",
+        "type": "string"
+      },
+      "SecretState": {
+        "description": "Whether the credential store holds a secret.",
+        "enum": [
+          "stored",
+          "missing"
+        ],
+        "title": "SecretState",
+        "type": "string"
+      },
+      "SecretStatus": {
+        "description": "A secret by its name, with whether it is stored, never with its value.",
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/SecretName"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SecretState"
+          }
+        },
+        "required": [
+          "name",
+          "state"
+        ],
+        "title": "SecretStatus",
+        "type": "object"
+      },
+      "SessionIdentity": {
+        "description": "A request of a login session, with the CSRF token that every state-changing request the\nsession's cookie authenticates must carry in `X-CSRF-Token`, and when the session ends.",
+        "properties": {
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "session",
+            "default": "session",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expires_at",
+          "csrf_token"
+        ],
+        "title": "SessionIdentity",
+        "type": "object"
+      },
+      "Settings": {
+        "additionalProperties": false,
+        "description": "What the server needs before its database opens, from `<FEFAT_HOME>/config.toml`\n(`01-architecture.md` sections 4, 6, and 8, D-83): the port it listens on, the address it\nbinds, which can only be the loopback (D-54), the size of its process pool, and the folders\nan import may read large files from. What the app edits, such as the password and the\ntheme, lives in its database's `settings` table instead; secrets live in the credential\nstore, never here.",
+        "properties": {
+          "bind_address": {
+            "const": "127.0.0.1",
+            "default": "127.0.0.1",
+            "title": "Bind Address",
+            "type": "string"
+          },
+          "import_roots": {
+            "default": [],
+            "items": {
+              "format": "path",
+              "type": "string"
+            },
+            "title": "Import Roots",
+            "type": "array"
+          },
+          "port": {
+            "default": 8765,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "process_pool_size": {
+            "minimum": 1.0,
+            "title": "Process Pool Size",
+            "type": "integer"
+          }
+        },
+        "title": "Settings",
+        "type": "object"
+      },
+      "SettingsChange": {
+        "additionalProperties": false,
+        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is.",
+        "properties": {
+          "secrets": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "format": "password",
+                  "minLength": 1,
+                  "type": "string",
+                  "writeOnly": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SecretName"
+            },
+            "title": "Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "secrets"
+        ],
+        "title": "SettingsChange",
+        "type": "object"
+      },
+      "ValidationProblem": {
+        "description": "A request the API's schema refused, with each of its errors.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "instance": {
+            "title": "Instance",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "request_id",
+          "errors"
+        ],
+        "title": "ValidationProblem",
+        "type": "object"
+      },
+      "Versions": {
+        "description": "The versions the server runs: the app's, the SDK's, and the engine's three, which every\nrun records (`02-engine-and-data.md` section 4).",
+        "properties": {
+          "artifact_schema": {
+            "title": "Artifact Schema",
+            "type": "integer"
+          },
+          "engine": {
+            "title": "Engine",
+            "type": "integer"
+          },
+          "fefat": {
+            "title": "Fefat",
+            "type": "string"
+          },
+          "fefat_app": {
+            "title": "Fefat App",
+            "type": "string"
+          },
+          "fill_model": {
+            "title": "Fill Model",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fefat_app",
+          "fefat",
+          "engine",
+          "fill_model",
+          "artifact_schema"
+        ],
+        "title": "Versions",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ApiToken": {
+        "description": "An API token of `fefat token create`, for notebooks and scripts.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "CsrfToken": {
+        "description": "The `csrf_token` of `POST /v1/auth/login` or `GET /v1/me`, which every request that changes state must carry when the session's cookie authenticates it.",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "type": "apiKey"
+      },
+      "Session": {
+        "description": "The login session's cookie, which `POST /v1/auth/login` sets.",
+        "in": "cookie",
+        "name": "fefat_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "FEFAT's local server: its API, for the web app, notebooks, and scripts.",
+    "title": "FEFAT",
+    "version": "0.0.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/auth/login": {
+      "post": {
+        "description": "Log in with the password: the response sets the cookie of a session of 30 days and\nreturns its CSRF token; refused with 401 for a wrong password, and with 429 after five\nattempts in a minute.",
+        "operationId": "login_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionIdentity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "description": "End the session the cookie names and clear the cookie; a request with an API token ends\nno session.",
+        "operationId": "logout_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Logout",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/v1/healthz": {
+      "get": {
+        "description": "Whether the server answers; no login needed.",
+        "operationId": "health_v1_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "description": "Who the request comes from: a login session, with its CSRF token and when it ends, or\nan API token, by its name.",
+        "operationId": "me_v1_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "api_token": "#/components/schemas/ApiTokenIdentity",
+                      "session": "#/components/schemas/SessionIdentity"
+                    },
+                    "propertyName": "kind"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionIdentity"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ApiTokenIdentity"
+                    }
+                  ],
+                  "title": "Response Me V1 Me Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/v1/settings": {
+      "get": {
+        "description": "The settings of `config.toml`, which the page shows read-only, and whether each secret\nis stored, never its value.",
+        "operationId": "read_settings_v1_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Read Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "description": "Store each secret named with a value in the operating system's credential store and\nremove each named with null; the settings after the change, never a secret's value.",
+        "operationId": "change_settings_v1_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Change Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/v1/version": {
+      "get": {
+        "description": "The versions the server runs; no login needed.",
+        "operationId": "version_v1_version_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Versions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Version",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  }
+}

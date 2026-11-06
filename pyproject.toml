@@ -97,6 +97,7 @@ forbidden_modules = [
     "starlette",
     "sqlalchemy",
     "alembic",
+    "fefat_app.http",
     "fefat_app.database",
     "fefat_app.credentials",
     "fefat_app.container",

@@ -75,6 +75,15 @@ test-engine:
 gen-schema:
     cargo run -p fefat-cli -- schema ../python/fefat/src/fefat/strategy/strategy_spec.schema.json
 
+# Write the API's OpenAPI document to web/openapi.json and the web app's types from it to web/src/api/schema.d.ts (step 4.2); a pytest and CI fail while the committed files differ
+gen-api:
+    uv run python -m fefat_app.http.openapi_document web/openapi.json
+    pnpm --dir web exec openapi-typescript openapi.json --output src/api/schema.d.ts
+
+# Start the local server on 127.0.0.1 at the port of FEFAT_HOME/config.toml (step 4.2): the API, its docs at /docs after login, and web/dist when built; it asks for a password on its first run
+up:
+    uv run fefat up
+
 # Rewrite the goldens under fixtures/goldens/ from the engine's output: only with the builder's approval, after the version bump, and with a changelog entry (the engine-golden skill)
 [working-directory("engine")]
 regenerate-goldens: build-engine

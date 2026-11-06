@@ -1,0 +1,78 @@
+"""The built web app served by the local server of step 4.2 (D-86): its files at `/`, every other
+page path a GET or HEAD asks for answered with its `index.html`, so that a reload on a page of
+the app works, and nothing under `/v1/` or outside its folder."""
+
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from fefat_app.container import Container
+from fefat_app.http.app import create_app
+from fefat_app.http.web_app import WEB_APP_DIR
+from local_server import LOOPBACK
+
+INDEX = "<!doctype html><title>FEFAT</title>"
+SCRIPT = "console.log('FEFAT');"
+PROBLEM = "application/problem+json"
+
+
+@pytest.fixture
+def built_web_app(tmp_path: Path) -> Path:
+    """A web app as `pnpm --dir web build` would leave it, beside a file outside it."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text(INDEX, encoding="utf-8")
+    (dist / "assets" / "app.js").write_text(SCRIPT, encoding="utf-8")
+    (tmp_path / "outside.txt").write_text("outside the web app", encoding="utf-8")
+    return dist
+
+
+@pytest.fixture
+def web_client(container: Container, built_web_app: Path) -> Iterator[TestClient]:
+    with TestClient(create_app(container, built_web_app), base_url=LOOPBACK) as opened:
+        yield opened
+
+
+def test_the_web_app_is_served_with_its_files(web_client: TestClient) -> None:
+    assert web_client.get("/").text == INDEX
+    assert web_client.get("/assets/app.js").text == SCRIPT
+
+
+@pytest.mark.parametrize("path", ["/runs/0193f0a2", "/settings"])
+def test_a_reload_on_a_page_of_the_web_app_answers_its_index(
+    web_client: TestClient, path: str
+) -> None:
+    page = web_client.get(path)
+
+    assert (page.status_code, page.text) == (200, INDEX)
+    assert web_client.head(path).status_code == 200
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize("path", ["/v1", "/v1/nothing"])
+def test_a_path_under_v1_that_the_api_does_not_own_is_a_problem(
+    web_client: TestClient, method: str, path: str
+) -> None:
+    response = web_client.request(method, path)
+
+    assert (response.status_code, response.headers["content-type"]) == (404, PROBLEM)
+
+
+def test_a_file_outside_the_web_app_is_never_served(web_client: TestClient) -> None:
+    response = web_client.get("/%2e%2e/outside.txt")
+
+    assert "outside the web app" not in response.text
+
+
+def test_without_a_built_web_app_the_root_is_a_problem(client: TestClient) -> None:
+    response = client.get("/")
+
+    assert (response.status_code, response.headers["content-type"]) == (404, PROBLEM)
+
+
+def test_the_server_looks_for_the_web_app_in_the_repositorys_web_dist() -> None:
+    repository = Path(__file__).resolve().parents[3]
+
+    assert repository / "web" / "dist" == WEB_APP_DIR
