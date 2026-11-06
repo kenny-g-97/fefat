@@ -66,6 +66,8 @@
       "PowerShell(pnpm --dir web dev:*)",
       "Bash(pnpm --dir web run:*)",
       "PowerShell(pnpm --dir web run:*)",
+      "Bash(pnpm --dir web exec:*)",
+      "PowerShell(pnpm --dir web exec:*)",
       "Bash(pnpm install:*)",
       "PowerShell(pnpm install:*)",
       "Bash(pnpm run:*)",
