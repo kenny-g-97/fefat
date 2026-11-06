@@ -65,6 +65,26 @@ def test_a_wrong_password_is_refused_and_the_sixth_attempt_must_wait(
     assert client.get("/v1/me").status_code == 401
 
 
+def test_a_login_without_a_json_body_is_refused_before_it_counts(
+    client: TestClient, container: Container
+) -> None:
+    # A page of another site can send a body without a content type, or as text/plain, with no
+    # preflight; FastAPI's strict content type refuses both before the login sees them.
+    container.logins.set_password(PASSWORD)
+    body = f'{{"password": "{PASSWORD}"}}'.encode()
+
+    untyped = [client.post("/v1/auth/login", content=body) for _ in range(3)]
+    plain = [
+        client.post("/v1/auth/login", content=body, headers={"Content-Type": "text/plain"})
+        for _ in range(3)
+    ]
+    login = client.post("/v1/auth/login", json={"password": PASSWORD})
+
+    assert [response.status_code for response in untyped + plain] == [422] * 6
+    assert "set-cookie" not in untyped[0].headers
+    assert login.status_code == 200
+
+
 def test_logout_ends_the_session_and_clears_its_cookie(
     client: TestClient, container: Container
 ) -> None:
@@ -191,3 +211,37 @@ def test_a_wrong_password_at_the_prompt_asks_again_and_counts_as_an_attempt(
     assert [response.status_code for response in asked_again] == [401] * 5
     assert asked_again[0].headers["www-authenticate"] == 'Basic realm="FEFAT"'
     assert waiting.status_code == 429
+
+
+def test_the_docs_refuse_a_request_another_site_started_but_a_link_it_opens(
+    client: TestClient, container: Container
+) -> None:
+    # A browser resends the password it was given at the prompt, so an image of another site's
+    # page pointing at /openapi.json would log in, a hash of Argon2 each time.
+    container.logins.set_password(PASSWORD)
+    image = {"Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"}
+    link = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+
+    refused = [
+        client.get("/openapi.json", headers={**basic(PASSWORD), **image, "Sec-Fetch-Site": site})
+        for site in ("cross-site", "same-site")
+    ]
+    opened = client.get("/docs", headers={**basic(PASSWORD), **link, "Sec-Fetch-Site": "same-site"})
+
+    assert [response.status_code for response in refused] == [403, 403]
+    assert refused[0].headers["content-type"] == PROBLEM
+    assert "set-cookie" not in refused[0].headers
+    assert opened.status_code == 200
+
+
+def test_logout_beside_an_api_token_ends_the_cookies_session_too(
+    client: TestClient, container: Container
+) -> None:
+    logged_in(client, container)
+    cookie = client.cookies["fefat_session"]
+    token = container.api_tokens.create("notebook")
+
+    logout = client.post("/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+    after = client.get("/v1/me", headers={"Cookie": f"fefat_session={cookie}"})
+
+    assert (logout.status_code, after.status_code) == (204, 401)

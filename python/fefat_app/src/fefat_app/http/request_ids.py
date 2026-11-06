@@ -1,7 +1,8 @@
 """The id of every request (step 4.2, D-86): 16 hexadecimal digits made as the request arrives,
 kept in its scope's state for the problem it may end in, echoed in `X-Request-Id`, and logged
-with its method, path, status, and duration, and with the traceback of a failure, in the
-server's log under `FefatPaths.logs_dir` (`fefat_app.http.server_log`).
+with its method, path, status, and duration in the server's log under `FefatPaths.logs_dir`
+(`fefat_app.http.server_log`); a failure is logged under the id by the kind of error alone,
+since uvicorn logs its traceback right after.
 
 It wraps the whole app, outside Starlette's handler of failures, so that a 500 carries the id
 too; a plain ASGI class, which never buffers a body, as step 4.4's streams need."""
@@ -43,8 +44,8 @@ class RequestIds:
         line = f"request_id={request_id} method={scope['method']} path={scope['path']}"
         try:
             await self.app(scope, receive, send_with_the_id)
-        except Exception:
-            logger.exception("%s failed", line)
+        except Exception as failure:
+            logger.error("%s failed with %s", line, type(failure).__name__)
             raise
         finally:
             elapsed = (time.perf_counter() - started) * 1000

@@ -9,6 +9,7 @@ from sqlalchemy import Engine, delete, select, update
 from sqlalchemy.orm import Session
 
 from fefat_app.database.models import ApiTokenRow, LoginSessionRow, SettingRow
+from fefat_app.database.schema import reading
 from fefat_app.ports import ApiToken, LoginSession
 
 PASSWORD_HASH_KEY = "password_hash"
@@ -22,7 +23,7 @@ class AccessTables:
     engine: Engine
 
     def password_hash(self) -> str | None:
-        with Session(self.engine) as session:
+        with Session(reading(self.engine)) as session:
             row = session.get(SettingRow, PASSWORD_HASH_KEY)
             if row is None:
                 return None
@@ -55,7 +56,7 @@ class AccessTables:
             )
 
     def session_by_hash(self, token_hash: str) -> LoginSession | None:
-        with Session(self.engine) as session:
+        with Session(reading(self.engine)) as session:
             row = session.scalars(
                 select(LoginSessionRow).where(LoginSessionRow.token_hash == token_hash)
             ).one_or_none()
@@ -89,7 +90,7 @@ class AccessTables:
             session.add(ApiTokenRow(name=name, token_hash=token_hash, created_at=created_at))
 
     def api_token_by_hash(self, token_hash: str) -> ApiToken | None:
-        with Session(self.engine) as session:
+        with Session(reading(self.engine)) as session:
             row = session.scalars(
                 select(ApiTokenRow).where(
                     ApiTokenRow.token_hash == token_hash, ApiTokenRow.revoked_at.is_(None)

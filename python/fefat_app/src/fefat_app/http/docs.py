@@ -5,7 +5,10 @@ A live session's cookie lets a request in as it is. Without one, the answer is 4
 challenge, which opens the browser's own password prompt until step 4.3's login page exists;
 the password typed there, with any user name, logs in through the same counted login and sets
 the session's cookie. A browser resends what it typed to every path of the server, which the
-API ignores and the cookie, checked first, makes cheap; it forgets it when it closes.
+API ignores and the cookie, checked first, makes cheap; it forgets it when it closes. Since it
+would resend it for an image of another site's page too, logging in each time, a request that
+another site started is refused unless it opens a page, as a link does (its `Sec-Fetch-*`
+headers tell).
 
 The page loads Swagger UI from jsdelivr and runs inline script, which the app's own content
 security policy forbids, so it answers under a policy of its own and needs the internet."""
@@ -34,7 +37,12 @@ DOCS_CONTENT_SECURITY_POLICY = (
 
 def docs_access(request: Request, container: ContainerDependency) -> OpenedLoginSession | None:
     """None for a live session's request; the session the password at the prompt opened,
-    whose cookie the answer sets; refused with 401 and the Basic challenge otherwise."""
+    whose cookie the answer sets; refused with 403 for a request another site started, and
+    with 401 and the Basic challenge otherwise."""
+    if _started_by_another_site(request):
+        raise HTTPException(
+            403, "Expected a request of this server's pages or a link opened, got another site's."
+        )
     cookie = request.cookies.get(SESSION_COOKIE)
     if cookie is not None and container.logins.identity_of_session(cookie) is not None:
         return None
@@ -85,6 +93,16 @@ def basic_password(authorization: str | None) -> str | None:
         return None
     _, separator, password = decoded.partition(":")
     return password if separator else None
+
+
+def _started_by_another_site(request: Request) -> bool:
+    """Whether a browser says another site started the request, other than to open a page."""
+    site = request.headers.get("sec-fetch-site")
+    opens_a_page = (
+        request.headers.get("sec-fetch-mode") == "navigate"
+        and request.headers.get("sec-fetch-dest") == "document"
+    )
+    return site in ("cross-site", "same-site") and not opens_a_page
 
 
 def _for_this_browser_alone(

@@ -8,7 +8,9 @@ schema change outside it: so a migration's changes and its revision are kept who
 all, and a batch migration that rebuilds a table never loses its rows halfway. It begins with
 `BEGIN IMMEDIATE`, taking the write lock at once, so that a second writer, such as a command
 run while the server writes, waits for the first rather than failing halfway, as a transaction
-that reads before it writes does in WAL mode.
+that reads before it writes does in WAL mode. A transaction that only reads, through `reading`,
+begins deferred instead, so that it neither waits for a writer nor holds one up, WAL mode giving
+it a snapshot (step 4.2: the server reads at every request).
 
 Foreign keys are on for every connection, and SQLite ignores turning them off inside a
 transaction, so a later migration that rebuilds a table another references in batch mode
@@ -28,6 +30,8 @@ from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.pool import ConnectionPoolEntry
 
 MIGRATIONS = Path(__file__).with_name("migrations")
+READ_ONLY = "fefat_read_only"
+"""The execution option of `reading`'s engine."""
 
 
 @contextmanager
@@ -81,5 +85,13 @@ def _on_connect(connection: DBAPIConnection, record: ConnectionPoolEntry) -> Non
     connection.isolation_level = None
 
 
+def reading(engine: Engine) -> Engine:
+    """`engine` for transactions that only read, which begin deferred (module docstring)."""
+    return engine.execution_options(**{READ_ONLY: True})
+
+
 def _on_begin(connection: Connection) -> None:
+    if connection.get_execution_options().get(READ_ONLY):
+        connection.exec_driver_sql("BEGIN")
+        return
     connection.exec_driver_sql("BEGIN IMMEDIATE")

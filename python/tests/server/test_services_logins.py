@@ -4,13 +4,17 @@ session as its token's SHA-256, five attempts a minute counted before the passwo
 sessions of 30 days, and a new password ending every session."""
 
 import hashlib
+import os
 import re
+import sqlite3
+import time
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
+from fefat.config import resolve_paths
 from fefat_app.container import Container
 from fefat_app.database.models import LoginSessionRow, SettingRow
 from fefat_app.services.logins import TooManyLoginAttemptsError, WrongPasswordError
@@ -163,3 +167,37 @@ def test_logout_ends_the_session_and_an_unknown_token_has_no_identity(
 
     assert container.logins.identity_of_session(token) is None
     assert container.logins.identity_of_session("not a token") is None
+
+
+def test_a_request_is_identified_while_another_writer_holds_the_database(
+    container: Container,
+) -> None:
+    # A read begins deferred, so a command or a job writing at the time holds up no request.
+    session_token = logged_in(container)
+    api_token = container.api_tokens.create("notebook")
+    container.api_tokens.identity_of_token(api_token)
+    writer = sqlite3.connect(resolve_paths(os.environ).database_file, timeout=0)
+    writer.execute("BEGIN IMMEDIATE")
+
+    try:
+        started = time.perf_counter()
+        session = container.logins.identity_of_session(session_token)
+        token = container.api_tokens.identity_of_token(api_token)
+        waited = time.perf_counter() - started
+    finally:
+        writer.rollback()
+        writer.close()
+
+    assert (session is not None, token is not None) == (True, True)
+    assert waited < 1
+
+
+def test_a_password_hash_argon2_cannot_read_is_refused_with_the_remedy(
+    container: Container, engine: Engine
+) -> None:
+    container.logins.set_password(PASSWORD)
+    with Session(engine) as session, session.begin():
+        session.execute(update(SettingRow).values(value_json="not a hash"))
+
+    with pytest.raises(ValueError, match="run `fefat password set`"):
+        container.logins.login(PASSWORD)

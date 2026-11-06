@@ -37,8 +37,8 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description End the session the cookie names and clear the cookie; a request with an API token ends
-         *     no session.
+         * @description End the session the cookie names, whether the cookie or an API token authenticates the
+         *     request, and clear the cookie.
          */
         post: operations["logout_v1_auth_logout_post"];
         delete?: never;

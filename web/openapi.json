@@ -447,7 +447,7 @@
     },
     "/v1/auth/logout": {
       "post": {
-        "description": "End the session the cookie names and clear the cookie; a request with an API token ends\nno session.",
+        "description": "End the session the cookie names, whether the cookie or an API token authenticates the\nrequest, and clear the cookie.",
         "operationId": "logout_v1_auth_logout_post",
         "responses": {
           "204": {

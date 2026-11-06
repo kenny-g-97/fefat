@@ -1,25 +1,22 @@
 """The local server's app (step 4.2, D-86, `01-architecture.md` sections 7 and 8): the API under
 `/v1`, its docs behind the login, and the built web app at `/`, for a host of the loopback
-alone, so that a page of another site that a DNS name points at 127.0.0.1 is refused. Every
-error is a problem (`fefat_app.http.problems`), and every response carries its request's id and
-the security headers, which wrap the whole app."""
+alone. Every error is a problem (`fefat_app.http.problems`), and every response carries its
+request's id and the security headers, which wrap the whole app with the host check."""
 
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp
 
 import fefat_app
 from fefat_app.container import Container
 from fefat_app.http import app_settings, docs, health, login
+from fefat_app.http.loopback_hosts import LoopbackHosts
 from fefat_app.http.problems import install_problem_handlers, problems_as_problem_json
 from fefat_app.http.request_ids import RequestIds
 from fefat_app.http.security_headers import SecurityHeaders
-from fefat_app.http.web_app import BuiltWebApp
-
-LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+from fefat_app.http.web_app import WebAppMount
 
 
 class FefatApi(FastAPI):
@@ -30,8 +27,8 @@ class FefatApi(FastAPI):
 
 
 def build_api() -> FastAPI:
-    """The API's routes, error handlers, and host check, without a container: enough for its
-    OpenAPI document."""
+    """The API's routes and error handlers, without a container: enough for its OpenAPI
+    document."""
     api = FefatApi(
         title="FEFAT",
         version=fefat_app.__version__,
@@ -39,8 +36,8 @@ def build_api() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        strict_content_type=True,
     )
-    api.add_middleware(TrustedHostMiddleware, allowed_hosts=list(LOOPBACK_HOSTS))
     install_problem_handlers(api)
     for router in (health.router, login.router, app_settings.router, docs.router):
         api.include_router(router)
@@ -53,5 +50,5 @@ def create_app(container: Container, built_web_app: Path | None) -> ASGIApp:
     api = build_api()
     api.state.container = container
     if built_web_app is not None:
-        api.mount("/", BuiltWebApp(built_web_app), name="web_app")
-    return RequestIds(SecurityHeaders(api))
+        api.router.routes.append(WebAppMount(built_web_app))
+    return RequestIds(SecurityHeaders(LoopbackHosts(api)))

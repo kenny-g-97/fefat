@@ -1,12 +1,15 @@
 """The built web app at `/` (step 4.2, D-86): the files that `pnpm --dir web build` writes to
-`web/dist` (step 4.3), and for any other path a GET or HEAD asks for, its `index.html`, so that
-a reload on a page of the app finds the app; never a path under `/v1/`, which stays the API's,
-and never a file outside the folder, which Starlette refuses."""
+`web/dist` (step 4.3), and for a page path a GET or HEAD asks for, one whose last part has no
+dot, its `index.html`, so that a reload on a page of the app finds the app. A file that is not
+there, such as a script of an older build, stays a 404; a path under `/v1` is left to the API's
+routes, so that a wrong method on one stays a 405; and Starlette refuses a file outside the
+folder."""
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
+from starlette.routing import Match, Mount
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
@@ -30,11 +33,21 @@ class BuiltWebApp(StaticFiles):
         super().__init__(directory=directory, html=True)
 
     async def get_response(self, path: str, scope: Scope) -> Response:
-        if is_api_path(str(scope["path"])):
-            raise HTTPException(status_code=404)
         try:
             return await super().get_response(path, scope)
         except HTTPException as missing:
-            if missing.status_code != 404:
+            if missing.status_code != 404 or "." in PurePosixPath(str(scope["path"])).name:
                 raise
             return await super().get_response(INDEX, scope)
+
+
+class WebAppMount(Mount):
+    """The built web app's mount at `/`, matching every path but the API's."""
+
+    def __init__(self, directory: Path) -> None:
+        super().__init__("/", app=BuiltWebApp(directory), name="web_app")
+
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        if scope["type"] == "http" and is_api_path(str(scope["path"])):
+            return Match.NONE, {}
+        return super().matches(scope)

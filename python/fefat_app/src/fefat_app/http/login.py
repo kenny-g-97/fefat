@@ -1,13 +1,18 @@
 """`POST /v1/auth/login`, `POST /v1/auth/logout`, and `GET /v1/me` (step 4.2, D-86,
 `01-architecture.md` sections 7 and 8): the login takes the password as JSON, which no other
-site's page can send without the browser asking this server first, and sets the session's
-cookie."""
+site's page can send without the browser asking this server first, since FastAPI's strict
+content type refuses a body sent untyped or as text, and it sets the session's cookie."""
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from fefat_app.http.api_prefix import API_PREFIX
-from fefat_app.http.dependencies import BEARER_CHALLENGE, ContainerDependency, IdentityDependency
+from fefat_app.http.dependencies import (
+    BEARER_CHALLENGE,
+    ContainerDependency,
+    IdentityDependency,
+    the_identity,
+)
 from fefat_app.http.problems import problem_responses
 from fefat_app.http.session_cookie import (
     SESSION_COOKIE,
@@ -42,14 +47,17 @@ def login(
     return opened.identity
 
 
-@router.post("/auth/logout", status_code=204, responses=problem_responses(401, 403))
-def logout(
-    request: Request, identity: IdentityDependency, container: ContainerDependency
-) -> Response:
-    """End the session the cookie names and clear the cookie; a request with an API token ends
-    no session."""
+@router.post(
+    "/auth/logout",
+    status_code=204,
+    dependencies=[Depends(the_identity)],
+    responses=problem_responses(401, 403),
+)
+def logout(request: Request, container: ContainerDependency) -> Response:
+    """End the session the cookie names, whether the cookie or an API token authenticates the
+    request, and clear the cookie."""
     cookie = request.cookies.get(SESSION_COOKIE)
-    if isinstance(identity, SessionIdentity) and cookie is not None:
+    if cookie is not None:
         container.logins.logout(cookie)
     ended = Response(status_code=204)
     clear_session_cookie(ended, request)

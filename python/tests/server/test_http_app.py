@@ -91,7 +91,10 @@ def test_a_validation_error_names_where_and_why_but_never_what_was_sent(
 
 
 def test_a_failure_answers_a_problem_with_its_request_id_and_nothing_of_the_error(
-    container: Container, keyring_backend: MemoryKeyring, monkeypatch: pytest.MonkeyPatch
+    container: Container,
+    keyring_backend: MemoryKeyring,
+    monkeypatch: pytest.MonkeyPatch,
+    server_log: Path,
 ) -> None:
     def broken(service: str, username: str) -> str | None:
         raise RuntimeError("the keyring broke while reading a-secret-value")
@@ -103,13 +106,17 @@ def test_a_failure_answers_a_problem_with_its_request_id_and_nothing_of_the_erro
         response = client.get("/v1/settings")
 
     problem = response.json()
+    logged = server_log.read_text(encoding="utf-8")
     assert (response.status_code, response.headers["content-type"]) == (500, PROBLEM)
     assert problem["request_id"] == response.headers["x-request-id"]
     assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
     assert "a-secret-value" not in response.text
+    # uvicorn logs the failure's traceback; the request's own line names it once more.
+    assert f"request_id={problem['request_id']} method=GET path=/v1/settings failed" in logged
+    assert "Traceback" not in logged
 
 
-def test_a_host_other_than_the_loopback_is_refused(container: Container) -> None:
+def test_a_host_other_than_the_loopback_is_refused_with_a_problem(container: Container) -> None:
     app = create_app(container, built_web_app=None)
     with TestClient(app, base_url="http://fefat.example") as foreign:
         refused = foreign.get("/v1/healthz")
@@ -117,3 +124,5 @@ def test_a_host_other_than_the_loopback_is_refused(container: Container) -> None
         answered = local.get("/v1/healthz")
 
     assert (refused.status_code, answered.status_code) == (400, 200)
+    assert refused.headers["content-type"] == PROBLEM
+    assert refused.json()["request_id"] == refused.headers["x-request-id"]

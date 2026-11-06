@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from fefat_app.ports import AccessRecords, Clock
@@ -143,3 +143,8 @@ class Logins:
             return self.hasher.verify(stored, password)
         except VerifyMismatchError:
             return False
+        except InvalidHashError as unreadable:
+            raise ValueError(
+                "Expected the password's Argon2 hash in the settings table, got one argon2 "
+                "cannot read: run `fefat password set`."
+            ) from unreadable

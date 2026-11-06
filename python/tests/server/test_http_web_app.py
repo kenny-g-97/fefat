@@ -60,6 +60,21 @@ def test_a_path_under_v1_that_the_api_does_not_own_is_a_problem(
     assert (response.status_code, response.headers["content-type"]) == (404, PROBLEM)
 
 
+def test_a_wrong_method_on_an_api_route_is_405_as_without_a_web_app(
+    web_client: TestClient,
+) -> None:
+    response = web_client.delete("/v1/healthz")
+
+    assert (response.status_code, response.headers["allow"]) == (405, "GET")
+
+
+@pytest.mark.parametrize("path", ["/assets/index-0ld.js", "/favicon.ico"])
+def test_a_missing_file_is_a_404_rather_than_the_index(web_client: TestClient, path: str) -> None:
+    response = web_client.get(path)
+
+    assert (response.status_code, response.headers["content-type"]) == (404, PROBLEM)
+
+
 def test_a_file_outside_the_web_app_is_never_served(web_client: TestClient) -> None:
     response = web_client.get("/%2e%2e/outside.txt")
 
