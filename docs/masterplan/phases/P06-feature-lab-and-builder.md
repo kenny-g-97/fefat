@@ -18,7 +18,7 @@
 
 ### 6.1 Feature library pages
 
-Depends on: 5.13 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.13 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -56,7 +56,7 @@ Not in this step: editing, preview.
 
 ### 6.2 Editor and preview run
 
-Depends on: 6.1 · Plan mode: required · Reviews: step-reviewer, ui-verifier, code-review · Security: yes · Model hint: hard
+Depends on: 6.1 · Plan mode: required · Reviews: step-reviewer, ui-verifier, design-reviewer, code-review · Security: yes · Model hint: hard
 
 #### Purpose
 
@@ -94,7 +94,7 @@ Not in this step: the chart pane (6.3), the leak check in the UI (6.4).
 
 ### 6.3 Preview chart and statistics panel
 
-Depends on: 6.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 6.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -170,7 +170,7 @@ Not in this step: anything else.
 
 ### 6.5 Feature analytics page
 
-Depends on: 6.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, leakage-auditor · Security: no · Model hint: default
+Depends on: 6.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer, leakage-auditor · Security: no · Model hint: default
 
 #### Purpose
 
@@ -208,7 +208,7 @@ Not in this step: studies (Phase 11).
 
 ### 6.6 Combination builder
 
-Depends on: 6.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 6.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -246,7 +246,7 @@ Not in this step: the strategy builder.
 
 ### 6.7 Rule builder
 
-Depends on: 6.6, 5.5 · Plan mode: required · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: hard
+Depends on: 6.6, 5.5 · Plan mode: required · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: hard
 
 #### Purpose
 
@@ -284,7 +284,7 @@ Not in this step: the execution template form (6.8).
 
 ### 6.8 Execution-template form and code generation
 
-Depends on: 6.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 6.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -322,7 +322,7 @@ Not in this step: running (already exists), the agent.
 
 ### 6.9 Builder-to-backtest end to end
 
-Depends on: 6.8 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 6.8 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 

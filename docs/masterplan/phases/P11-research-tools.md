@@ -96,7 +96,7 @@ Not in this step: optimizers, heatmaps.
 
 ### 11.3 Optimization and heatmaps
 
-Depends on: 11.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 11.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -282,7 +282,7 @@ Not in this step: new study kinds, changes to the safeguards.
 
 ### 11.8 End to end
 
-Depends on: 11.7 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 11.7 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 

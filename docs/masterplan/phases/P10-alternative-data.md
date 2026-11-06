@@ -207,7 +207,7 @@ Not in this step: pages.
 
 ### 10.6 Pages
 
-Depends on: 10.5 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 10.5 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 

@@ -142,7 +142,7 @@ Not in this step: pages, result endpoints (5.7–5.8).
 
 ### 5.4 Data catalog page and chart viewer
 
-Depends on: 5.1, 4.3 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.1, 4.3 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -185,7 +185,7 @@ Not in this step: indicators on the chart, trade markers.
 
 ### 5.5 Strategy page
 
-Depends on: 5.2, 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.2, 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -224,7 +224,7 @@ Not in this step: the builder (Phase 6), running (5.6), feature editing (6.2).
 
 ### 5.6 Run launch and run list
 
-Depends on: 5.3, 5.5 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.3, 5.5 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -266,7 +266,7 @@ Not in this step: results views.
 
 ### 5.7 Results: metrics, equity, distributions
 
-Depends on: 5.6 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.6 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -304,7 +304,7 @@ Not in this step: trades table, chart with trades.
 
 ### 5.8 Trade table
 
-Depends on: 5.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -342,7 +342,7 @@ Not in this step: the chart.
 
 ### 5.9 Trade review chart
 
-Depends on: 5.8, 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, code-review · Security: no · Model hint: default
+Depends on: 5.8, 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer, code-review · Security: no · Model hint: default
 
 #### Purpose
 
@@ -380,7 +380,7 @@ Not in this step: drawing tools, multiple timeframes on one chart.
 
 ### 5.10 Run comparison, version diff, reproduce-run check
 
-Depends on: 5.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -459,7 +459,7 @@ Not in this step: notification preferences per kind (Phase 12).
 
 ### 5.12 Import wizard for your own market data
 
-Depends on: 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: yes · Model hint: default
+Depends on: 5.4 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: default
 
 #### Purpose
 
@@ -497,7 +497,7 @@ Not in this step: trade logs for the prop simulator (Phase 7), alternative non-p
 
 ### 5.13 End-to-end suite and demo
 
-Depends on: 5.10, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 5.10, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
