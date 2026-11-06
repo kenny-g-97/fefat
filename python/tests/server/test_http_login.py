@@ -12,6 +12,10 @@ from local_server import PASSWORD, SettableClock, basic, logged_in, session_cook
 
 PROBLEM = "application/problem+json"
 A_SECRET_CHANGE = {"secrets": {"anthropic": "a key"}}
+LOGIN_PAGE_POLICY = (
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+    "connect-src 'self'; form-action 'none'; base-uri 'none'"
+)
 
 
 def test_a_login_sets_a_strict_http_only_cookie_whose_session_me_shows(
@@ -164,27 +168,41 @@ def test_the_browsers_basic_credentials_beside_a_session_change_nothing(
     assert response.json()["kind"] == "session"
 
 
-def test_the_docs_ask_for_the_password_through_the_browsers_prompt(client: TestClient) -> None:
-    # Done means 1: `/docs` works only after login.
-    for path in ("/docs", "/openapi.json"):
-        response = client.get(path)
-        assert (response.status_code, response.headers["content-type"]) == (401, PROBLEM)
-        assert response.headers["www-authenticate"] == 'Basic realm="FEFAT"'
+def test_without_a_session_the_docs_answer_a_password_page_never_the_browsers_prompt(
+    client: TestClient, container: Container
+) -> None:
+    # Done means 1: `/docs` works only after login. A password manager answered the browser's
+    # own prompt by itself at your check, five times in a second, which tripped the limit.
+    container.logins.set_password(PASSWORD)
+    token = container.api_tokens.create("notebook")
+
+    page = client.get("/docs", headers=basic(PASSWORD))
+    document = client.get("/openapi.json", headers=basic(PASSWORD))
+    by_token = client.get("/openapi.json", headers={"Authorization": f"Bearer {token}"})
+
+    assert page.status_code == 200
+    assert ('type="password"' in page.text, 'fetch("/v1/auth/login"' in page.text) == (True, True)
+    assert "swagger-ui" not in page.text
+    assert ("www-authenticate" in page.headers, "set-cookie" in page.headers) == (False, False)
+    assert page.headers["content-security-policy"] == LOGIN_PAGE_POLICY
+    assert page.headers["cache-control"] == "no-store"
+    assert (document.status_code, document.headers["www-authenticate"]) == (401, "Bearer")
+    assert by_token.json()["info"]["title"] == "FEFAT"
 
 
-def test_the_password_at_the_prompt_logs_in_and_serves_the_docs(
+def test_a_login_as_the_page_makes_it_serves_the_docs_and_their_document(
     client: TestClient, container: Container
 ) -> None:
     container.logins.set_password(PASSWORD)
 
-    page = client.get("/docs", headers=basic(PASSWORD))
+    login = client.post("/v1/auth/login", json={"password": PASSWORD})
+    page = client.get("/docs")
     document = client.get("/openapi.json")
 
-    assert page.status_code == 200
+    assert login.status_code == 200
     assert "swagger-ui" in page.text
-    assert session_cookie(page)["httponly"] is True
     assert document.json()["info"]["title"] == "FEFAT"
-    assert client.get("/v1/me").json()["kind"] == "session"
+    assert document.headers["cache-control"] == "no-store"
 
 
 def test_a_live_session_gets_the_docs_under_their_own_policy(
@@ -212,40 +230,6 @@ def test_the_docs_load_one_release_of_swagger_ui_and_keep_no_token_in_the_browse
     assert "swagger-ui-dist@5.34.0/swagger-ui-bundle.js" in page.text
     assert "swagger-ui-dist@5.34.0/swagger-ui.css" in page.text
     assert "persistAuthorization" not in page.text
-
-
-def test_a_wrong_password_at_the_prompt_asks_again_and_counts_as_an_attempt(
-    client: TestClient, container: Container
-) -> None:
-    container.logins.set_password(PASSWORD)
-
-    asked_again = [client.get("/docs", headers=basic("another one")) for _ in range(5)]
-    waiting = client.post("/v1/auth/login", json={"password": PASSWORD})
-
-    assert [response.status_code for response in asked_again] == [401] * 5
-    assert asked_again[0].headers["www-authenticate"] == 'Basic realm="FEFAT"'
-    assert waiting.status_code == 429
-
-
-def test_the_docs_refuse_a_request_another_site_started_but_a_link_it_opens(
-    client: TestClient, container: Container
-) -> None:
-    # A browser resends the password it was given at the prompt, so an image of another site's
-    # page pointing at /openapi.json would log in, a hash of Argon2 each time.
-    container.logins.set_password(PASSWORD)
-    image = {"Sec-Fetch-Mode": "no-cors", "Sec-Fetch-Dest": "image"}
-    link = {"Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
-
-    refused = [
-        client.get("/openapi.json", headers={**basic(PASSWORD), **image, "Sec-Fetch-Site": site})
-        for site in ("cross-site", "same-site")
-    ]
-    opened = client.get("/docs", headers={**basic(PASSWORD), **link, "Sec-Fetch-Site": "same-site"})
-
-    assert [response.status_code for response in refused] == [403, 403]
-    assert refused[0].headers["content-type"] == PROBLEM
-    assert "set-cookie" not in refused[0].headers
-    assert opened.status_code == 200
 
 
 def test_logout_beside_an_api_token_ends_the_cookies_session_too(

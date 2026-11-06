@@ -52,7 +52,7 @@ def _announce(settings: Settings, log_file: Path, web_app: Path | None) -> None:
     address = f"http://{settings.bind_address}:{settings.port}"
     print(f"FEFAT serves {address} to this computer alone; stop it with Ctrl+C.")
     print(
-        f"  The API's docs: {address}/docs, after the password; a request there that changes "
+        f"  The API's docs: {address}/docs, where you log in; a request there that changes "
         "something needs the csrf_token of GET /v1/me under Authorize, or an API token of "
         "`fefat token create`."
     )
