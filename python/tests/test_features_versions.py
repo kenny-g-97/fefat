@@ -358,6 +358,23 @@ def test_a_version_whose_schema_a_release_writes_otherwise_is_read_under_its_has
     assert spec.warmup == 5
 
 
+def test_a_version_whose_code_no_longer_gives_its_hash_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A version file whose code was written by hand with Windows line ends keeps a hash that its
+    # code, normalised when it is built again, no longer gives.
+    saved = ff.features.save(features_of_cell(GAP)["gap"])
+    code = saved.code.replace("\n", "\r\n")
+    edited = saved.model_copy(
+        update={"code": code, "hash": content_hash(code, saved.inputs, saved.parameter_schema)}
+    )
+    (folder("gap") / "v1.json").write_text(edited.model_dump_json(indent=2), encoding="utf-8")
+    monkeypatch.setattr(registry, "_DEFINED", {})
+
+    with pytest.raises(ValueError, match="its code no longer gives its hash"):
+        ff.features.ref("gap", version=1)
+
+
 def test_a_version_read_under_another_releases_schema_is_not_saved_into_another_library(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

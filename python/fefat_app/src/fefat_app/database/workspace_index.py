@@ -3,10 +3,11 @@ feature versions, the leak detector's reports, and the saved import profiles tha
 under `FEFAT_HOME`, through the SDK, and adds a row for each file it has not seen, in one
 transaction, moving and changing no file, so that it can run at any time.
 
-A version is seen by its feature and number, a report and a profile by their file's SHA-256,
-since the leak detector replaces a report with the next of its hash, whose row is added beside
-the last. A file the SDK refuses, such as a version changed after it was written, or a number
-saved again with another hash, stops the indexing with the reason, and no row is added."""
+A version is seen by its feature, number, and hash, a report and a profile by their file's
+SHA-256, since the leak detector replaces a report with the next of its hash, whose row is added
+beside the last. A file the SDK refuses, such as a version changed after it was written, or a
+version file deleted or replaced by hand after it was indexed, stops the indexing with the
+reason, and no row is added."""
 
 import hashlib
 import os
@@ -87,22 +88,23 @@ def _index_versions(session: Session, workspace_id: str) -> int:
             select(FeatureRow.name, FeatureRow.id).where(FeatureRow.workspace_id == workspace_id)
         )
     }
-    indexed = {
-        (feature_id, version_no): content_hash
-        for feature_id, version_no, content_hash in session.execute(
-            select(
-                FeatureVersionRow.feature_id,
-                FeatureVersionRow.version_no,
-                FeatureVersionRow.content_hash,
-            )
+    indexed = session.execute(
+        select(
+            FeatureVersionRow.feature_id,
+            FeatureVersionRow.version_no,
+            FeatureVersionRow.content_hash,
         )
-    }
+    ).all()
+    hashes = {(feature_id, number): content_hash for feature_id, number, content_hash in indexed}
+    numbers = {(feature_id, content_hash): number for feature_id, number, content_hash in indexed}
     added = 0
     for record in saved_versions():
         if record.name not in feature_ids:
             feature_ids[record.name] = _new_feature(session, workspace_id, record.name)
         feature_id = feature_ids[record.name]
-        if _seen(indexed, feature_id, record):
+        if _seen(
+            record, hashes.get((feature_id, record.version)), numbers.get((feature_id, record.hash))
+        ):
             continue
         session.add(_version_row(feature_id, record))
         added += 1
@@ -117,16 +119,25 @@ def _new_feature(session: Session, workspace_id: str, name: str) -> str:
     return feature.id
 
 
-def _seen(indexed: dict[tuple[str, int], str], feature_id: str, record: FeatureVersion) -> bool:
-    """Whether the version is indexed, refused where its number is indexed with another hash."""
-    found = indexed.get((feature_id, record.version))
-    if found is None:
+def _seen(record: FeatureVersion, indexed_hash: str | None, indexed_number: int | None) -> bool:
+    """Whether the version is indexed, given the hash the index holds for its number and the
+    number it holds for its hash; refused where either holds another, as a version file deleted
+    or replaced by hand after it was indexed leaves them."""
+    if indexed_hash is None and indexed_number is None:
         return False
-    if found != record.hash:
+    redone = (
+        "a version file was deleted or replaced by hand after it was indexed, which the index, "
+        "kept insert-only, cannot follow: put the files back as they were."
+    )
+    if indexed_hash is not None and indexed_hash != record.hash:
         raise ValueError(
             f"Expected version {record.version} of feature {record.name} with the hash "
-            f"{found[:12]} as indexed, got {record.hash[:12]}: its file was saved again; "
-            "delete the app's database to index the workspace anew."
+            f"{indexed_hash[:12]} as indexed, got {record.hash[:12]}: {redone}"
+        )
+    if indexed_number is not None and indexed_number != record.version:
+        raise ValueError(
+            f"Expected the hash {record.hash[:12]} of feature {record.name} as version "
+            f"{indexed_number}, as indexed, got version {record.version}: {redone}"
         )
     return True
 

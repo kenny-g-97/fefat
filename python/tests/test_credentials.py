@@ -5,7 +5,7 @@ import re
 
 import keyring
 import pytest
-from keyring.backends import fail
+from keyring.backends import fail, null
 
 from fefat_app.container import build_container
 from fefat_app.credentials import KeyringCredentialStore
@@ -54,6 +54,21 @@ def test_a_machine_without_a_usable_credential_store_is_refused_loudly() -> None
     with pytest.raises(ValueError, match=re.escape(expected)):
         store.get(SecretName.ANTHROPIC)
     with pytest.raises(ValueError, match=re.escape(expected)):
+        store.delete(SecretName.ANTHROPIC)
+
+
+def test_a_backend_that_keeps_nothing_is_refused() -> None:
+    # Keyring's `null` backend, which a PYTHON_KEYRING_BACKEND set for other tools may choose,
+    # accepts every secret and keeps none.
+    store = KeyringCredentialStore(null.Keyring())
+    expected = (
+        "Expected the credential store to give back the secret anthropic it was given, got "
+        "nothing from keyring's backend keyring.backends.null"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        store.set(SecretName.ANTHROPIC, "a value")
+    with pytest.raises(ValueError, match="got none to delete"):
         store.delete(SecretName.ANTHROPIC)
 
 

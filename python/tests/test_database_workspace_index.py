@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 import fefat as ff
 from fefat.config import resolve_paths
+from fefat.features import combine
 from fefat.features.validation_report import StartCheck, ValidationReport
 from fefat.features.versions import validation_file
 from fefat.market.importers.profiles import ProfileKind, preset_profiles
@@ -243,3 +244,41 @@ def test_a_version_saved_again_under_an_indexed_number_is_refused(engine: Engine
 
     with pytest.raises(ValueError, match=expected):
         index_workspace(engine)
+
+
+def test_a_version_saved_again_under_another_number_is_refused(engine: Engine) -> None:
+    # A version file deleted by hand and its code saved again takes the next number.
+    first = gap_with(3)
+    gap_with(4)
+    index_workspace(engine)
+    (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
+    again = gap_with(3)
+    expected = (
+        f"Expected the hash {first.hash[:12]} of feature gap as version 1, as indexed, got "
+        "version 3"
+    )
+
+    with pytest.raises(ValueError, match=expected):
+        index_workspace(engine)
+    assert (again.hash, again.version) == (first.hash, 3)
+
+
+def test_a_combination_is_indexed_with_its_description_and_the_features_it_reads(
+    engine: Engine,
+) -> None:
+    # Step 6.6's dialog reopens a combination from its description (from `BACKLOG.md`).
+    rsi = ff.indicators.rsi
+    stretch = combine.define("rsi_stretch", rsi(14) - combine.rolling_mean(rsi(14), 10))
+    saved = ff.features.save(stretch)
+    written = saved.model_dump(mode="json")
+
+    indexed = index_workspace(engine)
+
+    with Session(engine) as session:
+        row = session.scalars(
+            select(FeatureVersionRow).where(FeatureVersionRow.content_hash == saved.hash)
+        ).one()
+    assert indexed.versions == 2
+    assert row.combination_json == written["combination"]
+    assert row.inputs_json == written["inputs"]
+    assert [each["name"] for each in row.inputs_json] == ["rsi"]
