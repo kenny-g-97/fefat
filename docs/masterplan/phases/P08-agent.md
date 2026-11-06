@@ -132,7 +132,7 @@ Not in this step: execute and write tools, UI.
 
 ### 8.4 Chat with resumable streaming
 
-Depends on: 8.3 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 8.3 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -208,7 +208,7 @@ Not in this step: the write tools (8.6), the review UI.
 
 ### 8.6 Write tools and proposal review UI
 
-Depends on: 8.5 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: yes · Model hint: hard
+Depends on: 8.5 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: hard
 
 #### Purpose
 
@@ -394,7 +394,7 @@ Not in this step: new tools, upload-based attacks (Phase 10).
 
 ### 8.11 End to end
 
-Depends on: 8.10 · Plan mode: skip · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 8.10 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 

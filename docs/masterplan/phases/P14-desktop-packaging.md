@@ -90,7 +90,7 @@ Not in this step: installers.
 
 ### 14.3 Tauri shell: window, tray, auto-start
 
-Depends on: 14.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 14.2 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -287,7 +287,7 @@ Not in this step: market data of any kind, billing, customer accounts.
 
 ### 14.8 First-run experience
 
-Depends on: 14.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 14.7 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 

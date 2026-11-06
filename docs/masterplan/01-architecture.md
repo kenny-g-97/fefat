@@ -50,14 +50,14 @@ Three principles hold everything together:
 | --- | --- | --- |
 | Engine core | Rust (stable), `pyo3` + `maturin`, `abi3-py312` wheel | Crates in `engine/crates/`; Python module `fefat_engine` |
 | SDK and app | Python 3.12 (uv-managed), Polars, PyArrow, DuckDB, Pydantic 2 | Packages `fefat` (SDK) and `fefat_app` (server) in a uv workspace |
-| App state | SQLite (WAL), SQLAlchemy 2, Alembic (batch mode) | One file: `fefat.sqlite` |
-| Server | FastAPI + Uvicorn | `fefat up` starts it; OpenAPI exported to `web/openapi.json` |
-| Web | Vite 8, React 19, TypeScript, Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod, `openapi-typescript` + `openapi-fetch` | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, made with the `frontend-design` skill (`08-code-design.md` §5) |
+| App state | SQLite (WAL), SQLAlchemy 2.1, Alembic 1.20 (batch mode) | One file, `fefat.sqlite`: the app's own state and an index of the workspace's files, which stay the record (D-84) |
+| Server | FastAPI 0.162 + Uvicorn 0.54; argon2-cffi for the password, keyring for secrets | `fefat up` starts it on 127.0.0.1, port 8765 by default; OpenAPI exported to `web/openapi.json` |
+| Web | Vite 8, React 19, TypeScript 6 (7 held), Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod 4, `openapi-typescript` 7 + `openapi-fetch`, oxlint and oxfmt | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, made with the `frontend-design` and `unslop` skills (`08-code-design.md` §5); versions pinned at the Phase 4 kickoff (D-83) |
 | Charts | TradingView Lightweight Charts 5 (price, markers, indicator panes), ECharts 6 (analytics) | Keep `attributionLogo` on (Apache-2.0 attribution) |
 | Editor | CodeMirror 6 with `@codemirror/merge` | Lighter than Monaco, and it works on phones for the backlog's phone item |
 | Agent | `anthropic` Python SDK; tool loop; `claude-opus-5-5` default | See `04-agent.md` |
 | Jobs | `concurrent.futures` process pool inside the server; subprocess runner for user code | See §6 |
-| Tests | `pytest` + `hypothesis`; `cargo nextest` + `proptest` + `insta`; `vitest` + Playwright | See `05-build-process.md` |
+| Tests | `pytest` + `hypothesis`; `cargo nextest` + `proptest` + `insta`; `vitest` 5 + Playwright 1.65 | See `05-build-process.md` |
 | Task runner | `just` | Recipes call `uv`, `cargo`, `pnpm`; identical on Windows, CI, and macOS |
 | CI | GitHub Actions: `windows-latest` and `ubuntu-latest` (macOS added in P14) | Wheels built on both |
 | Desktop shell (P14) | Tauri 2, backend as a sidecar | Signed installers, auto-update |
@@ -92,7 +92,7 @@ fefat/
   web/                          Vite React app (pnpm)
     DESIGN.md                   the design system: tokens, type, layout, principles (written in step 4.3)
     src/app/                    shell, router, providers
-    src/areas/<area>/           lab, strategies, runs, prop, agent, data, settings: routes, components, hooks per area
+    src/areas/<area>/           home, lab, strategies, runs, prop, agent, data, settings: routes, components, hooks per area
     src/ui/                     design-system primitives and tokens (themed shadcn/ui)
     src/charts/                 chart wrappers (Lightweight Charts, ECharts)
     src/api/                    generated OpenAPI client and query hooks
@@ -106,7 +106,7 @@ fefat/
     spec/                       fill-semantics.md and other normative specs
 ```
 
-Dependencies point inward: `web → fefat_app.http → fefat_app.services → fefat → fefat_engine`. `fefat` never imports `fefat_app`; the adapters (`database/`, `jobs/`, `executor.py`, `agent/`, `push/`, `credentials.py`) implement the ports in `ports.py` and are built once in `container.py`; in Rust, only `fefat-data`, `fefat-py`, and `fefat-cli` touch the outside world. The rule, its reasons, the names, and how `just check` enforces it are in `08-code-design.md` §1–§3.
+Dependencies point inward: `web → fefat_app.http → fefat_app.services → fefat → fefat_engine`. `fefat` never imports `fefat_app`; the adapters (`database/`, `jobs/`, `executor.py`, `agent/`, `credentials.py`) implement the ports in `ports.py` and are built once in `container.py`; in Rust, only `fefat-data`, `fefat-py`, and `fefat-cli` touch the outside world. The rule, its reasons, the names, and how `just check` enforces it are in `08-code-design.md` §1–§3.
 
 ## 4. Runtime layout (the app-data folder)
 
@@ -114,15 +114,16 @@ Dependencies point inward: `web → fefat_app.http → fefat_app.services → fe
 
 ```text
 FEFAT_HOME/
-  config.toml                 port, bind address, data dir, model defaults
+  config.toml                 port, bind address, process-pool size, import roots (D-83)
   fefat.sqlite                app state
   logs/
   data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports) + instruments/ (products your imports added, step 1.10)
   profiles/                   your saved import profiles (YAML, step 1.10)
   cache/                      engine Arrow IPC cache, feature cache, session tables (all rebuildable)
   workspaces/default/
-    features/<name>/v<n>.json file-based feature versions from Phase 3 (imported into the database in 4.1, kept as backup)
-    artifacts/runs/<run_id>/  orders, fills, trades, trade_paths, equity, signals, log, run.json
+    features/<name>/v<n>.json feature versions, the record the database indexes (D-84), with validations/<hash>.json
+    artifacts/runs/<run key>/ orders, fills, costs, trades, trade_paths, equity, equity_daily, signals, log, run.json
+    artifacts/runs/requests/  <request key>.json: the request lookup of step 3.7
     artifacts/studies/<id>/
     artifacts/prop/<id>/      prop simulation results
     trade_logs/<id>/          trade logs imported from other platforms (backtest files)
@@ -134,14 +135,14 @@ Everything under `cache/` can be deleted and rebuilt. Everything else is backed 
 
 ## 5. Data model (SQLite)
 
-All ids are UUIDv7 strings. Every row carries `created_at`; versioned rows are never updated after creation.
+All ids are UUIDv7 strings. Every row carries `created_at`; versioned rows are never updated after creation. Workspace files are the record of feature versions, the leak detector's reports, import profiles, and runs, and these tables index them beside the app's own state (D-84); each step creates the tables it first writes, in a migration of its own (D-83).
 
 | Area | Tables (key columns) |
 | --- | --- |
-| Settings | `settings(key, value_json)`, `workspaces(id, name, path)` |
-| Data | `datasets(id, kind, provider, schema, root, instrument, range_start, range_end, origin, licence_scope, catalog_version)` (`origin` is `sync` or `import`; `provider` names the connector or preset), `dataset_snapshots(id, dataset_id, manifest_json, content_hash)`, `instruments(id, root, symbol, kind, tick_size, point_value, currency, calendar, valid_from, valid_to, source)`, `fee_tables(id, name, effective_from, json)`, `catalog_products(id, catalog_version, spec_json, recommended_sources_json, status, last_sync_at)`, `data_sources(id, provider, status, connected_at)` (keys live in the credential store), `import_profiles(id, kind, name, mapping_json)` (`kind` is `market_data` or `trade_log`) |
-| Code | `features(id, workspace_id, name, latest_version_id)`, `feature_versions(id, feature_id, version_no, parent_id, code, code_sha256, params_schema_json, inputs_json, warmup, validation_json, author_kind, proposal_id)`, `strategies(id, workspace_id, name, kind, latest_version_id)`, `strategy_versions(id, strategy_id, version_no, parent_id, code, code_sha256, builder_spec_json, params_schema_json, author_kind, proposal_id, changelog)`, `strategy_version_features(strategy_version_id, feature_version_id)` |
-| Runs | `runs(id, strategy_version_id, params_json, config_json, snapshot_ids_json, engine_version, fill_model_version, seed, run_hash, origin, status, job_id, study_id, trial_no, metrics_json, artifact_dir, fidelity_json, warnings_json)` (`origin` is `manual`, `study`, `walk_forward`, `reproduce`, or `agent`), `studies(id, kind, spec_json, state, totals_json, summary_json, artifact_dir)` |
+| Settings | `settings(key, value_json)`, `workspaces(id, name, path)`, `sessions(id, token_hash, created_at, expires_at, last_seen_at)`, `api_tokens(id, name, token_hash, created_at, last_used_at, revoked_at)` |
+| Data | `datasets(id, kind, provider, schema, root, instrument, range_start, range_end, origin, licence_scope, catalog_version)` (`origin` is `sync` or `import`; `provider` names the connector or preset), `dataset_snapshots(id, dataset_id, manifest_json, content_hash)`, `instruments(id, root, symbol, kind, tick_size, point_value, currency, calendar, valid_from, valid_to, source)`, `fee_tables(id, name, effective_from, json)`, `catalog_products(id, catalog_version, spec_json, recommended_sources_json, status, last_sync_at)`, `data_sources(id, provider, status, connected_at)` (keys live in the credential store), `import_profiles(id, kind, name, mapping_json, sha256)` (`kind` is `market_data` or `trade_log`) |
+| Code | `features(id, workspace_id, name, latest_version_id)`, `feature_versions(id, feature_id, version_no, parent_id, code, code_sha256, params_schema_json, inputs_json, outputs_json, warmup, warmup_sessions, combination_json, author_kind, proposal_id)`, `feature_validations(id, feature_version_id, report_sha256, instrument, timeframe, provider, window_start, window_end, parameters_json, report_json, passed)`, `strategies(id, workspace_id, name, kind, latest_version_id)`, `strategy_versions(id, strategy_id, version_no, parent_id, code, code_sha256, builder_spec_json, params_schema_json, author_kind, proposal_id, changelog)`, `strategy_version_features(strategy_version_id, feature_version_id)` |
+| Runs | `runs(id, strategy_version_id, params_json, config_json, snapshot_ids_json, engine_version, fill_model_version, seed, run_key, origin, status, job_id, study_id, trial_no, metrics_json, artifact_dir, fidelity_json, warnings_json)` (`origin` is `manual`, `study`, `walk_forward`, `reproduce`, or `agent`), `studies(id, kind, spec_json, state, totals_json, summary_json, artifact_dir)` |
 | Prop | `prop_rule_sets(id, firm, plan, name)`, `prop_rule_set_versions(id, rule_set_id, version_no, as_of, sources_json, rules_json, status)`, `prop_strategies(id, name)`, `prop_strategy_versions(id, prop_strategy_id, version_no, spec_json)`, `backtest_files(id, kind, run_id, import_profile_id, path_fidelity_json, instruments_json, range_start, range_end, trade_count, artifact_dir)` (`kind` is `run` or `imported`; `path_fidelity_json` is the mix of fidelities across trades), `prop_simulations(id, backtest_file_id, rule_set_version_ids_json, prop_strategy_version_id, config_json, sim_hash, metrics_json, artifact_dir)` |
 | Agent | `agent_sessions(id, context_json, model, status)`, `agent_turns(id, session_id, status, usage_json, cost_usd)`, `agent_messages(id, session_id, turn_id, role, content_json)`, `agent_transcript(id, session_id, seq, block_json)` (append-only API transcript), `agent_tool_calls(id, turn_id, name, input_json, output_json, duration_ms)`, `proposals(id, session_id, kind, target_id, base_version_id, content, diff, validation_json, status, decided_at, comment, result_version_id)`, `usage_ledger(id, turn_id, model, input_tokens, output_tokens, cache_read_tokens, cost_usd)` |
 | Uploads | `uploads(id, filename, size, sha256, status, path)`, `ingestion_recipes(id, upload_id, code, version_no)` |
@@ -156,7 +157,7 @@ The schema is created by Alembic migrations from Phase 4. Earlier phases keep SD
 - **Streams.** `GET /v1/streams/{stream_id}` is Server-Sent Events backed by the `events` table: the event id is the row id, the client reconnects with `Last-Event-ID`, heartbeats every 15 s. Agent turns use the same mechanism (stream `turn:<id>`).
 - **Executor.** User code (features, strategies, ingestion transforms) runs through `fefat_app.executor`: a subprocess with a scrubbed environment, a wall-clock timeout, a memory limit (Job Objects on Windows, `RLIMIT_AS` elsewhere), and a result file validated against a Pydantic model before anything is registered. This is crash containment and resource control, not a security boundary — a local app runs the user's own code.
 - **Cancellation.** The API sets `cancel_requested_at`; workers check it between chunks and trials; after a grace period the runner kills the subprocess.
-- **Idempotency.** `run_hash = sha256(strategy version hash, params, config, snapshot hashes, engine version, fill-model version, seed)` is the app-level identity of a run; the engine's own run key (`02-engine-and-data.md` §4, over the spec and the signal frame) is one of its inputs. Submitting an identical run returns the existing run.
+- **Idempotency.** A run's identity is the engine's run key (`02-engine-and-data.md` §4), which covers the spec, the run's config, the signal frame, the snapshots of the data it read, and the versions: it names the run's folder (D-62) and is unique in `runs.run_key` beside the row's UUIDv7 id (D-83), and the request lookup of step 3.7 finds an identical request's run without loading bars or evaluating signals. Submitting an identical run returns the existing run.
 - **Sweeps** (P11) are a parent `study` job that expands trials, skips hashes already done, and dispatches chunks of trials; signal-strategy chunks run inside one `fefat_engine.run_batch` call that parallelises with Rayon over the shared memory-mapped data.
 
 ## 7. API outline

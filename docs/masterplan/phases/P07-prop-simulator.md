@@ -324,7 +324,7 @@ Not in this step: pages.
 
 ### 7.9 Rule-set and prop-strategy pages
 
-Depends on: 7.8, 6.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 7.8, 6.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -362,7 +362,7 @@ Not in this step: backtest files and simulations (7.10).
 
 ### 7.10 Backtest files, simulation launch, results pages
 
-Depends on: 7.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: yes · Model hint: default
+Depends on: 7.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: default
 
 #### Purpose
 
@@ -399,7 +399,7 @@ Not in this step: new simulation features.
 
 ### 7.11 More presets, end to end
 
-Depends on: 7.10 · Plan mode: skip · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 7.10 · Plan mode: skip · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
@@ -473,7 +473,7 @@ Not in this step: pages (7.13); a strategy that reads the portfolio's state whil
 
 ### 7.13 Portfolio page
 
-Depends on: 7.12, 7.11 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 7.12, 7.11 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 

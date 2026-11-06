@@ -165,7 +165,7 @@ Not in this step: UI.
 
 ### 9.5 Code editor page for event strategies
 
-Depends on: 9.4, 6.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier · Security: no · Model hint: default
+Depends on: 9.4, 6.9 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
 
 #### Purpose
 
