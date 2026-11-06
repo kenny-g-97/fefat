@@ -64,7 +64,6 @@ from fefat.market.importers.file_import import (
     preview_file,
 )
 from fefat.market.importers.profiles import (
-    PROFILES_FOLDER_NAME,
     load_profile,
     preset_profiles,
     profile_yaml,
@@ -202,7 +201,7 @@ def import_a_file(arguments: argparse.Namespace) -> int:
     reference: str = arguments.profile
     request = FileImportRequest(
         path=arguments.path,
-        profile=load_profile(reference, paths.home),
+        profile=load_profile(reference, paths.profiles_dir),
         contract=arguments.contract,
         root=arguments.root,
         time_zone=arguments.time_zone,
@@ -218,23 +217,23 @@ def import_a_file(arguments: argparse.Namespace) -> int:
     )
     print(report.summary())
     if isinstance(report, FileImportReport):
-        save_profile(reference, paths.home)
+        save_profile(reference, paths.profiles_dir)
         dataset = report.reading.dataset
         _write_the_report(paths, dataset.provider, dataset.root)
     return EXIT_OK
 
 
 def print_the_profiles(arguments: argparse.Namespace) -> int:
-    home = resolve_paths(os.environ).home
+    profiles_dir = resolve_paths(os.environ).profiles_dir
     name: str | None = arguments.name
     if name is not None:
-        print(profile_yaml(load_profile(name, home)), end="")
+        print(profile_yaml(load_profile(name, profiles_dir)), end="")
         return EXIT_OK
-    saved = saved_profiles(home)
+    saved = saved_profiles(profiles_dir)
     lines = [
         "Import presets (fefat data sources names the source each reads):",
         *(f"  {profile.name}: {profile.description}" for profile in preset_profiles().values()),
-        f"Your saved profiles, in {home / PROFILES_FOLDER_NAME}:",
+        f"Your saved profiles, in {profiles_dir}:",
         *(f"  {profile.name}: {profile.description}" for profile in saved.values()),
         *([] if saved else ["  none yet: give --profile a profile's YAML file to save one"]),
     ]

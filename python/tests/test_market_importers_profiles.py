@@ -50,39 +50,42 @@ def a_profile_file(folder: Path, name: str = "es-tradingview-5m", **changes: obj
 def test_a_profile_file_is_saved_by_its_first_import_and_found_by_its_name_afterwards(
     tmp_path: Path,
 ) -> None:
-    home = tmp_path / "home"
+    # The profiles' folder is `FefatPaths.profiles_dir`, `<FEFAT_HOME>/profiles` (step 4.1).
+    profiles = tmp_path / "home" / "profiles"
     path = str(a_profile_file(tmp_path))
 
-    first = load_profile(path, home)
-    loading_saves_nothing = not (home / "profiles").exists()
-    saved = save_profile(path, home)
+    first = load_profile(path, profiles)
+    loading_saves_nothing = not profiles.exists()
+    saved = save_profile(path, profiles)
 
     assert loading_saves_nothing and saved
-    assert not save_profile(path, home)
-    assert (home / "profiles" / "es-tradingview-5m.yaml").is_file()
-    assert load_profile("es-tradingview-5m", home) == first
+    assert not save_profile(path, profiles)
+    assert (profiles / "es-tradingview-5m.yaml").is_file()
+    assert load_profile("es-tradingview-5m", profiles) == first
     assert str(first.timeframe) == "5m"
 
 
 def test_a_different_profile_under_a_saved_name_is_refused(tmp_path: Path) -> None:
-    home = tmp_path / "home"
-    save_profile(str(a_profile_file(tmp_path)), home)
+    profiles = tmp_path / "home" / "profiles"
+    save_profile(str(a_profile_file(tmp_path)), profiles)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     other = a_profile_file(elsewhere, timeframe="15m")
 
     with pytest.raises(ValueError, match="as saved in"):
-        load_profile(str(other), home)
+        load_profile(str(other), profiles)
 
 
 def test_a_profile_may_not_take_a_presets_name(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="other than the presets'"):
-        load_profile(str(a_profile_file(tmp_path, name="ninjatrader")), tmp_path / "home")
+        load_profile(
+            str(a_profile_file(tmp_path, name="ninjatrader")), tmp_path / "home" / "profiles"
+        )
 
 
 def test_an_unknown_profile_is_refused_with_the_known_ones(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="databento-csv, ibkr, ninjatrader"):
-        load_profile("motivewave", tmp_path / "home")
+        load_profile("motivewave", tmp_path / "home" / "profiles")
 
 
 @pytest.mark.parametrize(
@@ -132,7 +135,7 @@ def test_a_file_name_pattern_that_finds_no_contract_is_refused(
     path = a_profile_file(tmp_path, contract_in_file_name=pattern)
 
     with pytest.raises(ValueError, match=refusal):
-        load_profile(str(path), tmp_path / "home")
+        load_profile(str(path), tmp_path / "home" / "profiles")
 
 
 def test_a_timestamp_format_polars_cannot_read_is_refused_when_the_profile_is_read() -> None:

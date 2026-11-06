@@ -85,3 +85,73 @@ def test_the_quality_reports_live_in_the_data_folder(tmp_path: Path) -> None:
     paths = resolve_paths({"FEFAT_DATA_DIR": str(tmp_path / "market-data")})
 
     assert paths.reports_dir == tmp_path / "market-data" / "reports"
+
+
+def test_the_apps_own_files_live_under_fefat_home_and_resolving_makes_none(
+    tmp_path: Path,
+) -> None:
+    # Step 4.1 (`01-architecture.md` section 4): the settings, the app's database, the logs, and
+    # the saved import profiles, each named by `FefatPaths` alone.
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
+
+    assert paths.config_file == tmp_path / "config.toml"
+    assert paths.database_file == tmp_path / "fefat.sqlite"
+    assert paths.logs_dir == tmp_path / "logs"
+    assert paths.profiles_dir == tmp_path / "profiles"
+    assert list(tmp_path.iterdir()) == []
+
+
+def a_checkout(folder: Path, entry: str) -> Path:
+    """A git working tree at `folder`: its `.git` a folder, as in a clone, or a file, as in a
+    worktree or a submodule."""
+    folder.mkdir(parents=True)
+    if entry == "folder":
+        (folder / ".git").mkdir()
+    else:
+        (folder / ".git").write_text("gitdir: ../elsewhere\n", encoding="utf-8")
+    return folder
+
+
+@pytest.mark.parametrize("entry", ["folder", "file"])
+def test_a_data_folder_inside_a_git_working_tree_is_refused(tmp_path: Path, entry: str) -> None:
+    # Step 4.1 (from `BACKLOG.md`): an import would write licensed data beside tracked files.
+    checkout = a_checkout(tmp_path / "checkout", entry)
+    data_dir = checkout / "fixtures" / "not-made-yet"
+    expected = (
+        f"Expected the data folder outside a git working tree, got {data_dir} inside the "
+        f"repository at {checkout}"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        resolve_paths({"FEFAT_HOME": str(tmp_path / "home"), "FEFAT_DATA_DIR": str(data_dir)})
+
+
+def test_a_fefat_home_inside_a_git_working_tree_takes_its_data_folder_with_it(
+    tmp_path: Path,
+) -> None:
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+
+    with pytest.raises(ValueError, match="outside a git working tree"):
+        resolve_paths({"FEFAT_HOME": str(checkout / "home")})
+
+
+def test_a_data_folder_inside_a_git_working_tree_is_allowed_by_the_variable_at_1(
+    tmp_path: Path,
+) -> None:
+    # The tests that read the repository's `fixtures/` as their data folder set it.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    environment = {
+        "FEFAT_HOME": str(tmp_path / "home"),
+        "FEFAT_DATA_DIR": str(checkout / "fixtures"),
+        "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE": "1",
+    }
+
+    assert resolve_paths(environment).data_dir == checkout / "fixtures"
+
+
+@pytest.mark.parametrize("value", ["", "0", "true", "yes"])
+def test_the_variable_that_allows_it_takes_1_alone(tmp_path: Path, value: str) -> None:
+    expected = f"Expected FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE to be 1 or unset, got {value!r}."
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        resolve_paths({"FEFAT_HOME": str(tmp_path), "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE": value})

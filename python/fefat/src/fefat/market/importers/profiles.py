@@ -12,11 +12,12 @@ Its provider is the folder its datasets are stored under.
 
 The presets for common exports ship as `presets/<id>.yaml` beside this module, each an entry of
 the source guide (`fefat.market.sources`), and a trader's own profiles are YAML files in the
-same form, saved under `<FEFAT_HOME>/profiles/` by their first import:
+same form, saved under `<FEFAT_HOME>/profiles/` (`FefatPaths.profiles_dir`) by their first
+import:
 
-    load_profile("ninjatrader", paths.home)
-    profile = load_profile("C:/exports/fdax-5m.yaml", paths.home)
-    save_profile("C:/exports/fdax-5m.yaml", paths.home)  # once an import with it wrote
+    load_profile("ninjatrader", paths.profiles_dir)
+    profile = load_profile("C:/exports/fdax-5m.yaml", paths.profiles_dir)
+    save_profile("C:/exports/fdax-5m.yaml", paths.profiles_dir)  # once an import with it wrote
 """
 
 import re
@@ -46,8 +47,6 @@ from fefat.market.schema import FrozenModel, Timeframe
 from fefat.market.store_files import write_atomically
 
 PRESETS_FOLDER = Path(__file__).with_name("presets")
-PROFILES_FOLDER_NAME = "profiles"
-"""The folder of a trader's saved profiles, inside `FEFAT_HOME`."""
 TICKS = "ticks"
 
 
@@ -301,25 +300,24 @@ def preset_profiles() -> dict[str, ImportProfile]:
     return {profile.name: profile for profile in profiles}
 
 
-def saved_profiles(home: Path) -> dict[str, ImportProfile]:
-    """The profiles saved in `<home>/profiles/`, by name."""
-    folder = home / PROFILES_FOLDER_NAME
+def saved_profiles(profiles_dir: Path) -> dict[str, ImportProfile]:
+    """The profiles saved in `profiles_dir`, by name."""
     profiles = (
         parse_profile(path.read_text(encoding="utf-8"), str(path))
-        for path in sorted(folder.glob("*.yaml"))
+        for path in sorted(profiles_dir.glob("*.yaml"))
     )
     return {profile.name: profile for profile in profiles}
 
 
-def load_profile(reference: str, home: Path) -> ImportProfile:
-    """The profile `reference` names: a preset, a profile saved in `<home>/profiles/`, or a YAML
+def load_profile(reference: str, profiles_dir: Path) -> ImportProfile:
+    """The profile `reference` names: a preset, a profile saved in `profiles_dir`, or a YAML
     file, refused under a preset's name or where another profile is saved under its name; an
     import that writes with it saves it (`save_profile`)."""
     path = Path(reference)
     if _is_profile_file(path):
-        return _profile_file(path, home)
+        return _profile_file(path, profiles_dir)
     presets = preset_profiles()
-    saved = saved_profiles(home)
+    saved = saved_profiles(profiles_dir)
     if reference in presets:
         return presets[reference]
     if reference in saved:
@@ -331,14 +329,14 @@ def load_profile(reference: str, home: Path) -> ImportProfile:
     )
 
 
-def save_profile(reference: str, home: Path) -> bool:
-    """Save the YAML file `reference` under `<home>/profiles/` by its profile's name, for later
-    imports to name, once an import with it has written: True when it was written, False for a
-    preset, a saved profile's name, or a file saved already."""
+def save_profile(reference: str, profiles_dir: Path) -> bool:
+    """Save the YAML file `reference` in `profiles_dir` by its profile's name, for later imports
+    to name, once an import with it has written: True when it was written, False for a preset,
+    a saved profile's name, or a file saved already."""
     path = Path(reference)
     if not _is_profile_file(path):
         return False
-    saved_path = _saved_path(home, _profile_file(path, home).name)
+    saved_path = _saved_path(profiles_dir, _profile_file(path, profiles_dir).name)
     if saved_path.is_file():
         return False
     content = path.read_bytes()
@@ -350,11 +348,11 @@ def _is_profile_file(path: Path) -> bool:
     return path.suffix.lower() in (".yaml", ".yml")
 
 
-def _saved_path(home: Path, name: str) -> Path:
-    return home / PROFILES_FOLDER_NAME / f"{name}.yaml"
+def _saved_path(profiles_dir: Path, name: str) -> Path:
+    return profiles_dir / f"{name}.yaml"
 
 
-def _profile_file(path: Path, home: Path) -> ImportProfile:
+def _profile_file(path: Path, profiles_dir: Path) -> ImportProfile:
     if not path.is_file():
         raise FileNotFoundError(f"Expected an import profile at {path}, got no such file.")
     profile = parse_profile(path.read_text(encoding="utf-8"), str(path))
@@ -362,7 +360,7 @@ def _profile_file(path: Path, home: Path) -> ImportProfile:
         raise ValueError(
             f"Expected a profile name other than the presets', got {profile.name!r} in {path}."
         )
-    saved_path = _saved_path(home, profile.name)
+    saved_path = _saved_path(profiles_dir, profile.name)
     if saved_path.is_file():
         saved = parse_profile(saved_path.read_text(encoding="utf-8"), str(saved_path))
         if saved != profile:
