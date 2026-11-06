@@ -170,10 +170,22 @@ def _index_validations(session: Session, files: Iterable[Path]) -> int:
     indexed = session.scalars(select(FeatureValidationRow.report_sha256)).all()
     unseen = list(_unseen_files(files, indexed))
     for path, content, sha256 in unseen:
-        report = parsed_json(ValidationReport, content, str(path))
+        report = _report(path, content)
         version_id = version_ids.get((report.feature, report.hash))
         session.add(_validation_row(report, sha256, version_id))
     return len(unseen)
+
+
+def _report(path: Path, content: bytes) -> ValidationReport:
+    """The report `path` holds, refused with the way out where the SDK no longer reads it, as
+    one written before the leak detector's report took its present form."""
+    try:
+        return parsed_json(ValidationReport, content, str(path))
+    except ValueError as error:
+        raise ValueError(
+            f"{error}\nValidate the feature again, which writes its report anew in the present "
+            "form, or move the file out of the workspace."
+        ) from error
 
 
 def _validation_row(

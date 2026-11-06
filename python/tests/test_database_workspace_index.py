@@ -4,6 +4,7 @@ database, the files they index staying the record; indexing again adds only the 
 not seen, and moves or changes none."""
 
 import hashlib
+import json
 import os
 import shutil
 from collections.abc import Iterator
@@ -228,6 +229,24 @@ def test_a_report_of_a_hash_no_version_has_is_indexed_without_a_link(engine: Eng
     with Session(engine) as session:
         validation = session.scalars(select(FeatureValidationRow)).one()
     assert (validation.feature_name, validation.feature_version_id) == ("unsaved", None)
+
+
+def test_a_report_in_a_form_the_sdk_no_longer_reads_stops_the_indexing_with_the_way_out(
+    engine: Engine,
+) -> None:
+    # A report written while step 3.4 was being built, its lint's findings without the feature
+    # they read, as one on the builder's PC is.
+    report = a_report(gap_with(3), later_from=date(2026, 2, 3)).model_dump(mode="json")
+    finding = {"rule": "negative_shift", "line": 3, "source": "shift(-1)", "explanation": "ahead"}
+    path = validation_file(report["feature"], report["hash"])
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({**report, "lint": [finding]}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Validate the feature again") as refused:
+        index_workspace(engine)
+
+    assert str(path) in str(refused.value)
+    assert set(row_counts(engine).values()) == {0}
 
 
 def test_a_version_file_changed_after_it_was_written_stops_the_indexing(engine: Engine) -> None:
