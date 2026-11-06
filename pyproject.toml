@@ -43,6 +43,7 @@ src = [
     "python/fefat_app/src",
     "python/tests",
     "python/tests/features/leaks",
+    "python/tests/server",
     "python/tests/external/src",
     "scripts",
 ]
@@ -72,6 +73,8 @@ pythonpath = ["scripts", "docs/masterplan/tools"]
 
 [tool.importlinter]
 root_packages = ["fefat", "fefat_app"]
+# The services' contract names FastAPI, Starlette, SQLAlchemy, and Alembic (step 4.2).
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "The SDK never imports the app"
@@ -84,3 +87,17 @@ name = "The analytics never import the strategies or the backtests, which import
 type = "forbidden"
 source_modules = ["fefat.analytics"]
 forbidden_modules = ["fefat.strategy", "fefat.backtest"]
+
+[[tool.importlinter.contracts]]
+name = "The services import neither the web nor the database frameworks, nor the app's adapters"
+type = "forbidden"
+source_modules = ["fefat_app.services"]
+forbidden_modules = [
+    "fastapi",
+    "starlette",
+    "sqlalchemy",
+    "alembic",
+    "fefat_app.database",
+    "fefat_app.credentials",
+    "fefat_app.container",
+]
