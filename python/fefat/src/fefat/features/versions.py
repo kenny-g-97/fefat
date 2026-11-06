@@ -114,8 +114,24 @@ def save(definition: FeatureDef) -> FeatureVersion:
         created_at=datetime.now(UTC),
         combination=definition.combination,
     )
+    _require_content_of_its_hash(record)
     _create(folder / f"v{record.version}.json", record)
     return record
+
+
+def _require_content_of_its_hash(record: FeatureVersion) -> None:
+    """Refuse to write a record whose content does not give its hash, which `load` would refuse:
+    a definition `ref` read from a version that keeps another release's parameter schema
+    carries that version's hash, which only the library that keeps the version holds."""
+    found = record.content_hash()
+    if found == record.hash:
+        return
+    raise ValueError(
+        f"Expected feature {record.name} to give its hash {record.hash[:12]} with this "
+        f"release's parameter schema, got {found[:12]}: it was read from a version that keeps "
+        "another release's schema, which only that version's library holds; define it again "
+        "from its code to save it here as a new version."
+    )
 
 
 def load(name: str, version: int) -> FeatureVersion:

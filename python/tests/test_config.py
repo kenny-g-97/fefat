@@ -126,13 +126,25 @@ def test_a_data_folder_inside_a_git_working_tree_is_refused(tmp_path: Path, entr
         resolve_paths({"FEFAT_HOME": str(tmp_path / "home"), "FEFAT_DATA_DIR": str(data_dir)})
 
 
-def test_a_fefat_home_inside_a_git_working_tree_takes_its_data_folder_with_it(
+def test_a_fefat_home_inside_a_git_working_tree_is_refused_with_its_data_folder_elsewhere(
     tmp_path: Path,
 ) -> None:
+    # The caches under FEFAT_HOME hold copies of the licensed data (`01-architecture.md`
+    # section 4), which the variable for the tests' data folder does not allow.
     checkout = a_checkout(tmp_path / "checkout", "folder")
+    home = checkout / "home"
+    environment = {
+        "FEFAT_HOME": str(home),
+        "FEFAT_DATA_DIR": str(tmp_path / "data"),
+        "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE": "1",
+    }
+    expected = (
+        f"Expected FEFAT_HOME outside a git working tree, got {home} inside the repository at "
+        f"{checkout}: its caches would hold copies of licensed data"
+    )
 
-    with pytest.raises(ValueError, match="outside a git working tree"):
-        resolve_paths({"FEFAT_HOME": str(checkout / "home")})
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        resolve_paths(environment)
 
 
 def test_a_data_folder_inside_a_git_working_tree_is_allowed_by_the_variable_at_1(

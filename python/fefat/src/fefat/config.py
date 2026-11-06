@@ -6,11 +6,13 @@ enters the repository (docs/masterplan/01-architecture.md section 4, decision D-
 A data folder that the environment places inside a git working tree is refused, where
 an import would write licensed data beside tracked files, unless
 `FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE` is 1, as the tests that read the repository's
-`fixtures/` set it (step 4.1, D-85).
+`fixtures/` set it; and so is a `FEFAT_HOME` placed there, whose caches would hold copies
+of that data (step 4.1, D-85).
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import tomllib
 from collections.abc import Mapping
@@ -106,17 +108,31 @@ def resolve_paths(environment: Mapping[str, str]) -> FefatPaths:
 
     `FEFAT_HOME` defaults to the user data folder (`%LOCALAPPDATA%\\FEFAT` on Windows,
     `~/Library/Application Support/FEFAT` on macOS) and `FEFAT_DATA_DIR` to
-    `<FEFAT_HOME>/data`. A variable that is set must hold an absolute path, and where either
-    is set, the data folder must lie outside any git working tree unless
-    `FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE` is 1 (module docstring); the platform's default is not
-    checked, so that a repository around a user's home folder never stops the app. Pass
-    `os.environ` in the app and a plain dict in tests. Nothing is created on disk.
+    `<FEFAT_HOME>/data`. A variable that is set must hold an absolute path. A `FEFAT_HOME`
+    that is set must lie outside any git working tree, and where either variable is set, so
+    must the data folder, unless `FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE` is 1 (module docstring);
+    the platform's default is not checked, so that a repository around a user's home folder
+    never stops the app. Pass `os.environ` in the app and a plain dict in tests. Nothing is
+    created on disk.
     """
     home = _configured_folder(environment, HOME_VARIABLE, _default_home())
     data_dir = _configured_folder(environment, DATA_DIR_VARIABLE, home / DATA_FOLDER_NAME)
-    configured = HOME_VARIABLE in environment or DATA_DIR_VARIABLE in environment
-    if configured and not _allows_a_data_dir_in_a_git_tree(environment):
-        _require_outside_a_git_working_tree(data_dir)
+    allowed = _allows_a_data_dir_in_a_git_tree(environment)
+    if HOME_VARIABLE in environment:
+        _require_outside_a_git_working_tree(
+            home,
+            HOME_VARIABLE,
+            "its caches would hold copies of licensed data beside tracked files. Point "
+            f"{HOME_VARIABLE} elsewhere.",
+        )
+    if (HOME_VARIABLE in environment or DATA_DIR_VARIABLE in environment) and not allowed:
+        _require_outside_a_git_working_tree(
+            data_dir,
+            "the data folder",
+            "an import would write licensed data beside tracked files. Point "
+            f"{DATA_DIR_VARIABLE} elsewhere, or set {ALLOW_DATA_DIR_IN_GIT_TREE_VARIABLE}=1 "
+            "to allow it, as the tests do.",
+        )
     return FefatPaths(home=home, data_dir=data_dir)
 
 
@@ -147,18 +163,26 @@ def _allows_a_data_dir_in_a_git_tree(environment: Mapping[str, str]) -> bool:
     return True
 
 
-def _require_outside_a_git_working_tree(data_dir: Path) -> None:
-    """Refuse a data folder in a git working tree: one whose folder, or a folder above it, holds
-    a `.git` folder, as a clone does, or a `.git` file, as a worktree or a submodule does.
-    Neither the data folder nor its parents need exist."""
-    for folder in (data_dir, *data_dir.parents):
-        if (folder / ".git").exists():
-            raise ValueError(
-                f"Expected the data folder outside a git working tree, got {data_dir} inside "
-                f"the repository at {folder}: an import would write licensed data beside "
-                f"tracked files. Point {DATA_DIR_VARIABLE} elsewhere, or set "
-                f"{ALLOW_DATA_DIR_IN_GIT_TREE_VARIABLE}=1 to allow it, as the tests do."
-            )
+def _require_outside_a_git_working_tree(folder: Path, named: str, reason: str) -> None:
+    """Refuse `folder`, which `named` names, inside a git working tree, for `reason`."""
+    tree = _git_working_tree_around(folder)
+    if tree is not None:
+        raise ValueError(
+            f"Expected {named} outside a git working tree, got {folder} inside the repository "
+            f"at {tree}: {reason}"
+        )
+
+
+@functools.cache
+def _git_working_tree_around(folder: Path) -> Path | None:
+    """The nearest folder, `folder` itself included, that holds a `.git` folder, as a clone does,
+    or a `.git` file, as a worktree or a submodule does; None where there is none. Neither
+    `folder` nor its parents need exist. Looked up once a process for each folder, since
+    `resolve_paths` runs on every read of the store and the workspace."""
+    for candidate in (folder, *folder.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
 
 
 def _default_pool_size() -> int:
@@ -197,12 +221,14 @@ class Settings(BaseModel):
 
 def load_settings(config_file: Path) -> Settings:
     """The settings `config_file` holds (`FefatPaths.config_file`), the defaults where there is
-    no such file; refused, naming the file, where it holds no TOML or breaks the model."""
+    no such file; refused, naming the file, where it holds no TOML or breaks the model. A
+    byte-order mark, which some Windows editors write before UTF-8 text, is read past."""
     if not config_file.exists():
         return Settings()
     try:
-        return Settings.model_validate(tomllib.loads(config_file.read_text(encoding="utf-8")))
-    except (tomllib.TOMLDecodeError, ValidationError) as error:
+        text = config_file.read_text(encoding="utf-8-sig")
+        return Settings.model_validate(tomllib.loads(text))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError, ValidationError) as error:
         raise ValueError(
             f"Expected {config_file} to hold FEFAT's settings, got: {error}"
         ) from error

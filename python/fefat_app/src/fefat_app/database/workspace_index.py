@@ -82,14 +82,20 @@ def _index_versions(session: Session, workspace_id: str) -> int:
     """A row for each saved version not indexed yet, and one for its feature where it has none;
     the number of versions added."""
     feature_ids = {
-        row.name: row.id
-        for row in session.scalars(
-            select(FeatureRow).where(FeatureRow.workspace_id == workspace_id)
+        name: feature_id
+        for name, feature_id in session.execute(
+            select(FeatureRow.name, FeatureRow.id).where(FeatureRow.workspace_id == workspace_id)
         )
     }
     indexed = {
-        (row.feature_id, row.version_no): row.content_hash
-        for row in session.scalars(select(FeatureVersionRow))
+        (feature_id, version_no): content_hash
+        for feature_id, version_no, content_hash in session.execute(
+            select(
+                FeatureVersionRow.feature_id,
+                FeatureVersionRow.version_no,
+                FeatureVersionRow.content_hash,
+            )
+        )
     }
     added = 0
     for record in saved_versions():

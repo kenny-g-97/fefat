@@ -66,6 +66,24 @@ def test_a_config_file_that_breaks_the_settings_is_refused_naming_the_file(
         load_settings(config_file)
 
 
+def test_a_config_file_saved_with_a_byte_order_mark_is_read(tmp_path: Path) -> None:
+    # Windows PowerShell 5.1's `Set-Content -Encoding utf8` writes one before the text.
+    config_file = tmp_path / "config.toml"
+    config_file.write_bytes(b"\xef\xbb\xbfport = 9001\n")
+
+    assert load_settings(config_file).port == 9001
+
+
+def test_a_config_file_in_another_encoding_is_refused_naming_the_file(tmp_path: Path) -> None:
+    # Windows PowerShell 5.1's `>` writes UTF-16.
+    config_file = tmp_path / "config.toml"
+    config_file.write_bytes("port = 9001\n".encode("utf-16"))
+    expected = f"Expected {config_file} to hold FEFAT's settings, got: "
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        load_settings(config_file)
+
+
 def test_a_relative_import_root_is_named_in_the_refusal(tmp_path: Path) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text("import_roots = ['exports']\n", encoding="utf-8")

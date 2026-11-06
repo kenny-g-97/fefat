@@ -5,9 +5,16 @@ the base, with no `alembic.ini`.
 
 Each transaction is SQLite's own, begun here rather than by Python's `sqlite3`, which leaves a
 schema change outside it: so a migration's changes and its revision are kept whole or not at
-all, and a batch migration that rebuilds a table never loses its rows halfway. Foreign keys are
-on for every connection, so a later migration that rebuilds a table that another references
-turns them off for its run."""
+all, and a batch migration that rebuilds a table never loses its rows halfway. It begins with
+`BEGIN IMMEDIATE`, taking the write lock at once, so that a second writer, such as a command
+run while the server writes, waits for the first rather than failing halfway, as a transaction
+that reads before it writes does in WAL mode.
+
+Foreign keys are on for every connection, and SQLite ignores turning them off inside a
+transaction, so a later migration that rebuilds a table another references in batch mode
+defers them instead (`PRAGMA defer_foreign_keys=ON`); and since a rebuilt table loses its
+triggers, a migration that rebuilds one of the tables that index a file makes its triggers
+again (the first migration, `v0001_app_state`)."""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -75,4 +82,4 @@ def _on_connect(connection: DBAPIConnection, record: ConnectionPoolEntry) -> Non
 
 
 def _on_begin(connection: Connection) -> None:
-    connection.exec_driver_sql("BEGIN")
+    connection.exec_driver_sql("BEGIN IMMEDIATE")

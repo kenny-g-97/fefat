@@ -328,20 +328,25 @@ def test_a_feature_read_that_is_neither_defined_nor_saved_is_refused(
         ff.features.ref("lifted", version=1)
 
 
-def test_a_version_whose_schema_a_release_writes_otherwise_is_read_under_its_hash(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Step 4.1 (from `BACKLOG.md`): a Pydantic release that writes the parameters' schema
-    # otherwise leaves a version's file loading under its hash while its code builds another
-    # hash; the version keeps the schema its hash covers, so `ref` reads it under that hash,
-    # which the runs that pin it name. Building it again also keeps the new schema's definition,
-    # which `save` would save as a new version, as it does any new definition.
+def a_version_of_another_releases_schema() -> ff.features.FeatureVersion:
+    """Version 1 of `gap` as a release that writes the parameters' schema otherwise saved it:
+    its file loads under its hash, while its code builds another hash today."""
     saved = ff.features.save(features_of_cell(GAP)["gap"])
     schema = {**saved.parameter_schema, "description": "written by another release"}
     drifted = saved.model_copy(
         update={"parameter_schema": schema, "hash": content_hash(saved.code, saved.inputs, schema)}
     )
     (folder("gap") / "v1.json").write_text(drifted.model_dump_json(indent=2), encoding="utf-8")
+    return drifted
+
+
+def test_a_version_whose_schema_a_release_writes_otherwise_is_read_under_its_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 4.1 (from `BACKLOG.md`): the version keeps the schema its hash covers, so `ref` reads
+    # it under that hash, which the runs that pin it name. Building it again also keeps the new
+    # schema's definition, which `save` would save as a new version, as it does any new one.
+    drifted = a_version_of_another_releases_schema()
     monkeypatch.setattr(registry, "_DEFINED", {})
 
     spec = ff.features.ref("gap", version=1, n=5)
@@ -351,6 +356,22 @@ def test_a_version_whose_schema_a_release_writes_otherwise_is_read_under_its_has
     assert registry.registered(drifted.hash) is spec.definition
     assert spec.parameters.model_dump() == {"n": 5}
     assert spec.warmup == 5
+
+
+def test_a_version_read_under_another_releases_schema_is_not_saved_into_another_library(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Its definition carries the version's hash, which this release's schema does not give, so
+    # a library without that version would keep a file that `load` refuses.
+    a_version_of_another_releases_schema()
+    monkeypatch.setattr(registry, "_DEFINED", {})
+    definition = ff.features.ref("gap", version=1).definition
+    monkeypatch.setenv("FEFAT_HOME", str(tmp_path / "another-home"))
+
+    with pytest.raises(ValueError, match="define it again from its code"):
+        ff.features.save(definition)
+
+    assert not folder("gap").exists()
 
 
 def test_the_library_lists_each_saved_version_by_name_then_number() -> None:

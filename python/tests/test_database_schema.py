@@ -3,6 +3,7 @@ WAL mode with foreign keys on; its schema made and emptied by the migrations tha
 package (Done means 1), alike with the models; and the rows that index a file insert-only, an
 update or a delete of one refused (Done means 2, ADR-0020)."""
 
+import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -143,6 +144,22 @@ def test_schema_changes_run_in_one_transaction_with_the_rest(engine: Engine) -> 
         raise RuntimeError("a migration failed")
 
     assert "half_made" not in table_names(engine)
+
+
+def test_a_transaction_takes_the_write_lock_when_it_begins(engine: Engine, tmp_path: Path) -> None:
+    # A second writer waits at its own BEGIN, where a transaction that read first would fail
+    # halfway in WAL mode (`fefat_app.database.schema`).
+    upgrade_schema(engine)
+    other = sqlite3.connect(tmp_path / "home" / "fefat.sqlite", timeout=0)
+
+    try:
+        with (
+            engine.begin(),
+            pytest.raises(sqlite3.OperationalError, match="database is locked"),
+        ):
+            other.execute("BEGIN IMMEDIATE")
+    finally:
+        other.close()
 
 
 @pytest.mark.parametrize("table", INDEX_TABLES)
