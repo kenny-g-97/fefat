@@ -15,6 +15,8 @@
     fefat secrets set <name>
     fefat secrets list
     fefat secrets delete <name>
+    fefat db upgrade
+    fefat db downgrade base
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -41,6 +43,10 @@ lists it, and `cache features` lists the feature cache or prunes what was not us
 `secrets set` stores an API key typed at a prompt that does not echo it in the operating
 system's credential store, `secrets list` prints each key's name with whether one is stored,
 and `secrets delete` removes one; no command prints a value (`fefat_app.secret_commands`).
+
+`db upgrade` migrates the app's database under `FEFAT_HOME` to the latest schema, making it
+where there is none, and `db downgrade base` runs every migration down
+(`fefat_app.database_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
@@ -84,6 +90,7 @@ from fefat.market.sources import SOURCE_GUIDE, Source
 from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
 from fefat_app.cache_commands import add_the_cache_commands
+from fefat_app.database_commands import add_the_database_commands
 from fefat_app.secret_commands import add_the_secret_commands
 
 EXIT_OK = 0
@@ -159,6 +166,8 @@ def build_parser() -> argparse.ArgumentParser:
         "secrets", help="API keys in the operating system's credential store"
     )
     add_the_secret_commands(secrets)
+    database = commands.add_parser("db", help="the app's database under FEFAT_HOME")
+    add_the_database_commands(database)
     return parser
 
 
