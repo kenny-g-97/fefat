@@ -11,13 +11,17 @@ an import would write licensed data beside tracked files, unless
 
 from __future__ import annotations
 
+import os
+import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import platformdirs
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-__all__ = ["FefatPaths", "resolve_paths"]
+__all__ = ["FefatPaths", "Settings", "load_settings", "resolve_paths"]
 
 APP_NAME = "FEFAT"
 HOME_VARIABLE = "FEFAT_HOME"
@@ -155,3 +159,50 @@ def _require_outside_a_git_working_tree(data_dir: Path) -> None:
                 f"tracked files. Point {DATA_DIR_VARIABLE} elsewhere, or set "
                 f"{ALLOW_DATA_DIR_IN_GIT_TREE_VARIABLE}=1 to allow it, as the tests do."
             )
+
+
+def _default_pool_size() -> int:
+    """The logical processors less two, and at least one: `01-architecture.md` section 6 asks
+    for the physical cores less two, which the standard library cannot count (D-85)."""
+    processors = os.cpu_count()
+    if processors is None:
+        return 1
+    return max(1, processors - 2)
+
+
+class Settings(BaseModel):
+    """What the server needs before its database opens, from `<FEFAT_HOME>/config.toml`
+    (`01-architecture.md` sections 4, 6, and 8, D-83): the port it listens on, the address it
+    binds, which can only be the loopback (D-54), the size of its process pool, and the folders
+    an import may read large files from. What the app edits, such as the password and the
+    theme, lives in its database's `settings` table instead; secrets live in the credential
+    store, never here."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    port: int = Field(default=8765, ge=1, le=65535, strict=True)
+    bind_address: Literal["127.0.0.1"] = "127.0.0.1"
+    process_pool_size: int = Field(default_factory=_default_pool_size, ge=1, strict=True)
+    import_roots: tuple[Path, ...] = ()
+
+    @field_validator("import_roots")
+    @classmethod
+    def _absolute(cls, roots: tuple[Path, ...]) -> tuple[Path, ...]:
+        relative = [str(root) for root in roots if not root.is_absolute()]
+        if relative:
+            named = ", ".join(repr(root) for root in relative)
+            raise ValueError(f"Expected import_roots as absolute paths, got {named}.")
+        return roots
+
+
+def load_settings(config_file: Path) -> Settings:
+    """The settings `config_file` holds (`FefatPaths.config_file`), the defaults where there is
+    no such file; refused, naming the file, where it holds no TOML or breaks the model."""
+    if not config_file.exists():
+        return Settings()
+    try:
+        return Settings.model_validate(tomllib.loads(config_file.read_text(encoding="utf-8")))
+    except (tomllib.TOMLDecodeError, ValidationError) as error:
+        raise ValueError(
+            f"Expected {config_file} to hold FEFAT's settings, got: {error}"
+        ) from error
