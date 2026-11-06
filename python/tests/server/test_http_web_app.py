@@ -75,6 +75,24 @@ def test_a_missing_file_is_a_404_rather_than_the_index(web_client: TestClient, p
     assert (response.status_code, response.headers["content-type"]) == (404, PROBLEM)
 
 
+def test_the_index_is_checked_again_at_each_load_and_the_files_are_not(
+    web_client: TestClient,
+) -> None:
+    # A rebuild renames the scripts the index names, so a browser must not reuse an old index.
+    assert web_client.get("/").headers["cache-control"] == "no-cache"
+    assert web_client.get("/runs/0193f0a2").headers["cache-control"] == "no-cache"
+    assert "cache-control" not in web_client.get("/assets/app.js").headers
+
+
+@pytest.mark.parametrize("path", ["/x%22y", "/a|b"])
+def test_a_page_path_windows_cannot_name_as_a_file_answers_the_index(
+    web_client: TestClient, path: str
+) -> None:
+    response = web_client.get(path)
+
+    assert (response.status_code, response.text) == (200, INDEX)
+
+
 def test_a_file_outside_the_web_app_is_never_served(web_client: TestClient) -> None:
     response = web_client.get("/%2e%2e/outside.txt")
 

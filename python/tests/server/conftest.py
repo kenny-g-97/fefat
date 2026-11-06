@@ -3,7 +3,6 @@ made and migrated; a clock the test moves; keyring in memory; Argon2 at its lowe
 many logins take no time, while the server keeps argon2-cffi's defaults; a client of the app;
 and the server's log."""
 
-import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -66,12 +65,6 @@ def client(container: Container) -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def server_log(tmp_path: Path) -> Iterator[Path]:
+def server_log(root_log_put_back: None, tmp_path: Path) -> Path:
     """The server's log file, configured as `fefat up` configures it, and put back after."""
-    root = logging.getLogger()
-    handlers, level = list(root.handlers), root.level
-    yield configure_server_log(tmp_path / "logs")
-    for handler in [added for added in root.handlers if added not in handlers]:
-        root.removeHandler(handler)
-        handler.close()
-    root.setLevel(level)
+    return configure_server_log(tmp_path / "logs")

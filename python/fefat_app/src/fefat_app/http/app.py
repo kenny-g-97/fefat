@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.types import ASGIApp
 
 import fefat_app
@@ -17,6 +18,10 @@ from fefat_app.http.problems import install_problem_handlers, problems_as_proble
 from fefat_app.http.request_ids import RequestIds
 from fefat_app.http.security_headers import SecurityHeaders
 from fefat_app.http.web_app import WebAppMount
+
+BODY_BYTES = 1024 * 1024
+"""The largest request body the API reads, refused with 413 past it before it is held in memory;
+a later route that takes files, such as an upload's, sets its own."""
 
 
 class FefatApi(FastAPI):
@@ -38,6 +43,7 @@ def build_api() -> FastAPI:
         openapi_url=None,
         strict_content_type=True,
     )
+    api.add_middleware(RequestBodyLimitMiddleware, max_body_size=BODY_BYTES)
     install_problem_handlers(api)
     for router in (health.router, login.router, app_settings.router, docs.router):
         api.include_router(router)

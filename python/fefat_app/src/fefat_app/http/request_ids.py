@@ -1,6 +1,7 @@
 """The id of every request (step 4.2, D-86): 16 hexadecimal digits made as the request arrives,
 kept in its scope's state for the problem it may end in, echoed in `X-Request-Id`, and logged
-with its method, path, status, and duration in the server's log under `FefatPaths.logs_dir`
+with its method, path, status, and duration in the server's log under `FefatPaths.logs_dir`, the
+path quoted, so that a newline it carries cannot write a line of its own
 (`fefat_app.http.server_log`); a failure is logged under the id by the kind of error alone,
 since uvicorn logs its traceback right after.
 
@@ -41,7 +42,7 @@ class RequestIds:
                 MutableHeaders(scope=message).append(REQUEST_ID_HEADER, request_id)
             await send(message)
 
-        line = f"request_id={request_id} method={scope['method']} path={scope['path']}"
+        line = f"request_id={request_id} method={scope['method']} path={scope['path']!r}"
         try:
             await self.app(scope, receive, send_with_the_id)
         except Exception as failure:

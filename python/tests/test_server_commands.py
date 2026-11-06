@@ -4,9 +4,8 @@ configures the server's log, and runs uvicorn in its own process on the address 
 refused before anything starts (Done means 1 and 2)."""
 
 import getpass
-import logging
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -31,23 +30,15 @@ class ServerCall:
         self.calls.append((app, options))
 
 
+pytestmark = pytest.mark.usefixtures("root_log_put_back")
+"""`fefat up` configures the process's log, which each test gets back as it was."""
+
+
 @pytest.fixture
 def served(monkeypatch: pytest.MonkeyPatch) -> ServerCall:
     call = ServerCall()
     monkeypatch.setattr(uvicorn, "run", call)
     return call
-
-
-@pytest.fixture(autouse=True)
-def root_log_put_back() -> Iterator[None]:
-    """`fefat up` configures the process's log, which each test gets back as it was."""
-    root = logging.getLogger()
-    handlers, level = list(root.handlers), root.level
-    yield
-    for handler in [added for added in root.handlers if added not in handlers]:
-        root.removeHandler(handler)
-        handler.close()
-    root.setLevel(level)
 
 
 @pytest.fixture

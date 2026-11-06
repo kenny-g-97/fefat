@@ -59,7 +59,34 @@ def test_each_request_has_an_id_that_its_line_in_the_servers_log_carries(
     request_id = response.headers["x-request-id"]
     logged = server_log.read_text(encoding="utf-8")
     assert re.fullmatch("[0-9a-f]{16}", request_id)
-    assert f"request_id={request_id} method=GET path=/v1/healthz status=200" in logged
+    assert f"request_id={request_id} method=GET path='/v1/healthz' status=200" in logged
+
+
+def test_a_path_cannot_write_a_line_of_its_own_into_the_servers_log(
+    client: TestClient, server_log: Path
+) -> None:
+    forged = "INFO fefat_app.http request_id=0123456789abcdef method=PUT"
+
+    client.get(f"/nothing%0A{forged.replace(' ', '%20')}")
+
+    lines = server_log.read_text(encoding="utf-8").splitlines()
+    assert not any(line.startswith(forged) for line in lines)
+
+
+def test_a_body_larger_than_a_mebibyte_is_refused_before_it_is_read(client: TestClient) -> None:
+    # Starlette answers a body declared too large with its own plain 413, inside the request id.
+    declared = client.post(
+        "/v1/auth/login", content=b"x" * (2 * 1024 * 1024), headers={"Content-Type": "text/plain"}
+    )
+    streamed = client.post(
+        "/v1/auth/login",
+        content=(b"x" * (64 * 1024) for _ in range(32)),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert (declared.status_code, streamed.status_code) == (413, 413)
+    assert re.fullmatch("[0-9a-f]{16}", declared.headers["x-request-id"])
+    assert streamed.headers["content-type"] == PROBLEM
 
 
 def test_an_unknown_path_and_a_wrong_method_answer_problems_with_the_request_id(
@@ -112,7 +139,7 @@ def test_a_failure_answers_a_problem_with_its_request_id_and_nothing_of_the_erro
     assert response.headers["content-security-policy"] == CONTENT_SECURITY_POLICY
     assert "a-secret-value" not in response.text
     # uvicorn logs the failure's traceback; the request's own line names it once more.
-    assert f"request_id={problem['request_id']} method=GET path=/v1/settings failed" in logged
+    assert f"request_id={problem['request_id']} method=GET path='/v1/settings' failed" in logged
     assert "Traceback" not in logged
 
 

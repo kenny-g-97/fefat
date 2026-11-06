@@ -103,7 +103,6 @@ from fefat_app.cache_commands import add_the_cache_commands
 from fefat_app.database_commands import add_the_database_commands
 from fefat_app.password_commands import add_the_password_commands
 from fefat_app.secret_commands import add_the_secret_commands
-from fefat_app.server_commands import serve
 from fefat_app.token_commands import add_the_token_commands
 
 EXIT_OK = 0
@@ -190,6 +189,14 @@ def build_parser() -> argparse.ArgumentParser:
     token = commands.add_parser("token", help="API tokens for notebooks and scripts")
     add_the_token_commands(token)
     return parser
+
+
+def serve(arguments: argparse.Namespace) -> int:
+    """`fefat up` (`fefat_app.server_commands`), whose server libraries, FastAPI and uvicorn,
+    load only when it runs, so that no other command waits for them."""
+    from fefat_app import server_commands
+
+    return server_commands.serve(arguments)
 
 
 def _add_the_file_import_arguments(exports: argparse.ArgumentParser) -> None:

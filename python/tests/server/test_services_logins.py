@@ -192,6 +192,28 @@ def test_a_request_is_identified_while_another_writer_holds_the_database(
     assert waited < 1
 
 
+def test_a_last_seen_time_due_while_another_writer_holds_the_database_waits_for_later(
+    container: Container, clock: SettableClock, engine: Engine
+) -> None:
+    # The write of a last-seen time is bookkeeping: a busy database skips it, after SQLite's
+    # busy timeout, rather than failing the request.
+    session_token = logged_in(container)
+    clock.advance(timedelta(minutes=1))
+    writer = sqlite3.connect(resolve_paths(os.environ).database_file, timeout=0)
+    writer.execute("BEGIN IMMEDIATE")
+
+    try:
+        session = container.logins.identity_of_session(session_token)
+    finally:
+        writer.rollback()
+        writer.close()
+
+    assert session is not None
+    assert last_seen(engine) == [STARTED_AT]
+    container.logins.identity_of_session(session_token)
+    assert last_seen(engine) == [STARTED_AT + timedelta(minutes=1)]
+
+
 def test_a_password_hash_argon2_cannot_read_is_refused_with_the_remedy(
     container: Container, engine: Engine
 ) -> None:

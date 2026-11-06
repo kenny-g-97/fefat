@@ -1,11 +1,17 @@
 """The access records over the app's database (step 4.2, D-86): the password's Argon2 hash as the
 `settings` row `password_hash`, and the `sessions` and `api_tokens` tables, each token kept by
-its SHA-256 alone (`fefat_app.ports.AccessRecords`). Each call is a transaction of its own."""
+its SHA-256 alone (`fefat_app.ports.AccessRecords`). Each call is a transaction of its own; the
+reads begin deferred (`fefat_app.database.schema.reading`), and the last-seen and last-used
+times, which are bookkeeping, are skipped when another writer holds the database."""
 
+import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import Engine, delete, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from fefat_app.database.models import ApiTokenRow, LoginSessionRow, SettingRow
@@ -62,12 +68,10 @@ class AccessTables:
             ).one_or_none()
             if row is None:
                 return None
-            return LoginSession(
-                created_at=row.created_at, expires_at=row.expires_at, last_seen_at=row.last_seen_at
-            )
+            return LoginSession(expires_at=row.expires_at, last_seen_at=row.last_seen_at)
 
     def mark_session_seen(self, token_hash: str, seen_at: datetime) -> None:
-        with Session(self.engine) as session, session.begin():
+        with _skipped_when_busy(), Session(self.engine) as session, session.begin():
             session.execute(
                 update(LoginSessionRow)
                 .where(LoginSessionRow.token_hash == token_hash)
@@ -98,12 +102,28 @@ class AccessTables:
             ).one_or_none()
             if row is None:
                 return None
-            return ApiToken(name=row.name, created_at=row.created_at, last_used_at=row.last_used_at)
+            return ApiToken(name=row.name, last_used_at=row.last_used_at)
 
     def mark_api_token_used(self, token_hash: str, used_at: datetime) -> None:
-        with Session(self.engine) as session, session.begin():
+        with _skipped_when_busy(), Session(self.engine) as session, session.begin():
             session.execute(
                 update(ApiTokenRow)
                 .where(ApiTokenRow.token_hash == token_hash)
                 .values(last_used_at=used_at)
             )
+
+
+@contextmanager
+def _skipped_when_busy() -> Generator[None]:
+    """A write that the next request makes again, given up when another writer holds the
+    database past SQLite's busy timeout rather than failing the request."""
+    # shortcut: the request still waits out the busy timeout, 5 s, first; give the write a
+    # timeout of its own if a long writer, such as a job, ever makes that wait common.
+    try:
+        yield
+    except OperationalError as refused:
+        locked = refused.orig
+        if not isinstance(locked, sqlite3.OperationalError):
+            raise
+        if locked.sqlite_errorcode != sqlite3.SQLITE_BUSY:
+            raise

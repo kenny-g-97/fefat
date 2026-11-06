@@ -1,16 +1,18 @@
 """The built web app at `/` (step 4.2, D-86): the files that `pnpm --dir web build` writes to
 `web/dist` (step 4.3), and for a page path a GET or HEAD asks for, one whose last part has no
-dot, its `index.html`, so that a reload on a page of the app finds the app. A file that is not
-there, such as a script of an older build, stays a 404; a path under `/v1` is left to the API's
-routes, so that a wrong method on one stays a 405; and Starlette refuses a file outside the
-folder."""
+dot, its `index.html`, so that a reload on a page of the app finds the app. The index is checked
+again at each load, since a rebuild renames the scripts it names. A file that is not there, such
+as a script of an older build, stays a 404; a path that Windows cannot name as a file counts as
+one that is not there; a path under `/v1` is left to the API's routes, so that a wrong method on
+one stays a 405; and Starlette refuses a file outside the folder."""
 
+import os
 from pathlib import Path, PurePosixPath
 
 from starlette.exceptions import HTTPException
 from starlette.responses import Response
 from starlette.routing import Match, Mount
-from starlette.staticfiles import StaticFiles
+from starlette.staticfiles import PathLike, StaticFiles
 from starlette.types import Scope
 
 from fefat_app.http.api_prefix import is_api_path
@@ -35,10 +37,21 @@ class BuiltWebApp(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
             return await super().get_response(path, scope)
-        except HTTPException as missing:
-            if missing.status_code != 404 or "." in PurePosixPath(str(scope["path"])).name:
-                raise
-            return await super().get_response(INDEX, scope)
+        except OSError:
+            missing = HTTPException(status_code=404)
+        except HTTPException as refused:
+            missing = refused
+        if missing.status_code != 404 or "." in PurePosixPath(str(scope["path"])).name:
+            raise missing
+        return await super().get_response(INDEX, scope)
+
+    def file_response(
+        self, full_path: PathLike, stat_result: os.stat_result, scope: Scope, status_code: int = 200
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        if Path(full_path).name == INDEX:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 class WebAppMount(Mount):

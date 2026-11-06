@@ -45,24 +45,22 @@ class CredentialStore(Protocol):
 
 
 class LoginSession(BaseModel):
-    """A login session of the local server: when it began, when it ends, and when it was last
-    seen. The token its cookie carries is kept only as its SHA-256, which names it."""
+    """A login session of the local server: when it ends and when it was last seen. The token
+    its cookie carries is kept only as its SHA-256, which names it."""
 
     model_config = ConfigDict(frozen=True)
 
-    created_at: AwareDatetime
     expires_at: AwareDatetime
     last_seen_at: AwareDatetime
 
 
 class ApiToken(BaseModel):
     """An API token of a notebook or a script, by its name, kept only as its SHA-256, which
-    names it, with when it was made and when it was last used."""
+    names it, with when it was last used."""
 
     model_config = ConfigDict(frozen=True)
 
     name: str
-    created_at: AwareDatetime
     last_used_at: AwareDatetime | None
 
 
@@ -89,7 +87,8 @@ class AccessRecords(Protocol):
         ...
 
     def mark_session_seen(self, token_hash: str, seen_at: datetime) -> None:
-        """Record that the login session of the token of SHA-256 `token_hash` was seen."""
+        """Record that the login session of the token of SHA-256 `token_hash` was seen, or give
+        it up while another writer holds the records, the next request recording it."""
         ...
 
     def remove_session(self, token_hash: str) -> None:
@@ -109,5 +108,6 @@ class AccessRecords(Protocol):
         ...
 
     def mark_api_token_used(self, token_hash: str, used_at: datetime) -> None:
-        """Record that the API token of SHA-256 `token_hash` was used."""
+        """Record that the API token of SHA-256 `token_hash` was used, or give it up while
+        another writer holds the records, the next request recording it."""
         ...
