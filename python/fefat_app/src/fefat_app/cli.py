@@ -12,6 +12,9 @@
     fefat cache build --root <root> --year <year> [--provider <provider>]
     fefat cache status [--root <root>]
     fefat cache features [--prune [--older-than <days>]]
+    fefat secrets set <name>
+    fefat secrets list
+    fefat secrets delete <name>
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -34,6 +37,10 @@ or prints one as YAML to copy into a profile of your own.
 `cache build` builds the engine's cache of a product's trade dates in a year, `cache status`
 lists it, and `cache features` lists the feature cache or prunes what was not used for a while
 (`fefat_app.cache_commands`).
+
+`secrets set` stores an API key typed at a prompt that does not echo it in the operating
+system's credential store, `secrets list` prints each key's name with whether one is stored,
+and `secrets delete` removes one; no command prints a value (`fefat_app.secret_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
@@ -77,6 +84,7 @@ from fefat.market.sources import SOURCE_GUIDE, Source
 from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
 from fefat_app.cache_commands import add_the_cache_commands
+from fefat_app.secret_commands import add_the_secret_commands
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -147,6 +155,10 @@ def build_parser() -> argparse.ArgumentParser:
     profiles.set_defaults(run=print_the_profiles)
     cache = commands.add_parser("cache", help="the engine's and the features' caches")
     add_the_cache_commands(cache)
+    secrets = commands.add_parser(
+        "secrets", help="API keys in the operating system's credential store"
+    )
+    add_the_secret_commands(secrets)
     return parser
 
 

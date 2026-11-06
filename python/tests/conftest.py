@@ -1,5 +1,5 @@
-"""What every test shares: FEFAT's own folders inside a temporary folder; and for the seeded
-differential tests, draws that depend on their seed alone."""
+"""What every test shares: FEFAT's own folders inside a temporary folder, and no credential store
+of the machine; and for the seeded differential tests, draws that depend on their seed alone."""
 
 import shutil
 import tempfile
@@ -12,11 +12,14 @@ import pytest
 def pytest_configure(config: pytest.Config) -> None:
     """Point `FEFAT_HOME` and `FEFAT_DATA_DIR` into a temporary folder before collection, so
     that module-level code and wide-scoped fixtures, which run before any per-test fixture,
-    never see the default folder, where the trader's real data lives."""
+    never see the default folder, where the trader's real data lives; and keyring at its `fail`
+    backend, so that a test that gives keyring no backend of its own is refused rather than
+    reaching the machine's credential store (step 4.1)."""
     folder = Path(tempfile.mkdtemp(prefix="fefat-tests-"))
     environment = pytest.MonkeyPatch()
     environment.setenv("FEFAT_HOME", str(folder / "fefat-home"))
     environment.setenv("FEFAT_DATA_DIR", str(folder / "fefat-data"))
+    environment.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     config.add_cleanup(environment.undo)
     config.add_cleanup(lambda: shutil.rmtree(folder, ignore_errors=True))
 
