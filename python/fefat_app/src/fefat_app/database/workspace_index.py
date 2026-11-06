@@ -1,0 +1,210 @@
+"""The index of the workspace's files (step 4.1, D-84, ADR-0020): `index_workspace` reads the
+feature versions, the leak detector's reports, and the saved import profiles that the SDK wrote
+under `FEFAT_HOME`, through the SDK, and adds a row for each file it has not seen, in one
+transaction, moving and changing no file, so that it can run at any time.
+
+A version is seen by its feature and number, a report and a profile by their file's SHA-256,
+since the leak detector replaces a report with the next of its hash, whose row is added beside
+the last. A file the SDK refuses, such as a version changed after it was written, or a number
+saved again with another hash, stops the indexing with the reason, and no row is added."""
+
+import hashlib
+import os
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from pathlib import Path
+
+from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session
+
+from fefat.config import WORKSPACE_FOLDER, resolve_paths
+from fefat.features.validation_report import ValidationReport
+from fefat.features.versions import FeatureVersion, saved_versions
+from fefat.market.calendar import counted
+from fefat.market.importers.profiles import parse_profile
+from fefat.market.store_files import parsed_json
+from fefat_app.database.models import (
+    FeatureRow,
+    FeatureValidationRow,
+    FeatureVersionRow,
+    ImportProfileRow,
+    WorkspaceRow,
+)
+from fefat_app.database.uuid7 import new_uuid7
+
+DEFAULT_WORKSPACE = "default"
+
+
+@dataclass(frozen=True)
+class IndexSummary:
+    """The rows an indexing added, for each kind of file."""
+
+    versions: int
+    validations: int
+    profiles: int
+
+    def summary(self) -> str:
+        return (
+            f"Indexed {counted(self.versions, 'new feature version')}, "
+            f"{counted(self.validations, 'new validation report')}, and "
+            f"{counted(self.profiles, 'new import profile')}."
+        )
+
+
+def index_workspace(engine: Engine) -> IndexSummary:
+    """Index the files under `FEFAT_HOME` that the database has not seen (module docstring);
+    the home is the one the SDK reads, `resolve_paths(os.environ)`."""
+    paths = resolve_paths(os.environ)
+    with Session(engine) as session, session.begin():
+        workspace_id = _default_workspace(session)
+        versions = _index_versions(session, workspace_id)
+        validations = _index_validations(session, paths.features_dir.glob("*/validations/*.json"))
+        profiles = _index_profiles(session, paths.profiles_dir.glob("*.yaml"))
+    return IndexSummary(versions, validations, profiles)
+
+
+def _default_workspace(session: Session) -> str:
+    """The id of the one workspace of the first release, added where it has no row."""
+    found = session.scalars(
+        select(WorkspaceRow.id).where(WorkspaceRow.name == DEFAULT_WORKSPACE)
+    ).one_or_none()
+    if found is not None:
+        return found
+    workspace = WorkspaceRow(
+        id=new_uuid7(), name=DEFAULT_WORKSPACE, path=WORKSPACE_FOLDER.as_posix()
+    )
+    session.add(workspace)
+    session.flush()
+    return workspace.id
+
+
+def _index_versions(session: Session, workspace_id: str) -> int:
+    """A row for each saved version not indexed yet, and one for its feature where it has none;
+    the number of versions added."""
+    feature_ids = {
+        row.name: row.id
+        for row in session.scalars(
+            select(FeatureRow).where(FeatureRow.workspace_id == workspace_id)
+        )
+    }
+    indexed = {
+        (row.feature_id, row.version_no): row.content_hash
+        for row in session.scalars(select(FeatureVersionRow))
+    }
+    added = 0
+    for record in saved_versions():
+        if record.name not in feature_ids:
+            feature_ids[record.name] = _new_feature(session, workspace_id, record.name)
+        feature_id = feature_ids[record.name]
+        if _seen(indexed, feature_id, record):
+            continue
+        session.add(_version_row(feature_id, record))
+        added += 1
+    session.flush()
+    return added
+
+
+def _new_feature(session: Session, workspace_id: str, name: str) -> str:
+    feature = FeatureRow(id=new_uuid7(), workspace_id=workspace_id, name=name)
+    session.add(feature)
+    session.flush()
+    return feature.id
+
+
+def _seen(indexed: dict[tuple[str, int], str], feature_id: str, record: FeatureVersion) -> bool:
+    """Whether the version is indexed, refused where its number is indexed with another hash."""
+    found = indexed.get((feature_id, record.version))
+    if found is None:
+        return False
+    if found != record.hash:
+        raise ValueError(
+            f"Expected version {record.version} of feature {record.name} with the hash "
+            f"{found[:12]} as indexed, got {record.hash[:12]}: its file was saved again; "
+            "delete the app's database to index the workspace anew."
+        )
+    return True
+
+
+def _version_row(feature_id: str, record: FeatureVersion) -> FeatureVersionRow:
+    written = record.model_dump(mode="json")
+    return FeatureVersionRow(
+        id=new_uuid7(),
+        feature_id=feature_id,
+        version_no=record.version,
+        content_hash=record.hash,
+        code=record.code,
+        params_schema_json=record.parameter_schema,
+        inputs_json=written["inputs"],
+        outputs_json=written["outputs"],
+        warmup=record.warmup,
+        warmup_sessions=record.warmup_sessions,
+        combination_json=written["combination"],
+        created_at=record.created_at,
+    )
+
+
+def _index_validations(session: Session, files: Iterable[Path]) -> int:
+    """A row for each report file not indexed yet, linked to the version of its feature and
+    hash where one is indexed; the number added."""
+    version_ids = {
+        (name, content_hash): version_id
+        for name, content_hash, version_id in session.execute(
+            select(FeatureRow.name, FeatureVersionRow.content_hash, FeatureVersionRow.id).join(
+                FeatureRow, FeatureVersionRow.feature_id == FeatureRow.id
+            )
+        )
+    }
+    indexed = session.scalars(select(FeatureValidationRow.report_sha256)).all()
+    unseen = list(_unseen_files(files, indexed))
+    for path, content, sha256 in unseen:
+        report = parsed_json(ValidationReport, content, str(path))
+        version_id = version_ids.get((report.feature, report.hash))
+        session.add(_validation_row(report, sha256, version_id))
+    return len(unseen)
+
+
+def _validation_row(
+    report: ValidationReport, sha256: str, version_id: str | None
+) -> FeatureValidationRow:
+    return FeatureValidationRow(
+        id=new_uuid7(),
+        feature_version_id=version_id,
+        report_sha256=sha256,
+        feature_name=report.feature,
+        feature_hash=report.hash,
+        instrument=report.instrument,
+        timeframe=report.timeframe,
+        provider=report.provider,
+        window_start=report.start,
+        window_end=report.end,
+        parameters_json=report.parameters,
+        passed=report.passed,
+        created_at=report.created_at,
+    )
+
+
+def _index_profiles(session: Session, files: Iterable[Path]) -> int:
+    """A row for each saved profile file not indexed yet; the number added."""
+    indexed = session.scalars(select(ImportProfileRow.sha256)).all()
+    unseen = list(_unseen_files(files, indexed))
+    for path, content, sha256 in unseen:
+        profile = parse_profile(content.decode("utf-8"), str(path))
+        session.add(
+            ImportProfileRow(id=new_uuid7(), kind=profile.kind, name=profile.name, sha256=sha256)
+        )
+    return len(unseen)
+
+
+def _unseen_files(
+    files: Iterable[Path], indexed: Iterable[str]
+) -> Iterator[tuple[Path, bytes, str]]:
+    """The files of `files` in order with their bytes and SHA-256, but those whose SHA-256 is
+    indexed or was given before."""
+    seen = set(indexed)
+    for path in sorted(files):
+        content = path.read_bytes()
+        sha256 = hashlib.sha256(content).hexdigest()
+        if sha256 in seen:
+            continue
+        seen.add(sha256)
+        yield path, content, sha256

@@ -17,6 +17,7 @@
     fefat secrets delete <name>
     fefat db upgrade
     fefat db downgrade base
+    fefat db import-workspace
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -45,8 +46,9 @@ system's credential store, `secrets list` prints each key's name with whether on
 and `secrets delete` removes one; no command prints a value (`fefat_app.secret_commands`).
 
 `db upgrade` migrates the app's database under `FEFAT_HOME` to the latest schema, making it
-where there is none, and `db downgrade base` runs every migration down
-(`fefat_app.database_commands`).
+where there is none, `db downgrade base` runs every migration down, and `db import-workspace`
+indexes the feature versions, the leak detector's reports, and the import profiles saved as
+files, which stay the record (`fefat_app.database_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
