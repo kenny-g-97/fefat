@@ -5,6 +5,7 @@ not seen, and moves or changes none."""
 
 import hashlib
 import os
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -204,6 +205,17 @@ def test_indexing_moves_and_changes_no_file(engine: Engine) -> None:
 
     assert len(before) == 3
     assert file_digests() == before
+
+
+def test_a_profile_copied_by_hand_under_another_name_is_indexed_once(engine: Engine) -> None:
+    # Its copy holds the same bytes, which the index keeps by their SHA-256.
+    saved = a_saved_profile("es-tradingview-5m")
+    shutil.copyfile(saved, saved.with_name("es-tradingview-5m - Copy.yaml"))
+
+    indexed = index_workspace(engine)
+
+    assert indexed.profiles == 1
+    assert row_counts(engine)["import_profiles"] == 1
 
 
 def test_a_report_of_a_hash_no_version_has_is_indexed_without_a_link(engine: Engine) -> None:

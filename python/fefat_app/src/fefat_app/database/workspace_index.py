@@ -31,7 +31,6 @@ from fefat_app.database.models import (
     ImportProfileRow,
     WorkspaceRow,
 )
-from fefat_app.database.uuid7 import new_uuid7
 
 DEFAULT_WORKSPACE = "default"
 
@@ -71,9 +70,7 @@ def _default_workspace(session: Session) -> str:
     ).one_or_none()
     if found is not None:
         return found
-    workspace = WorkspaceRow(
-        id=new_uuid7(), name=DEFAULT_WORKSPACE, path=WORKSPACE_FOLDER.as_posix()
-    )
+    workspace = WorkspaceRow(name=DEFAULT_WORKSPACE, path=WORKSPACE_FOLDER.as_posix())
     session.add(workspace)
     session.flush()
     return workspace.id
@@ -113,7 +110,7 @@ def _index_versions(session: Session, workspace_id: str) -> int:
 
 
 def _new_feature(session: Session, workspace_id: str, name: str) -> str:
-    feature = FeatureRow(id=new_uuid7(), workspace_id=workspace_id, name=name)
+    feature = FeatureRow(workspace_id=workspace_id, name=name)
     session.add(feature)
     session.flush()
     return feature.id
@@ -145,7 +142,6 @@ def _seen(record: FeatureVersion, indexed_hash: str | None, indexed_number: int 
 def _version_row(feature_id: str, record: FeatureVersion) -> FeatureVersionRow:
     written = record.model_dump(mode="json")
     return FeatureVersionRow(
-        id=new_uuid7(),
         feature_id=feature_id,
         version_no=record.version,
         content_hash=record.hash,
@@ -184,7 +180,6 @@ def _validation_row(
     report: ValidationReport, sha256: str, version_id: str | None
 ) -> FeatureValidationRow:
     return FeatureValidationRow(
-        id=new_uuid7(),
         feature_version_id=version_id,
         report_sha256=sha256,
         feature_name=report.feature,
@@ -206,9 +201,7 @@ def _index_profiles(session: Session, files: Iterable[Path]) -> int:
     unseen = list(_unseen_files(files, indexed))
     for path, content, sha256 in unseen:
         profile = parse_profile(content.decode("utf-8"), str(path))
-        session.add(
-            ImportProfileRow(id=new_uuid7(), kind=profile.kind, name=profile.name, sha256=sha256)
-        )
+        session.add(ImportProfileRow(kind=profile.kind, name=profile.name, sha256=sha256))
     return len(unseen)
 
 

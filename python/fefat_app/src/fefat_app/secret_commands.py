@@ -36,7 +36,7 @@ def add_the_secret_commands(secrets: argparse.ArgumentParser) -> None:
 
 
 def store_a_secret(arguments: argparse.Namespace) -> int:
-    name = SecretName(_name(arguments))
+    name = SecretName(arguments.name)
     value = getpass.getpass(f"Value of {name} (not shown): ")
     build_container().credentials.set(name, value)
     print(f"Stored {name} in the credential store.")
@@ -52,12 +52,7 @@ def list_the_secrets(arguments: argparse.Namespace) -> int:
 
 
 def delete_a_secret(arguments: argparse.Namespace) -> int:
-    name = SecretName(_name(arguments))
+    name = SecretName(arguments.name)
     build_container().credentials.delete(name)
     print(f"Deleted {name} from the credential store.")
     return EXIT_OK
-
-
-def _name(arguments: argparse.Namespace) -> str:
-    name: str = arguments.name
-    return name
