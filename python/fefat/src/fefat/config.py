@@ -175,12 +175,14 @@ def _require_outside_a_git_working_tree(folder: Path, named: str, reason: str) -
 
 @functools.cache
 def _git_working_tree_around(folder: Path) -> Path | None:
-    """The nearest folder, `folder` itself included, that holds a `.git` folder, as a clone does,
-    or a `.git` file, as a worktree or a submodule does; None where there is none. Neither
-    `folder` nor its parents need exist. Looked up once a process for each folder, since
-    `resolve_paths` runs on every read of the store and the workspace."""
-    for candidate in (folder, *folder.parents):
-        if (candidate / ".git").exists():
+    """The nearest folder, `folder` itself included, where it lies once its `..` and its links
+    are resolved, that holds a `.git` folder, as a clone does, or a `.git` file, as a worktree or
+    a submodule does; None where there is none, or none this user can see. Neither `folder` nor
+    its parents need exist. Looked up once a process for each folder, since `resolve_paths` runs
+    on every read of the store and the workspace."""
+    lies = folder.resolve()
+    for candidate in (lies, *lies.parents):
+        if os.path.exists(candidate / ".git"):
             return candidate
     return None
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import platformdirs
 import pytest
 
+from fefat import config
 from fefat.config import FefatPaths, resolve_paths
 
 PATHS_WHEN_COLLECTED = resolve_paths(os.environ)
@@ -37,7 +38,8 @@ def test_runs_are_kept_in_the_default_workspace_under_fefat_home(tmp_path: Path)
 
 
 def test_feature_versions_are_kept_in_the_default_workspace(tmp_path: Path) -> None:
-    # Step 3.1 (`01-architecture.md` section 4): versions are files until the database of 4.1.
+    # Step 3.1 (`01-architecture.md` section 4): versions are files, the record the app's
+    # database indexes (D-84).
     paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
 
     assert paths.features_dir == tmp_path / "workspaces" / "default" / "features"
@@ -124,6 +126,33 @@ def test_a_data_folder_inside_a_git_working_tree_is_refused(tmp_path: Path, entr
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         resolve_paths({"FEFAT_HOME": str(tmp_path / "home"), "FEFAT_DATA_DIR": str(data_dir)})
+
+
+def test_a_data_folder_set_alone_inside_a_git_working_tree_is_refused(tmp_path: Path) -> None:
+    # The usual setup: the default FEFAT_HOME, and a data folder of one's own.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+
+    with pytest.raises(ValueError, match="Expected the data folder outside a git working tree"):
+        resolve_paths({"FEFAT_DATA_DIR": str(checkout / "data")})
+
+
+def test_a_data_folder_written_through_a_parent_is_judged_where_it_lies(tmp_path: Path) -> None:
+    # `<repository>/../data` lies beside the repository, not in it.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    beside = checkout / ".." / "data"
+
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path / "home"), "FEFAT_DATA_DIR": str(beside)})
+
+    assert paths.data_dir == beside
+
+
+def test_the_default_home_is_never_checked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # D-85: a repository around a user's home folder, such as one of their settings, never
+    # stops the app.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    monkeypatch.setattr(config, "_default_home", lambda: checkout / "FEFAT")
+
+    assert resolve_paths({}).home == checkout / "FEFAT"
 
 
 def test_a_fefat_home_inside_a_git_working_tree_is_refused_with_its_data_folder_elsewhere(
