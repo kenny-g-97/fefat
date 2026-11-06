@@ -27,6 +27,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-11-04 — A portfolio backtest joins Phase 7 (D-76): two or more backtest files, strategies or instruments, merge on one timeline into one backtest file that the replay, the Monte Carlo, the ranking, and the pages take unchanged, with the portfolio's own analysis (combined metrics, members' shares, correlation, positions open at once). New steps 7.12 and 7.13; `03-prop-simulator.md` §4.7; step 8.1 now depends on 7.13; the backlog's portfolio item became the steps, and an engine run of several strategies on shared capital took its place.
 - 2026-11-04 — The `unslop` skill (Damir Sokolovsky, CC BY 4.0) joined `frontend-design` as the design skill of every step that touches `web/` (D-77): step 4.3 opens `web/DESIGN.md` with its direction and takes its exact values where the brief is silent, every UI step ends with its audit and checklist before the reviewers, and the exits of UI phases run the audit over the main pages. No step renumbered; the skill is committed verbatim under `.claude/skills/unslop/`, and edits of it ask.
 - 2026-11-05 — The Phase 3 exit (D-82, pull request #55): the phase-wide reviews' fixes (a lead-in stops a week after the session tables' first date, so a daily EMA(200) runs; a load without a fidelity and `compute` refuse sessions past the decided fronts again; a contract run snapshots another instrument for its contract; the leak detector cuts each session's first bar and starts its check from two dates; the lint fails data read through the standard library and renamed label makers; errors and the report's words quote no feature value; a helper written inside a feature reads back; `==` between combination terms is refused; a session is found by bisection), the upgrade step with every major held, and the retro in `CLAUDE.md`, `pyproject.toml`, and the `phase-exit` skill. Steps 3.2, 3.4, and 3.7 gain an Amendment each; no unstarted step changed.
+- 2026-11-06 — Phase 4 kickoff (D-83, D-84, pull request #56): your answers, the name FEFAT with an F monogram as the placeholder icon, port 8765, workspace files kept as the record that the database indexes (D-84, ADR-0020), and the design brief for `web/DESIGN.md`, dark by default with a home page of widgets; oxfmt for `web/`, a script for the areas' import boundary, and TypeScript 6 kept; every Phase 4 step reconciled with the code of Phases 1 to 3 (an Amendment under each of steps 4.1 to 4.5, and the phase's conventions, pins, and skills in its header), the backlog items aimed at the kickoff written into steps 4.1 and 4.3 or settled and the rest retargeted to Phase 5, with a line for the home page's widgets; the `design-reviewer` on the meta lines of 32 unstarted UI steps, 4.4 among them. No step ID changed.
 
 ## Steps
 
@@ -178,7 +179,7 @@ Phase kickoffs and exits are tracked in the second table.
 | P1 | #10 | 2026-10-12 | #23 | 2026-10-21 | phase-1 |
 | P2 | #24 | 2026-10-21 | #43 | 2026-11-02 | phase-2 |
 | P3 | #44 | 2026-11-02 | #55 | 2026-11-05 | phase-3 |
-| P4 | | | | | |
+| P4 | #56 | 2026-11-06 | | | |
 | P5 | | | | | |
 | P6 | | | | | |
 | P7 | | | | | |
