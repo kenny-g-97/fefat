@@ -116,7 +116,7 @@ Dependencies point inward: `web → fefat_app.http → fefat_app.services → fe
 FEFAT_HOME/
   config.toml                 port, bind address, process-pool size, import roots (D-83)
   fefat.sqlite                app state
-  logs/
+  logs/                       server.log, the local server's log with each request's id (step 4.2)
   data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports) + instruments/ (products your imports added, step 1.10)
   profiles/                   your saved import profiles (YAML, step 1.10)
   cache/                      engine Arrow IPC cache, feature cache, session tables (all rebuildable)
@@ -188,6 +188,7 @@ The web app's TypeScript types are generated from `web/openapi.json` by `openapi
 - Login by password (set on first run) creates a session cookie (`HttpOnly`, `Secure` when served over HTTPS, `SameSite=Strict`). A CSRF token guards state-changing requests. A bearer token is accepted for notebooks and scripts.
 - Rate limit on login; passwords hashed with Argon2.
 - Content Security Policy: `default-src 'self'; img-src 'self' data: blob:` (no remote images in chat).
+- As step 4.2 built it (D-86): a session lasts 30 days, and its CSRF token is the SHA-256 of its token under a fixed prefix, kept nowhere; a request with a bearer token is decided by that token alone and needs no CSRF token; the login counts five attempts a minute before Argon2 runs; a host other than `127.0.0.1` or `localhost` is refused, so that a DNS name rebound to the loopback reaches nothing, and uvicorn trusts no forwarded header; `/docs` and `/openapi.json` sit behind the login, asking through the browser's own password prompt until the web app's login page exists, and the docs page loads Swagger UI from jsdelivr under a policy of its own; errors are problem+json that never echo the values sent; and every response carries its request's id, which the server's log under `logs/` records.
 - File access is confined to `FEFAT_HOME` and `FEFAT_DATA_DIR`; the API never takes raw filesystem paths from clients except for imports of large files, which are validated against the import roots allowed in `config.toml`.
 - Catalog updates from FEFAT's static host (Phase 14) are verified against a signed manifest and file hashes before they are installed; that host never serves market data.
 - Secrets (Anthropic API key, data vendor keys such as Databento's) live in the OS credential store via `keyring`, never in `config.toml`.
