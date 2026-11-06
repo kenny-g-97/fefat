@@ -18,7 +18,7 @@ from fefat.config import resolve_paths
 from fefat.features import FeatureDef, FeatureInput, InstrumentInput, OutputKind, combine, registry
 from fefat.features.definition import content_hash
 from fefat.features.runtime import FeatureGraph
-from fefat.features.versions import LIBRARY_COLUMNS
+from fefat.features.versions import LIBRARY_COLUMNS, saved_versions
 from fefat.market.schema import Timeframe
 from notebook_runs import features_of_cell
 
@@ -328,11 +328,14 @@ def test_a_feature_read_that_is_neither_defined_nor_saved_is_refused(
         ff.features.ref("lifted", version=1)
 
 
-def test_a_version_whose_code_no_longer_gives_its_hash_is_refused(
+def test_a_version_whose_schema_a_release_writes_otherwise_is_read_under_its_hash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The module docstring: a Pydantic release that writes the parameters' schema otherwise
-    # leaves a version's file loading under its hash while its code builds another.
+    # Step 4.1 (from `BACKLOG.md`): a Pydantic release that writes the parameters' schema
+    # otherwise leaves a version's file loading under its hash while its code builds another
+    # hash; the version keeps the schema its hash covers, so `ref` reads it under that hash,
+    # which the runs that pin it name. Building it again also keeps the new schema's definition,
+    # which `save` would save as a new version, as it does any new definition.
     saved = ff.features.save(features_of_cell(GAP)["gap"])
     schema = {**saved.parameter_schema, "description": "written by another release"}
     drifted = saved.model_copy(
@@ -341,9 +344,13 @@ def test_a_version_whose_code_no_longer_gives_its_hash_is_refused(
     (folder("gap") / "v1.json").write_text(drifted.model_dump_json(indent=2), encoding="utf-8")
     monkeypatch.setattr(registry, "_DEFINED", {})
 
+    spec = ff.features.ref("gap", version=1, n=5)
+
     assert ff.features.load("gap", 1).hash == drifted.hash
-    with pytest.raises(ValueError, match="save the feature again as a new version"):
-        ff.features.ref("gap", version=1)
+    assert spec.definition.hash == drifted.hash
+    assert registry.registered(drifted.hash) is spec.definition
+    assert spec.parameters.model_dump() == {"n": 5}
+    assert spec.warmup == 5
 
 
 def test_the_library_lists_each_saved_version_by_name_then_number() -> None:
@@ -363,6 +370,7 @@ def test_the_library_lists_each_saved_version_by_name_then_number() -> None:
     assert listed.get_column("hash").to_list() == [
         ff.features.load("gap", number).hash for number in (1, 2)
     ]
+    assert saved_versions() == [ff.features.load("gap", number) for number in (1, 2)]
 
 
 def test_a_combination_named_as_the_feature_it_reads_is_built_again(

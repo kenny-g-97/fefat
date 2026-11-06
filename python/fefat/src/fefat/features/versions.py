@@ -2,8 +2,8 @@
 never changes, to `<FEFAT_HOME>/workspaces/default/features/<name>/v<n>.json`, `n` counting from
 1 per name, and returns the version a saved record of the same hash already has rather than
 writing another; `load` reads a version back and refuses a record whose content no longer gives
-its hash, or whose declarations are not those its code writes. The database of step 4.1 imports
-these files (`01-architecture.md` §4 and §5).
+its hash, or whose declarations are not those its code writes. The files are the record, which
+the app's database of step 4.1 indexes (`01-architecture.md` §4 and §5, D-84).
 
     version = ff.features.save(rsi)
     ff.features.load("rsi", version.version)
@@ -21,9 +21,11 @@ From step 3.7, `save` saves first the features a feature reads that this process
 that the library holds what each version reads, and keeps a combination's description; and
 `ref` reads a saved version by its name and number as a feature with its parameters, which a
 strategy pins in its runs: the definition this process defined of its hash, or else the one its
-code and the features it reads build again (`ff.features.from_source`), refused where its code
-no longer gives its hash, as a Pydantic release would make it, or calls a helper its version does
-not keep. `library` lists the saved versions."""
+code and the features it reads build again (`ff.features.from_source`), kept under the version's
+hash, refused where its code reads other features than its version read, or calls a helper its
+version does not keep. A Pydantic release that writes the parameters' schema otherwise changes
+nothing there, since the version keeps the schema its hash covers (step 4.1). `library` lists
+the saved versions, and `saved_versions` gives their records."""
 
 import dataclasses
 import os
@@ -165,16 +167,19 @@ def definition_of(record: FeatureVersion) -> FeatureDef:
             named[name] = read
     built = from_source(record.code, named)
     _require_its_hash(record, built)
-    described = dataclasses.replace(built, combination=record.combination)
+    described = dataclasses.replace(built, combination=record.combination, hash=record.hash)
     register(described)
     return described
 
 
 def _require_its_hash(record: FeatureVersion, built: FeatureDef) -> None:
-    """Refuse a definition built again from `record`'s code that gives another hash: one whose
-    code names a feature of the SDK, such as `ff.indicators.atr`, that is now another version,
-    or whose parameters' schema a release of the libraries writes otherwise."""
-    if built.hash == record.hash:
+    """Refuse a definition built again from `record`'s code whose code and the features it reads
+    no longer give the version's hash with the parameter schema the version keeps: one whose
+    code names a feature of the SDK, such as `ff.indicators.atr`, that is now another version.
+    A schema that a release of the libraries writes otherwise changes nothing, since the
+    version keeps the schema its hash covers (step 4.1)."""
+    found = content_hash(built.code, built.inputs, record.parameter_schema)
+    if found == record.hash:
         return
     begun = f"Expected the code of version {record.version} of feature {record.name}"
     changed = [
@@ -189,9 +194,8 @@ def _require_its_hash(record: FeatureVersion, built: FeatureDef) -> None:
             "the features it reads now, and save it as a new version."
         )
     raise ValueError(
-        f"{begun} to give its hash {record.hash[:12]} again, got {built.hash[:12]}: its "
-        "parameter schema changed with a release of the libraries, so save the feature again as "
-        "a new version."
+        f"{begun} to give its hash {record.hash[:12]} again with the parameter schema it keeps, "
+        f"got {found[:12]}: its code no longer gives its hash."
     )
 
 
@@ -215,16 +219,21 @@ def saved_definition(name: str, content_hash: str, reader: str) -> FeatureDef:
 def library() -> pl.DataFrame:
     """The saved features, a row for each version by name and then number, with the columns of
     `LIBRARY_COLUMNS`; none while nothing is saved."""
+    rows = [
+        (each.name, each.version, each.hash, each.created_at, each.combination is not None)
+        for each in saved_versions()
+    ]
+    return pl.DataFrame(rows, schema=LIBRARY_COLUMNS, orient="row")
+
+
+def saved_versions() -> list[FeatureVersion]:
+    """Every saved version, by name and then number, each read through `load`, which refuses a
+    file changed after it was written; none while nothing is saved."""
     folder = resolve_paths(os.environ).features_dir
     names = (
         sorted(each.name for each in folder.iterdir() if each.is_dir()) if folder.is_dir() else []
     )
-    records = [load(name, number) for name in names for number in _version_numbers(folder / name)]
-    rows = [
-        (each.name, each.version, each.hash, each.created_at, each.combination is not None)
-        for each in records
-    ]
-    return pl.DataFrame(rows, schema=LIBRARY_COLUMNS, orient="row")
+    return [load(name, number) for name in names for number in _version_numbers(folder / name)]
 
 
 def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> None:
