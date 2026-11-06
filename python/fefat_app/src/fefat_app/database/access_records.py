@@ -15,11 +15,13 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from fefat_app.database.models import ApiTokenRow, LoginSessionRow, SettingRow
-from fefat_app.database.schema import reading
+from fefat_app.database.schema import not_waiting, reading
 from fefat_app.ports import ApiToken, LoginSession
 
 PASSWORD_HASH_KEY = "password_hash"
 """The `settings` row that keeps the password's hash."""
+PRIMARY_CODE = 0xFF
+"""The bits of an SQLite error code that name its primary error."""
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,7 @@ class AccessTables:
             return LoginSession(expires_at=row.expires_at, last_seen_at=row.last_seen_at)
 
     def mark_session_seen(self, token_hash: str, seen_at: datetime) -> None:
-        with _skipped_when_busy(), Session(self.engine) as session, session.begin():
+        with _skipped_when_busy(), Session(not_waiting(self.engine)) as session, session.begin():
             session.execute(
                 update(LoginSessionRow)
                 .where(LoginSessionRow.token_hash == token_hash)
@@ -105,7 +107,7 @@ class AccessTables:
             return ApiToken(name=row.name, last_used_at=row.last_used_at)
 
     def mark_api_token_used(self, token_hash: str, used_at: datetime) -> None:
-        with _skipped_when_busy(), Session(self.engine) as session, session.begin():
+        with _skipped_when_busy(), Session(not_waiting(self.engine)) as session, session.begin():
             session.execute(
                 update(ApiTokenRow)
                 .where(ApiTokenRow.token_hash == token_hash)
@@ -115,15 +117,14 @@ class AccessTables:
 
 @contextmanager
 def _skipped_when_busy() -> Generator[None]:
-    """A write that the next request makes again, given up when another writer holds the
-    database past SQLite's busy timeout rather than failing the request."""
-    # shortcut: the request still waits out the busy timeout, 5 s, first; give the write a
-    # timeout of its own if a long writer, such as a job, ever makes that wait common.
+    """A write that the next request makes again, given up rather than failing the request
+    when another writer holds the database, which `not_waiting` refuses at once; SQLite's busy
+    error is its primary code, under the extended ones such as `SQLITE_BUSY_SNAPSHOT`."""
     try:
         yield
     except OperationalError as refused:
         locked = refused.orig
         if not isinstance(locked, sqlite3.OperationalError):
             raise
-        if locked.sqlite_errorcode != sqlite3.SQLITE_BUSY:
+        if locked.sqlite_errorcode & PRIMARY_CODE != sqlite3.SQLITE_BUSY:
             raise

@@ -8,9 +8,11 @@ schema change outside it: so a migration's changes and its revision are kept who
 all, and a batch migration that rebuilds a table never loses its rows halfway. It begins with
 `BEGIN IMMEDIATE`, taking the write lock at once, so that a second writer, such as a command
 run while the server writes, waits for the first rather than failing halfway, as a transaction
-that reads before it writes does in WAL mode. A transaction that only reads, through `reading`,
-begins deferred instead, so that it neither waits for a writer nor holds one up, WAL mode giving
-it a snapshot (step 4.2: the server reads at every request).
+that reads before it writes does in WAL mode; it waits up to `BUSY_TIMEOUT_MS`. A transaction
+that only reads, through `reading`, begins deferred instead, so that it neither waits for a
+writer nor holds one up, WAL mode giving it a snapshot; and a write that may be given up, such
+as a session's last-seen time, through `not_waiting`, is refused at once with SQLite's busy
+error while another writer holds the database (step 4.2: the server reads at every request).
 
 Foreign keys are on for every connection, and SQLite ignores turning them off inside a
 transaction, so a later migration that rebuilds a table another references in batch mode
@@ -32,6 +34,10 @@ from sqlalchemy.pool import ConnectionPoolEntry
 MIGRATIONS = Path(__file__).with_name("migrations")
 READ_ONLY = "fefat_read_only"
 """The execution option of `reading`'s engine."""
+NOT_WAITING = "fefat_not_waiting"
+"""The execution option of `not_waiting`'s engine."""
+BUSY_TIMEOUT_MS = 5000
+"""How long a transaction waits for another writer, Python's `sqlite3`'s own five seconds."""
 
 
 @contextmanager
@@ -90,8 +96,17 @@ def reading(engine: Engine) -> Engine:
     return engine.execution_options(**{READ_ONLY: True})
 
 
+def not_waiting(engine: Engine) -> Engine:
+    """`engine` for writes that may be given up, refused at once while another writer holds the
+    database (module docstring)."""
+    return engine.execution_options(**{NOT_WAITING: True})
+
+
 def _on_begin(connection: Connection) -> None:
-    if connection.get_execution_options().get(READ_ONLY):
+    options = connection.get_execution_options()
+    waits = 0 if options.get(NOT_WAITING) else BUSY_TIMEOUT_MS
+    connection.exec_driver_sql(f"PRAGMA busy_timeout = {waits}")
+    if options.get(READ_ONLY):
         connection.exec_driver_sql("BEGIN")
         return
     connection.exec_driver_sql("BEGIN IMMEDIATE")

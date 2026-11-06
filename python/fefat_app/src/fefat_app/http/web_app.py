@@ -3,9 +3,11 @@
 dot, its `index.html`, so that a reload on a page of the app finds the app. The index is checked
 again at each load, since a rebuild renames the scripts it names. A file that is not there, such
 as a script of an older build, stays a 404; a path that Windows cannot name as a file counts as
-one that is not there; a path under `/v1` is left to the API's routes, so that a wrong method on
+one that is not there, while any other failure to read the disk stays a failure; a path under
+`/v1` is left to the API's routes, so that a wrong method on
 one stays a 405; and Starlette refuses a file outside the folder."""
 
+import errno
 import os
 from pathlib import Path, PurePosixPath
 
@@ -37,7 +39,9 @@ class BuiltWebApp(StaticFiles):
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
             return await super().get_response(path, scope)
-        except OSError:
+        except OSError as unreadable:
+            if unreadable.errno != errno.EINVAL:
+                raise
             missing = HTTPException(status_code=404)
         except HTTPException as refused:
             missing = refused

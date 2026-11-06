@@ -2,11 +2,14 @@
 page path a GET or HEAD asks for answered with its `index.html`, so that a reload on a page of
 the app works, and nothing under `/v1/` or outside its folder."""
 
+import errno
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.staticfiles import StaticFiles
 
 from fefat_app.container import Container
 from fefat_app.http.app import create_app
@@ -91,6 +94,24 @@ def test_a_page_path_windows_cannot_name_as_a_file_answers_the_index(
     response = web_client.get(path)
 
     assert (response.status_code, response.text) == (200, INDEX)
+
+
+def test_a_failing_disk_stays_a_failure_rather_than_the_index(
+    container: Container, built_web_app: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    found = StaticFiles.lookup_path
+
+    def failing(directory: StaticFiles, path: str) -> tuple[str, os.stat_result | None]:
+        if path == "index.html":
+            return found(directory, path)
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(StaticFiles, "lookup_path", failing)
+    app = create_app(container, built_web_app)
+    with TestClient(app, base_url=LOOPBACK, raise_server_exceptions=False) as client:
+        response = client.get("/runs/0193f0a2")
+
+    assert response.status_code == 500
 
 
 def test_a_file_outside_the_web_app_is_never_served(web_client: TestClient) -> None:

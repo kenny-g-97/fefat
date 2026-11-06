@@ -9,6 +9,7 @@ from pathlib import Path
 import fefat_engine
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import fefat
 import fefat_app
@@ -19,6 +20,8 @@ from memory_keyring import MemoryKeyring
 
 CONTENT_SECURITY_POLICY = "default-src 'self'; img-src 'self' data: blob:"
 PROBLEM = "application/problem+json"
+POLICY_VIOLATION = 1008
+"""The WebSocket close code of a connection refused by a policy (RFC 6455), not the router's 1000."""
 
 
 def test_health_and_versions_answer_without_a_login(client: TestClient) -> None:
@@ -149,7 +152,21 @@ def test_a_host_other_than_the_loopback_is_refused_with_a_problem(container: Con
         refused = foreign.get("/v1/healthz")
     with TestClient(app, base_url="http://localhost:8765") as local:
         answered = local.get("/v1/healthz")
+        spelled = local.get("/v1/healthz", headers={"Host": "LocalHost:8765"})
 
-    assert (refused.status_code, answered.status_code) == (400, 200)
+    assert (refused.status_code, answered.status_code, spelled.status_code) == (400, 200, 200)
     assert refused.headers["content-type"] == PROBLEM
     assert refused.json()["request_id"] == refused.headers["x-request-id"]
+
+
+def test_a_websocket_of_another_host_is_closed_before_it_opens(container: Container) -> None:
+    app = create_app(container, built_web_app=None)
+
+    with (
+        TestClient(app, base_url="http://fefat.example") as foreign,
+        pytest.raises(WebSocketDisconnect) as closed,
+        foreign.websocket_connect("/v1/healthz"),
+    ):
+        pass
+
+    assert closed.value.code == POLICY_VIOLATION

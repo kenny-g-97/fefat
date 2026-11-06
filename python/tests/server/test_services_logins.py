@@ -195,20 +195,23 @@ def test_a_request_is_identified_while_another_writer_holds_the_database(
 def test_a_last_seen_time_due_while_another_writer_holds_the_database_waits_for_later(
     container: Container, clock: SettableClock, engine: Engine
 ) -> None:
-    # The write of a last-seen time is bookkeeping: a busy database skips it, after SQLite's
-    # busy timeout, rather than failing the request.
+    # The write of a last-seen time is bookkeeping: a busy database skips it at once, rather
+    # than holding up the request for SQLite's busy timeout or failing it.
     session_token = logged_in(container)
     clock.advance(timedelta(minutes=1))
     writer = sqlite3.connect(resolve_paths(os.environ).database_file, timeout=0)
     writer.execute("BEGIN IMMEDIATE")
 
     try:
+        started = time.perf_counter()
         session = container.logins.identity_of_session(session_token)
+        waited = time.perf_counter() - started
     finally:
         writer.rollback()
         writer.close()
 
     assert session is not None
+    assert waited < 1
     assert last_seen(engine) == [STARTED_AT]
     container.logins.identity_of_session(session_token)
     assert last_seen(engine) == [STARTED_AT + timedelta(minutes=1)]

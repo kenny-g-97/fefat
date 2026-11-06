@@ -41,7 +41,7 @@ def build_api() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
-        strict_content_type=True,
+        strict_content_type=True,  # D-86: no page of another site logs in with an untyped body
     )
     api.add_middleware(RequestBodyLimitMiddleware, max_body_size=BODY_BYTES)
     install_problem_handlers(api)
