@@ -1,7 +1,8 @@
 """The app's database of step 4.1 (`01-architecture.md` section 5, D-83, D-85): `fefat.sqlite` in
 WAL mode with foreign keys on; its schema made and emptied by the migrations that ship in the
-package (Done means 1), alike with the models; and the rows that index a file insert-only, an
-update or a delete of one refused (Done means 2, ADR-0020)."""
+package (Done means 1), alike with the models, with the login sessions and API tokens of step
+4.2 (D-86); and the rows that index a file insert-only, an update or a delete of one refused
+(Done means 2, ADR-0020)."""
 
 import sqlite3
 from collections.abc import Iterator
@@ -17,11 +18,13 @@ from sqlalchemy.orm import Session
 
 from fefat.market.importers.profiles import ProfileKind
 from fefat_app.database.models import (
+    ApiTokenRow,
     Base,
     FeatureRow,
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
+    LoginSessionRow,
     WorkspaceRow,
 )
 from fefat_app.database.schema import empty_schema, opened_database, upgrade_schema
@@ -36,8 +39,11 @@ TABLES = {
     "import_profiles",
     "jobs",
     "events",
+    "sessions",
+    "api_tokens",
 }
 INDEX_TABLES = ["feature_versions", "feature_validations", "import_profiles"]
+LATEST_REVISION = "0002"
 SAVED_AT = datetime(2026, 11, 6, 12, 30, tzinfo=UTC)
 
 
@@ -96,11 +102,25 @@ def index_one_of_each(engine: Engine) -> None:
         session.add(ImportProfileRow(kind=ProfileKind.MARKET_DATA, name="mine", sha256="c" * 64))
 
 
+def log_in_once(engine: Engine) -> None:
+    """A login session and an API token, the app's own state of step 4.2."""
+    with Session(engine) as session, session.begin():
+        session.add(
+            LoginSessionRow(
+                token_hash="d" * 64,
+                created_at=SAVED_AT,
+                expires_at=SAVED_AT,
+                last_seen_at=SAVED_AT,
+            )
+        )
+        session.add(ApiTokenRow(name="notebook", token_hash="e" * 64, created_at=SAVED_AT))
+
+
 def test_upgrade_makes_the_schema_in_a_new_file(engine: Engine) -> None:
     # Done means 1.
     revision = upgrade_schema(engine)
 
-    assert revision == "0001"
+    assert revision == LATEST_REVISION
     assert table_names(engine) == TABLES | {"alembic_version"}
 
 
@@ -116,6 +136,7 @@ def test_downgrade_to_base_empties_it_and_upgrade_makes_it_again(engine: Engine)
     # Done means 1: `alembic downgrade base` leaves only Alembic's own table, without a row.
     upgrade_schema(engine)
     index_one_of_each(engine)
+    log_in_once(engine)
 
     empty_schema(engine)
 
@@ -123,7 +144,7 @@ def test_downgrade_to_base_empties_it_and_upgrade_makes_it_again(engine: Engine)
     with engine.connect() as connection:
         revisions = connection.exec_driver_sql("SELECT count(*) FROM alembic_version").scalar()
     assert (emptied, revisions) == ({"alembic_version"}, 0)
-    assert upgrade_schema(engine) == "0001"
+    assert upgrade_schema(engine) == LATEST_REVISION
     assert table_names(engine) == TABLES | {"alembic_version"}
 
 

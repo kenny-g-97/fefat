@@ -1,5 +1,6 @@
-"""The app's tables (`01-architecture.md` section 5, D-83, D-84, D-85): its own state, the
-settings it edits, the workspaces, the jobs, and their events; and an index of the workspace's
+"""The app's tables (`01-architecture.md` section 5, D-83, D-84, D-85, D-86): its own state, the
+settings it edits, the workspaces, the login sessions, the API tokens, the jobs, and their
+events; and an index of the workspace's
 files, the feature versions, the leak detector's reports, and the saved import profiles, which
 stay the record (ADR-0020). The migrations under `migrations/` make them, and a test holds the
 two alike.
@@ -103,6 +104,34 @@ class WorkspaceRow(Base):
     name: Mapped[str] = mapped_column(String, unique=True)
     path: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
+
+
+class LoginSessionRow(Base):
+    """A login session (step 4.2, D-86) by the SHA-256 of the token its cookie carries, never the
+    token itself, with when it ends and when it was last seen. The glossary's session is a
+    trading session, so the code says login session; the table keeps `01` section 5's name."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_uuid7)
+    token_hash: Mapped[str] = mapped_column(SHA256, unique=True)
+    created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
+    expires_at: Mapped[datetime] = mapped_column(UtcInstant)
+    last_seen_at: Mapped[datetime] = mapped_column(UtcInstant)
+
+
+class ApiTokenRow(Base):
+    """An API token of a notebook or a script (step 4.2, D-86) by its name, with the SHA-256 of
+    the token, never the token itself, when it was last used, and when it was revoked."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_uuid7)
+    name: Mapped[str] = mapped_column(String, unique=True)
+    token_hash: Mapped[str] = mapped_column(SHA256, unique=True)
+    created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(UtcInstant)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcInstant)
 
 
 class FeatureRow(Base):
