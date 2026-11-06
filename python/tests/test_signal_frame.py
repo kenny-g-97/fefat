@@ -34,8 +34,10 @@ FIRST_CLOSE = instant_nanoseconds("2026-03-06T14:35:00Z")
 
 @pytest.fixture
 def fixtures_as_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The repository's fixtures as the data folder, which `load` only reads."""
+    """The repository's fixtures as the data folder, which `load` only reads, inside the
+    checkout, which the variable allows (`fefat.config`, step 4.1)."""
     monkeypatch.setenv("FEFAT_DATA_DIR", str(FIXTURES))
+    monkeypatch.setenv("FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE", "1")
 
 
 def signal_bars(*closes: str, offset: str = "10.00", contract: str = "MESM2026") -> pl.DataFrame:

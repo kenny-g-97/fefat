@@ -150,6 +150,8 @@ All ids are UUIDv7 strings. Every row carries `created_at`; versioned rows are n
 
 The schema is created by Alembic migrations from Phase 4. Earlier phases keep SDK state in files (manifests, run folders) and need no database.
 
+Step 4.1 made `settings`, `workspaces`, `features`, `feature_versions`, `feature_validations`, `import_profiles`, `jobs`, and `events`, with these differences from the table above (D-85): `features` keeps no `latest_version_id`, a feature's latest version being its highest number; `feature_versions` names its hash `content_hash`, D-71's hash of the code, the features it reads, and the parameter schema; `feature_validations` keeps the report's `feature_name` and `feature_hash`, its link to a version empty where no version of that hash was saved when it was indexed; `import_profiles` keeps the kind, the name, and the file's `sha256`; `events.id` takes SQLite's `AUTOINCREMENT`, so that an event's id is never used again after a delete; and `parent_id`, `author_kind`, `proposal_id`, `report_json`, and `mapping_json` arrive with the steps that first write them (D-83). Triggers refuse an update or a delete of a row of the three tables that index a file.
+
 ## 6. Jobs and execution
 
 - **Jobs** are rows in `jobs`. Kinds in the first release: `backtest`, `feature_preview`, `feature_validate`, `analytics`, `study`, `prop_sim`, `source_sync`, `import`, `trade_import`, `catalog_sync`, `reproduce`, `agent_turn`, `ingest`, plus `demo` and `python_snippet` for tests and tooling; later phases add kinds the same way. State machine: `queued → running → succeeded | failed | cancelled | timed_out`; transitions are compare-and-set updates.

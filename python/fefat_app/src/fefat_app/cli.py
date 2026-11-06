@@ -12,6 +12,12 @@
     fefat cache build --root <root> --year <year> [--provider <provider>]
     fefat cache status [--root <root>]
     fefat cache features [--prune [--older-than <days>]]
+    fefat secrets set <name>
+    fefat secrets list
+    fefat secrets delete <name>
+    fefat db upgrade
+    fefat db downgrade base
+    fefat db import-workspace
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -34,6 +40,15 @@ or prints one as YAML to copy into a profile of your own.
 `cache build` builds the engine's cache of a product's trade dates in a year, `cache status`
 lists it, and `cache features` lists the feature cache or prunes what was not used for a while
 (`fefat_app.cache_commands`).
+
+`secrets set` stores an API key typed at a prompt that does not echo it in the operating
+system's credential store, `secrets list` prints each key's name with whether one is stored,
+and `secrets delete` removes one; no command prints a value (`fefat_app.secret_commands`).
+
+`db upgrade` migrates the app's database under `FEFAT_HOME` to the latest schema, making it
+where there is none, `db downgrade base` runs every migration down, and `db import-workspace`
+indexes the feature versions, the leak detector's reports, and the import profiles saved as
+files, which stay the record (`fefat_app.database_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
@@ -64,7 +79,6 @@ from fefat.market.importers.file_import import (
     preview_file,
 )
 from fefat.market.importers.profiles import (
-    PROFILES_FOLDER_NAME,
     load_profile,
     preset_profiles,
     profile_yaml,
@@ -78,6 +92,8 @@ from fefat.market.sources import SOURCE_GUIDE, Source
 from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
 from fefat_app.cache_commands import add_the_cache_commands
+from fefat_app.database_commands import add_the_database_commands
+from fefat_app.secret_commands import add_the_secret_commands
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -148,6 +164,12 @@ def build_parser() -> argparse.ArgumentParser:
     profiles.set_defaults(run=print_the_profiles)
     cache = commands.add_parser("cache", help="the engine's and the features' caches")
     add_the_cache_commands(cache)
+    secrets = commands.add_parser(
+        "secrets", help="API keys in the operating system's credential store"
+    )
+    add_the_secret_commands(secrets)
+    database = commands.add_parser("db", help="the app's database under FEFAT_HOME")
+    add_the_database_commands(database)
     return parser
 
 
@@ -202,7 +224,7 @@ def import_a_file(arguments: argparse.Namespace) -> int:
     reference: str = arguments.profile
     request = FileImportRequest(
         path=arguments.path,
-        profile=load_profile(reference, paths.home),
+        profile=load_profile(reference, paths.profiles_dir),
         contract=arguments.contract,
         root=arguments.root,
         time_zone=arguments.time_zone,
@@ -218,23 +240,23 @@ def import_a_file(arguments: argparse.Namespace) -> int:
     )
     print(report.summary())
     if isinstance(report, FileImportReport):
-        save_profile(reference, paths.home)
+        save_profile(reference, paths.profiles_dir)
         dataset = report.reading.dataset
         _write_the_report(paths, dataset.provider, dataset.root)
     return EXIT_OK
 
 
 def print_the_profiles(arguments: argparse.Namespace) -> int:
-    home = resolve_paths(os.environ).home
+    profiles_dir = resolve_paths(os.environ).profiles_dir
     name: str | None = arguments.name
     if name is not None:
-        print(profile_yaml(load_profile(name, home)), end="")
+        print(profile_yaml(load_profile(name, profiles_dir)), end="")
         return EXIT_OK
-    saved = saved_profiles(home)
+    saved = saved_profiles(profiles_dir)
     lines = [
         "Import presets (fefat data sources names the source each reads):",
         *(f"  {profile.name}: {profile.description}" for profile in preset_profiles().values()),
-        f"Your saved profiles, in {home / PROFILES_FOLDER_NAME}:",
+        f"Your saved profiles, in {profiles_dir}:",
         *(f"  {profile.name}: {profile.description}" for profile in saved.values()),
         *([] if saved else ["  none yet: give --profile a profile's YAML file to save one"]),
     ]

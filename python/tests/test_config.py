@@ -7,6 +7,7 @@ from pathlib import Path
 import platformdirs
 import pytest
 
+from fefat import config
 from fefat.config import FefatPaths, resolve_paths
 
 PATHS_WHEN_COLLECTED = resolve_paths(os.environ)
@@ -37,7 +38,8 @@ def test_runs_are_kept_in_the_default_workspace_under_fefat_home(tmp_path: Path)
 
 
 def test_feature_versions_are_kept_in_the_default_workspace(tmp_path: Path) -> None:
-    # Step 3.1 (`01-architecture.md` section 4): versions are files until the database of 4.1.
+    # Step 3.1 (`01-architecture.md` section 4): versions are files, the record the app's
+    # database indexes (D-84).
     paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
 
     assert paths.features_dir == tmp_path / "workspaces" / "default" / "features"
@@ -85,3 +87,112 @@ def test_the_quality_reports_live_in_the_data_folder(tmp_path: Path) -> None:
     paths = resolve_paths({"FEFAT_DATA_DIR": str(tmp_path / "market-data")})
 
     assert paths.reports_dir == tmp_path / "market-data" / "reports"
+
+
+def test_the_apps_own_files_live_under_fefat_home_and_resolving_makes_none(
+    tmp_path: Path,
+) -> None:
+    # Step 4.1 (`01-architecture.md` section 4): the settings, the app's database, the logs, and
+    # the saved import profiles, each named by `FefatPaths` alone.
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
+
+    assert paths.config_file == tmp_path / "config.toml"
+    assert paths.database_file == tmp_path / "fefat.sqlite"
+    assert paths.logs_dir == tmp_path / "logs"
+    assert paths.profiles_dir == tmp_path / "profiles"
+    assert list(tmp_path.iterdir()) == []
+
+
+def a_checkout(folder: Path, entry: str) -> Path:
+    """A git working tree at `folder`: its `.git` a folder, as in a clone, or a file, as in a
+    worktree or a submodule."""
+    folder.mkdir(parents=True)
+    if entry == "folder":
+        (folder / ".git").mkdir()
+    else:
+        (folder / ".git").write_text("gitdir: ../elsewhere\n", encoding="utf-8")
+    return folder
+
+
+@pytest.mark.parametrize("entry", ["folder", "file"])
+def test_a_data_folder_inside_a_git_working_tree_is_refused(tmp_path: Path, entry: str) -> None:
+    # Step 4.1 (from `BACKLOG.md`): an import would write licensed data beside tracked files.
+    checkout = a_checkout(tmp_path / "checkout", entry)
+    data_dir = checkout / "fixtures" / "not-made-yet"
+    expected = (
+        f"Expected the data folder outside a git working tree, got {data_dir} inside the "
+        f"repository at {checkout}"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        resolve_paths({"FEFAT_HOME": str(tmp_path / "home"), "FEFAT_DATA_DIR": str(data_dir)})
+
+
+def test_a_data_folder_set_alone_inside_a_git_working_tree_is_refused(tmp_path: Path) -> None:
+    # The usual setup: the default FEFAT_HOME, and a data folder of one's own.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+
+    with pytest.raises(ValueError, match="Expected the data folder outside a git working tree"):
+        resolve_paths({"FEFAT_DATA_DIR": str(checkout / "data")})
+
+
+def test_a_data_folder_written_through_a_parent_is_judged_where_it_lies(tmp_path: Path) -> None:
+    # `<repository>/../data` lies beside the repository, not in it.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    beside = checkout / ".." / "data"
+
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path / "home"), "FEFAT_DATA_DIR": str(beside)})
+
+    assert paths.data_dir == beside
+
+
+def test_the_default_home_is_never_checked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # D-85: a repository around a user's home folder, such as one of their settings, never
+    # stops the app.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    monkeypatch.setattr(config, "_default_home", lambda: checkout / "FEFAT")
+
+    assert resolve_paths({}).home == checkout / "FEFAT"
+
+
+def test_a_fefat_home_inside_a_git_working_tree_is_refused_with_its_data_folder_elsewhere(
+    tmp_path: Path,
+) -> None:
+    # The caches under FEFAT_HOME hold copies of the licensed data (`01-architecture.md`
+    # section 4), which the variable for the tests' data folder does not allow.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    home = checkout / "home"
+    environment = {
+        "FEFAT_HOME": str(home),
+        "FEFAT_DATA_DIR": str(tmp_path / "data"),
+        "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE": "1",
+    }
+    expected = (
+        f"Expected FEFAT_HOME outside a git working tree, got {home} inside the repository at "
+        f"{checkout}: its caches would hold copies of licensed data"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        resolve_paths(environment)
+
+
+def test_a_data_folder_inside_a_git_working_tree_is_allowed_by_the_variable_at_1(
+    tmp_path: Path,
+) -> None:
+    # The tests that read the repository's `fixtures/` as their data folder set it.
+    checkout = a_checkout(tmp_path / "checkout", "folder")
+    environment = {
+        "FEFAT_HOME": str(tmp_path / "home"),
+        "FEFAT_DATA_DIR": str(checkout / "fixtures"),
+        "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE": "1",
+    }
+
+    assert resolve_paths(environment).data_dir == checkout / "fixtures"
+
+
+@pytest.mark.parametrize("value", ["", "0", "true", "yes"])
+def test_the_variable_that_allows_it_takes_1_alone(tmp_path: Path, value: str) -> None:
+    expected = f"Expected FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE to be 1 or unset, got {value!r}."
+
+    with pytest.raises(ValueError, match=re.escape(expected)):
+        resolve_paths({"FEFAT_HOME": str(tmp_path), "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE": value})
