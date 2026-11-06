@@ -56,5 +56,5 @@ def _announce(settings: Settings, log_file: Path, web_app: Path | None) -> None:
         "something needs the csrf_token of GET /v1/me under Authorize, or an API token of "
         "`fefat token create`."
     )
-    print(f"  The web app: {'built, at ' + address if web_app else 'not built yet (step 4.3)'}.")
+    print(f"  The web app: {'built, at ' + address if web_app else 'not built yet'}.")
     print(f"  The server's log: {log_file}", flush=True)

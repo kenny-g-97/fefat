@@ -200,6 +200,20 @@ def test_a_live_session_gets_the_docs_under_their_own_policy(
     assert page.headers["cache-control"] == "no-store"
 
 
+def test_the_docs_load_one_release_of_swagger_ui_and_keep_no_token_in_the_browser(
+    client: TestClient, container: Container
+) -> None:
+    # A floating release could change under the session, and a token typed under Authorize
+    # would otherwise stay in the browser's storage after the page closes.
+    logged_in(client, container)
+
+    page = client.get("/docs")
+
+    assert "swagger-ui-dist@5.34.0/swagger-ui-bundle.js" in page.text
+    assert "swagger-ui-dist@5.34.0/swagger-ui.css" in page.text
+    assert "persistAuthorization" not in page.text
+
+
 def test_a_wrong_password_at_the_prompt_asks_again_and_counts_as_an_attempt(
     client: TestClient, container: Container
 ) -> None:

@@ -10,8 +10,11 @@ would resend it for an image of another site's page too, logging in each time, a
 another site started is refused unless it opens a page, as a link does (its `Sec-Fetch-*`
 headers tell).
 
-The page loads Swagger UI from jsdelivr and runs inline script, which the app's own content
-security policy forbids, so it answers under a policy of its own and needs the internet."""
+The page loads one release of Swagger UI from jsdelivr, whose files never change once
+published, and runs inline script, which the app's own content security policy forbids, so it
+answers under a policy of its own and needs the internet. What is typed under its Authorize
+dialog, a CSRF token or an API token, lasts as long as the page, never kept in the browser's
+storage."""
 
 import base64
 import binascii
@@ -29,6 +32,7 @@ router = APIRouter(include_in_schema=False)
 
 BASIC_CHALLENGE = 'Basic realm="FEFAT"'
 SWAGGER_UI = "https://cdn.jsdelivr.net"
+SWAGGER_UI_RELEASE = f"{SWAGGER_UI}/npm/swagger-ui-dist@5.34.0"
 DOCS_CONTENT_SECURITY_POLICY = (
     f"default-src 'self'; script-src 'self' {SWAGGER_UI} 'unsafe-inline'; "
     f"style-src 'self' {SWAGGER_UI} 'unsafe-inline'; img-src 'self' data:"
@@ -64,8 +68,9 @@ def docs_page(request: Request, opened: DocsAccess) -> HTMLResponse:
     page = get_swagger_ui_html(
         openapi_url="/openapi.json",
         title="FEFAT API",
+        swagger_js_url=f"{SWAGGER_UI_RELEASE}/swagger-ui-bundle.js",
+        swagger_css_url=f"{SWAGGER_UI_RELEASE}/swagger-ui.css",
         swagger_favicon_url="/favicon.ico",
-        swagger_ui_parameters={"persistAuthorization": True},
     )
     page.headers["Content-Security-Policy"] = DOCS_CONTENT_SECURITY_POLICY
     _for_this_browser_alone(page, opened, request)

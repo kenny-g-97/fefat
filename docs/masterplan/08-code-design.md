@@ -59,7 +59,7 @@ engine crates:  fefat-py, fefat-cli  →  fefat-run  →  fefat-engine, fefat-pr
 ```
 
 - `fefat` never imports `fefat_app`; `fefat_app.services` never imports FastAPI or SQLAlchemy; routers in `fefat_app.http` hold no business logic; the web client recomputes no number the API provides.
-- Ports are `typing.Protocol`s in `python/fefat_app/src/fefat_app/ports.py`: `Executor`, `Dispatcher`, `BlobStore`, `AgentRuntime`, `CredentialStore`, `Licence` (the data-source seam, `Provider`, is SDK code in `fefat.market.sources`, used from notebooks too). Adapters are built once from `config.toml` in `python/fefat_app/src/fefat_app/container.py` and reach services through FastAPI dependencies; no service instantiates an adapter.
+- Ports are `typing.Protocol`s in `python/fefat_app/src/fefat_app/ports.py`: `Executor`, `Dispatcher`, `BlobStore`, `AgentRuntime`, `CredentialStore`, `AccessRecords` (the password's hash, the login sessions, and the API tokens, step 4.2, D-86), `Licence` (the data-source seam, `Provider`, is SDK code in `fefat.market.sources`, used from notebooks too). Adapters are built once from `config.toml` in `python/fefat_app/src/fefat_app/container.py` and reach services through FastAPI dependencies; no service instantiates an adapter.
 - In Rust, `fefat-core` holds the shared vocabulary (newtypes, orders, fills, errors, calendar) and the `MarketDataReader` trait (bars, seconds, ticks, and the offsets between levels); `fefat-engine`, `fefat-prop`, and `fefat-metrics` are pure computation over it; `fefat-data` is the only crate with `unsafe` and the only one that opens files; `fefat-py` and `fefat-cli` wire the two together.
 
 ### 1.5 Enforcement
