@@ -114,6 +114,28 @@ test("a new token stays shown when the list fails to come back", async ({
   await expect(page.getByTestId("new-token")).toContainText("fefat_")
 })
 
+test("a name already taken is refused at its field, which takes the focus", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  const name = page.getByLabel("Token name")
+  const create = page.getByRole("button", { name: "Create token" })
+  await name.fill("e2e-taken")
+  await create.click()
+  await expect(page.getByRole("row", { name: /e2e-taken/ })).toBeVisible()
+
+  await name.fill("e2e-taken")
+  await create.click()
+
+  const taken = page.getByText(
+    "A token is already called e2e-taken, revoked or not. Choose another name."
+  )
+  await expect(taken).toBeVisible()
+  await expect(name).toBeFocused()
+  await name.fill("e2e-taken-again")
+  await expect(taken).toBeHidden()
+})
+
 test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
   await page.goto("/settings")
   await page.getByLabel("Token name").fill("e2e-double-click")

@@ -20,7 +20,7 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
   return (
     <div
       data-testid="new-token"
-      className="flex flex-col gap-2 rounded-lg border bg-muted p-4"
+      className="flex flex-col gap-2 rounded-md border bg-muted p-4"
     >
       <p className="text-sm">
         Copy the token of {issued.name} now: it is not shown again.
@@ -32,7 +32,7 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
         >
           {issued.token}
         </code>
-        <Button variant="secondary" size="sm" onClick={() => void copy()}>
+        <Button size="sm" onClick={() => void copy()}>
           {copying === "copied" ? "Copied" : "Copy"}
         </Button>
       </div>

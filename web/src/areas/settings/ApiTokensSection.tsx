@@ -32,13 +32,25 @@ export function ApiTokensSection() {
     mode: "onTouched",
   })
   const submit = form.handleSubmit(({ name }) =>
-    creation.mutate(name, { onSuccess: () => form.reset() })
+    creation.mutate(name, {
+      onSuccess: () => form.reset(),
+      onError: (error) => {
+        // A name in use is the field's own refusal: under the field, which takes the focus
+        // with the name selected, until the name changes.
+        if (isRefusal(error, 409)) {
+          form.setError("name", {
+            message: `A token is already called ${name}, revoked or not. Choose another name.`,
+          })
+          form.setFocus("name", { shouldSelect: true })
+        }
+      },
+    })
   )
   const refusal =
     form.formState.errors.name?.message ??
-    (creation.error === null
+    (creation.error === null || isRefusal(creation.error, 409)
       ? undefined
-      : refusalOf(creation.error, creation.variables))
+      : creation.error.message)
   const issued = creation.data
   // A token is shown once, so it leaves only when a list asked after its creation lacks it,
   // revoked here or elsewhere; a list that failed to come back leaves it in view.
@@ -82,11 +94,4 @@ export function ApiTokensSection() {
       <ApiTokenTable tokens={tokens} />
     </SettingsSection>
   )
-}
-
-function refusalOf(error: Error, name: string | undefined): string {
-  if (isRefusal(error, 409) && name !== undefined) {
-    return `A token is already called ${name}, revoked or not. Choose another name.`
-  }
-  return error.message
 }

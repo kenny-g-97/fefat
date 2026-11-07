@@ -37,7 +37,7 @@ export function ApiTokenTable({
           <TableHead className={HEAD}>Name</TableHead>
           <TableHead className={`${HEAD} text-right`}>Created</TableHead>
           <TableHead className={`${HEAD} text-right`}>Last used</TableHead>
-          <TableHead className="h-8">
+          <TableHead className="h-8 w-48">
             <span className="sr-only">Revocation</span>
           </TableHead>
         </TableRow>
@@ -77,6 +77,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
             <Button
               variant="destructive"
               size="sm"
+              className="h-7"
               disabled={revocation.isPending}
               onClick={() => revocation.mutate(token.name)}
             >
@@ -85,6 +86,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
             <Button
               variant="ghost"
               size="sm"
+              className="h-7"
               autoFocus
               onClick={() => setRevoking("kept")}
             >
@@ -95,6 +97,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           <Button
             variant="ghost"
             size="sm"
+            className="h-7"
             autoFocus={revoking === "kept"}
             onClick={() => setRevoking("confirming")}
           >
@@ -102,7 +105,10 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           </Button>
         )}
         {revocation.error !== null && (
-          <p role="alert" className="pb-1 text-caption text-negative">
+          <p
+            role="alert"
+            className="pb-1 text-caption whitespace-normal text-negative"
+          >
             {revocation.error.message}
           </p>
         )}
