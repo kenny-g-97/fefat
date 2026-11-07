@@ -1127,7 +1127,7 @@ def formatter_cases() -> list[Case]:
         case(
             "a web file is formatted by oxfmt",
             after_write(web_file),
-            (file_reads(web_file, "const x = 1;\n"), output_contains("read them again")),
+            (file_reads(web_file, "const x = 1\n"), output_contains("read them again")),
         ),
         case(
             "the generated API types are left as openapi-typescript writes them",

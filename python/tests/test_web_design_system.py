@@ -5,7 +5,13 @@ against the generic defaults."""
 import re
 from pathlib import Path
 
-DESIGN = Path(__file__).resolve().parents[2] / "web" / "DESIGN.md"
+WEB = Path(__file__).resolve().parents[2] / "web"
+DESIGN = WEB / "DESIGN.md"
+STYLESHEET = WEB / "src" / "index.css"
+TOKEN_ROW = re.compile(
+    r"^\| [^|]+ \| `(--[a-z-]+)` \| `(#[0-9a-f]{6})` \| `(#[0-9a-f]{6})` \|", re.M
+)
+HEX_DECLARATION = re.compile(r"^\s*(--[a-z-]+): (#[0-9a-f]{6});", re.MULTILINE)
 
 
 def section(title: str) -> str:
@@ -35,3 +41,20 @@ def test_the_palette_names_four_to_six_hex_values() -> None:
     named = re.findall(r"^\| (\w+) \| `(#[0-9a-f]{6})` \|", section("Palette"), re.MULTILINE)
 
     assert 4 <= len(named) <= 6, named
+
+
+def declared_colours(selector: str) -> dict[str, str]:
+    """The hex colours that `STYLESHEET`'s block for `selector` declares."""
+    text = STYLESHEET.read_text(encoding="utf-8")
+    block = re.search(rf"^{re.escape(selector)} {{(.*?)^}}", text, re.MULTILINE | re.DOTALL)
+    assert block is not None, f"Expected a block '{selector} {{' in {STYLESHEET.name}, got none."
+    return dict(HEX_DECLARATION.findall(block.group(1)))
+
+
+def test_every_token_of_the_design_is_the_stylesheets_variable_in_both_themes() -> None:
+    tokens = TOKEN_ROW.findall(section("Palette"))
+    light, dark = declared_colours(":root"), declared_colours(".dark")
+
+    assert len(tokens) >= 12, tokens
+    for token, dark_hex, light_hex in tokens:
+        assert (dark.get(token), light.get(token)) == (dark_hex, light_hex), token
