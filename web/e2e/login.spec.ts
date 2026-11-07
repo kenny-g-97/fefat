@@ -97,6 +97,27 @@ test("logging out after another tab logged in again ends the live session", asyn
   expect((await page.request.get("/v1/me")).status()).toBe(401)
 })
 
+test("logging out of a session that already ended goes to the login all the same", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await logIn(page, E2E_PASSWORD)
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible()
+  // Another tab logs out first.
+  const { csrf_token: csrfToken } = await (
+    await page.request.get("/v1/me")
+  ).json()
+  const elsewhere = await page.request.post("/v1/auth/logout", {
+    headers: { "X-CSRF-Token": csrfToken },
+  })
+  expect(elsewhere.status()).toBe(204)
+
+  await page.getByRole("button", { name: "Log out" }).click()
+
+  await expect(page).toHaveURL((url) => url.pathname === "/login")
+  await expect(page.getByRole("alert")).toHaveCount(0)
+})
+
 test("a login returns to the page that asked for it", async ({ page }) => {
   await page.goto("/settings")
   await expect(page).toHaveURL(

@@ -51,8 +51,10 @@ export function ApiTokenTable({
   )
 }
 
+type Revoking = "not asked" | "confirming" | "kept"
+
 function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
-  const [confirming, setConfirming] = useState(false)
+  const [revoking, setRevoking] = useState<Revoking>("not asked")
   const revocation = useTokenRevocation()
   return (
     <TableRow>
@@ -68,8 +70,9 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           : formatInstant(token.last_used_at)}
       </TableCell>
       <TableCell className="py-0 text-right">
-        {confirming ? (
-          // Keep takes the trigger's place and the focus, so a double click keeps the token.
+        {revoking === "confirming" ? (
+          // Keep takes the trigger's place and the focus, so a double click keeps the token,
+          // and the trigger takes the focus back when Keep is pressed.
           <div className="flex justify-end gap-2">
             <Button
               variant="destructive"
@@ -83,13 +86,18 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
               variant="ghost"
               size="sm"
               autoFocus
-              onClick={() => setConfirming(false)}
+              onClick={() => setRevoking("kept")}
             >
               Keep
             </Button>
           </div>
         ) : (
-          <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            autoFocus={revoking === "kept"}
+            onClick={() => setRevoking("confirming")}
+          >
             Revoke
           </Button>
         )}

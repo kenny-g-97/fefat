@@ -76,6 +76,11 @@ test("an unknown page says so and leads home", async ({ loggedIn: page }) => {
   await screenshot(page, "not-found")
   await page.getByRole("link", { name: "Go to the home page" }).click()
   await expect(page).toHaveURL("/")
+  await page.goto("/lab/no-such-page")
+  await expect(
+    page.getByRole("heading", { level: 1, name: "This page does not exist" })
+  ).toBeVisible()
+  await expect(page.getByRole("main")).toHaveCount(1)
 })
 
 test("a failure shows what broke and how to go on", async ({

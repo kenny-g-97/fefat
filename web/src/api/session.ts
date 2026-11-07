@@ -1,18 +1,15 @@
 import { useMutation } from "@tanstack/react-query"
-import { api, identityQuery, queryClient } from "./client"
+import { api, queryClient } from "./client"
 import { answer, isRefusal, succeeded } from "./problems"
 import type { components } from "./schema"
 
 type PasswordChange = components["schemas"]["PasswordChange"]
 
-/** Log in with the password; the session's identity, with its CSRF token, goes to the
- * cache. */
+/** Log in with the password, which sets the session's cookie. */
 export function useLogin() {
   return useMutation({
     mutationFn: async (password: string) =>
       answer(await api.POST("/v1/auth/login", { body: { password } })),
-    onSuccess: (identity) =>
-      queryClient.setQueryData(identityQuery.queryKey, identity),
   })
 }
 
@@ -30,13 +27,11 @@ export function useLogout() {
   })
 }
 
-/** Change the password with the current one; the new session that keeps this browser
- * logged in, and its CSRF token, go to the cache. */
+/** Change the password with the current one, which sets the cookie of a new session that keeps
+ * this browser logged in. */
 export function usePasswordChange() {
   return useMutation({
     mutationFn: async (change: PasswordChange) =>
       answer(await api.POST("/v1/auth/password", { body: change })),
-    onSuccess: (identity) =>
-      queryClient.setQueryData(identityQuery.queryKey, identity),
   })
 }

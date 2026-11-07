@@ -11,6 +11,8 @@ export const router = createRouter({
   context: { queryClient },
   defaultErrorComponent: ErrorPage,
   defaultNotFoundComponent: NotFoundPage,
+  // An unknown path inside the shell shows the page alone too, with its one main landmark.
+  notFoundMode: "root",
 })
 
 declare module "@tanstack/react-router" {

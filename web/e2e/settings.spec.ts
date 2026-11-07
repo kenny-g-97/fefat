@@ -77,9 +77,9 @@ test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
   const revoke = row.getByRole("button", { name: "Revoke", exact: true })
   await revoke.dblclick()
 
-  // The second click lands on Keep, which took the trigger's place.
+  // The second click lands on Keep, which took the trigger's place and gives the focus back.
   await page.waitForLoadState("networkidle")
-  await expect(revoke).toBeVisible()
+  await expect(revoke).toBeFocused()
   await revoke.click()
   await expect(row.getByRole("button", { name: "Keep" })).toBeFocused()
   await row.getByRole("button", { name: "Revoke now" }).click()
