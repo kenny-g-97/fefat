@@ -44,7 +44,7 @@ def test_a_token_name_in_use_is_refused(container: Container) -> None:
         container.api_tokens.create("notebook")
 
 
-@pytest.mark.parametrize("name", ["", "two words", "x" * 65, "naïve"])
+@pytest.mark.parametrize("name", ["", "two words", "x" * 65, "naïve", "..", ".", "-x"])
 def test_a_token_name_outside_the_pattern_is_refused(container: Container, name: str) -> None:
     with pytest.raises(ValueError, match="Expected a token name of 1 to 64 letters, digits"):
         container.api_tokens.create(name)

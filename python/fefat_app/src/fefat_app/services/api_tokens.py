@@ -11,8 +11,10 @@ from fefat_app.services.identity import SEEN_EVERY, ApiTokenIdentity, new_token,
 
 TOKEN_PREFIX = "fefat_"
 """What every API token starts with, so that a reader or a secret scanner can tell one."""
-TOKEN_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
-"""A token's name: 1 to 64 letters, digits, dots, dashes, or underscores."""
+TOKEN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+"""A token's name: 1 to 64 letters, digits, dots, dashes, or underscores, the first a letter or a
+digit, so that the name is a whole segment of a URL path (a browser rewrites `/..` before
+sending it) and never reads as an option of `fefat token revoke`."""
 
 
 class NoSuchApiTokenError(ValueError):
@@ -35,7 +37,7 @@ class ApiTokenIssuer:
         if TOKEN_NAME.fullmatch(name) is None:
             raise ValueError(
                 "Expected a token name of 1 to 64 letters, digits, dots, dashes, or underscores, "
-                f"got {name!r}."
+                f"starting with a letter or a digit, got {name!r}."
             )
         token = TOKEN_PREFIX + new_token()
         self.records.add_api_token(name, token_hash(token), created_at=self.clock())

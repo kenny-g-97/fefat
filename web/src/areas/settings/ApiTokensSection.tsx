@@ -16,8 +16,8 @@ const tokenForm = z.object({
   name: z
     .string()
     .regex(
-      /^[A-Za-z0-9._-]{1,64}$/,
-      "Use 1 to 64 letters, digits, dots, dashes, or underscores"
+      /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/,
+      "Use 1 to 64 letters, digits, dots, dashes, or underscores, starting with a letter or a digit"
     ),
 })
 

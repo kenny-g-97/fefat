@@ -97,3 +97,14 @@ def test_a_folders_index_counts_as_that_folder(tmp_path: Path) -> None:
         "areas/lab/LabPage.tsx:3: Expected an import of lab's own files, ui/, api/, charts/, "
         "or app/, got '@/areas/runs', which is in areas/runs.",
     ]
+
+
+def test_comments_and_line_breaks_inside_an_import_hide_nothing(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "areas/lab/LabPage.tsx",
+        'import {\n  RunsPage, // don\'t use directly\n} from "@/areas/runs/RunsPage"\n'
+        'const prop = import(\n  "@/areas/prop/PropPage"\n)\n',
+    )
+
+    assert [crossing.split(":")[1] for crossing in crossings(tmp_path)] == ["1", "4"]

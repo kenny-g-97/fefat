@@ -31,7 +31,8 @@ STATIC_IMPORT = re.compile(
     r"^[ \t]*(?:import|export)\b[^;'\"]*?\bfrom[ \t]*[\"']([^\"']+)[\"']", re.MULTILINE
 )
 SIDE_EFFECT_IMPORT = re.compile(r"^[ \t]*import[ \t]*[\"']([^\"']+)[\"']", re.MULTILINE)
-DYNAMIC_IMPORT = re.compile(r"\bimport\([ \t]*[\"']([^\"']+)[\"'][ \t]*\)")
+DYNAMIC_IMPORT = re.compile(r"\bimport\(\s*[\"']([^\"']+)[\"']\s*\)")
+COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -89,12 +90,19 @@ def refusal(importer: str, target: str, specifier: str) -> str | None:
     return None
 
 
+def without_comments(text: str) -> str:
+    """`text` with its comments blanked, their line breaks kept, so that an apostrophe or an
+    import in a comment neither hides nor makes an import, and offsets keep their lines."""
+    return COMMENT.sub(lambda comment: re.sub(r"[^\n]", " ", comment.group()), text)
+
+
 def imports_in(text: str) -> Iterator[tuple[int, str]]:
     """Each import's offset in `text` and its specifier, in the order they appear."""
+    code = without_comments(text)
     found = [
         (match.start(), match.group(1))
         for pattern in (STATIC_IMPORT, SIDE_EFFECT_IMPORT, DYNAMIC_IMPORT)
-        for match in pattern.finditer(text)
+        for match in pattern.finditer(code)
     ]
     yield from sorted(found)
 

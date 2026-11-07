@@ -61,11 +61,14 @@ def test_a_name_in_use_or_outside_the_pattern_is_refused(
 
     in_use = client.post("/v1/api-tokens", json={"name": "notebook"}, headers=csrf)
     spaced = client.post("/v1/api-tokens", json={"name": "two words"}, headers=csrf)
+    # A browser rewrites `/v1/api-tokens/..` before sending it, so no such name could be revoked.
+    dotted = client.post("/v1/api-tokens", json={"name": ".."}, headers=csrf)
 
     assert in_use.status_code == 409
     assert in_use.json()["detail"] == (
         "Expected a new token name, got 'notebook', which a token has."
     )
+    assert dotted.status_code == 422
     assert spaced.status_code == 422
 
 
