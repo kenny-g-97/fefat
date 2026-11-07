@@ -13,6 +13,26 @@ export function lowContrast(page: Page, measured: Measured): Promise<string[]> {
   return page.evaluate(contrastProblems, measured)
 }
 
+/** `lowContrast` in the dark theme, then in the light one, each line led by its theme. The
+ * page switches as the shell paints the server's setting, at once; a spec reduces motion
+ * first, so that no colour is measured halfway through its transition. */
+export async function lowContrastInEachTheme(
+  page: Page,
+  measured: Measured = "text"
+): Promise<string[]> {
+  const problems: string[] = []
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (dark) => document.documentElement.classList.toggle("dark", dark),
+      theme === "dark"
+    )
+    for (const problem of await lowContrast(page, measured)) {
+      problems.push(`${theme}: ${problem}`)
+    }
+  }
+  return problems
+}
+
 /** Runs in the page, so it carries its own helpers. */
 function contrastProblems(measured: Measured): string[] {
   const canvas = document.createElement("canvas")
@@ -108,9 +128,16 @@ function contrastProblems(measured: Measured): string[] {
     if (focused === null || focused === document.body) {
       return ["Expected a control with the keyboard focus, got none"]
     }
-    const ring = ringColour(getComputedStyle(focused).boxShadow)
+    const style = getComputedStyle(focused)
+    const outlined =
+      style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0
+    const ring = outlined ? style.outlineColor : ringColour(style.boxShadow)
     if (ring === null) {
       return [`Expected a ring around ${name(focused)}, got none`]
+    }
+    // A ring that touches the control has its fill on the inside as well.
+    if (!outlined || parseFloat(style.outlineOffset) <= 0) {
+      check(`the ring of ${name(focused)} on its fill`, ring, focused, 3)
     }
     check(
       `the ring of ${name(focused)}`,

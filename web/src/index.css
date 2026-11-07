@@ -179,10 +179,24 @@ a:not([data-slot="button"]):active {
   background-color: var(--muted);
 }
 
-/* A button has no border, so its ring is its whole focus indicator: full strength, where
-   shadcn's half gave 2.7 : 1 on dark and 2.2 : 1 on light (WCAG 1.4.11). */
+/* A button has no border to carry its focus, so it takes a 2 px outline in the accent, 2 px
+   outside it: shadcn's ring at half strength gave 2.7 : 1 on dark and 2.2 : 1 on light, and at
+   full strength it ran into a Cobalt button's own fill (WCAG 1.4.11). */
 [data-slot="button"]:focus-visible {
-  --tw-ring-color: var(--ring);
+  --tw-ring-color: transparent;
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* A 16 px radio shows no 2 % press, so its border takes the accent while pressed, its label's
+   press included. */
+[data-slot="radio-group-item"]:active {
+  border-color: var(--ring);
+}
+
+/* A table's container scrolls sideways, which would clip the focus outline of its last row. */
+[data-slot="table-container"] {
+  padding-bottom: 0.25rem;
 }
 
 /* A contrast theme of Windows forces colours and drops box-shadows, the focus rings among
