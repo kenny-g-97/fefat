@@ -2,7 +2,6 @@ import { useSuspenseQuery } from "@tanstack/react-query"
 import { settingsQuery, useThemeChange, type Theme } from "@/api/settings"
 import { Label } from "@/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group"
-import { showTheme, switchTheme } from "@/ui/theme"
 import { SettingsSection } from "./SettingsSection"
 
 const THEMES: readonly Readonly<{ value: Theme; label: string }>[] = [
@@ -10,8 +9,8 @@ const THEMES: readonly Readonly<{ value: Theme; label: string }>[] = [
   { value: "light", label: "Light" },
 ]
 
-/** The theme, which the server keeps for every browser; the page switches at once and goes
- * back if the server refuses. */
+/** The theme, which the server keeps for every browser; the shell paints it once the server
+ * has kept it, so that a refusal changes nothing on the page. */
 export function ThemeSection() {
   const { data: settings } = useSuspenseQuery(settingsQuery)
   const change = useThemeChange()
@@ -19,16 +18,17 @@ export function ThemeSection() {
   const choose = (value: string) => {
     const chosen = THEMES.find((theme) => theme.value === value)
     if (chosen === undefined) {
-      return
+      throw new Error(
+        `Expected the theme dark or light, got ${JSON.stringify(value)}.`
+      )
     }
-    switchTheme(chosen.value)
-    change.mutate(chosen.value, { onError: () => showTheme(settings.theme) })
+    change.mutate(chosen.value)
   }
 
   return (
     <SettingsSection
       title="Appearance"
-      description="The colours of every page, kept for each browser you log in from."
+      description="The colours of every page, the same in every browser you log in from."
     >
       <RadioGroup
         aria-label="Theme"

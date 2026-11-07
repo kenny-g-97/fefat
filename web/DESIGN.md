@@ -40,8 +40,9 @@ The tokens, as `web/src/index.css` defines them (shadcn's names, so that its com
 | Positive sign | `--positive` | `#4cc38a` | `#14773a` | 7.52 / 4.89 |
 | Negative sign, errors | `--negative` | `#ef5a5f` | `#c42121` | 5.00 / 5.08 |
 
-- **Colour means something.** The chrome is neutral. Cobalt marks the primary action, the selection, keyboard focus, and the one figure that matters, a few percent of a screen at most. Positive and negative mark the sign of a profit or loss and an alert or error, nothing else: no red or green decoration.
-- **Hairlines.** Borders are primary text at 8 % (`--border`); a form field's border is primary text at 14 % (`--input`), so that a field reads as one on a panel.
+- **Colour means something.** The chrome is neutral. Cobalt marks the primary action, the selection, keyboard focus, and the one figure that matters, a few percent of a screen at most. Positive and negative mark the sign of a profit or loss, an alert or error, and the confirm of an action that cannot be undone, nothing else: no red or green decoration.
+- **Hairlines.** Borders are primary text at 8 % (`--border`); a form field's border is primary text at 38 % on dark and 48 % on light (`--input`), which gives a field's edge 3 : 1 against the page and the panels (WCAG 1.4.11).
+- **Contrast themes.** Where Windows forces colours, the box-shadow rings disappear, so focus takes a 2 px outline in the system's highlight colour (`src/index.css`).
 - **Depth** comes from the surface steps and the hairlines. The dark theme has no shadows; the light theme gives small raised things `0 1px 2px rgba(0, 0, 0, 0.05)`.
 - **Charts** (from Phase 5) take their colours from these tokens: the main series in the accent, the others in neutral steps, the sign colours for fills and P&L only.
 
@@ -95,10 +96,10 @@ The shell is a terminal: a fixed sidebar on the deepest surface and a fluid work
 
 - One easing curve, `cubic-bezier(0.22, 1, 0.36, 1)`, and three durations: 150 ms for hover, press, and toggles; 200 ms for the theme's cross-fade; 300 ms for anything that enters, when a later step needs it.
 - Only colour, background, border, opacity, and transform move, each named (`transition-colors`, never `transition-all`).
-- A press answers on pointer-down: buttons darken and scale to 0.98.
+- A press answers on pointer-down on every control (the design brief): buttons, rows, and links scale to 0.98, and a text link turns to primary text.
 - The theme cross-fades on background and text colour, and only when the trader switches it; a theme painted on load switches with every transition off (`src/ui/theme.ts`), since 73 colour transitions would otherwise run at once.
 - At most one deliberate motion per screen that the app starts by itself (an entrance, an automatic transition, a pulsing mark); feedback to the trader's own input does not count. The shell starts none.
-- `prefers-reduced-motion: reduce` sets every duration to zero.
+- `prefers-reduced-motion: reduce` sets every duration to zero, the theme's cross-fade included.
 
 ## Copy
 
@@ -122,11 +123,15 @@ The shell is a terminal: a fixed sidebar on the deepest surface and a fluid work
 - **Shell.** The sidebar lists Home, Lab, Strategies, Runs, Prop, Agent, and Data, then Settings and Log out at its foot with the version's identity chip. An active row takes the active surface, primary text, and a Cobalt icon; the others take secondary text and muted icons. Lucide icons at 16 px, stroke 1.5, in an icon box 24 px wide, centred under the mark, and 8 px from the label, so that every label starts on the line of the wordmark. The sidebar spans the page's height, and its contents stay in view.
 - **Page header.** 56 px tall, the page title at 20 px left-aligned, any page actions on the right.
 - **Panel.** The raised surface with a hairline, radius 12 px, padding 20 px, its title at 16 px with an optional quiet link on the right. Panels in one row differ in width when their content does.
-- **Login panel.** Centred on the page, 360 px wide: the F monogram, the wordmark, the tagline, the password field, and "Log in".
-- **Forms.** react-hook-form with zod. The label sits above its field; an error sits under its field in the negative colour; the primary button closes the form; a success shows as one line of secondary text beside the button.
-- **Tables.** 32 px rows divided by hairlines, a header in muted text at 13 px, numbers and dates aligned right in one format.
+- **Login panel.** 360 px wide, anchored at 30 % of the window's height rather than centred, so that a refusal grows it downward: the F monogram, the wordmark, the tagline, the password field, and "Log in".
+- **Forms.** react-hook-form with zod. The label sits 8 px above its field, and fields sit 20 px apart; a field's rules are checked when it is left (the login's on submit); an error sits under its field in the negative colour, and a refusal of one field by the server sits there too, the field taking the focus with its text selected; a control whose request is in flight is disabled; the primary button closes the form; a success shows as one line of secondary text beside the button.
+- **Settings section.** Its title at 16 px, what it changes in one line of secondary text at 13 px, then its controls; sections are divided by a hairline, 24 px apart, and settings stay one level deep.
+- **Read-only value.** A path or an identity the trader cannot change here, in the monospace on the active surface with a hairline, and the way to change it said in the section's line.
+- **Secret shown once.** A box on the active surface with its warning, the secret in the monospace, and Copy, which says when the copy is refused; it leaves with the page, or once the secret is revoked.
+- **Inline confirmation.** For an action that cannot be undone: the trigger gives way to Keep, in its place and focused, with the confirm beside it in the negative colour, so that a double click keeps; the confirm's refusal shows under the row.
+- **Tables.** 32 px rows divided by hairlines, a row's own controls fitting inside them, a header in muted text at 13 px, numbers and dates aligned right in one format.
 - **Identity chip.** IBM Plex Mono at 12 px, muted text on the active surface with a hairline, which keeps it visible on the light sidebar, whose surface is the active one; radius 4 px, padding 2 by 6 px.
-- **Placeholder.** A panel or page not built yet: one line of secondary text on what it will hold, and a link to the page that will fill it.
+- **Placeholder.** A panel or page not built yet: one line of secondary text on what it will hold, and, on a page, "Not built yet" in muted text; a home widget leads to its page from its title row.
 - **Error and not-found pages.** The page title says what happened ("Something broke on this page", "This page does not exist"), the error's message follows in the monospace, and one button leads on.
 - **Overlays.** None yet: Radix's dialogs, menus, and selects lock scrolling with a style element that the content security policy refuses (`BACKLOG.md`), so inline confirmations and radio groups take their place.
 - **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, formatted by oxfmt in their own style, so that `shadcn add --diff` shows upstream changes alone; they are themed through these tokens and a few unlayered rules of `src/index.css` keyed on their `data-slot`, which name their transitions and give buttons their press.
@@ -144,5 +149,6 @@ The plan was checked against the defaults the `frontend-design` skill lists and 
 - **The primary button** on dark is Cobalt with ink text, rather than unslop's off-white fill, so that the one accent is also the one bright control.
 - **Contrast.** Unslop's ink values were measured on every surface they sit on: dark muted text moved from `#7a8296` to `#808898`, dark negative from `#e5484d` to `#ef5a5f`, and the light theme's muted, positive, and negative from `#6b7487`, `#16a34a`, and `#dc2626` to `#5f6878`, `#14773a`, and `#c42121`, which each failed 4.5 : 1 on the sidebar or a selected row.
 - **Targets.** 32 to 36 px rows rather than 44 px targets, recorded under "Layout", since the brief asks for dense tables and the 44 px note concerns the phone, deferred by D-54.
+- **Field borders**, after the design review: a hairline at 14 % gave a field's edge 1.5 : 1, under WCAG 1.4.11's 3 : 1 for the boundary that identifies a control, so `--input` takes 38 % on dark and 48 % on light, while every other border stays a hairline.
 
 The neutral ramp starts from unslop's ink ramp: unslop by Damir Sokolovsky ([@heydamir](https://x.com/heydamir)), CC BY 4.0.

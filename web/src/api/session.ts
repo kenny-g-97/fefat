@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query"
 import { api, identityQuery, queryClient } from "./client"
-import { answer, succeeded } from "./problems"
+import { answer, isRefusal, succeeded } from "./problems"
 import type { components } from "./schema"
 
 type PasswordChange = components["schemas"]["PasswordChange"]
@@ -16,12 +16,17 @@ export function useLogin() {
   })
 }
 
-/** Log out; the cache forgets what the session loaded, whether or not the server
- * answered. */
+/** Log out; once the session has ended, or had already ended (401), the cache forgets what it
+ * loaded. Any other refusal leaves the session, and the cache, as they are. */
 export function useLogout() {
   return useMutation({
     mutationFn: async () => succeeded(await api.POST("/v1/auth/logout")),
-    onSettled: () => queryClient.clear(),
+    onSuccess: () => queryClient.clear(),
+    onError: (error) => {
+      if (isRefusal(error, 401)) {
+        queryClient.clear()
+      }
+    },
   })
 }
 

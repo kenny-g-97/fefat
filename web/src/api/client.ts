@@ -5,6 +5,7 @@ import type { paths } from "./schema"
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"])
 const CSRF_HEADER = "X-CSRF-Token"
+const LOGIN = "/v1/auth/login"
 
 /** The one cache of what the server answered, which the router's loaders and the pages
  * share. */
@@ -24,9 +25,14 @@ export const identityQuery = queryOptions({
 })
 
 api.use({
-  onRequest({ request }) {
-    const identity = queryClient.getQueryData(identityQuery.queryKey)
-    if (!SAFE_METHODS.has(request.method) && identity?.kind === "session") {
+  // A change of state carries the CSRF token of the session the cookie holds now, asked afresh,
+  // since a login or a password change in another tab replaces the session.
+  async onRequest({ request, schemaPath }) {
+    if (SAFE_METHODS.has(request.method) || schemaPath === LOGIN) {
+      return request
+    }
+    const identity = await queryClient.fetchQuery(identityQuery)
+    if (identity.kind === "session") {
       request.headers.set(CSRF_HEADER, identity.csrf_token)
     }
     return request

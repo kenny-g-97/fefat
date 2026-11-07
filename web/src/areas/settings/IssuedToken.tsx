@@ -3,14 +3,19 @@ import type { components } from "@/api/schema"
 import { Button } from "@/ui/button"
 
 type IssuedApiToken = components["schemas"]["IssuedApiToken"]
+type Copying = "not yet" | "copied" | "refused"
 
 /** A token just made, shown this once: the server keeps its hash alone, so leaving the page
  * loses it. */
 export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
-  const [copied, setCopied] = useState(false)
+  const [copying, setCopying] = useState<Copying>("not yet")
   const copy = async () => {
-    await navigator.clipboard.writeText(issued.token)
-    setCopied(true)
+    try {
+      await navigator.clipboard.writeText(issued.token)
+      setCopying("copied")
+    } catch {
+      setCopying("refused")
+    }
   }
   return (
     <div
@@ -25,9 +30,14 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
           {issued.token}
         </code>
         <Button variant="secondary" size="sm" onClick={() => void copy()}>
-          {copied ? "Copied" : "Copy"}
+          {copying === "copied" ? "Copied" : "Copy"}
         </Button>
       </div>
+      {copying === "refused" && (
+        <p role="alert" className="text-caption text-negative">
+          Copy failed: select the token and press Ctrl+C.
+        </p>
+      )}
     </div>
   )
 }

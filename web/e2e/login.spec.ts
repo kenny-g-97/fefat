@@ -33,6 +33,7 @@ test("a wrong password is refused with what to do", async ({ page }) => {
     "That is not FEFAT's password. Type it again."
   )
   await expect(page).toHaveURL((url) => url.pathname === "/login")
+  await expect(page.getByLabel("Password")).toBeFocused()
   await screenshot(page, "login-refused")
 })
 
@@ -61,7 +62,7 @@ test("logging out asks the server for nothing with the ended session", async ({
   const asked: string[] = []
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname
-    if (path.startsWith("/v1/") && path !== "/v1/auth/logout") {
+    if (path.startsWith("/v1/")) {
       asked.push(path)
     }
   })
@@ -72,7 +73,28 @@ test("logging out asks the server for nothing with the ended session", async ({
     page.getByRole("heading", { level: 1, name: "FEFAT" })
   ).toBeVisible()
   await page.waitForLoadState("networkidle")
-  expect(asked).toEqual([])
+  // The session's CSRF token is asked for just before the logout; nothing may follow it.
+  expect(asked.slice(asked.indexOf("/v1/auth/logout"))).toEqual([
+    "/v1/auth/logout",
+  ])
+})
+
+test("logging out after another tab logged in again ends the live session", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await logIn(page, E2E_PASSWORD)
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible()
+  // Another tab logs in again: the browser's cookie now names a new session.
+  const again = await page.request.post("/v1/auth/login", {
+    data: { password: E2E_PASSWORD },
+  })
+  expect(again.status()).toBe(200)
+
+  await page.getByRole("button", { name: "Log out" }).click()
+
+  await expect(page).toHaveURL((url) => url.pathname === "/login")
+  expect((await page.request.get("/v1/me")).status()).toBe(401)
 })
 
 test("a login returns to the page that asked for it", async ({ page }) => {

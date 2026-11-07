@@ -30,14 +30,28 @@ export function PasswordSection() {
   const form = useForm({
     resolver: zodResolver(passwordForm),
     defaultValues: { current: "", next: "", again: "" },
+    mode: "onTouched",
   })
   const errors = form.formState.errors
   const submit = form.handleSubmit(({ current, next }) =>
     change.mutate(
       { current_password: current, new_password: next },
-      { onSuccess: () => form.reset() }
+      {
+        onSuccess: () => form.reset(),
+        onError: (error) => {
+          const refusal = currentPasswordRefusal(error)
+          if (refusal !== undefined) {
+            form.setError("current", { message: refusal })
+            form.setFocus("current", { shouldSelect: true })
+          }
+        },
+      }
     )
   )
+  const otherFailure =
+    change.error !== null && currentPasswordRefusal(change.error) === undefined
+      ? change.error.message
+      : undefined
 
   return (
     <SettingsSection
@@ -47,7 +61,7 @@ export function PasswordSection() {
       <form
         onSubmit={submit}
         noValidate
-        className="flex max-w-sm flex-col gap-4"
+        className="flex max-w-sm flex-col gap-5"
       >
         <PasswordField
           id="current-password"
@@ -80,9 +94,7 @@ export function PasswordSection() {
             </p>
           )}
         </div>
-        <FieldError>
-          {change.error === null ? undefined : refusalOf(change.error)}
-        </FieldError>
+        <FieldError>{otherFailure}</FieldError>
       </form>
     </SettingsSection>
   )
@@ -93,7 +105,7 @@ type PasswordFieldProps = ComponentProps<"input"> &
 
 function PasswordField({ id, label, error, ...input }: PasswordFieldProps) {
   return (
-    <Field data-invalid={error !== undefined}>
+    <Field data-invalid={error !== undefined} className="gap-2">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Input
         id={id}
@@ -106,12 +118,14 @@ function PasswordField({ id, label, error, ...input }: PasswordFieldProps) {
   )
 }
 
-function refusalOf(error: Error): string {
+/** What a refusal of the current password says, under that field, or undefined for another
+ * failure. */
+function currentPasswordRefusal(error: Error): string | undefined {
   if (isRefusal(error, 403)) {
     return "That is not the current password. Type it again."
   }
   if (isRefusal(error, 429)) {
     return "Five attempts in a minute: wait a minute, then try again."
   }
-  return error.message
+  return undefined
 }

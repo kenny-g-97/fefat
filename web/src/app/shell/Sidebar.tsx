@@ -12,6 +12,7 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react"
+import { isRefusal } from "@/api/problems"
 import { useLogout } from "@/api/session"
 import { versionsQuery } from "@/api/versions"
 import { IdentityChip } from "@/ui/identity-chip"
@@ -39,7 +40,7 @@ const SETTINGS: Destination = {
 }
 
 const ROW =
-  "flex h-8 items-center gap-2 rounded-md px-2 text-sm text-foreground-secondary transition-colors outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+  "flex h-8 items-center gap-2 rounded-md px-2 text-sm text-foreground-secondary outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
 const ICON = "mx-1 size-4 shrink-0 text-muted-foreground"
 
 /** The shell's sidebar (web/DESIGN.md, Patterns): the mark, the areas, then Settings, Log
@@ -104,14 +105,28 @@ function SidebarLink({ destination }: Readonly<{ destination: Destination }>) {
 function LogOutRow() {
   const logout = useLogout()
   const navigate = useNavigate()
+  const leave = () => void navigate({ to: "/login", search: {} })
   const logOut = () =>
     logout.mutate(undefined, {
-      onSettled: () => void navigate({ to: "/login", search: {} }),
+      onSuccess: leave,
+      onError: (error) => {
+        if (isRefusal(error, 401)) {
+          leave()
+        }
+      },
     })
+  const error = logout.error
   return (
-    <button type="button" onClick={logOut} className={`${ROW} w-full`}>
-      <LogOut strokeWidth={1.5} className={ICON} />
-      Log out
-    </button>
+    <>
+      <button type="button" onClick={logOut} className={`${ROW} w-full`}>
+        <LogOut strokeWidth={1.5} className={ICON} />
+        Log out
+      </button>
+      {error !== null && !isRefusal(error, 401) && (
+        <p role="alert" className="px-2 pt-1 text-caption text-negative">
+          Still logged in: {error.message}
+        </p>
+      )}
+    </>
   )
 }

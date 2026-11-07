@@ -9,9 +9,9 @@ WEB = Path(__file__).resolve().parents[2] / "web"
 DESIGN = WEB / "DESIGN.md"
 STYLESHEET = WEB / "src" / "index.css"
 TOKEN_ROW = re.compile(
-    r"^\| [^|]+ \| `(--[a-z-]+)` \| `(#[0-9a-f]{6})` \| `(#[0-9a-f]{6})` \|", re.M
+    r"^\| [^|]+ \| `(--[a-z0-9-]+)` \| `(#[0-9a-f]{6})` \| `(#[0-9a-f]{6})` \|", re.M
 )
-HEX_DECLARATION = re.compile(r"^\s*(--[a-z-]+): (#[0-9a-f]{6});", re.MULTILINE)
+HEX_DECLARATION = re.compile(r"^\s*(--[a-z0-9-]+): (#[0-9a-f]{6});", re.MULTILINE)
 
 
 def section(title: str) -> str:
@@ -51,10 +51,12 @@ def declared_colours(selector: str) -> dict[str, str]:
     return dict(HEX_DECLARATION.findall(block.group(1)))
 
 
-def test_every_token_of_the_design_is_the_stylesheets_variable_in_both_themes() -> None:
+def test_the_designs_tokens_are_the_stylesheets_colours_in_both_themes() -> None:
     tokens = TOKEN_ROW.findall(section("Palette"))
     light, dark = declared_colours(":root"), declared_colours(".dark")
+    documented = {token for token, _, _ in tokens}
 
     assert len(tokens) >= 12, tokens
+    assert (set(dark), set(light)) == (documented, documented), "a colour without a row"
     for token, dark_hex, light_hex in tokens:
-        assert (dark.get(token), light.get(token)) == (dark_hex, light_hex), token
+        assert (dark[token], light[token]) == (dark_hex, light_hex), token

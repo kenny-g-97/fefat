@@ -21,24 +21,28 @@ export function LoginPage({ returnTo }: Readonly<{ returnTo: string }>) {
     defaultValues: { password: "" },
   })
   const submit = form.handleSubmit(({ password }) =>
-    login.mutate(password, { onSuccess: () => router.history.push(returnTo) })
+    login.mutate(password, {
+      onSuccess: () => router.history.push(returnTo),
+      onError: (error) => {
+        form.setError("password", { message: refusalOf(error) })
+        form.setFocus("password", { shouldSelect: true })
+      },
+    })
   )
-  const refusal =
-    login.error === null
-      ? form.formState.errors.password?.message
-      : refusalOf(login.error)
+  const refusal = form.formState.errors.password?.message
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-6">
+    // Anchored near the top rather than centred, so that a refusal grows the panel downward.
+    <main className="flex min-h-screen justify-center px-6 pt-[30vh]">
       <title>Log in – FEFAT</title>
-      <div className="w-full max-w-90 rounded-xl border bg-card p-8 shadow-raised">
+      <div className="h-fit w-full max-w-90 rounded-xl border bg-card p-8 shadow-raised">
         <Monogram className="size-10" />
         <h1 className="mt-5 text-base font-semibold">FEFAT</h1>
         <p className="text-caption text-muted-foreground">
           feature engineering for algorithmic trading
         </p>
         <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-5">
-          <Field data-invalid={refusal !== undefined}>
+          <Field data-invalid={refusal !== undefined} className="gap-2">
             <FieldLabel htmlFor="password">Password</FieldLabel>
             <Input
               id="password"

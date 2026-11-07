@@ -1,6 +1,7 @@
 import type { Theme } from "@/api/settings"
 
 const CROSS_FADE_MS = 200
+let fading: number | undefined
 
 function isShown(theme: Theme) {
   return (
@@ -24,15 +25,16 @@ export function showTheme(theme: Theme) {
 }
 
 /** Switch to `theme` with the cross-fade that answers the trader's own choice (web/DESIGN.md,
- * Motion). */
+ * Motion); a second switch within the fade restarts its timer rather than cutting it short. */
 export function switchTheme(theme: Theme) {
   if (isShown(theme)) {
     return
   }
   const root = document.documentElement
+  window.clearTimeout(fading)
   root.classList.add("theme-changing")
   root.classList.toggle("dark", theme === "dark")
-  window.setTimeout(
+  fading = window.setTimeout(
     () => root.classList.remove("theme-changing"),
     CROSS_FADE_MS
   )

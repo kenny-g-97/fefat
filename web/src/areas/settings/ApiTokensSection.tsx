@@ -29,6 +29,7 @@ export function ApiTokensSection() {
   const form = useForm({
     resolver: zodResolver(tokenForm),
     defaultValues: { name: "" },
+    mode: "onTouched",
   })
   const submit = form.handleSubmit(({ name }) =>
     creation.mutate(name, { onSuccess: () => form.reset() })
@@ -38,6 +39,9 @@ export function ApiTokensSection() {
     (creation.error === null
       ? undefined
       : refusalOf(creation.error, creation.variables))
+  const issued = creation.data
+  const stillLive =
+    issued !== undefined && tokens.some((token) => token.name === issued.name)
 
   return (
     <SettingsSection
@@ -51,7 +55,10 @@ export function ApiTokensSection() {
     >
       <form onSubmit={submit} noValidate className="flex flex-col gap-2">
         <div className="flex items-end gap-2">
-          <Field data-invalid={refusal !== undefined} className="max-w-xs">
+          <Field
+            data-invalid={refusal !== undefined}
+            className="max-w-xs gap-2"
+          >
             <FieldLabel htmlFor="token-name">Token name</FieldLabel>
             <Input
               id="token-name"
@@ -67,7 +74,7 @@ export function ApiTokensSection() {
         </div>
         <FieldError>{refusal}</FieldError>
       </form>
-      {creation.data !== undefined && <IssuedToken issued={creation.data} />}
+      {stillLive && <IssuedToken issued={issued} />}
       <ApiTokenTable tokens={tokens} />
     </SettingsSection>
   )

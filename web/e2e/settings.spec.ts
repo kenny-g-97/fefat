@@ -68,6 +68,49 @@ test("a token is shown once, listed by its name, and revoked", async ({
   await expect(page.getByTestId("new-token")).toBeHidden()
 })
 
+test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
+  await page.goto("/settings")
+  await page.getByLabel("Token name").fill("e2e-double-click")
+  await page.getByRole("button", { name: "Create token" }).click()
+  const row = page.getByRole("row", { name: /e2e-double-click/ })
+
+  const revoke = row.getByRole("button", { name: "Revoke", exact: true })
+  await revoke.dblclick()
+
+  // The second click lands on Keep, which took the trigger's place.
+  await page.waitForLoadState("networkidle")
+  await expect(revoke).toBeVisible()
+  await revoke.click()
+  await expect(row.getByRole("button", { name: "Keep" })).toBeFocused()
+  await row.getByRole("button", { name: "Revoke now" }).click()
+  await expect(row).toBeHidden()
+})
+
+test("a revocation the server refuses leaves the row's real state", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  await page.getByLabel("Token name").fill("e2e-revoked-elsewhere")
+  await page.getByRole("button", { name: "Create token" }).click()
+  const row = page.getByRole("row", { name: /e2e-revoked-elsewhere/ })
+  await expect(row).toBeVisible()
+  const { csrf_token: csrfToken } = await (
+    await page.request.get("/v1/me")
+  ).json()
+  const elsewhere = await page.request.delete(
+    "/v1/api-tokens/e2e-revoked-elsewhere",
+    {
+      headers: { "X-CSRF-Token": csrfToken },
+    }
+  )
+  expect(elsewhere.status()).toBe(204)
+
+  await row.getByRole("button", { name: "Revoke" }).click()
+  await row.getByRole("button", { name: "Revoke now" }).click()
+
+  await expect(row).toBeHidden()
+})
+
 test.describe("the password", () => {
   let changed = false
 
@@ -113,6 +156,48 @@ test.describe("the password", () => {
     await page.getByLabel("Password").fill(NEW_PASSWORD)
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL("/")
+  })
+
+  test("changed in one tab, leaves the other tab working", async ({
+    loggedIn: page,
+  }) => {
+    const other = await page.context().newPage()
+    await other.goto("/settings")
+    await expect(
+      other.getByRole("heading", { level: 1, name: "Settings" })
+    ).toBeVisible()
+    await page.goto("/settings")
+
+    await page.getByLabel("Current password").fill(E2E_PASSWORD)
+    await page.getByLabel("New password", { exact: true }).fill(NEW_PASSWORD)
+    await page.getByLabel("New password again").fill(NEW_PASSWORD)
+    await page.getByRole("button", { name: "Change password" }).click()
+    changed = true
+    await expect(page.getByText("Password changed")).toBeVisible()
+
+    await other.getByLabel("Token name").fill("e2e-other-tab")
+    await other.getByRole("button", { name: "Create token" }).click()
+    await expect(other.getByTestId("new-token")).toContainText("fefat_")
+    const row = other.getByRole("row", { name: /e2e-other-tab/ })
+    await row.getByRole("button", { name: "Revoke" }).click()
+    await row.getByRole("button", { name: "Revoke now" }).click()
+    await expect(row).toBeHidden()
+  })
+
+  test("refuses a wrong current one under its field, which takes the focus", async ({
+    loggedIn: page,
+  }) => {
+    await page.goto("/settings")
+
+    await page.getByLabel("Current password").fill("not the password")
+    await page.getByLabel("New password", { exact: true }).fill(NEW_PASSWORD)
+    await page.getByLabel("New password again").fill(NEW_PASSWORD)
+    await page.getByRole("button", { name: "Change password" }).click()
+
+    await expect(
+      page.getByText("That is not the current password. Type it again.")
+    ).toBeVisible()
+    await expect(page.getByLabel("Current password")).toBeFocused()
   })
 
   test("refuses a new password typed twice differently", async ({

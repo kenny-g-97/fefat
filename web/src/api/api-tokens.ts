@@ -18,7 +18,8 @@ export function useTokenCreation() {
   })
 }
 
-/** Revoke the API token of the given name, which every request refuses from then on. */
+/** Revoke the API token of the given name, which every request refuses from then on; the
+ * list is asked again either way, since a refusal can mean that another tab revoked it. */
 export function useTokenRevocation() {
   return useMutation({
     mutationFn: async (name: string) =>
@@ -27,7 +28,7 @@ export function useTokenRevocation() {
           params: { path: { name } },
         })
       ),
-    onSuccess: () =>
+    onSettled: () =>
       queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey }),
   })
 }
