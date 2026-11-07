@@ -79,11 +79,15 @@ test("a token is shown once, listed by its name, and revoked", async ({
   await expect(shown).toContainText("fefat_")
   const row = page.getByRole("row", { name: /e2e-notebook/ })
   await expect(row).toBeVisible()
-  await screenshot(page, "settings-token-created", [
-    shown,
+  // The token and the local path are masked (D-80); the box around the token shows.
+  const masked = [
+    page.getByTestId("new-token-value"),
     page.getByTestId("data-folder"),
-  ])
+  ]
+  await screenshot(page, "settings-token-created", masked)
   await row.getByRole("button", { name: "Revoke" }).click()
+  await expect(row.getByRole("button", { name: "Keep" })).toBeFocused()
+  await screenshot(page, "settings-token-confirm", masked)
   await row.getByRole("button", { name: "Revoke now" }).click()
   await expect(row).toBeHidden()
   await expect(shown).toBeHidden()

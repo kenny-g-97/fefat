@@ -14,6 +14,9 @@ export async function screenshot(
     return
   }
   const file = path.join(project.outputDir, "screenshots", `${name}.png`)
+  // From the top: a full page taken after a click scrolled it draws the sticky sidebar where
+  // the window had scrolled to.
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.screenshot({
     path: file,
     fullPage: true,

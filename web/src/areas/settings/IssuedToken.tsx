@@ -26,7 +26,10 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
         Copy the token of {issued.name} now: it is not shown again.
       </p>
       <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate font-mono text-sm">
+        <code
+          data-testid="new-token-value"
+          className="min-w-0 flex-1 truncate font-mono text-sm"
+        >
           {issued.token}
         </code>
         <Button variant="secondary" size="sm" onClick={() => void copy()}>
