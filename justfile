@@ -50,6 +50,7 @@ check:
     pnpm --dir web lint
     pnpm --dir web run format --check
     pnpm --dir web typecheck
+    uv run --no-project python scripts/check_web_imports.py
     uv run python docs/masterplan/tools/check_masterplan.py
 
 # Format-check and lint the Cargo workspace
