@@ -3,7 +3,8 @@
 
 A live session's cookie gets the interactive page. Without one, `/docs` answers a small page with
 a password box, which logs in through `POST /v1/auth/login`, keeps the cookie that sets, and
-reloads, until step 4.3's login page takes its place. Nothing keeps the password: the browser's
+reloads; it stays beside the web app's login of step 4.3, since it needs no built web app (D-87).
+Nothing keeps the password: the browser's
 own prompt, which a password manager answered by itself with a password not FEFAT's until the
 login's limit tripped, is never asked for. `/openapi.json` answers a session or an API token.
 
