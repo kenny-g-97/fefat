@@ -138,7 +138,7 @@ test("a logout the server refuses keeps the page and says why", async ({
   await page.getByRole("button", { name: "Log out" }).click()
 
   await expect(page.getByRole("alert")).toHaveText(
-    "Still logged in: Refused on purpose, for this test."
+    "Still logged in. Refused on purpose, for this test."
   )
   await expect(page).toHaveURL((url) => url.pathname === "/")
 })

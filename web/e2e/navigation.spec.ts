@@ -82,6 +82,41 @@ test("an unknown page says so and leads home", async ({ loggedIn: page }) => {
     page.getByRole("heading", { level: 1, name: "This page does not exist" })
   ).toBeVisible()
   await expect(page.getByRole("main")).toHaveCount(1)
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0)
+  await expect(page.getByRole("main")).toContainText("FEFAT")
+})
+
+test("the sidebar shows the version the server reports", async ({
+  loggedIn: page,
+}) => {
+  const versions = await page.request.get("/v1/version")
+  const { fefat_app: version } = await versions.json()
+
+  await page.goto("/")
+
+  await expect(page.getByTestId("version")).toHaveText(`FEFAT ${version}`)
+})
+
+test("the shell's own failure stands alone under the wordmark", async ({
+  loggedIn: page,
+}) => {
+  await page.route("**/v1/me", (route) =>
+    route.fulfill(
+      problemAnswer(500, "The server failed on purpose, for this test.")
+    )
+  )
+
+  await page.goto("/")
+
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: "Something broke on this page",
+    })
+  ).toBeVisible()
+  await expect(page.getByRole("main")).toHaveCount(1)
+  await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0)
+  await expect(page.getByRole("main")).toContainText("FEFAT")
 })
 
 test("a failure shows what broke and how to go on", async ({

@@ -124,7 +124,7 @@ function LogOutRow() {
       </button>
       {error !== null && !isRefusal(error, 401) && (
         <p role="alert" className="px-2 pt-1 text-caption text-negative">
-          Still logged in: {error.message}
+          Still logged in. {error.message}
         </p>
       )}
     </>
