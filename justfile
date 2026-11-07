@@ -86,6 +86,15 @@ gen-api:
 up:
     uv run fefat up
 
+# Build the web app into web/dist, which `fefat up` serves at / (step 4.3)
+build-web:
+    pnpm --dir web build
+
+# Build the web app and run the Playwright specs against `fefat up` on a seeded temporary home, the login also through the Vite dev server (step 4.3); screenshots land in web/test-results/screenshots/
+e2e:
+    just build-web
+    pnpm --dir web exec playwright test
+
 # Rewrite the goldens under fixtures/goldens/ from the engine's output: only with the builder's approval, after the version bump, and with a changelog entry (the engine-golden skill)
 [working-directory("engine")]
 regenerate-goldens: build-engine
@@ -118,6 +127,6 @@ mutants *ARGS:
 strip-notebooks:
     uv run python scripts/strip_notebooks.py
 
-# Start the local server and the web dev server (arrives with Phase 4, step 4.3)
+# Start the local server, then the web dev server on http://localhost:5173 with its proxy to the server, and open the app (step 4.3); Ctrl+C stops both
 dev:
-    uv run python -c "print('just dev arrives with the local app in Phase 4 (step 4.3); nothing to start yet')"
+    uv run python scripts/dev.py

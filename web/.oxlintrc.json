@@ -9,6 +9,10 @@
     {
       "files": ["src/ui/**"],
       "rules": { "react/only-export-components": "off" }
+    },
+    {
+      "files": ["e2e/**", "playwright.config.ts"],
+      "rules": { "react/rules-of-hooks": "off" }
     }
   ]
 }
