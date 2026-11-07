@@ -13,6 +13,7 @@ const PAUSE_MS = 500
 test("the builder's click path, recorded", async ({ page }) => {
   await page.goto("/")
   await page.getByLabel("Password").fill(E2E_PASSWORD)
+  await page.waitForTimeout(PAUSE_MS)
   await page.getByRole("button", { name: "Log in" }).click()
   const sidebar = page.getByRole("navigation", { name: "Main" })
 
