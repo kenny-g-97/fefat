@@ -172,6 +172,19 @@ a:not([data-slot="button"]):active {
   color: var(--foreground);
 }
 
+/* A field rests on the active surface, as DESIGN.md's tokens say: shadcn fills a dark one with
+   --input at 30 %, which the field borders' 3 : 1 lifted until muted placeholder text fell to
+   4.2 : 1 (WCAG 1.4.3). */
+[data-slot="input"] {
+  background-color: var(--muted);
+}
+
+/* A button has no border, so its ring is its whole focus indicator: full strength, where
+   shadcn's half gave 2.7 : 1 on dark and 2.2 : 1 on light (WCAG 1.4.11). */
+[data-slot="button"]:focus-visible {
+  --tw-ring-color: var(--ring);
+}
+
 /* A contrast theme of Windows forces colours and drops box-shadows, the focus rings among
    them, so focus takes an outline there. */
 @media (forced-colors: active) {

@@ -42,6 +42,7 @@ The tokens, as `web/src/index.css` defines them (shadcn's names, so that its com
 
 - **Colour means something.** The chrome is neutral. Cobalt marks the primary action, the selection, keyboard focus, and the one figure that matters, a few percent of a screen at most. Positive and negative mark the sign of a profit or loss, an alert or error, and the confirm of an action that cannot be undone, nothing else: no red or green decoration.
 - **Hairlines.** Borders are primary text at 8 % (`--border`); a form field's border is primary text at 38 % on dark and 48 % on light (`--input`), which gives a field's edge 3 : 1 against the page and the panels (WCAG 1.4.11).
+- **Fields and focus.** A field rests on the active surface in both themes, where muted placeholder text keeps 4.5 : 1. A button's focus ring draws in the accent at full strength, 3 : 1 against the page and the panels, since a button has no border to carry its focus (WCAG 1.4.11). The quality floor measures both as the browser paints them, with every text of every page in both themes (`e2e/quality-floor.spec.ts`).
 - **Contrast themes.** Where Windows forces colours, the box-shadow rings disappear, so focus takes a 2 px outline in the system's highlight colour (`src/index.css`).
 - **Depth** comes from the surface steps and the hairlines. The dark theme has no shadows; the light theme gives small raised things `0 1px 2px rgba(0, 0, 0, 0.05)`.
 - **Charts** (from Phase 5) take their colours from these tokens: the main series in the accent, the others in neutral steps, the sign colours for fills and P&L only.
@@ -132,9 +133,9 @@ The shell is a terminal: a fixed sidebar on the deepest surface and a fluid work
 - **Tables.** 32 px rows divided by hairlines, a row's own controls fitting inside them, a header in muted text at 13 px, numbers and dates aligned right in one format.
 - **Identity chip.** IBM Plex Mono at 12 px, muted text on the active surface with a hairline, which keeps it visible on the light sidebar, whose surface is the active one; radius 4 px, padding 2 by 6 px.
 - **Placeholder.** A panel or page not built yet: one line of secondary text on what it will hold, and, on a page, "Not built yet" in muted text; a home widget leads to its page from its title row.
-- **Error and not-found pages.** The page title says what happened ("Something broke on this page", "This page does not exist"), the error's message follows in the monospace, and one button leads on.
+- **Error and not-found pages.** The page title says what happened ("Something broke on this page", "This page does not exist"), the error's message follows in the monospace, and one button leads on. An unknown address shows the not-found page alone, without the sidebar, wherever it was typed; a page that fails keeps the shell around its error.
 - **Overlays.** None yet: Radix's dialogs, menus, and selects lock scrolling with a style element that the content security policy refuses (`BACKLOG.md`), so inline confirmations and radio groups take their place.
-- **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, formatted by oxfmt in their own style, so that `shadcn add --diff` shows upstream changes alone; they are themed through these tokens and a few unlayered rules of `src/index.css` keyed on their `data-slot`, which name their transitions and give buttons their press.
+- **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, formatted by oxfmt in their own style, so that `shadcn add --diff` shows upstream changes alone; they are themed through these tokens and a few unlayered rules of `src/index.css`: on `a` and `button`, which name their transitions and give every control its press, and on two `data-slot`s, which rest a field on the active surface and draw a button's focus ring at full strength.
 
 ## Review against the generic defaults
 
@@ -150,5 +151,6 @@ The plan was checked against the defaults the `frontend-design` skill lists and 
 - **Contrast.** Unslop's ink values were measured on every surface they sit on: dark muted text moved from `#7a8296` to `#808898`, dark negative from `#e5484d` to `#ef5a5f`, and the light theme's muted, positive, and negative from `#6b7487`, `#16a34a`, and `#dc2626` to `#5f6878`, `#14773a`, and `#c42121`, which each failed 4.5 : 1 on the sidebar or a selected row.
 - **Targets.** 32 to 36 px rows rather than 44 px targets, recorded under "Layout", since the brief asks for dense tables and the 44 px note concerns the phone, deferred by D-54.
 - **Field borders**, after the design review: a hairline at 14 % gave a field's edge 1.5 : 1, under WCAG 1.4.11's 3 : 1 for the boundary that identifies a control, so `--input` takes 38 % on dark and 48 % on light, while every other border stays a hairline.
+- **Fills and rings**, after the UI verification: shadcn fills a dark field with `--input` at 30 %, so the raised borders left muted placeholder text at 4.2 : 1, and its focus ring at half strength gave a button 2.7 : 1 on dark and 2.2 : 1 on light. A field now rests on the active surface and a button's ring draws at full strength, and the quality floor's contrast specs hold both.
 
 The neutral ramp starts from unslop's ink ramp: unslop by Damir Sokolovsky ([@heydamir](https://x.com/heydamir)), CC BY 4.0.

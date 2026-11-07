@@ -1,9 +1,12 @@
+import type { Page } from "@playwright/test"
+import { lowContrast } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
 
 // The quality floor of 08-code-design.md section 5 on every page of the shell, served by
 // `fefat up` under its content security policy: nothing scrolls sideways at 1280 px, the
-// console stays free of errors (a refused style or font among them), keyboard focus shows, and
-// reduced motion stops the transitions. A page a later step adds joins PATHS.
+// console stays free of errors (a refused style or font among them), keyboard focus shows,
+// reduced motion stops the transitions, and text, fields, and focus rings keep WCAG's
+// contrast in both themes. A page a later step adds joins PATHS.
 
 const PATHS = [
   "/",
@@ -15,6 +18,16 @@ const PATHS = [
   "/data",
   "/settings",
 ]
+const THEMES = ["dark", "light"] as const
+
+/** The page in `theme` at once, as the shell paints the server's setting; specs that call it
+ * reduce motion first, so that no colour is measured halfway through its transition. */
+function showTheme(page: Page, theme: (typeof THEMES)[number]) {
+  return page.evaluate(
+    (dark) => document.documentElement.classList.toggle("dark", dark),
+    theme === "dark"
+  )
+}
 
 test("no page scrolls sideways at 1280 px or logs an error", async ({
   loggedIn: page,
@@ -153,4 +166,55 @@ test("reduced motion switches the theme without a fade", async ({
   await dark
   await expect(html).toHaveClass(/dark/)
   expect(running).toBe(0)
+})
+
+test("text, placeholders, and field borders keep their contrast on every page, in both themes", async ({
+  loggedIn: page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  const problems: string[] = []
+  for (const path of PATHS) {
+    await page.goto(path)
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    await page.waitForLoadState("networkidle")
+    for (const theme of THEMES) {
+      await showTheme(page, theme)
+      for (const problem of await lowContrast(page, "text")) {
+        problems.push(`${path}, ${theme}: ${problem}`)
+      }
+    }
+  }
+  expect(problems).toEqual([])
+})
+
+test("the login page keeps its contrast", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.goto("/login")
+  await expect(
+    page.getByRole("heading", { level: 1, name: "FEFAT" })
+  ).toBeVisible()
+
+  expect(await lowContrast(page, "text")).toEqual([])
+})
+
+test("a focused button's ring keeps 3 : 1 against the page, in both themes", async ({
+  loggedIn: page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.goto("/settings")
+  await page.waitForLoadState("networkidle")
+  const problems: string[] = []
+  for (const theme of THEMES) {
+    await showTheme(page, theme)
+    // Tab from the field before it, so that the browser shows the focus as a keyboard's.
+    await page.getByLabel("Token name").focus()
+    await page.keyboard.press("Tab")
+    await expect(
+      page.getByRole("button", { name: "Create token" })
+    ).toBeFocused()
+    for (const problem of await lowContrast(page, "focus ring")) {
+      problems.push(`${theme}: ${problem}`)
+    }
+  }
+  expect(problems).toEqual([])
 })
