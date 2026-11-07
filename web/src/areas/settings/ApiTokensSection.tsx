@@ -24,7 +24,7 @@ const tokenForm = z.object({
 /** The API tokens of notebooks and scripts: made here and shown once, listed by name, and
  * revoked from their row. */
 export function ApiTokensSection() {
-  const { data: tokens } = useSuspenseQuery(apiTokensQuery)
+  const { data: tokens, dataUpdatedAt } = useSuspenseQuery(apiTokensQuery)
   const creation = useTokenCreation()
   const form = useForm({
     resolver: zodResolver(tokenForm),
@@ -40,8 +40,12 @@ export function ApiTokensSection() {
       ? undefined
       : refusalOf(creation.error, creation.variables))
   const issued = creation.data
+  // A token is shown once, so it leaves only when a list asked after its creation lacks it,
+  // revoked here or elsewhere; a list that failed to come back leaves it in view.
   const stillLive =
-    issued !== undefined && tokens.some((token) => token.name === issued.name)
+    issued !== undefined &&
+    (dataUpdatedAt <= creation.submittedAt ||
+      tokens.some((token) => token.name === issued.name))
 
   return (
     <SettingsSection

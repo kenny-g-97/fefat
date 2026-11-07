@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { E2E_PASSWORD } from "./support/password.ts"
+import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // Done means 1 and 2 of step 4.3: the login, which the dev-proxy project repeats through the
@@ -72,8 +73,14 @@ test("logging out asks the server for nothing with the ended session", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "FEFAT" })
   ).toBeVisible()
-  await page.waitForLoadState("networkidle")
-  // The session's CSRF token is asked for just before the logout; nothing may follow it.
+  // A quiet second after the login shows: the session's CSRF token is asked for just
+  // before the logout, and nothing may follow it.
+  await expect(
+    page.waitForRequest(
+      (request) => new URL(request.url()).pathname.startsWith("/v1/"),
+      { timeout: 1000 }
+    )
+  ).rejects.toThrow()
   expect(asked.slice(asked.indexOf("/v1/auth/logout"))).toEqual([
     "/v1/auth/logout",
   ])
@@ -116,6 +123,24 @@ test("logging out of a session that already ended goes to the login all the same
 
   await expect(page).toHaveURL((url) => url.pathname === "/login")
   await expect(page.getByRole("alert")).toHaveCount(0)
+})
+
+test("a logout the server refuses keeps the page and says why", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await logIn(page, E2E_PASSWORD)
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible()
+  await page.route("**/v1/auth/logout", (route) =>
+    route.fulfill(problemAnswer(403, "Refused on purpose, for this test."))
+  )
+
+  await page.getByRole("button", { name: "Log out" }).click()
+
+  await expect(page.getByRole("alert")).toHaveText(
+    "Still logged in: Refused on purpose, for this test."
+  )
+  await expect(page).toHaveURL((url) => url.pathname === "/")
 })
 
 test("a login returns to the page that asked for it", async ({ page }) => {

@@ -1,5 +1,6 @@
 import { expect, test } from "./support/fixtures.ts"
 import { E2E_PASSWORD } from "./support/password.ts"
+import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // The settings page of step 4.3: the theme, kept by the server; the API tokens; the password;
@@ -45,6 +46,27 @@ test("the light theme stays chosen across a reload, and dark comes back", async 
   await expect(html).toHaveClass(/dark/)
 })
 
+test("a theme the server refuses changes nothing and says why", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  await page.route("**/v1/settings", (route) =>
+    route.request().method() === "PUT"
+      ? route.fulfill(
+          problemAnswer(500, "The server failed on purpose, for this test.")
+        )
+      : route.continue()
+  )
+
+  await page.getByRole("radio", { name: "Light" }).click()
+
+  await expect(page.getByRole("alert")).toHaveText(
+    "The server failed on purpose, for this test."
+  )
+  await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked()
+  await expect(page.locator("html")).toHaveClass(/dark/)
+})
+
 test("a token is shown once, listed by its name, and revoked", async ({
   loggedIn: page,
 }) => {
@@ -64,8 +86,28 @@ test("a token is shown once, listed by its name, and revoked", async ({
   await row.getByRole("button", { name: "Revoke" }).click()
   await row.getByRole("button", { name: "Revoke now" }).click()
   await expect(row).toBeHidden()
+  await expect(shown).toBeHidden()
   await page.reload()
   await expect(page.getByTestId("new-token")).toBeHidden()
+})
+
+test("a new token stays shown when the list fails to come back", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  await page.getByLabel("Token name").fill("e2e-unlisted")
+  await page.route("**/v1/api-tokens", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill(
+          problemAnswer(500, "The server failed on purpose, for this test.")
+        )
+      : route.continue()
+  )
+
+  await page.getByRole("button", { name: "Create token" }).click()
+
+  // A token is shown once, so a list that failed to come back must not hide it.
+  await expect(page.getByTestId("new-token")).toContainText("fefat_")
 })
 
 test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
@@ -78,7 +120,6 @@ test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
   await revoke.dblclick()
 
   // The second click lands on Keep, which took the trigger's place and gives the focus back.
-  await page.waitForLoadState("networkidle")
   await expect(revoke).toBeFocused()
   await revoke.click()
   await expect(row.getByRole("button", { name: "Keep" })).toBeFocused()
@@ -109,6 +150,28 @@ test("a revocation the server refuses leaves the row's real state", async ({
   await row.getByRole("button", { name: "Revoke now" }).click()
 
   await expect(row).toBeHidden()
+})
+
+test("a revocation that fails says why under its row", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  await page.getByLabel("Token name").fill("e2e-kept")
+  await page.getByRole("button", { name: "Create token" }).click()
+  const row = page.getByRole("row", { name: /e2e-kept/ })
+  await expect(row).toBeVisible()
+  await page.route("**/v1/api-tokens/e2e-kept", (route) =>
+    route.fulfill(
+      problemAnswer(500, "The server failed on purpose, for this test.")
+    )
+  )
+
+  await row.getByRole("button", { name: "Revoke" }).click()
+  await row.getByRole("button", { name: "Revoke now" }).click()
+
+  await expect(row.getByRole("alert")).toHaveText(
+    "The server failed on purpose, for this test."
+  )
 })
 
 test.describe("the password", () => {

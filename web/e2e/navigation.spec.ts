@@ -1,4 +1,5 @@
 import { expect, test } from "./support/fixtures.ts"
+import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // Done means 2 and 3 of step 4.3: the sidebar's pages, served by `fefat up` from web/dist with
@@ -87,18 +88,9 @@ test("a failure shows what broke and how to go on", async ({
   loggedIn: page,
 }) => {
   await page.route("**/v1/api-tokens", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/problem+json",
-      body: JSON.stringify({
-        type: "about:blank",
-        title: "Internal Server Error",
-        status: 500,
-        detail: "The server failed on purpose, for this test.",
-        instance: "/v1/api-tokens",
-        request_id: "e2e",
-      }),
-    })
+    route.fulfill(
+      problemAnswer(500, "The server failed on purpose, for this test.")
+    )
   )
 
   await page.goto("/settings")
