@@ -68,9 +68,10 @@ const READ_ONLY_COMMANDS = [
   readOnly("just check", { accepts: (rest) => rest.length === 0 }),
   readOnly("just test", { accepts: (rest) => rest.length === 0 }),
   readOnly("just e2e", { accepts: (rest) => rest.length === 0 }),
-  // Snapshot updates and --output write into the tree; a reporter or a config file can name a program to load.
+  // Spec files and --project only: other options write files (-u, --output, --last-failed-file,
+  // --only-changed through git) or load a module (--reporter, --add-reporter, -c, --tsconfig).
   readOnly("pnpm --dir web exec playwright test", {
-    forbids: [/^--update/, /^-[A-Za-z]*[uc]/, "--output", /^--reporter/, "--config"],
+    accepts: (rest) => rest.every((word) => !word.startsWith("-") || word === "--project" || word.startsWith("--project=")),
   }),
   readOnly("cargo test", { forbids: [...CARGO_RUNNER_OPTIONS, "--logfile"] }),
   readOnly("cargo check", { forbids: CARGO_RUNNER_OPTIONS }),

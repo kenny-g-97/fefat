@@ -1188,6 +1188,7 @@ def reviewer_cases() -> list[Case]:
     allowed += [
         "just e2e",
         "pnpm --dir web exec playwright test e2e/login.spec.ts --project desktop",
+        "pnpm --dir web exec playwright test e2e/settings.spec.ts --project=desktop",
     ]
     denied = [
         "git -c core.pager=less log",
@@ -1236,6 +1237,10 @@ def reviewer_cases() -> list[Case]:
         "pnpm --dir web exec playwright test --reporter=./x.mjs",
         "pnpm --dir web exec playwright test -c other.config.ts",
         "pnpm --dir web exec playwright codegen",
+        "pnpm --dir web exec playwright test --config other.config.ts",
+        "pnpm --dir web exec playwright test --last-failed-file ../CLAUDE.md",
+        "pnpm --dir web exec playwright test --list --only-changed=--output=../CLAUDE.md",
+        "pnpm --dir web exec playwright test --add-reporter=./x.mjs",
     ]
 
     def reviewer_bash(command: str) -> str:
