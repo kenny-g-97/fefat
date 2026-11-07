@@ -2,13 +2,16 @@
 `CredentialStore` port, its adapter over keyring, and the container that builds it once."""
 
 import re
+from pathlib import Path
 
 import keyring
 import pytest
 from keyring.backends import fail, null
 
-from fefat_app.container import build_container
+from fefat.config import Settings
+from fefat_app.container import build_container, credential_store
 from fefat_app.credentials import KeyringCredentialStore
+from fefat_app.database.schema import opened_database
 from fefat_app.ports import CredentialStore, SecretName
 from memory_keyring import MemoryKeyring
 
@@ -73,12 +76,13 @@ def test_a_backend_that_keeps_nothing_is_refused() -> None:
 
 
 def test_the_container_builds_the_store_over_the_keyring_of_this_machine(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     backend = MemoryKeyring()
     monkeypatch.setattr(keyring, "get_keyring", lambda: backend)
 
-    credentials: CredentialStore = build_container().credentials
+    with opened_database(tmp_path / "fefat.sqlite") as engine:
+        credentials: CredentialStore = build_container(engine, Settings()).credentials
     credentials.set(SecretName.ANTHROPIC, "a value")
 
     assert backend.passwords == {("fefat", "anthropic"): "a value"}
@@ -88,4 +92,4 @@ def test_the_tests_reach_no_credential_store_of_their_machine() -> None:
     # The conftest points keyring at its `fail` backend, so that a test that gives keyring no
     # backend of its own is refused rather than writing to the machine's credential store.
     with pytest.raises(ValueError, match="got none"):
-        build_container().credentials.get(SecretName.ANTHROPIC)
+        credential_store().get(SecretName.ANTHROPIC)

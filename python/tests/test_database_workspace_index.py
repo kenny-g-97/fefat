@@ -194,6 +194,8 @@ def test_indexing_again_adds_only_the_files_it_has_not_seen_and_keeps_a_replaced
         "import_profiles": 1,
         "jobs": 0,
         "events": 0,
+        "sessions": 0,
+        "api_tokens": 0,
     }
 
 

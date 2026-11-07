@@ -18,6 +18,9 @@
     fefat db upgrade
     fefat db downgrade base
     fefat db import-workspace
+    fefat up
+    fefat password set
+    fefat token create <name>
 
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
@@ -49,6 +52,11 @@ and `secrets delete` removes one; no command prints a value (`fefat_app.secret_c
 where there is none, `db downgrade base` runs every migration down, and `db import-workspace`
 indexes the feature versions, the leak detector's reports, and the import profiles saved as
 files, which stay the record (`fefat_app.database_commands`).
+
+`up` serves the local app on 127.0.0.1 at the port of `config.toml` until Ctrl+C, asking for a
+password on its first run (`fefat_app.server_commands`); `password set` replaces the password,
+ending every login session (`fefat_app.password_commands`); and `token create` prints an API
+token for a notebook or a script once (`fefat_app.token_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
@@ -93,7 +101,9 @@ from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
 from fefat_app.cache_commands import add_the_cache_commands
 from fefat_app.database_commands import add_the_database_commands
+from fefat_app.password_commands import add_the_password_commands
 from fefat_app.secret_commands import add_the_secret_commands
+from fefat_app.token_commands import add_the_token_commands
 
 EXIT_OK = 0
 EXIT_REFUSED = 1
@@ -170,7 +180,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_the_secret_commands(secrets)
     database = commands.add_parser("db", help="the app's database under FEFAT_HOME")
     add_the_database_commands(database)
+    server = commands.add_parser(
+        "up", help="serve the local app on 127.0.0.1 at the port of config.toml until Ctrl+C"
+    )
+    server.set_defaults(run=serve)
+    password = commands.add_parser("password", help="the local server's password")
+    add_the_password_commands(password)
+    token = commands.add_parser("token", help="API tokens for notebooks and scripts")
+    add_the_token_commands(token)
     return parser
+
+
+def serve(arguments: argparse.Namespace) -> int:
+    """`fefat up` (`fefat_app.server_commands`), whose server libraries, FastAPI and uvicorn,
+    load only when it runs, so that no other command waits for them."""
+    from fefat_app import server_commands
+
+    return server_commands.serve(arguments)
 
 
 def _add_the_file_import_arguments(exports: argparse.ArgumentParser) -> None:

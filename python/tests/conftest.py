@@ -1,6 +1,8 @@
 """What every test shares: FEFAT's own folders inside a temporary folder, and no credential store
-of the machine; and for the seeded differential tests, draws that depend on their seed alone."""
+of the machine; for the server's tests, the process's log put back; and for the seeded
+differential tests, draws that depend on their seed alone."""
 
+import logging
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -29,6 +31,19 @@ def fefat_folders_in_tmp_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     """Point `FEFAT_HOME` and `FEFAT_DATA_DIR` into each test's own temporary folder."""
     monkeypatch.setenv("FEFAT_HOME", str(tmp_path / "fefat-home"))
     monkeypatch.setenv("FEFAT_DATA_DIR", str(tmp_path / "fefat-data"))
+
+
+@pytest.fixture
+def root_log_put_back() -> Iterator[None]:
+    """The process's log as it was before the test, for a test that configures the server's
+    (`fefat_app.http.server_log`), whose open log file Windows would keep locked."""
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    yield
+    for handler in [added for added in root.handlers if added not in handlers]:
+        root.removeHandler(handler)
+        handler.close()
+    root.setLevel(level)
 
 
 CHECKED_HYPOTHESIS = "6.170.14"

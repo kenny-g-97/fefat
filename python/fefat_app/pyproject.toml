@@ -1,13 +1,16 @@
 [project]
 name = "fefat-app"
 version = "0.0.1"
-description = "FEFAT local server: HTTP, application services, database, jobs, executor, agent, push"
+description = "FEFAT local server: HTTP, application services, database, jobs, executor, agent"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.1,<2",
+    "argon2-cffi>=25.1.0,<26",
+    "fastapi>=0.162.0,<1",
     "fefat",
     "keyring>=25.7.0,<26",
     "sqlalchemy>=2.1.8,<3",
+    "uvicorn>=0.54.0,<1",
 ]
 
 [project.scripts]

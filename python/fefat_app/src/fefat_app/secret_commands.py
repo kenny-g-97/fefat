@@ -13,7 +13,7 @@ each name with whether a value is stored; `delete` removes one, refused where no
 import argparse
 import getpass
 
-from fefat_app.container import build_container
+from fefat_app.container import credential_store
 from fefat_app.ports import SecretName
 
 EXIT_OK = 0
@@ -38,13 +38,13 @@ def add_the_secret_commands(secrets: argparse.ArgumentParser) -> None:
 def store_a_secret(arguments: argparse.Namespace) -> int:
     name = SecretName(arguments.name)
     value = getpass.getpass(f"Value of {name} (not shown): ")
-    build_container().credentials.set(name, value)
+    credential_store().set(name, value)
     print(f"Stored {name} in the credential store.")
     return EXIT_OK
 
 
 def list_the_secrets(arguments: argparse.Namespace) -> int:
-    credentials = build_container().credentials
+    credentials = credential_store()
     for name in SecretName:
         stored = "not set" if credentials.get(name) is None else "set"
         print(f"{name}: {stored}")
@@ -53,6 +53,6 @@ def list_the_secrets(arguments: argparse.Namespace) -> int:
 
 def delete_a_secret(arguments: argparse.Namespace) -> int:
     name = SecretName(arguments.name)
-    build_container().credentials.delete(name)
+    credential_store().delete(name)
     print(f"Deleted {name} from the credential store.")
     return EXIT_OK

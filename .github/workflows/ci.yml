@@ -80,6 +80,14 @@ jobs:
       - run: just setup
       - run: just check
 
+      # The web app's types follow the API (01-architecture.md section 7):
+      # regenerate the OpenAPI document and its types, and fail on any
+      # difference from the committed files (step 4.2).
+      - name: Refuse a drift of the API's document or the web app's types
+        run: |
+          just gen-api
+          git diff --exit-code -- web/openapi.json web/src/api/schema.d.ts
+
       # `just check` guards the final tree; a data file that one commit of a
       # pull request adds and a later one removes is still in its history,
       # which GitHub keeps (D-48). Nothing to check on a push to main.
