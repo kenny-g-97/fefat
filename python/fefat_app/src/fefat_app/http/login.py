@@ -1,7 +1,8 @@
-"""`POST /v1/auth/login`, `POST /v1/auth/logout`, and `GET /v1/me` (step 4.2, D-86,
-`01-architecture.md` sections 7 and 8): the login takes the password as JSON, which no other
-site's page can send without the browser asking this server first, since FastAPI's strict
-content type refuses a body sent untyped or as text, and it sets the session's cookie."""
+"""`POST /v1/auth/login`, `POST /v1/auth/logout`, `GET /v1/me` (step 4.2, D-86,
+`01-architecture.md` sections 7 and 8), and `POST /v1/auth/password` (step 4.3): the login takes
+the password as JSON, which no other site's page can send without the browser asking this server
+first, since FastAPI's strict content type refuses a body sent untyped or as text, and it sets
+the session's cookie; a change of the password sets the cookie of a new session."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -13,12 +14,14 @@ from fefat_app.http.dependencies import (
     ContainerDependency,
     IdentityDependency,
     the_identity,
+    the_session,
 )
 from fefat_app.http.problems import problem_responses
 from fefat_app.http.session_cookie import SESSION_COOKIE, clear_session_cookie, set_session_cookie
 from fefat_app.services.identity import Identity, SessionIdentity
 from fefat_app.services.logins import (
     MAXIMUM_PASSWORD_LENGTH,
+    MINIMUM_PASSWORD_LENGTH,
     OpenedLoginSession,
     TooManyLoginAttemptsError,
     WrongPasswordError,
@@ -33,6 +36,17 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     password: SecretStr = Field(min_length=1, max_length=MAXIMUM_PASSWORD_LENGTH)
+
+
+class PasswordChange(BaseModel):
+    """The password the session's login used, and the one to keep in its place."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    current_password: SecretStr = Field(min_length=1, max_length=MAXIMUM_PASSWORD_LENGTH)
+    new_password: SecretStr = Field(
+        min_length=MINIMUM_PASSWORD_LENGTH, max_length=MAXIMUM_PASSWORD_LENGTH
+    )
 
 
 @router.post("/auth/login", responses=problem_responses(401, 422, 429))
@@ -69,6 +83,31 @@ def me(identity: IdentityDependency) -> Identity:
     """Who the request comes from: a login session, with its CSRF token and when it ends, or
     an API token, by its name."""
     return identity
+
+
+@router.post(
+    "/auth/password",
+    dependencies=[Depends(the_session)],
+    responses=problem_responses(401, 403, 422, 429),
+)
+def change_password(
+    request: Request, response: Response, change: PasswordChange, container: ContainerDependency
+) -> SessionIdentity:
+    """Change the password, from a login session alone: every session ends, and the response
+    sets the cookie of a new one for this browser and returns its CSRF token; refused with 403
+    for a wrong current password, and with 429 after five attempts in a minute, the logins'
+    attempts included."""
+    try:
+        opened = container.logins.change_password(
+            change.current_password.get_secret_value(), change.new_password.get_secret_value()
+        )
+    except WrongPasswordError as refused:
+        raise HTTPException(403, str(refused)) from refused
+    except TooManyLoginAttemptsError as refused:
+        retry_after = {"Retry-After": str(refused.retry_after_seconds)}
+        raise HTTPException(429, str(refused), headers=retry_after) from refused
+    set_session_cookie(response, opened, request)
+    return opened.identity
 
 
 def _opened_login_session(container: Container, password: str) -> OpenedLoginSession:

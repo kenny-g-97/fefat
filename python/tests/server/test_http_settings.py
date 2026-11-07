@@ -1,10 +1,16 @@
-"""`GET` and `PUT /v1/settings` of step 4.2 (D-86): the settings of `config.toml` and whether each
-secret is stored, a secret written to the credential store and never read back, and `null`
-removing one."""
+"""`GET` and `PUT /v1/settings` of steps 4.2 and 4.3 (D-86): the settings of `config.toml`, the
+data folder, the theme, and whether each secret is stored, a secret written to the credential
+store and never read back, `null` removing one, and the theme kept in the database."""
+
+import os
 
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
 
+from fefat.config import resolve_paths
 from fefat_app.container import Container
+from fefat_app.database.preferences import PreferenceRows
+from fefat_app.ports import Theme
 from local_server import logged_in
 from memory_keyring import MemoryKeyring
 
@@ -24,12 +30,29 @@ def test_the_settings_show_config_toml_and_whether_each_secret_is_stored(
             "process_pool_size": container.settings.process_pool_size,
             "import_roots": [],
         },
+        "data_dir": str(resolve_paths(os.environ).data_dir),
+        "theme": "dark",
         "secrets": [
             {"name": "anthropic", "state": "missing"},
             {"name": "databento", "state": "stored"},
         ],
     }
     assert "a stored key" not in response.text
+
+
+def test_the_theme_is_dark_until_the_trader_chooses_light_which_the_database_keeps(
+    client: TestClient, container: Container, engine: Engine
+) -> None:
+    csrf = logged_in(client, container)
+
+    changed = client.put("/v1/settings", json={"theme": "light"}, headers=csrf)
+    unchanged = client.put("/v1/settings", json={}, headers=csrf)
+    sepia = client.put("/v1/settings", json={"theme": "sepia"}, headers=csrf)
+
+    assert changed.json()["theme"] == "light"
+    assert unchanged.json()["theme"] == "light"
+    assert sepia.status_code == 422
+    assert PreferenceRows(engine).theme() is Theme.LIGHT
 
 
 def test_a_secret_is_written_to_the_credential_store_and_null_removes_it(

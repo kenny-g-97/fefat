@@ -12,7 +12,7 @@ from starlette.types import ASGIApp
 
 import fefat_app
 from fefat_app.container import Container
-from fefat_app.http import app_settings, docs, health, login
+from fefat_app.http import api_tokens, app_settings, docs, health, login
 from fefat_app.http.loopback_hosts import LoopbackHosts
 from fefat_app.http.problems import install_problem_handlers, problems_as_problem_json
 from fefat_app.http.request_ids import RequestIds
@@ -45,7 +45,13 @@ def build_api() -> FastAPI:
     )
     api.add_middleware(RequestBodyLimitMiddleware, max_body_size=BODY_BYTES)
     install_problem_handlers(api)
-    for router in (health.router, login.router, app_settings.router, docs.router):
+    for router in (
+        health.router,
+        login.router,
+        api_tokens.router,
+        app_settings.router,
+        docs.router,
+    ):
         api.include_router(router)
     return api
 

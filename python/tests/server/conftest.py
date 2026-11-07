@@ -16,6 +16,7 @@ from fefat.config import Settings, resolve_paths
 from fefat_app.container import Container
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.access_records import AccessTables
+from fefat_app.database.preferences import PreferenceRows
 from fefat_app.database.schema import opened_database, upgrade_schema
 from fefat_app.http.app import create_app
 from fefat_app.http.server_log import configure_server_log
@@ -51,9 +52,11 @@ def container(engine: Engine, clock: SettableClock, keyring_backend: MemoryKeyri
     cheap_hasher = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
     return Container(
         settings=Settings(),
+        paths=resolve_paths(os.environ),
         credentials=KeyringCredentialStore(keyring_backend),
         logins=Logins(records, cheap_hasher, LoginAttempts(), clock),
         api_tokens=ApiTokenIssuer(records, clock),
+        preferences=PreferenceRows(engine),
     )
 
 

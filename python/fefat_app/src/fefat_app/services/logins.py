@@ -1,7 +1,8 @@
-"""The password and the login sessions of the local server (step 4.2, D-86, `01-architecture.md`
-section 8): the password is set at `fefat up`'s first run or by `fefat password set` and kept as
-its Argon2 hash; a login checks it, at most five attempts a minute, and opens a session of 30
-days whose token the cookie carries; a new password ends every session."""
+"""The password and the login sessions of the local server (steps 4.2 and 4.3, D-86,
+`01-architecture.md` section 8): the password is set at `fefat up`'s first run or by `fefat
+password set`, or changed on the settings page with the current one, and kept as its Argon2
+hash; a login checks it, at most five attempts a minute, and opens a session of 30 days whose
+token the cookie carries; a new password ends every session."""
 
 import math
 import threading
@@ -108,16 +109,19 @@ class Logins:
         """A new login session when `password` is the password; refused with `WrongPasswordError`,
         or with `TooManyLoginAttemptsError` before the password is checked."""
         now = self.clock()
-        self.attempts.admit(now)
-        if not self._is_the_password(password):
-            raise WrongPasswordError()
-        self.attempts.clear()
+        self._check(password, now)
         self.records.remove_expired_sessions(now)
-        token = new_token()
-        expires_at = now + SESSION_LIFETIME
-        self.records.add_session(token_hash(token), created_at=now, expires_at=expires_at)
-        identity = SessionIdentity(expires_at=expires_at, csrf_token=csrf_token(token))
-        return OpenedLoginSession(token=SecretStr(token), identity=identity)
+        return self._opened_session(now)
+
+    def change_password(self, current: str, new: str) -> OpenedLoginSession:
+        """Keep `new` as the password once `current` is checked, as a login is, against the same
+        five attempts a minute; every login session ends, and the new one returned keeps the
+        browser that asked logged in. Refused with `WrongPasswordError`, with
+        `TooManyLoginAttemptsError`, or, for a new password of the wrong length, `ValueError`."""
+        now = self.clock()
+        self._check(current, now)
+        self.set_password(new)
+        return self._opened_session(now)
 
     def identity_of_session(self, token: str) -> SessionIdentity | None:
         """The identity of the login session whose cookie carries `token`, or None where there
@@ -134,6 +138,19 @@ class Logins:
     def logout(self, token: str) -> None:
         """End the login session whose cookie carries `token`, if it has not ended."""
         self.records.remove_session(token_hash(token))
+
+    def _check(self, password: str, now: datetime) -> None:
+        self.attempts.admit(now)
+        if not self._is_the_password(password):
+            raise WrongPasswordError()
+        self.attempts.clear()
+
+    def _opened_session(self, now: datetime) -> OpenedLoginSession:
+        token = new_token()
+        expires_at = now + SESSION_LIFETIME
+        self.records.add_session(token_hash(token), created_at=now, expires_at=expires_at)
+        identity = SessionIdentity(expires_at=expires_at, csrf_token=csrf_token(token))
+        return OpenedLoginSession(token=SecretStr(token), identity=identity)
 
     def _is_the_password(self, password: str) -> bool:
         stored = self.records.password_hash()

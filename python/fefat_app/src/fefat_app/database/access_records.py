@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from fefat_app.database.models import ApiTokenRow, LoginSessionRow, SettingRow
 from fefat_app.database.schema import not_waiting, reading
-from fefat_app.ports import ApiToken, LoginSession
+from fefat_app.ports import ApiToken, LoginSession, TokenNameInUseError
 
 PASSWORD_HASH_KEY = "password_hash"
 """The `settings` row that keeps the password's hash."""
@@ -92,7 +92,7 @@ class AccessTables:
         with Session(self.engine) as session, session.begin():
             used = session.scalars(select(ApiTokenRow.id).where(ApiTokenRow.name == name)).first()
             if used is not None:
-                raise ValueError(f"Expected a new token name, got {name!r}, which a token has.")
+                raise TokenNameInUseError(name)
             session.add(ApiTokenRow(name=name, token_hash=token_hash, created_at=created_at))
 
     def api_token_by_hash(self, token_hash: str) -> ApiToken | None:
@@ -102,9 +102,28 @@ class AccessTables:
                     ApiTokenRow.token_hash == token_hash, ApiTokenRow.revoked_at.is_(None)
                 )
             ).one_or_none()
+            return None if row is None else _api_token(row)
+
+    def live_api_tokens(self) -> tuple[ApiToken, ...]:
+        with Session(reading(self.engine)) as session:
+            rows = session.scalars(
+                select(ApiTokenRow)
+                .where(ApiTokenRow.revoked_at.is_(None))
+                .order_by(ApiTokenRow.created_at, ApiTokenRow.name)
+            )
+            return tuple(_api_token(row) for row in rows)
+
+    def revoke_api_token(self, name: str, revoked_at: datetime) -> bool:
+        with Session(self.engine) as session, session.begin():
+            row = session.scalars(
+                select(ApiTokenRow).where(
+                    ApiTokenRow.name == name, ApiTokenRow.revoked_at.is_(None)
+                )
+            ).one_or_none()
             if row is None:
-                return None
-            return ApiToken(name=row.name, last_used_at=row.last_used_at)
+                return False
+            row.revoked_at = revoked_at
+            return True
 
     def mark_api_token_used(self, token_hash: str, used_at: datetime) -> None:
         with _skipped_when_busy(), Session(not_waiting(self.engine)) as session, session.begin():
@@ -113,6 +132,10 @@ class AccessTables:
                 .where(ApiTokenRow.token_hash == token_hash)
                 .values(last_used_at=used_at)
             )
+
+
+def _api_token(row: ApiTokenRow) -> ApiToken:
+    return ApiToken(name=row.name, created_at=row.created_at, last_used_at=row.last_used_at)
 
 
 @contextmanager

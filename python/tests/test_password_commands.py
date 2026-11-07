@@ -29,12 +29,16 @@ def test_password_set_replaces_the_password_and_ends_every_session(
     typed(monkeypatch, PASSWORD, PASSWORD, NEW_PASSWORD, NEW_PASSWORD)
     main(["password", "set"])
     with opened_database(database_file) as engine:
-        token = build_container(engine, Settings()).logins.login(PASSWORD).token
+        token = (
+            build_container(engine, Settings(), resolve_paths(os.environ))
+            .logins.login(PASSWORD)
+            .token
+        )
 
     code = main(["password", "set"])
 
     with opened_database(database_file) as engine:
-        logins = build_container(engine, Settings()).logins
+        logins = build_container(engine, Settings(), resolve_paths(os.environ)).logins
         ended = logins.identity_of_session(token.get_secret_value())
         with pytest.raises(WrongPasswordError):
             logins.login(PASSWORD)

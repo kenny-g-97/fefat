@@ -19,7 +19,9 @@ def test_token_create_prints_a_token_once_that_identifies_its_name(
 
     lines = capsys.readouterr().out.splitlines()
     with opened_database(resolve_paths(os.environ).database_file) as engine:
-        identity = build_container(engine, Settings()).api_tokens.identity_of_token(lines[-1])
+        identity = build_container(
+            engine, Settings(), resolve_paths(os.environ)
+        ).api_tokens.identity_of_token(lines[-1])
     assert code == 0
     assert lines[0] == "Created the API token notebook; copy it now, it is not shown again:"
     assert lines[-1].startswith("fefat_")
@@ -35,4 +37,28 @@ def test_a_token_name_in_use_is_refused(capsys: pytest.CaptureFixture[str]) -> N
     assert code == 1
     assert capsys.readouterr().err == (
         "fefat: Expected a new token name, got 'notebook', which a token has.\n"
+    )
+
+
+def test_token_revoke_refuses_the_token_from_then_on(capsys: pytest.CaptureFixture[str]) -> None:
+    main(["token", "create", "notebook"])
+    token = capsys.readouterr().out.splitlines()[-1]
+
+    code = main(["token", "revoke", "notebook"])
+
+    printed = capsys.readouterr().out
+    paths = resolve_paths(os.environ)
+    with opened_database(paths.database_file) as engine:
+        identity = build_container(engine, Settings(), paths).api_tokens.identity_of_token(token)
+    assert code == 0
+    assert printed == "Revoked the API token notebook; a request that sends it is refused.\n"
+    assert identity is None
+
+
+def test_revoking_a_token_that_is_not_live_is_refused(capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(["token", "revoke", "notebook"])
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "fefat: Expected the name of a live API token, got 'notebook'.\n"
     )

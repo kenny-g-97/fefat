@@ -1,6 +1,7 @@
 """The credential store of step 4.1 (`01-architecture.md` sections 8 and 10, D-27): the
 `CredentialStore` port, its adapter over keyring, and the container that builds it once."""
 
+import os
 import re
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import keyring
 import pytest
 from keyring.backends import fail, null
 
-from fefat.config import Settings
+from fefat.config import Settings, resolve_paths
 from fefat_app.container import build_container, credential_store
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.schema import opened_database
@@ -82,7 +83,9 @@ def test_the_container_builds_the_store_over_the_keyring_of_this_machine(
     monkeypatch.setattr(keyring, "get_keyring", lambda: backend)
 
     with opened_database(tmp_path / "fefat.sqlite") as engine:
-        credentials: CredentialStore = build_container(engine, Settings()).credentials
+        credentials: CredentialStore = build_container(
+            engine, Settings(), resolve_paths(os.environ)
+        ).credentials
     credentials.set(SecretName.ANTHROPIC, "a value")
 
     assert backend.passwords == {("fefat", "anthropic"): "a value"}

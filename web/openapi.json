@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "ApiToken": {
+        "description": "An API token of a notebook or a script, by its name, kept only as its SHA-256, which\nnames it, with when it was made and last used.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "ApiToken",
+        "type": "object"
+      },
       "ApiTokenIdentity": {
         "description": "A request of an API token, by the token's name; it needs no CSRF token, since a browser\nnever sends a bearer token by itself.",
         "properties": {
@@ -21,9 +54,30 @@
         "title": "ApiTokenIdentity",
         "type": "object"
       },
-      "AppSettings": {
-        "description": "The settings the page shows: the server's, from `config.toml`, and each secret's\nstate.",
+      "ApiTokenRequest": {
+        "additionalProperties": false,
+        "description": "The name of a new API token, such as `notebook`.",
         "properties": {
+          "name": {
+            "pattern": "^[A-Za-z0-9._-]{1,64}$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ApiTokenRequest",
+        "type": "object"
+      },
+      "AppSettings": {
+        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\ntheme, and each secret's state.",
+        "properties": {
+          "data_dir": {
+            "format": "path",
+            "title": "Data Dir",
+            "type": "string"
+          },
           "secrets": {
             "items": {
               "$ref": "#/components/schemas/SecretStatus"
@@ -33,10 +87,15 @@
           },
           "server": {
             "$ref": "#/components/schemas/Settings"
+          },
+          "theme": {
+            "$ref": "#/components/schemas/Theme"
           }
         },
         "required": [
           "server",
+          "data_dir",
+          "theme",
           "secrets"
         ],
         "title": "AppSettings",
@@ -89,6 +148,25 @@
         "title": "Health",
         "type": "object"
       },
+      "IssuedApiToken": {
+        "description": "A new API token under its name, which this response alone carries.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "token"
+        ],
+        "title": "IssuedApiToken",
+        "type": "object"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "description": "The password, set at `fefat up`'s first run or by `fefat password set`.",
@@ -106,6 +184,34 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "PasswordChange": {
+        "additionalProperties": false,
+        "description": "The password the session's login used, and the one to keep in its place.",
+        "properties": {
+          "current_password": {
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "new_password": {
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChange",
         "type": "object"
       },
       "Problem": {
@@ -145,6 +251,25 @@
           "request_id"
         ],
         "title": "Problem",
+        "type": "object"
+      },
+      "SecretChanges": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "format": "password",
+              "minLength": 1,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "propertyNames": {
+          "$ref": "#/components/schemas/SecretName"
+        },
         "type": "object"
       },
       "SecretName": {
@@ -245,34 +370,33 @@
       },
       "SettingsChange": {
         "additionalProperties": false,
-        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is.",
+        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is; a theme, when given, replaces the theme.",
         "properties": {
           "secrets": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "format": "password",
-                  "minLength": 1,
-                  "type": "string",
-                  "writeOnly": true
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "propertyNames": {
-              "$ref": "#/components/schemas/SecretName"
-            },
-            "title": "Secrets",
-            "type": "object"
+            "$ref": "#/components/schemas/SecretChanges"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Theme"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": [
-          "secrets"
-        ],
         "title": "SettingsChange",
         "type": "object"
+      },
+      "Theme": {
+        "description": "The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or\nlight.",
+        "enum": [
+          "dark",
+          "light"
+        ],
+        "title": "Theme",
+        "type": "string"
       },
       "ValidationProblem": {
         "description": "A request the API's schema refused, with each of its errors.",
@@ -383,6 +507,221 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/api-tokens": {
+      "get": {
+        "description": "The API tokens not revoked, by when they were made, with when each was last used, never\na token.",
+        "operationId": "live_api_tokens_v1_api_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiToken"
+                  },
+                  "title": "Response Live Api Tokens V1 Api Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Live Api Tokens",
+        "tags": [
+          "api tokens"
+        ]
+      },
+      "post": {
+        "description": "Make an API token, shown in this response alone; refused with 409 for a name a token\nhas or had.",
+        "operationId": "create_api_token_v1_api_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedApiToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Create Api Token",
+        "tags": [
+          "api tokens"
+        ]
+      }
+    },
+    "/v1/api-tokens/{name}": {
+      "delete": {
+        "description": "Revoke the live API token `name`, which every request refuses from then on; refused with\n404 where no live token has the name.",
+        "operationId": "revoke_api_token_v1_api_tokens__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Revoke Api Token",
+        "tags": [
+          "api tokens"
+        ]
+      }
+    },
     "/v1/auth/login": {
       "post": {
         "description": "Log in with the password: the response sets the cookie of a session of 30 days and\nreturns its CSRF token; refused with 401 for a wrong password, and with 429 after five\nattempts in a minute.",
@@ -491,6 +830,89 @@
         ]
       }
     },
+    "/v1/auth/password": {
+      "post": {
+        "description": "Change the password, from a login session alone: every session ends, and the response\nsets the cookie of a new one for this browser and returns its CSRF token; refused with 403\nfor a wrong current password, and with 429 after five attempts in a minute, the logins'\nattempts included.",
+        "operationId": "change_password_v1_auth_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionIdentity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "login"
+        ]
+      }
+    },
     "/v1/healthz": {
       "get": {
         "description": "Whether the server answers; no login needed.",
@@ -573,7 +995,7 @@
     },
     "/v1/settings": {
       "get": {
-        "description": "The settings of `config.toml`, which the page shows read-only, and whether each secret\nis stored, never its value.",
+        "description": "The settings of `config.toml` and the data folder, which the page shows read-only, the\ntheme, and whether each secret is stored, never its value.",
         "operationId": "read_settings_v1_settings_get",
         "responses": {
           "200": {
@@ -614,7 +1036,7 @@
         ]
       },
       "put": {
-        "description": "Store each secret named with a value in the operating system's credential store and\nremove each named with null; the settings after the change, never a secret's value.",
+        "description": "Store each secret named with a value in the operating system's credential store, remove\neach named with null, and keep the theme when one is given; the settings after the change,\nnever a secret's value.",
         "operationId": "change_settings_v1_settings_put",
         "requestBody": {
           "content": {

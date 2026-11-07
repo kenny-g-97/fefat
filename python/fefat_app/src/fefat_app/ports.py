@@ -2,9 +2,10 @@
 `typing.Protocol` that an adapter implements, built once in `fefat_app.container` and passed to
 what uses it, so that swapping an adapter is a module of its own and a line of the container.
 
-The credential store is the first (step 4.1), and the records of who may use the local server
-the second (step 4.2); the executor, the dispatcher, the blob store, the agent's runtime, and
-the licence arrive with the steps that first use them."""
+The credential store is the first (step 4.1), the records of who may use the local server the
+second (step 4.2), and the trader's preferences the third (step 4.3); the executor, the
+dispatcher, the blob store, the agent's runtime, and the licence arrive with the steps that
+first use them."""
 
 from collections.abc import Callable
 from datetime import datetime
@@ -56,12 +57,20 @@ class LoginSession(BaseModel):
 
 class ApiToken(BaseModel):
     """An API token of a notebook or a script, by its name, kept only as its SHA-256, which
-    names it, with when it was last used."""
+    names it, with when it was made and last used."""
 
     model_config = ConfigDict(frozen=True)
 
     name: str
+    created_at: AwareDatetime
     last_used_at: AwareDatetime | None
+
+
+class TokenNameInUseError(ValueError):
+    """A new API token under a name a token has, or had before its revocation."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Expected a new token name, got {name!r}, which a token has.")
 
 
 class AccessRecords(Protocol):
@@ -100,14 +109,45 @@ class AccessRecords(Protocol):
         ...
 
     def add_api_token(self, name: str, token_hash: str, created_at: datetime) -> None:
-        """Keep the API token of SHA-256 `token_hash` under `name`; a name in use is refused."""
+        """Keep the API token of SHA-256 `token_hash` under `name`; a name in use is refused
+        with `TokenNameInUseError`."""
         ...
 
     def api_token_by_hash(self, token_hash: str) -> ApiToken | None:
         """The API token of SHA-256 `token_hash`, or None, which a revoked token gives too."""
         ...
 
+    def live_api_tokens(self) -> tuple[ApiToken, ...]:
+        """The API tokens not revoked, by when they were made, then by name."""
+        ...
+
+    def revoke_api_token(self, name: str, revoked_at: datetime) -> bool:
+        """Revoke the live API token `name`, which is refused from then on; whether there was
+        one."""
+        ...
+
     def mark_api_token_used(self, token_hash: str, used_at: datetime) -> None:
         """Record that the API token of SHA-256 `token_hash` was used, or give it up while
         another writer holds the records, the next request recording it."""
+        ...
+
+
+class Theme(StrEnum):
+    """The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or
+    light."""
+
+    DARK = "dark"
+    LIGHT = "light"
+
+
+class Preferences(Protocol):
+    """What the trader chooses in the app, which the app keeps for them in its database's
+    `settings` table (D-83), never in `config.toml`: the theme so far."""
+
+    def theme(self) -> Theme:
+        """The theme chosen, dark before any choice."""
+        ...
+
+    def replace_theme(self, theme: Theme) -> None:
+        """Keep `theme` as the theme, in place of any chosen before."""
         ...
