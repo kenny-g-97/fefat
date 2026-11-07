@@ -45,11 +45,12 @@ HOOK_TIMEOUT_SECONDS = 60
 PARALLEL_HOOKS = 8
 ON_WINDOWS = sys.platform == "win32"
 STEP_BRANCH = "step/0.5-hook-tests"
-PRETTIER = ROOT / "web" / "node_modules" / "prettier" / "bin" / "prettier.cjs"
+WEB_SCRATCH = ROOT / "web" / ".tmp" / f"hook-tests-{os.getpid()}"
+"""Under web/, where the formatter picks oxfmt; `.tmp/` is ignored at any depth."""
 DESIGN_SKILL_SCRIPT = (
     ROOT / ".claude" / "skills" / "backtest-expert" / "scripts" / "evaluate_backtest.py"
 )
-WEB_SOURCE = ROOT / "web" / "src" / "App.tsx"
+GENERATED_API_TYPES = ROOT / "web" / "src" / "api" / "schema.d.ts"
 AGENTS = ROOT / ".claude" / "agents"
 
 
@@ -191,6 +192,13 @@ def output_contains_one_of(texts: Sequence[str]) -> Check:
     def check(outcome: Outcome) -> str | None:
         found = any(text in outcome.stdout for text in texts)
         return None if found else f"expected the output to contain one of {list(texts)!r}"
+
+    return check
+
+
+def output_lacks(text: str) -> Check:
+    def check(outcome: Outcome) -> str | None:
+        return None if text not in outcome.stdout else f"expected no {text!r} in the output"
 
     return check
 
@@ -1087,7 +1095,9 @@ def formatter_cases() -> list[Case]:
     python_file.write_text("x=1\n", encoding="utf-8")
     rust_file = SCRATCH / "spacing.rs"
     rust_file.write_text("fn main(){}\n", encoding="utf-8")
-    web_check = () if PRETTIER.exists() else (file_unchanged(WEB_SOURCE, WEB_SOURCE.read_bytes()),)
+    WEB_SCRATCH.mkdir(parents=True, exist_ok=True)
+    web_file = WEB_SCRATCH / "spacing.ts"
+    web_file.write_text("const x=1\n", encoding="utf-8")
 
     def case(name: str, stdin: str, checks: tuple[Check, ...] = ()) -> Case:
         return Case(name, Hook.FORMATTER, stdin, Expect.CLEAN_EXIT, checks=checks)
@@ -1115,9 +1125,17 @@ def formatter_cases() -> list[Case]:
             (file_reads(rust_file, "fn main() {}\n"), output_contains("read them again")),
         ),
         case(
-            "a web file waits for the formatter the Phase 4 kickoff chooses",
-            after_write(WEB_SOURCE),
-            web_check,
+            "a web file is formatted by oxfmt",
+            after_write(web_file),
+            (file_reads(web_file, "const x = 1;\n"), output_contains("read them again")),
+        ),
+        case(
+            "the generated API types are left as openapi-typescript writes them",
+            after_write(GENERATED_API_TYPES),
+            (
+                file_unchanged(GENERATED_API_TYPES, GENERATED_API_TYPES.read_bytes()),
+                output_lacks("could not format"),
+            ),
         ),
         case("input that is not JSON exits cleanly", "not json"),
     ]
@@ -1405,11 +1423,12 @@ def current_branch(git: str) -> str:
 
 
 def remove_scratch() -> None:
-    shutil.rmtree(SCRATCH, ignore_errors=True)
-    try:
-        SCRATCH.parent.rmdir()
-    except OSError:
-        return
+    for scratch in (SCRATCH, WEB_SCRATCH):
+        shutil.rmtree(scratch, ignore_errors=True)
+        try:
+            scratch.parent.rmdir()
+        except OSError:
+            continue
 
 
 def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:

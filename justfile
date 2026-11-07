@@ -48,6 +48,7 @@ check:
     uv run lint-imports
     just check-engine
     pnpm --dir web lint
+    pnpm --dir web run format --check
     pnpm --dir web typecheck
     uv run python docs/masterplan/tools/check_masterplan.py
 
