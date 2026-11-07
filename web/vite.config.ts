@@ -19,8 +19,9 @@ export default defineConfig({
     tailwindcss(),
   ],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
-  // The content security policy allows no data: font (01-architecture.md section 8).
-  build: { assetsInlineLimit: 0 },
+  // The content security policy allows no data: font (01-architecture.md section 8), and the
+  // app loads from this machine, where half a megabyte of script is no wait.
+  build: { assetsInlineLimit: 0, chunkSizeWarningLimit: 1024 },
   server: {
     proxy: { "/v1": proxied, "/docs": proxied, "/openapi.json": proxied },
   },

@@ -14,5 +14,11 @@ export async function screenshot(
     return
   }
   const file = path.join(project.outputDir, "screenshots", `${name}.png`)
-  await page.screenshot({ path: file, mask: [...masked], maskColor: "#5f6878" })
+  await page.screenshot({
+    path: file,
+    fullPage: true,
+    animations: "disabled",
+    mask: [...masked],
+    maskColor: "#5f6878",
+  })
 }

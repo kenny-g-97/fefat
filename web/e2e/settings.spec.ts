@@ -13,18 +13,35 @@ test("the light theme stays chosen across a reload, and dark comes back", async 
 }) => {
   await page.goto("/settings")
   const html = page.locator("html")
+  const saved = () =>
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/v1/settings") &&
+        response.request().method() === "PUT"
+    )
 
-  await page.getByRole("radio", { name: "Light" }).check()
+  const light = saved()
+  await page.getByRole("radio", { name: "Light" }).click()
+  expect((await light).status()).toBe(200)
+  await expect(page.getByRole("radio", { name: "Light" })).toBeChecked()
   await expect(html).not.toHaveClass(/dark/)
   await page.reload()
   await expect(page.getByRole("radio", { name: "Light" })).toBeChecked()
   await expect(html).not.toHaveClass(/dark/)
+  // The theme painted on load moves nothing: the design brief counts that as motion.
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0)
   await screenshot(page, "settings-light", [page.getByTestId("data-folder")])
   await page.goto("/")
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Home" })
+  ).toBeVisible()
   await screenshot(page, "page-home-light")
 
   await page.goto("/settings")
-  await page.getByRole("radio", { name: "Dark" }).check()
+  const dark = saved()
+  await page.getByRole("radio", { name: "Dark" }).click()
+  expect((await dark).status()).toBe(200)
+  await expect(page.getByRole("radio", { name: "Dark" })).toBeChecked()
   await expect(html).toHaveClass(/dark/)
 })
 
@@ -53,6 +70,10 @@ test("a token is shown once, listed by its name, and revoked", async ({
 
 test.describe("the password", () => {
   let changed = false
+
+  test.beforeEach(() => {
+    changed = false
+  })
 
   test.afterEach(async ({ request }) => {
     if (!changed) {
@@ -85,6 +106,7 @@ test.describe("the password", () => {
       page.getByRole("heading", { level: 1, name: "Settings" })
     ).toBeVisible()
     await page.getByRole("button", { name: "Log out" }).click()
+    await expect(page).toHaveURL((url) => url.pathname === "/login")
     await page.getByLabel("Password").fill(E2E_PASSWORD)
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page.getByRole("alert")).toBeVisible()

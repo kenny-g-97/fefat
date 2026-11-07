@@ -56,6 +56,7 @@ test("the login page logs no error either", async ({ page }) => {
 
 test("keyboard focus is visible", async ({ loggedIn: page }) => {
   await page.goto("/")
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible()
 
   await page.keyboard.press("Tab")
 

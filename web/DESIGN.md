@@ -96,7 +96,7 @@ The shell is a terminal: a fixed sidebar on the deepest surface and a fluid work
 - One easing curve, `cubic-bezier(0.22, 1, 0.36, 1)`, and three durations: 150 ms for hover, press, and toggles; 200 ms for the theme's cross-fade; 300 ms for anything that enters, when a later step needs it.
 - Only colour, background, border, opacity, and transform move, each named (`transition-colors`, never `transition-all`).
 - A press answers on pointer-down: buttons darken and scale to 0.98.
-- The theme cross-fades on background and text colour, and only when the trader switches it.
+- The theme cross-fades on background and text colour, and only when the trader switches it; a theme painted on load switches with every transition off (`src/ui/theme.ts`), since 73 colour transitions would otherwise run at once.
 - At most one deliberate motion per screen that the app starts by itself (an entrance, an automatic transition, a pulsing mark); feedback to the trader's own input does not count. The shell starts none.
 - `prefers-reduced-motion: reduce` sets every duration to zero.
 
@@ -119,17 +119,17 @@ The shell is a terminal: a fixed sidebar on the deepest surface and a fluid work
 
 ## Patterns
 
-- **Shell.** The sidebar lists Home, Lab, Strategies, Runs, Prop, Agent, and Data, then Settings and Log out at its foot with the version's identity chip. An active row takes the active surface, primary text, and a Cobalt icon; the others take secondary text and muted icons. Lucide icons at 16 px, stroke 1.5, in an icon box of one width, 8 px from the label.
+- **Shell.** The sidebar lists Home, Lab, Strategies, Runs, Prop, Agent, and Data, then Settings and Log out at its foot with the version's identity chip. An active row takes the active surface, primary text, and a Cobalt icon; the others take secondary text and muted icons. Lucide icons at 16 px, stroke 1.5, in an icon box 24 px wide, centred under the mark, and 8 px from the label, so that every label starts on the line of the wordmark. The sidebar spans the page's height, and its contents stay in view.
 - **Page header.** 56 px tall, the page title at 20 px left-aligned, any page actions on the right.
 - **Panel.** The raised surface with a hairline, radius 12 px, padding 20 px, its title at 16 px with an optional quiet link on the right. Panels in one row differ in width when their content does.
 - **Login panel.** Centred on the page, 360 px wide: the F monogram, the wordmark, the tagline, the password field, and "Log in".
 - **Forms.** react-hook-form with zod. The label sits above its field; an error sits under its field in the negative colour; the primary button closes the form; a success shows as one line of secondary text beside the button.
 - **Tables.** 32 px rows divided by hairlines, a header in muted text at 13 px, numbers and dates aligned right in one format.
-- **Identity chip.** IBM Plex Mono at 12 px, muted text on the active surface, radius 4 px, padding 2 by 6 px.
+- **Identity chip.** IBM Plex Mono at 12 px, muted text on the active surface with a hairline, which keeps it visible on the light sidebar, whose surface is the active one; radius 4 px, padding 2 by 6 px.
 - **Placeholder.** A panel or page not built yet: one line of secondary text on what it will hold, and a link to the page that will fill it.
 - **Error and not-found pages.** The page title says what happened ("Something broke on this page", "This page does not exist"), the error's message follows in the monospace, and one button leads on.
 - **Overlays.** None yet: Radix's dialogs, menus, and selects lock scrolling with a style element that the content security policy refuses (`BACKLOG.md`), so inline confirmations and radio groups take their place.
-- **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, themed only through these tokens, so that `shadcn add --diff` can show upstream changes.
+- **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, formatted by oxfmt in their own style, so that `shadcn add --diff` shows upstream changes alone; they are themed through these tokens and a few unlayered rules of `src/index.css` keyed on their `data-slot`, which name their transitions and give buttons their press.
 
 ## Review against the generic defaults
 

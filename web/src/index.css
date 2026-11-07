@@ -126,7 +126,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* The theme cross-fades only while the trader switches it (DESIGN.md, Motion). */
+  /* The theme cross-fades only while the trader switches it, and a theme painted on load moves
+     nothing (DESIGN.md, Motion; src/ui/theme.ts). */
   html.theme-changing,
   html.theme-changing * {
     transition:
@@ -134,6 +135,11 @@
       border-color 200ms var(--ease-fefat),
       color 200ms var(--ease-fefat),
       fill 200ms var(--ease-fefat) !important;
+  }
+
+  html.theme-instant,
+  html.theme-instant * {
+    transition: none !important;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -144,4 +150,16 @@
       animation-duration: 0s !important;
     }
   }
+}
+
+/* shadcn/ui's controls under DESIGN.md's motion, keyed on their data-slot so that the vendored
+   files stay as the CLI writes them: named transitions rather than transition-all, and a press
+   that answers on pointer-down. Unlayered, so that it wins over the utilities. */
+[data-slot="button"] {
+  transition-property:
+    color, background-color, border-color, box-shadow, transform;
+}
+
+[data-slot="button"]:active:not(:disabled) {
+  transform: scale(0.98);
 }
