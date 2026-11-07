@@ -25,6 +25,7 @@ from pathlib import Path, PurePosixPath
 SOURCE = Path(__file__).resolve().parents[1] / "web" / "src"
 ALIAS = "@/"
 SHARED = frozenset({"ui", "api", "charts"})
+FOLDERS = SHARED | {"app", "areas"}
 GENERATED = frozenset({"routeTree.gen.ts"})
 STATIC_IMPORT = re.compile(
     r"^[ \t]*(?:import|export)\b[^;'\"]*?\bfrom[ \t]*[\"']([^\"']+)[\"']", re.MULTILINE
@@ -47,12 +48,13 @@ class Crossing:
 
 
 def part_of(path: PurePosixPath) -> str:
-    """The part of the app a file under the source folder belongs to: `areas/<area>`, `app`,
-    `ui`, `api`, `charts`, or `the entry files` for those beside the folders."""
-    parts = path.parts
-    if parts[0] == "areas" and len(parts) > 2:
-        return f"areas/{parts[1]}"
-    return parts[0] if len(parts) > 1 else "the entry files"
+    """The part of the app a path under the source folder belongs to, a file or a folder's
+    index (`@/api`, `@/areas/lab`): `areas/<area>`, `app`, `ui`, `api`, `charts`, or `the entry
+    files` for those beside the folders."""
+    first, *rest = path.parts
+    if first == "areas" and rest:
+        return f"areas/{rest[0]}"
+    return first if first in FOLDERS else "the entry files"
 
 
 def resolved(specifier: str, importer: PurePosixPath) -> PurePosixPath | None:

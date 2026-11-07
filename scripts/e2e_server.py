@@ -37,8 +37,15 @@ def required(name: str) -> str:
 
 def seeded_home(home: Path, port: int) -> None:
     """`home` made afresh, with a `config.toml` at `port` and the synthetic fixtures as the
-    provider `synthetic` of its data folder."""
-    shutil.rmtree(home, ignore_errors=True)
+    provider `synthetic` of its data folder; refused where the old home cannot be wiped."""
+    if home.exists():
+        try:
+            shutil.rmtree(home)
+        except OSError as held:
+            raise SystemExit(
+                f"Expected to wipe {home} for a fresh home, got {held}: is the server of an "
+                "earlier `just e2e` still running?"
+            ) from held
     home.mkdir(parents=True)
     (home / "config.toml").write_text(f"port = {port}\n", encoding="utf-8")
     shutil.copytree(FIXTURES, home / "data" / "synthetic")

@@ -82,3 +82,18 @@ def test_generated_and_declaration_files_are_left_out(tmp_path: Path) -> None:
     write(tmp_path, "areas/lab/types.d.ts", 'import { y } from "@/areas/runs/y"\n')
 
     assert crossings(tmp_path) == []
+
+
+def test_a_folders_index_counts_as_that_folder(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "areas/lab/LabPage.tsx",
+        'import { lab } from "@/areas/lab"\n'
+        'import { api } from "@/api"\n'
+        'import { runs } from "@/areas/runs"\n',
+    )
+
+    assert crossings(tmp_path) == [
+        "areas/lab/LabPage.tsx:3: Expected an import of lab's own files, ui/, api/, charts/, "
+        "or app/, got '@/areas/runs', which is in areas/runs.",
+    ]

@@ -65,17 +65,23 @@ def program(name: str) -> str:
 
 def main() -> int:
     port = load_settings(resolve_paths(os.environ).config_file).port
+    health = f"http://127.0.0.1:{port}/v1/healthz"
+    if answers(health):
+        raise SystemExit(
+            f"Expected port {port} free for fefat up, got a server answering there: stop it, "
+            "or set another port in config.toml."
+        )
     started: list[subprocess.Popen[bytes]] = []
     try:
         server = subprocess.Popen([program("uv"), "run", "fefat", "up"])
         started.append(server)
-        if not answered(server, f"http://127.0.0.1:{port}/v1/healthz"):
+        if not answered(server, health):
             return server.returncode
         web = [program("pnpm"), "--dir", "web", "dev", "--open"]
         started.append(subprocess.Popen(web, env={**os.environ, "FEFAT_SERVER_PORT": str(port)}))
         while all(process.poll() is None for process in started):
             time.sleep(POLL_SECONDS)
-        return 0
+        return next(process.returncode for process in started if process.returncode is not None)
     except KeyboardInterrupt:
         return 0
     finally:
