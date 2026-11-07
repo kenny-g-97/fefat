@@ -143,6 +143,18 @@ def cargo_subcommand(name: str) -> Callable[[], Installation | None]:
     return locate
 
 
+def pyright_language_server() -> Installation | None:
+    """`pyright-langserver` on the PATH, at the version of the `pyright` beside it, since the
+    server has no `--version` of its own."""
+    found = shutil.which("pyright-langserver")
+    if found is None:
+        return None
+    pyright = shutil.which("pyright", path=str(Path(found).parent))
+    output = None if pyright is None else run_command([pyright, "--version"])
+    version = None if output is None else Version.parse(first_line(output))
+    return Installation(Path(found), version)
+
+
 def uv_managed_python(requested: str) -> Installation | None:
     uv = shutil.which("uv")
     if uv is None:
@@ -254,6 +266,25 @@ def requirements() -> list[Requirement]:
             "cargo install cargo-mutants --locked (mutation testing at the phase exits)",
         ),
         Requirement("just", Version(1, 38), command_on_path("just"), "winget install Casey.Just"),
+        # The language-server plugins start these from the repository's root (06 section 7).
+        Requirement(
+            "rust-analyzer",
+            Version(1, 85),
+            command_on_path("rust-analyzer", ENGINE.parent),
+            "rustup component add rust-analyzer",
+        ),
+        Requirement(
+            "pyright-langserver",
+            Version(1, 1, 400),
+            pyright_language_server,
+            "just setup installs it in .venv; put .venv's scripts folder on the PATH",
+        ),
+        Requirement(
+            "typescript-language-server",
+            Version(4, 0),
+            command_on_path("typescript-language-server"),
+            "npm install -g typescript-language-server typescript@6",
+        ),
         native_linker_requirement(),
     ]
 

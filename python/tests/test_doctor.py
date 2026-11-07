@@ -65,3 +65,55 @@ def test_just_mutants_runs_cargo_mutants_on_the_engine_crate() -> None:
     recipe = '[working-directory("engine")]\nmutants *ARGS:\n'
 
     assert f"{recipe}    cargo mutants --package fefat-engine {{{{ARGS}}}}\n" in justfile
+
+
+def test_rust_analyzer_answers_from_the_root_where_the_plugin_starts_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folders: list[Path | None] = []
+
+    def recorded_run(arguments: list[str], directory: Path | None = None) -> str:
+        folders.append(directory)
+        return "rust-analyzer 1.99.0 (b940084d 2026-09-28)"
+
+    monkeypatch.setattr(doctor, "run_command", recorded_run)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"C:/rust/bin/{name}.exe")
+    (rust_analyzer,) = [r for r in doctor.requirements() if r.name == "rust-analyzer"]
+
+    found = rust_analyzer.locate()
+
+    assert folders == [doctor.ENGINE.parent], "the engine's pinned toolchain has no rust-analyzer"
+    assert found is not None
+    assert found.version == doctor.Version(1, 99, 0)
+
+
+def test_pyright_langserver_answers_through_the_pyright_beside_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def recorded_run(arguments: list[str], directory: Path | None = None) -> str:
+        commands.append(arguments)
+        return "pyright 1.1.414"
+
+    def located(name: str, path: str | None = None) -> str:
+        return f"{path or 'C:/venv/Scripts'}/{name}.exe"
+
+    monkeypatch.setattr(doctor, "run_command", recorded_run)
+    monkeypatch.setattr(doctor.shutil, "which", located)
+    (server,) = [r for r in doctor.requirements() if r.name == "pyright-langserver"]
+
+    found = server.locate()
+
+    ((program, *options),) = commands
+    assert Path(program) == Path("C:/venv/Scripts/pyright.exe"), "the server has no --version"
+    assert options == ["--version"]
+    assert found is not None
+    assert found.path == Path("C:/venv/Scripts/pyright-langserver.exe")
+    assert found.version == doctor.Version(1, 1, 414)
+
+
+def test_the_typescript_language_server_is_a_requirement() -> None:
+    names = [requirement.name for requirement in doctor.requirements()]
+
+    assert "typescript-language-server" in names
