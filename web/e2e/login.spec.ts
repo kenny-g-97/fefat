@@ -52,6 +52,29 @@ test("the password opens the home page, and logging out ends the session", async
   await expect(page).toHaveURL((url) => url.pathname === "/login")
 })
 
+test("logging out asks the server for nothing with the ended session", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await logIn(page, E2E_PASSWORD)
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible()
+  const asked: string[] = []
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.startsWith("/v1/") && path !== "/v1/auth/logout") {
+      asked.push(path)
+    }
+  })
+
+  await page.getByRole("button", { name: "Log out" }).click()
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "FEFAT" })
+  ).toBeVisible()
+  await page.waitForLoadState("networkidle")
+  expect(asked).toEqual([])
+})
+
 test("a login returns to the page that asked for it", async ({ page }) => {
   await page.goto("/settings")
   await expect(page).toHaveURL(
