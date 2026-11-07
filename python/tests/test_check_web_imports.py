@@ -108,3 +108,16 @@ def test_comments_and_line_breaks_inside_an_import_hide_nothing(tmp_path: Path) 
     )
 
     assert [crossing.split(":")[1] for crossing in crossings(tmp_path)] == ["1", "4"]
+
+
+def test_a_comment_marker_inside_a_string_hides_nothing(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "areas/lab/LabPage.tsx",
+        'const pages = import.meta.glob("/src/areas/*/Page.tsx")\n'
+        'const home = "http://127.0.0.1:8765/"\n'
+        'import { RunsPage } from "@/areas/runs/RunsPage"\n'
+        "/* the end */\n",
+    )
+
+    assert [crossing.split(":")[1] for crossing in crossings(tmp_path)] == ["3"]

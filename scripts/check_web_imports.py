@@ -32,7 +32,11 @@ STATIC_IMPORT = re.compile(
 )
 SIDE_EFFECT_IMPORT = re.compile(r"^[ \t]*import[ \t]*[\"']([^\"']+)[\"']", re.MULTILINE)
 DYNAMIC_IMPORT = re.compile(r"\bimport\(\s*[\"']([^\"']+)[\"']\s*\)")
-COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
+# A string first, as its group, so that a comment marker inside one starts nothing; then a comment.
+STRING_OR_COMMENT = re.compile(
+    r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|/\*.*?\*/|//[^\n]*""",
+    re.DOTALL,
+)
 
 
 @dataclass(frozen=True)
@@ -92,8 +96,16 @@ def refusal(importer: str, target: str, specifier: str) -> str | None:
 
 def without_comments(text: str) -> str:
     """`text` with its comments blanked, their line breaks kept, so that an apostrophe or an
-    import in a comment neither hides nor makes an import, and offsets keep their lines."""
-    return COMMENT.sub(lambda comment: re.sub(r"[^\n]", " ", comment.group()), text)
+    import in a comment neither hides nor makes an import, and offsets keep their lines; a
+    string stays whole, so that a `/*` or `//` inside one, as in a glob, starts no comment."""
+    return STRING_OR_COMMENT.sub(blanked, text)
+
+
+def blanked(found: re.Match[str]) -> str:
+    """A string as it is, or a comment as spaces with its line breaks."""
+    if found.group(1) is not None:
+        return found.group()
+    return re.sub(r"[^\n]", " ", found.group())
 
 
 def imports_in(text: str) -> Iterator[tuple[int, str]]:
