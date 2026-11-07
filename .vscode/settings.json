@@ -56,8 +56,6 @@
   "[jsonc]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
-  "oxc.path.oxfmt": "${workspaceFolder}/web/node_modules/.bin/oxfmt",
-  "oxc.path.oxlint": "${workspaceFolder}/web/node_modules/.bin/oxlint",
   "rust-analyzer.linkedProjects": ["engine/Cargo.toml"],
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
   "python.terminal.activateEnvironment": true,

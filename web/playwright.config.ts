@@ -15,7 +15,6 @@ const desktop = {
 export default defineConfig({
   testDir: "./e2e",
   workers: 1,
-  retries: 0,
   forbidOnly: true,
   reporter: [["list"], ["html", { open: "never" }]],
   use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
@@ -35,7 +34,6 @@ export default defineConfig({
       command: "uv run python scripts/e2e_server.py",
       cwd: "..",
       url: `http://127.0.0.1:${SERVER_PORT}/v1/healthz`,
-      reuseExistingServer: false,
       timeout: 120_000,
       stdout: "pipe",
       env: {
@@ -47,8 +45,6 @@ export default defineConfig({
     {
       command: `pnpm exec vite --port ${DEV_SERVER_PORT} --strictPort`,
       url: `http://localhost:${DEV_SERVER_PORT}`,
-      reuseExistingServer: false,
-      timeout: 60_000,
       env: { FEFAT_SERVER_PORT: String(SERVER_PORT) },
     },
   ],
