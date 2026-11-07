@@ -1185,6 +1185,10 @@ def reviewer_cases() -> list[Case]:
     ]
     allowed += ["git --no-pager log -3", "sort -r notes.txt", "git grep -n hooksPath"]
     allowed += ["rg -n start scripts/"]
+    allowed += [
+        "just e2e",
+        "pnpm --dir web exec playwright test e2e/login.spec.ts --project desktop",
+    ]
     denied = [
         "git -c core.pager=less log",
         "GIT_EXTERNAL_DIFF=./x.sh git diff",
@@ -1225,6 +1229,13 @@ def reviewer_cases() -> list[Case]:
         "git grep -nOrm -e foo",
         "uv run pytest -qolog_file=CLAUDE.md",
         "uv run ruff check -qoCLAUDE.md",
+        "just e2e strip-notebooks",
+        "pnpm --dir web exec playwright test --update-snapshots",
+        "pnpm --dir web exec playwright test -xu",
+        "pnpm --dir web exec playwright test --output=src",
+        "pnpm --dir web exec playwright test --reporter=./x.mjs",
+        "pnpm --dir web exec playwright test -c other.config.ts",
+        "pnpm --dir web exec playwright codegen",
     ]
 
     def reviewer_bash(command: str) -> str:
