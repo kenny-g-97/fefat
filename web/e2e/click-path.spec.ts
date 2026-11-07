@@ -3,7 +3,7 @@ import { E2E_PASSWORD } from "./support/password.ts"
 
 // The builder's check of step 4.3 as a clip for the pull request (the UI recipe): log in, open
 // each page of the sidebar, and switch to the light theme and back. The settings page's local
-// path sits below the fold of 800 px, out of the clip (D-80).
+// path must stay below the fold of 800 px, out of the clip, since a video cannot be masked (D-80).
 
 test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
@@ -27,4 +27,5 @@ test("the builder's click path, recorded", async ({ page }) => {
     await expect(page.getByRole("radio", { name: theme })).toBeChecked()
     await page.waitForTimeout(PAUSE_MS)
   }
+  await expect(page.getByTestId("data-folder")).not.toBeInViewport()
 })
