@@ -52,7 +52,7 @@ Three principles hold everything together:
 | SDK and app | Python 3.12 (uv-managed), Polars, PyArrow, DuckDB, Pydantic 2 | Packages `fefat` (SDK) and `fefat_app` (server) in a uv workspace |
 | App state | SQLite (WAL), SQLAlchemy 2.1, Alembic 1.20 (batch mode) | One file, `fefat.sqlite`: the app's own state and an index of the workspace's files, which stay the record (D-84) |
 | Server | FastAPI 0.162 + Uvicorn 0.54; argon2-cffi for the password, keyring for secrets | `fefat up` starts it on 127.0.0.1, port 8765 by default; OpenAPI exported to `web/openapi.json` |
-| Web | Vite 8, React 19, TypeScript 6 (7 held), Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod 4, `openapi-typescript` 7 + `openapi-fetch`, oxlint and oxfmt | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, made with the `frontend-design` and `unslop` skills (`08-code-design.md` §5); versions pinned at the Phase 4 kickoff (D-83) |
+| Web | Vite 8, React 19, TypeScript 6 (7 held), Tailwind 4, shadcn/ui, TanStack Router + Query, react-hook-form + zod 4, `openapi-typescript` 7 + `openapi-fetch`, oxlint and oxfmt | `web/` with pnpm, organised by product area (§3); the visual design comes from `web/DESIGN.md`, which applies the `contemporary-typeui` skill with the `frontend-design` and `unslop` skills (`08-code-design.md` §5, D-88); versions pinned at the Phase 4 kickoff (D-83) |
 | Charts | TradingView Lightweight Charts 5 (price, markers, indicator panes), ECharts 6 (analytics) | Keep `attributionLogo` on (Apache-2.0 attribution) |
 | Editor | CodeMirror 6 with `@codemirror/merge` | Lighter than Monaco, and it works on phones for the backlog's phone item |
 | Agent | `anthropic` Python SDK; tool loop; `claude-opus-5-5` default | See `04-agent.md` |
@@ -90,7 +90,7 @@ fefat/
       src/fefat_app/            http/ services/ ports.py container.py database/ jobs/ executor.py agent/ credentials.py cli.py
     tests/                      pytest for both packages (unit, contract, differential)
   web/                          Vite React app (pnpm)
-    DESIGN.md                   the design system: tokens, type, layout, principles (written in step 4.3)
+    DESIGN.md                   the design system: tokens, type, layout, principles (step 4.3, from the Contemporary skill)
     src/app/                    shell, router, providers
     src/areas/<area>/           home, lab, strategies, runs, prop, agent, data, settings: routes, components, hooks per area
     src/ui/                     design-system primitives and tokens (themed shadcn/ui)
@@ -227,4 +227,4 @@ Each seam except the data source (`Provider`, SDK code in `fefat.market.sources`
 - IDs: UUIDv7. Version numbers: integers starting at 1 per feature/strategy.
 - Line endings LF everywhere (`.gitattributes`); paths through `pathlib`; project scripts are Python run through `uv run python` (bare `python` is a Store stub on this PC) plus `just` recipes; Claude Code hooks are Node scripts; the only shell files are the one-line git pre-commit and pre-push launchers (D-48).
 - Python: ruff + pyright strict for `fefat_app`, basic for `fefat`; Rust: clippy with `unwrap_used`, `panic`, `indexing_slicing` denied in core crates; TypeScript: strict.
-- Code design: `08-code-design.md` — the dependency rule (`web → fefat_app.http → services → fefat → fefat_engine`), intention-revealing names (never `data`, `utils`, `helpers`, `manager`, …), fail-fast errors, an enum for every state, injected ports, immutable values, small units; one design system in `web/DESIGN.md`, built with the `frontend-design` skill.
+- Code design: `08-code-design.md` — the dependency rule (`web → fefat_app.http → services → fefat → fefat_engine`), intention-revealing names (never `data`, `utils`, `helpers`, `manager`, …), fail-fast errors, an enum for every state, injected ports, immutable values, small units; one design system in `web/DESIGN.md`, the `contemporary-typeui` skill applied with the `frontend-design` and `unslop` skills (D-88).

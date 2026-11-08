@@ -11,7 +11,7 @@
 ## Kickoff
 
 ```text
-/phase-kickoff 5 — Read docs/masterplan/phases/P05-backtesting-app.md, docs/masterplan/01-architecture.md §5–§7, and docs/masterplan/02-engine-and-data.md §7. Ask me the open decisions. Reconcile the steps with the Phase 4 server, jobs, and executor; pin Lightweight Charts 5 and ECharts 6 versions; open the kickoff PR. Pull in the D-29 backlog items that target this phase (the robustness summary on the results page, the hypothesis field, the stress profile, the record of abandoned ideas), and load the `frontend-design` skill with `web/DESIGN.md` for the page steps.
+/phase-kickoff 5 — Read docs/masterplan/phases/P05-backtesting-app.md, docs/masterplan/01-architecture.md §5–§7, and docs/masterplan/02-engine-and-data.md §7. Ask me the open decisions. Reconcile the steps with the Phase 4 server, jobs, and executor; pin Lightweight Charts 5 and ECharts 6 versions; open the kickoff PR. Pull in the D-29 backlog items that target this phase (the robustness summary on the results page, the hypothesis field, the stress profile, the record of abandoned ideas), and load the `frontend-design`, `unslop`, and `contemporary-typeui` skills with `web/DESIGN.md` for the page steps.
 ```
 
 ## Steps

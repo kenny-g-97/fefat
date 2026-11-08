@@ -1,6 +1,6 @@
 # Phase 12 — Phone polish
 
-**Deferred (D-54).** Every step of this phase is skipped until FEFAT is fully functional; the steps stay as written for the backlog's phone item, which also brings back steps 4.6 and 5.11 and a phone-size pass over every page.
+**Deferred (D-54).** Every step of this phase is skipped until FEFAT is fully functional; the steps stay as written for the backlog's phone item, which also brings back steps 4.6 and 5.11 and a phone-size pass over every page, after the Contemporary skill's layout for phones as `web/DESIGN.md` applies it (D-88).
 
 **Goal.** The phone experience is finished: installation and update behaviour are audited, notifications cover every job kind with preferences, touch interactions on charts and forms are right, the app is fast on a phone, and it behaves well offline and on reconnect.
 
