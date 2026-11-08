@@ -273,7 +273,7 @@
         "type": "object"
       },
       "SecretName": {
-        "description": "The secrets FEFAT keeps, each the key of a service it calls: the agent's model provider\n(Phase 8) and a market data vendor (D-37). The list is closed, since a credential store\ncannot list what it holds; a step that calls another service adds its name.",
+        "description": "The secrets FEAT keeps, each the key of a service it calls: the agent's model provider\n(Phase 8) and a market data vendor (D-37). The list is closed, since a credential store\ncannot list what it holds; a step that calls another service adds its name.",
         "enum": [
           "anthropic",
           "databento"
@@ -501,8 +501,8 @@
     }
   },
   "info": {
-    "description": "FEFAT's local server: its API, for the web app, notebooks, and scripts.",
-    "title": "FEFAT",
+    "description": "FEAT's local server: its API, for the web app, notebooks, and scripts.",
+    "title": "FEAT",
     "version": "0.0.1"
   },
   "openapi": "3.1.0",

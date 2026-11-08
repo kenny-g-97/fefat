@@ -11,7 +11,7 @@ type PageProps = Readonly<{
 export function Page({ title, description, children }: PageProps) {
   return (
     <div className="mx-auto w-full max-w-400 p-8">
-      <title>{`${title} – FEFAT`}</title>
+      <title>{`${title} – FEAT`}</title>
       <header className="mb-8 flex flex-col gap-1">
         <h1 className="text-title">{title}</h1>
         {description !== undefined && (

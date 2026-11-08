@@ -90,7 +90,6 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
             <Button
               variant="ghost"
               size="sm"
-              className="text-foreground-secondary"
               autoFocus
               onClick={() => setRevoking("kept")}
             >
@@ -101,7 +100,6 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           <Button
             variant="ghost"
             size="sm"
-            className="text-foreground-secondary"
             autoFocus={revoking === "kept"}
             onClick={() => setRevoking("confirming")}
           >

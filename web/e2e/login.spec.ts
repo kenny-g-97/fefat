@@ -15,9 +15,9 @@ test("the app asks for the password before anything else", async ({ page }) => {
   await page.goto("/")
 
   await expect(page).toHaveURL((url) => url.pathname === "/login")
-  await expect(page).toHaveTitle("Log in – FEFAT")
+  await expect(page).toHaveTitle("Log in – FEAT")
   await expect(
-    page.getByRole("heading", { level: 1, name: "FEFAT" })
+    page.getByRole("heading", { level: 1, name: "FEAT", exact: true })
   ).toBeVisible()
   await expect(
     page.getByText("feature engineering for algorithmic trading")
@@ -33,7 +33,7 @@ test("a wrong password is refused with what to do", async ({ page }) => {
   await logIn(page, "not the password")
 
   await expect(page.getByRole("alert")).toHaveText(
-    "That is not FEFAT's password. Type it again."
+    "That is not FEAT's password. Type it again."
   )
   await expect(page).toHaveURL((url) => url.pathname === "/login")
   await expect(page.getByLabel("Password")).toBeFocused()
@@ -46,6 +46,8 @@ test("a wrong password is refused with what to do", async ({ page }) => {
     })
   expect(ring).toContain(border)
   await screenshot(page, "login-refused")
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "login-refused-light")
 })
 
 test("the password opens the home page, and logging out ends the session", async ({
@@ -56,7 +58,7 @@ test("the password opens the home page, and logging out ends the session", async
   await logIn(page, E2E_PASSWORD)
 
   await expect(page).toHaveURL("/")
-  await expect(page).toHaveTitle("Home – FEFAT")
+  await expect(page).toHaveTitle("Home – FEAT")
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible()
   await page.getByRole("button", { name: "Log out" }).click()
   await expect(page).toHaveURL((url) => url.pathname === "/login")
@@ -81,7 +83,7 @@ test("logging out asks the server for nothing with the ended session", async ({
   await page.getByRole("button", { name: "Log out" }).click()
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "FEFAT" })
+    page.getByRole("heading", { level: 1, name: "FEAT", exact: true })
   ).toBeVisible()
   // A quiet second after the login shows: the session's CSRF token is asked for just
   // before the logout, and nothing may follow it.

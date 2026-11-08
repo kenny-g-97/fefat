@@ -125,7 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="fefat", description="FEFAT: feature engineering for algorithmic trading."
+        prog="fefat", description="FEAT: feature engineering for algorithmic trading."
     )
     commands = parser.add_subparsers(dest="command", required=True)
     market_data = commands.add_parser("data", help="the market data in your store")

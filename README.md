@@ -4,7 +4,7 @@
 
 Feature and strategy building for algorithmic trading.
 
-FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for futures and crypto traders. It runs on your own PC and is used from the browser: a feature lab and strategy workspace with a Claude agent, a backtester with its own Rust engine and strict strategy versioning, and a prop-firm simulator that tests saved backtests against prop rules and a prop strategy. FEFAT ships no market data: traders connect their own data sources, and FEFAT provides the product catalog, a guide to well-known sources, the connectors and import presets, and the sync that keeps a product current; imports cover anything else.
+FEAT ("feature engineering for algorithmic trading"; fefat in the code) is a local-first research platform for futures and crypto traders. It runs on your own PC and is used from the browser: a feature lab and strategy workspace with a Claude agent, a backtester with its own Rust engine and strict strategy versioning, and a prop-firm simulator that tests saved backtests against prop rules and a prop strategy. FEAT ships no market data: traders connect their own data sources, and FEAT provides the product catalog, a guide to well-known sources, the connectors and import presets, and the sync that keeps a product current; imports cover anything else.
 
 ## Status
 

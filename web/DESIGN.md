@@ -1,18 +1,18 @@
-# FEFAT design system
+# FEAT design system
 
-The one design system of the web app (D-28). It applies the Contemporary skill (`.claude/skills/contemporary-typeui/`), the reference the design brief follows exactly (D-88), to FEFAT, and records each place where FEFAT departs from the skill, with its reason. Every step that touches `web/` reads it, builds from its tokens, and adds the patterns it introduces under "Patterns", so the app stays one system. Precedence: the design brief's own words (`docs/masterplan/phases/P04-local-app.md`, "Design brief"), then this file, then the skill's values, then unslop's, then the `frontend-design` skill's defaults; the `apple-design` skill is the design reviewer's lens (D-34, D-77, D-88). Step 4.3 wrote it.
+The one design system of the web app (D-28). It applies the Contemporary skill (`.claude/skills/contemporary-typeui/`), the reference the design brief follows exactly (D-88), to FEAT, and records each place where FEAT departs from the skill, with its reason. Every step that touches `web/` reads it, builds from its tokens, and adds the patterns it introduces under "Patterns", so the app stays one system. Precedence: the design brief's own words (`docs/masterplan/phases/P04-local-app.md`, "Design brief"), then this file, then the skill's values, then unslop's, then the `frontend-design` skill's defaults; the `apple-design` skill is the design reviewer's lens (D-34, D-77, D-88). Step 4.3 wrote it; D-89 gave the app its name, its logo, and its two accents.
 
 ## Direction
 
-- **Product.** FEFAT is a research terminal where a futures or crypto trader builds features, backtests them through an exact fill engine, and checks whether an edge survives, read for hours at a desk beside a charting platform.
+- **Product.** FEAT is a research terminal where a futures or crypto trader builds features, backtests them through an exact fill engine, and checks whether an edge survives, read for hours at a desk beside a charting platform.
 - **Character.** Exact, dense, tech-forward: a terminal, not a desk.
-- **World.** Monospaced readouts on near-black panels at night, the skill's world: pure greys with no tint, hairlines in place of shadows, and one hot-pink indicator that marks where you are, what to do next, and the data that matters.
-- **Moments.** The chart, an equity or price curve in the pink with its fills marked by their sign, and the one figure that matters on a page, a bold tabular number. The home page's cards keep their place until the steps that build runs, features, and jobs fill them.
-- **Signature.** The skill's, kept whole: Geist Mono for every text, one 12 px radius on everything, and bold tabular figures on a four-step grey ramp with hairlines; and FEFAT's identity chip, a version, hash, run key, or token name in a 12 px tag, the mark of a deterministic, pinned, hashed run (D-11).
+- **World.** Monospaced readouts on near-black panels at night, the skill's world: pure greys with no tint, hairlines in place of shadows, and FEAT's orange, which marks where you are, what to do next, and the data that matters, with a purple for the quieter actions.
+- **Moments.** The chart, an equity or price curve in the orange with its fills marked by their sign, and the one figure that matters on a page, a bold tabular number. The home page's cards keep their place until the steps that build runs, features, and jobs fill them.
+- **Signature.** The skill's, kept whole: Geist Mono for every text, one 12 px radius on everything, and bold tabular figures on a four-step grey ramp with hairlines; FEAT's fox and wordmark at the head of the sidebar; and FEAT's identity chip, a version, hash, run key, or token name in a 12 px tag, the mark of a deterministic, pinned, hashed run (D-11).
 
 ## Palette
 
-Six named values carry the dark theme, the default and the one tuned first; they are the skill's:
+Six named values carry the dark theme, the default and the one tuned first; five are the skill's, and the accent is FEAT's own (D-89):
 
 | Name | Hex | Role |
 | --- | --- | --- |
@@ -21,9 +21,9 @@ Six named values carry the dark theme, the default and the one tuned first; they
 | Control | `#111111` | the sidebar, fields, and the boxes inside cards |
 | Hairline | `#1a1a1a` | borders, and the hover step |
 | Heading | `#ededed` | headings, labels, names, and figures |
-| Pink | `#f44174` | the accent: the primary action, the active item, focus, links, and the data |
+| Orange | `#fc734d` | the accent: the primary action, the active item, focus, the data, and the logo |
 
-The tokens, as `web/src/index.css` defines them under shadcn's names, so that its components and FEFAT's code share one vocabulary; a test holds the two files equal. The light theme is FEFAT's, since the skill is dark only: the same steps in grey and white, the pink fills unchanged, and the pink, green, and red darkened where they are text. The contrast column gives the lowest WCAG ratio of a colour on the surfaces it sits on.
+The tokens, as `web/src/index.css` defines them under shadcn's names, so that its components and FEAT's code share one vocabulary; a test holds the two files equal. The light theme is FEAT's, since the skill is dark only: the same steps in grey and white, the orange fills unchanged, and the orange, purple, green, and red darkened where they are text, an indicator, or a focus ring. The contrast column gives the lowest WCAG ratio of a colour on the surfaces it sits on.
 
 | Role | Token | Dark | Light | Lowest contrast, dark / light |
 | --- | --- | --- | --- | --- |
@@ -37,24 +37,25 @@ The tokens, as `web/src/index.css` defines them under shadcn's names, so that it
 | Heading text | `--foreground` | `#ededed` | `#121212` | 14.87 / 14.19 |
 | Body text | `--foreground-secondary` | `#888888` | `#555555` | 4.91 / 5.65 |
 | Subtle text | `--muted-foreground` | `#7c7c7c` | `#6b6b6b` | 4.52 / 4.51 |
-| Accent fill | `--primary` | `#f44174` | `#f44174` | |
-| Accent fill under the pointer | `--primary-hover` | `#ff5a89` | `#ff5a89` | |
-| Text on the accent | `--primary-foreground` | `#050505` | `#050505` | 5.68 / 5.68 |
-| Accent as text and icons | `--brand` | `#f44174` | `#c8175a` | 5.26 / 4.77 |
-| The active item's fill | `--brand-soft` | `#1a0810` | `#fde8ef` | |
-| The active item's border | `--brand-soft-border` | `#3d0e1f` | `#f5c2d3` | |
-| The active item's label and icon | `--brand-soft-foreground` | `#ffb0c7` | `#c8175a` | 11.31 / 4.82 |
+| Accent fill | `--primary` | `#fc734d` | `#fc734d` | |
+| Accent fill under the pointer | `--primary-hover` | `#ff8764` | `#ff8764` | |
+| Text on the accent | `--primary-foreground` | `#050505` | `#050505` | 7.47 / 7.47 |
+| Accent as text, icons, indicators, and focus | `--brand` | `#fc734d` | `#b4380f` | 5.55 / 5.06 |
+| The active item's fill | `--brand-soft` | `#1b0f0b` | `#fff1ed` | |
+| The active item's border | `--brand-soft-border` | `#401f16` | `#fed5ca` | |
+| The active item's label and icon | `--brand-soft-foreground` | `#fab499` | `#b4380f` | 10.76 / 5.42 |
+| Second accent: a quieter action, a link to another page | `--brand-secondary` | `#a855f7` | `#7e22ce` | 4.77 / 5.91 |
 | Positive sign | `--positive` | `#10b981` | `#0a7a4c` | 7.44 / 4.56 |
-| Negative sign, errors | `--negative` | `#ff6b4f` | `#c0392b` | 6.72 / 4.60 |
-| The danger action's fill under the pointer | `--negative-soft` | `#1f0a07` | `#fdecea` | |
+| Negative sign, errors | `--negative` | `#ff4d6d` | `#c81e4a` | 5.86 / 4.75 |
+| The danger action's fill under the pointer | `--negative-soft` | `#1e0c0f` | `#fae9ed` | |
 
-- **Colour means something.** The chrome is grey. The pink marks the primary action, the active item, keyboard focus, links, and the data that matters; positive and negative mark the sign of a profit or loss, an alert or error, and the confirm of an action that cannot be undone, nothing else: no red or green decoration. Log out is a neutral row, not the skill's red text, for that reason.
-- **Lifted for contrast.** The skill's values that fail WCAG on these surfaces are lifted to the first that passes: subtle text from `#666` (3.45 : 1 on a card) to `#7c7c7c`; a field's border from `#222` (1.24 : 1) to `#666`, 3 : 1 against the card and the field (1.4.11); text on the pink in ink, `#050505`, at 5.68 : 1, where the skill's white gives 3.59 : 1; and focus as a 2 px outline in the pink, 2 px outside the control, where the skill's 4 px rings in `#3d0e1f` and `#111` give 1.24 : 1 on the page. Lifted so, subtle text sits close to body text, so meta also takes the smaller size.
-- **Red apart from the pink.** The skill's danger reds sit 6 to 10 degrees of hue from its pink (`#f44174` at 343°, `#ff6677` at 353°), so a refused field looked pink and the danger action read as a link. The negative moves to `#ff6b4f` on dark and `#c0392b` on light, about 27° from the pink, so that a loss, an error, and the confirm of an action that cannot be undone never read as the accent, as the brief asks of red. The skill's warning orange, `#f83`, then sits 15° from the red, so a warning shows in the skill's warning text colour, `#fb3`, and never in `#f83` (step 4.4's badges).
+- **Colour means something.** The chrome is grey. The orange marks the primary action, the active item, keyboard focus, a list row under the pointer, and the data that matters; the purple marks a quieter action and a link to another page; positive and negative mark the sign of a profit or loss, an alert or error, and the confirm of an action that cannot be undone, nothing else: no red or green decoration. Log out is a neutral row, not the skill's red text, for that reason.
+- **Lifted for contrast.** The skill's values that fail WCAG on these surfaces are lifted to the first that passes: subtle text from `#666` (3.45 : 1 on a card) to `#7c7c7c`; a field's border from `#222` (1.24 : 1) to `#666`, 3 : 1 against the card and the field (1.4.11); text on the accent in ink, `#050505`, at 7.47 : 1 on the orange, where the skill's white would give 2.73 : 1; and focus as a 2 px outline in the brand colour, 2 px outside the control, where the skill's 4 px rings in `#3d0e1f` and `#111` give 1.24 : 1 on the page. An indicator, such as a radio's dot or a progress bar, takes the brand colour too, never the fill orange, which gives 2.73 : 1 on a light card. Lifted so, subtle text sits close to body text, so meta also takes the smaller size.
+- **Red apart from the orange.** Step 4.3 moved the negative to `#ff6b4f` to stand apart from the skill's pink, which leaves it 4° of hue from FEAT's orange (13°), so a loss, an error, and the confirm of an action that cannot be undone would read as the accent. The negative moves to a rose red, `#ff4d6d` on dark (349°) and `#c81e4a` on light (344.5°), 24° from the orange and 30° from the light theme's darker orange (15°), so that it never reads as the accent, as the brief asks of red. The skill's warning orange, `#f83`, sits 12° from the accent, so a warning shows in the skill's warning text colour, `#fb3`, and never in `#f83` (step 4.4's badges).
 - **Hairlines and depth.** Borders are the hairline, a grey rather than an alpha. Depth comes from the surface steps and the hairlines; cards, fields, buttons, and tiles take one small neutral shadow, `0 1px 2px` in black at 45 % on dark and 6 % on light, which Tailwind's `shadow-xs` names too, so that shadcn's fields and buttons take it. A disabled control keeps shadcn's half opacity rather than the skill's `#444` text, which reads in both themes. The border colour of every element is set in the base layer, so that a transparent or a semantic border still shows (a tell of the skill's reference).
-- **Steps that read.** A thing that must read on a surface takes the next step, never the same grey: a hovered sidebar row takes the hairline step, since the control step is the sidebar's own, and the identity chip takes the hairline step on the sidebar and on a card alike. Light pink text never sits on the light hover step, where it would fall to 4.27 : 1.
+- **Steps that read.** A thing that must read on a surface takes the next step, never the same grey: a hovered sidebar row takes the hairline step, since the control step is the sidebar's own, and the identity chip takes the hairline step on the sidebar and on a card alike. The purple never sits on the full dark hover step, where it falls to 4.40 : 1: a ghost button's own hover fill is half that step, where it keeps 4.57 : 1 over a hovered row, and a text link only underlines.
 - **Contrast themes.** Where Windows forces colours, a field's focus ring disappears with every box-shadow, so focus takes a 2 px outline in the system's highlight colour there (`src/index.css`).
-- **Charts** (from Phase 5) take their colours from these tokens: the lead series in the pink, the others in neutral steps (`#252525`, `#1a1a1a`), the sign colours for fills and P&L only; several hues only where a chart tells series apart.
+- **Charts** (from Phase 5) take their colours from these tokens: the lead series in the orange, the others in neutral steps (`#252525`, `#1a1a1a`), the sign colours for fills and P&L only; several hues only where a chart tells series apart, the second in the skill's cyan, `#06b6d4`, never the purple, which marks a quieter action.
 
 ## Type
 
@@ -69,8 +70,8 @@ The tokens, as `web/src/index.css` defines them under shadcn's names, so that it
 | Identity chip | 12 / 16 | 400 | heading |
 | Body, descriptions, table cells, errors | 14 / 20 | 400 | body, or negative |
 | Navigation rows, labels, names, a field's text | 14 / 20 | 500 | heading |
-| Text links | 14 / 20 | 600 | accent |
-| Card titles, the wordmark | 16 / 24 | 600 | heading |
+| Text links | 14 / 20 | 600 | second accent |
+| Card titles | 16 / 24 | 600 | heading |
 | A stat's value (from Phase 5) | 24 / 32, -0.025em | 700 | heading |
 | The figure that matters (from Phase 5) | 30 / 36, -0.025em | 700 | heading |
 | Page title | 26 to 36, as the window widens / 1.2, -0.02em | 600 | heading |
@@ -81,7 +82,7 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 
 ```text
 +----------------+--------------------------------------------------------+
-| [F] FEFAT      |                                                        |
+| [fox] FEAT     |                                                        |
 +----------------+  Home                                                  |
 | Home           |                                                        |
 | Lab            |  +--------------------------------+ +---------------+  |
@@ -94,7 +95,7 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 +----------------+  +--------------------------------+ +---------------+  |
 | Settings       |                                                        |
 | Log out        |                                                        |
-| [FEFAT 0.0.0]  |                                                        |
+| [FEAT 0.0.0]   |                                                        |
 +----------------+--------------------------------------------------------+
       256 px          fluid, padded 32 px, at most 1600 px wide
 ```
@@ -119,14 +120,14 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 
 - Plain verbs, sentence case, no exclamation marks, and one spelling for one action ("Log out"). No trailing period on a label, a button, a title, or a description, which says what a page, a card, or a field holds, as the skill writes them; a message, such as an error, a warning, or an empty state, is a sentence and keeps its period.
 - An action keeps its name from the button to its result: "Change password" gives "Password changed", "Revoke" gives the token gone from the list.
-- Errors say what happened and what to do: "That is not FEFAT's password. Type it again.", "The server did not answer: is fefat up still running?".
+- Errors say what happened and what to do: "That is not FEAT's password. Type it again.", "The server did not answer: is fefat up still running?".
 - A page names its place, never greets. A page not built yet says what it will do under its title, in one line, and that it is not built yet; it never shows invented data.
-- Each tab names the page, then FEFAT: `Lab – FEFAT`. The login page shows FEFAT with "feature engineering for algorithmic trading" small beneath it.
+- Each tab names the page, then FEAT: `Lab – FEAT`. The login page shows FEAT's logo with "feature engineering for algorithmic trading" small beneath it. The code keeps the name fefat (D-89), so copy that quotes the `fefat` command or a `FEFAT_` variable keeps its spelling.
 
 ## Principles
 
 1. **Figures first.** The page exists for its numbers and charts; the chrome stays grey so that they read at once.
-2. **Colour means sign.** Red and green say whether money was made or lost, or that something failed; the pink says where you are, what to do next, and which figure matters.
+2. **Colour means sign.** Red and green say whether money was made or lost, or that something failed; the orange says where you are, what to do next, and which figure matters, and the purple what else you can do.
 3. **Dense, never crowded.** Many rows on one screen, each at a readable size and contrast, grouped by space and by hairline cards.
 4. **No interruptions.** Inline edits and undo for routine actions; a confirmation only where an action cannot be undone, inline rather than in a dialog; settings one level deep.
 5. **Exactness shows.** Identities appear whole in the chip, numbers come from the API unchanged, and nothing is rounded for looks.
@@ -134,16 +135,17 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 
 ## Patterns
 
-- **Shell.** The sidebar's brand row, the 40 px monogram tile 12 px from FEFAT at 16 px and 600; then Home, Lab, Strategies, Runs, Prop, Agent, and Data; then, under a hairline, Settings, Log out, and the version's identity chip. A row is 40 px, padded 12 px, with a 20 px lucide icon (stroke 2) 12 px from its label, both in heading text at 500; the active row takes the brand's soft fill and border, the skill's intended border that its reference lost, with its label and icon in the brand's soft foreground, and a hovered row the hairline step. The sidebar spans the window's height; its navigation scrolls inside it when the window is short, so that Settings and Log out stay in reach, and the version stays at its foot. A group label, 12 px uppercase with 0.2em of tracking in subtle text, arrives with a second group of rows; the skill's user row and quick actions wait for something to hold.
+- **Shell.** The sidebar's brand row, FEAT's logo 40 px tall, the height of the skill's logo tile, leading home; then Home, Lab, Strategies, Runs, Prop, Agent, and Data; then, under a hairline, Settings, Log out, and the version's identity chip. A row is 40 px, padded 12 px, with a 20 px lucide icon (stroke 2) 12 px from its label, both in heading text at 500; the active row takes the brand's soft fill and border, the skill's intended border that its reference lost, with its label and icon in the brand's soft foreground, and a hovered row the hairline step. The sidebar spans the window's height; its navigation scrolls inside it when the window is short, so that Settings and Log out stay in reach, and the version stays at its foot. A group label, 12 px uppercase with 0.2em of tracking in subtle text, arrives with a second group of rows; the skill's user row and quick actions wait for something to hold.
+- **Logo.** FEAT's marks are the builder's drawings (D-89), one flat orange, `#fc734d`, in `public/`: `logo-full.svg`, the fox and the wordmark, 40 px tall in the brand row and on a page without the shell, and 48 px as the login card's heading; and `favicon.svg`, the fox alone on a square canvas. `index.html` preloads the logo, so that it paints with the shell rather than after it. They keep their orange in both themes, as a logo does, at 2.3 : 1 on the light sidebar, which WCAG exempts for a logotype. Each file was rewritten from the drawing program's export with plain fill attributes in place of its inline styles, which a strict content security policy can refuse, its invisible leftovers dropped and its canvas cropped to the drawing; Chromium paints it the same, pixel for pixel. The text-only wordmark waits for a place that needs it.
 - **Skip link.** The skill's, the first stop of every page in the shell: hidden above the page until it has the focus, then on the hairline step with a hairline and Tailwind's middle shadow, so that it reads over the sidebar's brand row, and at once rather than with the skill's slide, since only colour, background, border, shadow, and transform move; "Skip to content" moves the focus to the page.
 - **Top bar.** None yet: the skill's sticky top bar arrives with step 4.4's running-jobs indicator (D-88), 72 px tall so that its hairline meets the brand row's, solid or blurred rather than the reference's unblurred glass, and solid under `prefers-reduced-transparency`.
 - **Page header.** The page title, then its one-line description 4 px below in body text, 32 px above the content; page actions, once a page has them, on the right, where `Page` will take them.
-- **Card.** `Panel` in `src/ui/panel.tsx`, FEFAT's card, so that shadcn's own card is never added beside it: the card surface with a hairline and the small shadow, radius 12 px, padding 24 px: its title at 16 px and 600, an optional one-line description 4 px below in body text, a text link or a badge on the right, and its content 20 px below. Cards in one row differ in width when their content does. An icon tile only where the icon identifies the item, never one per card.
-- **Text link.** 14 px at 600 in the accent, no underline at rest and one under the pointer, with a 16 px arrow 6 px after it when it leads to another page; a pressed link turns to heading text.
+- **Card.** `Panel` in `src/ui/panel.tsx`, FEAT's card, so that shadcn's own card is never added beside it: the card surface with a hairline and the small shadow, radius 12 px, padding 24 px: its title at 16 px and 600, an optional one-line description 4 px below in body text, a text link or a badge on the right, and its content 20 px below. Cards in one row differ in width when their content does. An icon tile only where the icon identifies the item, never one per card.
+- **Text link.** 14 px at 600 in the second accent, no underline at rest and one under the pointer, with a 16 px arrow 6 px after it when it leads to another page; a pressed link turns to heading text.
 - **List row in a card.** A link padded 8 px with a transparent hairline, its 16 px icon in body text 12 px from its label in heading text, since the brief keeps the accent rare; under the pointer, the control surface and the hairline, its label in the accent.
-- **Login card.** 384 px wide, anchored at 30 % of the window's height rather than centred, so that a refusal grows it downward: the monogram tile, the wordmark, the tagline, the password field, and "Log in" across the card.
+- **Login card.** 384 px wide, anchored at 30 % of the window's height rather than centred, so that a refusal grows it downward: FEAT's logo 48 px tall as the page's heading, the tagline 12 px below it, the password field, and "Log in" across the card.
 - **Forms.** react-hook-form with zod. A label in heading text at 500 sits 8 px above its field, and fields sit 20 px apart; a field is 40 px on the control surface with the field border, its text in heading text and its placeholder in subtle text, and its focus the accent's border with a 1 px ring of the accent, or, while the field is refused, the negative's border and ring. A field's rules are checked when it is left (the login's on submit); an error sits under its field in the negative colour and turns its label to it, which points at the refused field in a form of several, while the typed text stays in heading text and a selection in the field takes the negative; a refusal of one field by the server sits there too, the field taking the focus with its text selected, until the field changes; a control whose request is in flight is disabled; the primary button closes the form; a success shows as one line of body text beside the button.
-- **Buttons.** The primary action, one to a form or a card, since a page of settings holds several forms and each closes its own (the skill's one to a view is a dashboard's), fills with the accent in ink text and lightens under the pointer; a quieter action is a ghost button in body text that takes the hover step; the confirm of an action that cannot be undone is the skill's danger action, the negative colour as text, on its soft fill under the pointer. A box inside a card, such as a secret shown once, has its own primary action. Buttons are 40 px in forms, and 32 px in a table's rows and inside a box.
+- **Buttons.** The primary action, one to a form or a card, since a page of settings holds several forms and each closes its own (the skill's one to a view is a dashboard's), fills with the accent in ink text and lightens under the pointer; a quieter action in the content is a ghost button in the second accent that takes the hover step, while an icon button in the chrome keeps heading text, so that the purple never sits on an icon alone; the confirm of an action that cannot be undone is the skill's danger action, the negative colour as text, on its soft fill under the pointer. A box inside a card, such as a secret shown once, has its own primary action. Buttons are 40 px in forms, and 32 px in a table's rows and inside a box.
 - **Settings.** Each section is a card, its title and its one-line description, then its controls; settings stay one level deep.
 - **Read-only value.** A path or an identity the trader cannot change here, in heading text in a box on the control surface with a hairline, and the way to change it said in the card's description.
 - **Secret shown once.** A box on the control surface with a hairline: its warning, the secret, and Copy, the box's one action and so the primary, which says when the copy is refused; it leaves with the page or once the secret is revoked.
@@ -152,22 +154,23 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 - **Identity chip.** 12 px in heading text on the hairline step, so that a token's name leads its row, radius 12 px, padding 2 by 8 px; it reads on the sidebar and on a card alike.
 - **Badges** (from step 4.4). The skill's: 12 px on a soft semantic fill with its strong text, radius 12 px, and a count in ink on the accent.
 - **Placeholder.** A page not built yet: its description says what it will hold, and "Not built yet" sits under the header in subtle text at 12 px; a home card says what it will hold in body text, a description and so without a period, and leads to its page from its title row.
-- **Error and not-found pages.** The page title says what happened ("Something broke on this page", "This page does not exist"), the error's message, or the way on, is the page's description in body text, and one button leads on. An unknown address, wherever it was typed, and a failure of the shell itself show their page alone, without the sidebar, in its own main landmark under the monogram and the wordmark; a page that fails keeps the shell around its error.
+- **Error and not-found pages.** The page title says what happened ("Something broke on this page", "This page does not exist"), the error's message, or the way on, is the page's description in body text, and one button leads on. An unknown address, wherever it was typed, and a failure of the shell itself show their page alone, without the sidebar, in its own main landmark under FEAT's logo; a page that fails keeps the shell around its error.
 - **Charts** (from Phase 5). The skill's: horizontal grid lines in the hairline and no vertical grid, axis line, or tick mark; tick labels at 12 px in subtle text, the Y axis at least 40 px wide; the legend in HTML under the figure; the lead series in the accent.
 - **Overlays.** None yet: Radix's dialogs, menus, and selects lock scrolling with a style element that the content security policy refuses (`BACKLOG.md`), so inline confirmations and radio groups take their place; a later overlay takes the skill's panel, the control surface with a hairline and its middle shadow.
-- **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, formatted by oxfmt in their own style, so that `shadcn add --diff` shows upstream changes alone. They are themed through these tokens and a few unlayered rules of `src/index.css`: on `a` and `button`, which name their transitions and give every control its press; on `:focus-visible`, the outline; and on a few `data-slot`s, which give a field its surface, height, and focus, a button its 40 px, the primary its hover, the destructive variant the danger action, a radio its press, and a table room under its last row for the focus. These rules beat a caller's utility classes, so a control that needs another size or surface gets a rule there, keyed on a data attribute, never a class at its call site.
+- **shadcn/ui.** `src/ui/` keeps the components as the shadcn CLI writes them, formatted by oxfmt in their own style, so that `shadcn add --diff` shows upstream changes alone. They are themed through these tokens and a few unlayered rules of `src/index.css`: on `a` and `button`, which name their transitions and give every control its press; on `:focus-visible`, the outline; and on a few `data-slot`s, which give a field its surface, height, and focus, a button its 40 px, the primary its hover, the ghost variant the second accent, the destructive variant the danger action, a radio its press and its dot's colour, and a table room under its last row for the focus. These rules beat a caller's utility classes, so a control that needs another size or surface gets a rule there, keyed on a data attribute, never a class at its call site.
 
 ## Review against the generic defaults
 
-The first direction, Cobalt on an ink ramp with IBM Plex, was checked against the defaults the `frontend-design` skill lists and unslop's signs at step 4.3's plan; the builder then chose the Contemporary skill as the reference to follow exactly (D-88), and the brief's words let a reference pin a look the skills would otherwise call a default. What follows the skill, what departs from it, and why:
+The first direction, Cobalt on an ink ramp with IBM Plex, was checked against the defaults the `frontend-design` skill lists and unslop's signs at step 4.3's plan; the builder then chose the Contemporary skill as the reference to follow exactly (D-88) and later FEAT's own name, logo, orange, and purple (D-89), and the brief's words let a reference pin a look the skills would otherwise call a default. What follows the skill, what departs from it, and why:
 
-- **The near-black page with one bright accent** is the second default `frontend-design` names, and the skill's look. The reference pins it, so it stays with the skill's own character: pure greys with no tint, a pink that sits on the data and the active item as much as on the primary button, and bold monospaced figures. The skill's template check holds: with blue for the pink and Inter for Geist Mono this would be any dark dashboard, so those, and the one radius, never change.
+- **The near-black page with one bright accent** is the second default `frontend-design` names, and the skill's look. The reference pins it, so it stays with the skill's own character: pure greys with no tint, an orange that sits on the data and the active item as much as on the primary button, and bold monospaced figures. The skill's template check holds: with blue for the orange and Inter for Geist Mono this would be any dark dashboard, so the brand's own colours, the monospace, and the one radius stay.
 - **A monospace for small labels** is a tell `frontend-design` names; here the reference sets every text in one monospace, so it is the system rather than a decoration.
 - **Arrows after links** are another; the skill's text links carry a 16 px arrow icon only where the link leads to another page, never a `→` in the text.
-- **The pink beside the sign colours.** Cobalt was chosen at the plan for its distance from red and green; the hot pink sits nearer the red, so the pink never marks a figure's sign, a negative figure keeps its minus sign beside its colour, and an action that cannot be undone shows the negative colour as text, never a pink fill.
+- **The orange beside the sign colours.** Cobalt was chosen at the plan for its distance from red and green; the orange sits near the red, so the orange never marks a figure's sign, the red moved 24° of hue away from it (Palette), a negative figure keeps its minus sign beside its colour, and an action that cannot be undone shows the negative colour as text, never an orange fill.
+- **Two accents.** The skill has one; FEAT adds a purple (D-89) for the quieter actions and the links to another page, so that the orange stays on the one thing to do and the purple says what else is there. It stays text, never a fill, and never rests on the dark hover step.
 - **Contrast.** The skill's values were measured on every surface they sit on, and four were lifted (Palette, "Lifted for contrast"); the light theme, which the skill does not have, was built from the same steps and measured the same way, and the quality floor's contrast specs hold both themes.
 - **The skill's own tells**, avoided: no greeting under the page title; no decorative icon tile on every card; one fill for every card and one weight for every card title; the border colour in the base layer; no surface on a surface of the same grey; one number format and one spelling per action; and no top bar until it has something to hold, then never glass without blur.
-- **The brief over the skill.** Log out stays a neutral row rather than the skill's red text; every control answers a press on pointer-down, where the skill only steps the surface under the pointer; tables keep 40 px rows rather than the reference's 57 px, with a hover the reference lacks; the negative red stands 27° of hue from the pink rather than the reference's 10°; and the page stops at 1600 px rather than running fluid.
+- **The brief over the skill.** Log out stays a neutral row rather than the skill's red text; every control answers a press on pointer-down, where the skill only steps the surface under the pointer; tables keep 40 px rows rather than the reference's 57 px, with a hover the reference lacks; the negative red stands 24° of hue from the orange; and the page stops at 1600 px rather than running fluid.
 - **The page title** is the skill's 26 to 36 px rather than the first direction's 20 px: the reference sets the title alone above the cards, not in a toolbar's row.
 
 The audit of every UI step follows unslop by Damir Sokolovsky ([@heydamir](https://x.com/heydamir)), CC BY 4.0. The Contemporary skill reads its values from TypeUI's Contemporary preview (`.claude/skills/contemporary-typeui/SKILL.md`, "Provenance").

@@ -31,7 +31,7 @@ def serve(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     with opened_container(paths) as container:
         if not container.logins.password_is_set():
-            print("FEFAT has no password yet: set the one its login will ask for.")
+            print("FEAT has no password yet: set the one its login will ask for.")
             container.logins.set_password(typed_new_password())
         log_file = configure_server_log(paths.logs_dir)
         web_app = built_web_app_dir()
@@ -50,7 +50,7 @@ def serve(arguments: argparse.Namespace) -> int:
 
 def _announce(settings: Settings, log_file: Path, web_app: Path | None) -> None:
     address = f"http://{settings.bind_address}:{settings.port}"
-    print(f"FEFAT serves {address} to this computer alone; stop it with Ctrl+C.")
+    print(f"FEAT serves {address} to this computer alone; stop it with Ctrl+C.")
     print(
         f"  The API's docs: {address}/docs, where you log in; a request there that changes "
         "something needs the csrf_token of GET /v1/me under Authorize, or an API token of "

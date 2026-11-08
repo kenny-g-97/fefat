@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-/** FEFAT's signature (web/DESIGN.md, Direction): an identity read exactly, such as a version,
+/** FEAT's signature (web/DESIGN.md, Direction): an identity read exactly, such as a version,
  * a hash, or a token's name, in a 12 px tag of heading text on the hairline step, which reads
  * on the sidebar and on a card alike. */
 export function IdentityChip({

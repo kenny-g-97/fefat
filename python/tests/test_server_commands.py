@@ -125,7 +125,7 @@ def test_up_refuses_a_bind_address_other_than_the_loopback(
 
     assert (code, served.calls) == (1, [])
     assert capsys.readouterr().err.startswith(
-        f"fefat: Expected {paths.config_file} to hold FEFAT's settings, got: "
+        f"fefat: Expected {paths.config_file} to hold FEAT's settings, got: "
     )
     assert not paths.database_file.exists()
 

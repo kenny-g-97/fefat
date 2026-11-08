@@ -33,7 +33,7 @@ def set_the_password(arguments: argparse.Namespace) -> int:
 
 def typed_new_password() -> str:
     """The password typed twice at a prompt that does not echo it; two that differ are refused."""
-    password = getpass.getpass("New password for FEFAT (not shown): ")
+    password = getpass.getpass("New password for FEAT (not shown): ")
     if getpass.getpass("The same again: ") != password:
         raise ValueError("Expected the same password twice, got two that differ.")
     return password

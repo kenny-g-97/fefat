@@ -1,6 +1,6 @@
 # FEFAT masterplan
 
-A step-by-step plan for building FEFAT ("feature engineering for algorithmic trading") with Claude Code. Every step is one Claude Code session and one pull request, with a copy-paste prompt, a definition of done, checks you perform yourself in a few minutes, and what to do if it fails.
+A step-by-step plan for building FEAT ("feature engineering for algorithmic trading"), called FEFAT in the code and in these documents (D-89), with Claude Code. Every step is one Claude Code session and one pull request, with a copy-paste prompt, a definition of done, checks you perform yourself in a few minutes, and what to do if it fails.
 
 Written 2026-10-06 from your idea (`../../raw_app_idea.txt`), four rounds of decisions, three research reports, and three design reviews; revised 2026-10-08 for platform data with imports of your own data, and for prop simulation from existing backtest files; on 2026-10-09 for the code architecture, the design rules, and the frontend design process (`08-code-design.md`); and on 2026-10-12 so that traders connect their own data sources and FEFAT ships no market data (D-37). Decisions are logged in `DECISIONS.md`. The code lives in the private repository [kenny-g-97/fefat](https://github.com/kenny-g-97/fefat); this folder is its clone.
 

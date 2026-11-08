@@ -77,7 +77,7 @@ def test_another_specification_of_a_saved_root_is_refused(tmp_path: Path) -> Non
 
 
 def test_a_root_fefat_knows_is_never_saved(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="an instrument FEFAT knows"):
+    with pytest.raises(ValueError, match="an instrument FEAT knows"):
         save_instrument(tmp_path, STATIC_TABLE.get("MES"))
 
 

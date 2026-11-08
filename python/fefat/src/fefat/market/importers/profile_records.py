@@ -158,7 +158,7 @@ def _instrument(
     if instruments.get(specified.root) != specified:
         raise ValueError(
             f"Expected the specification of {specified.root} that the store holds, got another "
-            f"in the profile {profile.name}: a product FEFAT knows keeps FEFAT's, and a new one "
+            f"in the profile {profile.name}: a product FEAT knows keeps FEAT's, and a new one "
             f"the one its first import saved, so name it as `instrument: {specified.root}`."
         )
     return specified, False
