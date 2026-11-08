@@ -1,6 +1,6 @@
 # 00 — Product specification
 
-FEFAT ("feature engineering for algorithmic trading") is a local-first research platform for discretionary and algorithmic futures and crypto traders. It runs on the trader's own PC, is used from the browser, and is later packaged as a desktop app. Its four pillars come straight from `raw_app_idea.txt`.
+FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in this plan, D-89) is a local-first research platform for discretionary and algorithmic futures and crypto traders. It runs on the trader's own PC, is used from the browser, and is later packaged as a desktop app. Its four pillars come straight from `raw_app_idea.txt`.
 
 ## 1. Who it is for
 
@@ -87,6 +87,7 @@ FEFAT ("feature engineering for algorithmic trading") is a local-first research 
 
 | Term | Meaning |
 | --- | --- |
+| FEAT | The product's name as traders see it (D-89). The code keeps fefat: the repository, the packages and crates, the `fefat` command, the `FEFAT_` variables, and the folders; the plan's documents keep FEFAT. |
 | Bar | A time bucket of trades (1-second, 1-minute, 5-minute, daily). Signals are decided at bar close. |
 | Tick | One trade print (or trade with the prior best bid/ask, "TBBO"). Fills are simulated on ticks when available. |
 | Session | One trade date's trading, from its open to its close, as UTC instants; a CME Globex session opens at 17:00 Chicago on the evening before its trade date and closes at 16:00 Chicago on it. |
