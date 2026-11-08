@@ -17,9 +17,12 @@ export async function screenshot(
   // From the top: a full page taken after a click scrolled it draws the sticky sidebar where
   // the window had scrolled to.
   await page.evaluate(() => window.scrollTo(0, 0))
-  // Every image drawn, the sidebar's logo among them, which no assertion waits for.
+  // Every image drawn, the sidebar's logo among them, which no assertion waits for; a broken
+  // image counts as complete too, but has no width.
   await page.waitForFunction(() =>
-    [...document.images].every((image) => image.complete)
+    [...document.images].every(
+      (image) => image.complete && image.naturalWidth > 0
+    )
   )
   await page.screenshot({
     path: file,

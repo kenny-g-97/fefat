@@ -3,7 +3,8 @@ import { expect, test } from "./support/fixtures.ts"
 // The Contemporary skin of web/DESIGN.md (D-88, D-89), as the browser paints it on the settings
 // page, which holds every kind of control the shell has: Geist Mono for every text, one 12 px
 // radius, the orange on the primary action, and the skill's measures for the sidebar, its rows,
-// the page title, and the cards; then the purple of a link to another page, on the home page.
+// the page title, and the cards; the light theme's darker orange on a checked radio's dot; then
+// the purple of a link to another page, on the home page.
 
 test("the shell wears the Contemporary skin and its measures", async ({
   loggedIn: page,
@@ -55,6 +56,10 @@ test("the shell wears the Contemporary skin and its measures", async ({
     primaryRadius: "12px",
     primaryFill: "rgb(252, 115, 77)",
   })
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await expect(
+    page.locator('[data-slot="radio-group-indicator"] svg')
+  ).toHaveCSS("fill", "rgb(180, 56, 15)")
   await page.goto("/")
   await expect(page.getByRole("link", { name: "All runs" })).toHaveCSS(
     "color",

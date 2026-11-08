@@ -50,7 +50,7 @@ export function Sidebar() {
       <div className="sticky top-0 flex h-screen flex-col">
         <div className="flex h-18 shrink-0 items-center border-b px-4">
           <Link to="/" aria-label="FEAT, the home page" className="rounded-xl">
-            <img src="/logo-full.svg" alt="" className="block h-10 w-auto" />
+            <img src="/logo-full.svg" alt="" className="h-10" />
           </Link>
         </div>
         <nav aria-label="Main" className="flex flex-1 flex-col overflow-y-auto">

@@ -36,7 +36,7 @@ export function LoginPage({ returnTo }: Readonly<{ returnTo: string }>) {
       <title>Log in – FEAT</title>
       <div className="h-fit w-full max-w-96 rounded-xl border bg-card p-6 shadow-raised">
         <h1>
-          <img src="/logo-full.svg" alt="FEAT" className="block h-12 w-auto" />
+          <img src="/logo-full.svg" alt="FEAT" className="h-12" />
         </h1>
         <p className="mt-3 text-xs text-muted-foreground">
           feature engineering for algorithmic trading

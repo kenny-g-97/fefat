@@ -88,7 +88,7 @@ test("an unknown page says so and leads home", async ({ loggedIn: page }) => {
   await expect(page.getByRole("main")).toHaveCount(1)
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0)
   await expect(
-    page.getByRole("main").getByRole("img", { name: "FEAT" })
+    page.getByRole("main").getByRole("img", { name: "FEAT", exact: true })
   ).toBeVisible()
 })
 
@@ -123,7 +123,7 @@ test("the shell's own failure stands alone under the logo", async ({
   await expect(page.getByRole("main")).toHaveCount(1)
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0)
   await expect(
-    page.getByRole("main").getByRole("img", { name: "FEAT" })
+    page.getByRole("main").getByRole("img", { name: "FEAT", exact: true })
   ).toBeVisible()
 })
 

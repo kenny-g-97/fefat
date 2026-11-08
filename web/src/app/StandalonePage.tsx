@@ -8,7 +8,7 @@ export function StandalonePage({
   return (
     <main>
       <div className="mx-auto flex h-18 w-full max-w-400 items-center px-8">
-        <img src="/logo-full.svg" alt="FEAT" className="block h-10 w-auto" />
+        <img src="/logo-full.svg" alt="FEAT" className="h-10" />
       </div>
       {children}
     </main>

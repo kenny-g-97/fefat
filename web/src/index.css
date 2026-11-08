@@ -28,7 +28,6 @@
   --brand-soft-border: #fed5ca;
   --brand-soft-foreground: #b4380f;
   --brand-secondary: #7e22ce;
-  --brand-secondary-strong: #6b21a8;
   --positive: #0a7a4c;
   --negative: #c81e4a;
   --negative-soft: #fae9ed;
@@ -62,9 +61,8 @@
   --brand: #fc734d;
   --brand-soft: #1b0f0b;
   --brand-soft-border: #401f16;
-  --brand-soft-foreground: #ffcdba;
+  --brand-soft-foreground: #fab499;
   --brand-secondary: #a855f7;
-  --brand-secondary-strong: #d1b2f9;
   --positive: #10b981;
   --negative: #ff4d6d;
   --negative-soft: #1e0c0f;
@@ -92,7 +90,6 @@
   --color-brand-soft-border: var(--brand-soft-border);
   --color-brand-soft-foreground: var(--brand-soft-foreground);
   --color-brand-secondary: var(--brand-secondary);
-  --color-brand-secondary-strong: var(--brand-secondary-strong);
   --color-destructive: var(--destructive);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
@@ -238,15 +235,11 @@ main[tabindex="-1"]:focus-visible {
   background-color: var(--primary-hover);
 }
 
-/* A quieter action takes the second accent as its text (D-89), and its stronger tone under the
-   pointer, where the dark hover step would hold the purple at 4.40 : 1; shadcn's ghost would
-   turn it to heading text there. */
-[data-slot="button"][data-variant="ghost"] {
+/* A quieter action takes the second accent as its text (D-89), under the pointer too, where
+   shadcn's ghost would turn it to heading text and its half-step fill keeps the purple above
+   4.5 : 1; an icon button keeps heading text, so that the chrome stays grey. */
+[data-slot="button"][data-variant="ghost"]:not([data-size^="icon"]) {
   color: var(--brand-secondary);
-}
-
-[data-slot="button"][data-variant="ghost"]:hover {
-  color: var(--brand-secondary-strong);
 }
 
 /* The confirm of an action that cannot be undone is the skill's danger action: the negative

@@ -19,7 +19,7 @@ type Clock = Callable[[], datetime]
 
 
 class SecretName(StrEnum):
-    """The secrets FEFAT keeps, each the key of a service it calls: the agent's model provider
+    """The secrets FEAT keeps, each the key of a service it calls: the agent's model provider
     (Phase 8) and a market data vendor (D-37). The list is closed, since a credential store
     cannot list what it holds; a step that calls another service adds its name."""
 

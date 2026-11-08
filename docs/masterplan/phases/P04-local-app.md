@@ -227,7 +227,7 @@ Not in this step: real job kinds (backtests come in 5.3).
 
 2026-11-08 (D-88): the jobs drawer and the running-jobs widget build from the Contemporary skill as `web/DESIGN.md` applies it, a job's progress as the skill's 8 px bar in the pink on a track that shows. The skill's sticky top bar arrives in this step, 72 px tall as `web/DESIGN.md` gives it, so that its hairline meets the brand row's, and solid or blurred rather than the reference's unblurred glass, to hold the running-jobs indicator that opens the drawer; the sidebar keeps Settings and Log out.
 
-2026-11-08 (D-89): the accent is FEAT's orange where the paragraph above names the pink, and a quieter action takes the purple, the second accent of `web/DESIGN.md`.
+2026-11-08 (D-89): the accent is FEAT's orange where the paragraph above names the pink, a job's progress bar taking `--brand` rather than the fill orange, so that it keeps 3 : 1 in the light theme; a quieter action in the drawer takes the purple, the second accent of `web/DESIGN.md`, while an icon button in the top bar keeps heading text.
 
 ### 4.5 Executor: subprocess isolation and limits for user code
 

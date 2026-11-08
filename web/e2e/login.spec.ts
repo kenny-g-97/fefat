@@ -17,7 +17,7 @@ test("the app asks for the password before anything else", async ({ page }) => {
   await expect(page).toHaveURL((url) => url.pathname === "/login")
   await expect(page).toHaveTitle("Log in – FEAT")
   await expect(
-    page.getByRole("heading", { level: 1, name: "FEAT" })
+    page.getByRole("heading", { level: 1, name: "FEAT", exact: true })
   ).toBeVisible()
   await expect(
     page.getByText("feature engineering for algorithmic trading")
@@ -46,6 +46,8 @@ test("a wrong password is refused with what to do", async ({ page }) => {
     })
   expect(ring).toContain(border)
   await screenshot(page, "login-refused")
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "login-refused-light")
 })
 
 test("the password opens the home page, and logging out ends the session", async ({
@@ -81,7 +83,7 @@ test("logging out asks the server for nothing with the ended session", async ({
   await page.getByRole("button", { name: "Log out" }).click()
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "FEAT" })
+    page.getByRole("heading", { level: 1, name: "FEAT", exact: true })
   ).toBeVisible()
   // A quiet second after the login shows: the session's CSRF token is asked for just
   // before the logout, and nothing may follow it.
