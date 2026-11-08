@@ -35,13 +35,13 @@ export function LoginPage({ returnTo }: Readonly<{ returnTo: string }>) {
     // Anchored near the top rather than centred, so that a refusal grows the panel downward.
     <main className="flex min-h-screen justify-center px-6 pt-[30vh]">
       <title>Log in – FEFAT</title>
-      <div className="h-fit w-full max-w-90 rounded-xl border bg-card p-8 shadow-raised">
+      <div className="h-fit w-full max-w-96 rounded-xl border bg-card p-6 shadow-raised">
         <Monogram className="size-10" />
-        <h1 className="mt-5 text-base font-semibold">FEFAT</h1>
-        <p className="text-caption text-muted-foreground">
+        <h1 className="mt-4 text-base font-semibold">FEFAT</h1>
+        <p className="text-xs text-muted-foreground">
           feature engineering for algorithmic trading
         </p>
-        <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-5">
+        <form onSubmit={submit} noValidate className="mt-6 flex flex-col gap-5">
           <Field data-invalid={refusal !== undefined} className="gap-2">
             <FieldLabel htmlFor="password">Password</FieldLabel>
             <Input

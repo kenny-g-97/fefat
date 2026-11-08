@@ -8,8 +8,8 @@ export function StandalonePage({
 }: Readonly<{ children: ReactNode }>) {
   return (
     <main>
-      <div className="mx-auto flex h-14 w-full max-w-400 items-center gap-2 px-6">
-        <Monogram className="size-6" />
+      <div className="mx-auto flex h-18 w-full max-w-400 items-center gap-3 px-8">
+        <Monogram className="size-10" />
         <span className="text-base font-semibold">FEFAT</span>
       </div>
       {children}

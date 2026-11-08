@@ -26,6 +26,7 @@
   --primary-foreground: #050505;
   --brand: #c8175a;
   --brand-soft: #fde8ef;
+  --brand-soft-border: #f5c2d3;
   --brand-soft-foreground: #c8175a;
   --positive: #0a7a4c;
   --negative: #cc2244;
@@ -40,9 +41,6 @@
   --accent-foreground: var(--foreground);
   --destructive: var(--negative);
   --ring: var(--primary);
-  --sidebar-accent: var(--accent);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
 }
 
 .dark {
@@ -62,6 +60,7 @@
   --primary-foreground: #050505;
   --brand: #f44174;
   --brand-soft: #1a0810;
+  --brand-soft-border: #3d0e1f;
   --brand-soft-foreground: #ffb0c7;
   --positive: #10b981;
   --negative: #ff6677;
@@ -88,6 +87,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-brand: var(--brand);
   --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-border: var(--brand-soft-border);
   --color-brand-soft-foreground: var(--brand-soft-foreground);
   --color-destructive: var(--destructive);
   --color-positive: var(--positive);
@@ -97,9 +97,6 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
   --shadow-raised: var(--shadow-raised);
 }
 
@@ -113,8 +110,6 @@
   --text-title--line-height: 1.2;
   --text-title--letter-spacing: -0.02em;
   --text-title--font-weight: 600;
-  --text-caption: 0.8125rem;
-  --text-caption--line-height: 1.25rem;
   --radius-xs: 0.75rem;
   --radius-sm: 0.75rem;
   --radius-md: 0.75rem;
@@ -191,7 +186,7 @@ a:not([data-slot="button"]):active {
   outline-offset: 2px;
 }
 
-[data-slot="button"]:focus-visible {
+:is([data-slot="button"], [data-slot="radio-group-item"]):focus-visible {
   --tw-ring-color: transparent;
 }
 

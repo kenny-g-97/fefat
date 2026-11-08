@@ -12,7 +12,7 @@ export function ErrorPage({ error, reset }: Readonly<ErrorComponentProps>) {
   }
   return (
     <Page title="Something broke on this page">
-      <p className="max-w-2xl font-mono text-sm text-foreground-secondary">
+      <p className="max-w-2xl text-foreground-secondary">
         {error instanceof Error ? error.message : String(error)}
       </p>
       <Button className="mt-6" onClick={tryAgain}>

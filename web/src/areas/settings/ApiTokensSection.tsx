@@ -7,9 +7,9 @@ import { isRefusal } from "@/api/problems"
 import { Button } from "@/ui/button"
 import { Field, FieldError, FieldLabel } from "@/ui/field"
 import { Input } from "@/ui/input"
+import { Panel } from "@/ui/panel"
 import { ApiTokenTable } from "./ApiTokenTable"
 import { IssuedToken } from "./IssuedToken"
-import { SettingsSection } from "./SettingsSection"
 
 // The server's own rule for a token's name (fefat_app.services.api_tokens.TOKEN_NAME).
 const tokenForm = z.object({
@@ -60,12 +60,11 @@ export function ApiTokensSection() {
       tokens.some((token) => token.name === issued.name))
 
   return (
-    <SettingsSection
+    <Panel
       title="API tokens"
       description={
         <>
-          A notebook or a script sends one as{" "}
-          <code className="font-mono">Authorization: Bearer</code>.
+          A notebook or a script sends one as <code>Authorization: Bearer</code>
         </>
       }
     >
@@ -92,6 +91,6 @@ export function ApiTokensSection() {
       </form>
       {stillLive && <IssuedToken issued={issued} />}
       <ApiTokenTable tokens={tokens} />
-    </SettingsSection>
+    </Panel>
   )
 }

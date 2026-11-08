@@ -42,6 +42,7 @@ The tokens, as `web/src/index.css` defines them under shadcn's names, so that it
 | Text on the accent | `--primary-foreground` | `#050505` | `#050505` | 5.68 / 5.68 |
 | Accent as text and icons | `--brand` | `#f44174` | `#c8175a` | 5.26 / 4.77 |
 | The active item's fill | `--brand-soft` | `#1a0810` | `#fde8ef` | |
+| The active item's border | `--brand-soft-border` | `#3d0e1f` | `#f5c2d3` | |
 | The active item's label and icon | `--brand-soft-foreground` | `#ffb0c7` | `#c8175a` | 11.31 / 4.82 |
 | Positive sign | `--positive` | `#10b981` | `#0a7a4c` | 7.44 / 4.56 |
 | Negative sign, errors | `--negative` | `#ff6677` | `#cc2244` | 6.67 / 4.58 |
@@ -115,7 +116,7 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 
 ## Copy
 
-- Plain verbs, sentence case, no exclamation marks, no trailing period on a label, a button, or a title, and one spelling for one action ("Log out").
+- Plain verbs, sentence case, no exclamation marks, and one spelling for one action ("Log out"). No trailing period on a label, a button, a title, or a description or hint of one sentence, as the skill writes them; a message of two sentences, such as an error, keeps its periods.
 - An action keeps its name from the button to its result: "Change password" gives "Password changed", "Revoke" gives the token gone from the list.
 - Errors say what happened and what to do: "That is not FEFAT's password. Type it again.", "The server did not answer: is fefat up still running?".
 - A page names its place, never greets. A page not built yet says what it will do under its title, in one line, and that it is not built yet; it never shows invented data.
@@ -132,12 +133,12 @@ The shell is the skill's: a sidebar on the control surface beside a fluid page, 
 
 ## Patterns
 
-- **Shell.** The sidebar's brand row, the 40 px monogram tile 12 px from FEFAT at 16 px and 600; then Home, Lab, Strategies, Runs, Prop, Agent, and Data; then, under a hairline, Settings, Log out, and the version's identity chip. A row is 40 px, padded 12 px, with a 20 px lucide icon (stroke 2) 12 px from its label, both in heading text at 500; the active row takes the brand's soft fill with its label and icon in the brand's soft foreground, and a hovered row the hairline step. The sidebar spans the window's height, and its contents stay in view. A group label, 12 px uppercase with 0.2em of tracking in subtle text, arrives with a second group of rows; the skill's user row and quick actions wait for something to hold.
+- **Shell.** The sidebar's brand row, the 40 px monogram tile 12 px from FEFAT at 16 px and 600; then Home, Lab, Strategies, Runs, Prop, Agent, and Data; then, under a hairline, Settings, Log out, and the version's identity chip. A row is 40 px, padded 12 px, with a 20 px lucide icon (stroke 2) 12 px from its label, both in heading text at 500; the active row takes the brand's soft fill and border, the skill's intended border that its reference lost, with its label and icon in the brand's soft foreground, and a hovered row the hairline step. The sidebar spans the window's height, and its contents stay in view. A group label, 12 px uppercase with 0.2em of tracking in subtle text, arrives with a second group of rows; the skill's user row and quick actions wait for something to hold.
 - **Top bar.** None yet: the skill's 64 px sticky top bar arrives with step 4.4's running-jobs indicator (D-88), solid or blurred rather than the reference's unblurred glass.
 - **Page header.** The page title, then its one-line description 4 px below in body text, 32 px above the content; any page actions on the right.
 - **Card.** The card surface with a hairline and the small shadow, radius 12 px, padding 24 px: its title at 16 px and 600, an optional one-line description 4 px below in body text, a text link or a badge on the right, and its content 20 px below. Cards in one row differ in width when their content does. An icon tile only where the icon identifies the item, never one per card.
 - **Text link.** 14 px at 600 in the accent, no underline at rest and one under the pointer, with a 16 px arrow 6 px after it when it leads to another page; a pressed link turns to heading text.
-- **List row in a card.** A link padded 8 px with a transparent hairline, its 16 px icon in the accent 12 px from its label in heading text; under the pointer, the control surface and the hairline, its label in the accent.
+- **List row in a card.** A link padded 8 px with a transparent hairline, its 16 px icon in body text 12 px from its label in heading text, since the brief keeps the accent rare; under the pointer, the control surface and the hairline, its label in the accent.
 - **Login card.** 384 px wide, anchored at 30 % of the window's height rather than centred, so that a refusal grows it downward: the monogram tile, the wordmark, the tagline, the password field, and "Log in" across the card.
 - **Forms.** react-hook-form with zod. A label in heading text at 500 sits 8 px above its field, and fields sit 20 px apart; a field is 40 px on the control surface with the field border, its text in heading text and its placeholder in subtle text, and its focus the accent's border with a 1 px ring of the accent. A field's rules are checked when it is left (the login's on submit); an error sits under its field in the negative colour, and a refusal of one field by the server sits there too, the field taking the focus with its text selected, until the field changes; a control whose request is in flight is disabled; the primary button closes the form; a success shows as one line of body text beside the button.
 - **Buttons.** The primary action, one to a form or a card, fills with the accent in ink text and lightens under the pointer; a quieter action is a ghost button in body text that takes the hover step; the confirm of an action that cannot be undone is the skill's danger action, the negative colour as text, on its soft fill under the pointer. Buttons are 40 px in forms and 32 px in a table's rows.

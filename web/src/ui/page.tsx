@@ -2,20 +2,21 @@ import type { ReactNode } from "react"
 
 type PageProps = Readonly<{
   title: string
-  actions?: ReactNode
+  description?: string
   children: ReactNode
 }>
 
-/** A page of the work area (web/DESIGN.md, Patterns): its tab's title, a 56 px header with
- * the page title and any actions, and the content, 24 px from the edges and at most 1600 px
- * wide. */
-export function Page({ title, actions, children }: PageProps) {
+/** A page of the work area (web/DESIGN.md, Patterns): its tab's title, a header with the page
+ * title and its one-line description, then the content, padded 32 px and at most 1600 px wide. */
+export function Page({ title, description, children }: PageProps) {
   return (
-    <div className="mx-auto w-full max-w-400 px-6 pb-8">
+    <div className="mx-auto w-full max-w-400 p-8">
       <title>{`${title} – FEFAT`}</title>
-      <header className="flex h-14 items-center justify-between gap-4">
-        <h1 className="text-xl font-medium">{title}</h1>
-        {actions}
+      <header className="mb-8 flex flex-col gap-1">
+        <h1 className="text-title">{title}</h1>
+        {description !== undefined && (
+          <p className="text-foreground-secondary">{description}</p>
+        )}
       </header>
       {children}
     </div>

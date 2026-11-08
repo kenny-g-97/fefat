@@ -15,16 +15,17 @@ import {
 
 type ApiToken = components["schemas"]["ApiToken"]
 
-const HEAD = "h-8 text-caption text-muted-foreground"
+const HEAD =
+  "h-10 px-3 text-xs font-semibold tracking-[0.125rem] text-foreground-secondary uppercase"
 
-/** The live API tokens, one 32 px row each: the name, when it was made and last used, and
+/** The live API tokens, one 40 px row each: the name, when it was made and last used, and
  * its revocation, which asks once inline, since it cannot be undone. */
 export function ApiTokenTable({
   tokens,
 }: Readonly<{ tokens: readonly ApiToken[] }>) {
   if (tokens.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-foreground-secondary">
         No tokens yet. Create one for each notebook or script that calls the
         API.
       </p>
@@ -37,7 +38,7 @@ export function ApiTokenTable({
           <TableHead className={HEAD}>Name</TableHead>
           <TableHead className={`${HEAD} text-right`}>Created</TableHead>
           <TableHead className={`${HEAD} text-right`}>Last used</TableHead>
-          <TableHead className="h-8 w-48">
+          <TableHead className="h-10 w-48">
             <span className="sr-only">Revocation</span>
           </TableHead>
         </TableRow>
@@ -57,14 +58,14 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
   const [revoking, setRevoking] = useState<Revoking>("not asked")
   const revocation = useTokenRevocation()
   return (
-    <TableRow>
-      <TableCell className="py-0">
+    <TableRow className="h-10">
+      <TableCell className="px-3 py-0">
         <IdentityChip>{token.name}</IdentityChip>
       </TableCell>
-      <TableCell className="py-0 text-right">
+      <TableCell className="px-3 py-0 text-right text-foreground-secondary">
         {formatInstant(token.created_at)}
       </TableCell>
-      <TableCell className="py-0 text-right">
+      <TableCell className="px-3 py-0 text-right text-foreground-secondary">
         {token.last_used_at === null
           ? "Never"
           : formatInstant(token.last_used_at)}
@@ -77,7 +78,6 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
             <Button
               variant="destructive"
               size="sm"
-              className="h-7"
               disabled={revocation.isPending}
               onClick={() => revocation.mutate(token.name)}
             >
@@ -86,7 +86,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7"
+              className="text-foreground-secondary"
               autoFocus
               onClick={() => setRevoking("kept")}
             >
@@ -97,7 +97,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-7"
+            className="text-foreground-secondary"
             autoFocus={revoking === "kept"}
             onClick={() => setRevoking("confirming")}
           >
@@ -107,7 +107,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
         {revocation.error !== null && (
           <p
             role="alert"
-            className="pb-1 text-caption whitespace-normal text-negative"
+            className="pb-1 text-xs whitespace-normal text-negative"
           >
             {revocation.error.message}
           </p>

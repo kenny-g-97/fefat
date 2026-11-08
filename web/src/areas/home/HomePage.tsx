@@ -1,5 +1,6 @@
 import { Link, type LinkProps } from "@tanstack/react-router"
 import {
+  ArrowRight,
   ChartLine,
   Database,
   FlaskConical,
@@ -19,47 +20,35 @@ const STARTS: readonly Start[] = [
   { label: "Import data", to: "/data", icon: Database },
 ]
 
-const QUIET_LINK =
-  "rounded-sm text-caption text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-
-/** The page the app opens on (the design brief's home): a widget for each kind of work, each
+/** The page the app opens on (the design brief's home): a card for each kind of work, each
  * leading to its page, a placeholder until the steps that fill them (`BACKLOG.md`). */
 export function HomePage() {
   return (
     <Page title="Home">
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-6">
         <Panel
           title="Recent runs"
           className="col-span-2"
-          action={
-            <Link to="/runs" className={QUIET_LINK}>
-              All runs
-            </Link>
-          }
+          action={<TextLink to="/runs">All runs</TextLink>}
         >
-          <WidgetSlot>
-            Your latest backtests will appear here with their robustness
-            verdict.
-          </WidgetSlot>
+          <CardSlot>
+            Your latest backtests will appear here with their robustness verdict
+          </CardSlot>
         </Panel>
         <Panel title="Running jobs">
-          <WidgetSlot>
+          <CardSlot>
             Imports, backtests, and studies will show their progress here while
-            they run.
-          </WidgetSlot>
+            they run
+          </CardSlot>
         </Panel>
         <Panel
           title="Feature library"
           className="col-span-2"
-          action={
-            <Link to="/lab" className={QUIET_LINK}>
-              All features
-            </Link>
-          }
+          action={<TextLink to="/lab">All features</TextLink>}
         >
-          <WidgetSlot>
-            Saved features will appear here with their versions.
-          </WidgetSlot>
+          <CardSlot>
+            Saved features will appear here with their versions
+          </CardSlot>
         </Panel>
         <Panel title="Start">
           <ul className="-mx-2 flex flex-col gap-1">
@@ -67,13 +56,10 @@ export function HomePage() {
               <li key={label}>
                 <Link
                   to={to}
-                  className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-foreground-secondary outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  className="group flex items-center gap-3 rounded-xl border border-transparent p-2 font-medium hover:border-border hover:bg-muted"
                 >
-                  <Icon
-                    strokeWidth={1.5}
-                    className="size-4 shrink-0 text-muted-foreground"
-                  />
-                  {label}
+                  <Icon className="size-4 shrink-0 text-foreground-secondary" />
+                  <span className="group-hover:text-brand">{label}</span>
                 </Link>
               </li>
             ))}
@@ -84,9 +70,25 @@ export function HomePage() {
   )
 }
 
-function WidgetSlot({ children }: Readonly<{ children: string }>) {
+/** The skill's text link to another page, in the accent with its arrow. */
+function TextLink({
+  to,
+  children,
+}: Readonly<{ to: LinkProps["to"]; children: string }>) {
   return (
-    <p className="flex min-h-24 items-center text-sm text-foreground-secondary">
+    <Link
+      to={to}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl font-semibold text-brand underline-offset-4 hover:underline"
+    >
+      {children}
+      <ArrowRight className="size-4" />
+    </Link>
+  )
+}
+
+function CardSlot({ children }: Readonly<{ children: string }>) {
+  return (
+    <p className="flex min-h-24 items-center text-foreground-secondary">
       {children}
     </p>
   )

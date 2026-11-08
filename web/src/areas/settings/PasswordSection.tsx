@@ -7,7 +7,7 @@ import { usePasswordChange } from "@/api/session"
 import { Button } from "@/ui/button"
 import { Field, FieldError, FieldLabel } from "@/ui/field"
 import { Input } from "@/ui/input"
-import { SettingsSection } from "./SettingsSection"
+import { Panel } from "@/ui/panel"
 
 const passwordForm = z
   .object({
@@ -54,9 +54,9 @@ export function PasswordSection() {
       : undefined
 
   return (
-    <SettingsSection
+    <Panel
       title="Password"
-      description="Changing it ends every other login session."
+      description="Changing it ends every other login session"
     >
       <form
         onSubmit={submit}
@@ -89,14 +89,14 @@ export function PasswordSection() {
             Change password
           </Button>
           {change.isSuccess && (
-            <p role="status" className="text-sm text-foreground-secondary">
+            <p role="status" className="text-foreground-secondary">
               Password changed
             </p>
           )}
         </div>
         <FieldError>{otherFailure}</FieldError>
       </form>
-    </SettingsSection>
+    </Panel>
   )
 }
 

@@ -1,8 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query"
 import { settingsQuery, useThemeChange, type Theme } from "@/api/settings"
 import { Label } from "@/ui/label"
+import { Panel } from "@/ui/panel"
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group"
-import { SettingsSection } from "./SettingsSection"
 
 const THEMES: readonly Readonly<{ value: Theme; label: string }>[] = [
   { value: "dark", label: "Dark" },
@@ -26,9 +26,9 @@ export function ThemeSection() {
   }
 
   return (
-    <SettingsSection
+    <Panel
       title="Appearance"
-      description="The colours of every page, the same in every browser you log in from."
+      description="The colours of every page, the same in every browser you log in from"
     >
       <RadioGroup
         aria-label="Theme"
@@ -44,10 +44,10 @@ export function ThemeSection() {
         ))}
       </RadioGroup>
       {change.error !== null && (
-        <p role="alert" className="text-sm text-negative">
+        <p role="alert" className="text-negative">
           {change.error.message}
         </p>
       )}
-    </SettingsSection>
+    </Panel>
   )
 }

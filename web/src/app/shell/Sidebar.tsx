@@ -40,38 +40,40 @@ const SETTINGS: Destination = {
 }
 
 const ROW =
-  "flex h-8 items-center gap-2 rounded-md px-2 text-sm text-foreground-secondary outline-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-const ICON = "mx-1 size-4 shrink-0 text-muted-foreground"
+  "flex h-10 items-center gap-3 rounded-xl border border-transparent px-3 font-medium"
+const ICON = "size-5 shrink-0"
 
 /** The shell's sidebar (web/DESIGN.md, Patterns): the mark, the areas, then Settings, Log
  * out, and the app's version. */
 export function Sidebar() {
   const versions = useQuery(versionsQuery)
   return (
-    <aside className="w-60 shrink-0 border-r border-sidebar-border bg-sidebar">
-      <div className="sticky top-0 flex h-screen flex-col px-3 pb-4">
-        <Link
-          to="/"
-          aria-label="FEFAT, the home page"
-          className="flex h-14 items-center gap-2 rounded-md px-2 outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        >
-          <Monogram className="size-6" />
-          <span className="text-base font-semibold">FEFAT</span>
-        </Link>
+    <aside className="w-64 shrink-0 border-r bg-sidebar">
+      <div className="sticky top-0 flex h-screen flex-col">
+        <div className="flex h-18 shrink-0 items-center border-b px-4">
+          <Link
+            to="/"
+            aria-label="FEFAT, the home page"
+            className="flex items-center gap-3 rounded-xl"
+          >
+            <Monogram className="size-10" />
+            <span className="text-base font-semibold">FEFAT</span>
+          </Link>
+        </div>
         <nav aria-label="Main" className="flex flex-1 flex-col">
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-1 px-3 py-4">
             {AREAS.map((area) => (
               <SidebarLink key={area.label} destination={area} />
             ))}
           </ul>
-          <ul className="mt-auto flex flex-col gap-0.5">
+          <ul className="mt-auto flex flex-col gap-1 border-t px-3 pt-4">
             <SidebarLink destination={SETTINGS} />
             <li>
               <LogOutRow />
             </li>
           </ul>
         </nav>
-        <div className="mt-4 px-2">
+        <div className="px-6 pt-3 pb-4">
           <IdentityChip testId="version">
             {versions.data === undefined
               ? "FEFAT"
@@ -90,12 +92,14 @@ function SidebarLink({ destination }: Readonly<{ destination: Destination }>) {
       <Link
         to={to}
         activeOptions={{ exact: to === "/" }}
-        className={`${ROW} group data-[status=active]:bg-sidebar-accent data-[status=active]:font-medium data-[status=active]:text-foreground`}
+        className={ROW}
+        activeProps={{
+          className:
+            "border-brand-soft-border bg-brand-soft text-brand-soft-foreground",
+        }}
+        inactiveProps={{ className: "hover:bg-accent" }}
       >
-        <Icon
-          strokeWidth={1.5}
-          className={`${ICON} group-data-[status=active]:text-primary`}
-        />
+        <Icon className={ICON} />
         {label}
       </Link>
     </li>
@@ -118,12 +122,16 @@ function LogOutRow() {
   const error = logout.error
   return (
     <>
-      <button type="button" onClick={logOut} className={`${ROW} w-full`}>
-        <LogOut strokeWidth={1.5} className={ICON} />
+      <button
+        type="button"
+        onClick={logOut}
+        className={`${ROW} w-full hover:bg-accent`}
+      >
+        <LogOut className={ICON} />
         Log out
       </button>
       {error !== null && !isRefusal(error, 401) && (
-        <p role="alert" className="px-2 pt-1 text-caption text-negative">
+        <p role="alert" className="px-3 pt-1 text-xs text-negative">
           Still logged in. {error.message}
         </p>
       )}

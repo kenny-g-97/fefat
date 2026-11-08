@@ -20,16 +20,11 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
   return (
     <div
       data-testid="new-token"
-      className="flex flex-col gap-2 rounded-md border bg-muted p-4"
+      className="flex flex-col gap-3 rounded-xl border bg-muted p-4"
     >
-      <p className="text-sm">
-        Copy the token of {issued.name} now: it is not shown again.
-      </p>
+      <p>Copy the token of {issued.name} now: it is not shown again</p>
       <div className="flex items-center gap-2">
-        <code
-          data-testid="new-token-value"
-          className="min-w-0 flex-1 truncate font-mono text-sm"
-        >
+        <code data-testid="new-token-value" className="min-w-0 flex-1 truncate">
           {issued.token}
         </code>
         <Button size="sm" onClick={() => void copy()}>
@@ -37,7 +32,7 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
         </Button>
       </div>
       {copying === "refused" && (
-        <p role="alert" className="text-caption text-negative">
+        <p role="alert" className="text-xs text-negative">
           Copy failed: select the token and press Ctrl+C.
         </p>
       )}
