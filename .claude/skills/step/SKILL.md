@@ -35,7 +35,7 @@ The protocol is `docs/masterplan/05-build-process.md` §2, and this skill is its
    - `software-design-principles` for any code;
    - `designing-architecture` for a new module, package, crate, port, adapter, or seam;
    - `backtest-expert` for engine, prop, results, and research work;
-   - `frontend-design:frontend-design` and `unslop` for anything under `web/`, after reading `web/DESIGN.md` (once step 4.3 has written it); the step ends with unslop's audit (`references/signs.md`) and checklist over its screens, every sign fixed before the reviewers run (D-77);
+   - `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` for anything under `web/`, after reading `web/DESIGN.md` (once step 4.3 has written it); the step ends with unslop's audit (`references/signs.md`) and the Contemporary skill's checklist over its screens, every sign fixed before the reviewers run (D-77, D-88);
    - `engine-golden` when engine, scenario, or golden files change;
    - `claude-api` for any code that calls the Anthropic API.
 2. Read the documents the step's prompt names and the rules in `.claude/rules/` for the areas it touches.

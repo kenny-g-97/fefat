@@ -7,7 +7,7 @@ paths:
 
 From `docs/masterplan/08-code-design.md` §1.5, §3.1, §3.4, and §5, and `docs/masterplan/01-architecture.md` §3 and §8.
 
-- **Design system.** Load the `frontend-design:frontend-design` and `unslop` skills and read `web/DESIGN.md` before building UI (the file arrives in step 4.3). Build from its tokens, and add every new pattern to it so the app stays one design system. Before the reviewers, run unslop's audit (`references/signs.md`) and checklist over the step's screens and fix every sign; where `web/DESIGN.md` is silent, unslop's exact values are the default (D-77).
+- **Design system.** Load the `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` skills and read `web/DESIGN.md` before building UI. `web/DESIGN.md` applies the Contemporary skill, the reference the design brief follows exactly, to FEFAT, and records each deviation with its reason (D-88). Build from its tokens, and add every new pattern to it so the app stays one design system. Before the reviewers, run unslop's audit (`references/signs.md`) and the Contemporary skill's checklist over the step's screens and fix every sign; where `web/DESIGN.md` is silent, the skill's exact values are the default, then unslop's (D-77, D-88).
 - **Types from the API.** API types are generated from `web/openapi.json` with `openapi-typescript`, never written by hand. zod schemas cover everything the API does not type: URL search parameters, local storage, SSE payloads, imported files.
 - **Numbers come from the API.** The client never recomputes a number the API returns; contract tests compare UI numbers with SDK numbers.
 - **Strict TypeScript.** No `any`, no `as` assertions, no `@ts-ignore` or `@ts-expect-error` without a one-line reason and the reviewer's approval.

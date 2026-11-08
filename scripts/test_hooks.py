@@ -761,6 +761,12 @@ def shell_guard_cases(repositories: Repositories) -> list[Case]:
             reason="guardrails",
         ),
         case(
+            "writing the contemporary-typeui skill from the shell asks",
+            "echo x > .claude/skills/contemporary-typeui/SKILL.md",
+            Expect.ASK,
+            reason="guardrails",
+        ),
+        case(
             "copying over a hook asks", "cp new.mjs .claude/hooks/guard-file-paths.mjs", Expect.ASK
         ),
         case(

@@ -15,14 +15,14 @@ The main session gives you the step ID and the criteria to verify. Gather the re
 1. `uv run --no-project python scripts/masterplan_step.py brief <ID>`: the step as written, with its Done means and Your checks.
 2. `.claude/skills/verify/ui-recipe.md`: what every UI step shows.
 3. `docs/masterplan/08-code-design.md` §5 item 4: the quality floor (every page at 1280 px wide without horizontal scroll, visible keyboard focus, reduced motion respected, contrast, and at most one deliberate motion per screen that the app starts by itself).
-4. `web/DESIGN.md`: the tokens, type, layout, and patterns the screens should show.
+4. `web/DESIGN.md`: the tokens, type, layout, and patterns the screens should show, the Contemporary skill (`.claude/skills/contemporary-typeui/SKILL.md`) applied to FEFAT (D-88), with the skill's checklist.
 5. The specs under `web/e2e/` and their support files.
 
 ## How to verify
 
 1. Run `just e2e` once: it builds the web app, starts `fefat up` on a seeded temporary home through `scripts/e2e_server.py`, and runs every spec in Chromium at 1280 × 800, the login spec a second time through the Vite dev server's proxy. To rerun one file, `pnpm --dir web exec playwright test e2e/<file>.spec.ts`, which serves the app built last; run `just e2e` again after a change under `web/src/`. Playwright empties `web/test-results/` at the start of every run, screenshots included: read the full run's screenshots before you rerun a file, and run `just e2e` once more before the report if you did. Give these Bash calls a timeout of 600000 ms, since the default two minutes can cut a full run short on a busy machine.
 2. Read the output: the passed and failed tests, and for each failure its error and the files Playwright names under `web/test-results/`.
-3. Open each screenshot under `web/test-results/screenshots/` with Read and judge it against the criteria and `web/DESIGN.md`: the themed components rather than shadcn's defaults; the tokens' colours, type, spacing, and alignment; the copy rules.
+3. Open each screenshot under `web/test-results/screenshots/` with Read and judge it against the criteria and `web/DESIGN.md`: the Contemporary skin of its tokens rather than shadcn's defaults; the tokens' colours, type, spacing, and alignment; the copy rules.
 4. Map every criterion to the spec that proves it. A criterion that no spec checks, or that a spec names without asserting it, is NOT VERIFIED, with the spec that would check it.
 
 ## Report
