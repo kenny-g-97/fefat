@@ -4,6 +4,53 @@
  */
 
 export interface paths {
+    "/v1/api-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live Api Tokens
+         * @description The API tokens not revoked, by when they were made, with when each was last used, never
+         *     a token.
+         */
+        get: operations["live_api_tokens_v1_api_tokens_get"];
+        put?: never;
+        /**
+         * Create Api Token
+         * @description Make an API token, shown in this response alone; refused with 409 for a name a token
+         *     has or had.
+         */
+        post: operations["create_api_token_v1_api_tokens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/api-tokens/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Api Token
+         * @description Revoke the live API token `name`, which every request refuses from then on; refused with
+         *     404 where no live token has the name.
+         */
+        delete: operations["revoke_api_token_v1_api_tokens__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/auth/login": {
         parameters: {
             query?: never;
@@ -41,6 +88,29 @@ export interface paths {
          *     request, and clear the cookie.
          */
         post: operations["logout_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Change the password, from a login session alone: every session ends, and the response
+         *     sets the cookie of a new one for this browser and returns its CSRF token; refused with 403
+         *     for a wrong current password, and with 429 after five attempts in a minute, the logins'
+         *     attempts included.
+         */
+        post: operations["change_password_v1_auth_password_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -97,14 +167,15 @@ export interface paths {
         };
         /**
          * Read Settings
-         * @description The settings of `config.toml`, which the page shows read-only, and whether each secret
-         *     is stored, never its value.
+         * @description The settings of `config.toml` and the data folder, which the page shows read-only, the
+         *     theme, and whether each secret is stored, never its value.
          */
         get: operations["read_settings_v1_settings_get"];
         /**
          * Change Settings
-         * @description Store each secret named with a value in the operating system's credential store and
-         *     remove each named with null; the settings after the change, never a secret's value.
+         * @description Store each secret named with a value in the operating system's credential store, remove
+         *     each named with null, and keep the theme when one is given; the settings after the change,
+         *     never a secret's value.
          */
         put: operations["change_settings_v1_settings_put"];
         post?: never;
@@ -139,6 +210,22 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ApiToken
+         * @description An API token of a notebook or a script, by its name, kept only as its SHA-256, which
+         *     names it, with when it was made and last used.
+         */
+        ApiToken: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+        };
+        /**
          * ApiTokenIdentity
          * @description A request of an API token, by the token's name; it needs no CSRF token, since a browser
          *     never sends a bearer token by itself.
@@ -153,14 +240,28 @@ export interface components {
             token_name: string;
         };
         /**
+         * ApiTokenRequest
+         * @description The name of a new API token, such as `notebook`.
+         */
+        ApiTokenRequest: {
+            /** Name */
+            name: string;
+        };
+        /**
          * AppSettings
-         * @description The settings the page shows: the server's, from `config.toml`, and each secret's
-         *     state.
+         * @description The settings the page shows: the server's, from `config.toml`, the data folder, the
+         *     theme, and each secret's state.
          */
         AppSettings: {
+            /**
+             * Data Dir
+             * Format: path
+             */
+            data_dir: string;
             /** Secrets */
             secrets: components["schemas"]["SecretStatus"][];
             server: components["schemas"]["Settings"];
+            theme: components["schemas"]["Theme"];
         };
         /**
          * FieldError
@@ -187,6 +288,16 @@ export interface components {
             status: "ok";
         };
         /**
+         * IssuedApiToken
+         * @description A new API token under its name, which this response alone carries.
+         */
+        IssuedApiToken: {
+            /** Name */
+            name: string;
+            /** Token */
+            token: string;
+        };
+        /**
          * LoginRequest
          * @description The password, set at `fefat up`'s first run or by `fefat password set`.
          */
@@ -196,6 +307,22 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /**
+         * PasswordChange
+         * @description The password the session's login used, and the one to keep in its place.
+         */
+        PasswordChange: {
+            /**
+             * Current Password
+             * Format: password
+             */
+            current_password: string;
+            /**
+             * New Password
+             * Format: password
+             */
+            new_password: string;
         };
         /**
          * Problem
@@ -217,6 +344,9 @@ export interface components {
              * @default about:blank
              */
             type: string;
+        };
+        SecretChanges: {
+            [key: string]: string | null;
         };
         /**
          * SecretName
@@ -291,14 +421,19 @@ export interface components {
         /**
          * SettingsChange
          * @description A change of the settings: a secret named with a value stores it, one named with null
-         *     removes it, and one left out stays as it is.
+         *     removes it, and one left out stays as it is; a theme, when given, replaces the theme.
          */
         SettingsChange: {
-            /** Secrets */
-            secrets: {
-                [key: string]: string | null;
-            };
+            secrets?: components["schemas"]["SecretChanges"];
+            theme?: components["schemas"]["Theme"] | null;
         };
+        /**
+         * Theme
+         * @description The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or
+         *     light.
+         * @enum {string}
+         */
+        Theme: "dark" | "light";
         /**
          * ValidationProblem
          * @description A request the API's schema refused, with each of its errors.
@@ -348,6 +483,160 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    live_api_tokens_v1_api_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiToken"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_api_token_v1_api_tokens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedApiToken"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    revoke_api_token_v1_api_tokens__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     login_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -426,6 +715,66 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    change_password_v1_auth_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionIdentity"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

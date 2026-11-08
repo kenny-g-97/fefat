@@ -35,7 +35,7 @@ The protocol is `docs/masterplan/05-build-process.md` §2, and this skill is its
    - `software-design-principles` for any code;
    - `designing-architecture` for a new module, package, crate, port, adapter, or seam;
    - `backtest-expert` for engine, prop, results, and research work;
-   - `frontend-design:frontend-design` and `unslop` for anything under `web/`, after reading `web/DESIGN.md` (once step 4.3 has written it); the step ends with unslop's audit (`references/signs.md`) and checklist over its screens, every sign fixed before the reviewers run (D-77);
+   - `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` for anything under `web/`, after reading `web/DESIGN.md` (once step 4.3 has written it); the step ends with unslop's audit (`references/signs.md`) and the Contemporary skill's checklist over its screens, every sign fixed before the reviewers run (D-77, D-88);
    - `engine-golden` when engine, scenario, or golden files change;
    - `claude-api` for any code that calls the Anthropic API.
 2. Read the documents the step's prompt names and the rules in `.claude/rules/` for the areas it touches.
@@ -56,7 +56,7 @@ Before the pull request, run these in order, fix what they find, and re-run what
 1. `just check` and `just test`.
 2. The `verify` skill with `--full`.
 3. The `step-reviewer` subagent, given the step ID and the range `origin/main...HEAD`.
-4. The reviewers on the meta line: the `engine-accuracy-reviewer` and `leakage-auditor` subagents; `code-review` there means step 5 runs at `high`; `ui-verifier` arrives with step 4.3 (until then, note it under Deviations). The `design-reviewer` subagent reviews every step that changes `web/` from step 4.3 on, whether or not the meta line names it; give it the screenshots of the UI recipe (D-34).
+4. The reviewers on the meta line: the `engine-accuracy-reviewer` and `leakage-auditor` subagents; `code-review` there means step 5 runs at `high`; the `ui-verifier` subagent, given the step ID and its criteria, runs `just e2e` and reports per criterion with the screenshots. The `design-reviewer` subagent reviews every step that changes `web/` from step 4.3 on, whether or not the meta line names it; give it the screenshots of the UI recipe (D-34).
 5. `/code-review medium` (or `high`, see above).
 6. `/ponytail-review` (the ponytail plugin's `ponytail:ponytail-review` skill) over the branch, `origin/main...HEAD` (D-32).
 7. `/security-review` when the meta line says `Security: yes`.

@@ -5,9 +5,8 @@
  *
  *   .rs        rustfmt, with the edition from engine/Cargo.toml
  *   .py .pyi   ruff format, from the project's .venv (or through uv run)
- *   web/       prettier, once web/node_modules/prettier exists; the Phase 4
- *              kickoff chooses between prettier and oxfmt, and until then web
- *              files are left as they are
+ *   web/       oxfmt, from web/node_modules (the Phase 4 kickoff's choice,
+ *              D-83), which leaves the files web/.oxfmtrc.json ignores alone
  *
  * Markdown, TOML, YAML, and everything under .claude/skills/ (the design
  * skills stay verbatim) are never touched. It never blocks and never fails a
@@ -90,14 +89,15 @@ function pythonFormatter(file, project) {
 }
 
 function webFormatter(file, project) {
-  const prettier = `${project}/web/node_modules/prettier/bin/prettier.cjs`;
-  if (!fs.existsSync(prettier)) {
-    return null;
+  const oxfmt = `${project}/web/node_modules/oxfmt/bin/oxfmt`;
+  if (!fs.existsSync(oxfmt)) {
+    return { problem: "oxfmt is not installed in web/node_modules (just setup installs it), so the file was not formatted" };
   }
   return {
-    name: "prettier",
+    name: "oxfmt",
     program: process.execPath,
-    args: [prettier, "--write", "--log-level", "warn", file.absolute],
+    // An ignored file, such as the generated API types, is then a quiet no-op rather than exit 2.
+    args: [oxfmt, "--no-error-on-unmatched-pattern", file.absolute],
     directory: `${project}/web`,
   };
 }

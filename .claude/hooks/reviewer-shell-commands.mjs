@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * PreToolUse hook for the read-only reviewer subagents (step-reviewer,
- * engine-accuracy-reviewer, leakage-auditor, design-reviewer), registered in
- * .claude/settings.json for the Bash and PowerShell tools of every session.
+ * engine-accuracy-reviewer, leakage-auditor, design-reviewer, ui-verifier),
+ * registered in .claude/settings.json for the Bash and PowerShell tools of
+ * every session.
  * It acts only on calls whose agent_type names a reviewer, because Claude
  * Code (2.1.295 and 2.1.296) does not run hooks declared in an agent's
  * frontmatter.
@@ -31,7 +32,7 @@ import {
 } from "./lib/shell-commands.mjs";
 
 /** The agents in .claude/agents/; scripts/test_hooks.py probes each one. */
-const REVIEWERS = new Set(["design-reviewer", "engine-accuracy-reviewer", "leakage-auditor", "step-reviewer"]);
+const REVIEWERS = new Set(["design-reviewer", "engine-accuracy-reviewer", "leakage-auditor", "step-reviewer", "ui-verifier"]);
 const BRANCH_CHANGING_OPTIONS = new Set([
   "--delete", "--move", "--copy", "--force", "--unset-upstream", "--edit-description", "--track", "--no-track",
 ]);
@@ -66,6 +67,12 @@ const READ_ONLY_COMMANDS = [
   // just runs every recipe named after the first, so `just check strip-notebooks` would write.
   readOnly("just check", { accepts: (rest) => rest.length === 0 }),
   readOnly("just test", { accepts: (rest) => rest.length === 0 }),
+  readOnly("just e2e", { accepts: (rest) => rest.length === 0 }),
+  // Spec files and --project only: other options write files (-u, --output, --last-failed-file,
+  // --only-changed through git) or load a module (--reporter, --add-reporter, -c, --tsconfig).
+  readOnly("pnpm --dir web exec playwright test", {
+    accepts: (rest) => rest.every((word) => !word.startsWith("-") || word === "--project" || word.startsWith("--project=")),
+  }),
   readOnly("cargo test", { forbids: [...CARGO_RUNNER_OPTIONS, "--logfile"] }),
   readOnly("cargo check", { forbids: CARGO_RUNNER_OPTIONS }),
   readOnly("cargo metadata", { forbids: CARGO_RUNNER_OPTIONS }),

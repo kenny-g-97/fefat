@@ -10,8 +10,7 @@
     "editorconfig.editorconfig",
     "davidanson.vscode-markdownlint",
     "nefrob.vscode-just-syntax",
-    "dbaeumer.vscode-eslint",
-    "esbenp.prettier-vscode",
+    "oxc.oxc-vscode",
     "bradlc.vscode-tailwindcss",
     "ms-playwright.playwright"
   ]

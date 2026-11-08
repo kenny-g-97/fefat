@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "printWidth": 80,
+  "trailingComma": "es5",
+  "ignorePatterns": [
+    "*.md",
+    "openapi.json",
+    "src/api/schema.d.ts",
+    "src/app/routeTree.gen.ts"
+  ]
+}

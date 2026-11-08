@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from fefat_app.container import Container
 from fefat_app.database.models import ApiTokenRow
+from fefat_app.services.api_tokens import NoSuchApiTokenError
 from fefat_app.services.identity import ApiTokenIdentity
 from local_server import STARTED_AT, SettableClock, database_bytes
 
@@ -43,7 +44,7 @@ def test_a_token_name_in_use_is_refused(container: Container) -> None:
         container.api_tokens.create("notebook")
 
 
-@pytest.mark.parametrize("name", ["", "two words", "x" * 65, "naïve"])
+@pytest.mark.parametrize("name", ["", "two words", "x" * 65, "naïve", "..", ".", "-x"])
 def test_a_token_name_outside_the_pattern_is_refused(container: Container, name: str) -> None:
     with pytest.raises(ValueError, match="Expected a token name of 1 to 64 letters, digits"):
         container.api_tokens.create(name)
@@ -71,3 +72,24 @@ def test_a_token_is_marked_used_at_most_once_a_minute(
     clock.advance(timedelta(seconds=1))
     container.api_tokens.identity_of_token(token)
     assert last_used(engine) == [STARTED_AT + timedelta(minutes=1)]
+
+
+def test_a_revoked_token_leaves_the_live_tokens_and_is_refused(container: Container) -> None:
+    token = container.api_tokens.create("notebook")
+    container.api_tokens.create("script")
+
+    container.api_tokens.revoke("notebook")
+
+    assert [live.name for live in container.api_tokens.live_tokens()] == ["script"]
+    assert container.api_tokens.identity_of_token(token) is None
+
+
+def test_only_a_live_token_can_be_revoked(container: Container) -> None:
+    container.api_tokens.create("notebook")
+    container.api_tokens.revoke("notebook")
+    expected = "Expected the name of a live API token, got 'notebook'."
+
+    with pytest.raises(NoSuchApiTokenError, match=re.escape(expected)):
+        container.api_tokens.revoke("notebook")
+    with pytest.raises(NoSuchApiTokenError):
+        container.api_tokens.revoke("never-made")

@@ -246,6 +246,7 @@
       "Edit(./.claude/skills/software-design-principles/**)",
       "Edit(./.claude/skills/apple-design/**)",
       "Edit(./.claude/skills/unslop/**)",
+      "Edit(./.claude/skills/contemporary-typeui/**)",
       "Edit(./fixtures/goldens/**)"
     ],
     "deny": [

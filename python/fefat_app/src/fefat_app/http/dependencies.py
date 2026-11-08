@@ -80,6 +80,18 @@ def the_identity(
 IdentityDependency = Annotated[SessionIdentity | ApiTokenIdentity, Depends(the_identity)]
 
 
+def the_session(identity: IdentityDependency) -> SessionIdentity:
+    """The login session a request proves; an API token is refused with 403, since the app's
+    login alone manages the password and the API tokens, so that no token mints another."""
+    if isinstance(identity, ApiTokenIdentity):
+        raise HTTPException(
+            403,
+            "Expected a login session, got an API token: the password and the tokens are "
+            "managed from the app's settings page.",
+        )
+    return identity
+
+
 def _identity_of_token(container: Container, token: str) -> ApiTokenIdentity:
     identity = container.api_tokens.identity_of_token(token)
     if identity is None:

@@ -4,5 +4,15 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/ui/**", "src/app/routes/**"],
+      "rules": { "react/only-export-components": "off" }
+    },
+    {
+      "files": ["e2e/**", "playwright.config.ts"],
+      "rules": { "react/rules-of-hooks": "off" }
+    }
+  ]
 }
