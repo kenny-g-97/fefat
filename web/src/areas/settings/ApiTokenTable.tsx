@@ -31,24 +31,28 @@ export function ApiTokenTable({
       </p>
     )
   }
+  // The table runs to the card's inner edges, its outer cells padded as the card is, so that a
+  // row's hover spans the card while its text keeps the card's line.
   return (
-    <Table>
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead className={`${HEAD} pl-0`}>Name</TableHead>
-          <TableHead className={`${HEAD} text-right`}>Created</TableHead>
-          <TableHead className={`${HEAD} text-right`}>Last used</TableHead>
-          <TableHead className="h-10 w-48">
-            <span className="sr-only">Revocation</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tokens.map((token) => (
-          <ApiTokenRow key={token.name} token={token} />
-        ))}
-      </TableBody>
-    </Table>
+    <div className="-mx-6">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className={`${HEAD} pl-6`}>Name</TableHead>
+            <TableHead className={`${HEAD} text-right`}>Created</TableHead>
+            <TableHead className={`${HEAD} text-right`}>Last used</TableHead>
+            <TableHead className="h-10 w-52 pr-6">
+              <span className="sr-only">Revocation</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {tokens.map((token) => (
+            <ApiTokenRow key={token.name} token={token} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -59,7 +63,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
   const revocation = useTokenRevocation()
   return (
     <TableRow className="h-10 hover:bg-muted">
-      <TableCell className="py-0 pr-3 pl-0">
+      <TableCell className="py-0 pr-3 pl-6">
         <IdentityChip>{token.name}</IdentityChip>
       </TableCell>
       <TableCell className="px-3 py-0 text-right text-foreground-secondary">
@@ -70,7 +74,7 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           ? "Never"
           : formatInstant(token.last_used_at)}
       </TableCell>
-      <TableCell className="py-0 text-right">
+      <TableCell className="py-0 pr-6 text-right">
         {revoking === "confirming" ? (
           // Keep takes the trigger's place and the focus, so a double click keeps the token,
           // and the trigger takes the focus back when Keep is pressed.

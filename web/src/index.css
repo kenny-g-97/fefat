@@ -95,6 +95,7 @@
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
   --shadow-raised: var(--shadow-raised);
+  --shadow-xs: var(--shadow-raised);
 }
 
 /* The skill's one family, one radius, and type scale; Tailwind's own 12, 14, 16, and 24 px steps
@@ -193,11 +194,13 @@ a:not([data-slot="button"]):active {
 
    A field rests on the control surface, 40 px tall beside a 40 px button, and shows its focus as
    the skill's accent border with a 1 px ring of the accent, inside its own corners; a refused
-   field keeps the negative colour for its ring, as for its border. */
+   field keeps the negative colour for its ring and its selection, as for its border, while its
+   text stays in heading text whatever colour its field group gives. */
 [data-slot="input"] {
   height: 2.5rem;
   padding-inline: 1rem;
   background-color: var(--muted);
+  color: var(--foreground);
 }
 
 [data-slot="input"]:focus-visible {
@@ -207,6 +210,11 @@ a:not([data-slot="button"]):active {
 
 [data-slot="input"][aria-invalid="true"]:focus-visible {
   box-shadow: 0 0 0 1px var(--negative);
+}
+
+[data-slot="input"][aria-invalid="true"]::selection {
+  background-color: var(--negative);
+  color: var(--card);
 }
 
 /* The skip link moves the focus to the page itself, which needs no outline of its own. */

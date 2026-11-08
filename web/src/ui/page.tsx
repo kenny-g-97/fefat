@@ -15,7 +15,7 @@ export function Page({ title, description, children }: PageProps) {
       <header className="mb-8 flex flex-col gap-1">
         <h1 className="text-title">{title}</h1>
         {description !== undefined && (
-          <p className="text-foreground-secondary">{description}</p>
+          <p className="max-w-2xl text-foreground-secondary">{description}</p>
         )}
       </header>
       {children}

@@ -16,6 +16,7 @@ const PATHS = [
   "/agent",
   "/data",
   "/settings",
+  "/no-such-page",
 ]
 
 test("no page scrolls sideways at 1280 px or logs an error", async ({

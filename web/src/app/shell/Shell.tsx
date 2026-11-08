@@ -28,7 +28,7 @@ export function Shell() {
           event.preventDefault()
           main.current?.focus()
         }}
-        className="absolute -top-24 left-4 z-50 rounded-xl border bg-muted px-5 py-3 font-medium shadow-md focus:top-4"
+        className="absolute -top-24 left-4 z-50 rounded-xl border bg-accent px-5 py-3 font-medium shadow-md focus:top-4"
       >
         Skip to content
       </a>
