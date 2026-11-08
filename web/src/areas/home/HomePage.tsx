@@ -70,7 +70,7 @@ export function HomePage() {
   )
 }
 
-/** The skill's text link to another page, in the accent with its arrow. */
+/** The skill's text link to another page, in the second accent with its arrow (D-89). */
 function TextLink({
   to,
   children,
@@ -78,7 +78,7 @@ function TextLink({
   return (
     <Link
       to={to}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl font-semibold text-brand underline-offset-4 hover:underline"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl font-semibold text-brand-secondary underline-offset-4 hover:underline"
     >
       {children}
       <ArrowRight className="size-4" />

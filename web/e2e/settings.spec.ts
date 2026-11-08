@@ -85,6 +85,11 @@ test("a token is shown once, listed by its name, and revoked", async ({
     page.getByTestId("data-folder"),
   ]
   await screenshot(page, "settings-token-created", masked)
+  // The quieter action, in the second accent (D-89).
+  await expect(row.getByRole("button", { name: "Revoke" })).toHaveCSS(
+    "color",
+    "rgb(168, 85, 247)"
+  )
   await row.getByRole("button", { name: "Revoke" }).click()
   await expect(row.getByRole("button", { name: "Keep" })).toBeFocused()
   await screenshot(page, "settings-token-confirm", masked)

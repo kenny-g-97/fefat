@@ -3,8 +3,8 @@
 @import "@fontsource/geist-mono/latin-500.css";
 @import "@fontsource/geist-mono/latin-600.css";
 
-/* The tokens of web/DESIGN.md, the Contemporary skill applied to FEFAT (D-88), under shadcn/ui's
-   names; a test holds the two files equal. */
+/* The tokens of web/DESIGN.md, the Contemporary skill applied to FEAT (D-88, D-89), under
+   shadcn/ui's names; a test holds the two files equal. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -20,16 +20,18 @@
   --foreground: #121212;
   --foreground-secondary: #555555;
   --muted-foreground: #6b6b6b;
-  --primary: #f44174;
-  --primary-hover: #ff5a89;
+  --primary: #fc734d;
+  --primary-hover: #ff8764;
   --primary-foreground: #050505;
-  --brand: #c8175a;
-  --brand-soft: #fde8ef;
-  --brand-soft-border: #f5c2d3;
-  --brand-soft-foreground: #c8175a;
+  --brand: #b4380f;
+  --brand-soft: #fff1ed;
+  --brand-soft-border: #fed5ca;
+  --brand-soft-foreground: #b4380f;
+  --brand-secondary: #7e22ce;
+  --brand-secondary-strong: #6b21a8;
   --positive: #0a7a4c;
-  --negative: #c0392b;
-  --negative-soft: #fdecea;
+  --negative: #c81e4a;
+  --negative-soft: #fae9ed;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06);
 
   --card-foreground: var(--foreground);
@@ -39,7 +41,7 @@
   --secondary-foreground: var(--foreground);
   --accent-foreground: var(--foreground);
   --destructive: var(--negative);
-  --ring: var(--primary);
+  --ring: var(--brand);
 }
 
 .dark {
@@ -54,16 +56,18 @@
   --foreground: #ededed;
   --foreground-secondary: #888888;
   --muted-foreground: #7c7c7c;
-  --primary: #f44174;
-  --primary-hover: #ff5a89;
+  --primary: #fc734d;
+  --primary-hover: #ff8764;
   --primary-foreground: #050505;
-  --brand: #f44174;
-  --brand-soft: #1a0810;
-  --brand-soft-border: #3d0e1f;
-  --brand-soft-foreground: #ffb0c7;
+  --brand: #fc734d;
+  --brand-soft: #1b0f0b;
+  --brand-soft-border: #401f16;
+  --brand-soft-foreground: #ffcdba;
+  --brand-secondary: #a855f7;
+  --brand-secondary-strong: #d1b2f9;
   --positive: #10b981;
-  --negative: #ff6b4f;
-  --negative-soft: #1f0a07;
+  --negative: #ff4d6d;
+  --negative-soft: #1e0c0f;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 }
 
@@ -87,6 +91,8 @@
   --color-brand-soft: var(--brand-soft);
   --color-brand-soft-border: var(--brand-soft-border);
   --color-brand-soft-foreground: var(--brand-soft-foreground);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-secondary-strong: var(--brand-secondary-strong);
   --color-destructive: var(--destructive);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
@@ -178,8 +184,9 @@ a:not([data-slot="button"]):active {
 }
 
 /* Focus is the skill's 2 px outline in the accent, 2 px outside every control: its 4 px rings in
-   #3d0e1f and #111 vanish on the page (1.24 : 1), and a ring that touched a pink button ran into
-   its fill (WCAG 1.4.11). */
+   #3d0e1f and #111 vanish on the page (1.24 : 1), and a ring that touched an orange button ran
+   into its fill (WCAG 1.4.11). The ring takes the brand colour, the accent as text, since the
+   fill orange gives 2.50 : 1 on the light page. */
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -231,6 +238,17 @@ main[tabindex="-1"]:focus-visible {
   background-color: var(--primary-hover);
 }
 
+/* A quieter action takes the second accent as its text (D-89), and its stronger tone under the
+   pointer, where the dark hover step would hold the purple at 4.40 : 1; shadcn's ghost would
+   turn it to heading text there. */
+[data-slot="button"][data-variant="ghost"] {
+  color: var(--brand-secondary);
+}
+
+[data-slot="button"][data-variant="ghost"]:hover {
+  color: var(--brand-secondary-strong);
+}
+
 /* The confirm of an action that cannot be undone is the skill's danger action: the negative
    colour as text, on its soft fill under the pointer. */
 [data-slot="button"][data-variant="destructive"] {
@@ -246,6 +264,12 @@ main[tabindex="-1"]:focus-visible {
    press included. */
 [data-slot="radio-group-item"]:active {
   border-color: var(--ring);
+}
+
+/* A checked radio's dot is an indicator rather than a fill, so it takes the brand colour, which
+   keeps 3 : 1 on a light card, where the fill orange gives 2.73 : 1 (WCAG 1.4.11). */
+[data-slot="radio-group-item"] {
+  --primary: var(--brand);
 }
 
 /* A table's container scrolls sideways, which would clip the focus outline of its last row. */

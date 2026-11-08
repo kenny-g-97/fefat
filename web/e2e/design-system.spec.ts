@@ -1,9 +1,9 @@
 import { expect, test } from "./support/fixtures.ts"
 
-// The Contemporary skin of web/DESIGN.md (D-88), as the browser paints it on the settings page,
-// which holds every kind of control the shell has: Geist Mono for every text, one 12 px radius,
-// the hot pink on the primary action, and the skill's measures for the sidebar, its rows, the
-// page title, and the cards.
+// The Contemporary skin of web/DESIGN.md (D-88, D-89), as the browser paints it on the settings
+// page, which holds every kind of control the shell has: Geist Mono for every text, one 12 px
+// radius, the orange on the primary action, and the skill's measures for the sidebar, its rows,
+// the page title, and the cards; then the purple of a link to another page, on the home page.
 
 test("the shell wears the Contemporary skin and its measures", async ({
   loggedIn: page,
@@ -45,7 +45,7 @@ test("the shell wears the Contemporary skin and its measures", async ({
     sidebarWidth: "256px",
     rowHeight: "40px",
     rowRadius: "12px",
-    rowBorder: "rgb(61, 14, 31)",
+    rowBorder: "rgb(64, 31, 22)",
     rowTransition:
       "color, background-color, border-color, box-shadow, transform 0.15s",
     titleWeight: "600",
@@ -53,6 +53,11 @@ test("the shell wears the Contemporary skin and its measures", async ({
     cardPadding: "24px",
     fieldRadius: "12px",
     primaryRadius: "12px",
-    primaryFill: "rgb(244, 65, 116)",
+    primaryFill: "rgb(252, 115, 77)",
   })
+  await page.goto("/")
+  await expect(page.getByRole("link", { name: "All runs" })).toHaveCSS(
+    "color",
+    "rgb(168, 85, 247)"
+  )
 })
