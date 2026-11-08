@@ -22,7 +22,7 @@ export function IssuedToken({ issued }: Readonly<{ issued: IssuedApiToken }>) {
       data-testid="new-token"
       className="flex flex-col gap-3 rounded-xl border bg-muted p-4"
     >
-      <p>Copy the token of {issued.name} now: it is not shown again</p>
+      <p>Copy the token of {issued.name} now: it is not shown again.</p>
       <div className="flex items-center gap-2">
         <code data-testid="new-token-value" className="min-w-0 flex-1 truncate">
           {issued.token}

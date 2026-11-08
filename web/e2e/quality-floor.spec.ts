@@ -98,6 +98,37 @@ test("keyboard focus is visible on the first stops of the page", async ({
   expect(rings).toEqual(["ring", "ring", "ring"])
 })
 
+test("a skip link leads past the sidebar to the page", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+
+  await page.keyboard.press("Tab")
+  const skip = page.getByRole("link", { name: "Skip to content" })
+  await expect(skip).toBeFocused()
+  await expect(skip).toBeInViewport()
+  await page.keyboard.press("Enter")
+  await page.keyboard.press("Tab")
+
+  // The page's first control, the theme's checked radio, past the sidebar's ten stops.
+  await expect(page.getByRole("radio", { name: "Dark" })).toBeFocused()
+})
+
+test("in a short window the sidebar scrolls, so Log out is reached without scrolling the page", async ({
+  loggedIn: page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 460 })
+  await page.goto("/settings")
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+
+  const logOut = page.getByRole("button", { name: "Log out" })
+  await logOut.scrollIntoViewIfNeeded()
+
+  await expect(logOut).toBeInViewport()
+  expect(await page.evaluate(() => window.scrollY)).toBe(0)
+})
+
 test("reduced motion stops every transition", async ({ loggedIn: page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/")

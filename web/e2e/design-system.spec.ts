@@ -29,6 +29,8 @@ test("the shell wears the Contemporary skin and its measures", async ({
       sidebarWidth: style("aside").width,
       rowHeight: row.height,
       rowRadius: row.borderTopLeftRadius,
+      rowBorder: row.borderTopColor,
+      rowTransition: `${row.transitionProperty} ${row.transitionDuration}`,
       titleWeight: style("main h1").fontWeight,
       cardRadius: card.borderTopLeftRadius,
       cardPadding: card.paddingTop,
@@ -43,6 +45,9 @@ test("the shell wears the Contemporary skin and its measures", async ({
     sidebarWidth: "256px",
     rowHeight: "40px",
     rowRadius: "12px",
+    rowBorder: "rgb(61, 14, 31)",
+    rowTransition:
+      "color, background-color, border-color, box-shadow, transform 0.15s",
     titleWeight: "600",
     cardRadius: "12px",
     cardPadding: "24px",

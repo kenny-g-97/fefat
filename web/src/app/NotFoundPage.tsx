@@ -7,11 +7,11 @@ import { StandalonePage } from "./StandalonePage"
 export function NotFoundPage() {
   return (
     <StandalonePage>
-      <Page title="This page does not exist">
-        <p className="text-foreground-secondary">
-          Check the address, or go on from the home page
-        </p>
-        <Button asChild className="mt-6">
+      <Page
+        title="This page does not exist"
+        description="Check the address, or go on from the home page"
+      >
+        <Button asChild>
           <Link to="/">Go to the home page</Link>
         </Button>
       </Page>

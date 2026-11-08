@@ -32,6 +32,10 @@ test("each page of the sidebar opens with its title and its row marked", async (
     await expect(page).toHaveTitle(`${name} – FEFAT`)
     await expect(page.getByRole("heading", { level: 1, name })).toBeVisible()
     await expect(link).toHaveAttribute("aria-current", "page")
+    // The mark leads home too, so it is the current page on Home alone.
+    await expect(page.locator('a[aria-current="page"]')).toHaveCount(
+      path === "/" ? 2 : 1
+    )
     await screenshot(page, `page-${name.toLowerCase()}`, [
       page.getByTestId("data-folder"),
     ])

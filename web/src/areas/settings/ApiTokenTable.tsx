@@ -34,8 +34,8 @@ export function ApiTokenTable({
   return (
     <Table>
       <TableHeader>
-        <TableRow>
-          <TableHead className={HEAD}>Name</TableHead>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className={`${HEAD} pl-0`}>Name</TableHead>
           <TableHead className={`${HEAD} text-right`}>Created</TableHead>
           <TableHead className={`${HEAD} text-right`}>Last used</TableHead>
           <TableHead className="h-10 w-48">
@@ -58,8 +58,8 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
   const [revoking, setRevoking] = useState<Revoking>("not asked")
   const revocation = useTokenRevocation()
   return (
-    <TableRow className="h-10">
-      <TableCell className="px-3 py-0">
+    <TableRow className="h-10 hover:bg-muted">
+      <TableCell className="py-0 pr-3 pl-0">
         <IdentityChip>{token.name}</IdentityChip>
       </TableCell>
       <TableCell className="px-3 py-0 text-right text-foreground-secondary">

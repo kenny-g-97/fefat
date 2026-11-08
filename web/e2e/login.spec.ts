@@ -26,6 +26,8 @@ test("the app asks for the password before anything else", async ({ page }) => {
 })
 
 test("a wrong password is refused with what to do", async ({ page }) => {
+  // Reduced motion lets the focus ring settle at once, so that its colour is measured whole.
+  await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/login")
 
   await logIn(page, "not the password")
@@ -35,6 +37,14 @@ test("a wrong password is refused with what to do", async ({ page }) => {
   )
   await expect(page).toHaveURL((url) => url.pathname === "/login")
   await expect(page.getByLabel("Password")).toBeFocused()
+  // The refused field draws its focus in its border's negative colour, not in the accent.
+  const { border, ring } = await page
+    .getByLabel("Password")
+    .evaluate((field) => {
+      const style = getComputedStyle(field)
+      return { border: style.borderTopColor, ring: style.boxShadow }
+    })
+  expect(ring).toContain(border)
   await screenshot(page, "login-refused")
 })
 

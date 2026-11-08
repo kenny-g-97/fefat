@@ -39,8 +39,7 @@ const SETTINGS: Destination = {
   icon: Settings,
 }
 
-const ROW =
-  "flex h-10 items-center gap-3 rounded-xl border border-transparent px-3 font-medium"
+const ROW = "flex h-10 items-center gap-3 rounded-xl border px-3 font-medium"
 const ICON = "size-5 shrink-0"
 
 /** The shell's sidebar (web/DESIGN.md, Patterns): the mark, the areas, then Settings, Log
@@ -60,13 +59,13 @@ export function Sidebar() {
             <span className="text-base font-semibold">FEFAT</span>
           </Link>
         </div>
-        <nav aria-label="Main" className="flex flex-1 flex-col">
+        <nav aria-label="Main" className="flex flex-1 flex-col overflow-y-auto">
           <ul className="flex flex-col gap-1 px-3 py-4">
             {AREAS.map((area) => (
               <SidebarLink key={area.label} destination={area} />
             ))}
           </ul>
-          <ul className="mt-auto flex flex-col gap-1 border-t px-3 pt-4">
+          <ul className="mt-auto flex flex-col gap-1 border-t px-3 pt-4 pb-1">
             <SidebarLink destination={SETTINGS} />
             <li>
               <LogOutRow />
@@ -97,7 +96,7 @@ function SidebarLink({ destination }: Readonly<{ destination: Destination }>) {
           className:
             "border-brand-soft-border bg-brand-soft text-brand-soft-foreground",
         }}
-        inactiveProps={{ className: "hover:bg-accent" }}
+        inactiveProps={{ className: "border-transparent hover:bg-accent" }}
       >
         <Icon className={ICON} />
         {label}
@@ -125,7 +124,7 @@ function LogOutRow() {
       <button
         type="button"
         onClick={logOut}
-        className={`${ROW} w-full hover:bg-accent`}
+        className={`${ROW} w-full border-transparent hover:bg-accent`}
       >
         <LogOut className={ICON} />
         Log out

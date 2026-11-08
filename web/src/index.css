@@ -2,7 +2,6 @@
 @import "@fontsource/geist-mono/latin-400.css";
 @import "@fontsource/geist-mono/latin-500.css";
 @import "@fontsource/geist-mono/latin-600.css";
-@import "@fontsource/geist-mono/latin-700.css";
 
 /* The tokens of web/DESIGN.md, the Contemporary skill applied to FEFAT (D-88), under shadcn/ui's
    names; a test holds the two files equal. */
@@ -29,8 +28,8 @@
   --brand-soft-border: #f5c2d3;
   --brand-soft-foreground: #c8175a;
   --positive: #0a7a4c;
-  --negative: #cc2244;
-  --negative-soft: #fdeaed;
+  --negative: #c0392b;
+  --negative-soft: #fdecea;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06);
 
   --card-foreground: var(--foreground);
@@ -63,8 +62,8 @@
   --brand-soft-border: #3d0e1f;
   --brand-soft-foreground: #ffb0c7;
   --positive: #10b981;
-  --negative: #ff6677;
-  --negative-soft: #1a0508;
+  --negative: #ff6b4f;
+  --negative-soft: #1f0a07;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 }
 
@@ -77,7 +76,6 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -92,7 +90,6 @@
   --color-destructive: var(--destructive);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
-  --color-negative-soft: var(--negative-soft);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -130,6 +127,7 @@
   body {
     @apply bg-background font-sans text-sm text-foreground antialiased;
     font-variant-numeric: tabular-nums;
+    text-wrap-style: pretty;
   }
 
   /* The theme cross-fades only while the trader switches it, and never under reduced motion;
@@ -190,8 +188,12 @@ a:not([data-slot="button"]):active {
   --tw-ring-color: transparent;
 }
 
-/* A field rests on the control surface, 40 px tall beside a 40 px button, and shows its focus as
-   the skill's accent border with a 1 px ring of the accent, inside its own corners. */
+/* These data-slot rules beat a caller's utility classes, so a control that needs another size or
+   surface gets a rule here, keyed on a data attribute, never a class at its call site.
+
+   A field rests on the control surface, 40 px tall beside a 40 px button, and shows its focus as
+   the skill's accent border with a 1 px ring of the accent, inside its own corners; a refused
+   field keeps the negative colour for its ring, as for its border. */
 [data-slot="input"] {
   height: 2.5rem;
   padding-inline: 1rem;
@@ -201,6 +203,15 @@ a:not([data-slot="button"]):active {
 [data-slot="input"]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--ring);
+}
+
+[data-slot="input"][aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 1px var(--negative);
+}
+
+/* The skip link moves the focus to the page itself, which needs no outline of its own. */
+main[tabindex="-1"]:focus-visible {
+  outline: none;
 }
 
 [data-slot="button"][data-size="default"] {
