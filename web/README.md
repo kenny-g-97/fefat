@@ -10,3 +10,5 @@ just check      # oxlint, oxfmt --check, tsc, and the areas' import boundary, wi
 ```
 
 `src/` is laid out by product area (`docs/masterplan/08-code-design.md` §1.5): `app/` holds the router, its file routes, the login, and the shell; `areas/<area>/` the pages of one area, which import only `ui/`, `api/`, `charts/`, and `app/`, never another area; `ui/` the design system's primitives, the shadcn components among them; and `api/` the client, its CSRF header, and the query hooks. `src/app/routeTree.gen.ts` and `src/api/schema.d.ts` are generated, by the router's Vite plugin and by `just gen-api`, and committed.
+
+The harness serves the app on port 8766 and the dev proxy on 5174, beside `just dev`'s 8765 and 5173; when another program holds 8766, set `FEFAT_E2E_PORT` to a free port before `just e2e`.

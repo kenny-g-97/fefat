@@ -1,8 +1,14 @@
 import { defineConfig, devices } from "@playwright/test"
 import { E2E_PASSWORD } from "./e2e/support/password.ts"
 
-// Ports beside `just dev`'s 8765 and 5173, so that both can run at once.
-const SERVER_PORT = 8766
+// Ports beside `just dev`'s 8765 and 5173, so that both can run at once; FEFAT_E2E_PORT moves the
+// server when another program holds 8766.
+const SERVER_PORT = Number(process.env.FEFAT_E2E_PORT ?? "8766")
+if (!Number.isInteger(SERVER_PORT)) {
+  throw new Error(
+    `Expected FEFAT_E2E_PORT to be a port number, got ${process.env.FEFAT_E2E_PORT}.`
+  )
+}
 const DEV_SERVER_PORT = 5174
 const desktop = {
   ...devices["Desktop Chrome"],
