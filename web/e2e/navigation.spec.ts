@@ -29,7 +29,7 @@ test("each page of the sidebar opens with its title and its row marked", async (
     await link.click()
 
     await expect(page).toHaveURL(path)
-    await expect(page).toHaveTitle(`${name} – FEFAT`)
+    await expect(page).toHaveTitle(`${name} – FEAT`)
     await expect(page.getByRole("heading", { level: 1, name })).toBeVisible()
     await expect(link).toHaveAttribute("aria-current", "page")
     // The mark leads home too, so it is the current page on Home alone.
@@ -87,7 +87,9 @@ test("an unknown page says so and leads home", async ({ loggedIn: page }) => {
   ).toBeVisible()
   await expect(page.getByRole("main")).toHaveCount(1)
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0)
-  await expect(page.getByRole("main")).toContainText("FEFAT")
+  await expect(
+    page.getByRole("main").getByRole("img", { name: "FEAT" })
+  ).toBeVisible()
 })
 
 test("the sidebar shows the version the server reports", async ({
@@ -98,10 +100,10 @@ test("the sidebar shows the version the server reports", async ({
 
   await page.goto("/")
 
-  await expect(page.getByTestId("version")).toHaveText(`FEFAT ${version}`)
+  await expect(page.getByTestId("version")).toHaveText(`FEAT ${version}`)
 })
 
-test("the shell's own failure stands alone under the wordmark", async ({
+test("the shell's own failure stands alone under the logo", async ({
   loggedIn: page,
 }) => {
   await page.route("**/v1/me", (route) =>
@@ -120,7 +122,9 @@ test("the shell's own failure stands alone under the wordmark", async ({
   ).toBeVisible()
   await expect(page.getByRole("main")).toHaveCount(1)
   await expect(page.getByRole("navigation", { name: "Main" })).toHaveCount(0)
-  await expect(page.getByRole("main")).toContainText("FEFAT")
+  await expect(
+    page.getByRole("main").getByRole("img", { name: "FEAT" })
+  ).toBeVisible()
 })
 
 test("a failure shows what broke and how to go on", async ({

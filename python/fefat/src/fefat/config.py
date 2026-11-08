@@ -231,6 +231,4 @@ def load_settings(config_file: Path) -> Settings:
         text = config_file.read_text(encoding="utf-8-sig")
         return Settings.model_validate(tomllib.loads(text))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError, ValidationError) as error:
-        raise ValueError(
-            f"Expected {config_file} to hold FEFAT's settings, got: {error}"
-        ) from error
+        raise ValueError(f"Expected {config_file} to hold FEAT's settings, got: {error}") from error

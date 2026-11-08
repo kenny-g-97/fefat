@@ -16,7 +16,6 @@ import { isRefusal } from "@/api/problems"
 import { useLogout } from "@/api/session"
 import { versionsQuery } from "@/api/versions"
 import { IdentityChip } from "@/ui/identity-chip"
-import { Monogram } from "@/ui/monogram"
 
 type Destination = Readonly<{
   label: string
@@ -50,13 +49,8 @@ export function Sidebar() {
     <aside className="w-64 shrink-0 border-r bg-sidebar">
       <div className="sticky top-0 flex h-screen flex-col">
         <div className="flex h-18 shrink-0 items-center border-b px-4">
-          <Link
-            to="/"
-            aria-label="FEFAT, the home page"
-            className="flex items-center gap-3 rounded-xl"
-          >
-            <Monogram className="size-10" />
-            <span className="text-base font-semibold">FEFAT</span>
+          <Link to="/" aria-label="FEAT, the home page" className="rounded-xl">
+            <img src="/logo-full.svg" alt="" className="block h-10 w-auto" />
           </Link>
         </div>
         <nav aria-label="Main" className="flex flex-1 flex-col overflow-y-auto">
@@ -75,8 +69,8 @@ export function Sidebar() {
         <div className="px-6 pt-3 pb-4">
           <IdentityChip testId="version">
             {versions.data === undefined
-              ? "FEFAT"
-              : `FEFAT ${versions.data.fefat_app}`}
+              ? "FEAT"
+              : `FEAT ${versions.data.fefat_app}`}
           </IdentityChip>
         </div>
       </div>

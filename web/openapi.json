@@ -501,8 +501,8 @@
     }
   },
   "info": {
-    "description": "FEFAT's local server: its API, for the web app, notebooks, and scripts.",
-    "title": "FEFAT",
+    "description": "FEAT's local server: its API, for the web app, notebooks, and scripts.",
+    "title": "FEAT",
     "version": "0.0.1"
   },
   "openapi": "3.1.0",

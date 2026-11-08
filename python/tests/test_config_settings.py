@@ -60,7 +60,7 @@ def test_a_config_file_that_breaks_the_settings_is_refused_naming_the_file(
 ) -> None:
     config_file = tmp_path / "config.toml"
     config_file.write_text(content, encoding="utf-8")
-    expected = f"Expected {config_file} to hold FEFAT's settings, got: "
+    expected = f"Expected {config_file} to hold FEAT's settings, got: "
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         load_settings(config_file)
@@ -78,7 +78,7 @@ def test_a_config_file_in_another_encoding_is_refused_naming_the_file(tmp_path: 
     # Windows PowerShell 5.1's `>` writes UTF-16.
     config_file = tmp_path / "config.toml"
     config_file.write_bytes("port = 9001\n".encode("utf-16"))
-    expected = f"Expected {config_file} to hold FEFAT's settings, got: "
+    expected = f"Expected {config_file} to hold FEAT's settings, got: "
 
     with pytest.raises(ValueError, match=re.escape(expected)):
         load_settings(config_file)

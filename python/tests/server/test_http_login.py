@@ -187,7 +187,7 @@ def test_without_a_session_the_docs_answer_a_password_page_never_the_browsers_pr
     assert page.headers["content-security-policy"] == LOGIN_PAGE_POLICY
     assert page.headers["cache-control"] == "no-store"
     assert (document.status_code, document.headers["www-authenticate"]) == (401, "Bearer")
-    assert by_token.json()["info"]["title"] == "FEFAT"
+    assert by_token.json()["info"]["title"] == "FEAT"
 
 
 def test_a_login_as_the_page_makes_it_serves_the_docs_and_their_document(
@@ -201,7 +201,7 @@ def test_a_login_as_the_page_makes_it_serves_the_docs_and_their_document(
 
     assert login.status_code == 200
     assert "swagger-ui" in page.text
-    assert document.json()["info"]["title"] == "FEFAT"
+    assert document.json()["info"]["title"] == "FEAT"
     assert document.headers["cache-control"] == "no-store"
 
 

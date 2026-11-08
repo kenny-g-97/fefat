@@ -32,7 +32,7 @@ def save_instrument(data_dir: Path, instrument: Instrument) -> bool:
     specification is FEFAT's, and so is a second, different specification of a saved root."""
     if instrument.root in STATIC_TABLE.roots():
         raise ValueError(
-            f"Expected a new product, got {instrument.root}, an instrument FEFAT knows: name it "
+            f"Expected a new product, got {instrument.root}, an instrument FEAT knows: name it "
             "in the profile as `instrument: <root>` instead of giving its specification."
         )
     path = data_dir / INSTRUMENTS_FOLDER_NAME / f"{instrument.root}.json"

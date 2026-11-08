@@ -35,9 +35,9 @@ def build_api() -> FastAPI:
     """The API's routes and error handlers, without a container: enough for its OpenAPI
     document."""
     api = FefatApi(
-        title="FEFAT",
+        title="FEAT",
         version=fefat_app.__version__,
-        description="FEFAT's local server: its API, for the web app, notebooks, and scripts.",
+        description="FEAT's local server: its API, for the web app, notebooks, and scripts.",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

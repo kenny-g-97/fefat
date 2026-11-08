@@ -41,7 +41,7 @@ LOGIN_PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>Log in - FEFAT API</title>
+<title>Log in - FEAT API</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 22rem; margin: 6rem auto; padding: 0 1rem; }
   label, input, button { display: block; width: 100%; box-sizing: border-box; }
@@ -50,7 +50,7 @@ LOGIN_PAGE = """<!doctype html>
 </style>
 </head>
 <body>
-<h1>FEFAT API</h1>
+<h1>FEAT API</h1>
 <form id="login" method="post">
   <label for="password">Password</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
@@ -91,10 +91,10 @@ def docs_page(request: Request, container: ContainerDependency) -> HTMLResponse:
         return _for_this_browser_alone(HTMLResponse(LOGIN_PAGE), LOGIN_PAGE_CONTENT_SECURITY_POLICY)
     page = get_swagger_ui_html(
         openapi_url="/openapi.json",
-        title="FEFAT API",
+        title="FEAT API",
         swagger_js_url=f"{SWAGGER_UI_RELEASE}/swagger-ui-bundle.js",
         swagger_css_url=f"{SWAGGER_UI_RELEASE}/swagger-ui.css",
-        swagger_favicon_url="/favicon.ico",
+        swagger_favicon_url="/favicon.svg",
     )
     return _for_this_browser_alone(page, DOCS_CONTENT_SECURITY_POLICY)
 

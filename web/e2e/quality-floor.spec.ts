@@ -53,7 +53,7 @@ test("the login page neither scrolls sideways nor logs an error", async ({
 
   await page.goto("/login")
   await expect(
-    page.getByRole("heading", { level: 1, name: "FEFAT" })
+    page.getByRole("heading", { level: 1, name: "FEAT" })
   ).toBeVisible()
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth
@@ -209,7 +209,7 @@ test("the login page keeps its contrast in both themes", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/login")
   await expect(
-    page.getByRole("heading", { level: 1, name: "FEFAT" })
+    page.getByRole("heading", { level: 1, name: "FEAT" })
   ).toBeVisible()
 
   // A logout from the light theme leaves the login light until a reload.

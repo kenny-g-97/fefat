@@ -1,4 +1,4 @@
-# FEFAT web app
+# FEAT web app
 
 Vite, React, and TypeScript with Tailwind, shadcn/ui, TanStack Router and Query, and an `openapi-fetch` client over the types `just gen-api` generates, managed with pnpm from the repository root. Its design system is [DESIGN.md](DESIGN.md), which every change here builds from and extends.
 

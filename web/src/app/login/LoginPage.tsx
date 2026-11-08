@@ -7,7 +7,6 @@ import { useLogin } from "@/api/session"
 import { Button } from "@/ui/button"
 import { Field, FieldError, FieldLabel } from "@/ui/field"
 import { Input } from "@/ui/input"
-import { Monogram } from "@/ui/monogram"
 
 const loginForm = z.object({ password: z.string().min(1, "Type the password") })
 
@@ -34,11 +33,12 @@ export function LoginPage({ returnTo }: Readonly<{ returnTo: string }>) {
   return (
     // Anchored near the top rather than centred, so that a refusal grows the panel downward.
     <main className="flex min-h-screen justify-center px-6 pt-[30vh]">
-      <title>Log in – FEFAT</title>
+      <title>Log in – FEAT</title>
       <div className="h-fit w-full max-w-96 rounded-xl border bg-card p-6 shadow-raised">
-        <Monogram className="size-10" />
-        <h1 className="mt-4 text-base font-semibold">FEFAT</h1>
-        <p className="text-xs text-muted-foreground">
+        <h1>
+          <img src="/logo-full.svg" alt="FEAT" className="block h-12 w-auto" />
+        </h1>
+        <p className="mt-3 text-xs text-muted-foreground">
           feature engineering for algorithmic trading
         </p>
         <form onSubmit={submit} noValidate className="mt-6 flex flex-col gap-5">
@@ -65,7 +65,7 @@ export function LoginPage({ returnTo }: Readonly<{ returnTo: string }>) {
 
 function refusalOf(error: Error): string {
   if (isRefusal(error, 401)) {
-    return "That is not FEFAT's password. Type it again."
+    return "That is not FEAT's password. Type it again."
   }
   if (isRefusal(error, 429)) {
     return "Five attempts in a minute: wait a minute, then try again."
