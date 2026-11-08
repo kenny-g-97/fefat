@@ -1,6 +1,7 @@
-"""`web/DESIGN.md`, the web app's design system (step 4.3, D-28, D-77): unslop's direction in
-five lines, then the palette, the type, the layout, the principles, and the review of the plan
-against the generic defaults."""
+"""`web/DESIGN.md`, the web app's design system (step 4.3, D-28, D-77, D-88): unslop's direction
+in five lines, then the palette, the type, the layout, the principles, and the review of the plan
+against the generic defaults; and the Contemporary skill's one family and one radius in the
+stylesheet."""
 
 import re
 from pathlib import Path
@@ -60,3 +61,19 @@ def test_the_designs_tokens_are_the_stylesheets_colours_in_both_themes() -> None
     assert (set(dark), set(light)) == (documented, documented), "a colour without a row"
     for token, dark_hex, light_hex in tokens:
         assert (dark[token], light[token]) == (dark_hex, light_hex), token
+
+
+def test_every_text_is_set_in_geist_mono() -> None:
+    stylesheet = STYLESHEET.read_text(encoding="utf-8")
+    families = dict(re.findall(r"^\s*(--font-(?:sans|mono)): ([^;]+);", stylesheet, re.MULTILINE))
+
+    assert set(families) == {"--font-sans", "--font-mono"}, families
+    assert all(family.startswith('"Geist Mono"') for family in families.values()), families
+
+
+def test_every_corner_takes_the_one_radius_of_the_contemporary_skill() -> None:
+    stylesheet = STYLESHEET.read_text(encoding="utf-8")
+    radii = dict(re.findall(r"^\s*(--radius-[a-z0-9]+): ([^;]+);", stylesheet, re.MULTILINE))
+
+    assert len(radii) >= 4, radii
+    assert set(radii.values()) == {"0.75rem"}, radii

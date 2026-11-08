@@ -1,66 +1,72 @@
 @import "tailwindcss";
-@import "@fontsource/ibm-plex-sans/latin-400.css";
-@import "@fontsource/ibm-plex-sans/latin-500.css";
-@import "@fontsource/ibm-plex-sans/latin-600.css";
-@import "@fontsource/ibm-plex-mono/latin-400.css";
-@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/geist-mono/latin-400.css";
+@import "@fontsource/geist-mono/latin-500.css";
+@import "@fontsource/geist-mono/latin-600.css";
+@import "@fontsource/geist-mono/latin-700.css";
 
-/* The tokens of web/DESIGN.md, under shadcn/ui's names; a test holds the two files equal. */
+/* The tokens of web/DESIGN.md, the Contemporary skill applied to FEFAT (D-88), under shadcn/ui's
+   names; a test holds the two files equal. */
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
   color-scheme: light;
-  --sidebar: #eceff4;
-  --background: #f5f7fa;
+  --background: #f5f5f5;
   --card: #ffffff;
-  --muted: #eceff4;
-  --sidebar-accent: #ffffff;
-  --foreground: #111827;
-  --foreground-secondary: #4b5565;
-  --muted-foreground: #5f6878;
-  --primary: #1a5fd0;
-  --primary-foreground: #ffffff;
-  --positive: #14773a;
-  --negative: #c42121;
-  --border: rgb(17 24 39 / 0.08);
-  --input: rgb(17 24 39 / 0.48);
-  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.05);
+  --sidebar: #ececec;
+  --muted: #ececec;
+  --accent: #e0e0e0;
+  --border: #e0e0e0;
+  --input: #868686;
+  --foreground: #121212;
+  --foreground-secondary: #555555;
+  --muted-foreground: #6b6b6b;
+  --primary: #f44174;
+  --primary-hover: #ff5a89;
+  --primary-foreground: #050505;
+  --brand: #c8175a;
+  --brand-soft: #fde8ef;
+  --brand-soft-foreground: #c8175a;
+  --positive: #0a7a4c;
+  --negative: #cc2244;
+  --negative-soft: #fdeaed;
+  --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06);
 
   --card-foreground: var(--foreground);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
   --secondary: var(--muted);
   --secondary-foreground: var(--foreground);
-  --accent: var(--muted);
   --accent-foreground: var(--foreground);
   --destructive: var(--negative);
   --ring: var(--primary);
-  --sidebar-foreground: var(--foreground-secondary);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-accent: var(--accent);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--ring);
 }
 
 .dark {
   color-scheme: dark;
-  --sidebar: #07080d;
-  --background: #0b0d14;
-  --card: #11141c;
-  --muted: #1a1e28;
-  --sidebar-accent: #1a1e28;
-  --foreground: #eef0f5;
-  --foreground-secondary: #a3a9b8;
-  --muted-foreground: #808898;
-  --primary: #5aa2ff;
-  --primary-foreground: #0b0d14;
-  --positive: #4cc38a;
-  --negative: #ef5a5f;
-  --border: rgb(238 240 245 / 0.08);
-  --input: rgb(238 240 245 / 0.38);
-  --shadow-raised: none;
+  --background: #050505;
+  --card: #0a0a0a;
+  --sidebar: #111111;
+  --muted: #111111;
+  --accent: #1a1a1a;
+  --border: #1a1a1a;
+  --input: #666666;
+  --foreground: #ededed;
+  --foreground-secondary: #888888;
+  --muted-foreground: #7c7c7c;
+  --primary: #f44174;
+  --primary-hover: #ff5a89;
+  --primary-foreground: #050505;
+  --brand: #f44174;
+  --brand-soft: #1a0810;
+  --brand-soft-foreground: #ffb0c7;
+  --positive: #10b981;
+  --negative: #ff6677;
+  --negative-soft: #1a0508;
+  --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
 }
 
 @theme inline {
@@ -72,6 +78,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -79,37 +86,41 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-foreground: var(--brand-soft-foreground);
   --color-destructive: var(--destructive);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --shadow-raised: var(--shadow-raised);
 }
 
+/* The skill's one family, one radius, and type scale; Tailwind's own 12, 14, 16, and 24 px steps
+   are the skill's, and its default transition, 150 ms on cubic-bezier(0.4, 0, 0.2, 1), is the
+   skill's too. */
 @theme {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Geist Mono", ui-monospace, monospace;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --text-title: clamp(1.625rem, 3vw, 2.25rem);
+  --text-title--line-height: 1.2;
+  --text-title--letter-spacing: -0.02em;
+  --text-title--font-weight: 600;
   --text-caption: 0.8125rem;
   --text-caption--line-height: 1.25rem;
-  --text-figure: 1.75rem;
-  --text-figure--line-height: 2rem;
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.625rem;
+  --radius-xs: 0.75rem;
+  --radius-sm: 0.75rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 0.75rem;
   --radius-xl: 0.75rem;
-  --ease-fefat: cubic-bezier(0.22, 1, 0.36, 1);
-  --default-transition-duration: 150ms;
-  --default-transition-timing-function: var(--ease-fefat);
+  --radius-2xl: 0.75rem;
 }
 
 @layer base {
@@ -132,10 +143,10 @@
     html.theme-changing,
     html.theme-changing * {
       transition:
-        background-color 200ms var(--ease-fefat),
-        border-color 200ms var(--ease-fefat),
-        color 200ms var(--ease-fefat),
-        fill 200ms var(--ease-fefat) !important;
+        background-color 200ms var(--ease-in-out),
+        border-color 200ms var(--ease-in-out),
+        color 200ms var(--ease-in-out),
+        fill 200ms var(--ease-in-out) !important;
     }
   }
 
@@ -161,7 +172,7 @@
   transition-property:
     color, background-color, border-color, box-shadow, transform;
   transition-duration: 150ms;
-  transition-timing-function: var(--ease-fefat);
+  transition-timing-function: var(--ease-in-out);
 }
 
 :is(a, button):active:not(:disabled) {
@@ -172,20 +183,49 @@ a:not([data-slot="button"]):active {
   color: var(--foreground);
 }
 
-/* A field rests on the active surface, as DESIGN.md's tokens say: shadcn fills a dark one with
-   --input at 30 %, which the field borders' 3 : 1 lifted until muted placeholder text fell to
-   4.2 : 1 (WCAG 1.4.3). */
+/* Focus is the skill's 2 px outline in the accent, 2 px outside every control: its 4 px rings in
+   #3d0e1f and #111 vanish on the page (1.24 : 1), and a ring that touched a pink button ran into
+   its fill (WCAG 1.4.11). */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-slot="button"]:focus-visible {
+  --tw-ring-color: transparent;
+}
+
+/* A field rests on the control surface, 40 px tall beside a 40 px button, and shows its focus as
+   the skill's accent border with a 1 px ring of the accent, inside its own corners. */
 [data-slot="input"] {
+  height: 2.5rem;
+  padding-inline: 1rem;
   background-color: var(--muted);
 }
 
-/* A button has no border to carry its focus, so it takes a 2 px outline in the accent, 2 px
-   outside it: shadcn's ring at half strength gave 2.7 : 1 on dark and 2.2 : 1 on light, and at
-   full strength it ran into a Cobalt button's own fill (WCAG 1.4.11). */
-[data-slot="button"]:focus-visible {
-  --tw-ring-color: transparent;
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+[data-slot="input"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
+}
+
+[data-slot="button"][data-size="default"] {
+  height: 2.5rem;
+}
+
+/* The primary action lightens on hover, as the skill's does, rather than fading. */
+[data-slot="button"][data-variant="default"]:hover {
+  background-color: var(--primary-hover);
+}
+
+/* The confirm of an action that cannot be undone is the skill's danger action: the negative
+   colour as text, on its soft fill under the pointer. */
+[data-slot="button"][data-variant="destructive"] {
+  background-color: transparent;
+  color: var(--negative);
+}
+
+[data-slot="button"][data-variant="destructive"]:hover {
+  background-color: var(--negative-soft);
 }
 
 /* A 16 px radio shows no 2 % press, so its border takes the accent while pressed, its label's
@@ -199,10 +239,11 @@ a:not([data-slot="button"]):active {
   padding-bottom: 0.25rem;
 }
 
-/* A contrast theme of Windows forces colours and drops box-shadows, the focus rings among
-   them, so focus takes an outline there. */
+/* A contrast theme of Windows forces colours and drops box-shadows, a field's focus ring among
+   them, so every focus takes an outline in the system's highlight there. */
 @media (forced-colors: active) {
-  :focus-visible {
+  :focus-visible,
+  [data-slot="input"]:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
