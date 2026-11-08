@@ -31,24 +31,24 @@ export function HomePage() {
           className="col-span-2"
           action={<TextLink to="/runs">All runs</TextLink>}
         >
-          <CardSlot>
+          <PanelSlot>
             Your latest backtests will appear here with their robustness verdict
-          </CardSlot>
+          </PanelSlot>
         </Panel>
         <Panel title="Running jobs">
-          <CardSlot>
+          <PanelSlot>
             Imports, backtests, and studies will show their progress here while
             they run
-          </CardSlot>
+          </PanelSlot>
         </Panel>
         <Panel
           title="Feature library"
           className="col-span-2"
           action={<TextLink to="/lab">All features</TextLink>}
         >
-          <CardSlot>
+          <PanelSlot>
             Saved features will appear here with their versions
-          </CardSlot>
+          </PanelSlot>
         </Panel>
         <Panel title="Start">
           <ul className="-mx-2 flex flex-col gap-1">
@@ -86,7 +86,7 @@ function TextLink({
   )
 }
 
-function CardSlot({ children }: Readonly<{ children: string }>) {
+function PanelSlot({ children }: Readonly<{ children: string }>) {
   return (
     <p className="flex min-h-24 items-center text-foreground-secondary">
       {children}

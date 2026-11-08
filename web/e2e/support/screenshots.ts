@@ -22,6 +22,6 @@ export async function screenshot(
     fullPage: true,
     animations: "disabled",
     mask: [...masked],
-    maskColor: "#5f6878",
+    maskColor: "#666666",
   })
 }
