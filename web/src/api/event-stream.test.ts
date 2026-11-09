@@ -91,21 +91,6 @@ describe("followEventStream", () => {
     ])
   })
 
-  it("resumes from the event id it was given", async () => {
-    const server = serverOf([streamOf([progress(8)], "closes")])
-    const stopped = new AbortController()
-
-    await followEventStream({
-      url: STREAM,
-      lastEventId: "7",
-      signal: stopped.signal,
-      fetchStream: server.fetchStream,
-      onEvent: () => stopped.abort(),
-    })
-
-    expect(server.headers[0].get("Last-Event-ID")).toBe("7")
-  })
-
   it("skips comments, joins data lines, and reads line breaks split across reads", async () => {
     const server = serverOf([
       streamOf(

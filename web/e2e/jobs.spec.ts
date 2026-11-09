@@ -1,3 +1,4 @@
+import type { Request } from "@playwright/test"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { cancelActiveJobs, progressOf } from "./support/jobs.ts"
@@ -88,6 +89,16 @@ test("a demo job's progress shows live, survives a reload, and stops on Cancel",
     }
   })
   page.on("pageerror", (error) => errors.push(error.message))
+  // A job's stream is open only while the job is active, or the browser's six connections to
+  // the server would run out after a few jobs: none is left once the job is cancelled.
+  const streams = new Set<Request>()
+  page.on("request", (request) => {
+    if (request.url().includes("/v1/streams/")) {
+      streams.add(request)
+    }
+  })
+  page.on("requestfinished", (request) => streams.delete(request))
+  page.on("requestfailed", (request) => streams.delete(request))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const indicator = page.getByTestId("jobs-indicator")
   const drawer = page.getByRole("dialog", { name: "Jobs" })
@@ -150,15 +161,16 @@ test("a demo job's progress shows live, survives a reload, and stops on Cancel",
     page.getByRole("heading", { level: 1, name: "Home" })
   ).toBeVisible()
   await indicator.click()
-  expect(await progressOf(row.getByRole("progressbar"))).toBeGreaterThanOrEqual(
-    before
-  )
+  const resumed = await progressOf(row.getByRole("progressbar"))
+  expect(resumed).toBeGreaterThanOrEqual(before)
+  // And it moves on, through the stream the reload opened anew.
   await expect
     .poll(() => progressOf(row.getByRole("progressbar")), { timeout: 10_000 })
-    .toBeGreaterThan(before)
+    .toBeGreaterThan(resumed)
 
   await row.getByTestId("job-cancel").click()
   await expect(row).toContainText("Cancelled", { timeout: 15_000 })
+  await expect.poll(() => streams.size).toBe(0)
   await expect(row.getByRole("progressbar")).toHaveCount(0)
   await expect(indicator).toHaveAccessibleName("Jobs")
   await expect(card.getByText("No jobs running.")).toBeVisible()

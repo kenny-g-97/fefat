@@ -10,7 +10,6 @@ type Following = {
   readonly url: string
   readonly signal: AbortSignal
   readonly onEvent: (event: StreamedEvent) => void
-  readonly lastEventId?: string
   readonly fetchStream?: typeof fetch
 }
 
@@ -34,10 +33,9 @@ export async function followEventStream({
   url,
   signal,
   onEvent,
-  lastEventId,
   fetchStream = fetch,
 }: Following): Promise<void> {
-  let lastId = lastEventId
+  let lastId: string | undefined
   let pause = FIRST_PAUSE_MS
   while (!signal.aborted) {
     try {

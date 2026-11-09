@@ -10,11 +10,12 @@ type PercentBarProps = Readonly<{
 export function PercentBar({ value, label }: PercentBarProps) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
-      {/* shadcn's Progress keeps `value` for its fill, so the bar's value is given to Radix's root
-          here, which screen readers and the specs read. */}
+      {/* shadcn's Progress keeps `value` for its fill, so the bar's value and its text are given
+          to Radix's root here, which screen readers and the specs read. */}
       <Progress
         value={value}
         aria-valuenow={value}
+        aria-valuetext={`${Math.round(value)}%`}
         aria-label={label}
         className="flex-1"
       />
