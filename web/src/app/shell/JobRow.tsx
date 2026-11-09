@@ -21,8 +21,8 @@ const STATUS_TONES: Readonly<Record<Job["status"], string>> = {
   timed_out: "border-transparent bg-negative-soft text-negative",
 }
 
-/** A job in the jobs drawer (web/DESIGN.md, Patterns): its kind and status, its last message,
- * then its bar and Cancel while it is queued or running, or when it ended and why. */
+/** A job in the jobs drawer (web/DESIGN.md, Patterns): its kind and status, then its bar and
+ * Cancel while it is queued or running, or when it ended and why, then its last message. */
 export function JobRow({ job }: Readonly<{ job: Job }>) {
   return (
     <li
@@ -35,10 +35,10 @@ export function JobRow({ job }: Readonly<{ job: Job }>) {
         </span>
         <StatusBadge job={job} />
       </div>
+      {isActive(job) ? <ActiveJob job={job} /> : <EndedJob job={job} />}
       {job.message !== null && (
         <p className="text-xs text-muted-foreground">{job.message}</p>
       )}
-      {isActive(job) ? <ActiveJob job={job} /> : <EndedJob job={job} />}
     </li>
   )
 }

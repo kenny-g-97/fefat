@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 import { Page } from "@/ui/page"
 import { Panel } from "@/ui/panel"
+import { RunningJobsWidget } from "./RunningJobsWidget"
 
 type Start = Readonly<{ label: string; to: LinkProps["to"]; icon: LucideIcon }>
 
@@ -21,7 +22,8 @@ const STARTS: readonly Start[] = [
 ]
 
 /** The page the app opens on (the design brief's home): a card for each kind of work, each
- * leading to its page, a placeholder until the steps that fill them (`BACKLOG.md`). */
+ * leading to its page, a placeholder until the steps that fill them (`BACKLOG.md`); the running
+ * jobs are live since step 4.4. */
 export function HomePage() {
   return (
     <Page title="Home">
@@ -35,12 +37,7 @@ export function HomePage() {
             Your latest backtests will appear here with their robustness verdict
           </PanelSlot>
         </Panel>
-        <Panel title="Running jobs">
-          <PanelSlot>
-            Imports, backtests, and studies will show their progress here while
-            they run
-          </PanelSlot>
-        </Panel>
+        <RunningJobsWidget />
         <Panel
           title="Feature library"
           className="col-span-2"
