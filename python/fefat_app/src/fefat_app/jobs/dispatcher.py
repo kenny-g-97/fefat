@@ -45,6 +45,7 @@ class LocalDispatcher:
         self._reaper: threading.Thread | None = None
 
     def start(self) -> None:
+        self._stopped.clear()
         self._reaper = threading.Thread(
             target=self._reap_until_closed, name="jobs' reaper", daemon=True
         )

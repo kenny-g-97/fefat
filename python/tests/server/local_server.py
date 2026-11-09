@@ -1,6 +1,7 @@
 """What the local server's tests share beside their fixtures (step 4.2): the password they set,
 when their clock starts, a clock that stands still until a test moves it, the bytes the database
-keeps on disk, and the steps of a login through the API."""
+keeps on disk, the steps of a login through the API, and a dispatcher that runs nothing (step
+4.4)."""
 
 import base64
 import os
@@ -33,6 +34,22 @@ class SettableClock:
 
     def advance(self, by: timedelta) -> None:
         self.now = self.now + by
+
+
+class RecordingDispatcher:
+    """A dispatcher that runs nothing and keeps what it was asked, in order (step 4.4)."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def start(self) -> None:
+        self.calls.append("start")
+
+    def submit(self, job_id: str) -> None:
+        self.calls.append(f"submit {job_id}")
+
+    def close(self) -> None:
+        self.calls.append("close")
 
 
 def database_bytes() -> bytes:

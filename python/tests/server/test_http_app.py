@@ -4,6 +4,7 @@ every response and in the server's log, every error as problem+json, and a host 
 loopback refused."""
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import fefat_engine
@@ -15,7 +16,7 @@ import fefat
 import fefat_app
 from fefat_app.container import Container
 from fefat_app.http.app import create_app
-from local_server import LOOPBACK, logged_in
+from local_server import LOOPBACK, RecordingDispatcher, logged_in
 from memory_keyring import MemoryKeyring
 
 CONTENT_SECURITY_POLICY = "default-src 'self'; img-src 'self' data: blob:"
@@ -170,3 +171,18 @@ def test_a_websocket_of_another_host_is_closed_before_it_opens(container: Contai
         pass
 
     assert closed.value.code == POLICY_VIOLATION
+
+
+def test_the_server_starts_the_jobs_dispatcher_and_closes_it_as_it_stops(
+    container: Container,
+) -> None:
+    # Step 4.4: the jobs' reaper runs while the server does, and the pool's workers end with it.
+    dispatcher = RecordingDispatcher()
+    app = create_app(replace(container, dispatcher=dispatcher), built_web_app=None)
+
+    with TestClient(app, base_url=LOOPBACK) as client:
+        client.get("/v1/healthz")
+        started = list(dispatcher.calls)
+
+    assert started == ["start"]
+    assert dispatcher.calls == ["start", "close"]

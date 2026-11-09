@@ -21,7 +21,10 @@ from fefat_app.database.preferences import PreferenceRows
 from fefat_app.database.schema import opened_database, upgrade_schema
 from fefat_app.http.app import create_app
 from fefat_app.http.server_log import configure_server_log
+from fefat_app.jobs.dispatcher import LocalDispatcher
+from fefat_app.jobs.worker import JobTimings
 from fefat_app.services.api_tokens import ApiTokenIssuer
+from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 from local_server import LOOPBACK, STARTED_AT, SettableClock
 from memory_keyring import MemoryKeyring
@@ -52,19 +55,32 @@ def job_records(engine: Engine) -> JobTables:
 
 
 @pytest.fixture
-def container(engine: Engine, clock: SettableClock, keyring_backend: MemoryKeyring) -> Container:
+def container(
+    engine: Engine, clock: SettableClock, keyring_backend: MemoryKeyring, job_records: JobTables
+) -> Iterator[Container]:
     """The server's container as `build_container` wires it, but for the clock, keyring, and
-    Argon2's cost."""
+    Argon2's cost, and a pool of one worker whose reaper waits an hour, so that it never takes
+    the jobs a test makes in the records, nor ends a worker by the test's clock; its workers end
+    with the test."""
     records = AccessTables(engine)
     cheap_hasher = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
-    return Container(
-        settings=Settings(),
-        paths=resolve_paths(os.environ),
-        credentials=KeyringCredentialStore(keyring_backend),
-        logins=Logins(records, cheap_hasher, LoginAttempts(), clock),
-        api_tokens=ApiTokenIssuer(records, clock),
-        preferences=PreferenceRows(engine),
+    paths = resolve_paths(os.environ)
+    dispatcher = LocalDispatcher(
+        job_records, paths.database_file, clock, JobTimings(reaper_period_seconds=3600), 1
     )
+    try:
+        yield Container(
+            settings=Settings(),
+            paths=paths,
+            credentials=KeyringCredentialStore(keyring_backend),
+            logins=Logins(records, cheap_hasher, LoginAttempts(), clock),
+            api_tokens=ApiTokenIssuer(records, clock),
+            preferences=PreferenceRows(engine),
+            jobs=Jobs(job_records, dispatcher, clock),
+            dispatcher=dispatcher,
+        )
+    finally:
+        dispatcher.close()
 
 
 @pytest.fixture
