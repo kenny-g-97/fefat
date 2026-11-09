@@ -29,6 +29,7 @@
   --brand-soft-foreground: #b4380f;
   --brand-secondary: #7e22ce;
   --positive: #0a7a4c;
+  --positive-soft: #e6f5ec;
   --negative: #c81e4a;
   --negative-soft: #fae9ed;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.06);
@@ -64,6 +65,7 @@
   --brand-soft-foreground: #fab499;
   --brand-secondary: #a855f7;
   --positive: #10b981;
+  --positive-soft: #061a14;
   --negative: #ff4d6d;
   --negative-soft: #1e0c0f;
   --shadow-raised: 0 1px 2px 0 rgb(0 0 0 / 0.45);
@@ -92,6 +94,7 @@
   --color-brand-secondary: var(--brand-secondary);
   --color-destructive: var(--destructive);
   --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
   --color-negative: var(--negative);
   --color-border: var(--border);
   --color-input: var(--input);
@@ -263,6 +266,48 @@ main[tabindex="-1"]:focus-visible {
    keeps 3 : 1 on a light card, where the fill orange gives 2.73 : 1 (WCAG 1.4.11). */
 [data-slot="radio-group-item"] {
   --primary: var(--brand);
+}
+
+/* A job's progress is the skill's 8 px bar: its track one step above the panel it sits on,
+   where the skill's own vanished, and its fill in the brand colour, an indicator that keeps
+   3 : 1 on its track in the light theme, where the fill orange would not (D-89). The fill moves
+   on transform alone, never on width, and its end takes the track's round. */
+[data-slot="progress"] {
+  background-color: var(--accent);
+}
+
+[data-slot="progress-indicator"] {
+  background-color: var(--brand);
+  border-radius: inherit;
+  transition-property: transform;
+}
+
+/* A drawer is the skill's panel: the control surface with its middle shadow, sliding in from
+   the edge it opens at in 150 ms, as feedback to the click that opened it, and out the same
+   way; reduced motion stops the slide, which still ends at once. */
+[data-slot="sheet-content"] {
+  background-color: var(--muted);
+  box-shadow: var(--shadow-md);
+}
+
+[data-slot="sheet-content"][data-state="open"] {
+  animation: sheet-in 150ms var(--ease-in-out);
+}
+
+[data-slot="sheet-content"][data-state="closed"] {
+  animation: sheet-out 150ms var(--ease-in-out);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes sheet-out {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 /* A table's container scrolls sideways, which would clip the focus outline of its last row. */

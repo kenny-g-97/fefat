@@ -45,7 +45,8 @@ The tokens, as `web/src/index.css` defines them under shadcn's names, so that it
 | The active item's border | `--brand-soft-border` | `#401f16` | `#fed5ca` | |
 | The active item's label and icon | `--brand-soft-foreground` | `#fab499` | `#b4380f` | 10.76 / 5.42 |
 | Second accent: a quieter action, a link to another page | `--brand-secondary` | `#a855f7` | `#7e22ce` | 4.77 / 5.91 |
-| Positive sign | `--positive` | `#10b981` | `#0a7a4c` | 7.44 / 4.56 |
+| Positive sign | `--positive` | `#10b981` | `#0a7a4c` | 7.10 / 4.56 |
+| A succeeded job's badge, under the positive sign | `--positive-soft` | `#061a14` | `#e6f5ec` | |
 | Negative sign, errors | `--negative` | `#ff4d6d` | `#c81e4a` | 5.86 / 4.75 |
 | The danger action's fill under the pointer | `--negative-soft` | `#1e0c0f` | `#fae9ed` | |
 
