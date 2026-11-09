@@ -21,13 +21,16 @@ from fefat_app.database.job_records import JobTables
 from fefat_app.database.schema import opened_database
 from fefat_app.jobs.demo import run_demo
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
-from fefat_app.ports import Job, JobKind, JobRecords, JobStatus
+from fefat_app.ports import Job, JobEnd, JobKind, JobRecords, JobStatus
 
 type JobWork = Callable[[Mapping[str, Any], JobProgress], dict[str, Any]]
 """A kind's work: it takes the job's payload and reports through its progress; its result."""
 
 WORK_BY_KIND: Mapping[JobKind, JobWork] = {JobKind.DEMO: run_demo}
 """The work of each kind a worker runs; the steps of later phases add theirs."""
+END_TRIES = 12
+"""How many times a worker writes its job's end while a writer holds the database past its busy
+timeout of five seconds: a minute, while the heartbeat keeps the lease."""
 
 
 @dataclass(frozen=True)
@@ -57,17 +60,32 @@ def run_job(job_id: str, database_file: Path, timings: JobTimings) -> None:
 
 
 def _run(records: JobRecords, job: Job, worker_pid: int) -> None:
-    """Run `job`'s work and end the job as the work ended."""
+    """Run `job`'s work and end the job as the work ended, trying the end again while a writer
+    holds the database past its busy timeout, so that a job whose work ended never stays
+    running until its lease runs out."""
+    end, result, error = _outcome(records, job, worker_pid)
+    for attempt in range(1, END_TRIES + 1):
+        try:
+            records.finish(job.id, worker_pid, end, datetime.now(UTC), result=result, error=error)
+            return
+        except OperationalError:
+            if attempt == END_TRIES:
+                raise
+
+
+def _outcome(
+    records: JobRecords, job: Job, worker_pid: int
+) -> tuple[JobEnd, dict[str, Any] | None, str | None]:
+    """How `job`'s work ended: its end, with its result where it succeeded, or its reason where
+    it failed."""
     try:
         work = _work_of(job.kind)
         result = work(job.payload, JobProgress(records, job.id, worker_pid))
     except JobCancelledError:
-        records.finish(job.id, worker_pid, JobStatus.CANCELLED, datetime.now(UTC))
+        return JobStatus.CANCELLED, None, None
     except Exception as failure:
-        reason = f"{type(failure).__name__}: {failure}"
-        records.finish(job.id, worker_pid, JobStatus.FAILED, datetime.now(UTC), error=reason)
-    else:
-        records.finish(job.id, worker_pid, JobStatus.SUCCEEDED, datetime.now(UTC), result=result)
+        return JobStatus.FAILED, None, f"{type(failure).__name__}: {failure}"
+    return JobStatus.SUCCEEDED, result, None
 
 
 def _work_of(kind: JobKind) -> JobWork:

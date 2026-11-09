@@ -5,6 +5,8 @@ and stops the work where the job was asked to stop, or where its worker no longe
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy.exc import OperationalError
+
 from fefat_app.ports import JobRecords
 
 
@@ -22,10 +24,15 @@ class JobProgress:
 
     def advance(self, percent: float, message: str, **details: Any) -> None:
         """Report `percent` of the work done, with `message` and any `details` of its kind;
-        `JobCancelledError` where the work must stop."""
+        `JobCancelledError` where the work must stop. A report that a writer holding the database
+        past its busy timeout refused is skipped, the next one reporting again and checking for
+        a request to stop."""
         if not 0 <= percent <= 100:
             raise ValueError(f"Expected a percent from 0 to 100, got {percent}.")
-        job = self.records.advance(self.job_id, self.worker_pid, percent, message, details)
+        try:
+            job = self.records.advance(self.job_id, self.worker_pid, percent, message, details)
+        except OperationalError:
+            return
         if job is None:
             raise JobCancelledError(
                 f"The job {self.job_id} is no longer held by the worker {self.worker_pid}."

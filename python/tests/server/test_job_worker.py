@@ -7,9 +7,10 @@ import os
 import sqlite3
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy.exc import OperationalError
@@ -18,7 +19,7 @@ from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
 from fefat_app.jobs.worker import JobTimings, run_job
-from fefat_app.ports import Job, JobKind, JobStatus, job_stream
+from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
 from local_server import STARTED_AT
 
 DEADLINE_SECONDS = 30
@@ -166,3 +167,65 @@ def test_the_lease_outlasts_a_renewal_the_busy_database_refused(
     assert ended.started_at is not None
     assert ended.lease_expires_at is not None
     assert ended.lease_expires_at > ended.started_at + timedelta(seconds=1.5)
+
+
+def test_a_report_the_busy_database_refused_is_skipped_and_the_work_goes_on(
+    job_records: JobTables, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The next report says how far the work came, and checks for a request to stop again.
+    advance = JobTables.advance
+    refusals = [OperationalError("advance", {}, sqlite3.OperationalError("database is locked"))]
+
+    def busy_once(
+        records: JobTables,
+        job_id: str,
+        worker_pid: int,
+        percent: float,
+        message: str,
+        details: Mapping[str, Any],
+    ) -> Job | None:
+        if refusals:
+            raise refusals.pop()
+        return advance(records, job_id, worker_pid, percent, message, details)
+
+    monkeypatch.setattr(JobTables, "advance", busy_once)
+    job = a_demo(job_records, {"seconds": 2})
+
+    ended = ran(job_records, job)
+
+    assert refusals == []
+    assert (ended.status, ended.progress, ended.result) == (
+        JobStatus.SUCCEEDED,
+        100.0,
+        {"counted": 2},
+    )
+
+
+def test_an_end_the_busy_database_refused_is_tried_again(
+    job_records: JobTables, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A job whose end was never written would run on as running until its lease ran out.
+    finish = JobTables.finish
+    refusals = [OperationalError("finish", {}, sqlite3.OperationalError("database is locked"))]
+
+    def busy_once(
+        records: JobTables,
+        job_id: str,
+        worker_pid: int,
+        end: JobEnd,
+        now: datetime,
+        *,
+        result: Mapping[str, Any] | None = None,
+        error: str | None = None,
+    ) -> Job | None:
+        if refusals:
+            raise refusals.pop()
+        return finish(records, job_id, worker_pid, end, now, result=result, error=error)
+
+    monkeypatch.setattr(JobTables, "finish", busy_once)
+    job = a_demo(job_records, {"seconds": 1})
+
+    ended = ran(job_records, job)
+
+    assert refusals == []
+    assert (ended.status, ended.result) == (JobStatus.SUCCEEDED, {"counted": 1})
