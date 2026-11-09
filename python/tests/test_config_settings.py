@@ -5,23 +5,34 @@ import os
 import re
 from pathlib import Path
 
+import psutil
 import pytest
 
 from fefat.config import Settings, load_settings
 
 
 def test_without_a_config_file_the_settings_are_the_defaults(tmp_path: Path) -> None:
-    # Port 8765 (D-83), the loopback alone (D-54), the logical processors less two (D-85), and
-    # no import roots.
-    processors = os.cpu_count()
+    # Port 8765 (D-83), the loopback alone (D-54), the physical cores less two (D-90), and no
+    # import roots.
+    cores = psutil.cpu_count(logical=False)
 
     settings = load_settings(tmp_path / "config.toml")
 
-    assert processors is not None
+    assert cores is not None
     assert settings == Settings()
     assert (settings.port, settings.bind_address, settings.import_roots) == (8765, "127.0.0.1", ())
-    assert settings.process_pool_size == max(1, processors - 2)
+    assert settings.process_pool_size == max(1, cores - 2)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_where_no_physical_core_is_counted_the_pool_counts_logical_processors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # psutil counts no physical cores on some systems, such as a few virtual machines (D-90).
+    monkeypatch.setattr(psutil, "cpu_count", lambda logical=True: 6 if logical else None)
+    monkeypatch.setattr(os, "cpu_count", lambda: 6)
+
+    assert Settings().process_pool_size == 4
 
 
 def test_a_config_file_round_trips_through_the_settings(tmp_path: Path) -> None:

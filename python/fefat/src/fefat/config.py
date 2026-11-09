@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import platformdirs
+import psutil
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 __all__ = ["FefatPaths", "Settings", "load_settings", "resolve_paths"]
@@ -188,12 +189,15 @@ def _git_working_tree_around(folder: Path) -> Path | None:
 
 
 def _default_pool_size() -> int:
-    """The logical processors less two, and at least one: `01-architecture.md` section 6 asks
-    for the physical cores less two, which the standard library cannot count (D-85)."""
-    processors = os.cpu_count()
-    if processors is None:
+    """The physical cores less two, and at least one (`01-architecture.md` section 6, D-90),
+    which psutil counts; the logical processors where it counts none, as on a few virtual
+    machines."""
+    cores = psutil.cpu_count(logical=False)
+    if cores is None:
+        cores = os.cpu_count()
+    if cores is None:
         return 1
-    return max(1, processors - 2)
+    return max(1, cores - 2)
 
 
 class Settings(BaseModel):
