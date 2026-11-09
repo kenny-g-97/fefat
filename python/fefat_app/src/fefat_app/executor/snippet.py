@@ -1,8 +1,9 @@
 """A snippet of Python in the runner (step 4.5): run as a script runs, under the name `__main__`,
 with `ff` and `pl` bound, and `bars`, the lazy frame `ff.market.load` gives, where its spec names
-a dataset of the store; what it prints to `sys.stdout` kept to its last characters; and what it
-raises, a `MemoryError` at the limit included, a failure with the end of its traceback, its
-names dropped first so that the memory they held is free to write the result."""
+a dataset of the store; what it prints to `sys.stdout` kept to its last characters; ended, as a
+script, by `sys.exit()`, which fails it only with a status other than 0; and what it raises, a
+`MemoryError` at the limit included, a failure with the end of its traceback, its names dropped
+first so that the memory they held is free to write the result."""
 
 import contextlib
 import io
@@ -60,6 +61,10 @@ def snippet(spec: PythonSnippetSpec, report: ProgressReport) -> RunnerResult:
     try:
         with contextlib.redirect_stdout(printed):
             exec(compile(code, SNIPPET_FILE, "exec"), names)
+    except SystemExit as ended:
+        if ended.code not in (None, 0):
+            names.clear()
+            return failed_with(ended, printed.tail())
     except Exception as failure:
         names.clear()
         return failed_with(failure, printed.tail())

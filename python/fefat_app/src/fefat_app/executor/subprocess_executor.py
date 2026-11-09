@@ -5,7 +5,8 @@ read back and validated, then the folder removed. A snippet starts a runner of i
 runs in the executor's warm runner, where it keeps one: a runner that waits between previews with
 the SDK imported and its caches warm, so that a preview starts no interpreter, one a workspace
 since the server keeps one executor (`fefat_app.container`), and started again after it failed,
-ran out of time, or kept another memory limit, which a runner keeps from its start."""
+ran out of time, was asked to stop, or kept another memory limit, which a runner keeps from its
+start."""
 
 import tempfile
 import threading
@@ -23,10 +24,13 @@ from fefat_app.execution import (
     FeaturePreviewOutput,
     FeaturePreviewSpec,
     ProgressReport,
+    StopCheck,
+    keep_running,
 )
 from fefat_app.executor.protocol import (
     SPEC_FILE,
     PreviewSummary,
+    RunnerOutputError,
     RunnerResult,
     read_result_file,
     read_series,
@@ -44,17 +48,26 @@ class SubprocessExecutor:
         self.warm_previews = warm_previews
         self._warm_lock = threading.Lock()
         self._warm: RunnerProcess | None = None
+        self._closed = False
 
-    def run(self, spec: ExecutionSpec, report: ProgressReport) -> ExecutionResult:
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
         folder = self._folder_of(spec)
         try:
             if self.warm_previews and isinstance(spec, FeaturePreviewSpec):
-                return self._run_warm(spec, folder, report)
-            return self._run_alone(spec, folder, report)
+                return self._run_warm(spec, folder, report, check)
+            return self._run_alone(spec, folder, report, check)
         finally:
             removed(folder)
 
     def close(self) -> None:
+        """End the warm runner at once, a preview it runs then failing, and refuse any preview
+        after, as the server stops."""
+        self._closed = True
+        running = self._warm
+        if running is not None:
+            running.stop()
         with self._warm_lock:
             warm, self._warm = self._warm, None
         if warm is not None:
@@ -68,39 +81,53 @@ class SubprocessExecutor:
         return folder
 
     def _run_alone(
-        self, spec: ExecutionSpec, folder: Path, report: ProgressReport
+        self, spec: ExecutionSpec, folder: Path, report: ProgressReport, check: StopCheck
     ) -> ExecutionResult:
         """Run `folder`'s execution in a runner of its own, ended with it."""
         deadline = time.monotonic() + spec.limits.timeout_seconds
         runner = start_runner(self.paths, spec.limits.memory_bytes, folder)
         try:
-            if runner.relay(deadline, report) is RunnerEnd.TIMED_OUT:
-                return ExecutionTimedOut()
-            return _result_of(spec, folder, runner)
+            return _relayed(spec, folder, runner, deadline, report, check)
         finally:
             runner.close()
 
     def _run_warm(
-        self, spec: FeaturePreviewSpec, folder: Path, report: ProgressReport
+        self, spec: FeaturePreviewSpec, folder: Path, report: ProgressReport, check: StopCheck
     ) -> ExecutionResult:
-        """Run `folder`'s preview in the warm runner, one at a time, stopping the runner where the
-        preview runs out of time or `report` raises, its state then unknown."""
+        """Run `folder`'s preview in the warm runner, one at a time; a runner that turns out to
+        have ended since the last preview is started again, and one whose preview did not end
+        as a result of its own, by a timeout, a refused line, or a request to stop, is stopped,
+        its state then unknown."""
         with self._warm_lock:
             deadline = time.monotonic() + spec.limits.timeout_seconds
-            runner = self._warm_runner(spec.limits.memory_bytes)
-            runner.send(folder)
+            runner = self._sent(folder, spec.limits.memory_bytes)
             try:
-                ended = runner.relay(deadline, report)
+                result = _relayed(spec, folder, runner, deadline, report, check)
             except BaseException:
                 runner.stop()
                 raise
-            if ended is RunnerEnd.TIMED_OUT:
+            if isinstance(result, ExecutionTimedOut):
                 runner.stop()
-                return ExecutionTimedOut()
-            return _result_of(spec, folder, runner)
+            return result
+
+    def _sent(self, folder: Path, memory_bytes: int) -> RunnerProcess:
+        """The warm runner, given `folder`'s preview: started again where it ended, even between
+        the look and the sending, or kept another memory limit."""
+        runner = self._warm_runner(memory_bytes)
+        try:
+            runner.send(folder)
+        except OSError:
+            runner.stop()
+            runner = self._warm_runner(memory_bytes)
+            runner.send(folder)
+        return runner
 
     def _warm_runner(self, memory_bytes: int) -> RunnerProcess:
         """The warm runner, started again where it ended or keeps another memory limit."""
+        if self._closed:
+            raise ValueError(
+                "Expected an open executor for a preview, got one closed as the server stops."
+            )
         warm = self._warm
         if warm is not None and warm.is_running() and warm.memory_bytes == memory_bytes:
             return warm
@@ -110,12 +137,23 @@ class SubprocessExecutor:
         return self._warm
 
 
-def _result_of(spec: ExecutionSpec, folder: Path, runner: RunnerProcess) -> ExecutionResult:
-    """The result the runner left in `folder`, validated, or why it was refused, with the end of
-    the runner's log, the runner stopped first."""
+def _relayed(
+    spec: ExecutionSpec,
+    folder: Path,
+    runner: RunnerProcess,
+    deadline: float,
+    report: ProgressReport,
+    check: StopCheck,
+) -> ExecutionResult:
+    """How `folder`'s execution in `runner` ended: timed out at `deadline`, or the result the
+    runner left, validated; a line or a result of the runner's that is refused fails it, with the
+    end of the runner's log, the runner stopped first. What `report` or `check` raises comes
+    through."""
     try:
+        if runner.relay(deadline, report, check) is RunnerEnd.TIMED_OUT:
+            return ExecutionTimedOut()
         return _validated(spec, folder, read_result_file(folder))
-    except ValueError as refused:
+    except RunnerOutputError as refused:
         exit_code = runner.stop()
         return ExecutionFailed(
             error=f"{refused} The runner ended with exit code {exit_code}; its log ends:\n"
@@ -131,7 +169,9 @@ def _validated(spec: ExecutionSpec, folder: Path, ran: RunnerResult) -> Executio
         return ran
     output = ran.output
     if output.kind != spec.kind:
-        raise ValueError(f"Expected the output of a {spec.kind}, got that of a {output.kind}.")
+        raise RunnerOutputError(
+            f"Expected the output of a {spec.kind}, got that of a {output.kind}."
+        )
     if isinstance(output, PreviewSummary):
         series = read_series(folder)
         return ExecutionSucceeded(

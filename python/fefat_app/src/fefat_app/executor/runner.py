@@ -3,10 +3,12 @@ given at its start, or, warm, for each folder the executor sends on its stdin, i
 runs it by its kind, printing a line of JSON for each report of its progress, leaves its result in
 the folder, what its kind gave or the end of the traceback that failed it, and prints an empty
 line. The end of its stdin, which the executor's close or its own end gives, ends the runner at
-once, whatever it runs, so that no runner outlives its executor."""
+once, whatever it runs, with its session elsewhere than on Windows, whose Job Object ends it, so
+that neither the runner nor a process the trader's code started outlives its executor."""
 
 import os
 import queue
+import signal
 import sys
 import threading
 from functools import partial
@@ -52,11 +54,11 @@ def serve(folder: Path | None) -> int:
 
 def _serve_folder(folder: Path, channel: TextIO) -> None:
     """Run `folder`'s execution, reporting on `channel`, leave its result in the folder, then say
-    so."""
+    so; a `SystemExit` of the trader's code fails the execution rather than ending the runner."""
     try:
         spec = EXECUTION_SPEC.validate_json((folder / SPEC_FILE).read_bytes())
         result = _ran(spec, folder, partial(_report, channel))
-    except Exception as failure:
+    except (Exception, SystemExit) as failure:
         result = failed_with(failure, stdout_tail="")
     write_result_file(folder, result)
     channel.write(END_OF_EXECUTION)
@@ -85,7 +87,9 @@ def _progress_channel() -> TextIO:
 
 def _folders_until_stdin_ends(folders: queue.Queue[Path]) -> None:
     """Queue each folder the executor sends, a line of stdin each; at the end of stdin, end the
-    runner at once (module docstring)."""
+    runner at once, with its session where it has one (module docstring)."""
     for line in sys.stdin:
         folders.put(Path(line.rstrip("\n")))
+    if sys.platform != "win32":
+        os.killpg(os.getpgrp(), signal.SIGKILL)
     os._exit(0)

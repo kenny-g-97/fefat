@@ -1,10 +1,14 @@
 """The executions of step 4.5 as jobs (`01-architecture.md` section 6): a worker runs a snippet's or
 a preview's job through an executor of its own, each report of the runner a `progress` event of
-the job's stream; a snippet that runs out of time ends its job `timed_out` (`BACKLOG.md`), one that
+the job's stream; a snippet that runs out of time ends its job `timed_out` (`BACKLOG.md`), one
+asked to stop ends `cancelled` within a second or two, its worker stopping the runner, one that
 runs to its end succeeds with what it printed, and a preview whose code defines no feature fails
 with the runner's error; run in this process, as `test_job_worker` runs the worker."""
 
 import os
+import threading
+import time
+from datetime import UTC, datetime
 
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
@@ -14,6 +18,7 @@ from fefat_app.ports import Job, JobKind, JobStatus, job_stream
 from local_server import STARTED_AT, running_runners
 
 GIB = 1024**3
+DEADLINE_SECONDS = 60
 
 
 def ran(job_records: JobTables, kind: JobKind, payload: dict[str, object]) -> Job:
@@ -48,6 +53,41 @@ def test_a_snippet_job_that_runs_out_of_time_ends_timed_out_after_its_progress(
         ("status", {"status": "timed_out"}),
     ]
     assert running_runners() == []
+
+
+def test_a_snippet_job_asked_to_stop_ends_cancelled_by_its_worker(job_records: JobTables) -> None:
+    # The snippet reports nothing while it runs, so the worker asks each second whether its job
+    # runs on and stops the runner itself, where the reaper, which this test has none of, would
+    # end the pool's worker ten seconds later (step 4.4).
+    job = job_records.add(
+        JobKind.PYTHON_SNIPPET, snippet("import time\ntime.sleep(60)\n"), 3, STARTED_AT
+    )
+    worker = threading.Thread(
+        target=run_job, args=(job.id, resolve_paths(os.environ), JobTimings())
+    )
+    worker.start()
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    while _progress_of(job_records, job.id) < 30:
+        assert time.monotonic() < deadline, (
+            f"Expected the snippet to run within {DEADLINE_SECONDS} s."
+        )
+        time.sleep(0.05)
+
+    job_records.request_cancel(job.id, datetime.now(UTC))
+    began = time.monotonic()
+    worker.join(DEADLINE_SECONDS)
+
+    ended = job_records.by_id(job.id)
+    assert ended is not None
+    assert ended.status == JobStatus.CANCELLED
+    assert time.monotonic() - began < 5
+    assert running_runners() == []
+
+
+def _progress_of(job_records: JobTables, job_id: str) -> float:
+    now = job_records.by_id(job_id)
+    assert now is not None
+    return now.progress
 
 
 def test_a_snippet_job_succeeds_with_what_it_printed(job_records: JobTables) -> None:

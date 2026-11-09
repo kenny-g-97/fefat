@@ -1,10 +1,11 @@
 """The executor's previews of step 4.5 in its warm runner (`01-architecture.md` section 6): a
 preview gives each output's statistics as the SDK computes them, and a series downsampled to at
 most a thousand points that keeps its highs and lows; the warm runner survives a preview that
-fails, and is started again after one that runs out of time or asks for another memory limit;
-and a month of 5-minute bars, generated (the step's amendment), previews again in under a second
-(Done means 2)."""
+fails, is started again after one that runs out of time or asks for another memory limit, and
+ends with the executor, the preview it runs then failing; and a month of 5-minute bars, generated
+(the step's amendment), previews again in the same runner in under a second (Done means 2)."""
 
+import threading
 import time
 from datetime import date
 
@@ -165,6 +166,7 @@ def test_a_warm_preview_of_a_month_of_five_minute_bars_takes_under_a_second_afte
     began = time.perf_counter()
     first = previewed(warm_executor, rsi.code, {"n": 14})
     first_took = time.perf_counter() - began
+    warm = running_runners()
     began = time.perf_counter()
     again = previewed(warm_executor, rsi.code, {"n": 14})
     again_took = time.perf_counter() - began
@@ -173,6 +175,35 @@ def test_a_warm_preview_of_a_month_of_five_minute_bars_takes_under_a_second_afte
     assert again == first
     assert output_of(again).statistics["rsi"].count > 4000
     assert again_took < 1.0
+    assert len(warm) == 1
+    assert running_runners() == warm
+
+
+def test_closing_the_executor_ends_the_preview_it_runs_and_refuses_any_after(
+    warm_executor: SubprocessExecutor,
+) -> None:
+    # As the server stops: a preview of a feature that never ends would hold its runner, and the
+    # server, for its whole timeout.
+    reports: list[ExecutionProgress] = []
+    results: list[ExecutionResult] = []
+    spec = FeaturePreviewSpec(code=LOOPS, parameters={"n": 3}, bars=MONTH, limits=ROOMY)
+    previewing = threading.Thread(
+        target=lambda: results.append(warm_executor.run(spec, reports.append))
+    )
+    previewing.start()
+    deadline = time.monotonic() + 60
+    while not reports:
+        assert time.monotonic() < deadline, "Expected the preview to report within 60 s."
+        time.sleep(0.05)
+
+    began = time.monotonic()
+    warm_executor.close()
+    previewing.join(60)
+
+    assert time.monotonic() - began < 10
+    assert [type(result) for result in results] == [ExecutionFailed]
+    with pytest.raises(ValueError, match="Expected an open executor for a preview"):
+        previewed(warm_executor, rsi.code, {"n": 14})
 
 
 def test_the_series_holds_each_output_of_a_feature_of_several(

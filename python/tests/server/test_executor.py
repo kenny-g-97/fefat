@@ -1,22 +1,28 @@
 """The executor of step 4.5 (`01-architecture.md` section 6) on snippets, each run by a runner of
-its own: a snippet that loops for ever is stopped at its timeout, and one that allocates past its
-memory limit fails there, neither reaching the test's process; a snippet sees no secret of the
-environment, and keyring gives it none; a result the runner left that is not one is refused; and
-a snippet reads its bars and gives back the tail of what it printed (Done means 1). They run on
-Windows here and on Linux in CI, whose limits differ: a Job Object's commit charge on Windows, the
-address space (`RLIMIT_AS`) on Linux."""
+its own: a snippet that loops for ever is stopped at its timeout, with the processes it started,
+and one that allocates past its memory limit fails there, neither reaching the test's process; no
+runner outlives the process of its executor; a snippet sees no secret of the environment, and
+keyring gives it none; a result the runner left that is not one is refused; and a snippet reads
+its bars and gives back the tail of what it printed (Done means 1). They run on Windows here and
+on Linux in CI, whose limits differ: a Job Object's commit charge on Windows, the address space
+(`RLIMIT_AS`) on Linux."""
 
 import ast
+import os
 import re
+import subprocess
+import sys
 import threading
 import time
 from datetime import date
 from pathlib import Path
 
 import polars as pl
+import psutil
 import pytest
+from pydantic import ValidationError
 
-from fefat.config import FefatPaths
+from fefat.config import DATA_DIR_VARIABLE, HOME_VARIABLE, FefatPaths, resolve_paths
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat_app.execution import (
     BarsReference,
@@ -37,6 +43,7 @@ from fefat_app.executor.protocol import (
     SERIES_FILE,
     SERIES_POINTS,
     SERIES_SCHEMA,
+    RunnerOutputError,
     read_result_file,
     read_series,
 )
@@ -50,6 +57,25 @@ GIB = 1024**3
 MIB = 1024**2
 ROOMY = ExecutionLimits(timeout_seconds=60, memory_bytes=8 * GIB)
 """Limits no test snippet but the ones testing them comes near."""
+DEADLINE_SECONDS = 60
+SPAWNS = """\
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import psutil
+
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+started = [psutil.Process(pid) for pid in (os.getpid(), child.pid)]
+Path({started!r} + ".tmp").write_text(repr([(each.pid, each.create_time()) for each in started]))
+os.replace({started!r} + ".tmp", {started!r})
+while True:
+    time.sleep(0.1)
+"""
+"""A snippet that starts a process that sleeps for ten minutes, writes its own process's and that
+process's pids and start times to the file `started`, then sleeps for ever."""
 
 
 def ran(
@@ -71,6 +97,35 @@ def printed(result: ExecutionResult) -> str:
     return result.output.stdout_tail
 
 
+def started_by(snippet: Path) -> list[tuple[int, float]]:
+    """The processes that `SPAWNS` wrote to `snippet`, waited for: the runner's interpreter and
+    the process it started, each by its pid and start time."""
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    while not snippet.exists():
+        assert time.monotonic() < deadline, f"Expected {snippet.name} within {DEADLINE_SECONDS} s."
+        time.sleep(0.1)
+    return ast.literal_eval(snippet.read_text())
+
+
+def ended(processes: list[tuple[int, float]]) -> bool:
+    """Whether none of `processes` runs, a process of the same pid started since being another."""
+    for pid, started in processes:
+        try:
+            process = psutil.Process(pid)
+            if process.create_time() == started and process.status() != psutil.STATUS_ZOMBIE:
+                return False
+        except psutil.NoSuchProcess:
+            continue
+    return True
+
+
+def waited_until_ended(processes: list[tuple[int, float]]) -> None:
+    deadline = time.monotonic() + 10
+    while not ended(processes):
+        assert time.monotonic() < deadline, f"Expected {processes} to end within 10 s."
+        time.sleep(0.1)
+
+
 def test_a_snippet_that_loops_for_ever_is_stopped_at_its_timeout(
     executor: SubprocessExecutor,
 ) -> None:
@@ -85,6 +140,56 @@ def test_a_snippet_that_loops_for_ever_is_stopped_at_its_timeout(
     assert result == ExecutionTimedOut()
     assert 3 <= took < 15
     assert running_runners() == []
+
+
+def test_a_snippet_stopped_at_its_timeout_takes_the_processes_it_started_with_it(
+    executor: SubprocessExecutor, tmp_path: Path
+) -> None:
+    # The Job Object on Windows, and the runner's session elsewhere, end a process the trader's
+    # code started with the runner.
+    snippet = tmp_path / "started.txt"
+    limits = ExecutionLimits(timeout_seconds=8, memory_bytes=8 * GIB)
+
+    result, _ = ran(executor, SPAWNS.format(started=str(snippet)), limits)
+
+    assert result == ExecutionTimedOut()
+    waited_until_ended(started_by(snippet))
+
+
+PARENT = """\
+import os
+from pathlib import Path
+
+from fefat.config import resolve_paths
+from fefat_app.execution import ExecutionLimits, PythonSnippetSpec
+from fefat_app.executor.subprocess_executor import SubprocessExecutor
+
+Path({parent!r}).write_text(str(os.getpid()))
+limits = ExecutionLimits(timeout_seconds=600, memory_bytes=8 * 1024**3)
+spec = PythonSnippetSpec(code={code!r}, bars=None, limits=limits)
+SubprocessExecutor(resolve_paths(os.environ), warm_previews=False).run(spec, lambda progress: None)
+"""
+"""A process that runs the snippet `code` with a ten-minute timeout, having written its pid to
+the file `parent`."""
+
+
+def test_no_runner_outlives_the_process_of_its_executor(tmp_path: Path) -> None:
+    # A worker the reaper ends, or a server that crashes, takes its runners with it: on Windows
+    # its handle to their Job Object closes, and elsewhere their stdin ends, whose reader ends
+    # the runner's session.
+    snippet, parent_pid = tmp_path / "started.txt", tmp_path / "parent.txt"
+    script = tmp_path / "parent.py"
+    code = SPAWNS.format(started=str(snippet))
+    script.write_text(PARENT.format(parent=str(parent_pid), code=code), encoding="utf-8")
+    parent = subprocess.Popen([sys.executable, str(script)], env=os.environ)
+    try:
+        started = started_by(snippet)
+        psutil.Process(int(parent_pid.read_text())).kill()
+
+        waited_until_ended(started)
+    finally:
+        parent.kill()
+        parent.wait(DEADLINE_SECONDS)
 
 
 PEAK_MEMORY = """\
@@ -235,6 +340,34 @@ def test_a_snippet_reads_its_bars_and_gives_back_the_tail_of_what_it_printed(
     ]
 
 
+def test_a_snippet_that_ends_with_sys_exit_succeeds_or_fails_by_its_status(
+    executor: SubprocessExecutor,
+) -> None:
+    ended_well, _ = ran(executor, "import sys\nprint('done')\nsys.exit(0)\n")
+    ended_badly, _ = ran(executor, "import sys\nprint('half')\nsys.exit(3)\n")
+
+    assert printed(ended_well) == "done\n"
+    assert isinstance(ended_badly, ExecutionFailed), ended_badly
+    assert ended_badly.error.endswith("SystemExit: 3\n")
+    assert ended_badly.stdout_tail == "half\n"
+
+
+def test_a_line_of_the_runner_that_is_not_a_report_is_refused_without_its_values() -> None:
+    # A runner that dies in the middle of a line fails its execution rather than raising past it,
+    # and the refusal quotes no value, which may be a price (D-21).
+    with pytest.raises(RunnerOutputError, match="Expected a report of progress") as refused:
+        runner_process._progress('{"percent": 4512.25, "message": "Computed"}\n')
+
+    assert "4512.25" not in str(refused.value)
+
+
+def test_limits_past_a_day_or_what_64_bits_hold_are_refused() -> None:
+    with pytest.raises(ValidationError, match="timeout_seconds"):
+        ExecutionLimits(timeout_seconds=float("inf"), memory_bytes=GIB)
+    with pytest.raises(ValidationError, match="memory_bytes"):
+        ExecutionLimits(timeout_seconds=5, memory_bytes=2**64)
+
+
 def test_a_snippet_that_raises_fails_with_its_traceback_and_what_it_printed(
     executor: SubprocessExecutor,
 ) -> None:
@@ -288,7 +421,7 @@ def test_the_runner_s_environment_keeps_the_system_s_variables_and_fefat_s_folde
         "GITHUB_TOKEN": "planted-by-the-test",
         "DATABASE_URL": "planted-by-the-test",
         "HTTPS_PROXY": "planted-by-the-test",
-        "FEFAT_HOME": "/elsewhere",
+        "FEFAT_HOME": str(tmp_path / "elsewhere"),
         "PYTHON_KEYRING_BACKEND": "keyring.backends.fail.Keyring",
     }
 
@@ -303,3 +436,15 @@ def test_the_runner_s_environment_keeps_the_system_s_variables_and_fefat_s_folde
         "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
         "PYTHONUTF8": "1",
     }
+
+
+def test_a_runner_of_a_server_on_the_default_home_resolves_it_as_the_server_did() -> None:
+    # A git working tree around the user's folders, as a dotfiles repository makes, refuses a
+    # FEFAT_HOME only where the environment sets it (D-85): a server on the platform's default
+    # home gives its runners none, so that they resolve that home, unchecked, as it did.
+    paths = resolve_paths({})
+
+    scrubbed = scrubbed_environment(paths, {"PATH": "/bin"})
+
+    assert HOME_VARIABLE not in scrubbed
+    assert DATA_DIR_VARIABLE not in scrubbed

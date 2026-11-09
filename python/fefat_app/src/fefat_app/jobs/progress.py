@@ -1,13 +1,15 @@
 """How a job's work reports how far it has come (step 4.4, `01-architecture.md` section 6): each
 report, made between two chunks of the work, writes the job's progress and a `progress` event,
-and stops the work where the job was asked to stop, or where its worker no longer holds it."""
+and stops the work where the job was asked to stop, or where its worker no longer holds it; and,
+for work that reports seldom, as the trader's code run by the executor does, a check that stops it
+alike without a report (step 4.5)."""
 
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
-from fefat_app.ports import JobRecords
+from fefat_app.ports import Job, JobRecords, JobStatus
 
 
 class JobCancelledError(Exception):
@@ -33,6 +35,26 @@ class JobProgress:
             job = self.records.advance(self.job_id, self.worker_pid, percent, message, details)
         except OperationalError:
             return
+        self._stop_unless_held(job)
+
+    def check(self) -> None:
+        """`JobCancelledError` where the work must stop, as at a report, without writing one; a
+        read the busy database refused is skipped, the next check reading again."""
+        try:
+            job = self.records.by_id(self.job_id)
+        except OperationalError:
+            return
+        self._stop_unless_held(self._held(job))
+
+    def _held(self, job: Job | None) -> Job | None:
+        """`job` where this worker runs it, else None."""
+        if job is None or job.status != JobStatus.RUNNING or job.worker_pid != self.worker_pid:
+            return None
+        return job
+
+    def _stop_unless_held(self, job: Job | None) -> None:
+        """Stop the work where the worker no longer holds `job`, None then, or where it was asked
+        to stop."""
         if job is None:
             raise JobCancelledError(
                 f"The job {self.job_id} is no longer held by the worker {self.worker_pid}."

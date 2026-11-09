@@ -20,14 +20,20 @@ class ExecutionKind(StrEnum):
     PYTHON_SNIPPET = "python_snippet"
 
 
+MOST_SECONDS = 24 * 60 * 60
+"""The longest timeout an execution takes: a day, longer than any run FEFAT starts."""
+MOST_BYTES = 2**63 - 1
+"""The largest memory limit an execution takes, the most a limit of 64 bits holds."""
+
+
 class ExecutionLimits(BaseModel):
     """What an execution may take: the seconds of the wall clock from its start, and the bytes of
     memory its processes may commit together, past which an allocation fails."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    timeout_seconds: float = Field(gt=0)
-    memory_bytes: int = Field(gt=0)
+    timeout_seconds: float = Field(gt=0, le=MOST_SECONDS)
+    memory_bytes: int = Field(gt=0, le=MOST_BYTES)
 
 
 class BarsReference(BaseModel):
@@ -89,6 +95,14 @@ class ExecutionProgress(BaseModel):
 type ProgressReport = Callable[[ExecutionProgress], None]
 """Where an execution's progress goes as it comes, a job's events or a notebook's output; what it
 raises stops the execution, as a job asked to stop does."""
+type StopCheck = Callable[[], None]
+"""Asked whenever a second passes without a report while an execution runs; what it raises stops
+the execution, as a job asked to stop does, so that a long computation that reports nothing still
+stops within a second."""
+
+
+def keep_running() -> None:
+    """The check of an execution nothing asks to stop, as a notebook's."""
 
 
 class ExecutionOutcome(StrEnum):

@@ -15,7 +15,13 @@ from typing import Any, Literal, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
-from fefat_app.execution import ExecutionResult, ExecutionSpec, ProgressReport
+from fefat_app.execution import (
+    ExecutionResult,
+    ExecutionSpec,
+    ProgressReport,
+    StopCheck,
+    keep_running,
+)
 
 type Clock = Callable[[], datetime]
 """Now, as an aware instant in UTC: the system's clock in the server, a settable one in tests."""
@@ -356,9 +362,12 @@ class Executor(Protocol):
     and containers if ever needed; crash containment, not a security boundary
     (`fefat_app.executor`)."""
 
-    def run(self, spec: ExecutionSpec, report: ProgressReport) -> ExecutionResult:
-        """Run `spec` within its limits, giving `report` each report of its progress as it
-        comes; how it ended, its result validated. What `report` raises stops the execution and
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
+        """Run `spec` within its limits, giving `report` each report of its progress as it comes
+        and asking `check` whenever a second passes without one; how it ended, its result
+        validated. What either raises stops the execution, with every process it started, and
         comes through."""
         ...
 

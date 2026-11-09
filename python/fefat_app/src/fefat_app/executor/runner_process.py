@@ -1,11 +1,13 @@
 """A runner as the executor sees it (step 4.5): a process of `sys.executable` running
-`python -m fefat_app.executor`, given one execution's folder at its start or, warm, sent each
-folder on its stdin; contained from its first line, on Windows in a Job Object that limits its
-memory, which it joins while suspended, and elsewhere in a session of its own, the runner limiting
-its own memory; its lines of progress read by a thread of their own, so that the executor waits
-for them no longer than the execution's deadline; its stderr, and what the trader's code prints
-from C or Rust, in a log of its own under `FefatPaths.executions_dir`; and stopped with every
-process it started, at a timeout, a failure, or the end of its work."""
+`python -P -m fefat_app.executor`, which puts no working folder on its import path, given one
+execution's folder at its start or, warm, sent each folder on its stdin; contained from its first
+line, on Windows in a Job Object that limits its memory, which it joins while suspended, and
+elsewhere in a session of its own, the runner limiting its own memory; its lines of progress read
+by a thread of their own, so that the executor waits for them no longer than the execution's
+deadline, and asks between them whether the execution runs on; its stderr, and what the trader's
+code prints from C or Rust, in a log of its own under `FefatPaths.executions_dir`; and stopped
+with every process it started, at a timeout, a failure, a request to stop, or the end of its
+work."""
 
 import contextlib
 import logging
@@ -25,16 +27,19 @@ from pathlib import Path
 from typing import IO, BinaryIO
 
 import psutil
+from pydantic import ValidationError
 
 from fefat.config import FefatPaths
-from fefat_app.execution import ExecutionProgress, ProgressReport
+from fefat_app.execution import ExecutionProgress, ProgressReport, StopCheck
 from fefat_app.executor.environment import scrubbed_environment
-from fefat_app.executor.protocol import END_OF_EXECUTION
+from fefat_app.executor.protocol import END_OF_EXECUTION, RunnerOutputError, problems
 
 LOG = logging.getLogger("fefat_app.executor")
 RUNNER_MODULE = "fefat_app.executor"
 CREATE_SUSPENDED = 0x00000004
 """Windows' flag that starts a process with its first thread suspended, until it is resumed."""
+CHECK_SECONDS = 1.0
+"""How long the executor waits for a report before it asks whether the execution runs on."""
 LOG_TAIL_BYTES = 2000
 """How much of a runner's log a failure quotes, from its end."""
 READER_SECONDS = 5.0
@@ -68,7 +73,9 @@ class RunnerProcess:
         self.memory_bytes = memory_bytes
         self.log = log
         self._end = end
+        self._stopping = threading.Lock()
         self._stopped = False
+        self._log_start = 0
         self._lines: queue.Queue[str | None] = queue.Queue()
         self._reader = threading.Thread(
             target=_queued_lines,
@@ -82,49 +89,51 @@ class RunnerProcess:
         return self.process.poll() is None
 
     def send(self, folder: Path) -> None:
-        """Give the warm runner `folder`'s execution."""
+        """Give the warm runner `folder`'s execution, whose log starts where the log ends now."""
+        self._log_start = self.log.stat().st_size
         stdin = _piped(self.process.stdin)
         stdin.write(f"{folder}\n")
         stdin.flush()
 
-    def relay(self, deadline: float, report: ProgressReport) -> RunnerEnd:
-        """Give `report` each report of progress the runner prints until the execution's result
-        is in its folder, until the runner ends, or until `deadline`, an instant of
-        `time.monotonic`; a line that is not a report is refused."""
+    def relay(self, deadline: float, report: ProgressReport, check: StopCheck) -> RunnerEnd:
+        """Give `report` each report of progress the runner prints, and ask `check` whenever
+        `CHECK_SECONDS` pass without one, until the execution's result is in its folder, until
+        the runner ends, or until `deadline`, an instant of `time.monotonic`; a line that is not
+        a report is refused with a `RunnerOutputError`."""
         while (remaining := deadline - time.monotonic()) > 0:
             try:
-                line = self._lines.get(timeout=remaining)
+                line = self._lines.get(timeout=min(remaining, CHECK_SECONDS))
             except queue.Empty:
-                break
+                check()
+                continue
             if line is None:
                 return RunnerEnd.EXITED
             if line == END_OF_EXECUTION:
                 return RunnerEnd.FINISHED
-            report(ExecutionProgress.model_validate_json(line))
+            report(_progress(line))
         return RunnerEnd.TIMED_OUT
 
     def stop(self) -> int:
-        """End the runner and every process it started, where they still run; its exit code."""
-        if not self._stopped:
-            self._stopped = True
-            self._end()
+        """End the runner and every process it started, where they still run, from whichever
+        thread asks first; its exit code."""
+        with self._stopping:
+            if not self._stopped:
+                self._stopped = True
+                self._end()
         return self.process.wait()
 
     def close(self) -> None:
         """Stop the runner, then let go of its pipes and remove its log."""
         self.stop()
         self._reader.join(READER_SECONDS)
-        for stream in (self.process.stdin, self.process.stdout):
-            if stream is not None:
-                with contextlib.suppress(OSError):
-                    stream.close()
+        _closed_pipes(self.process)
         removed(self.log)
 
     def log_tail(self) -> str:
-        """The end of the runner's log: its stderr, and what the trader's code printed from C or
-        Rust."""
+        """The end of the runner's log since its execution began: its stderr, and what the
+        trader's code printed from C or Rust."""
         with self.log.open("rb") as log:
-            log.seek(max(0, self.log.stat().st_size - LOG_TAIL_BYTES))
+            log.seek(max(self._log_start, self.log.stat().st_size - LOG_TAIL_BYTES))
             return log.read().decode("utf-8", errors="replace")
 
 
@@ -132,7 +141,7 @@ def start_runner(paths: FefatPaths, memory_bytes: int, folder: Path | None) -> R
     """A runner limited to `memory_bytes`, for `folder`'s execution, or warm without one, its
     working folder that execution's folder, so that a snippet's relative paths land there and go
     with it, or the executions' own."""
-    command = [sys.executable, "-m", RUNNER_MODULE, "--memory-bytes", str(memory_bytes)]
+    command = [sys.executable, "-P", "-m", RUNNER_MODULE, "--memory-bytes", str(memory_bytes)]
     working_folder = paths.executions_dir
     if folder is not None:
         command.append(str(folder))
@@ -158,7 +167,8 @@ def _contained(
     memory_bytes: int,
 ) -> tuple[subprocess.Popen[str], Callable[[], None]]:
     """The runner's process, started with its pipes, its log, and its environment, and what ends
-    it with every process it starts (module docstring)."""
+    it with every process it starts (module docstring); a runner that cannot be contained is
+    ended, and its pipes let go."""
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -178,13 +188,13 @@ def _contained(
         job = JobObject.holding(process.pid, memory_bytes)
     except OSError:
         process.kill()
-        process.wait()
+        _discarded(process)
         raise
     try:
         psutil.Process(process.pid).resume()
     except psutil.Error:
         job.close()
-        process.wait()
+        _discarded(process)
         raise
     return process, job.close
 
@@ -209,12 +219,35 @@ def removed(path: Path) -> None:
             time.sleep(0.01)
 
 
+def _progress(line: str) -> ExecutionProgress:
+    """The report `line` holds; refused without the line's values, which may be prices (D-21)."""
+    try:
+        return ExecutionProgress.model_validate_json(line)
+    except ValidationError as error:
+        raise RunnerOutputError(
+            f"Expected a report of progress from the runner, got: {problems(error)}."
+        ) from error
+
+
 def _end_session(session: int) -> None:
     """End every process of the runner's session `session`, the runner's pid, where they still
     run: elsewhere than on Windows, whose Job Object ends them."""
     if sys.platform != "win32":
         with contextlib.suppress(ProcessLookupError):
             os.killpg(session, signal.SIGKILL)
+
+
+def _discarded(process: subprocess.Popen[str]) -> None:
+    """Wait for a runner that could not be contained to end, then let go of its pipes."""
+    process.wait()
+    _closed_pipes(process)
+
+
+def _closed_pipes(process: subprocess.Popen[str]) -> None:
+    for stream in (process.stdin, process.stdout):
+        if stream is not None:
+            with contextlib.suppress(OSError):
+                stream.close()
 
 
 def _queued_lines(stream: IO[str], lines: queue.Queue[str | None]) -> None:

@@ -40,6 +40,11 @@ ERROR_CHARS = 4000
 """How much of a failure's traceback its result keeps, from its end."""
 
 
+class RunnerOutputError(ValueError):
+    """What a runner printed or left that the executor refuses: a line of progress, a result, or
+    a series that is not one, or one too large."""
+
+
 class PreviewSummary(BaseModel):
     """What a preview's runner leaves in `result.json`: each output's statistics, and what the
     bars' loading warned of; its series is in `series.parquet`."""
@@ -84,7 +89,7 @@ def read_result_file(folder: Path) -> RunnerResult:
     try:
         return RUNNER_RESULT.validate_json(content)
     except ValidationError as error:
-        raise ValueError(
+        raise RunnerOutputError(
             f"Expected {RESULT_FILE} to hold the result of an execution, got: {problems(error)}."
         ) from error
 
@@ -97,20 +102,20 @@ def read_series(folder: Path) -> tuple[SeriesPoint, ...]:
     try:
         series = pl.read_parquet(io.BytesIO(content))
     except pl.exceptions.PolarsError as error:
-        raise ValueError(f"Expected {SERIES_FILE} to be Parquet, got: {error}") from error
+        raise RunnerOutputError(f"Expected {SERIES_FILE} to be Parquet, got: {error}") from error
     if series.schema != SERIES_SCHEMA:
-        raise ValueError(
+        raise RunnerOutputError(
             f"Expected {SERIES_FILE} of the columns {_described(SERIES_SCHEMA)}, got "
             f"{_described(series.schema)}."
         )
     most = series.group_by("output").len().get_column("len").max()
     if isinstance(most, int) and most > SERIES_POINTS:
-        raise ValueError(f"Expected at most {SERIES_POINTS} points an output, got {most}.")
+        raise RunnerOutputError(f"Expected at most {SERIES_POINTS} points an output, got {most}.")
     rows = series.sort("output", "ts_close").iter_rows(named=True)
     try:
         return tuple(SeriesPoint.model_validate(row) for row in rows)
     except ValidationError as error:
-        raise ValueError(
+        raise RunnerOutputError(
             f"Expected {SERIES_FILE} to hold points, got: {problems(error)}."
         ) from error
 
@@ -134,11 +139,13 @@ def _capped(path: Path, most_bytes: int) -> bytes:
     """The bytes of `path`, refused where the runner left none, or more than `most_bytes`, which
     are never read."""
     if not path.is_file():
-        raise ValueError(f"Expected the runner to leave {path.name} in its folder, got none.")
+        raise RunnerOutputError(
+            f"Expected the runner to leave {path.name} in its folder, got none."
+        )
     with path.open("rb") as file:
         content = file.read(most_bytes + 1)
     if len(content) > most_bytes:
-        raise ValueError(f"Expected {path.name} of at most {most_bytes} bytes, got more.")
+        raise RunnerOutputError(f"Expected {path.name} of at most {most_bytes} bytes, got more.")
     return content
 
 

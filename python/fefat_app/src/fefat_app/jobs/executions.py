@@ -1,8 +1,9 @@
 """A job that runs an execution of the trader's code (step 4.5, `01-architecture.md` section 6): a
 feature's preview or a snippet, its payload the spec of its kind, run by the worker's executor,
-each report of the runner's progress a `progress` event of the job's stream; an execution that ran
-out of time ends its job `timed_out`, and one that failed ends it `failed` with the runner's
-error."""
+each report of the runner's progress a `progress` event of the job's stream, and the job's
+request to stop read each second between them, so that the worker stops the runner itself rather
+than the reaper ending the worker; an execution that ran out of time ends its job `timed_out`,
+and one that failed ends it `failed` with the runner's error."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -37,6 +38,7 @@ def run_execution(
     result = executor.run(
         spec,
         lambda reported: progress.advance(reported.percent, reported.message, **reported.details),
+        progress.check,
     )
     if isinstance(result, ExecutionTimedOut):
         raise ExecutionTimedOutError(
