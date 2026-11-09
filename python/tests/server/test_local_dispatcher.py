@@ -8,10 +8,11 @@ deadline, since a spawned worker takes a second or more to start on Windows."""
 import multiprocessing
 import os
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from multiprocessing.process import BaseProcess
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,7 @@ from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.jobs.dispatcher import LocalDispatcher
 from fefat_app.jobs.worker import JobTimings
-from fefat_app.ports import Job, JobKind, JobStatus, job_stream
+from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
 
 TEST_TIMINGS = JobTimings(
     lease_seconds=3, heartbeat_seconds=0.5, reaper_period_seconds=0.5, cancel_grace_seconds=1
@@ -89,6 +90,24 @@ def worker_of(pid: int | None) -> BaseProcess:
     workers = [child for child in multiprocessing.active_children() if child.pid == pid]
     assert len(workers) == 1, f"Expected one worker of pid {pid}, got {workers}."
     return workers[0]
+
+
+class WorkerEndsFirst(JobTables):
+    """The records of a race the reaper loses: each job's worker ends it, a moment before the
+    reaper's own change of it."""
+
+    def finish(
+        self,
+        job_id: str,
+        worker_pid: int,
+        end: JobEnd,
+        now: datetime,
+        *,
+        result: Mapping[str, Any] | None = None,
+        error: str | None = None,
+    ) -> Job | None:
+        super().finish(job_id, worker_pid, JobStatus.SUCCEEDED, now, result={})
+        return super().finish(job_id, worker_pid, end, now, result=result, error=error)
 
 
 def held_by_stand_in(job_records: JobTables, job: Job, stand_in: BaseProcess, lease: float) -> Job:
@@ -262,3 +281,49 @@ def test_a_pool_wider_than_windows_allows_still_runs_its_jobs(job_records: JobTa
         dispatcher.close()
 
     assert ended.result == {"counted": 1}
+
+
+def test_a_worker_made_after_its_job_started_is_left_running(
+    idle_dispatcher: LocalDispatcher, job_records: JobTables, stand_in: BaseProcess
+) -> None:
+    # Windows gives an ended worker's pid to a new process soon: the reaper ends only a worker
+    # made before the job it reaps started, and changes the job all the same.
+    job = a_demo(job_records, seconds=60, max_attempts=1)
+    assert stand_in.pid is not None
+    before_the_stand_in = datetime.now(UTC) - timedelta(seconds=60)
+    job_records.start(job.id, stand_in.pid, before_the_stand_in, before_the_stand_in)
+
+    idle_dispatcher.sweep()
+    stand_in.join(1)
+
+    ended = job_records.by_id(job.id)
+    assert ended is not None
+    assert ended.status == JobStatus.FAILED
+    assert stand_in.is_alive()
+
+
+def test_a_job_its_worker_ended_first_leaves_the_worker_running(
+    job_records: JobTables, stand_in: BaseProcess
+) -> None:
+    # The worker that ended its job may already run another: the reaper ends a worker only
+    # once its own change of the job holds.
+    racing = LocalDispatcher(
+        WorkerEndsFirst(job_records.engine),
+        resolve_paths(os.environ).database_file,
+        partial(datetime.now, UTC),
+        TEST_TIMINGS,
+        workers=1,
+    )
+    job = held_by_stand_in(job_records, a_demo(job_records, seconds=60), stand_in, lease=60)
+    job_records.request_cancel(job.id, datetime.now(UTC) - timedelta(seconds=5))
+
+    try:
+        racing.sweep()
+        stand_in.join(1)
+    finally:
+        racing.close()
+
+    ended = job_records.by_id(job.id)
+    assert ended is not None
+    assert ended.status == JobStatus.SUCCEEDED
+    assert stand_in.is_alive()

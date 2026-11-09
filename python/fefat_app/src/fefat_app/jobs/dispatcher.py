@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
 
+import psutil
+
 from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.ports import Clock, Job, JobRecords, JobStatus
 
@@ -99,33 +101,41 @@ class LocalDispatcher:
             self.submit(job_id)
 
     def _reap(self, job: Job, now: datetime) -> None:
-        """End `job`'s worker where it was asked to stop past the grace, or where its lease ran
-        out, and end the job, or queue it again while it has attempts left."""
-        worker_pid, lease_expires_at = job.worker_pid, job.lease_expires_at
-        if worker_pid is None or lease_expires_at is None:
+        """End `job` where it was asked to stop and ran on past the grace, or where its lease ran
+        out, then end its worker; the job first, so that a worker that ended the job itself in
+        the meantime, and may run another by now, runs on."""
+        worker_pid, lease_expires_at, started_at = (
+            job.worker_pid,
+            job.lease_expires_at,
+            job.started_at,
+        )
+        if worker_pid is None or lease_expires_at is None or started_at is None:
             raise ValueError(
-                f"Expected the running job {job.id} with a worker and a lease, "
-                f"got {worker_pid} and {lease_expires_at}."
+                f"Expected the running job {job.id} with a worker, a lease, and a start, "
+                f"got {worker_pid}, {lease_expires_at}, and {started_at}."
             )
-        grace = timedelta(seconds=self.timings.cancel_grace_seconds)
         asked_to_stop = job.cancel_requested_at
-        if asked_to_stop is not None and now - asked_to_stop >= grace:
-            LOG.info("Ending the worker %s of job %s, asked to stop.", worker_pid, job.id)
-            _terminate(worker_pid)
-            self.records.finish(job.id, worker_pid, JobStatus.CANCELLED, now)
+        grace = timedelta(seconds=self.timings.cancel_grace_seconds)
+        past_grace = asked_to_stop is not None and now - asked_to_stop >= grace
+        if not past_grace and lease_expires_at >= now:
             return
-        if lease_expires_at >= now:
+        ended = self._ended(job, worker_pid, now)
+        if ended is None:
             return
-        LOG.info("Ending the worker %s of job %s, which stopped answering.", worker_pid, job.id)
-        _terminate(worker_pid)
-        if asked_to_stop is not None:
-            self.records.finish(job.id, worker_pid, JobStatus.CANCELLED, now)
-        elif job.attempt < job.max_attempts:
-            if self.records.requeue(job.id, worker_pid) is not None:
-                self.submit(job.id)
-        else:
-            reason = f"The worker {worker_pid} stopped answering after {job.attempt} attempts."
-            self.records.finish(job.id, worker_pid, JobStatus.FAILED, now, error=reason)
+        LOG.info("Ending the worker %s of job %s, now %s.", worker_pid, job.id, ended.status)
+        _terminate(worker_pid, started_at)
+        if ended.status == JobStatus.QUEUED:
+            self.submit(job.id)
+
+    def _ended(self, job: Job, worker_pid: int, now: datetime) -> Job | None:
+        """`job` cancelled where it was asked to stop, queued again while it has attempts left,
+        or failed after its last; None where its worker changed it first."""
+        if job.cancel_requested_at is not None:
+            return self.records.finish(job.id, worker_pid, JobStatus.CANCELLED, now)
+        if job.attempt < job.max_attempts:
+            return self.records.requeue(job.id, worker_pid)
+        reason = f"The worker {worker_pid} stopped answering after {job.attempt} attempts."
+        return self.records.finish(job.id, worker_pid, JobStatus.FAILED, now, error=reason)
 
     def _reap_until_closed(self) -> None:
         while not self._stopped.wait(self.timings.reaper_period_seconds):
@@ -152,13 +162,23 @@ class LocalDispatcher:
             LOG.warning("The pool gave up the job %s: %r", job_id, future.exception())
 
 
-def _terminate(worker_pid: int) -> None:
-    """End the worker `worker_pid`, one of this process's own children, by its handle rather
-    than its pid, which the system may have given another process since.
+def _terminate(worker_pid: int, started_at: datetime) -> None:
+    """End the worker `worker_pid` of a job that started at `started_at`, one of this process's
+    own children made before the job started: Windows soon gives an ended worker's pid to a new
+    process, which may be a new worker of the pool.
 
     shortcut: the pool marks itself broken when one of its workers ends, ending the others, whose
-    jobs the reaper queues again with an attempt spent; one process per job when step 5.3 runs
-    backtests side by side (`BACKLOG.md`)."""
+    jobs the reaper queues again with an attempt spent, so that ends of other jobs' workers can
+    fail a job that never misbehaved; one process per job when step 5.3 runs backtests side by
+    side (`BACKLOG.md`)."""
     for worker in multiprocessing.active_children():
-        if worker.pid == worker_pid:
+        if worker.pid == worker_pid and _made_before(worker_pid, started_at):
             worker.terminate()
+
+
+def _made_before(pid: int, instant: datetime) -> bool:
+    """Whether the process `pid` was made before `instant`; not where it has ended since."""
+    try:
+        return psutil.Process(pid).create_time() <= instant.timestamp()
+    except psutil.NoSuchProcess:
+        return False
