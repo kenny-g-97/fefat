@@ -151,3 +151,35 @@ class Preferences(Protocol):
     def replace_theme(self, theme: Theme) -> None:
         """Keep `theme` as the theme, in place of any chosen before."""
         ...
+
+
+class JobKind(StrEnum):
+    """What a job runs (`01-architecture.md` section 6); a later phase adds its kinds."""
+
+    BACKTEST = "backtest"
+    FEATURE_PREVIEW = "feature_preview"
+    FEATURE_VALIDATE = "feature_validate"
+    ANALYTICS = "analytics"
+    STUDY = "study"
+    PROP_SIM = "prop_sim"
+    SOURCE_SYNC = "source_sync"
+    IMPORT = "import"
+    TRADE_IMPORT = "trade_import"
+    CATALOG_SYNC = "catalog_sync"
+    REPRODUCE = "reproduce"
+    AGENT_TURN = "agent_turn"
+    INGEST = "ingest"
+    DEMO = "demo"
+    PYTHON_SNIPPET = "python_snippet"
+
+
+class JobStatus(StrEnum):
+    """Where a job stands (`01-architecture.md` section 6): queued, then running, then one of
+    four ends, each change a compare-and-set update (step 4.4)."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
