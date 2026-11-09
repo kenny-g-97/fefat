@@ -1,7 +1,7 @@
 """The local server's parts on each test's own home (step 4.2): the database of its `FEFAT_HOME`,
 made and migrated; a clock the test moves; keyring in memory; Argon2 at its lowest cost, so that
 many logins take no time, while the server keeps argon2-cffi's defaults; a client of the app;
-and the server's log."""
+the server's log; and the executors, cold and warm (step 4.5)."""
 
 import os
 from collections.abc import Iterator
@@ -19,6 +19,7 @@ from fefat_app.database.access_records import AccessTables
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.preferences import PreferenceRows
 from fefat_app.database.schema import opened_database, upgrade_schema
+from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.http.app import create_app
 from fefat_app.http.server_log import configure_server_log
 from fefat_app.jobs.dispatcher import LocalDispatcher
@@ -26,7 +27,7 @@ from fefat_app.jobs.worker import JobTimings
 from fefat_app.services.api_tokens import ApiTokenIssuer
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
-from local_server import LOOPBACK, STARTED_AT, SettableClock
+from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
 from memory_keyring import MemoryKeyring
 
 
@@ -94,3 +95,30 @@ def client(container: Container) -> Iterator[TestClient]:
 def server_log(root_log_put_back: None, tmp_path: Path) -> Path:
     """The server's log file, configured as `fefat up` configures it, and put back after."""
     return configure_server_log(tmp_path / "logs")
+
+
+@pytest.fixture
+def executor() -> Iterator[SubprocessExecutor]:
+    """An executor over the test's own folders that starts a runner for each execution (step
+    4.5)."""
+    yield from _executor_leaving_nothing(warm_previews=False)
+
+
+@pytest.fixture
+def warm_executor() -> Iterator[SubprocessExecutor]:
+    """An executor over the test's own folders that runs the previews in its warm runner (step
+    4.5)."""
+    yield from _executor_leaving_nothing(warm_previews=True)
+
+
+def _executor_leaving_nothing(warm_previews: bool) -> Iterator[SubprocessExecutor]:
+    """An executor that, once the test closes it, leaves no runner running and nothing in its
+    folder, neither an execution's folder nor a runner's log."""
+    paths = resolve_paths(os.environ)
+    opened = SubprocessExecutor(paths, warm_previews)
+    try:
+        yield opened
+    finally:
+        opened.close()
+    assert running_runners() == []
+    assert sorted(paths.executions_dir.glob("*")) == []

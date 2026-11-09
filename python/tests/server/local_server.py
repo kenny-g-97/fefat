@@ -1,15 +1,17 @@
 """What the local server's tests share beside their fixtures (step 4.2): the password they set,
 when their clock starts, a clock that stands still until a test moves it, the bytes the database
-keeps on disk, the steps of a login through the API, and a dispatcher that runs nothing (step
-4.4)."""
+keeps on disk, the steps of a login through the API, a dispatcher that runs nothing (step 4.4),
+and the executor's runners that still run (step 4.5)."""
 
 import base64
+import contextlib
 import os
 from datetime import UTC, datetime, timedelta
 from http.cookies import Morsel, SimpleCookie
 from pathlib import Path
 
 import httpx2
+import psutil
 from fastapi.testclient import TestClient
 
 from fefat.config import resolve_paths
@@ -82,3 +84,16 @@ def session_cookie(response: httpx2.Response) -> Morsel[str]:
     cookies = SimpleCookie()
     cookies.load(response.headers["set-cookie"])
     return cookies["fefat_session"]
+
+
+def running_runners() -> list[tuple[int, float]]:
+    """The executor's runners this process started that still run, each by its pid and when it
+    started, since Windows soon gives an ended process's pid to another (step 4.5): the process
+    the executor started, which on Windows is uv's launcher of the venv's interpreter, the
+    interpreter its child, both in the runner's Job Object."""
+    runners: list[tuple[int, float]] = []
+    for child in psutil.Process().children():
+        with contextlib.suppress(psutil.Error):
+            if "fefat_app.executor" in child.cmdline():
+                runners.append((child.pid, child.create_time()))
+    return runners
