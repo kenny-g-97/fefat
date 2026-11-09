@@ -3,6 +3,8 @@
 alone. Every error is a problem (`fefat_app.http.problems`), and every response carries its
 request's id and the security headers, which wrap the whole app with the host check."""
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,7 @@ from starlette.types import ASGIApp
 
 import fefat_app
 from fefat_app.container import Container
-from fefat_app.http import api_tokens, app_settings, docs, health, login
+from fefat_app.http import api_tokens, app_settings, docs, health, jobs, login, streams
 from fefat_app.http.loopback_hosts import LoopbackHosts
 from fefat_app.http.problems import install_problem_handlers, problems_as_problem_json
 from fefat_app.http.request_ids import RequestIds
@@ -42,6 +44,7 @@ def build_api() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
         strict_content_type=True,  # D-86: no page of another site logs in with an untyped body
+        lifespan=_dispatching,
     )
     api.add_middleware(RequestBodyLimitMiddleware, max_body_size=BODY_BYTES)
     install_problem_handlers(api)
@@ -50,10 +53,24 @@ def build_api() -> FastAPI:
         login.router,
         api_tokens.router,
         app_settings.router,
+        jobs.router,
+        streams.router,
         docs.router,
     ):
         api.include_router(router)
     return api
+
+
+@asynccontextmanager
+async def _dispatching(api: FastAPI) -> AsyncGenerator[None]:
+    """The jobs' dispatcher reaps while the server runs, and its workers end with the server
+    (step 4.4)."""
+    container: Container = api.state.container
+    container.dispatcher.start()
+    try:
+        yield
+    finally:
+        container.dispatcher.close()
 
 
 def create_app(container: Container, built_web_app: Path | None) -> ASGIApp:

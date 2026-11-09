@@ -3,16 +3,19 @@ import { settingsQuery } from "@/api/settings"
 import { Page } from "@/ui/page"
 import { Panel } from "@/ui/panel"
 import { ApiTokensSection } from "./ApiTokensSection"
+import { DemoJobSection } from "./DemoJobSection"
 import { PasswordSection } from "./PasswordSection"
 import { ThemeSection } from "./ThemeSection"
 
-/** The settings, one level deep (the design brief), a card each: the theme, the password, the
- * API tokens, and the data folder, read-only; the model defaults join with step 8.2. */
+/** The settings, one level deep (the design brief), a card each: the theme, the demo job, the
+ * password, the API tokens, and the data folder, read-only; the model defaults join with step
+ * 8.2. */
 export function SettingsPage() {
   return (
     <Page title="Settings">
       <div className="flex max-w-3xl flex-col gap-6">
         <ThemeSection />
+        <DemoJobSection />
         <PasswordSection />
         <ApiTokensSection />
         <DataFolderSection />

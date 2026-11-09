@@ -12,7 +12,6 @@ triggers of the migrations enforce (D-11)."""
 
 import enum
 from datetime import UTC, date, datetime
-from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
@@ -23,6 +22,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     String,
@@ -34,6 +34,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from fefat.market.importers.profiles import ProfileKind
 from fefat_app.database.uuid7 import new_uuid7
+from fefat_app.ports import JobKind, JobStatus
 
 ID = String(36)
 """A UUIDv7 as text."""
@@ -212,40 +213,10 @@ class ImportProfileRow(Base):
     created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
 
 
-class JobKind(StrEnum):
-    """What a job runs (`01-architecture.md` section 6); a later phase adds its kinds."""
-
-    BACKTEST = "backtest"
-    FEATURE_PREVIEW = "feature_preview"
-    FEATURE_VALIDATE = "feature_validate"
-    ANALYTICS = "analytics"
-    STUDY = "study"
-    PROP_SIM = "prop_sim"
-    SOURCE_SYNC = "source_sync"
-    IMPORT = "import"
-    TRADE_IMPORT = "trade_import"
-    CATALOG_SYNC = "catalog_sync"
-    REPRODUCE = "reproduce"
-    AGENT_TURN = "agent_turn"
-    INGEST = "ingest"
-    DEMO = "demo"
-    PYTHON_SNIPPET = "python_snippet"
-
-
-class JobStatus(StrEnum):
-    """Where a job stands (`01-architecture.md` section 6): queued, then running, then one of
-    four ends, each change a compare-and-set update (step 4.4)."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    TIMED_OUT = "timed_out"
-
-
 class JobRow(Base):
-    """A job of the app's process pool (`01-architecture.md` section 6), which step 4.4 runs."""
+    """A job of the app's process pool (`01-architecture.md` section 6), which step 4.4 runs; its
+    kinds and states are the ports' (`fefat_app.ports.JobKind`, `JobStatus`), so that a service
+    names them without SQLAlchemy."""
 
     __tablename__ = "jobs"
 
@@ -258,6 +229,7 @@ class JobRow(Base):
         Enum(JobStatus, native_enum=False, length=16, values_callable=_values)
     )
     progress: Mapped[float] = mapped_column(Float)
+    message: Mapped[str | None] = mapped_column(Text)
     attempt: Mapped[int] = mapped_column(Integer)
     max_attempts: Mapped[int] = mapped_column(Integer)
     worker_pid: Mapped[int | None] = mapped_column(Integer)
@@ -272,10 +244,14 @@ class JobRow(Base):
 
 class EventRow(Base):
     """An event of a stream, such as `job:<id>`, a job's progress (`01-architecture.md` section
-    6): its id counts up and is never reused, since a reader resumes after the last it saw."""
+    6): its id counts up and is never reused, since a reader resumes after the last it saw, which
+    the index of a stream's ids finds (step 4.4)."""
 
     __tablename__ = "events"
-    __table_args__ = ({"sqlite_autoincrement": True},)
+    __table_args__ = (
+        Index("ix_events_stream_id_id", "stream_id", "id"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     stream_id: Mapped[str] = mapped_column(String)

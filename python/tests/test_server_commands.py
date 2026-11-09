@@ -80,6 +80,8 @@ def test_up_serves_the_app_on_the_loopback_at_the_port_of_config_toml(
     assert (options["host"], options["port"]) == ("127.0.0.1", 8790)
     assert (options["log_config"], options["proxy_headers"]) == (None, False)
     assert (options["access_log"], options["server_header"]) == (False, False)
+    # Step 4.4: an open event stream holds Ctrl+C three seconds at most.
+    assert options["timeout_graceful_shutdown"] == 3
     assert "http://127.0.0.1:8790" in printed
     assert str(paths.logs_dir / "server.log") in printed
     with TestClient(app, base_url="http://127.0.0.1") as client:

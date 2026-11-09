@@ -137,6 +137,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent Jobs
+         * @description The newest jobs, newest first, at most a hundred.
+         */
+        get: operations["recent_jobs_v1_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Demo Job
+         * @description Start a demo job that counts `seconds`, reporting each; it is queued until a worker of
+         *     the pool is free.
+         */
+        post: operations["start_demo_job_v1_jobs_demo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job By Id
+         * @description The job `job_id`; refused with 404 where no job has the id.
+         */
+        get: operations["job_by_id_v1_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Job
+         * @description Cancel the job `job_id`: at once while it is queued; while it runs, it is asked to stop,
+         *     which its worker does at its next report, or which the server makes it do ten seconds
+         *     later; an ended job is given as it is. Refused with 404 where no job has the id.
+         */
+        post: operations["cancel_job_v1_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -178,6 +261,28 @@ export interface paths {
          *     never a secret's value.
          */
         put: operations["change_settings_v1_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/streams/{stream_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Events
+         * @description The events of the stream `stream_id`, such as `job:<id>`, after the event `Last-Event-ID`
+         *     names, or from the first, then each new one as it is kept; each event's `id` is what to send
+         *     as `Last-Event-ID` on reconnecting, its `event` its type, and its `data` what it says.
+         */
+        get: operations["stream_events_v1_streams__stream_id__get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -264,6 +369,14 @@ export interface components {
             theme: components["schemas"]["Theme"];
         };
         /**
+         * DemoJobRequest
+         * @description How many seconds a demo job counts, one a second, from 1 to an hour.
+         */
+        DemoJobRequest: {
+            /** Seconds */
+            seconds: number;
+        };
+        /**
          * FieldError
          * @description Where a request broke the API's schema and why, without the value it sent.
          */
@@ -297,6 +410,66 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * Job
+         * @description A job as the app keeps it (`01-architecture.md` section 6): what it runs and with what,
+         *     where it stands, how far it has come, in percent, with its last message, its attempts, the
+         *     worker process that holds it and until when its lease runs, when it was asked to stop, and
+         *     how it ended.
+         */
+        Job: {
+            /** Attempt */
+            attempt: number;
+            /** Cancel Requested At */
+            cancel_requested_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["JobKind"];
+            /** Lease Expires At */
+            lease_expires_at: string | null;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Message */
+            message: string | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Progress */
+            progress: number;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["JobStatus"];
+            /** Worker Pid */
+            worker_pid: number | null;
+        };
+        /**
+         * JobKind
+         * @description What a job runs (`01-architecture.md` section 6); a later phase adds its kinds.
+         * @enum {string}
+         */
+        JobKind: "backtest" | "feature_preview" | "feature_validate" | "analytics" | "study" | "prop_sim" | "source_sync" | "import" | "trade_import" | "catalog_sync" | "reproduce" | "agent_turn" | "ingest" | "demo" | "python_snippet";
+        /**
+         * JobStatus
+         * @description Where a job stands (`01-architecture.md` section 6): queued, then running, then one of
+         *     four ends, each change a compare-and-set update; a running job whose worker stopped
+         *     answering is queued again while it has attempts left (step 4.4, D-90).
+         * @enum {string}
+         */
+        JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
         /**
          * LoginRequest
          * @description The password, set at `fefat up`'s first run or by `fefat password set`.
@@ -804,6 +977,193 @@ export interface operations {
             };
         };
     };
+    recent_jobs_v1_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    start_demo_job_v1_jobs_demo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    job_by_id_v1_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    cancel_job_v1_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     me_v1_me_get: {
         parameters: {
             query?: never;
@@ -895,6 +1255,48 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    stream_events_v1_streams__stream_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "last-event-id"?: number | null;
+            };
+            path: {
+                stream_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

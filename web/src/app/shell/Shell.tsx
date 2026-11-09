@@ -4,9 +4,10 @@ import { useLayoutEffect, useRef } from "react"
 import { settingsQuery } from "@/api/settings"
 import { showTheme, switchTheme } from "@/ui/theme"
 import { Sidebar } from "./Sidebar"
+import { TopBar } from "./TopBar"
 
-/** The app behind the login: a skip link past the sidebar, the sidebar beside the page, in the
- * theme the server keeps, painted at once before the first frame, and with the cross-fade when
+/** The app behind the login: a skip link past the sidebar, the sidebar beside the top bar and
+ * the page under it, in the theme the server keeps, painted at once before the first frame, and with the cross-fade when
  * the trader changes it after that. */
 export function Shell() {
   const { data: settings } = useSuspenseQuery(settingsQuery)
@@ -33,9 +34,12 @@ export function Shell() {
         Skip to content
       </a>
       <Sidebar />
-      <main ref={main} id="main" tabIndex={-1} className="min-w-0 flex-1">
-        <Outlet />
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        <main ref={main} id="main" tabIndex={-1} className="min-w-0 flex-1">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

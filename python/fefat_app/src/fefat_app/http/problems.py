@@ -59,13 +59,14 @@ def problem_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
 
 def problems_as_problem_json(document: dict[str, Any]) -> dict[str, Any]:
     """`document` with each error response's schema under the media type the API answers it
-    with, where FastAPI files it under `application/json`."""
+    with, where FastAPI files it under the route's own, `application/json`, or an event stream's
+    `text/event-stream` (step 4.4)."""
     for path_item in document["paths"].values():
         for operation in path_item.values():
             for status, response in operation["responses"].items():
                 content = response.get("content", {})
-                if status[0] in "45" and "application/json" in content:
-                    response["content"] = {PROBLEM_MEDIA_TYPE: content["application/json"]}
+                if status[0] in "45" and content:
+                    response["content"] = {PROBLEM_MEDIA_TYPE: next(iter(content.values()))}
     return document
 
 

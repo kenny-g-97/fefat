@@ -17,8 +17,8 @@ const desktop = {
 }
 
 /** The UI harness of step 4.3 (`just e2e`): every spec against the built app that `fefat up`
- * serves on a seeded temporary home, and the login once more through the Vite dev server's
- * proxy, at desktop size alone (D-54). */
+ * serves on a seeded temporary home, and the login and the jobs' streams (step 4.4) once more
+ * through the Vite dev server's proxy, at desktop size alone (D-54). */
 export default defineConfig({
   testDir: "./e2e",
   workers: 1,
@@ -32,7 +32,7 @@ export default defineConfig({
     },
     {
       name: "dev-proxy",
-      testMatch: "login.spec.ts",
+      testMatch: ["login.spec.ts", "jobs.spec.ts"],
       use: { ...desktop, baseURL: `http://localhost:${DEV_SERVER_PORT}` },
     },
   ],

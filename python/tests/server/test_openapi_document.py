@@ -42,3 +42,21 @@ def test_errors_are_documented_as_problem_json_and_the_docs_stay_out() -> None:
     }
     assert "HTTPValidationError" not in document["components"]["schemas"]
     assert {"/docs", "/openapi.json"}.isdisjoint(document["paths"])
+
+
+def test_every_error_of_every_route_is_documented_as_problem_json() -> None:
+    # Step 4.4: an event stream's refusals too, which FastAPI files under its stream's media type.
+    document = openapi_document()
+
+    filed = {
+        f"{method} {path} {status}": list(response["content"])
+        for path, path_item in document["paths"].items()
+        for method, operation in path_item.items()
+        for status, response in operation["responses"].items()
+        if status[0] in "45" and "content" in response
+    }
+
+    assert filed
+    assert {
+        route for route, media in filed.items() if media != ["application/problem+json"]
+    } == set()

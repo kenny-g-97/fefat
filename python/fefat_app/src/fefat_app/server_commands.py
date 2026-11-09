@@ -24,6 +24,9 @@ from fefat_app.http.web_app import built_web_app_dir
 from fefat_app.password_commands import typed_new_password
 
 EXIT_OK = 0
+GRACEFUL_SHUTDOWN_SECONDS = 3
+"""How long Ctrl+C waits for open requests, such as a job's event stream, which never ends by
+itself, before the server stops them (step 4.4)."""
 
 
 def serve(arguments: argparse.Namespace) -> int:
@@ -44,6 +47,7 @@ def serve(arguments: argparse.Namespace) -> int:
             access_log=False,
             server_header=False,
             proxy_headers=False,
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SECONDS,
         )
     return EXIT_OK
 
