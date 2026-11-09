@@ -22,6 +22,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     String,
@@ -228,6 +229,7 @@ class JobRow(Base):
         Enum(JobStatus, native_enum=False, length=16, values_callable=_values)
     )
     progress: Mapped[float] = mapped_column(Float)
+    message: Mapped[str | None] = mapped_column(Text)
     attempt: Mapped[int] = mapped_column(Integer)
     max_attempts: Mapped[int] = mapped_column(Integer)
     worker_pid: Mapped[int | None] = mapped_column(Integer)
@@ -242,10 +244,14 @@ class JobRow(Base):
 
 class EventRow(Base):
     """An event of a stream, such as `job:<id>`, a job's progress (`01-architecture.md` section
-    6): its id counts up and is never reused, since a reader resumes after the last it saw."""
+    6): its id counts up and is never reused, since a reader resumes after the last it saw, which
+    the index of a stream's ids finds (step 4.4)."""
 
     __tablename__ = "events"
-    __table_args__ = ({"sqlite_autoincrement": True},)
+    __table_args__ = (
+        Index("ix_events_stream_id_id", "stream_id", "id"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     stream_id: Mapped[str] = mapped_column(String)

@@ -43,7 +43,7 @@ TABLES = {
     "api_tokens",
 }
 INDEX_TABLES = ["feature_versions", "feature_validations", "import_profiles"]
-LATEST_REVISION = "0002"
+LATEST_REVISION = "0003"
 SAVED_AT = datetime(2026, 11, 6, 12, 30, tzinfo=UTC)
 
 

@@ -16,6 +16,7 @@ from fefat.config import Settings, resolve_paths
 from fefat_app.container import Container
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.access_records import AccessTables
+from fefat_app.database.job_records import JobTables
 from fefat_app.database.preferences import PreferenceRows
 from fefat_app.database.schema import opened_database, upgrade_schema
 from fefat_app.http.app import create_app
@@ -42,6 +43,12 @@ def engine() -> Iterator[Engine]:
 @pytest.fixture
 def keyring_backend() -> MemoryKeyring:
     return MemoryKeyring()
+
+
+@pytest.fixture
+def job_records(engine: Engine) -> JobTables:
+    """The jobs and their events in the test's database (step 4.4)."""
+    return JobTables(engine)
 
 
 @pytest.fixture
