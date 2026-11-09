@@ -90,10 +90,14 @@ class LocalDispatcher:
         pool.shutdown(wait=True, cancel_futures=True)
 
     def sweep(self) -> None:
-        """Reap the running jobs, then submit the queued jobs no worker was given."""
+        """Reap the running jobs, then submit the queued jobs no worker was given; a running job's
+        row the reaper cannot read is logged and passed over, so that it holds up no other."""
         now = self.clock()
         for job in self.records.with_status(JobStatus.RUNNING):
-            self._reap(job, now)
+            try:
+                self._reap(job, now)
+            except ValueError:
+                LOG.exception("The jobs' reaper passed over the job %s.", job.id)
         queued = self.records.with_status(JobStatus.QUEUED)
         with self._lock:
             unsubmitted = [job.id for job in queued if job.id not in self._submitted]

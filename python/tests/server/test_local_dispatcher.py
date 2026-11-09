@@ -15,9 +15,11 @@ from multiprocessing.process import BaseProcess
 from typing import Any
 
 import pytest
+from sqlalchemy.orm import Session
 
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
+from fefat_app.database.models import JobRow
 from fefat_app.jobs.dispatcher import LocalDispatcher
 from fefat_app.jobs.worker import JobTimings
 from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
@@ -327,3 +329,27 @@ def test_a_job_its_worker_ended_first_leaves_the_worker_running(
     assert ended is not None
     assert ended.status == JobStatus.SUCCEEDED
     assert stand_in.is_alive()
+
+
+def test_a_running_job_the_reaper_cannot_read_holds_up_no_other(
+    idle_dispatcher: LocalDispatcher, job_records: JobTables
+) -> None:
+    # A row changed by hand, running with no worker or lease, is logged and passed over.
+    with Session(job_records.engine) as session, session.begin():
+        session.add(
+            JobRow(
+                kind=JobKind.DEMO,
+                payload_json={"seconds": 1},
+                status=JobStatus.RUNNING,
+                progress=0.0,
+                attempt=1,
+                max_attempts=3,
+                created_at=datetime.now(UTC),
+            )
+        )
+    queued = a_demo(job_records, seconds=1)
+
+    idle_dispatcher.sweep()
+    ended = waited_for(job_records, queued, lambda now: now.status == JobStatus.SUCCEEDED)
+
+    assert ended.result == {"counted": 1}
