@@ -32,6 +32,7 @@ DATA_DIR_VARIABLE = "FEFAT_DATA_DIR"
 ALLOW_DATA_DIR_IN_GIT_TREE_VARIABLE = "FEFAT_ALLOW_DATA_DIR_IN_GIT_TREE"
 DATA_FOLDER_NAME = "data"
 CACHE_FOLDER_NAME = "cache"
+EXECUTIONS_FOLDER_NAME = "executions"
 REPORTS_FOLDER_NAME = "reports"
 WORKSPACE_FOLDER = Path("workspaces") / "default"
 RUNS_FOLDER = Path("artifacts") / "runs"
@@ -54,6 +55,13 @@ class FefatPaths:
         """`<FEFAT_HOME>/cache`: what FEFAT can rebuild, such as the session tables, so the
         folder may be deleted at any time (`01-architecture.md` section 4)."""
         return self.home / CACHE_FOLDER_NAME
+
+    @property
+    def executions_dir(self) -> Path:
+        """`<FEFAT_HOME>/cache/executions`: the runners' logs, and a folder for each execution of
+        the trader's code while it runs, with its spec, its result, and its outputs, removed once
+        read (`fefat_app.executor`, step 4.5)."""
+        return self.cache_dir / EXECUTIONS_FOLDER_NAME
 
     @property
     def workspace_dir(self) -> Path:

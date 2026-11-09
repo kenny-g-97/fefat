@@ -3,9 +3,10 @@
 what uses it, so that swapping an adapter is a module of its own and a line of the container.
 
 The credential store is the first (step 4.1), the records of who may use the local server the
-second (step 4.2), the trader's preferences the third (step 4.3), and the jobs' records and their
-dispatcher the fourth and fifth (step 4.4); the executor, the blob store, the agent's runtime,
-and the licence arrive with the steps that first use them."""
+second (step 4.2), the trader's preferences the third (step 4.3), the jobs' records and their
+dispatcher the fourth and fifth (step 4.4), and the executor the sixth (step 4.5), its specs and
+results in `fefat_app.execution`; the blob store, the agent's runtime, and the licence arrive
+with the steps that first use them."""
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -13,6 +14,8 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
+
+from fefat_app.execution import ExecutionResult, ExecutionSpec, ProgressReport
 
 type Clock = Callable[[], datetime]
 """Now, as an aware instant in UTC: the system's clock in the server, a settable one in tests."""
@@ -344,4 +347,21 @@ class Dispatcher(Protocol):
     def close(self) -> None:
         """Stop reaping and end every worker, as the server stops; their jobs are queued again
         when it starts next."""
+        ...
+
+
+class Executor(Protocol):
+    """Where the trader's code runs (`01-architecture.md` sections 6 and 10, step 4.5): a
+    subprocess within a wall-clock timeout and a memory limit, in a scrubbed environment, today,
+    and containers if ever needed; crash containment, not a security boundary
+    (`fefat_app.executor`)."""
+
+    def run(self, spec: ExecutionSpec, report: ProgressReport) -> ExecutionResult:
+        """Run `spec` within its limits, giving `report` each report of its progress as it
+        comes; how it ended, its result validated. What `report` raises stops the execution and
+        comes through."""
+        ...
+
+    def close(self) -> None:
+        """End any process the executor keeps between executions, as the server stops."""
         ...
