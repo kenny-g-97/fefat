@@ -102,4 +102,5 @@ forbidden_modules = [
     "fefat_app.credentials",
     "fefat_app.container",
     "fefat_app.jobs",
+    "fefat_app.executor",
 ]

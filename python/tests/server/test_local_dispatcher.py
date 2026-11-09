@@ -7,6 +7,7 @@ deadline, since a spawned worker takes a second or more to start on Windows."""
 
 import multiprocessing
 import os
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -37,7 +38,7 @@ DEADLINE_SECONDS = 60
 def a_dispatcher(job_records: JobTables) -> LocalDispatcher:
     return LocalDispatcher(
         job_records,
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         partial(datetime.now, UTC),
         TEST_TIMINGS,
         workers=1,
@@ -90,6 +91,29 @@ def waited_for(job_records: JobTables, job: Job, reached: Callable[[Job], bool])
 
 def a_demo(job_records: JobTables, seconds: int, max_attempts: int = 3) -> Job:
     return job_records.add(JobKind.DEMO, {"seconds": seconds}, max_attempts, datetime.now(UTC))
+
+
+def suspended_outside_a_write(worker: psutil.Process) -> None:
+    """Suspend `worker` at a moment it holds no write of the database, as a worker that hangs in
+    its work does: one suspended inside its heartbeat's or its report's transaction would keep
+    the database's write lock, and with it the reaper from queueing its job again (`BACKLOG.md`,
+    a worker hung inside a write), so such a suspension is let go and tried again."""
+    database_file = resolve_paths(os.environ).database_file
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    while time.monotonic() < deadline:
+        worker.suspend()
+        time.sleep(0.05)
+        probe = sqlite3.connect(database_file, timeout=0)
+        try:
+            probe.execute("BEGIN IMMEDIATE")
+            probe.rollback()
+            return
+        except sqlite3.OperationalError:
+            worker.resume()
+        finally:
+            probe.close()
+        time.sleep(0.05)
+    raise AssertionError(f"Expected the worker {worker.pid} suspended outside a write.")
 
 
 def worker_of(pid: int | None) -> BaseProcess:
@@ -274,7 +298,7 @@ def test_a_pool_wider_than_windows_allows_still_runs_its_jobs(job_records: JobTa
     # would ask for 62 (D-90).
     dispatcher = LocalDispatcher(
         job_records,
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         partial(datetime.now, UTC),
         TEST_TIMINGS,
         workers=64,
@@ -315,7 +339,7 @@ def test_a_job_its_worker_ended_first_leaves_the_worker_running(
     # once its own change of the job holds.
     racing = LocalDispatcher(
         WorkerEndsFirst(job_records.engine),
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         partial(datetime.now, UTC),
         TEST_TIMINGS,
         workers=1,
@@ -369,7 +393,7 @@ def test_the_reaper_queues_a_hung_workers_job_again_in_a_new_worker(
     first = waited_for(job_records, job, lambda now: now.progress > 0)
     assert first.worker_pid is not None
 
-    psutil.Process(first.worker_pid).suspend()
+    suspended_outside_a_write(psutil.Process(first.worker_pid))
     second = waited_for(
         job_records,
         job,
@@ -406,7 +430,7 @@ def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
     clock = SettableClock(datetime.now(UTC))
     dispatcher = LocalDispatcher(
         job_records,
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         clock,
         TEST_TIMINGS,
         workers=1,

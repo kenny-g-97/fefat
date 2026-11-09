@@ -9,13 +9,12 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from fefat.config import resolve_paths
+from fefat.config import FefatPaths, resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
 from fefat_app.jobs.worker import JobTimings, run_job
@@ -26,8 +25,8 @@ DEADLINE_SECONDS = 30
 SERVER_TIMINGS = JobTimings()
 
 
-def database_file() -> Path:
-    return resolve_paths(os.environ).database_file
+def fefat_paths() -> FefatPaths:
+    return resolve_paths(os.environ)
 
 
 def a_demo(job_records: JobTables, payload: dict[str, object]) -> Job:
@@ -35,7 +34,7 @@ def a_demo(job_records: JobTables, payload: dict[str, object]) -> Job:
 
 
 def ran(job_records: JobTables, job: Job, timings: JobTimings = SERVER_TIMINGS) -> Job:
-    run_job(job.id, database_file(), timings)
+    run_job(job.id, fefat_paths(), timings)
     ended = job_records.by_id(job.id)
     assert ended is not None
     return ended
@@ -77,7 +76,7 @@ def test_a_worker_runs_a_demo_to_its_end_with_its_progress(job_records: JobTable
 def test_a_job_asked_to_stop_ends_cancelled_at_its_next_report(job_records: JobTables) -> None:
     # Done means 1: the request is checked between chunks, the demo's seconds.
     job = a_demo(job_records, {"seconds": 60})
-    worker = threading.Thread(target=run_job, args=(job.id, database_file(), JobTimings()))
+    worker = threading.Thread(target=run_job, args=(job.id, fefat_paths(), JobTimings()))
     worker.start()
 
     waited_for(job_records, job, lambda now: now.status == JobStatus.RUNNING)
@@ -108,7 +107,10 @@ def test_a_kind_the_worker_cannot_run_fails_with_the_reason(job_records: JobTabl
     ended = ran(job_records, job)
 
     assert ended.status == JobStatus.FAILED
-    assert ended.error == "ValueError: Expected a job kind the worker runs (demo), got backtest."
+    assert ended.error == (
+        "ValueError: Expected a job kind the worker runs (demo, feature_preview, python_snippet), "
+        "got backtest."
+    )
 
 
 def test_a_demo_refuses_a_payload_it_cannot_count(job_records: JobTables) -> None:

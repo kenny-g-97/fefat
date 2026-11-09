@@ -13,10 +13,10 @@ from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime, timedelta
 from functools import partial
-from pathlib import Path
 
 import psutil
 
+from fefat.config import FefatPaths
 from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.ports import Clock, Job, JobRecords, JobStatus
 
@@ -27,19 +27,20 @@ MOST_WORKERS = 61
 
 
 class LocalDispatcher:
-    """`Dispatcher` over a pool of `workers` processes that run the jobs of the database
-    `database_file`, which `records` reads too; no process starts before the first job does."""
+    """`Dispatcher` over a pool of `workers` processes that run the jobs of the database of
+    `paths`, which `records` reads too, in the folders of `paths`; no process starts before the
+    first job does."""
 
     def __init__(
         self,
         records: JobRecords,
-        database_file: Path,
+        paths: FefatPaths,
         clock: Clock,
         timings: JobTimings,
         workers: int,
     ) -> None:
         self.records = records
-        self.database_file = database_file
+        self.paths = paths
         self.clock = clock
         self.timings = timings
         self.workers = workers
@@ -60,15 +61,11 @@ class LocalDispatcher:
     def submit(self, job_id: str) -> None:
         with self._lock:
             try:
-                future = self._opened_pool().submit(
-                    run_job, job_id, self.database_file, self.timings
-                )
+                future = self._opened_pool().submit(run_job, job_id, self.paths, self.timings)
             except BrokenProcessPool:
                 self._opened_pool().shutdown(wait=False)
                 self._pool = None
-                future = self._opened_pool().submit(
-                    run_job, job_id, self.database_file, self.timings
-                )
+                future = self._opened_pool().submit(run_job, job_id, self.paths, self.timings)
             self._submitted[job_id] = future
         future.add_done_callback(partial(self._forget, job_id))
 
