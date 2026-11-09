@@ -8,6 +8,7 @@ address space (`RLIMIT_AS`) on Linux."""
 
 import ast
 import re
+import threading
 import time
 from datetime import date
 from pathlib import Path
@@ -28,6 +29,7 @@ from fefat_app.execution import (
     PythonSnippetOutput,
     PythonSnippetSpec,
 )
+from fefat_app.executor import runner_process
 from fefat_app.executor.environment import scrubbed_environment
 from fefat_app.executor.protocol import (
     RESULT_BYTES,
@@ -38,6 +40,7 @@ from fefat_app.executor.protocol import (
     read_result_file,
     read_series,
 )
+from fefat_app.executor.runner_process import removed
 from fefat_app.executor.snippet import TAIL_CHARS
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from generated_minutes import FEBRUARY, write_minutes
@@ -241,6 +244,34 @@ def test_a_snippet_that_raises_fails_with_its_traceback_and_what_it_printed(
     assert result.error.endswith("ValueError: planted\n")
     assert 'File "<snippet>", line 2' in result.error
     assert result.stdout_tail == "before\n"
+
+
+def test_what_a_runner_still_holds_is_removed_once_it_lets_go(tmp_path: Path) -> None:
+    # Windows refuses to remove a file another handle holds, as it holds a stopped runner's log
+    # and working folder for some milliseconds after the runner has gone.
+    log = tmp_path / "runner.log"
+    folder = tmp_path / "execution"
+    folder.mkdir()
+    held = [log.open("wb"), (folder / "result.json").open("wb")]
+    threading.Timer(0.2, lambda: [handle.close() for handle in held]).start()
+
+    removed(log)
+    removed(folder)
+
+    assert sorted(tmp_path.iterdir()) == []
+
+
+def test_a_runner_that_fails_to_start_leaves_no_log(
+    executor: SubprocessExecutor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(*arguments: object) -> None:
+        raise OSError("planted: no runner today")
+
+    monkeypatch.setattr(runner_process, "_contained", refused)
+
+    with pytest.raises(OSError, match="planted"):
+        ran(executor, "print(1)\n")
+    # The executor fixture checks that its folder holds nothing, neither the log nor the folder.
 
 
 def test_the_runner_s_environment_keeps_the_system_s_variables_and_fefat_s_folders_alone(

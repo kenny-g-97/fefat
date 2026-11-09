@@ -141,8 +141,12 @@ def start_runner(paths: FefatPaths, memory_bytes: int, folder: Path | None) -> R
         prefix="runner-", suffix=".log", dir=paths.executions_dir
     )
     environment = scrubbed_environment(paths, os.environ)
-    with os.fdopen(descriptor, "wb") as log:
-        process, end = _contained(command, environment, working_folder, log, memory_bytes)
+    try:
+        with os.fdopen(descriptor, "wb") as log:
+            process, end = _contained(command, environment, working_folder, log, memory_bytes)
+    except BaseException:
+        removed(Path(log_name))
+        raise
     return RunnerProcess(process, end, memory_bytes, Path(log_name))
 
 
@@ -176,14 +180,20 @@ def _contained(
         process.kill()
         process.wait()
         raise
-    psutil.Process(process.pid).resume()
+    try:
+        psutil.Process(process.pid).resume()
+    except psutil.Error:
+        job.close()
+        process.wait()
+        raise
     return process, job.close
 
 
 def removed(path: Path) -> None:
     """Remove the file or folder `path`, trying again for `REMOVAL_SECONDS` while Windows still
-    holds it for a runner that has just ended; past them, it is logged and left in `cache/`,
-    which may be deleted at any time."""
+    holds it, or a file in it, for a runner that has just ended; past them, it is logged and left
+    in `cache/`, which may be deleted at any time, so that the cleaning never fails an execution
+    that ended."""
     deadline = time.monotonic() + REMOVAL_SECONDS
     while True:
         try:
@@ -192,7 +202,7 @@ def removed(path: Path) -> None:
             else:
                 path.unlink(missing_ok=True)
             return
-        except PermissionError:
+        except OSError:
             if time.monotonic() > deadline:
                 LOG.warning("The executor left %s, which another process still holds.", path)
                 return
@@ -200,8 +210,8 @@ def removed(path: Path) -> None:
 
 
 def _end_session(session: int) -> None:
-    """End every process of the runner's session `session`, the runner's pid, where they still run:
-    elsewhere than on Windows, whose Job Object ends them."""
+    """End every process of the runner's session `session`, the runner's pid, where they still
+    run: elsewhere than on Windows, whose Job Object ends them."""
     if sys.platform != "win32":
         with contextlib.suppress(ProcessLookupError):
             os.killpg(session, signal.SIGKILL)
