@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
-import { isActive, jobsQuery, KIND_LABELS } from "@/api/jobs"
+import {
+  isActive,
+  isCancelling,
+  type Job,
+  jobsQuery,
+  KIND_LABELS,
+} from "@/api/jobs"
 import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
 import { PercentBar } from "@/ui/percent-bar"
@@ -58,11 +64,23 @@ function RunningJobs() {
             value={job.progress}
             label={`${KIND_LABELS[job.kind]} progress`}
           />
-          {job.message !== null && (
-            <p className="text-xs text-muted-foreground">{job.message}</p>
-          )}
+          <JobNote job={job} />
         </li>
       ))}
     </ul>
   )
+}
+
+/** What a job does now: Queued until a worker takes it, Cancelling once asked to stop, or else
+ * its last message. */
+function JobNote({ job }: Readonly<{ job: Job }>) {
+  const note = isCancelling(job)
+    ? "Cancelling"
+    : job.status === "queued"
+      ? "Queued"
+      : job.message
+  if (note === null) {
+    return null
+  }
+  return <p className="text-xs text-muted-foreground">{note}</p>
 }

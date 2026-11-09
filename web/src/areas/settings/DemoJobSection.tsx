@@ -9,7 +9,7 @@ export function DemoJobSection() {
   return (
     <Panel
       title="Demo job"
-      description="A job that counts for a minute, to watch its progress in the jobs drawer survive a reload and stop on Cancel"
+      description="A job that counts for a minute, to follow at the top right and on Home"
     >
       <div className="flex items-center gap-4">
         <Button
@@ -21,7 +21,7 @@ export function DemoJobSection() {
         </Button>
         {start.isSuccess && (
           <p role="status" className="text-foreground-secondary">
-            Demo job started
+            Demo job queued
           </p>
         )}
       </div>

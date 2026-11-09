@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query"
 import { X } from "lucide-react"
-import { jobsQuery } from "@/api/jobs"
+import { isActive, jobsQuery } from "@/api/jobs"
 import { Button } from "@/ui/button"
 import { SheetClose, SheetContent, SheetTitle } from "@/ui/sheet"
 import { JobRow } from "./JobRow"
 
 /** The jobs drawer (web/DESIGN.md, Patterns), which the top bar's indicator opens at the
- * window's right edge: the newest jobs first, each with its progress while it runs. */
+ * window's right edge: the queued and running jobs first, then the ended, each newest first,
+ * with its progress while it runs. */
 export function JobsDrawer() {
   return (
     <SheetContent
@@ -18,7 +19,12 @@ export function JobsDrawer() {
       <header className="flex h-18 shrink-0 items-center justify-between border-b px-6">
         <SheetTitle className="text-base">Jobs</SheetTitle>
         <SheetClose asChild>
-          <Button variant="outline" size="icon-lg" aria-label="Close">
+          <Button
+            data-slot="button"
+            variant="ghost"
+            size="icon-lg"
+            aria-label="Close"
+          >
             <X className="size-5" />
           </Button>
         </SheetClose>
@@ -53,9 +59,13 @@ function JobList() {
       </p>
     )
   }
+  const ordered = [
+    ...jobs.data.filter(isActive),
+    ...jobs.data.filter((job) => !isActive(job)),
+  ]
   return (
     <ul className="flex-1 overflow-y-auto px-6">
-      {jobs.data.map((job) => (
+      {ordered.map((job) => (
         <JobRow key={job.id} job={job} />
       ))}
     </ul>
