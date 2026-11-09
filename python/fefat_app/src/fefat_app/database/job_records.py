@@ -246,7 +246,7 @@ def _stream_event(row: EventRow) -> StreamEvent:
     return StreamEvent(
         id=row.id,
         stream_id=row.stream_id,
-        event_type=row.event_type,
-        data=row.data_json,
+        event_type=JobEventType(row.event_type),
+        said=row.data_json,
         created_at=row.created_at,
     )

@@ -112,7 +112,7 @@ def test_a_submitted_demo_runs_in_a_worker_of_the_pool(
     assert (ended.result, ended.progress, ended.attempt) == ({"counted": 2}, 100.0, 1)
     assert ended.worker_pid not in (None, os.getpid())
     reports = job_records.events_after(job_stream(job.id), 0, 100)
-    assert [event.data["percent"] for event in reports if event.event_type == "progress"] == [
+    assert [event.said["percent"] for event in reports if event.event_type == "progress"] == [
         50.0,
         100.0,
     ]
@@ -153,7 +153,7 @@ def test_a_killed_workers_job_is_queued_again_up_to_its_attempts_then_fails(
     assert ended.attempt == 2
     assert ended.error == f"The worker {second.worker_pid} stopped answering after 2 attempts."
     statuses = [
-        event.data["status"]
+        event.said["status"]
         for event in job_records.events_after(job_stream(job.id), 0, 1000)
         if event.event_type == "status"
     ]

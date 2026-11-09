@@ -62,7 +62,7 @@ def test_a_worker_runs_a_demo_to_its_end_with_its_progress(job_records: JobTable
     )
     assert (ended.message, ended.attempt, ended.worker_pid) == ("Counted 2 of 2", 1, os.getpid())
     events = job_records.events_after(job_stream(job.id), 0, 100)
-    assert [(event.event_type, event.data) for event in events] == [
+    assert [(event.event_type, event.said) for event in events] == [
         ("status", {"status": "queued"}),
         ("status", {"status": "running"}),
         ("progress", {"percent": 50.0, "message": "Counted 1 of 2", "details": {"count": 1}}),

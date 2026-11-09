@@ -28,7 +28,7 @@ def started(job_records: JobTables, job: Job, worker: int = WORKER) -> Job:
 
 def stream_types(job_records: JobTables, job: Job) -> list[tuple[str, dict[str, object]]]:
     events = job_records.events_after(job_stream(job.id), 0, 100)
-    return [(event.event_type, event.data) for event in events]
+    return [(event.event_type, event.said) for event in events]
 
 
 def test_a_new_job_is_queued_at_no_attempt_with_its_status_event(job_records: JobTables) -> None:

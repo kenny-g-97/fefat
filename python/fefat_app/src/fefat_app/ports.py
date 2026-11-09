@@ -233,14 +233,15 @@ class Job(BaseModel):
 
 class StreamEvent(BaseModel):
     """An event of a stream, such as `job:<id>` (`01-architecture.md` section 6): its id, which
-    counts up and which a reader resumes after, its type, what it says, and when it was kept."""
+    counts up and which a reader resumes after, its type, what it says, and when it was kept. The
+    jobs' types are the only ones so far; the agent's turns add theirs (Phase 8)."""
 
     model_config = ConfigDict(frozen=True)
 
     id: int
     stream_id: str
-    event_type: str
-    data: dict[str, Any]
+    event_type: JobEventType
+    said: dict[str, Any]
     created_at: AwareDatetime
 
 

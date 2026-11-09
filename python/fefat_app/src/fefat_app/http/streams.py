@@ -46,7 +46,7 @@ async def stream_events(
             container.jobs.events_after, stream_id, after, EVENTS_PER_READ
         )
         for event in events:
-            yield ServerSentEvent(id=str(event.id), event=event.event_type, data=event.data)
+            yield ServerSentEvent(id=str(event.id), event=event.event_type, data=event.said)
             after = event.id
         if len(events) < EVENTS_PER_READ:
             await asyncio.sleep(READ_EVERY_SECONDS)
