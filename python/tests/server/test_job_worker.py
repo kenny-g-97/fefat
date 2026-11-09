@@ -4,13 +4,15 @@ result, cancelled at the first report after a request to stop, or failed with th
 this process here, where the dispatcher's tests run it in the pool's."""
 
 import os
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
@@ -140,3 +142,27 @@ def test_a_report_of_a_job_no_longer_held_stops_the_work(job_records: JobTables)
 
     with pytest.raises(JobCancelledError, match="no longer held"):
         JobProgress(job_records, job.id, os.getpid()).advance(50, "Not mine")
+
+
+def test_the_lease_outlasts_a_renewal_the_busy_database_refused(
+    job_records: JobTables, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A writer that holds the database past the busy timeout refuses one renewal; the next beat
+    # renews the lease, so that the reaper never ends a worker that answers.
+    renew_lease = JobTables.renew_lease
+    refusals = [OperationalError("renew", {}, sqlite3.OperationalError("database is locked"))]
+
+    def busy_once(records: JobTables, job_id: str, worker_pid: int, lease_until: datetime) -> bool:
+        if refusals:
+            raise refusals.pop()
+        return renew_lease(records, job_id, worker_pid, lease_until)
+
+    monkeypatch.setattr(JobTables, "renew_lease", busy_once)
+    job = a_demo(job_records, {"seconds": 2})
+
+    ended = ran(job_records, job, JobTimings(lease_seconds=1, heartbeat_seconds=0.1))
+
+    assert refusals == []
+    assert ended.started_at is not None
+    assert ended.lease_expires_at is not None
+    assert ended.lease_expires_at > ended.started_at + timedelta(seconds=1.5)

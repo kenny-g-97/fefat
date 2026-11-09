@@ -15,6 +15,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.exc import OperationalError
+
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.schema import opened_database
 from fefat_app.jobs.demo import run_demo
@@ -99,8 +101,15 @@ def _lease_kept(
 def _renew_until(
     records: JobRecords, job_id: str, worker_pid: int, timings: JobTimings, stopped: threading.Event
 ) -> None:
-    """Renew the lease until `stopped` is set, or until the worker no longer holds the job."""
+    """Renew the lease until `stopped` is set, or until the worker no longer holds the job; a
+    renewal that a writer holding the database past its busy timeout refused is tried again at
+    the next beat, several of which fit in a lease, so that the reaper never ends a worker that
+    answers."""
     while not stopped.wait(timings.heartbeat_seconds):
         lease_until = datetime.now(UTC) + timedelta(seconds=timings.lease_seconds)
-        if not records.renew_lease(job_id, worker_pid, lease_until):
+        try:
+            held = records.renew_lease(job_id, worker_pid, lease_until)
+        except OperationalError:
+            continue
+        if not held:
             return
