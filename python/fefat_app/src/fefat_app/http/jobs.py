@@ -30,7 +30,7 @@ def recent_jobs(container: ContainerDependency) -> tuple[Job, ...]:
     return container.jobs.recent()
 
 
-@router.get("/jobs/{job_id}", responses=problem_responses(401, 404))
+@router.get("/jobs/{job_id}", responses=problem_responses(401, 404, 422))
 def job_by_id(job_id: str, container: ContainerDependency) -> Job:
     """The job `job_id`; refused with 404 where no job has the id."""
     try:
@@ -39,7 +39,7 @@ def job_by_id(job_id: str, container: ContainerDependency) -> Job:
         raise HTTPException(404, str(refused)) from refused
 
 
-@router.post("/jobs/{job_id}/cancel", responses=problem_responses(401, 403, 404))
+@router.post("/jobs/{job_id}/cancel", responses=problem_responses(401, 403, 404, 422))
 def cancel_job(job_id: str, container: ContainerDependency) -> Job:
     """Cancel the job `job_id`: at once while it is queued; while it runs, it is asked to stop,
     which its worker does at its next report, or which the server makes it do ten seconds
