@@ -13,6 +13,10 @@ export type Job = components["schemas"]["Job"]
 /** How long the settings page's demo job counts, as the builder's check asks. */
 const DEMO_SECONDS = 60
 
+/** How many jobs' streams the shell follows at once: Chromium keeps six connections to one
+ * host over HTTP/1.1, so four leave two for the app's own requests. */
+const STREAMS_AT_MOST = 4
+
 /** What the jobs drawer and the home page call each kind of job. */
 export const KIND_LABELS: Readonly<Record<Job["kind"], string>> = {
   backtest: "Backtest",
@@ -56,6 +60,20 @@ export function isActive(job: Job): boolean {
   return job.status === "queued" || job.status === "running"
 }
 
+/** Whether `job` runs on after it was asked to stop, until its worker stops it. */
+export function isCancelling(job: Job): boolean {
+  return job.status === "running" && job.cancel_requested_at !== null
+}
+
+/** The ids of the jobs whose streams the shell follows: the running ones first, then the
+ * queued, four at most; the others' figures come with the list, which each status event of a
+ * followed job asks for again, so that a queued job is followed once it runs. */
+export function followedJobIds(jobs: readonly Job[]): readonly string[] {
+  const running = jobs.filter((job) => job.status === "running")
+  const queued = jobs.filter((job) => job.status === "queued")
+  return [...running, ...queued].slice(0, STREAMS_AT_MOST).map((job) => job.id)
+}
+
 /** Start a demo job that counts for a minute. */
 export function useDemoJobStart() {
   return useMutation({
@@ -87,23 +105,19 @@ export function useJobCancellation() {
   })
 }
 
-/** The jobs, with the progress of each queued or running job followed through its stream: a
- * progress event moves its bar, and a status event asks for the list again. The shell's top
- * bar calls it once; the drawer and the home page read the same cache. A stream is open only
- * while its job is active, and every stream closes when the shell does, as on logging out. */
+/** The jobs, with the progress of the queued and running jobs followed through their streams
+ * (`followedJobIds`): a progress event moves a bar, and a status event asks for the list again.
+ * The shell's top bar calls it once; the drawer and the home page read the same cache. A stream
+ * is open only while its job is active, and every stream closes when the shell does, as on
+ * logging out. */
 export function useLiveJobs() {
   const jobs = useQuery(jobsQuery)
   const followed = useRef(new Map<string, AbortController>())
-  const activeIds =
-    jobs.data === undefined
-      ? ""
-      : jobs.data
-          .filter(isActive)
-          .map((job) => job.id)
-          .join(" ")
+  const followedIds =
+    jobs.data === undefined ? "" : followedJobIds(jobs.data).join(" ")
 
   useEffect(() => {
-    const active = new Set(activeIds === "" ? [] : activeIds.split(" "))
+    const active = new Set(followedIds === "" ? [] : followedIds.split(" "))
     const streams = followed.current
     for (const [jobId, stop] of streams) {
       if (!active.has(jobId)) {
@@ -116,7 +130,7 @@ export function useLiveJobs() {
         streams.set(jobId, followedJob(jobId))
       }
     }
-  }, [activeIds])
+  }, [followedIds])
 
   useEffect(() => {
     const streams = followed.current
@@ -153,6 +167,9 @@ export function applyJobEvent(jobId: string, event: StreamedEvent): void {
   }
   const report = progressReport.safeParse(parsedJson(event.data))
   if (!report.success) {
+    console.error(
+      `Expected a progress report of the job ${jobId} with a percent and a message, got ${event.data}.`
+    )
     return
   }
   queryClient.setQueryData(jobsQuery.queryKey, (jobs) =>
