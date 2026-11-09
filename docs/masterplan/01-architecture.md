@@ -87,7 +87,7 @@ fefat/
     fefat/                      the SDK package (uv workspace member, src layout)
       src/fefat/                market/ features/ indicators/ analytics/ strategy/ backtest/ prop/ research/ reference/ config.py
     fefat_app/                  the server package (uv workspace member, src layout)
-      src/fefat_app/            http/ services/ ports.py container.py database/ jobs/ executor.py agent/ credentials.py cli.py
+      src/fefat_app/            http/ services/ ports.py container.py database/ jobs/ execution.py executor/ agent/ credentials.py cli.py
     tests/                      pytest for both packages (unit, contract, differential)
   web/                          Vite React app (pnpm)
     DESIGN.md                   the design system: tokens, type, layout, principles (step 4.3, from the Contemporary skill)
@@ -106,7 +106,7 @@ fefat/
     spec/                       fill-semantics.md and other normative specs
 ```
 
-Dependencies point inward: `web → fefat_app.http → fefat_app.services → fefat → fefat_engine`. `fefat` never imports `fefat_app`; the adapters (`database/`, `jobs/`, `executor.py`, `agent/`, `credentials.py`) implement the ports in `ports.py` and are built once in `container.py`; in Rust, only `fefat-data`, `fefat-py`, and `fefat-cli` touch the outside world. The rule, its reasons, the names, and how `just check` enforces it are in `08-code-design.md` §1–§3.
+Dependencies point inward: `web → fefat_app.http → fefat_app.services → fefat → fefat_engine`. `fefat` never imports `fefat_app`; the adapters (`database/`, `jobs/`, `executor/`, `agent/`, `credentials.py`) implement the ports in `ports.py` and are built once in `container.py`; in Rust, only `fefat-data`, `fefat-py`, and `fefat-cli` touch the outside world. The rule, its reasons, the names, and how `just check` enforces it are in `08-code-design.md` §1–§3.
 
 ## 4. Runtime layout (the app-data folder)
 
@@ -119,7 +119,7 @@ FEFAT_HOME/
   logs/                       server.log, the local server's log with each request's id (step 4.2)
   data/                       canonical market data (Parquet; synced and imported) + raw/ (immutable vendor files + manifest; raw/user/ for your imports) + reports/ (quality reports) + instruments/ (products your imports added, step 1.10)
   profiles/                   your saved import profiles (YAML, step 1.10)
-  cache/                      engine Arrow IPC cache, feature cache, session tables (all rebuildable)
+  cache/                      engine Arrow IPC cache, feature cache, session tables, the executor's executions/ (all rebuildable)
   workspaces/default/
     features/<name>/v<n>.json feature versions, the record the database indexes (D-84), with validations/<hash>.json
     artifacts/runs/<run key>/ orders, fills, costs, trades, trade_paths, equity, equity_daily, signals, log, run.json
@@ -157,7 +157,7 @@ Step 4.1 made `settings`, `workspaces`, `features`, `feature_versions`, `feature
 - **Jobs** are rows in `jobs`. Kinds in the first release: `backtest`, `feature_preview`, `feature_validate`, `analytics`, `study`, `prop_sim`, `source_sync`, `import`, `trade_import`, `catalog_sync`, `reproduce`, `agent_turn`, `ingest`, plus `demo` and `python_snippet` for tests and tooling; later phases add kinds the same way. State machine: `queued → running → succeeded | failed | cancelled | timed_out`; transitions are compare-and-set updates, and a running job whose worker stopped answering goes back to `queued` while it has attempts left, failing after its last (step 4.4, D-90).
 - **Runner.** The server owns a process pool sized from `config.toml` (default: physical cores minus two, which psutil counts, D-90). Each job runs `run_job(job_id)` in a worker process; progress is written to `events` (stream `job:<id>`) and `jobs.progress`. As step 4.4 built it: the pool's processes are spawned, the only start method Windows has; a worker renews its job's lease every 3 s, and a reaper in the server ends a worker whose 15-second lease ran out and queues its job again; a worker's end breaks CPython's pool and ends its other workers, whose jobs the reaper queues again (`BACKLOG.md`).
 - **Streams.** `GET /v1/streams/{stream_id}` is Server-Sent Events backed by the `events` table: the event id is the row id, the client reconnects with `Last-Event-ID`, heartbeats every 15 s. Agent turns use the same mechanism (stream `turn:<id>`). As step 4.4 built it: without `Last-Event-ID` a stream starts at its first event, it ends only when the client goes, and the server reads the table every half second, the workers writing from their own processes.
-- **Executor.** User code (features, strategies, ingestion transforms) runs through `fefat_app.executor`: a subprocess with a scrubbed environment, a wall-clock timeout, a memory limit (Job Objects on Windows, `RLIMIT_AS` elsewhere), and a result file validated against a Pydantic model before anything is registered. This is crash containment and resource control, not a security boundary — a local app runs the user's own code.
+- **Executor.** User code (features, strategies, ingestion transforms) runs through `fefat_app.executor`: a subprocess with a scrubbed environment, a wall-clock timeout, a memory limit (Job Objects on Windows, `RLIMIT_AS` elsewhere), and a result file validated against a Pydantic model before anything is registered. This is crash containment and resource control, not a security boundary — a local app runs the user's own code. As step 4.5 built it (D-91): the runner is `python -m fefat_app.executor` from `sys.executable`, for one execution's folder under `cache/executions/` or, warm, for each folder sent on its stdin, and it ends at the end of its stdin, so that none outlives its executor; on Windows it starts suspended and joins a Job Object whose processes may commit the limit together, and which ends them all when closed, elsewhere it runs in a session of its own and caps its own address space; the timeout counts from the execution's start; the environment keeps the system's variables, the Python path, and FEFAT's two folders alone, with keyring's null backend; `result.json` and a preview's `series.parquet` are capped in size and validated, and a validation's error quotes no value; the kinds are `feature_preview`, statistics and a series of at most a thousand points an output that keeps its highs and lows, and `python_snippet`, the tail of what it printed; the server's executor runs the previews in one warm runner, started again after a failure, a timeout, or another memory limit, while a snippet, and every execution a job of the pool runs, starts a runner of its own; and a job whose execution runs out of time ends `timed_out`. What it does not protect against: files the trader may read or write, the data folder included, read-only by convention; the Windows credential store read through the system's own interfaces; the network; and a process that leaves its job or session on purpose (`fefat_app.executor`).
 - **Cancellation.** The API sets `cancel_requested_at`; workers check it between chunks and trials; after a grace period the runner kills the subprocess. As step 4.4 built it: a queued job is cancelled at once, and the reaper ends a running job's worker 10 s after the request.
 - **Idempotency.** A run's identity is the engine's run key (`02-engine-and-data.md` §4), which covers the spec, the run's config, the signal frame, the snapshots of the data it read, and the versions: it names the run's folder (D-62) and is unique in `runs.run_key` beside the row's UUIDv7 id (D-83), and the request lookup of step 3.7 finds an identical request's run without loading bars or evaluating signals. Submitting an identical run returns the existing run.
 - **Sweeps** (P11) are a parent `study` job that expands trials, skips hashes already done, and dispatches chunks of trials; signal-strategy chunks run inside one `fefat_engine.run_batch` call that parallelises with Rayon over the shared memory-mapped data.
@@ -209,7 +209,7 @@ CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for
 
 | Seam | Interface | Today | Later |
 | --- | --- | --- | --- |
-| Executor | `Executor.run(ExecutionSpec) -> ExecutionResult` | subprocess | containers, if ever needed |
+| Executor | `Executor.run(ExecutionSpec, report) -> ExecutionResult`, the reports of progress given to `report` as they come, and `close()` (D-91) | subprocess, with a warm runner for the previews | containers, if ever needed |
 | Dispatcher | `start()`, `submit(job_id)`, `close()`, a job cancelled through its records (D-90) | local process pool | remote workers, cloud sync |
 | Blob store | `BlobStore.put/get/list` over workspace paths | local files | optional cloud sync |
 | Agent runtime | `AgentRuntime.run_turn(session, message, tools, emit)` | Messages API loop | Agent SDK or Managed Agents |

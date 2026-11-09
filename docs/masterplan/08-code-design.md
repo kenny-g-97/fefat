@@ -95,7 +95,7 @@ engine crates:  fefat-py, fefat-cli  →  fefat-run  →  fefat-engine, fefat-pr
 | `fefat_app/server/` | `fefat_app/http/` | names the adapter by what it is: the HTTP ring |
 | business logic in routers | `fefat_app/services/<area>.py` | one application-service module per area (`runs`, `strategies`, `features`, `prop`, `imports`, `studies`, `agent_sessions`), where use cases orchestrate the SDK, the repositories, and the jobs |
 | seams named in prose | `fefat_app/ports.py` and `fefat_app/container.py` | injected dependencies instead of adapters created inside methods |
-| `fefat_app/exec_runner.py`, `Executor.run(ExecSpec) -> ExecResult` | `fefat_app/executor.py`, `Executor.run(ExecutionSpec) -> ExecutionResult` | no abbreviations |
+| `fefat_app/exec_runner.py`, `Executor.run(ExecSpec) -> ExecResult` | `fefat_app/executor/`, `Executor.run(ExecutionSpec, report) -> ExecutionResult` (step 4.5, D-91) | no abbreviations |
 | `fefat_app/db/`, rule file `db.md` | `fefat_app/database/`, rule file `database.md` | no abbreviations |
 | `fefat_app/secrets.py` | `fefat_app/credentials.py` | the seam is the credential store |
 | engine reads the cache directly | `MarketDataReader` trait in `fefat-core`, implemented by `fefat-data` and by in-memory tapes in tests | engine tests and the differential suite never touch the file system |
