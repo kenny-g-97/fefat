@@ -167,6 +167,28 @@ describe("followEventStream", () => {
     expect(server.headers[1].get("Last-Event-ID")).toBe("1")
   })
 
+  it("tries again after the server failed, as while it restarts", async () => {
+    const server = serverOf([
+      new Response(null, { status: 502 }),
+      streamOf([progress(1)], "closes"),
+    ])
+    const stopped = new AbortController()
+    const received: (string | undefined)[] = []
+
+    await followEventStream({
+      url: STREAM,
+      signal: stopped.signal,
+      fetchStream: server.fetchStream,
+      onEvent: (event) => {
+        received.push(event.id)
+        stopped.abort()
+      },
+    })
+
+    expect(received).toEqual(["1"])
+    expect(server.headers).toHaveLength(2)
+  })
+
   it("stops when the server refuses the stream", async () => {
     const server = serverOf([new Response(null, { status: 401 })])
 

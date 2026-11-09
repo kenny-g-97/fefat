@@ -27,8 +27,9 @@ const LINE_BREAK = /\r\n|\r|\n/
  * `onEvent`, which must not throw. When the connection drops, it connects again after a pause
  * that doubles up to ten seconds, sending the id of the last whole event it handed on as
  * `Last-Event-ID`, so that the server sends the events after it, none twice and none missed. It
- * stops when `signal` aborts, and when the server refuses the stream, such as a session that
- * ended. */
+ * stops when `signal` aborts, and when the server refuses the stream with a 4xx, such as for a
+ * session that ended; a failure of the server, such as a 502 while it restarts, counts as a
+ * dropped connection. */
 export async function followEventStream({
   url,
   signal,
@@ -43,13 +44,15 @@ export async function followEventStream({
       const headers: Record<string, string> =
         lastId === undefined ? {} : { "Last-Event-ID": lastId }
       const response = await fetchStream(url, { signal, headers })
-      if (!response.ok || response.body === null) {
+      if (response.status >= 400 && response.status < 500) {
         return
       }
-      for await (const event of eventsOf(response.body)) {
-        lastId = event.id === undefined ? lastId : event.id
-        pause = FIRST_PAUSE_MS
-        onEvent(event)
+      if (response.ok && response.body !== null) {
+        for await (const event of eventsOf(response.body)) {
+          lastId = event.id === undefined ? lastId : event.id
+          pause = FIRST_PAUSE_MS
+          onEvent(event)
+        }
       }
     } catch {
       if (signal.aborted) {
@@ -100,12 +103,18 @@ async function* eventsOf(
 }
 
 /** The lines of a stream's `body`, each without its line break; a carriage return that ends a
- * read waits for the next, which may hold its line feed. */
+ * read waits for the next, which may hold its line feed. It reads through `getReader`, since
+ * WebKit cannot iterate a stream with `for await`. */
 async function* linesOf(
   body: ReadableStream<Uint8Array<ArrayBuffer>>
 ): AsyncGenerator<string> {
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader()
   let pending = ""
-  for await (const text of body.pipeThrough(new TextDecoderStream())) {
+  for (;;) {
+    const { done, value: text } = await reader.read()
+    if (done) {
+      return
+    }
     const buffered = pending + text
     const held = buffered.endsWith("\r")
     const read = splitLines(held ? buffered.slice(0, -1) : buffered)
