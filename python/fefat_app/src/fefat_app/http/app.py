@@ -14,7 +14,7 @@ from starlette.types import ASGIApp
 
 import fefat_app
 from fefat_app.container import Container
-from fefat_app.http import api_tokens, app_settings, docs, health, login
+from fefat_app.http import api_tokens, app_settings, docs, health, jobs, login
 from fefat_app.http.loopback_hosts import LoopbackHosts
 from fefat_app.http.problems import install_problem_handlers, problems_as_problem_json
 from fefat_app.http.request_ids import RequestIds
@@ -53,6 +53,7 @@ def build_api() -> FastAPI:
         login.router,
         api_tokens.router,
         app_settings.router,
+        jobs.router,
         docs.router,
     ):
         api.include_router(router)
