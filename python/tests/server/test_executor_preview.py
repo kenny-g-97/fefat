@@ -5,14 +5,17 @@ fails, is started again after one that runs out of time or asks for another memo
 ends with the executor, the preview it runs then failing; and a month of 5-minute bars, generated
 (the step's amendment), previews again in the same runner in under a second (Done means 2)."""
 
+import os
 import threading
 import time
 from datetime import date
+from pathlib import Path
 
 import polars as pl
 import pytest
 
 import fefat as ff
+from fefat.config import resolve_paths
 from fefat.features.examples import rsi
 from fefat_app.execution import (
     BarsReference,
@@ -26,6 +29,7 @@ from fefat_app.execution import (
     FeaturePreviewSpec,
 )
 from fefat_app.executor.protocol import SERIES_POINTS
+from fefat_app.executor.runner_process import RunnerProcess
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from generated_minutes import SPRING, write_minutes
 from local_server import running_runners
@@ -204,6 +208,45 @@ def test_closing_the_executor_ends_the_preview_it_runs_and_refuses_any_after(
     assert [type(result) for result in results] == [ExecutionFailed]
     with pytest.raises(ValueError, match="Expected an open executor for a preview"):
         previewed(warm_executor, rsi.code, {"n": 14})
+
+
+def test_a_module_in_the_warm_runner_s_working_folder_shadows_nothing(
+    warm_executor: SubprocessExecutor,
+) -> None:
+    # `python -m` would put the warm runner's working folder, which every preview shares, first
+    # on its import path, where a file a preview wrote would hide a module of the same name.
+    planted = resolve_paths(os.environ).executions_dir / "pydantic.py"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text('raise ImportError("planted")\n', encoding="utf-8")
+    try:
+        output_of(previewed(warm_executor, rsi.code, {"n": 14}))
+    finally:
+        warm_executor.close()
+        planted.unlink()
+
+
+def test_a_warm_runner_found_ended_at_the_sending_is_started_again(
+    warm_executor: SubprocessExecutor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output_of(previewed(warm_executor, rsi.code, {"n": 14}))
+    first = running_runners()
+    sending = RunnerProcess.send
+    refusals: list[Path] = []
+
+    def ended_once(runner: RunnerProcess, folder: Path) -> None:
+        if not refusals:
+            refusals.append(folder)
+            raise BrokenPipeError("planted: the runner ended since the look")
+        sending(runner, folder)
+
+    monkeypatch.setattr(RunnerProcess, "send", ended_once)
+
+    output_of(previewed(warm_executor, rsi.code, {"n": 14}))
+
+    again = running_runners()
+    assert len(refusals) == 1
+    assert len(first) == len(again) == 1
+    assert again != first
 
 
 def test_the_series_holds_each_output_of_a_feature_of_several(

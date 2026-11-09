@@ -87,9 +87,10 @@ def _progress_channel() -> TextIO:
 
 def _folders_until_stdin_ends(folders: queue.Queue[Path]) -> None:
     """Queue each folder the executor sends, a line of stdin each; at the end of stdin, end the
-    runner at once, with its session where it has one (module docstring)."""
+    runner at once, with its session where it leads one, as the executor starts it, and never
+    the process group of a program that started it otherwise (module docstring)."""
     for line in sys.stdin:
         folders.put(Path(line.rstrip("\n")))
-    if sys.platform != "win32":
+    if sys.platform != "win32" and os.getsid(0) == os.getpid():
         os.killpg(os.getpgrp(), signal.SIGKILL)
     os._exit(0)
