@@ -20,4 +20,6 @@ Windows credential store, or another secret, through the operating system's own 
 network; the processor time of the machine's other processes, short of the timeout; the disk
 that code fills; memory beyond the limit on Linux taken by several processes the code started,
 each held to the limit alone, and any memory on macOS, which enforces no limit of the address
-space; and code that leaves its Job Object or its session on purpose."""
+space; a preview's code that changes the warm runner's state for the previews after it, or an
+execution's code that reads or changes another's files beside it in `cache/executions`; and code
+that leaves its Job Object or its session on purpose."""
