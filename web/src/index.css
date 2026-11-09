@@ -96,6 +96,7 @@
   --color-positive: var(--positive);
   --color-positive-soft: var(--positive-soft);
   --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -243,6 +244,19 @@ main[tabindex="-1"]:focus-visible {
    4.5 : 1; an icon button keeps heading text, so that the chrome stays grey. */
 [data-slot="button"][data-variant="ghost"]:not([data-size^="icon"]) {
   color: var(--brand-secondary);
+}
+
+/* An icon button of the chrome is the skill's: 40 px on the control surface with a hairline,
+   its icon in heading text, a step lighter under the pointer, where shadcn's outline variant
+   would take the field border and a translucent fill. */
+[data-slot="button"][data-variant="outline"][data-size^="icon"] {
+  background-color: var(--muted);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+[data-slot="button"][data-variant="outline"][data-size^="icon"]:hover {
+  background-color: var(--accent);
 }
 
 /* The confirm of an action that cannot be undone is the skill's danger action: the negative
