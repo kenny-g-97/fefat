@@ -1646,7 +1646,7 @@
           },
           "401": {
             "content": {
-              "text/event-stream": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
                 }
@@ -1656,7 +1656,7 @@
           },
           "422": {
             "content": {
-              "text/event-stream": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblem"
                 }

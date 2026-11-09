@@ -1301,7 +1301,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["Problem"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Unprocessable Entity */
@@ -1310,7 +1310,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["ValidationProblem"];
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
         };
