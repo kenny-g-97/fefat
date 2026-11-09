@@ -3,9 +3,9 @@
 what uses it, so that swapping an adapter is a module of its own and a line of the container.
 
 The credential store is the first (step 4.1), the records of who may use the local server the
-second (step 4.2), the trader's preferences the third (step 4.3), and the jobs' records the
-fourth (step 4.4); the executor, the dispatcher, the blob store, the agent's runtime, and the
-licence arrive with the steps that first use them."""
+second (step 4.2), the trader's preferences the third (step 4.3), and the jobs' records and their
+dispatcher the fourth and fifth (step 4.4); the executor, the blob store, the agent's runtime,
+and the licence arrive with the steps that first use them."""
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -323,4 +323,24 @@ class JobRecords(Protocol):
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
         """At most `limit` events of the stream `stream_id` after the event `after_id`, in the
         order they were kept."""
+        ...
+
+
+class Dispatcher(Protocol):
+    """Where the queued jobs run (`01-architecture.md` section 10): the local process pool, or
+    remote workers one day. Its reaper queues again, or ends, a running job whose worker stopped
+    answering, and ends a job asked to stop that runs on past the grace (step 4.4); a job is
+    cancelled through its records, which its worker reads between chunks."""
+
+    def start(self) -> None:
+        """Begin reaping, as the server starts."""
+        ...
+
+    def submit(self, job_id: str) -> None:
+        """Run the queued job `job_id` once a worker is free."""
+        ...
+
+    def close(self) -> None:
+        """Stop reaping and end every worker, as the server stops; their jobs are queued again
+        when it starts next."""
         ...
