@@ -73,8 +73,9 @@ class LocalDispatcher:
         future.add_done_callback(partial(self._forget, job_id))
 
     def close(self) -> None:
-        """Stop the reaper, end every process of the server's own, which are the pool's
-        workers, and shut the pool down.
+        """Stop the reaper, kill every process of the server's own, which are the pool's
+        workers, and shut the pool down; a kill, since a stopped process on Linux and macOS
+        holds a polite end until it continues, while the shutdown waits for it.
 
         shortcut: a running job's worker is ended rather than waited for, and its job is queued
         again when the server starts next, its attempt spent; a drain that waits for short jobs
@@ -87,7 +88,7 @@ class LocalDispatcher:
         if pool is None:
             return
         for worker in multiprocessing.active_children():
-            worker.terminate()
+            worker.kill()
         pool.shutdown(wait=True, cancel_futures=True)
 
     def sweep(self) -> None:
@@ -134,7 +135,7 @@ class LocalDispatcher:
         if ended is None:
             return
         LOG.info("Ending the worker %s of job %s, now %s.", worker_pid, job.id, ended.status)
-        _terminate(worker_pid, started_at)
+        _kill_worker(worker_pid, started_at)
         if ended.status == JobStatus.QUEUED:
             self.submit(job.id)
 
@@ -175,10 +176,11 @@ class LocalDispatcher:
             LOG.warning("The pool gave up the job %s: %r", job_id, future.exception())
 
 
-def _terminate(worker_pid: int, started_at: datetime) -> None:
-    """End the worker `worker_pid` of a job that started at `started_at`, one of this process's
+def _kill_worker(worker_pid: int, started_at: datetime) -> None:
+    """Kill the worker `worker_pid` of a job that started at `started_at`, one of this process's
     own children made before the job started: Windows soon gives an ended worker's pid to a new
-    process, which may be a new worker of the pool.
+    process, which may be a new worker of the pool. A kill rather than a polite end, which a
+    hung worker stopped on Linux or macOS would hold until it continued: the step's hard kill.
 
     shortcut: the pool marks itself broken when one of its workers ends, ending the others, whose
     jobs the reaper queues again with an attempt spent, so that ends of other jobs' workers can
@@ -186,7 +188,7 @@ def _terminate(worker_pid: int, started_at: datetime) -> None:
     side (`BACKLOG.md`)."""
     for worker in multiprocessing.active_children():
         if worker.pid == worker_pid and _made_before(worker_pid, started_at):
-            worker.terminate()
+            worker.kill()
 
 
 def _made_before(pid: int, instant: datetime) -> bool:

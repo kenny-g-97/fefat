@@ -14,7 +14,10 @@ from fefat.config import Settings, load_settings
 def test_without_a_config_file_the_settings_are_the_defaults(tmp_path: Path) -> None:
     # Port 8765 (D-83), the loopback alone (D-54), the physical cores less two (D-90), and no
     # import roots.
-    cores = psutil.cpu_count(logical=False)
+    # The logical count stands in only where psutil counts no physical core, as on a few virtual
+    # machines, which the next test covers.
+    physical = psutil.cpu_count(logical=False)
+    cores = os.cpu_count() if physical is None else physical
 
     settings = load_settings(tmp_path / "config.toml")
 
