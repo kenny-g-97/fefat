@@ -242,3 +242,23 @@ def test_closing_ends_a_running_worker(job_records: JobTables) -> None:
     worker.join(DEADLINE_SECONDS)
 
     assert not worker.is_alive()
+
+
+def test_a_pool_wider_than_windows_allows_still_runs_its_jobs(job_records: JobTables) -> None:
+    # CPython's pool refuses more than 61 workers on Windows, where a 64-core machine's default
+    # would ask for 62 (D-90).
+    dispatcher = LocalDispatcher(
+        job_records,
+        resolve_paths(os.environ).database_file,
+        partial(datetime.now, UTC),
+        TEST_TIMINGS,
+        workers=64,
+    )
+    job = a_demo(job_records, seconds=1)
+    try:
+        dispatcher.submit(job.id)
+        ended = waited_for(job_records, job, lambda now: now.status == JobStatus.SUCCEEDED)
+    finally:
+        dispatcher.close()
+
+    assert ended.result == {"counted": 1}

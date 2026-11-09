@@ -19,6 +19,9 @@ from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.ports import Clock, Job, JobRecords, JobStatus
 
 LOG = logging.getLogger("fefat_app.jobs")
+MOST_WORKERS = 61
+"""The most workers the pool runs: CPython's pool refuses more on Windows, which waits on at most
+63 handles at once, two of them the pool's own; a machine of 64 cores or more stays at it."""
 
 
 class LocalDispatcher:
@@ -134,7 +137,8 @@ class LocalDispatcher:
     def _opened_pool(self) -> ProcessPoolExecutor:
         if self._pool is None:
             self._pool = ProcessPoolExecutor(
-                max_workers=self.workers, mp_context=multiprocessing.get_context("spawn")
+                max_workers=min(self.workers, MOST_WORKERS),
+                mp_context=multiprocessing.get_context("spawn"),
             )
         return self._pool
 
