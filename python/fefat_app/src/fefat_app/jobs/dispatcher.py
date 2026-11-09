@@ -48,6 +48,7 @@ class LocalDispatcher:
         self._submitted: dict[str, Future[None]] = {}
         self._stopped = threading.Event()
         self._reaper: threading.Thread | None = None
+        self._last_sweep: datetime | None = None
 
     def start(self) -> None:
         self._stopped.clear()
@@ -91,9 +92,15 @@ class LocalDispatcher:
 
     def sweep(self) -> None:
         """Reap the running jobs, then submit the queued jobs no worker was given; a running job's
-        row the reaper cannot read is logged and passed over, so that it holds up no other."""
+        row the reaper cannot read is logged and passed over, so that it holds up no other. The
+        first sweep after a gap longer than a lease, as when the PC slept, leaves the running jobs
+        to their workers, whose heartbeats wake with it and renew the leases first."""
         now = self.clock()
-        for job in self.records.with_status(JobStatus.RUNNING):
+        lease = timedelta(seconds=self.timings.lease_seconds)
+        slept = self._last_sweep is not None and now - self._last_sweep > lease
+        self._last_sweep = now
+        running = () if slept else self.records.with_status(JobStatus.RUNNING)
+        for job in running:
             try:
                 self._reap(job, now)
             except ValueError:
@@ -158,10 +165,12 @@ class LocalDispatcher:
 
     def _forget(self, job_id: str, future: Future[None]) -> None:
         """Drop `future`, run or failed, so that a sweep submits its job again if it is still
-        queued, as its pool broke before a worker took it."""
-        with self._lock:
-            if self._submitted.get(job_id) is future:
-                del self._submitted[job_id]
+        queued, as its pool broke before a worker took it. It takes no lock: CPython's pool runs it
+        while it holds its own lock, which a submit takes under the dispatcher's, so that waiting
+        for the dispatcher's here could wait for ever; at worst a job is submitted twice, and the
+        second worker's start refuses it."""
+        if self._submitted.get(job_id) is future:
+            self._submitted.pop(job_id, None)
         if not future.cancelled() and future.exception() is not None:
             LOG.warning("The pool gave up the job %s: %r", job_id, future.exception())
 

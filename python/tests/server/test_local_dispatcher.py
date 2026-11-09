@@ -7,13 +7,16 @@ deadline, since a spawned worker takes a second or more to start on Windows."""
 
 import multiprocessing
 import os
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
+from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from multiprocessing.process import BaseProcess
 from typing import Any
 
+import psutil
 import pytest
 from sqlalchemy.orm import Session
 
@@ -23,6 +26,7 @@ from fefat_app.database.models import JobRow
 from fefat_app.jobs.dispatcher import LocalDispatcher
 from fefat_app.jobs.worker import JobTimings
 from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
+from local_server import SettableClock
 
 TEST_TIMINGS = JobTimings(
     lease_seconds=3, heartbeat_seconds=0.5, reaper_period_seconds=0.5, cancel_grace_seconds=1
@@ -353,3 +357,74 @@ def test_a_running_job_the_reaper_cannot_read_holds_up_no_other(
     ended = waited_for(job_records, queued, lambda now: now.status == JobStatus.SUCCEEDED)
 
     assert ended.result == {"counted": 1}
+
+
+def test_the_reaper_queues_a_hung_workers_job_again_in_a_new_worker(
+    dispatcher: LocalDispatcher, job_records: JobTables
+) -> None:
+    # The reaper's own path for a worker that hangs: its lease runs out, the job is queued
+    # again, the worker is ended, which breaks the pool, and the job runs again in a new one.
+    job = a_demo(job_records, seconds=60, max_attempts=2)
+    dispatcher.submit(job.id)
+    first = waited_for(job_records, job, lambda now: now.progress > 0)
+    assert first.worker_pid is not None
+
+    psutil.Process(first.worker_pid).suspend()
+    second = waited_for(
+        job_records,
+        job,
+        lambda now: now.status == JobStatus.RUNNING and now.attempt == 2,
+    )
+
+    assert second.worker_pid not in (None, first.worker_pid)
+
+
+def test_a_pool_failing_its_futures_never_waits_for_the_dispatchers_lock(
+    job_records: JobTables,
+) -> None:
+    # CPython's pool fails its pending futures, whose callbacks it runs, while it holds its own
+    # lock, which a submit takes under the dispatcher's: a callback that waited for the
+    # dispatcher's lock would wait for ever, and every later submit with it.
+    dispatcher = a_dispatcher(job_records)
+    ended: Future[None] = Future()
+    ended.set_result(None)
+    forgetting = threading.Thread(target=dispatcher._forget, args=("job", ended), daemon=True)
+
+    with dispatcher._lock:
+        forgetting.start()
+        forgetting.join(5)
+        waiting = forgetting.is_alive()
+
+    assert not waiting
+
+
+def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
+    job_records: JobTables, stand_in: BaseProcess
+) -> None:
+    # A PC that slept past a lease wakes the workers and the reaper together: the first sweep
+    # after so long a gap leaves the leases to the workers' heartbeats, the next one reaps.
+    clock = SettableClock(datetime.now(UTC))
+    dispatcher = LocalDispatcher(
+        job_records,
+        resolve_paths(os.environ).database_file,
+        clock,
+        TEST_TIMINGS,
+        workers=1,
+    )
+    job = a_demo(job_records, seconds=60, max_attempts=1)
+    held_by_stand_in(job_records, job, stand_in, lease=1)
+
+    try:
+        dispatcher.sweep()
+        clock.advance(timedelta(hours=1))
+        dispatcher.sweep()
+        after_the_sleep = job_records.by_id(job.id)
+        dispatcher.sweep()
+        reaped = job_records.by_id(job.id)
+    finally:
+        dispatcher.close()
+
+    assert after_the_sleep is not None
+    assert after_the_sleep.status == JobStatus.RUNNING
+    assert reaped is not None
+    assert reaped.status == JobStatus.FAILED
