@@ -57,17 +57,21 @@ def job_records(engine: Engine) -> JobTables:
 
 @pytest.fixture
 def container(
-    engine: Engine, clock: SettableClock, keyring_backend: MemoryKeyring, job_records: JobTables
+    engine: Engine,
+    clock: SettableClock,
+    keyring_backend: MemoryKeyring,
+    job_records: JobTables,
+    warm_executor: SubprocessExecutor,
 ) -> Iterator[Container]:
     """The server's container as `build_container` wires it, but for the clock, keyring, and
     Argon2's cost, and a pool of one worker whose reaper waits an hour, so that it never takes
     the jobs a test makes in the records, nor ends a worker by the test's clock; its workers end
-    with the test."""
+    with the test, as its executor's warm runner does."""
     records = AccessTables(engine)
     cheap_hasher = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
     paths = resolve_paths(os.environ)
     dispatcher = LocalDispatcher(
-        job_records, paths.database_file, clock, JobTimings(reaper_period_seconds=3600), 1
+        job_records, paths, clock, JobTimings(reaper_period_seconds=3600), 1
     )
     try:
         yield Container(
@@ -79,6 +83,7 @@ def container(
             preferences=PreferenceRows(engine),
             jobs=Jobs(job_records, dispatcher, clock),
             dispatcher=dispatcher,
+            executor=warm_executor,
         )
     finally:
         dispatcher.close()

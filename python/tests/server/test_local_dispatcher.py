@@ -37,7 +37,7 @@ DEADLINE_SECONDS = 60
 def a_dispatcher(job_records: JobTables) -> LocalDispatcher:
     return LocalDispatcher(
         job_records,
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         partial(datetime.now, UTC),
         TEST_TIMINGS,
         workers=1,
@@ -274,7 +274,7 @@ def test_a_pool_wider_than_windows_allows_still_runs_its_jobs(job_records: JobTa
     # would ask for 62 (D-90).
     dispatcher = LocalDispatcher(
         job_records,
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         partial(datetime.now, UTC),
         TEST_TIMINGS,
         workers=64,
@@ -315,7 +315,7 @@ def test_a_job_its_worker_ended_first_leaves_the_worker_running(
     # once its own change of the job holds.
     racing = LocalDispatcher(
         WorkerEndsFirst(job_records.engine),
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         partial(datetime.now, UTC),
         TEST_TIMINGS,
         workers=1,
@@ -406,7 +406,7 @@ def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
     clock = SettableClock(datetime.now(UTC))
     dispatcher = LocalDispatcher(
         job_records,
-        resolve_paths(os.environ).database_file,
+        resolve_paths(os.environ),
         clock,
         TEST_TIMINGS,
         workers=1,
