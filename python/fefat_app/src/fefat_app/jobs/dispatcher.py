@@ -15,8 +15,10 @@ from datetime import datetime, timedelta
 from functools import partial
 
 import psutil
+from sqlalchemy.exc import OperationalError
 
 from fefat.config import FefatPaths
+from fefat.market.calendar import counted
 from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.ports import Clock, Job, JobRecords, JobStatus
 
@@ -50,6 +52,7 @@ class LocalDispatcher:
         self._stopped = threading.Event()
         self._reaper: threading.Thread | None = None
         self._last_sweep: datetime | None = None
+        self._woke_at: datetime | None = None
 
     def start(self) -> None:
         self._stopped.clear()
@@ -90,18 +93,20 @@ class LocalDispatcher:
 
     def sweep(self) -> None:
         """Reap the running jobs, then submit the queued jobs no worker was given; a running job's
-        row the reaper cannot read is logged and passed over, so that it holds up no other. The
-        first sweep after a gap longer than a lease, as when the PC slept, leaves the running jobs
-        to their workers, whose heartbeats wake with it and renew the leases first."""
+        row the reaper cannot read or change is logged and passed over, so that it holds up no
+        other. For a lease after a gap longer than a lease, as when the PC slept, the sweeps leave
+        the running jobs to their workers, whose heartbeats wake with it and renew the leases."""
         now = self.clock()
         lease = timedelta(seconds=self.timings.lease_seconds)
-        slept = self._last_sweep is not None and now - self._last_sweep > lease
+        if self._last_sweep is not None and now - self._last_sweep > lease:
+            self._woke_at = now
         self._last_sweep = now
-        running = () if slept else self.records.with_status(JobStatus.RUNNING)
+        waking = self._woke_at is not None and now - self._woke_at < lease
+        running = () if waking else self.records.with_status(JobStatus.RUNNING)
         for job in running:
             try:
                 self._reap(job, now)
-            except ValueError:
+            except (ValueError, OperationalError):
                 LOG.exception("The jobs' reaper passed over the job %s.", job.id)
         queued = self.records.with_status(JobStatus.QUEUED)
         with self._lock:
@@ -112,7 +117,9 @@ class LocalDispatcher:
     def _reap(self, job: Job, now: datetime) -> None:
         """End `job` where it was asked to stop and ran on past the grace, or where its lease ran
         out, then end its worker; the job first, so that a worker that ended the job itself in
-        the meantime, and may run another by now, runs on."""
+        the meantime, and may run another by now, runs on. Where the database refuses the change,
+        held past its busy timeout, as by a worker hung inside one of its own writes, which no
+        wait outlasts, the worker is ended first and the change made then."""
         worker_pid, lease_expires_at, started_at = (
             job.worker_pid,
             job.lease_expires_at,
@@ -128,7 +135,11 @@ class LocalDispatcher:
         past_grace = asked_to_stop is not None and now - asked_to_stop >= grace
         if not past_grace and lease_expires_at >= now:
             return
-        ended = self._ended(job, worker_pid, now)
+        try:
+            ended = self._ended(job, worker_pid, now)
+        except OperationalError:
+            _kill_worker(worker_pid, started_at)
+            ended = self._ended(job, worker_pid, now)
         if ended is None:
             return
         LOG.info("Ending the worker %s of job %s, now %s.", worker_pid, job.id, ended.status)
@@ -143,7 +154,9 @@ class LocalDispatcher:
             return self.records.finish(job.id, worker_pid, JobStatus.CANCELLED, now)
         if job.attempt < job.max_attempts:
             return self.records.requeue(job.id, worker_pid)
-        reason = f"The worker {worker_pid} stopped answering after {job.attempt} attempts."
+        reason = (
+            f"The worker {worker_pid} stopped answering after {counted(job.attempt, 'attempt')}."
+        )
         return self.records.finish(job.id, worker_pid, JobStatus.FAILED, now, error=reason)
 
     def _reap_until_closed(self) -> None:

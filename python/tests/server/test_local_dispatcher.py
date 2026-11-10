@@ -24,10 +24,12 @@ from sqlalchemy.orm import Session
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.models import JobRow
+from fefat_app.execution import ExecutionLimits, PythonSnippetSpec
 from fefat_app.jobs.dispatcher import LocalDispatcher
 from fefat_app.jobs.worker import JobTimings
 from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
 from local_server import SettableClock
+from write_lock import hung_inside_a_write
 
 TEST_TIMINGS = JobTimings(
     lease_seconds=3, heartbeat_seconds=0.5, reaper_period_seconds=0.5, cancel_grace_seconds=1
@@ -167,6 +169,28 @@ def test_a_submitted_demo_runs_in_a_worker_of_the_pool(
     ]
 
 
+def test_a_snippet_job_runs_its_runner_from_a_worker_of_the_pool(
+    dispatcher: LocalDispatcher, job_records: JobTables
+) -> None:
+    # The Phase 4 exit's step review: the executions ran as jobs in the tests' own process alone,
+    # while a worker of the pool starts its runners from a spawned interpreter of its own.
+    limits = ExecutionLimits(timeout_seconds=60, memory_bytes=8 * 1024**3)
+    snippet = PythonSnippetSpec(code="print(6 * 7)\n", bars=None, limits=limits)
+    job = job_records.add(
+        JobKind.PYTHON_SNIPPET, snippet.model_dump(mode="json"), 3, datetime.now(UTC)
+    )
+
+    dispatcher.submit(job.id)
+    ended = waited_for(
+        job_records, job, lambda now: now.status not in (JobStatus.QUEUED, JobStatus.RUNNING)
+    )
+
+    assert (ended.status, ended.error) == (JobStatus.SUCCEEDED, None)
+    assert ended.result is not None
+    assert ended.result["output"] == {"kind": "python_snippet", "stdout_tail": "42\n"}
+    assert ended.worker_pid not in (None, os.getpid())
+
+
 def test_cancel_stops_a_running_demo(dispatcher: LocalDispatcher, job_records: JobTables) -> None:
     # Done means 1: cancellation.
     job = a_demo(job_records, seconds=60)
@@ -252,7 +276,7 @@ def test_a_worker_that_stopped_renewing_its_lease_is_ended_with_its_last_attempt
     assert ended is not None
     assert not stand_in.is_alive()
     assert ended.status == JobStatus.FAILED
-    assert ended.error == f"The worker {stand_in.pid} stopped answering after 1 attempts."
+    assert ended.error == f"The worker {stand_in.pid} stopped answering after 1 attempt."
 
 
 def test_a_job_asked_to_stop_whose_worker_stopped_answering_is_cancelled(
@@ -403,6 +427,38 @@ def test_the_reaper_queues_a_hung_workers_job_again_in_a_new_worker(
     assert second.worker_pid not in (None, first.worker_pid)
 
 
+def test_the_reaper_ends_a_worker_hung_inside_a_write_then_queues_its_job_again(
+    idle_dispatcher: LocalDispatcher, job_records: JobTables
+) -> None:
+    # The Phase 4 exit (`BACKLOG.md`, a worker hung inside a write): a worker that hangs while it
+    # holds the database's write lock refused every change of the reaper's, so that its job ran
+    # for ever; the reaper now ends such a worker first, then queues its job again.
+    spawning = multiprocessing.get_context("spawn")
+    go, locked = spawning.Event(), spawning.Event()
+    database_file = str(resolve_paths(os.environ).database_file)
+    hung = spawning.Process(target=hung_inside_a_write, args=(database_file, go, locked))
+    hung.start()
+    try:
+        job = held_by_stand_in(job_records, a_demo(job_records, seconds=60), hung, lease=-10)
+        go.set()
+        assert locked.wait(DEADLINE_SECONDS)
+
+        idle_dispatcher.sweep()
+        hung.join(DEADLINE_SECONDS)
+        ended = hung.exitcode
+        again = waited_for(
+            job_records,
+            job,
+            lambda now: now.status == JobStatus.RUNNING and now.attempt == 2,
+        )
+    finally:
+        hung.kill()
+        hung.join()
+
+    assert ended is not None
+    assert again.worker_pid not in (None, hung.pid)
+
+
 def test_a_pool_failing_its_futures_never_waits_for_the_dispatchers_lock(
     job_records: JobTables,
 ) -> None:
@@ -425,8 +481,10 @@ def test_a_pool_failing_its_futures_never_waits_for_the_dispatchers_lock(
 def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
     job_records: JobTables, stand_in: BaseProcess
 ) -> None:
-    # A PC that slept past a lease wakes the workers and the reaper together: the first sweep
-    # after so long a gap leaves the leases to the workers' heartbeats, the next one reaps.
+    # A PC that slept past a lease wakes the workers and the reaper together: the sweeps for a
+    # lease after so long a gap leave the leases to the workers' heartbeats, the next of which
+    # can come a reaper's period after the first sweep (the Phase 4 exit's code review); the
+    # first sweep a lease after the wake reaps.
     clock = SettableClock(datetime.now(UTC))
     dispatcher = LocalDispatcher(
         job_records,
@@ -443,6 +501,10 @@ def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
         clock.advance(timedelta(hours=1))
         dispatcher.sweep()
         after_the_sleep = job_records.by_id(job.id)
+        clock.advance(timedelta(seconds=TEST_TIMINGS.reaper_period_seconds))
+        dispatcher.sweep()
+        a_period_later = job_records.by_id(job.id)
+        clock.advance(timedelta(seconds=TEST_TIMINGS.lease_seconds))
         dispatcher.sweep()
         reaped = job_records.by_id(job.id)
     finally:
@@ -450,5 +512,7 @@ def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
 
     assert after_the_sleep is not None
     assert after_the_sleep.status == JobStatus.RUNNING
+    assert a_period_later is not None
+    assert a_period_later.status == JobStatus.RUNNING
     assert reaped is not None
     assert reaped.status == JobStatus.FAILED
