@@ -87,7 +87,7 @@ def quantile_returns_of(
     )
     by_day = _returns_by_day(bucketed, labels)
     means = by_day.group_by("horizon", "quantile").agg(
-        bars=pl.col("bars").sum(), mean_ticks=pl.col("ticks").sum() / pl.col("bars").sum()
+        bars=pl.col("bars").sum(), mean_ticks=_ordered_sum("ticks") / pl.col("bars").sum()
     )
     frame = (
         means.join(ranges, on="quantile")
@@ -105,6 +105,13 @@ def _bucket(feature: str, quantiles: int) -> pl.Expr:
     return (rank - 1) * quantiles // pl.len() + 1
 
 
+def _ordered_sum(column: str) -> pl.Expr:
+    """The sum of a group's values of `column` taken in their sorted order, the same at each run
+    (D-11): Polars sums a group's floats in the order its threads gather them, and a sum before a
+    sort could be simplified away, while a running total keeps the order."""
+    return pl.col(column).sort().cum_sum().last()
+
+
 def _returns_by_day(bucketed: pl.DataFrame, labels: Sequence[Label]) -> pl.DataFrame:
     """The sum and the count of each trade date's labels in each quantile at each horizon."""
     per_label = [
@@ -120,7 +127,7 @@ def _returns_by_day(bucketed: pl.DataFrame, labels: Sequence[Label]) -> pl.DataF
         pl.concat(per_label)
         .drop_nulls("ticks")
         .group_by("trade_date", "horizon", "quantile")
-        .agg(ticks=pl.col("ticks").sum(), bars=pl.len())
+        .agg(ticks=_ordered_sum("ticks"), bars=pl.len())
     )
 
 
@@ -140,7 +147,7 @@ def _day_block_intervals(by_day: pl.DataFrame, resamples: int, seed: int) -> pl.
     )
     drawn = draws.join(by_day.join(days, on="trade_date").drop("trade_date"), on="day")
     means = drawn.group_by("resample", "horizon", "quantile").agg(
-        mean=pl.col("ticks").sum() / pl.col("bars").sum()
+        mean=_ordered_sum("ticks") / pl.col("bars").sum()
     )
     low, high = INTERVAL
     every_draw = pl.len() == resamples
