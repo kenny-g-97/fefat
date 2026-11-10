@@ -99,6 +99,26 @@ def test_the_source_stamp_changes_with_a_saved_added_or_renamed_file_and_not_a_c
     assert len({first, saved, added, renamed}) == 4
 
 
+def test_the_source_stamp_of_a_folder_gone_mid_scan_is_empty(tmp_path: Path) -> None:
+    # Step 5.1's review: a checkout that removes a package's folder must not end `just dev`.
+    assert dev.source_stamp((tmp_path / "gone",)) == frozenset()
+
+
+def test_dev_names_a_home_with_a_port_of_its_own_where_the_throwaway_ones_is_taken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.1's review: the throwaway home has no `config.toml` to set another port in.
+    with socketserver.TCPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler) as other:
+        port = other.server_address[1]
+        threading.Thread(target=other.serve_forever, daemon=True).start()
+        monkeypatch.delenv("FEFAT_HOME")
+        monkeypatch.setattr(dev, "DEV_PORT", port)
+
+        with pytest.raises(SystemExit, match="or name a FEFAT_HOME whose config"):
+            dev.main()
+        other.shutdown()
+
+
 def test_dev_refuses_a_port_another_server_answers_on_before_starting_anything(
     tmp_path: Path,
 ) -> None:

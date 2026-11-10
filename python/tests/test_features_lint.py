@@ -5,6 +5,7 @@ warns of what the content hash leaves out (`BACKLOG.md`), in well under a second
 import sqlite3
 import time
 from datetime import date
+from pathlib import Path
 from urllib.request import urlopen
 
 import polars as pl
@@ -17,6 +18,8 @@ from fefat.features.examples import atr, in_session_window, rsi
 from fefat.features.source_lint import LintFinding, LintRule, lint
 from fefat.market.api import series_source
 from fefat.market.schema import Timeframe
+from fefat.market.series_source import series_source_in
+from fefat.market.store import Store
 
 SESSION_START = date(2026, 3, 9)
 
@@ -205,6 +208,20 @@ def test_a_feature_reading_prints_itself_fails_its_validation() -> None:
     found = {(finding.rule, finding.line) for finding in lint(reads_prints)}
 
     assert found == {(LintRule.READS_DATA, 3), (LintRule.READS_DATA, 4)}
+
+
+@ff.feature(outputs={"spliced": "other"})
+def reads_a_store_of_its_own(bars: pl.LazyFrame) -> pl.LazyFrame:
+    source = series_source_in(Store(Path("data")), Path("cache"), "ES")
+    return bars.with_columns(spliced=pl.lit(source.calendar is not None))
+
+
+def test_a_feature_reading_a_store_it_names_fails_its_validation() -> None:
+    # Step 5.1's review: the source of a store its caller names reads data, every roll of the
+    # dataset among it, as `series_source` does.
+    found = {(finding.rule, finding.line) for finding in lint(reads_a_store_of_its_own)}
+
+    assert found == {(LintRule.READS_DATA, 3)}
 
 
 @ff.feature(warmup=20, outputs={"windowed": "other"})

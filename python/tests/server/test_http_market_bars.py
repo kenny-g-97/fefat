@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 
 import fefat as ff
 from fefat_app.container import Container
+from fefat_app.services import market_bars
+from generated_minutes import SPRING, write_minutes
 from local_server import logged_in
 from notebook_runs import store_with
 
@@ -61,6 +63,7 @@ def test_a_day_of_five_minute_es_bars_comes_as_load_gives_them_column_by_column(
     logged_in(client, container)
 
     response = client.get(BARS, params=ONE_DAY_OF_ES)
+    named = client.get(BARS, params={**ONE_DAY_OF_ES, "provider": "synthetic", "origin": "import"})
 
     page = response.json()
     numbers = [page["bars"][name] for name in ("time", "open", "high", "low", "close", "volume")]
@@ -74,6 +77,7 @@ def test_a_day_of_five_minute_es_bars_comes_as_load_gives_them_column_by_column(
     assert page["bars"] == as_sent(ff.market.load("ES", "5m", "2026-03-06", "2026-03-06").collect())
     assert len(page["bars"]["time"]) == 276
     assert all(abs(value) < 2**53 for column in numbers for value in column)
+    assert (named.status_code, named.json()) == (200, page)
 
 
 def test_a_day_of_five_minute_es_bars_answers_in_under_300_ms_warm(
@@ -129,6 +133,48 @@ def test_a_window_pages_to_its_end_and_its_pages_join_to_one_load(
     assert [len(page["bars"]["time"]) for page in pages] == sizes
     assert joined(pages) == as_sent(whole.collect())
     assert [page["next_from"] is None for page in pages] == [False] * (len(sizes) - 1) + [True]
+
+
+def test_a_page_that_ends_at_a_close_under_its_cap_hands_over_to_the_next_open(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.1's review: with a cap of 1,000, a session of 1,380 one-minute bars takes two
+    # pages, the second of 380 ending at its close, whose `next_from` is the next session's open.
+    monkeypatch.setattr(market_bars, "BARS_PER_PAGE", 1_000)
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "1m", "from": "2026-03-05", "to": "2026-03-09"}
+
+    pages = pages_of(client, asked)
+
+    whole = ff.market.load("ES", "1m", "2026-03-05", "2026-03-09").collect()
+    assert [len(page["bars"]["time"]) for page in pages] == [0, 1_000, 380, 1_000, 380]
+    assert [page["next_from"] for page in pages] == [
+        "2026-03-05T23:00:00Z",
+        "2026-03-06T15:40:00Z",
+        "2026-03-08T22:00:00Z",
+        "2026-03-09T14:40:00Z",
+        None,
+    ]
+    assert joined(pages) == as_sent(whole)
+
+
+def test_a_contracts_window_starts_at_its_first_trade_date(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.1's review: ESM2026 trades from 2026-02-23 in a dataset ESH2026 holds from 01-02, so
+    # a window cut to the dataset's dates paged through seven weeks of empty pages first.
+    write_minutes(SPRING)
+    logged_in(client, container)
+    asked = {"instrument": "ESM2026", "timeframe": "1m", "from": "2026-01-02", "to": "2026-03-31"}
+
+    pages = pages_of(client, asked)
+
+    whole = ff.market.load("ESM2026", "1m", "2026-01-02", "2026-03-31").collect()
+    assert all(page["bars"]["time"] for page in pages)
+    assert pages[0]["bars"]["trade_date"][0] == "2026-02-23"
+    assert set(joined(pages)["contract"]) == {"ESM2026"}
+    assert joined(pages) == as_sent(whole)
 
 
 def test_a_window_wider_than_the_data_is_cut_to_it_and_one_without_data_is_empty(
@@ -196,6 +242,7 @@ def test_each_contract_comes_beside_the_others_at_an_open_without_splicing(
         ({"timeframe": "1s"}, 400, "Expected a timeframe of 1m or coarser"),
         ({"from": "2026-03-09", "to": "2026-03-06"}, 400, "Expected the start 2026-03-09 on"),
         ({"from": "2026-02-30"}, 400, "day is out of range for month"),
+        ({"from": "2300-01-01T00:00:00Z", "to": "2300-01-02"}, 400, "Expected an instant from"),
     ],
 )
 def test_a_window_the_sdk_refuses_is_a_problem_in_its_words(

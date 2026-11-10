@@ -11,6 +11,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
+from fefat.market.layout import DatasetOrigin
 from fefat.market.sources import SourceGuide
 from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
@@ -146,7 +147,7 @@ def market_bars(
         end=end,
         continuous=continuous,
         provider=provider,
-        origin=origin,
+        origin=None if origin is None else DatasetOrigin(origin),
     )
     try:
         return container.catalog.bars(request)

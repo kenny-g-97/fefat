@@ -1,5 +1,6 @@
 import hashlib
 import json
+import pickle
 import shutil
 from collections.abc import Callable
 from datetime import UTC, date, datetime
@@ -448,6 +449,30 @@ def test_the_reports_to_write_are_each_providers_of_each_root_the_store_holds(
         reported_products(FIXTURES, "ZZ")
     with pytest.raises(NothingToReportError, match="trades or bars of any product in the store"):
         reported_products(Store(tmp_path))
+
+
+def test_a_dataset_without_a_partition_calls_for_no_report(tmp_path: Path) -> None:
+    # Step 5.1's review: an import that wrote its `dataset.json` and no partition, which the
+    # report refuses, stopped every sync of the products sorted after it.
+    store = copied_fixtures(tmp_path)
+    store.write_dataset_metadata(
+        Dataset(provider="databento", schema_name=parse_schema_name("ohlcv-1m"), root="MCL"),
+        CONTRACT_SIZES,
+    )
+
+    assert reported_products(store) == (("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES"))
+    with pytest.raises(NothingToReportError, match="Expected trades or bars of MCL"):
+        reported_products(store, "MCL")
+
+
+def test_a_refusal_of_a_report_crosses_a_process_whole() -> None:
+    # Step 5.1's review: a notebook's pool of loads sends its workers' errors back pickled.
+    with pytest.raises(NothingToReportError) as refused:
+        reported_products(FIXTURES, "ZZ")
+
+    again = pickle.loads(pickle.dumps(refused.value))
+
+    assert (type(again), str(again)) == (NothingToReportError, str(refused.value))
 
 
 def test_a_root_without_trades_or_bars_from_the_provider_is_refused(cache: Path) -> None:

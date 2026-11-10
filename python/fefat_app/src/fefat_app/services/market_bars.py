@@ -5,12 +5,14 @@ instrument's units, so that no number passes the 2^53 that JavaScript's numbers 
 phase's header); `next_from` is the instant the next page opens at, which the caller sends back
 as the window's start, none on the last page.
 
-A window is cut to the trade dates its datasets hold before anything is read, and a page's
-trade dates are counted ahead from the session table, each session's buckets of the timeframe,
-so that a request reads the sessions of one page whatever its window. The pages of a spliced
-series, of a contract that trades, or of a product that does not expire join to one `load` of
-the window; with `continuous` false, a contract that stopped trading before a page's first
-session has no rows on it, as `load` reads one session of lead-in (`SeriesSource.dates_read`)."""
+A window is cut to the trade dates held by the datasets that build its timeframe, from a named
+contract's own first one, before anything is read, and a page's trade dates are counted ahead
+from the session table, each session's buckets of the timeframe, so that a request reads the
+sessions of one page, not of its window, though the sessions of a page of coarse bars may hold
+many prints (the `shortcut:` in `_page_end`). The pages of a spliced series, of a contract, or
+of a product that does not expire join to one `load` of the window; with `continuous` false, a
+contract that stopped trading before a page's first session has no rows on it, as `load` reads
+one session of lead-in (`SeriesSource.dates_read`)."""
 
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -19,9 +21,11 @@ from typing import NamedTuple
 import polars as pl
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from fefat.market.calendar import SessionTable
+from fefat.market.calendar import SessionTable, utc_text
 from fefat.market.coverage import dataset_coverage
+from fefat.market.dataset_choice import building_datasets
 from fefat.market.engine_units import price_in_units
+from fefat.market.layout import DatasetOrigin
 from fefat.market.schema import Timeframe, TimeUnit
 from fefat.market.series_source import (
     SIGNAL_BAR_COLUMNS,
@@ -55,7 +59,7 @@ class BarsRequest(BaseModel):
     end: date
     continuous: bool | None = None
     provider: str | None = None
-    origin: str | None = None
+    origin: DatasetOrigin | None = None
 
 
 class BarColumns(BaseModel):
@@ -142,10 +146,13 @@ def _page(source: SeriesSource, timeframe: Timeframe, request: BarsRequest) -> _
         raise ValueError(
             f"Expected the start {first} on or before the end, got the end {request.end}."
         )
-    held = _held_dates(source)
+    held = _held_dates(source, timeframe)
     if held is None or held[1] < first or request.end < held[0]:
         return _Page(pl.DataFrame(schema=SIGNAL_BAR_COLUMNS), None)
     first, last = max(first, held[0]), min(request.end, held[1])
+    # shortcut: a page counts the bars it sends, not the data it reads: a page of 1d bars built
+    # from trades reads every print of its window; cap a page's sessions by the finest dataset
+    # that builds it when a store holds years of ticks (BACKLOG, step 5.4).
     through = _page_end(source.sessions, timeframe, first, last)
     rows = source.signal_bars(timeframe, (first, through))
     if opens_from is not None:
@@ -166,22 +173,34 @@ def _start(text: str, sessions: SessionTable) -> tuple[date, int | None]:
     if "T" not in text:
         return date.fromisoformat(text), None
     instant = int(datetime.fromisoformat(text).timestamp()) * _NANOSECONDS_PER_SECOND
+    opens, closes = sessions.span()
+    if not opens <= instant < closes:
+        raise ValueError(
+            f"Expected an instant from {utc_text(opens)} to before {utc_text(closes)}, got {text}."
+        )
     at = pl.DataFrame({"instant": [instant]}, schema={"instant": pl.Int64})
     trade_date: date = sessions.assign_trade_dates_or_previous(at, "instant").item(0, "trade_date")
     return trade_date, instant
 
 
-def _held_dates(source: SeriesSource) -> tuple[date, date] | None:
-    """The first and the last trade date the source's datasets hold; none while they hold no
-    partition."""
+def _held_dates(source: SeriesSource, timeframe: Timeframe) -> tuple[date, date] | None:
+    """The first and the last trade date the source's datasets that build `timeframe` hold,
+    the first of the contract's own partitions where the source names one, since `load` gives a
+    contract no bars before its first; none while they hold no partition of it."""
+    building = building_datasets(source.datasets, timeframe)
     held = [
-        coverage
-        for dataset in source.datasets.values()
-        if (coverage := dataset_coverage(source.store, dataset)) is not None
+        found for each in building if (found := dataset_coverage(source.store, each)) is not None
     ]
-    if not held:
+    named = held
+    if source.contract is not None:
+        named = [
+            found
+            for each in building
+            if (found := dataset_coverage(source.store, each, source.contract)) is not None
+        ]
+    if not named:
         return None
-    return min(each.first_trade_date for each in held), max(each.last_trade_date for each in held)
+    return min(each.first_trade_date for each in named), max(each.last_trade_date for each in held)
 
 
 def _page_end(sessions: SessionTable, timeframe: Timeframe, first: date, last: date) -> date:

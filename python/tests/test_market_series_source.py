@@ -2,6 +2,7 @@
 `BACKLOG.md`): the app's services hold the store the container built, while a notebook's `load`
 reads the store `FEFAT_DATA_DIR` names."""
 
+import pickle
 import shutil
 from datetime import date
 from pathlib import Path
@@ -55,3 +56,15 @@ def test_a_symbol_that_names_no_root_and_no_contract_of_one_is_unknown(
 
     with pytest.raises(UnknownSymbolError, match=f"or a contract such as MESH2024, got '{symbol}'"):
         series_source_in(store, tmp_path / "cache", symbol)
+
+
+def test_an_unknown_symbol_crosses_a_process_whole(tmp_path: Path) -> None:
+    # Step 5.1's review: a notebook's pool of loads sends its workers' errors back pickled, and
+    # an error its pickle cannot rebuild breaks the pool instead of saying which symbol.
+    store = store_elsewhere(tmp_path / "elsewhere")
+    with pytest.raises(UnknownSymbolError) as refused:
+        series_source_in(store, tmp_path / "cache", "ESX")
+
+    again = pickle.loads(pickle.dumps(refused.value))
+
+    assert (type(again), str(again)) == (UnknownSymbolError, str(refused.value))

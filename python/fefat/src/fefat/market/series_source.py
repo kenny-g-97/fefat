@@ -46,11 +46,6 @@ offset of its prices, whether it is a new front's first, and whether its bucket 
 class UnknownSymbolError(ValueError):
     """A symbol that names no root of the instrument table and no contract of one."""
 
-    def __init__(self, symbol: str, roots: tuple[str, ...]) -> None:
-        super().__init__(
-            f"Expected a root ({', '.join(roots)}) or a contract such as MESH2024, got {symbol!r}."
-        )
-
 
 @dataclass(frozen=True)
 class SeriesSource:
@@ -226,12 +221,15 @@ def _root_and_contract(symbol: str, table: InstrumentTable) -> tuple[str, str | 
     roots = table.roots()
     if symbol in roots:
         return symbol, None
+    unknown = (
+        f"Expected a root ({', '.join(roots)}) or a contract such as MESH2024, got {symbol!r}."
+    )
     try:
         root, _ = parse_contract_name(symbol)
     except ValueError as error:
-        raise UnknownSymbolError(symbol, roots) from error
+        raise UnknownSymbolError(unknown) from error
     if root not in roots:
-        raise UnknownSymbolError(symbol, roots)
+        raise UnknownSymbolError(unknown)
     return root, symbol
 
 

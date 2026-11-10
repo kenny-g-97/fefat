@@ -5,6 +5,7 @@ and fidelity."""
 
 import os
 import time
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -19,7 +20,7 @@ from fefat.market.instruments import Currency, Instrument, InstrumentKind
 from fefat.market.last_trade_rules import ThirdFriday
 from fefat.market.layout import Dataset, Partition
 from fefat.market.quality import assess_quality
-from fefat.market.quality_report import write_quality_report
+from fefat.market.quality_report import FINDING_COLUMNS, write_quality_report
 from fefat.market.saved_instruments import save_instrument
 from fefat.market.schema import parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE
@@ -135,6 +136,32 @@ def test_a_datasets_quality_flows_from_its_roots_report_with_every_schemas_findi
         "flagged",
         "flagged",
     )
+
+
+def test_a_datasets_quality_lists_the_first_200_findings_with_how_many_there_are(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.1's review: a report of 250 findings lists its first 200 (`FINDINGS_SHOWN`).
+    store_with("trades")
+    logged_in(client, container)
+    paths = resolve_paths(os.environ)
+    assessed = assess_quality(Store(paths.data_dir), "synthetic", "ES", paths.cache_dir)
+    many = pl.DataFrame(
+        {
+            "trade_date": [date(2026, 3, 5)] * 250,
+            "kind": ["duplicates"] * 250,
+            "schema": ["trades"] * 250,
+            "contract": ["ESH2026"] * 250,
+            "count": range(1, 251),
+        },
+        schema=FINDING_COLUMNS,
+    )
+    write_quality_report(replace(assessed, findings=many), paths.reports_dir)
+
+    quality = client.get("/v1/datasets/synthetic:trades:ES/quality").json()
+
+    assert quality["findings_total"] == 250
+    assert [each["count"] for each in quality["findings"]] == list(range(1, 201))
 
 
 @pytest.mark.parametrize(

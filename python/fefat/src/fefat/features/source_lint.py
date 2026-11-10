@@ -155,6 +155,7 @@ _READERS = frozenset(
         "roll_calendar",
         "scan",
         "series_source",
+        "series_source_in",
         "side_volumes",
         "signal_bars",
         "urlopen",
@@ -162,7 +163,16 @@ _READERS = frozenset(
 )
 """Methods that read data, such as `ff.market.load`, `ff.features.compute`, and a store's `scan`."""
 _NAMED_READERS = frozenset(
-    {"compute", "connect", "load", "open", "roll_calendar", "series_source", "urlopen"}
+    {
+        "compute",
+        "connect",
+        "load",
+        "open",
+        "roll_calendar",
+        "series_source",
+        "series_source_in",
+        "urlopen",
+    }
 )
 """Functions called by their name that read data, such as Python's `open`."""
 _READER_PREFIXES = ("read_", "scan_")

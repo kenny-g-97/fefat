@@ -226,12 +226,17 @@ class MarketCatalog:
 
     def start_sync(self, root: str | None) -> Job:
         """Queue the catalog sync of `root`, or of every product where it is None, which writes
-        each of its quality reports as `fefat data quality` does; `NothingToSyncError` where the
-        store holds nothing to report, so that no job is queued to fail."""
+        each of its quality reports as `fefat data quality` does, or give the queued or running
+        sync that covers it, of `root` or of every product, not asked to stop, since two would
+        write the same reports at once; `NothingToSyncError` where the store holds nothing to
+        report, so that no job is queued to fail."""
         try:
             reported_products(self.store, root)
         except NothingToReportError as refused:
             raise NothingToSyncError(str(refused)) from refused
+        for job in self.jobs.active(JobKind.CATALOG_SYNC):
+            if job.cancel_requested_at is None and job.payload["root"] in (None, root):
+                return job
         return self.jobs.start(JobKind.CATALOG_SYNC, {"root": root})
 
 

@@ -105,23 +105,22 @@ class NothingToReportError(ValueError):
     """A report asked of a product, or of every product, that the store holds no trades, TBBO,
     or bars of."""
 
-    def __init__(self, root: str | None) -> None:
-        named = "any product" if root is None else root
-        super().__init__(f"Expected trades or bars of {named} in the store, got none.")
-
 
 def reported_products(store: Store, root: str | None = None) -> tuple[tuple[str, str], ...]:
     """The provider and root of each report the store's trades, TBBO, and bars call for, of
-    `root` alone where it is named, sorted; none is refused with `NothingToReportError`."""
+    `root` alone where it is named, sorted: those of its datasets that hold a partition, since a
+    report refuses a dataset without one, as an import that stopped after its `dataset.json`
+    leaves it; none is refused with `NothingToReportError`."""
     held = sorted(
         {
             (dataset.provider, dataset.root)
             for dataset in session_datasets(store)
-            if root is None or dataset.root == root
+            if (root is None or dataset.root == root) and store.list_partitions(dataset)
         }
     )
     if not held:
-        raise NothingToReportError(root)
+        named = "any product" if root is None else root
+        raise NothingToReportError(f"Expected trades or bars of {named} in the store, got none.")
     return tuple(held)
 
 

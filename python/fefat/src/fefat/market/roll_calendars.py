@@ -47,14 +47,12 @@ def kept_roll_calendar(
 
 
 def _listing_stamp(store: Store, dataset: Dataset) -> tuple[tuple[str, int, int], ...]:
-    """Each partition of the dataset by path, size, and modification time, which a write
-    changes."""
-    stamped = []
-    for file in store.list_partitions(dataset):
-        relative = file.partition.relative_path()
-        status = (store.folder / relative).stat()
-        stamped.append((relative.as_posix(), status.st_size, status.st_mtime_ns))
-    return tuple(stamped)
+    """Each partition of the dataset by path, size, and modification time, as the store lists
+    it, which a write changes."""
+    return tuple(
+        (file.partition.relative_path().as_posix(), file.size_bytes, file.modified_ns)
+        for file in store.list_partitions(dataset)
+    )
 
 
 def _built_roll_calendar(

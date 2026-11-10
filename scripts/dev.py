@@ -17,6 +17,7 @@ by itself, as at an error in the source, waits for the next change. Ctrl+C, or V
 both, with every process they started.
 """
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -67,12 +68,14 @@ def dev_home(environment: Mapping[str, str]) -> DevHome | None:
 
 def source_stamp(folders: Sequence[Path]) -> SourceStamp:
     """Each file under `folders`, but those of `__pycache__`, with the time it was last written:
-    another stamp means a file was saved, added, removed, or renamed."""
+    another stamp means a file was saved, added, removed, or renamed. A folder, or a file, that
+    goes while it is read ends its folder's part of the stamp, as a checkout that removes it
+    changes the stamp anyway."""
     return frozenset(found for folder in folders for found in _written(folder))
 
 
 def _written(folder: Path) -> Iterator[tuple[str, int]]:
-    with os.scandir(folder) as entries:
+    with contextlib.suppress(FileNotFoundError), os.scandir(folder) as entries:
         for entry in entries:
             if not entry.is_dir():
                 yield entry.path, entry.stat().st_mtime_ns
@@ -176,9 +179,12 @@ def main() -> int:
         port = load_settings(resolve_paths(os.environ).config_file).port
     health = f"http://127.0.0.1:{port}/v1/healthz"
     if answers(health):
+        elsewhere = "set another port in config.toml"
+        if seeded is not None:
+            elsewhere = "name a FEFAT_HOME whose config.toml sets another port"
         raise SystemExit(
             f"Expected port {port} free for fefat up, got a server answering there: stop it, "
-            "or set another port in config.toml."
+            f"or {elsewhere}."
         )
     if seeded is not None:
         e2e_server.seed(seeded.home, port, DEV_PASSWORD, seeded.data_dir)

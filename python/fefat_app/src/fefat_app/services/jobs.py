@@ -46,6 +46,15 @@ class Jobs:
         """Queue a demo job that counts `seconds`, and give it to the dispatcher."""
         return self.start(JobKind.DEMO, {"seconds": seconds})
 
+    def active(self, kind: JobKind) -> tuple[Job, ...]:
+        """The jobs of `kind` that are queued, then those that run, each oldest first."""
+        return tuple(
+            job
+            for status in (JobStatus.QUEUED, JobStatus.RUNNING)
+            for job in self.records.with_status(status)
+            if job.kind == kind
+        )
+
     def recent(self) -> tuple[Job, ...]:
         """The newest jobs, newest first, then the running jobs older than them, which a queue
         of newer jobs would otherwise hide with their progress and their Cancel."""
