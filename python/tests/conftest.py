@@ -46,7 +46,7 @@ def root_log_put_back() -> Iterator[None]:
     root.setLevel(level)
 
 
-CHECKED_HYPOTHESIS = "6.170.14"
+CHECKED_HYPOTHESIS = "6.170.15"
 """The Hypothesis whose reading of local constants `draws_of_the_seed_alone` was checked against."""
 
 
