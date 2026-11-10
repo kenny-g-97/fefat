@@ -76,6 +76,8 @@ def container(
     dispatcher = LocalDispatcher(
         job_records, paths, clock, JobTimings(reaper_period_seconds=3600), 1
     )
+    jobs = Jobs(job_records, dispatcher, clock)
+    store = Store(paths.data_dir)
     try:
         yield Container(
             settings=Settings(),
@@ -84,10 +86,10 @@ def container(
             logins=Logins(records, cheap_hasher, LoginAttempts(), clock),
             api_tokens=ApiTokenIssuer(records, clock),
             preferences=PreferenceRows(engine),
-            jobs=Jobs(job_records, dispatcher, clock),
+            jobs=jobs,
             dispatcher=dispatcher,
             executor=warm_executor,
-            catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir),
+            catalog=MarketCatalog(store, paths.reports_dir, paths.cache_dir, jobs),
         )
     finally:
         dispatcher.close()

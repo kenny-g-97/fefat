@@ -1,8 +1,10 @@
-"""The data catalog's routes of step 5.1 (D-93, `01-architecture.md` section 7): what the store in
-the data folder holds, read through the SDK at each request, behind the login. Done means 1: the
-datasets list with their trade dates and fidelity."""
+"""The data catalog's routes of step 5.1 (D-93, `01-architecture.md` sections 6 and 7): what the
+store in the data folder holds, read through the SDK at each request, and the catalog sync, the
+quality reports as a job, behind the login. Done means 1: the datasets list with their trade dates
+and fidelity."""
 
 import os
+import time
 from datetime import date
 from decimal import Decimal
 
@@ -23,11 +25,13 @@ from fefat.market.schema import parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 from fefat_app.container import Container
+from fefat_app.database.job_records import JobTables
 from generated_minutes import listing, write_minutes
 from local_server import logged_in
 from notebook_runs import store_with
 
 PROBLEM = "application/problem+json"
+DEADLINE_SECONDS = 60
 SYNTHETIC_LICENCE = "Synthetic data of scripts/gen_fixtures.py; no licence applies"
 ES_TRADES = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
 A_NEW_PRODUCT = Instrument(
@@ -238,14 +242,71 @@ def test_the_instruments_are_feats_and_those_an_import_saved(
     assert by_root["BTCUSDT"]["lot_step"] == 0.00001
 
 
+def test_a_catalog_sync_of_every_product_answers_queued_and_runs_in_the_pool_to_its_end(
+    client: TestClient, container: Container
+) -> None:
+    # The one test of the sync's route that runs a worker of the pool.
+    store_with("ohlcv-1m")
+    csrf = logged_in(client, container)
+
+    started = client.post("/v1/catalog/sync", json={}, headers=csrf)
+    job_id = started.json()["id"]
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    ended = client.get(f"/v1/jobs/{job_id}").json()
+    while ended["status"] in ("queued", "running") and time.monotonic() < deadline:
+        time.sleep(0.1)
+        ended = client.get(f"/v1/jobs/{job_id}").json()
+
+    clean = {"provider": "synthetic", "status": "clean", "findings": 0}
+    assert started.status_code == 202
+    assert {name: started.json()[name] for name in ("kind", "payload", "status")} == {
+        "kind": "catalog_sync",
+        "payload": {"root": None},
+        "status": "queued",
+    }
+    assert (ended["status"], ended["progress"], ended["result"]) == (
+        "succeeded",
+        100.0,
+        {"reports": [{**clean, "root": "BTCUSDT-PERP"}, {**clean, "root": "ES"}]},
+    )
+    assert client.get("/v1/datasets/synthetic:ohlcv-1m:ES/quality").json()["quality"] == "clean"
+
+
+def test_a_sync_of_what_the_store_lacks_is_refused_and_queues_no_job(
+    client: TestClient, container: Container, job_records: JobTables
+) -> None:
+    csrf = logged_in(client, container)
+    of_an_empty_store = client.post("/v1/catalog/sync", json={}, headers=csrf)
+    store_with("ohlcv-1m")
+
+    of_an_unknown_root = client.post("/v1/catalog/sync", json={"root": "ZZ"}, headers=csrf)
+    without_the_csrf_token = client.post("/v1/catalog/sync", json={"root": "ES"})
+
+    refusals = (of_an_empty_store, of_an_unknown_root)
+    assert [(each.status_code, each.headers["content-type"]) for each in refusals] == [
+        (404, PROBLEM),
+        (404, PROBLEM),
+    ]
+    assert [each.json()["detail"] for each in refusals] == [
+        "Expected trades or bars of any product in the store, got none.",
+        "Expected trades or bars of ZZ in the store, got none.",
+    ]
+    assert without_the_csrf_token.status_code == 403
+    assert job_records.recent(10) == ()
+
+
 def test_the_catalog_needs_a_login_and_an_api_token_is_one(
     client: TestClient, container: Container
 ) -> None:
     paths = ("/datasets", "/datasets/synthetic:trades:ES/quality", "/catalog")
     anonymous = [client.get(f"/v1{path}") for path in (*paths, "/sources", "/instruments")]
+    anonymous_sync = client.post("/v1/catalog/sync", json={})
     bearer = {"Authorization": f"Bearer {container.api_tokens.create('notebook')}"}
 
     with_a_token = client.get("/v1/datasets", headers=bearer)
+    sync_with_a_token = client.post("/v1/catalog/sync", json={}, headers=bearer)
 
-    assert [each.status_code for each in anonymous] == [401] * 5
+    assert [each.status_code for each in (*anonymous, anonymous_sync)] == [401] * 6
     assert (with_a_token.status_code, with_a_token.json()) == (200, [])
+    # An empty store holds nothing to sync: the token was let in, and the sync refused.
+    assert sync_with_a_token.status_code == 404

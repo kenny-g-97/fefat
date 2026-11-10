@@ -1,23 +1,27 @@
-"""The data catalog's routes (step 5.1, `01-architecture.md` section 7, D-93), behind the login,
-a session's or an API token's, over `fefat_app.services.catalog`: `GET /v1/datasets`,
+"""The data catalog's routes (step 5.1, `01-architecture.md` sections 6 and 7, D-93), behind the
+login, a session's or an API token's, over `fefat_app.services.catalog`: `GET /v1/datasets`,
 `GET /v1/datasets/{dataset_id}/quality`, `GET /v1/catalog`, `GET /v1/sources`,
 `GET /v1/instruments`, and `GET /v1/market/bars`, each reading the store in the data folder as it
-is asked."""
+is asked; and `POST /v1/catalog/sync`, which starts the quality report of a product, or of every
+product, as a job."""
 
 from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict
 
 from fefat.market.sources import SourceGuide
 from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
 from fefat_app.http.problems import problem_responses
+from fefat_app.ports import Job
 from fefat_app.services.catalog import (
     CatalogStatus,
     DatasetQuality,
     InstrumentVersion,
     NoSuchDatasetError,
+    NothingToSyncError,
     StoredDataset,
 )
 from fefat_app.services.market_bars import (
@@ -32,6 +36,15 @@ router = APIRouter(prefix=API_PREFIX, tags=["data"], dependencies=[Depends(the_i
 
 TIMEFRAME = r"^[1-9][0-9]*[smhd]$"
 """A bar's timeframe: a count and a unit, such as `1s`, `5m`, `1h`, or `1d`."""
+
+
+class CatalogSyncRequest(BaseModel):
+    """The product, such as `MES`, whose quality reports a catalog sync writes; every product
+    the store holds where it is left out."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    root: str | None = None
 
 
 @router.get("/datasets", responses=problem_responses(401))
@@ -58,6 +71,17 @@ def catalog_status(container: ContainerDependency) -> CatalogStatus:
     recommended source, and the datasets that cover it, complete or partial, none where it is
     missing; then the datasets of the roots the catalog does not list."""
     return container.catalog.catalog_status()
+
+
+@router.post("/catalog/sync", status_code=202, responses=problem_responses(401, 403, 404, 422))
+def start_catalog_sync(request: CatalogSyncRequest, container: ContainerDependency) -> Job:
+    """Start the catalog sync of `root`, or of every product: a job that writes the quality
+    report of each provider's data of it, as `fefat data quality` does, queued until a worker of
+    the pool is free; refused with 404 where the store holds no trades or bars of it."""
+    try:
+        return container.catalog.start_sync(request.root)
+    except NothingToSyncError as refused:
+        raise HTTPException(404, str(refused)) from refused
 
 
 @router.get("/sources", responses=problem_responses(401))

@@ -68,6 +68,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
     dispatcher = LocalDispatcher(
         job_records, paths, clock, JobTimings(), settings.process_pool_size
     )
+    jobs = Jobs(job_records, dispatcher, clock)
     return Container(
         settings=settings,
         paths=paths,
@@ -75,10 +76,10 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         logins=Logins(records, PasswordHasher(), LoginAttempts(), clock),
         api_tokens=ApiTokenIssuer(records, clock),
         preferences=PreferenceRows(engine),
-        jobs=Jobs(job_records, dispatcher, clock),
+        jobs=jobs,
         dispatcher=dispatcher,
         executor=SubprocessExecutor(paths, warm_previews=True),
-        catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir),
+        catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir, jobs),
     )
 
 

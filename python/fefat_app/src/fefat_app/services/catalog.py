@@ -2,7 +2,9 @@
 in the data folder holds, read through the SDK each time it is asked, with nothing kept in the
 database until a step writes state of its own there (D-83): the datasets with their quality, a
 dataset's findings, the catalog's products with the datasets that cover them, the source guide,
-the instruments, and the bars of a window, a page at a time (`fefat_app.services.market_bars`).
+the instruments, and the bars of a window, a page at a time (`fefat_app.services.market_bars`);
+and the catalog sync, the quality report of a product, or of every product, as a job of the pool
+(`fefat_app.jobs.catalog_sync`), which a product's Update starts until the connectors (D-38).
 
 A dataset's id names its provider, schema, and root, `provider:schema:root`, such as
 `databento:ohlcv-1m:MES`, none of which holds a colon (`fefat.market.layout.FolderName`)."""
@@ -20,6 +22,7 @@ from fefat.market.catalog import CATALOG
 from fefat.market.coverage import SESSION_KINDS, DatasetCoverage, dataset_coverage
 from fefat.market.instruments import STATIC_TABLE, Currency, Instrument, InstrumentKind
 from fefat.market.layout import Dataset, DatasetOrigin
+from fefat.market.quality import NothingToReportError, reported_products
 from fefat.market.quality_report import QualityFinding, QualityStatus, stored_findings
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import parse_schema_name
@@ -32,6 +35,8 @@ from fefat.market.status import (
     product_status,
 )
 from fefat.market.store import ListedStore, Store
+from fefat_app.ports import Job, JobKind
+from fefat_app.services.jobs import Jobs
 from fefat_app.services.market_bars import BarsPage, BarsRequest, bars_page
 
 FINDINGS_SHOWN = 200
@@ -152,14 +157,21 @@ class NoSuchDatasetError(ValueError):
         )
 
 
+class NothingToSyncError(ValueError):
+    """A catalog sync of a product, or of every product, that the store holds no trades, TBBO,
+    or bars of, in the words of the quality report's refusal (`NothingToReportError`)."""
+
+
 @dataclass(frozen=True)
 class MarketCatalog:
     """What `store` holds, read at each call (module docstring), with its quality reports in
-    `reports_folder` and the session tables cached in `cache_folder`."""
+    `reports_folder` and the session tables cached in `cache_folder`, and the catalog syncs it
+    starts through `jobs`."""
 
     store: Store
     reports_folder: Path
     cache_folder: Path
+    jobs: Jobs
 
     def datasets(self) -> tuple[StoredDataset, ...]:
         """Every dataset of trades, TBBO, or bars the store holds, by provider, root, and
@@ -211,6 +223,16 @@ class MarketCatalog:
     def bars(self, request: BarsRequest) -> BarsPage:
         """The page of bars `request` asks for (`fefat_app.services.market_bars`)."""
         return bars_page(self.store, self.cache_folder, request)
+
+    def start_sync(self, root: str | None) -> Job:
+        """Queue the catalog sync of `root`, or of every product where it is None, which writes
+        each of its quality reports as `fefat data quality` does; `NothingToSyncError` where the
+        store holds nothing to report, so that no job is queued to fail."""
+        try:
+            reported_products(self.store, root)
+        except NothingToReportError as refused:
+            raise NothingToSyncError(str(refused)) from refused
+        return self.jobs.start(JobKind.CATALOG_SYNC, {"root": root})
 
 
 def dataset_id(provider: str, schema: str, root: str) -> str:

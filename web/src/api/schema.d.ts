@@ -139,6 +139,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/catalog/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Catalog Sync
+         * @description Start the catalog sync of `root`, or of every product: a job that writes the quality
+         *     report of each provider's data of it, as `fefat data quality` does, queued until a worker of
+         *     the pool is free; refused with 404 where the store holds no trades or bars of it.
+         */
+        post: operations["start_catalog_sync_v1_catalog_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets": {
         parameters: {
             query?: never;
@@ -572,6 +594,15 @@ export interface components {
             unlisted: components["schemas"]["StoredDataset"][];
             /** Version */
             version: number;
+        };
+        /**
+         * CatalogSyncRequest
+         * @description The product, such as `MES`, whose quality reports a catalog sync writes; every product
+         *     the store holds where it is left out.
+         */
+        CatalogSyncRequest: {
+            /** Root */
+            root?: string | null;
         };
         /**
          * CoveringDataset
@@ -1449,6 +1480,66 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    start_catalog_sync_v1_catalog_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
         };

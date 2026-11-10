@@ -279,6 +279,25 @@
         "title": "CatalogStatus",
         "type": "object"
       },
+      "CatalogSyncRequest": {
+        "additionalProperties": false,
+        "description": "The product, such as `MES`, whose quality reports a catalog sync writes; every product\nthe store holds where it is left out.",
+        "properties": {
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          }
+        },
+        "title": "CatalogSyncRequest",
+        "type": "object"
+      },
       "CoveringDataset": {
         "description": "A dataset of a catalog product: complete when it starts by the first trade date of the\nproduct's history, partial when it starts after it.",
         "properties": {
@@ -1896,6 +1915,89 @@
           }
         ],
         "summary": "Catalog Status",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/catalog/sync": {
+      "post": {
+        "description": "Start the catalog sync of `root`, or of every product: a job that writes the quality\nreport of each provider's data of it, as `fefat data quality` does, queued until a worker of\nthe pool is free; refused with 404 where the store holds no trades or bars of it.",
+        "operationId": "start_catalog_sync_v1_catalog_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Start Catalog Sync",
         "tags": [
           "data"
         ]
