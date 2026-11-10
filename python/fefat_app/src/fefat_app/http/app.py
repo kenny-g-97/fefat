@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.types import ASGIApp
 
@@ -58,6 +59,7 @@ def build_api() -> FastAPI:
         docs.router,
     ):
         api.include_router(router)
+    api.mount(docs.SWAGGER_UI_PATH, StaticFiles(directory=docs.SWAGGER_UI_FILES), "swagger-ui")
     return api
 
 

@@ -8,11 +8,14 @@ Nothing keeps the password: the browser's
 own prompt, which a password manager answered by itself with a password not FEFAT's until the
 login's limit tripped, is never asked for. `/openapi.json` answers a session or an API token.
 
-The interactive page loads one release of Swagger UI from jsdelivr, whose files never change
-once published, and runs inline script, which the app's own content security policy forbids, so
-it answers under a policy of its own and needs the internet. What is typed under its Authorize
-dialog, a CSRF token or an API token, lasts as long as the page, never kept in the browser's
-storage. Both pages are framed by no site and cached by no browser."""
+The interactive page loads Swagger UI 5.34.0, whose script, style, and licence the package
+carries under `swagger_ui/` (the Phase 4 exit, D-92), from the app itself, so that it needs no
+internet and trusts no CDN, and runs inline script, which the app's own content security policy
+forbids, so it answers under a policy of its own. What is typed under its Authorize dialog, a
+CSRF token or an API token, lasts as long as the page, never kept in the browser's storage. Both
+pages are framed by no site and cached by no browser."""
+
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -23,11 +26,13 @@ from fefat_app.http.session_cookie import SESSION_COOKIE
 
 router = APIRouter(include_in_schema=False)
 
-SWAGGER_UI = "https://cdn.jsdelivr.net"
-SWAGGER_UI_RELEASE = f"{SWAGGER_UI}/npm/swagger-ui-dist@5.34.0"
+SWAGGER_UI_FILES = Path(__file__).parent / "swagger_ui"
+"""Swagger UI 5.34.0 from npm's `swagger-ui-dist`, under its Apache 2.0 licence."""
+SWAGGER_UI_PATH = "/docs/swagger-ui"
+"""Where the app serves `SWAGGER_UI_FILES`."""
 DOCS_CONTENT_SECURITY_POLICY = (
-    f"default-src 'self'; script-src 'self' {SWAGGER_UI} 'unsafe-inline'; "
-    f"style-src 'self' {SWAGGER_UI} 'unsafe-inline'; img-src 'self' data:"
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:"
 )
 LOGIN_PAGE_CONTENT_SECURITY_POLICY = (
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
@@ -92,8 +97,8 @@ def docs_page(request: Request, container: ContainerDependency) -> HTMLResponse:
     page = get_swagger_ui_html(
         openapi_url="/openapi.json",
         title="FEAT API",
-        swagger_js_url=f"{SWAGGER_UI_RELEASE}/swagger-ui-bundle.js",
-        swagger_css_url=f"{SWAGGER_UI_RELEASE}/swagger-ui.css",
+        swagger_js_url=f"{SWAGGER_UI_PATH}/swagger-ui-bundle.js",
+        swagger_css_url=f"{SWAGGER_UI_PATH}/swagger-ui.css",
         swagger_favicon_url="/favicon.svg",
     )
     return _for_this_browser_alone(page, DOCS_CONTENT_SECURITY_POLICY)

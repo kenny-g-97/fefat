@@ -214,22 +214,31 @@ def test_a_live_session_gets_the_docs_under_their_own_policy(
 
     assert page.status_code == 200
     assert "set-cookie" not in page.headers
-    assert "script-src 'self' https://cdn.jsdelivr.net" in page.headers["content-security-policy"]
+    assert "script-src 'self' 'unsafe-inline'" in page.headers["content-security-policy"]
+    assert "cdn.jsdelivr.net" not in page.headers["content-security-policy"]
     assert page.headers["cache-control"] == "no-store"
 
 
-def test_the_docs_load_one_release_of_swagger_ui_and_keep_no_token_in_the_browser(
+def test_the_docs_load_swagger_ui_from_the_app_itself_and_keep_no_token_in_the_browser(
     client: TestClient, container: Container
 ) -> None:
     # A floating release could change under the session, and a token typed under Authorize
-    # would otherwise stay in the browser's storage after the page closes.
+    # would otherwise stay in the browser's storage after the page closes; the release from a
+    # CDN needed the internet and trusted the CDN, so the app serves its own copy (the Phase 4
+    # exit).
     logged_in(client, container)
 
     page = client.get("/docs")
+    script = client.get("/docs/swagger-ui/swagger-ui-bundle.js")
+    style = client.get("/docs/swagger-ui/swagger-ui.css")
 
-    assert "swagger-ui-dist@5.34.0/swagger-ui-bundle.js" in page.text
-    assert "swagger-ui-dist@5.34.0/swagger-ui.css" in page.text
+    assert '"/docs/swagger-ui/swagger-ui-bundle.js"' in page.text
+    assert '"/docs/swagger-ui/swagger-ui.css"' in page.text
+    assert "cdn.jsdelivr.net" not in page.text
     assert "persistAuthorization" not in page.text
+    assert script.status_code == style.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
+    assert style.headers["content-type"].startswith("text/css")
 
 
 def test_logout_beside_an_api_token_ends_the_cookies_session_too(
