@@ -149,3 +149,10 @@ On this machine on 2026-11-02: git 2.55.0, gh 2.97.0, Node 24.18.0, pnpm 12.10.1
 2. The guard also refuses `gh` and `sed` in a reviewer, neither on its read-only list, so a reviewer reads the steps' squash commits where it would read their pull requests; a phase exit puts what each pull request declined in the brief.
 
 On this machine on 2026-11-05: git 2.55.0, gh 2.97.0, Node 24.18.0, pnpm 12.10.1, uv 0.11.33, Python 3.12.13, Rust 1.99.1, `just` 1.58.0, cargo-mutants 27.1.0, MSVC linker 14.44.35207.
+
+### Re-verified on 2026-11-10 (VS Code extension 2.1.319, Phase 4 exit)
+
+1. The reviewers' guard holds on 2.1.319: a `step-reviewer` asked to run `printf probe` got `Reviewers are read-only: "printf probe" is not on the read-only list. …`, which the hook gives only to an agent it knows as a reviewer, and `git status --short` ran.
+2. Eleven reviewers of the phase diff, briefed through one context file and the steps' pull request bodies saved in the scratchpad, and reading the merged code in the clean worktree, all delivered within their turns; `/code-review high` took the range `phase-3..origin/main` as its target, in forked execution.
+
+On this machine on 2026-11-10: git 2.55.0, gh 2.97.0, Node 24.18.0, pnpm 12.10.1, uv 0.11.33, Python 3.12.13, Rust 1.99.1, `just` 1.58.0, cargo-mutants 27.1.0, MSVC linker 14.44.35207.
