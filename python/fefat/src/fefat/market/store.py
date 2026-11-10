@@ -275,7 +275,7 @@ class Store:
 class ListedStore(Store):
     """A `Store` that lists each dataset's partitions once and keeps the listing, for a reader of
     many windows of a store that does not change meanwhile, as `load` and the feature cache read
-    one (`fefat.market.api.series_source`): listing a dataset of years of files is most of the
+    one (`fefat.market.series_source`): listing a dataset of years of files is most of the
     time a month's load takes. A partition written through it lists the store again."""
 
     def __init__(self, folder: Path) -> None:
