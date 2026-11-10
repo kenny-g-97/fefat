@@ -203,18 +203,40 @@ def write_quality_report(report: QualityReport, reports_folder: Path) -> Path:
 def quality_standing(reports_folder: Path, provider: str, root: str) -> QualityStanding:
     """The status of the root's report from `provider` and the last trade date it checked;
     unchecked while no report is written. Tables whose columns differ are refused."""
+    tables = _stored_tables(reports_folder, provider, root)
+    if tables is None:
+        return QualityStanding(status=QualityStatus.UNCHECKED, checked_through=None)
+    days, findings = tables
+    status = QualityStatus.CLEAN if findings.is_empty() else QualityStatus.FLAGGED
+    checked_through = days.select(pl.col("trade_date").max()).item()
+    return QualityStanding(status=status, checked_through=checked_through)
+
+
+def stored_findings(reports_folder: Path, provider: str, root: str) -> pl.DataFrame:
+    """The findings of the root's report from `provider`, with the columns of
+    `FINDING_COLUMNS`; none while no report is written. Tables whose columns differ are
+    refused."""
+    tables = _stored_tables(reports_folder, provider, root)
+    if tables is None:
+        return pl.DataFrame(schema=FINDING_COLUMNS)
+    return tables[1]
+
+
+def _stored_tables(
+    reports_folder: Path, provider: str, root: str
+) -> tuple[pl.DataFrame, pl.DataFrame] | None:
+    """The days and the findings of the root's report from `provider`, each with its columns;
+    None while either is not written."""
     folder = reports_folder / provider / root
     days_path, findings_path = folder / DAYS_FILE_NAME, folder / FINDINGS_FILE_NAME
     if not (days_path.is_file() and findings_path.is_file()):
-        return QualityStanding(status=QualityStatus.UNCHECKED, checked_through=None)
+        return None
     days = pl.read_parquet(days_path)
     findings = pl.read_parquet(findings_path)
     again = f"; write it again with `fefat data quality {root}`"
     require_columns(DAY_COLUMNS, days.schema, f"{days_path}{again}")
     require_columns(FINDING_COLUMNS, findings.schema, f"{findings_path}{again}")
-    status = QualityStatus.CLEAN if findings.is_empty() else QualityStatus.FLAGGED
-    checked_through = days.select(pl.col("trade_date").max()).item()
-    return QualityStanding(status=status, checked_through=checked_through)
+    return days, findings
 
 
 def report_written_ns(reports_folder: Path, provider: str, root: str) -> int | None:

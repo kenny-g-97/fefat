@@ -4,6 +4,7 @@ same instrument parameters."""
 
 from decimal import Decimal
 
+import polars as pl
 import pytest
 
 from fefat.market import instruments
@@ -13,6 +14,7 @@ from fefat.market.engine_units import (
     instrument_parameters,
     micro_units,
     money_text,
+    price_in_units,
     price_text,
 )
 from fefat.reference import units
@@ -36,6 +38,16 @@ def test_prices_and_money_are_written_as_their_decimals() -> None:
     assert price_text(4_990_250_000_000) == "4990.25"
     assert price_text(-250_000_000) == "-0.25"
     assert money_text(-84_514) == "-0.084514"
+
+
+def test_a_price_column_reads_in_the_instruments_units_as_the_float_nearest_its_decimal() -> None:
+    # Step 5.1: the API sends prices in the instrument's units, which no client scales again.
+    held = [4_990_250_000_000, -250_000_000, 76_430_000_000, 1]
+
+    prices = pl.DataFrame({"close": held}).select(price_in_units("close")).to_series().to_list()
+
+    assert prices == [float(price_text(units)) for units in held]
+    assert prices[:3] == [4990.25, -0.25, 76.43]
 
 
 def test_an_amount_finer_than_a_micro_unit_is_refused() -> None:
