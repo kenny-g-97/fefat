@@ -2,13 +2,14 @@
 `01-architecture.md` section 8): Done means 1's `/docs` behind the login, and Done means 2's
 login, CSRF, and bearer tests."""
 
+import mimetypes
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
 from fefat_app.container import Container
 from fefat_app.http.app import create_app
-from local_server import PASSWORD, SettableClock, basic, logged_in, session_cookie
+from local_server import LOOPBACK, PASSWORD, SettableClock, basic, logged_in, session_cookie
 
 PROBLEM = "application/problem+json"
 A_SECRET_CHANGE = {"secrets": {"anthropic": "a key"}}
@@ -239,6 +240,22 @@ def test_the_docs_load_swagger_ui_from_the_app_itself_and_keep_no_token_in_the_b
     assert script.status_code == style.status_code == 200
     assert script.headers["content-type"].startswith("text/javascript")
     assert style.headers["content-type"].startswith("text/css")
+
+
+def test_the_app_serves_its_scripts_as_javascript_whatever_the_registry_says(
+    container: Container,
+) -> None:
+    # The Phase 4 exit's CI: the media type of a file came from the machine's registry, which on
+    # Windows' runner names `.js` application/javascript and on some machines text/plain, a type
+    # a browser refuses to run under the app's nosniff.
+    mimetypes.add_type("text/plain", ".js")
+    try:
+        with TestClient(create_app(container, built_web_app=None), base_url=LOOPBACK) as client:
+            script = client.get("/docs/swagger-ui/swagger-ui-bundle.js")
+    finally:
+        mimetypes.add_type("text/javascript", ".js")
+
+    assert script.headers["content-type"].startswith("text/javascript")
 
 
 def test_logout_beside_an_api_token_ends_the_cookies_session_too(

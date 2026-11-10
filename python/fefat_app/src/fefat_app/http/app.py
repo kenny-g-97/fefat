@@ -3,6 +3,7 @@
 alone. Every error is a problem (`fefat_app.http.problems`), and every response carries its
 request's id and the security headers, which wrap the whole app with the host check."""
 
+import mimetypes
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,6 +26,10 @@ from fefat_app.http.web_app import WebAppMount
 BODY_BYTES = 1024 * 1024
 """The largest request body the API reads, refused with 413 past it before it is held in memory;
 a later route that takes files, such as an upload's, sets its own."""
+SERVED_TYPES = (("text/javascript", ".js"), ("text/css", ".css"))
+"""The media types of the scripts and styles the app serves, which a machine's registry may name
+otherwise: Windows' runner names `.js` application/javascript and some machines text/plain, a
+type a browser refuses to run under the app's nosniff (the Phase 4 exit's CI)."""
 
 
 class FefatApi(FastAPI):
@@ -37,6 +42,8 @@ class FefatApi(FastAPI):
 def build_api() -> FastAPI:
     """The API's routes and error handlers, without a container: enough for its OpenAPI
     document."""
+    for media_type, suffix in SERVED_TYPES:
+        mimetypes.add_type(media_type, suffix)
     api = FefatApi(
         title="FEAT",
         version=fefat_app.__version__,
