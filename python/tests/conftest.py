@@ -38,11 +38,11 @@ def root_log_put_back() -> Iterator[None]:
     """The process's log as it was before the test, for a test that configures the server's
     (`fefat_app.http.server_log`), whose open log file Windows would keep locked."""
     root = logging.getLogger()
-    handlers, level = list(root.handlers), root.level
+    before, level = list(root.handlers), root.level
     yield
-    for handler in [added for added in root.handlers if added not in handlers]:
-        root.removeHandler(handler)
-        handler.close()
+    for added in [destination for destination in root.handlers if destination not in before]:
+        root.removeHandler(added)
+        added.close()
     root.setLevel(level)
 
 

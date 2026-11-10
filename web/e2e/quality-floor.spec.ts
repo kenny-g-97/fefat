@@ -160,6 +160,13 @@ test("keyboard focus shows in a contrast theme of Windows too", async ({
       : getComputedStyle(document.activeElement).outlineStyle
   )
   expect(outline).toBe("solid")
+
+  // A field shows its focus as a ring, which a contrast theme drops, so there it takes an
+  // outline too: the Phase 4 exit's step review found the first stop, a link, outlined anyway.
+  await page.goto("/settings")
+  const field = page.getByLabel("Token name")
+  await field.focus()
+  await expect(field).toHaveCSS("outline-style", "solid")
 })
 
 test("reduced motion switches the theme without a fade", async ({

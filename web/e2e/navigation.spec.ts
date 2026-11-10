@@ -7,6 +7,16 @@ import { screenshot } from "./support/screenshots.ts"
 
 type SidebarPage = { readonly name: string; readonly path: string }
 
+/** Each link of the home page's panels, with the page it leads to. */
+const HOME_LINKS: readonly (readonly [string, string])[] = [
+  ["All runs", "/runs"],
+  ["All features", "/lab"],
+  ["Build a strategy", "/strategies"],
+  ["Open the feature lab", "/lab"],
+  ["Run a backtest", "/runs"],
+  ["Import data", "/data"],
+]
+
 const PAGES: readonly SidebarPage[] = [
   { name: "Home", path: "/" },
   { name: "Lab", path: "/lab" },
@@ -56,6 +66,13 @@ test("the home page links each widget to its page", async ({
     await expect(
       page.getByRole("heading", { level: 2, name: widget })
     ).toBeVisible()
+  }
+  // The Phase 4 exit's step review: every link leads to its page, not the one clicked alone.
+  for (const [name, href] of HOME_LINKS) {
+    await expect(page.getByRole("link", { name, exact: true })).toHaveAttribute(
+      "href",
+      href
+    )
   }
   await page.getByRole("link", { name: "Open the feature lab" }).click()
   await expect(page).toHaveURL("/lab")

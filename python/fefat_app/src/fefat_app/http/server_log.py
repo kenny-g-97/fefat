@@ -23,8 +23,8 @@ def configure_server_log(logs_dir: Path) -> Path:
     )
     to_terminal = logging.StreamHandler()
     root = logging.getLogger()
-    for handler in (to_file, to_terminal):
-        handler.setFormatter(formatter)
-        root.addHandler(handler)
+    for destination in (to_file, to_terminal):
+        destination.setFormatter(formatter)
+        root.addHandler(destination)
     root.setLevel(logging.INFO)
     return log_file

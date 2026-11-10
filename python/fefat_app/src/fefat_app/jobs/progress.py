@@ -30,7 +30,9 @@ class JobProgress:
         past its busy timeout refused is skipped, the next one reporting again and checking for
         a request to stop."""
         if not 0 <= percent <= 100:
-            raise ValueError(f"Expected a percent from 0 to 100, got {percent}.")
+            raise ValueError(
+                f"Expected a percent from 0 to 100 for the job {self.job_id}, got {percent}."
+            )
         try:
             job = self.records.advance(self.job_id, self.worker_pid, percent, message, details)
         except OperationalError:

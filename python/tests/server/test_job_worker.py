@@ -135,7 +135,8 @@ def test_a_report_outside_0_to_100_percent_is_refused(job_records: JobTables) ->
     job_records.start(job.id, os.getpid(), STARTED_AT + timedelta(seconds=15), STARTED_AT)
     progress = JobProgress(job_records, job.id, os.getpid())
 
-    with pytest.raises(ValueError, match="Expected a percent from 0 to 100, got 101"):
+    expected = f"Expected a percent from 0 to 100 for the job {job.id}, got 101"
+    with pytest.raises(ValueError, match=expected):
         progress.advance(101, "Too far")
 
 

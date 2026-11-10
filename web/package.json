@@ -10,7 +10,7 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "typecheck": "tsc -b",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "dependencies": {
     "@fontsource/geist-mono": "5.3.0",
