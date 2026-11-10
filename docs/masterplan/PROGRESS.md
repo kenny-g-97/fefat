@@ -31,6 +31,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-11-08 — The web app takes the look of your Contemporary TypeUI skill, which the design brief now follows exactly (D-88): the skill committed under `.claude/skills/contemporary-typeui/` and loaded by every UI step beside `frontend-design` and `unslop`, its checklist closing each; step 4.3's open pull request restyles the shell to it with a light theme kept in grey and white (an Amendment under 4.3), step 4.4 brings its top bar (an Amendment under 4.4), and the Skills lines of Phases 4, 7, and 11, the Phase 5 kickoff, and the phone pass of Phase 12 name it. No step ID changed.
 - 2026-11-08 — The app is shown to traders as FEAT, with your fox logo, the orange accent `#fc734d`, and a purple second accent, `#a855f7`, for the quieter actions (D-89, the `config/feat-brand` pull request): the negative red moved to a rose red apart from the orange, every identifier keeps fefat, and `web/DESIGN.md` records the palette, the logo, and the second accent. Step 4.4 gains an Amendment that names the orange.
 - 2026-11-10 — The Phase 4 exit (D-92, pull request #63): the six backlog lines that targeted it are done (the index rebuilt from the workspace's files, Swagger UI served by the app, the UI harness in CI, the reaper and a worker hung inside a write, the executor's leftovers, the study's sums in a fixed order); the reviews' fixes (two tabs following three jobs no longer freeze the app, a woken worker gets a whole lease, the list keeps the running jobs, a cancel that meets a requeue holds, an empty `PYTHONPATH` entry no longer undoes `-P`); and the upgrade step, every major held at your call. Steps 4.1 to 4.5 gain an Amendment each, and 4.2's row says how `/docs` asks for the login.
+- 2026-11-10 — Phase 5 kickoff (D-93, pull request #64): your answers, connectors and sync deferred again (D-38), so data comes in through the import wizard, which also takes a Databento batch folder, and a product's Update runs its quality report; the engine guide's breakout and two templates written beside it as the demo, none of your own strategies while the repository is public (D-80); the eight KPI cards of step 5.7; and inline styles allowed from step 5.4, scripts staying locked. Every unstarted Phase 5 step reconciled with the code of Phases 1 to 4 (an Amendment under each of 5.1 to 5.10, 5.12, and 5.13, and the phase's conventions, versions, and skills in its header): strategy versions as files the database indexes (D-84), the tables each step first writes, an API without int64, and the SDK holding what a notebook would want too; Lightweight Charts 5.2.1, ECharts 6.1.0, CodeMirror 6.0.2 with `@codemirror/merge` 6.12.3, TanStack Table 9.3.1 and Virtual 3.14.26, DuckDB 2.0.0, and python-multipart 0.0.33 pinned; 23 backlog lines written into the steps, 6 in part, 5 retargeted, and step 4.3's line on overlays settled. No step ID changed.
 
 ## Steps
 
@@ -183,7 +184,7 @@ Phase kickoffs and exits are tracked in the second table.
 | P2 | #24 | 2026-10-21 | #43 | 2026-11-02 | phase-2 |
 | P3 | #44 | 2026-11-02 | #55 | 2026-11-05 | phase-3 |
 | P4 | #56 | 2026-11-06 | #63 | 2026-11-10 | phase-4 |
-| P5 | | | | | |
+| P5 | #64 | 2026-11-10 | | | |
 | P6 | | | | | |
 | P7 | | | | | |
 | P8 | | | | | |
