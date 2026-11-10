@@ -1,7 +1,8 @@
 """The local server's parts on each test's own home (step 4.2): the database of its `FEFAT_HOME`,
 made and migrated; a clock the test moves; keyring in memory; Argon2 at its lowest cost, so that
 many logins take no time, while the server keeps argon2-cffi's defaults; a client of the app;
-the server's log; and the executors, cold and warm (step 4.5)."""
+the server's log; the executors, cold and warm (step 4.5); and the data catalog over the store
+of its `FEFAT_DATA_DIR` (step 5.1)."""
 
 import os
 from collections.abc import Iterator
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from fefat.config import Settings, resolve_paths
+from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.access_records import AccessTables
@@ -25,6 +27,7 @@ from fefat_app.http.server_log import configure_server_log
 from fefat_app.jobs.dispatcher import LocalDispatcher
 from fefat_app.jobs.worker import JobTimings
 from fefat_app.services.api_tokens import ApiTokenIssuer
+from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
@@ -84,6 +87,7 @@ def container(
             jobs=Jobs(job_records, dispatcher, clock),
             dispatcher=dispatcher,
             executor=warm_executor,
+            catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir),
         )
     finally:
         dispatcher.close()

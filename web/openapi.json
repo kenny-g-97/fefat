@@ -101,6 +101,236 @@
         "title": "AppSettings",
         "type": "object"
       },
+      "CatalogProductStatus": {
+        "description": "A product of the catalog: its root, the first trade date of its history, the name of its\nfirst recommended source, and the datasets of it the store holds, none while it is missing.",
+        "properties": {
+          "datasets": {
+            "items": {
+              "$ref": "#/components/schemas/CoveringDataset"
+            },
+            "title": "Datasets",
+            "type": "array"
+          },
+          "history_from": {
+            "format": "date",
+            "title": "History From",
+            "type": "string"
+          },
+          "recommended_source": {
+            "title": "Recommended Source",
+            "type": "string"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "history_from",
+          "recommended_source",
+          "datasets"
+        ],
+        "title": "CatalogProductStatus",
+        "type": "object"
+      },
+      "CatalogStatus": {
+        "description": "The catalog at its version: its products in its order, then the datasets of the roots it\ndoes not list.",
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogProductStatus"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "unlisted": {
+            "items": {
+              "$ref": "#/components/schemas/StoredDataset"
+            },
+            "title": "Unlisted",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "products",
+          "unlisted"
+        ],
+        "title": "CatalogStatus",
+        "type": "object"
+      },
+      "CoveringDataset": {
+        "description": "A dataset of a catalog product: complete when it starts by the first trade date of the\nproduct's history, partial when it starts after it.",
+        "properties": {
+          "checked_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked Through"
+          },
+          "contracts": {
+            "title": "Contracts",
+            "type": "integer"
+          },
+          "coverage": {
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Coverage",
+            "type": "string"
+          },
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "first_trade_date": {
+            "format": "date",
+            "title": "First Trade Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_import": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import"
+          },
+          "last_trade_date": {
+            "format": "date",
+            "title": "Last Trade Date",
+            "type": "string"
+          },
+          "licence_scope": {
+            "title": "Licence Scope",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/DatasetOrigin"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityStatus"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "schema_name": {
+            "title": "Schema Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "root",
+          "schema_name",
+          "fidelity",
+          "contracts",
+          "first_trade_date",
+          "last_trade_date",
+          "quality",
+          "checked_through",
+          "origin",
+          "licence_scope",
+          "last_import",
+          "coverage"
+        ],
+        "title": "CoveringDataset",
+        "type": "object"
+      },
+      "Currency": {
+        "description": "The currency of an instrument's prices and of what a point is worth.",
+        "enum": [
+          "USD",
+          "USDT",
+          "EUR",
+          "GBP",
+          "JPY",
+          "CHF",
+          "AUD",
+          "CAD"
+        ],
+        "title": "Currency",
+        "type": "string"
+      },
+      "DatasetOrigin": {
+        "description": "How a dataset came into the store (D-37): imported from the trader's files, or synced\nthrough a connector to a source the trader connects, which waits for a later phase (D-38).",
+        "enum": [
+          "import",
+          "sync"
+        ],
+        "title": "DatasetOrigin",
+        "type": "string"
+      },
+      "DatasetQuality": {
+        "description": "A dataset's quality: the verdict of its root's report from its provider, as the dataset\nreads it, and the last trade date the report checked; and the report's findings, those of\nevery schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many\nthere are.",
+        "properties": {
+          "checked_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked Through"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReportedFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "findings_total": {
+            "title": "Findings Total",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityStatus"
+          }
+        },
+        "required": [
+          "id",
+          "quality",
+          "checked_through",
+          "findings",
+          "findings_total"
+        ],
+        "title": "DatasetQuality",
+        "type": "object"
+      },
       "DemoJobRequest": {
         "additionalProperties": false,
         "description": "How many seconds a demo job counts, one a second, from 1 to an hour.",
@@ -117,6 +347,16 @@
         ],
         "title": "DemoJobRequest",
         "type": "object"
+      },
+      "DesktopUse": {
+        "description": "Whether a desktop app on the trader's machine may use the trader's own account or files:\nconfirmed by the source in writing (none is yet: the confirmations are a Phase 14 kickoff\ndecision, ADR-0018), to be checked against its terms, or forbidden by them.",
+        "enum": [
+          "confirmed",
+          "check-the-terms",
+          "forbidden"
+        ],
+        "title": "DesktopUse",
+        "type": "string"
       },
       "FieldError": {
         "description": "Where a request broke the API's schema and why, without the value it sent.",
@@ -163,6 +403,82 @@
           }
         },
         "title": "Health",
+        "type": "object"
+      },
+      "InstrumentKind": {
+        "description": "What trades: a dated futures contract, a perpetual swap, or the asset itself.",
+        "enum": [
+          "futures",
+          "perpetual",
+          "spot"
+        ],
+        "title": "InstrumentKind",
+        "type": "string"
+      },
+      "InstrumentVersion": {
+        "description": "A version of an instrument's specification (`fefat.market.instruments`): its root and\nkind; its tick size, what a point is worth, and its lot step, in its currency's units; the\nname of its session calendar; the trade dates it is in force, from `valid_from` to the day\nbefore `valid_to`; and whether an import saved it, where FEAT does not know the product.",
+        "properties": {
+          "calendar": {
+            "title": "Calendar",
+            "type": "string"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InstrumentKind"
+          },
+          "lot_step": {
+            "title": "Lot Step",
+            "type": "number"
+          },
+          "point_value": {
+            "title": "Point Value",
+            "type": "number"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "boolean"
+          },
+          "tick_size": {
+            "title": "Tick Size",
+            "type": "number"
+          },
+          "valid_from": {
+            "format": "date",
+            "title": "Valid From",
+            "type": "string"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          }
+        },
+        "required": [
+          "root",
+          "kind",
+          "tick_size",
+          "point_value",
+          "lot_step",
+          "currency",
+          "calendar",
+          "valid_from",
+          "valid_to",
+          "saved"
+        ],
+        "title": "InstrumentVersion",
         "type": "object"
       },
       "IssuedApiToken": {
@@ -416,6 +732,47 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "Preset": {
+        "additionalProperties": false,
+        "description": "A file layout FEFAT imports; its id is the provider its datasets are stored under.",
+        "properties": {
+          "id": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "reads": {
+            "minLength": 1,
+            "title": "Reads",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PresetStatus"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "reads",
+          "status"
+        ],
+        "title": "Preset",
+        "type": "object"
+      },
+      "PresetStatus": {
+        "description": "Whether FEFAT reads a preset's files yet: the Databento importer of step 1.6 does, and\nthe presets of step 1.10 are planned.",
+        "enum": [
+          "available",
+          "planned"
+        ],
+        "title": "PresetStatus",
+        "type": "string"
+      },
       "Problem": {
         "description": "An error the API answered (RFC 9457), with the id of the request it ended.",
         "properties": {
@@ -453,6 +810,71 @@
           "request_id"
         ],
         "title": "Problem",
+        "type": "object"
+      },
+      "QualityFinding": {
+        "description": "What a report finds wrong with a dataset on a trade date: a session without records,\nrepeated records, records outside their session and its break, decreases of the clock\nbetween stored rows, prices of zero or below where none are allowed, and bars that differ\nfrom those rebuilt from finer data.",
+        "enum": [
+          "gap",
+          "duplicates",
+          "out-of-session",
+          "clock-decreases",
+          "non-positive-prices",
+          "bar-differences"
+        ],
+        "title": "QualityFinding",
+        "type": "string"
+      },
+      "QualityStatus": {
+        "description": "A root's verdict from one provider: no finding, some, no report yet, or a clean report a\ndataset outgrew, whose last trade date checked is before the dataset's last (step 1.9) or\nthat is older than a partition of the dataset (step 5.1).",
+        "enum": [
+          "clean",
+          "flagged",
+          "unchecked",
+          "stale"
+        ],
+        "title": "QualityStatus",
+        "type": "string"
+      },
+      "ReportedFinding": {
+        "description": "A finding of a quality report: its trade date, its kind, the schema and the contract it\nwas found in, none for a gap, which no contract fills, and how many records or bars it\ncounts.",
+        "properties": {
+          "contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/QualityFinding"
+          },
+          "schema_name": {
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "kind",
+          "schema_name",
+          "contract",
+          "count"
+        ],
+        "title": "ReportedFinding",
         "type": "object"
       },
       "SecretChanges": {
@@ -589,6 +1011,212 @@
           }
         },
         "title": "SettingsChange",
+        "type": "object"
+      },
+      "Source": {
+        "additionalProperties": false,
+        "description": "A source of market data as the guide describes it; `terms_page` is null where the source\npublishes no terms page, and `licence_scope` is copied into every dataset imported from it.",
+        "properties": {
+          "cost": {
+            "minLength": 1,
+            "title": "Cost",
+            "type": "string"
+          },
+          "desktop_use": {
+            "$ref": "#/components/schemas/DesktopUse"
+          },
+          "desktop_use_note": {
+            "minLength": 1,
+            "title": "Desktop Use Note",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SourceKind"
+          },
+          "licence_scope": {
+            "minLength": 1,
+            "title": "Licence Scope",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "offers": {
+            "minLength": 1,
+            "title": "Offers",
+            "type": "string"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/Preset"
+            },
+            "title": "Presets",
+            "type": "array"
+          },
+          "terms": {
+            "minLength": 1,
+            "title": "Terms",
+            "type": "string"
+          },
+          "terms_page": {
+            "anyOf": [
+              {
+                "pattern": "^https://\\S+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Page"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "offers",
+          "cost",
+          "terms",
+          "terms_page",
+          "desktop_use",
+          "desktop_use_note",
+          "licence_scope",
+          "presets"
+        ],
+        "title": "Source",
+        "type": "object"
+      },
+      "SourceGuide": {
+        "additionalProperties": false,
+        "description": "Every known source in the order the guide prints them, as read on `researched_on`.",
+        "properties": {
+          "researched_on": {
+            "format": "date",
+            "title": "Researched On",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/Source"
+            },
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "researched_on",
+          "sources"
+        ],
+        "title": "SourceGuide",
+        "type": "object"
+      },
+      "SourceKind": {
+        "description": "What a source is: a data vendor, an exchange's own archive, or a trading platform whose\nexports a preset reads.",
+        "enum": [
+          "vendor",
+          "exchange-archive",
+          "platform"
+        ],
+        "title": "SourceKind",
+        "type": "string"
+      },
+      "StoredDataset": {
+        "description": "A dataset of trades, TBBO, or bars the store holds (`fefat.market.status`): its id; its\nprovider, root, schema, and fidelity, `trades`, `tbbo`, or the timeframe of its bars; how\nmany contracts it holds and its first and last trade date; the quality of its root's report\nfrom its provider, with the last trade date the report checked, none while unchecked; its\norigin and the licence scope of its source; and the last day a file of its provider that fed\nits root was imported, none without a record of one.",
+        "properties": {
+          "checked_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked Through"
+          },
+          "contracts": {
+            "title": "Contracts",
+            "type": "integer"
+          },
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "first_trade_date": {
+            "format": "date",
+            "title": "First Trade Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_import": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import"
+          },
+          "last_trade_date": {
+            "format": "date",
+            "title": "Last Trade Date",
+            "type": "string"
+          },
+          "licence_scope": {
+            "title": "Licence Scope",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/DatasetOrigin"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityStatus"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "schema_name": {
+            "title": "Schema Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "root",
+          "schema_name",
+          "fidelity",
+          "contracts",
+          "first_trade_date",
+          "last_trade_date",
+          "quality",
+          "checked_through",
+          "origin",
+          "licence_scope",
+          "last_import"
+        ],
+        "title": "StoredDataset",
         "type": "object"
       },
       "Theme": {
@@ -1115,6 +1743,170 @@
         ]
       }
     },
+    "/v1/catalog": {
+      "get": {
+        "description": "The products of the catalog, each with its history's first trade date, its first\nrecommended source, and the datasets that cover it, complete or partial, none where it is\nmissing; then the datasets of the roots the catalog does not list.",
+        "operationId": "catalog_status_v1_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Catalog Status",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/datasets": {
+      "get": {
+        "description": "Every dataset of trades, TBBO, or bars the store holds, by provider, root, and schema,\nwith its trade dates, fidelity, and quality.",
+        "operationId": "stored_datasets_v1_datasets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StoredDataset"
+                  },
+                  "title": "Response Stored Datasets V1 Datasets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Stored Datasets",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/datasets/{dataset_id}/quality": {
+      "get": {
+        "description": "The quality of the dataset `dataset_id` names, `provider:schema:root` such as\n`databento:ohlcv-1m:MES`, with the findings of its root's report; refused with 404 where the\nstore holds no such dataset.",
+        "operationId": "dataset_quality_v1_datasets__dataset_id__quality_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetQuality"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Dataset Quality",
+        "tags": [
+          "data"
+        ]
+      }
+    },
     "/v1/healthz": {
       "get": {
         "description": "Whether the server answers; no login needed.",
@@ -1134,6 +1926,53 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/instruments": {
+      "get": {
+        "description": "Every version of every instrument's specification, FEAT's and those your imports saved,\nwith its tick size, point value, lot step, currency, and session calendar.",
+        "operationId": "instruments_v1_instruments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstrumentVersion"
+                  },
+                  "title": "Response Instruments V1 Instruments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Instruments",
+        "tags": [
+          "data"
         ]
       }
     },
@@ -1584,6 +2423,49 @@
         "summary": "Change Settings",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/v1/sources": {
+      "get": {
+        "description": "The source guide: each source of market data with what it offers and costs, its terms\nand their page, whether a desktop app may use your own account or files, and the import\npresets that read its files.",
+        "operationId": "source_guide_v1_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceGuide"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Source Guide",
+        "tags": [
+          "data"
         ]
       }
     },
