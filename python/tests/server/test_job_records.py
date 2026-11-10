@@ -168,6 +168,20 @@ def test_a_requeued_job_starts_again_from_the_start_keeping_its_attempts(
     assert job_records.requeue(job.id, WORKER) is None
 
 
+def test_a_job_asked_to_stop_is_not_queued_again(job_records: JobTables) -> None:
+    # The Phase 4 exit's ponytail review: a stop asked for after the reaper read the job, and
+    # before it queued the job again, was kept on the queued job, which then ran again.
+    job = started(job_records, a_demo(job_records))
+    job_records.request_cancel(job.id, STARTED_AT)
+
+    refused = job_records.requeue(job.id, WORKER)
+    cancelled = job_records.finish(job.id, WORKER, JobStatus.CANCELLED, STARTED_AT)
+
+    assert refused is None
+    assert cancelled is not None
+    assert cancelled.status == JobStatus.CANCELLED
+
+
 def test_events_come_in_order_after_the_last_one_seen_up_to_a_limit(
     job_records: JobTables,
 ) -> None:

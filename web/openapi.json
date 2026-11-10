@@ -1139,7 +1139,7 @@
     },
     "/v1/jobs": {
       "get": {
-        "description": "The newest jobs, newest first, at most a hundred.",
+        "description": "The newest jobs, newest first, at most a hundred, then the running jobs older than them.",
         "operationId": "recent_jobs_v1_jobs_get",
         "responses": {
           "200": {

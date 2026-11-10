@@ -327,7 +327,8 @@ class JobRecords(Protocol):
 
     def requeue(self, job_id: str, worker_pid: int) -> Job | None:
         """Queue the running job `job_id`, whose worker `worker_pid` stopped answering, again,
-        from the start, keeping the attempts it spent."""
+        from the start, keeping the attempts it spent; None where it was asked to stop, which
+        the reaper then ends as cancelled."""
         ...
 
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:

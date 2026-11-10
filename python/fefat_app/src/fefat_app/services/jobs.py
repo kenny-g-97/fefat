@@ -5,12 +5,14 @@ which its worker reads at its next report, or after which the reaper ends it."""
 
 from dataclasses import dataclass
 
-from fefat_app.ports import Clock, Dispatcher, Job, JobKind, JobRecords, StreamEvent
+from fefat_app.ports import Clock, Dispatcher, Job, JobKind, JobRecords, JobStatus, StreamEvent
 
 MAX_ATTEMPTS = 3
 """How many times a job runs before a worker that stops answering fails it."""
 RECENT_JOBS = 100
-"""How many of the newest jobs the list holds."""
+"""How many of the newest jobs the list holds, beside the running jobs older than them."""
+ACTIVE = frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
+"""The statuses of a job that has not ended."""
 
 
 class NoSuchJobError(ValueError):
@@ -35,8 +37,12 @@ class Jobs:
         return job
 
     def recent(self) -> tuple[Job, ...]:
-        """The newest jobs, newest first."""
-        return self.records.recent(RECENT_JOBS)
+        """The newest jobs, newest first, then the running jobs older than them, which a queue
+        of newer jobs would otherwise hide with their progress and their Cancel."""
+        newest = self.records.recent(RECENT_JOBS)
+        listed = {job.id for job in newest}
+        running = self.records.with_status(JobStatus.RUNNING)
+        return newest + tuple(job for job in running if job.id not in listed)
 
     def by_id(self, job_id: str) -> Job:
         """The job `job_id`; `NoSuchJobError` where there is none."""
@@ -47,15 +53,19 @@ class Jobs:
 
     def cancel(self, job_id: str) -> Job:
         """Cancel the job `job_id` at once if it is queued, or ask it to stop if it runs; a job
-        that has ended, or that was asked before, is given as it is."""
+        that has ended, or that was asked before, is given as it is. A job the reaper queued
+        again, or a worker started, between the two tries is tried again."""
         now = self.clock()
-        cancelled = self.records.cancel_queued(job_id, now)
-        if cancelled is not None:
-            return cancelled
-        asked = self.records.request_cancel(job_id, now)
-        if asked is not None:
-            return asked
-        return self.by_id(job_id)
+        while True:
+            cancelled = self.records.cancel_queued(job_id, now)
+            if cancelled is not None:
+                return cancelled
+            asked = self.records.request_cancel(job_id, now)
+            if asked is not None:
+                return asked
+            job = self.by_id(job_id)
+            if job.status not in ACTIVE or job.cancel_requested_at is not None:
+                return job
 
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
         """At most `limit` events of the stream `stream_id` after the event `after_id`."""

@@ -158,6 +158,7 @@ class JobTables:
                 JobStatus.RUNNING,
                 JobStatus.QUEUED,
                 worker_pid,
+                JobRow.cancel_requested_at.is_(None),
                 worker_pid=None,
                 lease_expires_at=None,
                 progress=0.0,
@@ -181,12 +182,13 @@ def _compare_and_set(
     expected: JobStatus,
     to: JobStatus,
     held_by: int | None,
+    *also: ColumnElement[bool],
     **changes: Any,
 ) -> Job | None:
     """Move the job `job_id` from `expected` to `to` with `changes`, where it is held by the
-    worker `held_by` if one is named, and write the `status` event of the move; None where the
-    job was not so."""
-    criteria = [JobRow.id == job_id, JobRow.status == expected]
+    worker `held_by` if one is named and meets `also`, and write the `status` event of the move;
+    None where the job was not so."""
+    criteria = [JobRow.id == job_id, JobRow.status == expected, *also]
     if held_by is not None:
         criteria.append(JobRow.worker_pid == held_by)
     if not _changed_one(session, update(JobRow).where(*criteria).values(status=to, **changes)):
