@@ -3,9 +3,10 @@
 
 `dataset_status` gives each dataset of trades, TBBO, or bars its provider, root, schema, and
 fidelity, its contracts and trade dates, the quality verdict of its root's report from its
-provider, stale when the report's last trade date is before the dataset's, the origin and
-licence scope of its `dataset.json`, and the last day a file of its provider that fed its root
-was imported, from the raw manifest; `ff.market.datasets()` lists it. `product_status` gives
+provider (`dataset_standing`), stale when the report's last trade date is before the dataset's
+or a partition of the dataset was written after the report (step 5.1), the origin and licence
+scope of its `dataset.json`, and the last day a file of its provider that fed its root was
+imported, from the raw manifest; `ff.market.datasets()` lists it. `product_status` gives
 each product of the catalog, in catalog order, its datasets, complete at their fidelity when
 they start by the first trade date of the product's history and partial when after it, or one
 row that says it is missing, with its first recommended source; then the datasets of roots the
@@ -15,6 +16,7 @@ catalog does not list, unlisted. `fefat data status` prints it.
     product_status(Store(paths.data_dir), paths.reports_dir)
 """
 
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 
@@ -23,12 +25,17 @@ import polars as pl
 from fefat.market.catalog import CATALOG, Catalog
 from fefat.market.coverage import DatasetCoverage, dataset_coverage, session_datasets
 from fefat.market.fidelity import TickFidelity
-from fefat.market.layout import Dataset, DatasetMetadata
-from fefat.market.quality_report import quality_standing, quality_verdict
+from fefat.market.layout import Dataset
+from fefat.market.quality_report import (
+    QualityStanding,
+    quality_standing,
+    quality_verdict,
+    report_written_ns,
+)
 from fefat.market.raw_manifest import RawManifest
 from fefat.market.schema import BarSchemaName, SchemaKind
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
-from fefat.market.store import Store
+from fefat.market.store import ListedStore, Store
 
 DATASET_COLUMNS = pl.Schema(
     {
@@ -83,16 +90,31 @@ _CATALOG_ORDER = "catalog_order"
 def dataset_status(store: Store, reports_folder: Path) -> pl.DataFrame:
     """Every dataset of trades, TBBO, or bars the store holds, with the columns of
     `DATASET_COLUMNS`, sorted by provider, root, and schema; the quality reports are read from
-    `reports_folder`."""
-    manifest = store.raw.manifest()
+    `reports_folder`, and each dataset's partitions are listed once."""
+    listed = ListedStore(store.folder)
+    manifest = listed.raw.manifest()
     rows = [
-        _dataset_row(dataset, coverage, store.dataset_metadata(dataset), reports_folder, manifest)
-        for dataset in session_datasets(store)
-        if (coverage := dataset_coverage(store, dataset)) is not None
+        _dataset_row(listed, dataset, coverage, reports_folder, manifest)
+        for dataset in session_datasets(listed)
+        if (coverage := dataset_coverage(listed, dataset)) is not None
     ]
     return pl.DataFrame(rows, schema=DATASET_COLUMNS, orient="row").sort(
         "provider", "root", "schema"
     )
+
+
+def dataset_standing(
+    store: Store, dataset: Dataset, last_trade_date: date, reports_folder: Path
+) -> QualityStanding:
+    """The quality of `dataset`, whose last trade date is `last_trade_date`, as its root's report
+    from its provider in `reports_folder` vouches for it (`quality_verdict`): stale once the
+    dataset runs past the last trade date the report checked, or once a partition of it was
+    written after the report."""
+    standing = quality_standing(reports_folder, dataset.provider, dataset.root)
+    written = report_written_ns(reports_folder, dataset.provider, dataset.root)
+    newest = max((file.modified_ns for file in store.list_partitions(dataset)), default=None)
+    written_since = written is not None and newest is not None and newest > written
+    return quality_verdict(standing, last_trade_date, written_since)
 
 
 def product_status(
@@ -130,16 +152,14 @@ def _fidelity_text(dataset: Dataset) -> str:
 
 
 def _dataset_row(
+    store: Store,
     dataset: Dataset,
     coverage: DatasetCoverage,
-    metadata: DatasetMetadata,
     reports_folder: Path,
     manifest: RawManifest,
 ) -> tuple[object, ...]:
-    standing = quality_verdict(
-        quality_standing(reports_folder, dataset.provider, dataset.root),
-        coverage.last_trade_date,
-    )
+    standing = dataset_standing(store, dataset, coverage.last_trade_date, reports_folder)
+    metadata = store.dataset_metadata(dataset)
     return (
         dataset.provider,
         dataset.root,

@@ -86,8 +86,9 @@ class QualityFinding(StrEnum):
 
 
 class QualityStatus(StrEnum):
-    """A root's verdict from one provider: no finding, some, no report yet, or a clean report
-    whose last trade date checked is before a dataset's last (step 1.9)."""
+    """A root's verdict from one provider: no finding, some, no report yet, or a clean report a
+    dataset outgrew, whose last trade date checked is before the dataset's last (step 1.9) or
+    that is older than a partition of the dataset (step 5.1)."""
 
     CLEAN = "clean"
     FLAGGED = "flagged"
@@ -216,15 +217,30 @@ def quality_standing(reports_folder: Path, provider: str, root: str) -> QualityS
     return QualityStanding(status=status, checked_through=checked_through)
 
 
-def quality_verdict(standing: QualityStanding, last_trade_date: date) -> QualityStanding:
+def report_written_ns(reports_folder: Path, provider: str, root: str) -> int | None:
+    """When the root's report from `provider` was last written: the time its days' table was, in
+    nanoseconds since the Unix epoch; None while no report is written."""
+    days_path = reports_folder / provider / root / DAYS_FILE_NAME
+    if not days_path.is_file():
+        return None
+    return days_path.stat().st_mtime_ns
+
+
+def quality_verdict(
+    standing: QualityStanding, last_trade_date: date, written_since: bool
+) -> QualityStanding:
     """The standing as a dataset whose last trade date is `last_trade_date` reads it: a clean
-    report that checked up to an earlier trade date is stale, since it would vouch for days it
-    never read, while a flagged one stays flagged, its last trade date showing how far it got."""
-    # shortcut: compares trade dates only, so a backfill or a rewrite that keeps the last trade
-    # date reads as current; compare the report's time with the partitions' when imports backfill.
+    report that checked up to an earlier trade date is stale, and so is one older than a
+    partition of the dataset, `written_since` it, as an import that backfills older months
+    writes one (step 5.1), since it would vouch for data it never read; a flagged one stays
+    flagged, its last trade date showing how far it got."""
+    # shortcut: a partition written while its report was assessed reads as checked; stamp the
+    # report with its assessment's start when imports run beside reports.
     checked_through = standing.checked_through
     clean = standing.status is QualityStatus.CLEAN
-    if not clean or checked_through is None or checked_through >= last_trade_date:
+    if not clean or checked_through is None:
+        return standing
+    if checked_through >= last_trade_date and not written_since:
         return standing
     return QualityStanding(status=QualityStatus.STALE, checked_through=checked_through)
 
