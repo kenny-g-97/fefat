@@ -306,6 +306,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/market/bars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Market Bars
+         * @description A page of at most 20,000 of the instrument's bars on the trade dates from `from` to `to`,
+         *     as `ff.market.load` gives them, column by column; `next_from` is the instant the next page
+         *     opens at, to send as `from`, none on the last page. Refused with 404 for an instrument that
+         *     names no root and no contract of one, and with 400, in the SDK's words, for a window it
+         *     refuses, such as one a provider named does not hold.
+         */
+        get: operations["market_bars_v1_market_bars_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -475,6 +499,48 @@ export interface components {
             secrets: components["schemas"]["SecretStatus"][];
             server: components["schemas"]["Settings"];
             theme: components["schemas"]["Theme"];
+        };
+        /**
+         * BarColumns
+         * @description A page's bars, column by column, by their open, the bars of one open by their contract:
+         *     each bar's open in whole seconds since the Unix epoch, UTC; its trade date; its prices in the
+         *     instrument's units, adjusted on a spliced series; its volume, in lots of the dataset's size
+         *     unit, a contract, or 0.001 BTC for bitcoin's perpetual; and its contract.
+         */
+        BarColumns: {
+            /** Close */
+            close: number[];
+            /** Contract */
+            contract: string[];
+            /** High */
+            high: number[];
+            /** Low */
+            low: number[];
+            /** Open */
+            open: number[];
+            /** Time */
+            time: number[];
+            /** Trade Date */
+            trade_date: string[];
+            /** Volume */
+            volume: number[];
+        };
+        /**
+         * BarsPage
+         * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
+         *     datasets the bars come from, the bars, and the instant the next page opens at, which the
+         *     caller sends as the window's start, none on the last page.
+         */
+        BarsPage: {
+            bars: components["schemas"]["BarColumns"];
+            /** Instrument */
+            instrument: string;
+            /** Next From */
+            next_from: string | null;
+            /** Provider */
+            provider: string;
+            /** Timeframe */
+            timeframe: string;
         };
         /**
          * CatalogProductStatus
@@ -1674,6 +1740,77 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    market_bars_v1_market_bars_get: {
+        parameters: {
+            query: {
+                /** @description A root such as `ES`, or a contract such as `ESH2026`. */
+                instrument: string;
+                /** @description The bars' timeframe, such as `5m`. */
+                timeframe: string;
+                /** @description The trade date the window starts on, such as `2026-03-06`, or the instant a page opens at, a page's `next_from`, such as `2026-03-06T03:20:00Z`. */
+                from: string;
+                /** @description The trade date the window ends on. */
+                to: string;
+                /** @description Whether a futures root's contracts are spliced, by default true. */
+                continuous?: boolean | null;
+                /** @description The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument. */
+                provider?: string | null;
+                /** @description Only datasets of this origin; every dataset is an import for now. */
+                origin?: "import" | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BarsPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

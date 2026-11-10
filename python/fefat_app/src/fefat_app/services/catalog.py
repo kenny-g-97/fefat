@@ -2,7 +2,7 @@
 in the data folder holds, read through the SDK each time it is asked, with nothing kept in the
 database until a step writes state of its own there (D-83): the datasets with their quality, a
 dataset's findings, the catalog's products with the datasets that cover them, the source guide,
-and the instruments.
+the instruments, and the bars of a window, a page at a time (`fefat_app.services.market_bars`).
 
 A dataset's id names its provider, schema, and root, `provider:schema:root`, such as
 `databento:ohlcv-1m:MES`, none of which holds a colon (`fefat.market.layout.FolderName`)."""
@@ -32,6 +32,7 @@ from fefat.market.status import (
     product_status,
 )
 from fefat.market.store import ListedStore, Store
+from fefat_app.services.market_bars import BarsPage, BarsRequest, bars_page
 
 FINDINGS_SHOWN = 200
 """How many of a report's findings a dataset's quality lists, beside how many there are."""
@@ -206,6 +207,10 @@ class MarketCatalog:
         known = STATIC_TABLE.roots()
         ordered = sorted(versions, key=lambda version: (version.root, version.valid_from))
         return tuple(_instrument_version(each, each.root not in known) for each in ordered)
+
+    def bars(self, request: BarsRequest) -> BarsPage:
+        """The page of bars `request` asks for (`fefat_app.services.market_bars`)."""
+        return bars_page(self.store, self.cache_folder, request)
 
 
 def dataset_id(provider: str, schema: str, root: str) -> str:
