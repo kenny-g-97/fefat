@@ -3,7 +3,7 @@
 Vite, React, and TypeScript with Tailwind, shadcn/ui, TanStack Router and Query, and an `openapi-fetch` client over the types `just gen-api` generates, managed with pnpm from the repository root. Its design system is [DESIGN.md](DESIGN.md), which every change here builds from and extends.
 
 ```text
-just dev        # fefat up, then the Vite dev server on http://localhost:5173 with its proxy, opening the app
+just dev        # fefat up on a throwaway home of the fixtures (or FEFAT_HOME's), restarted when python/ source changes, then the Vite dev server on http://localhost:5173 with its proxy, opening the app
 just build-web  # build into web/dist, which fefat up serves at http://127.0.0.1:8765
 just e2e        # build, then the Playwright specs of e2e/ against a seeded fefat up; screenshots in test-results/screenshots/
 just check      # oxlint, oxfmt --check, tsc, and the areas' import boundary, with the rest of the repository

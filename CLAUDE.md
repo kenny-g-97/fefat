@@ -36,7 +36,7 @@ just xcheck-tests  # the cross-check project's own tests and pyright, outside ju
 just tick-check  # the tick engine on the store's IBKR sessions (step 2.16): bars, reference against Rust, tick-versus-minute classes, hashes; writes docs/validation/ibkr-tick-check.md
 just bench    # the engine's benchmarks on the generated year of step 2.7 (step 2.15); --baseline <file> warns above a 30 % regression
 just mutants  # cargo-mutants on fefat-engine, for the phase exits (step 2.15); -f <file> for one file
-just dev      # local server, then the web dev server with its proxy, opening the app (step 4.3)
+just dev      # local server on a throwaway home of the fixtures (or FEFAT_HOME's), restarted when python/ source changes, then the web dev server with its proxy (steps 4.3, 5.1)
 just build-web  # build the web app into web/dist, which `fefat up` serves
 just e2e      # build the web app and run the Playwright specs against a seeded `fefat up` (step 4.3)
 ```
