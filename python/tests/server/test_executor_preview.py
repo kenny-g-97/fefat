@@ -225,6 +225,22 @@ def test_a_module_in_the_warm_runner_s_working_folder_shadows_nothing(
         planted.unlink()
 
 
+def test_an_empty_entry_of_pythonpath_puts_no_working_folder_on_the_import_path(
+    warm_executor: SubprocessExecutor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Phase 4 exit's security review: Python reads an empty entry of PYTHONPATH, as a
+    # trailing separator leaves, as the working folder, which undid the runner's `-P`.
+    monkeypatch.setenv("PYTHONPATH", os.environ.get("PYTHONPATH", "") + os.pathsep)
+    planted = resolve_paths(os.environ).executions_dir / "pydantic.py"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text('raise ImportError("planted")\n', encoding="utf-8")
+    try:
+        output_of(previewed(warm_executor, rsi.code, {"n": 14}))
+    finally:
+        warm_executor.close()
+        planted.unlink()
+
+
 def test_a_warm_runner_found_ended_at_the_sending_is_started_again(
     warm_executor: SubprocessExecutor, monkeypatch: pytest.MonkeyPatch
 ) -> None:

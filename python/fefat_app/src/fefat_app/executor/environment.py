@@ -7,6 +7,7 @@ URL holding its password. It keeps the trader's code from what the server knows,
 machine: a program can still read the Windows credential store through the system's own
 interfaces (`fefat_app.executor`)."""
 
+import os
 from collections.abc import Mapping
 
 from fefat.config import (
@@ -62,7 +63,17 @@ def scrubbed_environment(paths: FefatPaths, environment: Mapping[str, str]) -> d
     FEFAT's folders stay as `environment` names them where they resolve to `paths`, so that a
     runner resolves the platform's default home as the server does, which no git working tree
     around it refuses (D-85), and are set to `paths` otherwise."""
-    kept = {name: value for name, value in environment.items() if name.upper() in PASSED_ON}
+    kept = {
+        name: _without_empty_entries(value) if name.upper() == "PYTHONPATH" else value
+        for name, value in environment.items()
+        if name.upper() in PASSED_ON
+    }
     if resolve_paths(kept) != paths:
         kept |= {HOME_VARIABLE: str(paths.home), DATA_DIR_VARIABLE: str(paths.data_dir)}
     return {**kept, KEYRING_BACKEND_VARIABLE: NULL_KEYRING, "PYTHONUTF8": "1"}
+
+
+def _without_empty_entries(search_path: str) -> str:
+    """`search_path` without its empty entries, each of which Python reads as the working folder,
+    which would undo the runner's `-P` (the Phase 4 exit's security review)."""
+    return os.pathsep.join(entry for entry in search_path.split(os.pathsep) if entry)
