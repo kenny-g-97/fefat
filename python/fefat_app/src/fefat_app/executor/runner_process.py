@@ -47,6 +47,9 @@ READER_SECONDS = 5.0
 REMOVAL_SECONDS = 2.0
 """How long the executor tries to remove what a runner it stopped held, its log and its working
 folder, which Windows lets go of some milliseconds after the runner has ended."""
+LEFT_SECONDS = 24 * 3600
+"""How long ago a runner's log or an execution's folder last changed for the server's start to
+take it for one left behind, since a notebook's own executor may use the folder meanwhile."""
 
 
 class RunnerEnd(StrEnum):
@@ -217,6 +220,18 @@ def removed(path: Path) -> None:
                 LOG.warning("The executor left %s, which another process still holds.", path)
                 return
             time.sleep(0.01)
+
+
+def leftovers_removed(folder: Path) -> None:
+    """Remove each runner's log and execution's folder in `folder` that last changed more than
+    `LEFT_SECONDS` ago, which Windows held past the removal or a server stopped during an
+    execution left behind; the server's start calls it, before any runner of its own."""
+    if not folder.is_dir():
+        return
+    oldest = time.time() - LEFT_SECONDS
+    for path in folder.iterdir():
+        if path.stat().st_mtime < oldest:
+            removed(path)
 
 
 def _progress(line: str) -> ExecutionProgress:

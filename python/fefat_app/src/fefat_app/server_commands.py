@@ -4,6 +4,7 @@
     fefat up
 
 It reads `config.toml`, refusing a bind address other than 127.0.0.1 before anything starts;
+removes what executions left in `cache/executions` more than a day ago (the Phase 4 exit);
 migrates the app's database; asks for a password on its first run, typed twice at a prompt that
 does not echo it; sends the server's log to `<FEFAT_HOME>/logs/server.log`; and serves the app
 with uvicorn in its own process, on 127.0.0.1 alone, at the port of `config.toml`, 8765 by
@@ -18,6 +19,7 @@ import uvicorn
 
 from fefat.config import Settings, resolve_paths
 from fefat_app.container import opened_container
+from fefat_app.executor.runner_process import leftovers_removed
 from fefat_app.http.app import create_app
 from fefat_app.http.server_log import configure_server_log
 from fefat_app.http.web_app import built_web_app_dir
@@ -32,6 +34,7 @@ itself, before the server stops them (step 4.4)."""
 def serve(arguments: argparse.Namespace) -> int:
     """Start the local server (module docstring)."""
     paths = resolve_paths(os.environ)
+    leftovers_removed(paths.executions_dir)
     with opened_container(paths) as container:
         if not container.logins.password_is_set():
             print("FEAT has no password yet: set the one its login will ask for.")
