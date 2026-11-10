@@ -17,7 +17,7 @@
     fefat secrets delete <name>
     fefat db upgrade
     fefat db downgrade base
-    fefat db import-workspace
+    fefat db import-workspace [--rebuild]
     fefat up
     fefat password set
     fefat token create <name>

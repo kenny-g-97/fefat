@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 from sqlalchemy import Engine, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import fefat as ff
@@ -24,6 +25,7 @@ from fefat.features.versions import validation_file
 from fefat.market.importers.profiles import ProfileKind, preset_profiles
 from fefat.market.store_files import json_writer, write_atomically
 from fefat_app.database.models import (
+    ApiTokenRow,
     Base,
     FeatureRow,
     FeatureValidationRow,
@@ -294,6 +296,35 @@ def test_a_version_saved_again_under_another_number_is_refused(engine: Engine) -
     with pytest.raises(ValueError, match=expected):
         index_workspace(engine)
     assert (again.hash, again.version) == (first.hash, 3)
+
+
+def test_a_rebuild_indexes_the_files_as_they_are_and_keeps_the_apps_own_state(
+    engine: Engine,
+) -> None:
+    # The Phase 4 exit (`BACKLOG.md`, rebuild the index tables alone): a version file deleted
+    # by hand stopped every indexing, and deleting the database to index anew would lose the
+    # password, the sessions, and the API tokens; a rebuild indexes the files as they are now.
+    gap_with(3)
+    a_saved_profile("es-tradingview-5m")
+    index_workspace(engine)
+    with Session(engine) as session, session.begin():
+        session.add(ApiTokenRow(name="notebook", token_hash="e" * 64, created_at=VALIDATED_AT))
+    (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
+    again = gap_with(4)
+
+    with pytest.raises(ValueError, match="fefat db import-workspace --rebuild"):
+        index_workspace(engine)
+    rebuilt = index_workspace(engine, rebuild=True)
+
+    assert rebuilt == IndexSummary(versions=1, validations=0, profiles=1, rebuilt=True)
+    with Session(engine) as session:
+        assert session.scalars(select(FeatureVersionRow.content_hash)).all() == [again.hash]
+        assert session.scalars(select(ApiTokenRow.name)).all() == ["notebook"]
+    with (
+        pytest.raises(IntegrityError, match="feature_versions rows are never deleted"),
+        engine.begin() as connection,
+    ):
+        connection.exec_driver_sql("DELETE FROM feature_versions")
 
 
 def test_a_combination_is_indexed_with_its_description_and_the_features_it_reads(

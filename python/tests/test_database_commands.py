@@ -77,6 +77,28 @@ def test_db_import_workspace_makes_the_database_and_indexes_what_the_sdk_saved(
     )
 
 
+def test_db_import_workspace_rebuild_indexes_the_files_as_they_are(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The Phase 4 exit (`BACKLOG.md`, rebuild the index tables alone).
+    ff.features.save(features_of_cell(GAP)["gap"])
+    main(["db", "import-workspace"])
+    (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
+    ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
+    capsys.readouterr()
+
+    refused = main(["db", "import-workspace"])
+    refusal = capsys.readouterr().err
+    rebuilt = main(["db", "import-workspace", "--rebuild"])
+
+    assert (refused, rebuilt) == (1, 0)
+    assert "fefat db import-workspace --rebuild" in refusal
+    assert capsys.readouterr().out == (
+        "Rebuilt the index from the files as they are: 1 feature version, 0 validation "
+        "reports, and 0 import profiles.\n"
+    )
+
+
 def test_db_import_workspace_names_a_file_it_refuses(capsys: pytest.CaptureFixture[str]) -> None:
     ff.features.save(features_of_cell(GAP)["gap"])
     path = resolve_paths(os.environ).features_dir / "gap" / "v1.json"
