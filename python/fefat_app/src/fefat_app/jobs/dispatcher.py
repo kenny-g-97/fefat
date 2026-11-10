@@ -26,6 +26,10 @@ LOG = logging.getLogger("fefat_app.jobs")
 MOST_WORKERS = 61
 """The most workers the pool runs: CPython's pool refuses more on Windows, which waits on at most
 63 handles at once, two of them the pool's own; a machine of 64 cores or more stays at it."""
+CLOCK_TICK = timedelta(milliseconds=16)
+"""How late a job's start can read the time: Python 3.12 reads Windows' clock in ticks of up to
+15.6 ms, while the system records a process's creation precisely, so a worker made a moment
+before its job started could otherwise count as made after it (the Phase 4 exit)."""
 
 
 class LocalDispatcher:
@@ -202,8 +206,9 @@ def _kill_worker(worker_pid: int, started_at: datetime) -> None:
 
 
 def _made_before(pid: int, instant: datetime) -> bool:
-    """Whether the process `pid` was made before `instant`; not where it has ended since."""
+    """Whether the process `pid` was made before `instant`, read up to `CLOCK_TICK` late; not
+    where it has ended since."""
     try:
-        return psutil.Process(pid).create_time() <= instant.timestamp()
+        return psutil.Process(pid).create_time() <= (instant + CLOCK_TICK).timestamp()
     except psutil.NoSuchProcess:
         return False

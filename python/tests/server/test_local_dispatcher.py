@@ -25,7 +25,7 @@ from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.models import JobRow
 from fefat_app.execution import ExecutionLimits, PythonSnippetSpec
-from fefat_app.jobs.dispatcher import LocalDispatcher
+from fefat_app.jobs.dispatcher import LocalDispatcher, _made_before
 from fefat_app.jobs.worker import JobTimings
 from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
 from local_server import SettableClock
@@ -335,6 +335,20 @@ def test_a_pool_wider_than_windows_allows_still_runs_its_jobs(job_records: JobTa
         dispatcher.close()
 
     assert ended.result == {"counted": 1}
+
+
+def test_a_worker_made_within_a_tick_of_the_clock_before_its_job_started_counts_as_before(
+    stand_in: BaseProcess,
+) -> None:
+    # The Phase 4 exit: Python 3.12 reads Windows' clock in ticks of up to 15.6 ms, while the
+    # system records a process's creation precisely, so a job's start read just after its
+    # worker was made could come out a few milliseconds before it, 1.5 and 5.6 ms in the runs
+    # that failed, and the reaper left the worker running.
+    assert stand_in.pid is not None
+    created = datetime.fromtimestamp(psutil.Process(stand_in.pid).create_time(), UTC)
+
+    assert _made_before(stand_in.pid, created - timedelta(milliseconds=6))
+    assert not _made_before(stand_in.pid, created - timedelta(seconds=1))
 
 
 def test_a_worker_made_after_its_job_started_is_left_running(
