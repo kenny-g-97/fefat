@@ -4,9 +4,10 @@
     fefat up
 
 It reads `config.toml`, refusing a bind address other than 127.0.0.1 before anything starts;
-removes what executions left in `cache/executions` more than a day ago (the Phase 4 exit);
-migrates the app's database; asks for a password on its first run, typed twice at a prompt that
-does not echo it; sends the server's log to `<FEFAT_HOME>/logs/server.log`; and serves the app
+migrates the app's database; removes what executions left in `cache/executions` more than a day
+ago, before any runner of its own (the Phase 4 exit); asks for a password on its first run,
+typed twice at a prompt that does not echo it; sends the server's log to
+`<FEFAT_HOME>/logs/server.log`; and serves the app
 with uvicorn in its own process, on 127.0.0.1 alone, at the port of `config.toml`, 8765 by
 default, until Ctrl+C. uvicorn trusts no forwarded header, since every client of a loopback
 server is 127.0.0.1, and one could claim HTTPS that way."""
@@ -34,8 +35,8 @@ itself, before the server stops them (step 4.4)."""
 def serve(arguments: argparse.Namespace) -> int:
     """Start the local server (module docstring)."""
     paths = resolve_paths(os.environ)
-    leftovers_removed(paths.executions_dir)
     with opened_container(paths) as container:
+        leftovers_removed(paths.executions_dir)
         if not container.logins.password_is_set():
             print("FEAT has no password yet: set the one its login will ask for.")
             container.logins.set_password(typed_new_password())

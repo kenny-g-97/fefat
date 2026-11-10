@@ -3,6 +3,7 @@ dispatcher that runs nothing: a demo job is queued and given to the dispatcher; 
 cancelled at once, a running one asked to stop, an ended one left as it is; and an unknown id is
 refused (Done means 1: cancellation)."""
 
+import threading
 from datetime import datetime, timedelta
 
 import pytest
@@ -112,3 +113,33 @@ def test_a_running_job_older_than_the_hundred_newest_is_still_listed(
 
     assert len(listed) == 101
     assert listed[-1].id == running.id
+
+
+class RefusesEveryChange(JobTables):
+    """The records of a job no change of a cancel holds on, as a status the cancel does not
+    know would leave it."""
+
+    def cancel_queued(self, job_id: str, now: datetime) -> Job | None:
+        return None
+
+    def request_cancel(self, job_id: str, now: datetime) -> Job | None:
+        return None
+
+
+def test_a_cancel_that_no_change_holds_on_gives_the_job_as_it_is(
+    job_records: JobTables, dispatcher: RecordingDispatcher, clock: SettableClock
+) -> None:
+    # The Phase 4 exit's review of its own changes: the cancel's retries had no bound, so such a
+    # job held a request of the server's for ever.
+    refusing = RefusesEveryChange(job_records.engine)
+    job = refusing.add(JobKind.DEMO, {"seconds": 60}, 3, clock())
+    answered: list[Job] = []
+
+    asking = threading.Thread(
+        target=lambda: answered.append(Jobs(refusing, dispatcher, clock).cancel(job.id)),
+        daemon=True,
+    )
+    asking.start()
+    asking.join(5)
+
+    assert [found.status for found in answered] == [JobStatus.QUEUED]

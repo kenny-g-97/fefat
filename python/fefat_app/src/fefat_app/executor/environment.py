@@ -64,7 +64,7 @@ def scrubbed_environment(paths: FefatPaths, environment: Mapping[str, str]) -> d
     runner resolves the platform's default home as the server does, which no git working tree
     around it refuses (D-85), and are set to `paths` otherwise."""
     kept = {
-        name: _without_empty_entries(value) if name.upper() == "PYTHONPATH" else value
+        name: _absolute_entries(value) if name.upper() == "PYTHONPATH" else value
         for name, value in environment.items()
         if name.upper() in PASSED_ON
     }
@@ -73,7 +73,12 @@ def scrubbed_environment(paths: FefatPaths, environment: Mapping[str, str]) -> d
     return {**kept, KEYRING_BACKEND_VARIABLE: NULL_KEYRING, "PYTHONUTF8": "1"}
 
 
-def _without_empty_entries(search_path: str) -> str:
-    """`search_path` without its empty entries, each of which Python reads as the working folder,
-    which would undo the runner's `-P` (the Phase 4 exit's security review)."""
-    return os.pathsep.join(entry for entry in search_path.split(os.pathsep) if entry)
+def _absolute_entries(search_path: str) -> str:
+    """`search_path` without its empty entries and with each relative one made absolute against
+    this process's working folder, where it was meant: Python reads both against the runner's
+    working folder, which would undo the runner's `-P` (the Phase 4 exit's reviews)."""
+    return os.pathsep.join(
+        entry if os.path.isabs(entry) else os.path.abspath(entry)
+        for entry in search_path.split(os.pathsep)
+        if entry
+    )

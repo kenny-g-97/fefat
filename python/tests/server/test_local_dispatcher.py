@@ -530,3 +530,35 @@ def test_a_sweep_after_the_server_slept_leaves_the_workers_to_renew_first(
     assert a_period_later.status == JobStatus.RUNNING
     assert reaped is not None
     assert reaped.status == JobStatus.FAILED
+
+
+def test_a_sweep_slower_than_a_lease_is_no_sleep_of_the_pc(
+    job_records: JobTables, stand_in: BaseProcess
+) -> None:
+    # The Phase 4 exit's review of its own changes: the gap that marks a wake was counted from
+    # the start of the last sweep, so a sweep that the database's busy timeouts made longer than
+    # a lease left the running jobs alone for a lease after it.
+    clock = SettableClock(datetime.now(UTC))
+
+    class SlowToRead(JobTables):
+        def with_status(self, status: JobStatus) -> tuple[Job, ...]:
+            clock.advance(timedelta(seconds=TEST_TIMINGS.lease_seconds + 1))
+            return super().with_status(status)
+
+    reaper = LocalDispatcher(
+        SlowToRead(job_records.engine), resolve_paths(os.environ), clock, TEST_TIMINGS, workers=1
+    )
+    try:
+        reaper.sweep()
+        job = a_demo(job_records, seconds=60, max_attempts=1)
+        held_by_stand_in(job_records, job, stand_in, lease=-1)
+        clock.advance(timedelta(seconds=TEST_TIMINGS.reaper_period_seconds))
+        reaper.sweep()
+        stand_in.join(DEADLINE_SECONDS)
+        reaped = job_records.by_id(job.id)
+    finally:
+        reaper.close()
+
+    assert reaped is not None
+    assert reaped.status == JobStatus.FAILED
+    assert not stand_in.is_alive()

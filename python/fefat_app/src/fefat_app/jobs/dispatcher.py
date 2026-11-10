@@ -98,14 +98,19 @@ class LocalDispatcher:
     def sweep(self) -> None:
         """Reap the running jobs, then submit the queued jobs no worker was given; a running job's
         row the reaper cannot read or change is logged and passed over, so that it holds up no
-        other. For a lease after a gap longer than a lease, as when the PC slept, the sweeps leave
-        the running jobs to their workers, whose heartbeats wake with it and renew the leases."""
+        other. For a lease after a gap longer than a lease since the last sweep ended, as when the
+        PC slept, the sweeps leave the running jobs to their workers, whose heartbeats wake with it
+        and renew the leases; a sweep that the database's busy timeouts made long is no gap."""
         now = self.clock()
         lease = timedelta(seconds=self.timings.lease_seconds)
         if self._last_sweep is not None and now - self._last_sweep > lease:
             self._woke_at = now
-        self._last_sweep = now
-        waking = self._woke_at is not None and now - self._woke_at < lease
+        try:
+            self._swept(now, self._woke_at is not None and now - self._woke_at < lease)
+        finally:
+            self._last_sweep = self.clock()
+
+    def _swept(self, now: datetime, waking: bool) -> None:
         running = () if waking else self.records.with_status(JobStatus.RUNNING)
         for job in running:
             try:

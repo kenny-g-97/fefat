@@ -171,3 +171,21 @@ def test_up_removes_what_executions_left_more_than_a_day_ago(
     main(["up"])
 
     assert sorted(paths.executions_dir.iterdir()) == [fresh]
+
+
+def test_up_refused_for_its_bind_address_removes_nothing(
+    served: ServerCall, paths: FefatPaths
+) -> None:
+    # The Phase 4 exit's review of its own changes: the sweep of what executions left ran before
+    # config.toml was read, so a start refused for its bind address had removed files already.
+    paths.config_file.write_text("bind_address = '0.0.0.0'\n", encoding="utf-8")
+    paths.executions_dir.mkdir(parents=True)
+    left = paths.executions_dir / "runner-left.log"
+    left.write_text("", encoding="utf-8")
+    two_days_ago = time.time() - 2 * 24 * 3600
+    os.utime(left, (two_days_ago, two_days_ago))
+
+    code = main(["up"])
+
+    assert (code, served.calls) == (1, [])
+    assert left.exists()

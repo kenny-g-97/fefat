@@ -13,6 +13,9 @@ RECENT_JOBS = 100
 """How many of the newest jobs the list holds, beside the running jobs older than them."""
 ACTIVE = frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
 """The statuses of a job that has not ended."""
+CANCEL_TRIES = 3
+"""How many times a cancel reads its job again after the job changed under it, as when the
+reaper queues it again; a race that repeats faster than a read takes is no race."""
 
 
 class NoSuchJobError(ValueError):
@@ -54,18 +57,21 @@ class Jobs:
     def cancel(self, job_id: str) -> Job:
         """Cancel the job `job_id` at once if it is queued, or ask it to stop if it runs; a job
         that has ended, or that was asked before, is given as it is. A job the reaper queued
-        again, or a worker started, between the two tries is tried again."""
+        again, or a worker started, since it was read is read again, `CANCEL_TRIES` times at
+        most, after which it is given as it is."""
         now = self.clock()
-        while True:
-            cancelled = self.records.cancel_queued(job_id, now)
-            if cancelled is not None:
-                return cancelled
-            asked = self.records.request_cancel(job_id, now)
-            if asked is not None:
-                return asked
-            job = self.by_id(job_id)
+        job = self.by_id(job_id)
+        for _ in range(CANCEL_TRIES):
             if job.status not in ACTIVE or job.cancel_requested_at is not None:
                 return job
+            if job.status == JobStatus.QUEUED:
+                changed = self.records.cancel_queued(job_id, now)
+            else:
+                changed = self.records.request_cancel(job_id, now)
+            if changed is not None:
+                return changed
+            job = self.by_id(job_id)
+        return job
 
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
         """At most `limit` events of the stream `stream_id` after the event `after_id`."""

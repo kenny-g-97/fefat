@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
@@ -392,6 +393,37 @@ def test_what_a_runner_still_holds_is_removed_once_it_lets_go(tmp_path: Path) ->
     removed(folder)
 
     assert sorted(tmp_path.iterdir()) == []
+
+
+def test_an_entry_gone_during_the_sweep_of_leftovers_stops_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Phase 4 exit's review of its own changes: a notebook's executor that removed its folder
+    # while `fefat up` swept the leftovers stopped the server's start with FileNotFoundError.
+    left = tmp_path / "runner-left.log"
+    left.write_text("", encoding="utf-8")
+    two_days_ago = time.time() - 2 * 24 * 3600
+    os.utime(left, (two_days_ago, two_days_ago))
+    listed = [tmp_path / "execution-gone", left]
+
+    def listing(folder: Path) -> Iterator[Path]:
+        return iter(listed)
+
+    monkeypatch.setattr(Path, "iterdir", listing)
+    runner_process.leftovers_removed(tmp_path)
+
+    assert not left.exists()
+
+
+def test_a_relative_entry_of_pythonpath_reaches_the_runner_made_absolute(tmp_path: Path) -> None:
+    # The Phase 4 exit's review of its own changes: a relative entry, as an empty one, resolves
+    # against the runner's working folder, which `-P` keeps off the import path.
+    paths = FefatPaths(home=tmp_path / "home", data_dir=tmp_path / "data")
+    given = {"PYTHONPATH": os.pathsep.join(["", ".", "src", str(tmp_path)])}
+
+    kept = scrubbed_environment(paths, given)["PYTHONPATH"]
+
+    assert kept == os.pathsep.join([os.getcwd(), os.path.join(os.getcwd(), "src"), str(tmp_path)])
 
 
 def test_a_runner_that_fails_to_start_leaves_no_log(
