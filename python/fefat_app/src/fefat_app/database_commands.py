@@ -2,7 +2,7 @@
 
     fefat db upgrade
     fefat db downgrade base
-    fefat db import-workspace
+    fefat db import-workspace [--rebuild]
 
 `upgrade` migrates the database to the latest schema, making the file where there is none, and
 prints the revision it is at; `downgrade base` runs every migration down, which drops every
@@ -10,7 +10,8 @@ table but Alembic's own, as `alembic downgrade base` does with the migrations th
 the package; `import-workspace` upgrades the database, then indexes the feature versions, the
 leak detector's reports, and the saved import profiles it has not seen, and prints how many
 (`fefat_app.database.workspace_index`, D-84). The files stay the record, and it may run again at
-any time.
+any time; with `--rebuild` it empties the index first, so that it holds the files as they are
+now, after a version file was deleted or replaced by hand (D-92).
 """
 
 import argparse
@@ -40,6 +41,12 @@ def add_the_database_commands(database: argparse.ArgumentParser) -> None:
         "import-workspace",
         help="index the feature versions, reports, and import profiles saved as files",
     )
+    workspace.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="empty the index first, so that it holds the files as they are now; the reports a "
+        "validation replaced leave it",
+    )
     workspace.set_defaults(run=index_the_workspace)
 
 
@@ -63,6 +70,6 @@ def index_the_workspace(arguments: argparse.Namespace) -> int:
     database_file = resolve_paths(os.environ).database_file
     with opened_database(database_file) as engine:
         upgrade_schema(engine)
-        indexed = index_workspace(engine)
+        indexed = index_workspace(engine, rebuild=arguments.rebuild)
     print(indexed.summary())
     return EXIT_OK

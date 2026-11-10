@@ -199,6 +199,27 @@ def test_a_feature_named_like_a_column_the_analyses_add_is_studied_as_any() -> N
     assert events.path.rows() == [(1, 2, 1.5, 1.5), (2, 2, 3.0, 3.0)]
 
 
+def off_grid_bars(days: int = 400) -> pl.DataFrame:
+    """`days` trade dates of planted bars whose opens lie off the tick grid, so that each forward
+    return is a fraction of ticks, and enough of them for Polars to sum them in parallel."""
+    draw = random.Random(3)
+    bars = pl.concat(
+        planted_day(draw, FIRST_DATE + timedelta(days=day), day) for day in range(days)
+    )
+    offsets = pl.Series([draw.randrange(1, TICK) for _ in range(bars.height)])
+    return bars.with_columns(pl.col("open") + offsets)
+
+
+def test_quantile_returns_are_the_same_at_each_run() -> None:
+    # The Phase 4 exit: Polars summed a group's labels in the order its threads gathered them,
+    # so the means and intervals differed in their last bits from one run to the next (D-11).
+    study = FeatureStudy(off_grid_bars(), "ES")
+
+    frames = [study.quantile_returns("planted").frame for _ in range(10)]
+
+    assert all(frame.equals(frames[0]) for frame in frames[1:])
+
+
 def test_correlations_cluster_the_features_that_say_the_same() -> None:
     study = FeatureStudy(planted_bars(), "ES")
 

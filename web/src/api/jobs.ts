@@ -1,5 +1,5 @@
 import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useSyncExternalStore } from "react"
 import { z } from "zod"
 import { api, queryClient } from "./client"
 import { followEventStream, type StreamedEvent } from "./event-stream"
@@ -13,8 +13,9 @@ export type Job = components["schemas"]["Job"]
 /** How long the settings page's demo job counts, as the builder's check asks. */
 const DEMO_SECONDS = 60
 
-/** How many jobs' streams the shell follows at once: Chromium keeps six connections to one
- * host over HTTP/1.1, so four leave two for the app's own requests. */
+/** How many jobs' streams the shown tab follows at once: Chromium keeps six connections to one
+ * host over HTTP/1.1 for all the tabs of the browser, so four leave two for the app's own
+ * requests, and a hidden tab follows none (`useLiveJobs`). */
 const STREAMS_AT_MOST = 4
 
 /** What the jobs drawer and the home page call each kind of job. */
@@ -49,15 +50,23 @@ export const STATUS_LABELS: Readonly<Record<Job["status"], string>> = {
 /** A progress event's data, which the OpenAPI document does not type. */
 const progressReport = z.object({ percent: z.number(), message: z.string() })
 
-/** The hundred newest jobs, newest first. */
+/** A status event's data, which the OpenAPI document does not type either. */
+const statusChange = z.object({ status: z.string() })
+
+/** The statuses of a job that has not ended. */
+const ACTIVE_STATUSES: ReadonlySet<string> = new Set(["queued", "running"])
+
+/** The hundred newest jobs, newest first, then the running jobs older than them; read again
+ * when a hidden tab is shown, since it followed no stream meanwhile. */
 export const jobsQuery = queryOptions({
   queryKey: ["jobs"],
   queryFn: async () => answer(await api.GET("/v1/jobs")),
+  refetchOnWindowFocus: true,
 })
 
 /** Whether `job` is queued or running, and so has progress to follow. */
 export function isActive(job: Job): boolean {
-  return job.status === "queued" || job.status === "running"
+  return ACTIVE_STATUSES.has(job.status)
 }
 
 /** Whether `job` runs on after it was asked to stop, until its worker stops it. */
@@ -108,13 +117,14 @@ export function useJobCancellation() {
 /** The jobs, with the progress of the queued and running jobs followed through their streams
  * (`followedJobIds`): a progress event moves a bar, and a status event asks for the list again.
  * The shell's top bar calls it once; the drawer and the home page read the same cache. A stream
- * is open only while its job is active, and every stream closes when the shell does, as on
- * logging out. */
+ * is open only while its job is active and the tab is shown, and every stream closes when the
+ * shell does, as on logging out. */
 export function useLiveJobs() {
   const jobs = useQuery(jobsQuery)
+  const shown = useSyncExternalStore(onVisibilityChange, isShown)
   const followed = useRef(new Map<string, AbortController>())
   const followedIds =
-    jobs.data === undefined ? "" : followedJobIds(jobs.data).join(" ")
+    !shown || jobs.data === undefined ? "" : followedJobIds(jobs.data).join(" ")
 
   useEffect(() => {
     const active = new Set(followedIds === "" ? [] : followedIds.split(" "))
@@ -145,14 +155,39 @@ export function useLiveJobs() {
   return jobs
 }
 
+/** Follow the stream of the job `jobId` until its job ends, even while the list that would
+ * say so waits for a connection. */
 function followedJob(jobId: string): AbortController {
   const stop = new AbortController()
   void followEventStream({
     url: `/v1/streams/job:${jobId}`,
     signal: stop.signal,
-    onEvent: (event) => applyJobEvent(jobId, event),
+    onEvent: (event) => {
+      applyJobEvent(jobId, event)
+      if (endsTheJob(event)) {
+        stop.abort()
+      }
+    },
   })
   return stop
+}
+
+/** Whether `event` is a change of status to one of a job's ends. */
+function endsTheJob(event: StreamedEvent): boolean {
+  if (event.event !== "status") {
+    return false
+  }
+  const change = statusChange.safeParse(parsedJson(event.data))
+  return change.success && !ACTIVE_STATUSES.has(change.data.status)
+}
+
+function onVisibilityChange(changed: () => void): () => void {
+  document.addEventListener("visibilitychange", changed)
+  return () => document.removeEventListener("visibilitychange", changed)
+}
+
+function isShown(): boolean {
+  return document.visibilityState === "visible"
 }
 
 /** A job's event in the cache: a report moves its progress, never backwards, since a stream

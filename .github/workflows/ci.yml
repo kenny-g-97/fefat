@@ -101,6 +101,29 @@ jobs:
 
       - run: just test
 
+      # The UI harness of step 4.3 against `fefat up` on a seeded home, on Linux
+      # alone, where Chromium installs with its system libraries in about a
+      # minute; Windows runs it on the builder's PC before every pull request
+      # (the Phase 4 exit, D-92). Its report stays when it fails.
+      - name: Install Chromium for the UI harness
+        if: matrix.system == 'Ubuntu'
+        run: pnpm --dir web exec playwright install --with-deps chromium
+
+      - name: Run the UI harness
+        if: matrix.system == 'Ubuntu'
+        run: just e2e
+
+      - name: Keep the UI harness's report of a failed run
+        if: failure() && matrix.system == 'Ubuntu'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-harness-report
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
       # A release build, like `just build-engine`, so it reuses the compiled
       # crates; publishing wheels waits for a release workflow. Into dist/,
       # outside the cached target folder.

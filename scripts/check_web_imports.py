@@ -24,8 +24,8 @@ from pathlib import Path, PurePosixPath
 
 SOURCE = Path(__file__).resolve().parents[1] / "web" / "src"
 ALIAS = "@/"
-SHARED = frozenset({"ui", "api", "charts"})
-FOLDERS = SHARED | {"app", "areas"}
+LIBRARIES = frozenset({"ui", "api", "charts"})
+FOLDERS = LIBRARIES | {"app", "areas"}
 GENERATED = frozenset({"routeTree.gen.ts"})
 STATIC_IMPORT = re.compile(
     r"^[ \t]*(?:import|export)\b[^;'\"]*?\bfrom[ \t]*[\"']([^\"']+)[\"']", re.MULTILINE
@@ -85,11 +85,11 @@ def refusal(importer: str, target: str, specifier: str) -> str | None:
     None where it may."""
     got = f"got {specifier!r}, which is in {target}."
     if importer.startswith("areas/"):
-        if target == importer or target in SHARED | {"app"}:
+        if target == importer or target in LIBRARIES | {"app"}:
             return None
         area = importer.removeprefix("areas/")
         return f"Expected an import of {area}'s own files, ui/, api/, charts/, or app/, {got}"
-    if importer in SHARED and target not in SHARED:
+    if importer in LIBRARIES and target not in LIBRARIES:
         return f"Expected an import of ui/, api/, or charts/, {got}"
     return None
 

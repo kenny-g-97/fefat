@@ -26,7 +26,7 @@ class DemoJobRequest(BaseModel):
 
 @router.get("/jobs", responses=problem_responses(401))
 def recent_jobs(container: ContainerDependency) -> tuple[Job, ...]:
-    """The newest jobs, newest first, at most a hundred."""
+    """The newest jobs, newest first, at most a hundred, then the running jobs older than them."""
     return container.jobs.recent()
 
 

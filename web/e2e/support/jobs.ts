@@ -5,6 +5,23 @@ const identity = z.object({ csrf_token: z.string() })
 const listedJobs = z.array(z.object({ id: z.string(), status: z.string() }))
 const ACTIVE = new Set(["queued", "running"])
 
+/** Start `count` demo jobs of a minute through the API with the context's session. */
+export async function startDemoJobs(
+  request: APIRequestContext,
+  count: number
+): Promise<void> {
+  const { csrf_token } = identity.parse(
+    await (await request.get("/v1/me")).json()
+  )
+  for (let started = 0; started < count; started += 1) {
+    const demo = await request.post("/v1/jobs/demo", {
+      data: { seconds: 60 },
+      headers: { "X-CSRF-Token": csrf_token },
+    })
+    expect(demo.status()).toBe(202)
+  }
+}
+
 /** Cancel every queued or running job through the API with the context's session, and wait
  * until none is left, so that a later spec finds no job running: the shell keeps a job's
  * stream open while it runs, which `networkidle` would wait on for ever. */

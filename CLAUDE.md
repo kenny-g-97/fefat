@@ -88,6 +88,7 @@ Each is a decision in `docs/masterplan/DECISIONS.md`, with its record where it h
 - Bare `python` and `python3` are Microsoft Store stubs here: always run Python through `uv run python` (or `python3.12`).
 - Line endings are LF everywhere (`.gitattributes`, `.editorconfig`); use `pathlib` for paths.
 - `just` runs recipe lines in `cmd.exe` on Windows, so a recipe line is one plain command: no `&&`, pipes, or environment prefixes.
+- A program outside FEFAT keeps port 8766, the UI harness's default, open on this PC: run `FEFAT_E2E_PORT=8767 just e2e` from Git Bash, and never two harness runs at once, since they share one seeded home.
 - Node 24 runs the Claude Code hooks. The settings call them in exec form (`node` and its arguments), never through a shell, and their smoke tests are `scripts/test_hooks.py`.
 - The standalone `claude` CLI is not installed, by choice: Claude Code runs in the VS Code extension, plugins come from `/plugins`, and the extension's own CLI sits in `~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/`.
 - The language-server plugins (`rust-analyzer-lsp`, `pyright-lsp`, `typescript-lsp`) report type errors after each edit; their servers must be on PATH (`06-claude-code-setup.md` §7).

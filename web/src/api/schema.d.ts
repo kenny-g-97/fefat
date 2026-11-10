@@ -146,7 +146,7 @@ export interface paths {
         };
         /**
          * Recent Jobs
-         * @description The newest jobs, newest first, at most a hundred.
+         * @description The newest jobs, newest first, at most a hundred, then the running jobs older than them.
          */
         get: operations["recent_jobs_v1_jobs_get"];
         put?: never;

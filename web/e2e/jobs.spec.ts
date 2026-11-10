@@ -1,7 +1,7 @@
 import type { Request } from "@playwright/test"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
-import { cancelActiveJobs, progressOf } from "./support/jobs.ts"
+import { cancelActiveJobs, progressOf, startDemoJobs } from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
@@ -181,6 +181,73 @@ test("a demo job's progress shows live, survives a reload, and stops on Cancel",
   await expect(indicator).toBeFocused()
   expect(await lowContrastInEachTheme(page, "focus ring")).toEqual([])
   expect(errors).toEqual([])
+})
+
+test("a hidden tab leaves its connections to the shown one", async ({
+  loggedIn: page,
+}) => {
+  // The Phase 4 exit's reviews: Chromium keeps six connections to one host for all the tabs
+  // of the browser, so two tabs that followed three jobs each held all six, and every other
+  // request of both waited until a reload; a hidden tab now follows no stream.
+  let streams = 0
+  page.context().on("request", (request: Request) => {
+    if (request.url().includes("/v1/streams/")) {
+      streams += 1
+    }
+  })
+  await startDemoJobs(page.request, 3)
+  const other = await page.context().newPage()
+  await page.goto("/")
+  await other.goto("/")
+  await expect.poll(() => streams).toBeGreaterThanOrEqual(6)
+
+  await other.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { value: "hidden" })
+    document.dispatchEvent(new Event("visibilitychange"))
+  })
+  const answered = await page.evaluate(() =>
+    Promise.race([
+      fetch("/v1/version").then((response) => String(response.status)),
+      new Promise<string>((resolve) =>
+        setTimeout(() => resolve("stalled"), 5_000)
+      ),
+    ])
+  )
+
+  expect(answered).toBe("200")
+  await other.close()
+})
+
+test("the streams of jobs that ended close while every connection is taken", async ({
+  loggedIn: page,
+}) => {
+  // Two shown tabs that follow three jobs each still hold all six connections: a stream closed
+  // only once a new list showed its job ended, and that list waited for a connection, so the
+  // tabs stayed stuck after the jobs had ended; a stream now closes at its job's end.
+  let streams = 0
+  page.context().on("request", (request: Request) => {
+    if (request.url().includes("/v1/streams/")) {
+      streams += 1
+    }
+  })
+  await startDemoJobs(page.request, 3)
+  const other = await page.context().newPage()
+  await page.goto("/")
+  await other.goto("/")
+  await expect.poll(() => streams).toBeGreaterThanOrEqual(6)
+
+  await cancelActiveJobs(page.request)
+  const answered = await page.evaluate(() =>
+    Promise.race([
+      fetch("/v1/version").then((response) => String(response.status)),
+      new Promise<string>((resolve) =>
+        setTimeout(() => resolve("stalled"), 10_000)
+      ),
+    ])
+  )
+
+  expect(answered).toBe("200")
+  await other.close()
 })
 
 test("the drawer shows every status, the active jobs first, an empty list, and its own failure", async ({

@@ -2,13 +2,14 @@
 `01-architecture.md` section 8): Done means 1's `/docs` behind the login, and Done means 2's
 login, CSRF, and bearer tests."""
 
+import mimetypes
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
 from fefat_app.container import Container
 from fefat_app.http.app import create_app
-from local_server import PASSWORD, SettableClock, basic, logged_in, session_cookie
+from local_server import LOOPBACK, PASSWORD, SettableClock, basic, logged_in, session_cookie
 
 PROBLEM = "application/problem+json"
 A_SECRET_CHANGE = {"secrets": {"anthropic": "a key"}}
@@ -214,22 +215,47 @@ def test_a_live_session_gets_the_docs_under_their_own_policy(
 
     assert page.status_code == 200
     assert "set-cookie" not in page.headers
-    assert "script-src 'self' https://cdn.jsdelivr.net" in page.headers["content-security-policy"]
+    assert "script-src 'self' 'unsafe-inline'" in page.headers["content-security-policy"]
+    assert "cdn.jsdelivr.net" not in page.headers["content-security-policy"]
     assert page.headers["cache-control"] == "no-store"
 
 
-def test_the_docs_load_one_release_of_swagger_ui_and_keep_no_token_in_the_browser(
+def test_the_docs_load_swagger_ui_from_the_app_itself_and_keep_no_token_in_the_browser(
     client: TestClient, container: Container
 ) -> None:
     # A floating release could change under the session, and a token typed under Authorize
-    # would otherwise stay in the browser's storage after the page closes.
+    # would otherwise stay in the browser's storage after the page closes; the release from a
+    # CDN needed the internet and trusted the CDN, so the app serves its own copy (the Phase 4
+    # exit).
     logged_in(client, container)
 
     page = client.get("/docs")
+    script = client.get("/docs/swagger-ui/swagger-ui-bundle.js")
+    style = client.get("/docs/swagger-ui/swagger-ui.css")
 
-    assert "swagger-ui-dist@5.34.0/swagger-ui-bundle.js" in page.text
-    assert "swagger-ui-dist@5.34.0/swagger-ui.css" in page.text
+    assert '"/docs/swagger-ui/swagger-ui-bundle.js"' in page.text
+    assert '"/docs/swagger-ui/swagger-ui.css"' in page.text
+    assert "cdn.jsdelivr.net" not in page.text
     assert "persistAuthorization" not in page.text
+    assert script.status_code == style.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
+    assert style.headers["content-type"].startswith("text/css")
+
+
+def test_the_app_serves_its_scripts_as_javascript_whatever_the_registry_says(
+    container: Container,
+) -> None:
+    # The Phase 4 exit's CI: the media type of a file came from the machine's registry, which on
+    # Windows' runner names `.js` application/javascript and on some machines text/plain, a type
+    # a browser refuses to run under the app's nosniff.
+    mimetypes.add_type("text/plain", ".js")
+    try:
+        with TestClient(create_app(container, built_web_app=None), base_url=LOOPBACK) as client:
+            script = client.get("/docs/swagger-ui/swagger-ui-bundle.js")
+    finally:
+        mimetypes.add_type("text/javascript", ".js")
+
+    assert script.headers["content-type"].startswith("text/javascript")
 
 
 def test_logout_beside_an_api_token_ends_the_cookies_session_too(

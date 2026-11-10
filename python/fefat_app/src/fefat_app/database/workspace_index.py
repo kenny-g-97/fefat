@@ -7,7 +7,13 @@ A version is seen by its feature, number, and hash, a report and a profile by th
 SHA-256, since the leak detector replaces a report with the next of its hash, whose row is added
 beside the last. A file the SDK refuses, such as a version changed after it was written, or a
 version file deleted or replaced by hand after it was indexed, stops the indexing with the
-reason, and no row is added."""
+reason, and no row is added.
+
+A rebuild (the Phase 4 exit, D-92) empties the tables that index the files first, in the same
+transaction, lifting the triggers that keep them insert-only and laying them again from their own
+text, so that the index holds the files as they are now; the app's own state, the password, the
+sessions, the API tokens, and the jobs, stays, and the rows of the reports a validation replaced
+leave with their files."""
 
 import hashlib
 import os
@@ -15,7 +21,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, bindparam, delete, select, text
 from sqlalchemy.orm import Session
 
 from fefat.config import WORKSPACE_FOLDER, resolve_paths
@@ -35,15 +41,30 @@ from fefat_app.database.models import (
 DEFAULT_WORKSPACE = "default"
 
 
+INDEX_TABLES = ("feature_validations", "feature_versions", "import_profiles")
+"""The tables whose rows each index a file, which triggers keep insert-only (migration 0001)."""
+INDEX_TRIGGERS = text(
+    "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN :tables"
+).bindparams(bindparam("tables", expanding=True))
+
+
 @dataclass(frozen=True)
 class IndexSummary:
-    """The rows an indexing added, for each kind of file."""
+    """The rows an indexing added, for each kind of file, and whether it rebuilt the index."""
 
     versions: int
     validations: int
     profiles: int
+    rebuilt: bool = False
 
     def summary(self) -> str:
+        if self.rebuilt:
+            return (
+                "Rebuilt the index from the files as they are: "
+                f"{counted(self.versions, 'feature version')}, "
+                f"{counted(self.validations, 'validation report')}, and "
+                f"{counted(self.profiles, 'import profile')}."
+            )
         return (
             f"Indexed {counted(self.versions, 'new feature version')}, "
             f"{counted(self.validations, 'new validation report')}, and "
@@ -51,16 +72,32 @@ class IndexSummary:
         )
 
 
-def index_workspace(engine: Engine) -> IndexSummary:
-    """Index the files under `FEFAT_HOME` that the database has not seen (module docstring);
-    the home is the one the SDK reads, `resolve_paths(os.environ)`."""
+def index_workspace(engine: Engine, *, rebuild: bool = False) -> IndexSummary:
+    """Index the files under `FEFAT_HOME` that the database has not seen, or with `rebuild` every
+    file, the index emptied first (module docstring); the home is the one the SDK reads,
+    `resolve_paths(os.environ)`."""
     paths = resolve_paths(os.environ)
     with Session(engine) as session, session.begin():
+        if rebuild:
+            _emptied_index(session)
         workspace_id = _default_workspace(session)
         versions = _index_versions(session, workspace_id)
         validations = _index_validations(session, paths.features_dir.glob("*/validations/*.json"))
         profiles = _index_profiles(session, paths.profiles_dir.glob("*.yaml"))
-    return IndexSummary(versions, validations, profiles)
+    return IndexSummary(versions, validations, profiles, rebuild)
+
+
+def _emptied_index(session: Session) -> None:
+    """Delete every row that indexes a file, and the features they name, in the session's
+    transaction, the triggers that refuse it dropped for it and made again from their own text."""
+    connection = session.connection()
+    triggers = session.execute(INDEX_TRIGGERS, {"tables": list(INDEX_TABLES)}).all()
+    for name, _ in triggers:
+        connection.exec_driver_sql(f'DROP TRIGGER "{name}"')
+    for model in (FeatureValidationRow, FeatureVersionRow, FeatureRow, ImportProfileRow):
+        session.execute(delete(model))
+    for _, made in triggers:
+        connection.exec_driver_sql(made)
 
 
 def _default_workspace(session: Session) -> str:
@@ -124,7 +161,8 @@ def _seen(record: FeatureVersion, indexed_hash: str | None, indexed_number: int 
         return False
     redone = (
         "a version file was deleted or replaced by hand after it was indexed, which the index, "
-        "kept insert-only, cannot follow: put the files back as they were."
+        "kept insert-only, cannot follow: put the files back as they were, or index the files "
+        "as they are now with `fefat db import-workspace --rebuild`."
     )
     if indexed_hash is not None and indexed_hash != record.hash:
         raise ValueError(

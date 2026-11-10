@@ -4,8 +4,10 @@
     fefat up
 
 It reads `config.toml`, refusing a bind address other than 127.0.0.1 before anything starts;
-migrates the app's database; asks for a password on its first run, typed twice at a prompt that
-does not echo it; sends the server's log to `<FEFAT_HOME>/logs/server.log`; and serves the app
+migrates the app's database; removes what executions left in `cache/executions` more than a day
+ago, before any runner of its own (the Phase 4 exit); asks for a password on its first run,
+typed twice at a prompt that does not echo it; sends the server's log to
+`<FEFAT_HOME>/logs/server.log`; and serves the app
 with uvicorn in its own process, on 127.0.0.1 alone, at the port of `config.toml`, 8765 by
 default, until Ctrl+C. uvicorn trusts no forwarded header, since every client of a loopback
 server is 127.0.0.1, and one could claim HTTPS that way."""
@@ -18,6 +20,7 @@ import uvicorn
 
 from fefat.config import Settings, resolve_paths
 from fefat_app.container import opened_container
+from fefat_app.executor.runner_process import leftovers_removed
 from fefat_app.http.app import create_app
 from fefat_app.http.server_log import configure_server_log
 from fefat_app.http.web_app import built_web_app_dir
@@ -33,6 +36,7 @@ def serve(arguments: argparse.Namespace) -> int:
     """Start the local server (module docstring)."""
     paths = resolve_paths(os.environ)
     with opened_container(paths) as container:
+        leftovers_removed(paths.executions_dir)
         if not container.logins.password_is_set():
             print("FEAT has no password yet: set the one its login will ask for.")
             container.logins.set_password(typed_new_password())
