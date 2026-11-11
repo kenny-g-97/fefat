@@ -101,6 +101,82 @@
         "title": "AppSettings",
         "type": "object"
       },
+      "AtTimeframe": {
+        "additionalProperties": false,
+        "description": "A term evaluated on the bars of `timeframe`, each value seen from its bar's close.",
+        "properties": {
+          "kind": {
+            "const": "at_timeframe",
+            "default": "at_timeframe",
+            "title": "Kind",
+            "type": "string"
+          },
+          "of": {
+            "discriminator": {
+              "mapping": {
+                "add": "#/components/schemas/BinaryOperation",
+                "and": "#/components/schemas/BinaryOperation",
+                "at_timeframe": "#/components/schemas/AtTimeframe",
+                "column": "#/components/schemas/Column",
+                "constant": "#/components/schemas/Constant",
+                "crosses_above": "#/components/schemas/BinaryOperation",
+                "crosses_below": "#/components/schemas/BinaryOperation",
+                "divide": "#/components/schemas/BinaryOperation",
+                "feature": "#/components/schemas/FeatureOutput",
+                "greater_than": "#/components/schemas/BinaryOperation",
+                "lag": "#/components/schemas/Window",
+                "multiply": "#/components/schemas/BinaryOperation",
+                "not": "#/components/schemas/Negation",
+                "or": "#/components/schemas/BinaryOperation",
+                "percent_rank": "#/components/schemas/Window",
+                "ratio_to": "#/components/schemas/BinaryOperation",
+                "rolling_max": "#/components/schemas/Window",
+                "rolling_mean": "#/components/schemas/Window",
+                "rolling_min": "#/components/schemas/Window",
+                "rolling_rank": "#/components/schemas/Window",
+                "rolling_std": "#/components/schemas/Window",
+                "subtract": "#/components/schemas/BinaryOperation",
+                "z_score": "#/components/schemas/Window"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Constant"
+              },
+              {
+                "$ref": "#/components/schemas/Column"
+              },
+              {
+                "$ref": "#/components/schemas/FeatureOutput"
+              },
+              {
+                "$ref": "#/components/schemas/BinaryOperation"
+              },
+              {
+                "$ref": "#/components/schemas/Negation"
+              },
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "$ref": "#/components/schemas/AtTimeframe"
+              }
+            ],
+            "title": "Of"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "of",
+          "timeframe"
+        ],
+        "title": "AtTimeframe",
+        "type": "object"
+      },
       "BarColumns": {
         "description": "A page's bars, column by column, by their open, the bars of one open by their contract:\neach bar's open in whole seconds since the Unix epoch, UTC; its trade date; its prices in the\ninstrument's units, adjusted on a spliced series; its volume, in lots of the dataset's size\nunit, a contract, or 0.001 BTC for bitcoin's perpetual; and its contract.",
         "properties": {
@@ -216,6 +292,143 @@
         "title": "BarsPage",
         "type": "object"
       },
+      "BinaryOperation": {
+        "additionalProperties": false,
+        "description": "An operation on a `left` and a `right` term (module docstring).",
+        "properties": {
+          "kind": {
+            "enum": [
+              "add",
+              "subtract",
+              "multiply",
+              "divide",
+              "ratio_to",
+              "greater_than",
+              "crosses_above",
+              "crosses_below",
+              "and",
+              "or"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "add": "#/components/schemas/BinaryOperation",
+                "and": "#/components/schemas/BinaryOperation",
+                "at_timeframe": "#/components/schemas/AtTimeframe",
+                "column": "#/components/schemas/Column",
+                "constant": "#/components/schemas/Constant",
+                "crosses_above": "#/components/schemas/BinaryOperation",
+                "crosses_below": "#/components/schemas/BinaryOperation",
+                "divide": "#/components/schemas/BinaryOperation",
+                "feature": "#/components/schemas/FeatureOutput",
+                "greater_than": "#/components/schemas/BinaryOperation",
+                "lag": "#/components/schemas/Window",
+                "multiply": "#/components/schemas/BinaryOperation",
+                "not": "#/components/schemas/Negation",
+                "or": "#/components/schemas/BinaryOperation",
+                "percent_rank": "#/components/schemas/Window",
+                "ratio_to": "#/components/schemas/BinaryOperation",
+                "rolling_max": "#/components/schemas/Window",
+                "rolling_mean": "#/components/schemas/Window",
+                "rolling_min": "#/components/schemas/Window",
+                "rolling_rank": "#/components/schemas/Window",
+                "rolling_std": "#/components/schemas/Window",
+                "subtract": "#/components/schemas/BinaryOperation",
+                "z_score": "#/components/schemas/Window"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Constant"
+              },
+              {
+                "$ref": "#/components/schemas/Column"
+              },
+              {
+                "$ref": "#/components/schemas/FeatureOutput"
+              },
+              {
+                "$ref": "#/components/schemas/BinaryOperation"
+              },
+              {
+                "$ref": "#/components/schemas/Negation"
+              },
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "$ref": "#/components/schemas/AtTimeframe"
+              }
+            ],
+            "title": "Left"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "add": "#/components/schemas/BinaryOperation",
+                "and": "#/components/schemas/BinaryOperation",
+                "at_timeframe": "#/components/schemas/AtTimeframe",
+                "column": "#/components/schemas/Column",
+                "constant": "#/components/schemas/Constant",
+                "crosses_above": "#/components/schemas/BinaryOperation",
+                "crosses_below": "#/components/schemas/BinaryOperation",
+                "divide": "#/components/schemas/BinaryOperation",
+                "feature": "#/components/schemas/FeatureOutput",
+                "greater_than": "#/components/schemas/BinaryOperation",
+                "lag": "#/components/schemas/Window",
+                "multiply": "#/components/schemas/BinaryOperation",
+                "not": "#/components/schemas/Negation",
+                "or": "#/components/schemas/BinaryOperation",
+                "percent_rank": "#/components/schemas/Window",
+                "ratio_to": "#/components/schemas/BinaryOperation",
+                "rolling_max": "#/components/schemas/Window",
+                "rolling_mean": "#/components/schemas/Window",
+                "rolling_min": "#/components/schemas/Window",
+                "rolling_rank": "#/components/schemas/Window",
+                "rolling_std": "#/components/schemas/Window",
+                "subtract": "#/components/schemas/BinaryOperation",
+                "z_score": "#/components/schemas/Window"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Constant"
+              },
+              {
+                "$ref": "#/components/schemas/Column"
+              },
+              {
+                "$ref": "#/components/schemas/FeatureOutput"
+              },
+              {
+                "$ref": "#/components/schemas/BinaryOperation"
+              },
+              {
+                "$ref": "#/components/schemas/Negation"
+              },
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "$ref": "#/components/schemas/AtTimeframe"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "kind",
+          "left",
+          "right"
+        ],
+        "title": "BinaryOperation",
+        "type": "object"
+      },
       "CatalogProductStatus": {
         "description": "A product of the catalog: its root, the first trade date of its history, the name of its\nfirst recommended source, and the datasets of it the store holds, none while it is missing.",
         "properties": {
@@ -296,6 +509,80 @@
           }
         },
         "title": "CatalogSyncRequest",
+        "type": "object"
+      },
+      "Column": {
+        "additionalProperties": false,
+        "description": "A column of the signal bars, or of another `instrument`'s bars at the same timeframe,\njoined as of each close (`InstrumentInput`).",
+        "properties": {
+          "column": {
+            "enum": [
+              "open",
+              "high",
+              "low",
+              "close",
+              "close_raw",
+              "vwap",
+              "volume",
+              "trade_count"
+            ],
+            "title": "Column",
+            "type": "string"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
+          },
+          "kind": {
+            "const": "column",
+            "default": "column",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "column"
+        ],
+        "title": "Column",
+        "type": "object"
+      },
+      "Constant": {
+        "additionalProperties": false,
+        "description": "A number or a flag, the same on every bar; a price in the bars' 1e-9 units.",
+        "properties": {
+          "kind": {
+            "const": "constant",
+            "default": "constant",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "Constant",
         "type": "object"
       },
       "CoveringDataset": {
@@ -412,6 +699,28 @@
         "title": "Currency",
         "type": "string"
       },
+      "DatasetInput": {
+        "additionalProperties": false,
+        "description": "A dataset of alternative data by its name, reserved for Phase 10.",
+        "properties": {
+          "kind": {
+            "const": "dataset",
+            "default": "dataset",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DatasetInput",
+        "type": "object"
+      },
       "DatasetOrigin": {
         "description": "How a dataset came into the store (D-37): imported from the trader's files, or synced\nthrough a connector to a source the trader connects, which waits for a later phase (D-38).",
         "enum": [
@@ -492,6 +801,117 @@
         "title": "DesktopUse",
         "type": "string"
       },
+      "FeatureCode": {
+        "additionalProperties": false,
+        "description": "A feature's code: one function under its `@ff.feature(...)` call.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "FeatureCode",
+        "type": "object"
+      },
+      "FeatureInput": {
+        "additionalProperties": false,
+        "description": "Another feature the feature reads, by its name and its content hash; with the\n`parameters` it reads it with, where its reader binds them, as a combination does, else those\nof the slot given for it, or its defaults; and under the columns of an `alias`, as a slot's,\nwhere its reader names one, else under its outputs' names (step 3.7).",
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "kind": {
+            "const": "feature",
+            "default": "feature",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          }
+        },
+        "required": [
+          "name",
+          "hash"
+        ],
+        "title": "FeatureInput",
+        "type": "object"
+      },
+      "FeatureOutput": {
+        "additionalProperties": false,
+        "description": "The output `output` of the feature `name` with its `parameters`, the feature found by its\ncontent hash.",
+        "properties": {
+          "hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "kind": {
+            "const": "feature",
+            "default": "feature",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "output": {
+            "minLength": 1,
+            "title": "Output",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "hash",
+          "parameters",
+          "output"
+        ],
+        "title": "FeatureOutput",
+        "type": "object"
+      },
       "FieldError": {
         "description": "Where a request broke the API's schema and why, without the value it sent.",
         "properties": {
@@ -537,6 +957,166 @@
           }
         },
         "title": "Health",
+        "type": "object"
+      },
+      "IndexedFeature": {
+        "description": "A saved feature as the index holds it: its row's id, its name, and its versions in order.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/IndexedVersion"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "versions"
+        ],
+        "title": "IndexedFeature",
+        "type": "object"
+      },
+      "IndexedStrategy": {
+        "description": "A saved strategy as the index holds it: its row's id, its name, its kind, and its versions\nin order.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StrategyKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/IndexedStrategyVersion"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "versions"
+        ],
+        "title": "IndexedStrategy",
+        "type": "object"
+      },
+      "IndexedStrategyVersion": {
+        "description": "A strategy's version as the index holds it, with the instrument and the timeframe its\nstrategy names, its hypothesis, and its changelog.",
+        "properties": {
+          "changelog": {
+            "title": "Changelog",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "hypothesis": {
+            "title": "Hypothesis",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "hash",
+          "created_at",
+          "instrument",
+          "timeframe",
+          "hypothesis",
+          "changelog"
+        ],
+        "title": "IndexedStrategyVersion",
+        "type": "object"
+      },
+      "IndexedVersion": {
+        "description": "A saved version as the index holds it: its row's id, its number, its content hash, and when\nit was saved.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "hash",
+          "created_at"
+        ],
+        "title": "IndexedVersion",
+        "type": "object"
+      },
+      "InstrumentInput": {
+        "additionalProperties": false,
+        "description": "Another instrument's signal bars at the feature's timeframe, such as MNQ's for a feature\nof MES, each column suffixed with its root, as `close_MNQ`, with `staleness_MNQ`, the\nnanoseconds from that bar's close, joined as of each row's close (step 3.2).",
+        "properties": {
+          "kind": {
+            "const": "instrument",
+            "default": "instrument",
+            "title": "Kind",
+            "type": "string"
+          },
+          "root": {
+            "minLength": 1,
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root"
+        ],
+        "title": "InstrumentInput",
         "type": "object"
       },
       "InstrumentKind": {
@@ -819,6 +1399,26 @@
         "title": "JobStatus",
         "type": "string"
       },
+      "JsonValue": {},
+      "LintRule": {
+        "description": "What a finding of the lint is: a way of reading ahead (`looks_ahead`), a read of data the\ndetector cannot cut (`fails_validation`), or a warning of what the content hash leaves out.",
+        "enum": [
+          "negative_shift",
+          "backward_fill",
+          "centred_window",
+          "full_sample",
+          "partition_aggregate",
+          "reversed",
+          "forward_join",
+          "join_on_open",
+          "reads_data",
+          "reads_labels",
+          "name_read_outside",
+          "non_literal_default"
+        ],
+        "title": "LintRule",
+        "type": "string"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "description": "The password, set at `fefat up`'s first run or by `fefat password set`.",
@@ -837,6 +1437,167 @@
         ],
         "title": "LoginRequest",
         "type": "object"
+      },
+      "Negation": {
+        "additionalProperties": false,
+        "description": "`not` of a flag.",
+        "properties": {
+          "kind": {
+            "const": "not",
+            "default": "not",
+            "title": "Kind",
+            "type": "string"
+          },
+          "of": {
+            "discriminator": {
+              "mapping": {
+                "add": "#/components/schemas/BinaryOperation",
+                "and": "#/components/schemas/BinaryOperation",
+                "at_timeframe": "#/components/schemas/AtTimeframe",
+                "column": "#/components/schemas/Column",
+                "constant": "#/components/schemas/Constant",
+                "crosses_above": "#/components/schemas/BinaryOperation",
+                "crosses_below": "#/components/schemas/BinaryOperation",
+                "divide": "#/components/schemas/BinaryOperation",
+                "feature": "#/components/schemas/FeatureOutput",
+                "greater_than": "#/components/schemas/BinaryOperation",
+                "lag": "#/components/schemas/Window",
+                "multiply": "#/components/schemas/BinaryOperation",
+                "not": "#/components/schemas/Negation",
+                "or": "#/components/schemas/BinaryOperation",
+                "percent_rank": "#/components/schemas/Window",
+                "ratio_to": "#/components/schemas/BinaryOperation",
+                "rolling_max": "#/components/schemas/Window",
+                "rolling_mean": "#/components/schemas/Window",
+                "rolling_min": "#/components/schemas/Window",
+                "rolling_rank": "#/components/schemas/Window",
+                "rolling_std": "#/components/schemas/Window",
+                "subtract": "#/components/schemas/BinaryOperation",
+                "z_score": "#/components/schemas/Window"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Constant"
+              },
+              {
+                "$ref": "#/components/schemas/Column"
+              },
+              {
+                "$ref": "#/components/schemas/FeatureOutput"
+              },
+              {
+                "$ref": "#/components/schemas/BinaryOperation"
+              },
+              {
+                "$ref": "#/components/schemas/Negation"
+              },
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "$ref": "#/components/schemas/AtTimeframe"
+              }
+            ],
+            "title": "Of"
+          }
+        },
+        "required": [
+          "of"
+        ],
+        "title": "Negation",
+        "type": "object"
+      },
+      "NewFeature": {
+        "additionalProperties": false,
+        "description": "A new feature: its name, the name of the function its code defines, and its first\nversion's code.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "NewFeature",
+        "type": "object"
+      },
+      "NewStrategy": {
+        "additionalProperties": false,
+        "description": "A new strategy: its name, a lower-case identifier of at most 64 characters, and its first\nversion.",
+        "properties": {
+          "changelog": {
+            "default": "",
+            "title": "Changelog",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "hypothesis": {
+            "title": "Hypothesis",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "hypothesis",
+          "name"
+        ],
+        "title": "NewStrategy",
+        "type": "object"
+      },
+      "NewStrategyVersionRequest": {
+        "additionalProperties": false,
+        "description": "A version to save: its code, its hypothesis, one sentence on one line stating the edge,\nand its changelog.",
+        "properties": {
+          "changelog": {
+            "default": "",
+            "title": "Changelog",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "hypothesis": {
+            "title": "Hypothesis",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "hypothesis"
+        ],
+        "title": "NewStrategyVersionRequest",
+        "type": "object"
+      },
+      "OutputKind": {
+        "description": "What an output's values are (D-71), which its column must admit and its version keeps; the\nleak detector compares values by their column's type. A `price` (a level, such as a moving\naverage) and a `price_distance` (such as an ATR) are in the bars' 1e-9 units, the units in\nwhich the execution template reads them (F-RND-01, D-60), never in points.",
+        "enum": [
+          "price",
+          "price_distance",
+          "ratio",
+          "count",
+          "flag",
+          "other"
+        ],
+        "title": "OutputKind",
+        "type": "string"
       },
       "PasswordChange": {
         "additionalProperties": false,
@@ -864,6 +1625,33 @@
           "new_password"
         ],
         "title": "PasswordChange",
+        "type": "object"
+      },
+      "PinnedFeature": {
+        "additionalProperties": false,
+        "description": "A feature version a strategy's slots read, as the library keeps it: its name, its number,\nand its content hash.",
+        "properties": {
+          "hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "hash"
+        ],
+        "title": "PinnedFeature",
         "type": "object"
       },
       "Preset": {
@@ -970,6 +1758,90 @@
         "title": "QualityStatus",
         "type": "string"
       },
+      "RefusedCode": {
+        "additionalProperties": false,
+        "description": "Code the SDK refused: the line of the code the refusal is at, None where it has none, and\nwhy, in the SDK's words.",
+        "properties": {
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "verdict": {
+            "const": "refused",
+            "default": "refused",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "line",
+          "message"
+        ],
+        "title": "RefusedCode",
+        "type": "object"
+      },
+      "RefusedCodeProblem": {
+        "description": "The trader's code the SDK refused (step 5.2), with the line of the code the refusal is\nat, None where it has none, which an editor underlines.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "instance": {
+            "title": "Instance",
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "detail",
+          "instance",
+          "request_id",
+          "line"
+        ],
+        "title": "RefusedCodeProblem",
+        "type": "object"
+      },
       "ReportedFinding": {
         "description": "A finding of a quality report: its trade date, its kind, the schema and the contract it\nwas found in, none for a gap, which no contract fills, and how many records or bars it\ncounts.",
         "properties": {
@@ -1009,6 +1881,284 @@
           "count"
         ],
         "title": "ReportedFinding",
+        "type": "object"
+      },
+      "SavedFeatureVersion": {
+        "additionalProperties": false,
+        "description": "A feature version as the API gives it: its file's record (`fefat.features.versions`), and\nits row's id and its feature's in the index.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "combination": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "add": "#/components/schemas/BinaryOperation",
+                    "and": "#/components/schemas/BinaryOperation",
+                    "at_timeframe": "#/components/schemas/AtTimeframe",
+                    "column": "#/components/schemas/Column",
+                    "constant": "#/components/schemas/Constant",
+                    "crosses_above": "#/components/schemas/BinaryOperation",
+                    "crosses_below": "#/components/schemas/BinaryOperation",
+                    "divide": "#/components/schemas/BinaryOperation",
+                    "feature": "#/components/schemas/FeatureOutput",
+                    "greater_than": "#/components/schemas/BinaryOperation",
+                    "lag": "#/components/schemas/Window",
+                    "multiply": "#/components/schemas/BinaryOperation",
+                    "not": "#/components/schemas/Negation",
+                    "or": "#/components/schemas/BinaryOperation",
+                    "percent_rank": "#/components/schemas/Window",
+                    "ratio_to": "#/components/schemas/BinaryOperation",
+                    "rolling_max": "#/components/schemas/Window",
+                    "rolling_mean": "#/components/schemas/Window",
+                    "rolling_min": "#/components/schemas/Window",
+                    "rolling_rank": "#/components/schemas/Window",
+                    "rolling_std": "#/components/schemas/Window",
+                    "subtract": "#/components/schemas/BinaryOperation",
+                    "z_score": "#/components/schemas/Window"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Constant"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Column"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FeatureOutput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BinaryOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Negation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Window"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AtTimeframe"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Combination"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "feature_id": {
+            "title": "Feature Id",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "dataset": "#/components/schemas/DatasetInput",
+                  "feature": "#/components/schemas/FeatureInput",
+                  "instrument": "#/components/schemas/InstrumentInput",
+                  "timeframe": "#/components/schemas/TimeframeInput",
+                  "trades": "#/components/schemas/TradesInput"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/FeatureInput"
+                },
+                {
+                  "$ref": "#/components/schemas/InstrumentInput"
+                },
+                {
+                  "$ref": "#/components/schemas/TimeframeInput"
+                },
+                {
+                  "$ref": "#/components/schemas/DatasetInput"
+                },
+                {
+                  "$ref": "#/components/schemas/TradesInput"
+                }
+              ]
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "outputs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OutputKind"
+            },
+            "title": "Outputs",
+            "type": "object"
+          },
+          "parameter_schema": {
+            "additionalProperties": true,
+            "title": "Parameter Schema",
+            "type": "object"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "warmup": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Warmup"
+          },
+          "warmup_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": 0,
+            "title": "Warmup Sessions"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "hash",
+          "code",
+          "parameter_schema",
+          "inputs",
+          "outputs",
+          "warmup",
+          "created_at",
+          "id",
+          "feature_id"
+        ],
+        "title": "SavedFeatureVersion",
+        "type": "object"
+      },
+      "SavedStrategyVersion": {
+        "additionalProperties": false,
+        "description": "A strategy version as the API gives it: its file's record (`fefat.strategy.versions`),\nits row's id and its strategy's in the index, and the lint's findings in its code, which\nwarn.",
+        "properties": {
+          "changelog": {
+            "title": "Changelog",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "hypothesis": {
+            "minLength": 1,
+            "title": "Hypothesis",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instrument": {
+            "minLength": 1,
+            "title": "Instrument",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/StrategyKind"
+          },
+          "lint": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyLintFinding"
+            },
+            "title": "Lint",
+            "type": "array"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parameter_schema": {
+            "additionalProperties": true,
+            "title": "Parameter Schema",
+            "type": "object"
+          },
+          "pinned_features": {
+            "items": {
+              "$ref": "#/components/schemas/PinnedFeature"
+            },
+            "title": "Pinned Features",
+            "type": "array"
+          },
+          "strategy_id": {
+            "title": "Strategy Id",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "kind",
+          "hash",
+          "code",
+          "hypothesis",
+          "instrument",
+          "timeframe",
+          "parameter_schema",
+          "pinned_features",
+          "changelog",
+          "created_at",
+          "id",
+          "strategy_id",
+          "lint"
+        ],
+        "title": "SavedStrategyVersion",
         "type": "object"
       },
       "SecretChanges": {
@@ -1353,6 +2503,83 @@
         "title": "StoredDataset",
         "type": "object"
       },
+      "StrategyCode": {
+        "additionalProperties": false,
+        "description": "A strategy's code, a module whose function `strategy` gives the `SignalStrategy`.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "StrategyCode",
+        "type": "object"
+      },
+      "StrategyKind": {
+        "description": "What a strategy is: a signal strategy (`SignalStrategy`), the only kind until the event\nstrategies of Phase 9.",
+        "enum": [
+          "signal"
+        ],
+        "title": "StrategyKind",
+        "type": "string"
+      },
+      "StrategyLintFinding": {
+        "additionalProperties": false,
+        "description": "A finding of a strategy's lint: its rule, the line of the code it is on, the line's text,\nand why it reads ahead.",
+        "properties": {
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/LintRule"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "line",
+          "source",
+          "explanation"
+        ],
+        "title": "StrategyLintFinding",
+        "type": "object"
+      },
+      "StrategyTemplate": {
+        "additionalProperties": false,
+        "description": "A strategy to start from: its name, its hypothesis, one sentence stating the edge, and its\ncode, a strategy version's (`fefat.strategy.source_code`).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "hypothesis": {
+            "title": "Hypothesis",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "hypothesis",
+          "code"
+        ],
+        "title": "StrategyTemplate",
+        "type": "object"
+      },
       "Theme": {
         "description": "The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or\nlight.",
         "enum": [
@@ -1361,6 +2588,81 @@
         ],
         "title": "Theme",
         "type": "string"
+      },
+      "TimeframeInput": {
+        "additionalProperties": false,
+        "description": "The timeframe of the bars the feature is evaluated on, such as `15m` for a feature that a\nstrategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2).",
+        "properties": {
+          "kind": {
+            "const": "timeframe",
+            "default": "timeframe",
+            "title": "Kind",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timeframe"
+        ],
+        "title": "TimeframeInput",
+        "type": "object"
+      },
+      "TradesInput": {
+        "additionalProperties": false,
+        "description": "The instrument's prints of each bucket of the feature's bars by aggressor side, available\nat the bucket's close, as `buy_volume`, `sell_volume`, and `unknown_side_volume`, null where\nno prints are in hand (step 3.6, `fefat.market.aggressor`), as cumulative delta reads them.",
+        "properties": {
+          "kind": {
+            "const": "trades",
+            "default": "trades",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "TradesInput",
+        "type": "object"
+      },
+      "ValidStrategy": {
+        "additionalProperties": false,
+        "description": "A strategy's code that builds: the instrument and the timeframe its strategy names with\nits defaults, the JSON schema of its parameters, and the lint's findings in its code, which\nwarn (`ff.strategy.lint`).",
+        "properties": {
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "lint": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyLintFinding"
+            },
+            "title": "Lint",
+            "type": "array"
+          },
+          "parameter_schema": {
+            "additionalProperties": true,
+            "title": "Parameter Schema",
+            "type": "object"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "verdict": {
+            "const": "valid",
+            "default": "valid",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument",
+          "timeframe",
+          "parameter_schema",
+          "lint"
+        ],
+        "title": "ValidStrategy",
+        "type": "object"
       },
       "ValidationProblem": {
         "description": "A request the API's schema refused, with each of its errors.",
@@ -1409,6 +2711,30 @@
         "title": "ValidationProblem",
         "type": "object"
       },
+      "VersionDiff": {
+        "description": "The unified diff of the code of two versions, `earlier`'s and `later`'s, empty where their\ncode is the same; the structured diff of a builder's spec joins it with the builder of\nPhase 6.",
+        "properties": {
+          "code_diff": {
+            "title": "Code Diff",
+            "type": "string"
+          },
+          "earlier": {
+            "title": "Earlier",
+            "type": "integer"
+          },
+          "later": {
+            "title": "Later",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "earlier",
+          "later",
+          "code_diff"
+        ],
+        "title": "VersionDiff",
+        "type": "object"
+      },
       "Versions": {
         "description": "The versions the server runs: the app's, the SDK's, and the engine's three, which every\nrun records (`02-engine-and-data.md` section 4).",
         "properties": {
@@ -1441,6 +2767,92 @@
           "artifact_schema"
         ],
         "title": "Versions",
+        "type": "object"
+      },
+      "Window": {
+        "additionalProperties": false,
+        "description": "A window over the last `n` bars of a term, `lag` the term `n` bars before.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "rolling_mean",
+              "rolling_std",
+              "rolling_min",
+              "rolling_max",
+              "rolling_rank",
+              "percent_rank",
+              "z_score",
+              "lag"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "n": {
+            "minimum": 1.0,
+            "title": "N",
+            "type": "integer"
+          },
+          "of": {
+            "discriminator": {
+              "mapping": {
+                "add": "#/components/schemas/BinaryOperation",
+                "and": "#/components/schemas/BinaryOperation",
+                "at_timeframe": "#/components/schemas/AtTimeframe",
+                "column": "#/components/schemas/Column",
+                "constant": "#/components/schemas/Constant",
+                "crosses_above": "#/components/schemas/BinaryOperation",
+                "crosses_below": "#/components/schemas/BinaryOperation",
+                "divide": "#/components/schemas/BinaryOperation",
+                "feature": "#/components/schemas/FeatureOutput",
+                "greater_than": "#/components/schemas/BinaryOperation",
+                "lag": "#/components/schemas/Window",
+                "multiply": "#/components/schemas/BinaryOperation",
+                "not": "#/components/schemas/Negation",
+                "or": "#/components/schemas/BinaryOperation",
+                "percent_rank": "#/components/schemas/Window",
+                "ratio_to": "#/components/schemas/BinaryOperation",
+                "rolling_max": "#/components/schemas/Window",
+                "rolling_mean": "#/components/schemas/Window",
+                "rolling_min": "#/components/schemas/Window",
+                "rolling_rank": "#/components/schemas/Window",
+                "rolling_std": "#/components/schemas/Window",
+                "subtract": "#/components/schemas/BinaryOperation",
+                "z_score": "#/components/schemas/Window"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Constant"
+              },
+              {
+                "$ref": "#/components/schemas/Column"
+              },
+              {
+                "$ref": "#/components/schemas/FeatureOutput"
+              },
+              {
+                "$ref": "#/components/schemas/BinaryOperation"
+              },
+              {
+                "$ref": "#/components/schemas/Negation"
+              },
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "$ref": "#/components/schemas/AtTimeframe"
+              }
+            ],
+            "title": "Of"
+          }
+        },
+        "required": [
+          "kind",
+          "of",
+          "n"
+        ],
+        "title": "Window",
         "type": "object"
       }
     },
@@ -2121,6 +3533,566 @@
         "summary": "Dataset Quality",
         "tags": [
           "data"
+        ]
+      }
+    },
+    "/v1/features": {
+      "get": {
+        "description": "The saved features by name, each with its versions in order.",
+        "operationId": "saved_features_v1_features_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IndexedFeature"
+                  },
+                  "title": "Response Saved Features V1 Features Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Saved Features",
+        "tags": [
+          "features"
+        ]
+      },
+      "post": {
+        "description": "Create the feature `name` with its first version, saved in the executor; refused with 400\nand the line of the code where it defines no feature, or another, and with 409 where a saved\nfeature has the name or the library holds files the index cannot follow.",
+        "operationId": "create_feature_v1_features_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewFeature"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFeatureVersion"
+                }
+              }
+            },
+            "description": "The code was saved before: its version, unchanged."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFeatureVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusedCodeProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Create Feature",
+        "tags": [
+          "features"
+        ]
+      }
+    },
+    "/v1/features/{feature_id}/diff": {
+      "get": {
+        "description": "The unified diff of the code of versions `from` and `to` of the feature.",
+        "operationId": "feature_diff_v1_features__feature_id__diff_get",
+        "parameters": [
+          {
+            "description": "A feature's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "description": "A feature's id in the index, a UUIDv7.",
+              "title": "Feature Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The earlier version.",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "description": "The earlier version.",
+              "minimum": 1,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The later version.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "description": "The later version.",
+              "minimum": 1,
+              "title": "To",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionDiff"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Feature Diff",
+        "tags": [
+          "features"
+        ]
+      }
+    },
+    "/v1/features/{feature_id}/versions": {
+      "get": {
+        "description": "The versions of the feature, in order.",
+        "operationId": "feature_versions_v1_features__feature_id__versions_get",
+        "parameters": [
+          {
+            "description": "A feature's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "description": "A feature's id in the index, a UUIDv7.",
+              "title": "Feature Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IndexedVersion"
+                  },
+                  "title": "Response Feature Versions V1 Features  Feature Id  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Feature Versions",
+        "tags": [
+          "features"
+        ]
+      },
+      "post": {
+        "description": "Save the next version of the feature in the executor, or answer the version of the same\ncontent.",
+        "operationId": "save_feature_version_v1_features__feature_id__versions_post",
+        "parameters": [
+          {
+            "description": "A feature's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "description": "A feature's id in the index, a UUIDv7.",
+              "title": "Feature Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeatureCode"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFeatureVersion"
+                }
+              }
+            },
+            "description": "The code was saved before: its version, unchanged."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFeatureVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusedCodeProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Save Feature Version",
+        "tags": [
+          "features"
+        ]
+      }
+    },
+    "/v1/features/{feature_id}/versions/{number}": {
+      "get": {
+        "description": "Version `number` of the feature as its file keeps it.",
+        "operationId": "feature_version_v1_features__feature_id__versions__number__get",
+        "parameters": [
+          {
+            "description": "A feature's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "feature_id",
+            "required": true,
+            "schema": {
+              "description": "A feature's id in the index, a UUIDv7.",
+              "title": "Feature Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A version's number, from 1.",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "A version's number, from 1.",
+              "minimum": 1,
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFeatureVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Feature Version",
+        "tags": [
+          "features"
         ]
       }
     },
@@ -2860,6 +4832,701 @@
         "summary": "Source Guide",
         "tags": [
           "data"
+        ]
+      }
+    },
+    "/v1/strategies": {
+      "get": {
+        "description": "The saved strategies by name, each with its versions in order.",
+        "operationId": "saved_strategies_v1_strategies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IndexedStrategy"
+                  },
+                  "title": "Response Saved Strategies V1 Strategies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Saved Strategies",
+        "tags": [
+          "strategies"
+        ]
+      },
+      "post": {
+        "description": "Create the strategy `name` with its first version, saved in the executor; refused with\n400 and the line of the code where the code gives no strategy, and with 409 where a saved\nstrategy has the name or the library holds files the index cannot follow.",
+        "operationId": "create_strategy_v1_strategies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewStrategy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedStrategyVersion"
+                }
+              }
+            },
+            "description": "The code was saved before with the same words: its version, unchanged."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedStrategyVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusedCodeProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Create Strategy",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/v1/strategies/templates": {
+      "get": {
+        "description": "The strategies to start from, each with its hypothesis and its code: the engine guide's\nbreakout, a mean reversion reading the RSI, and a breakout in an entry window.",
+        "operationId": "strategy_templates_v1_strategies_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StrategyTemplate"
+                  },
+                  "title": "Response Strategy Templates V1 Strategies Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Strategy Templates",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/v1/strategies/validate": {
+      "post": {
+        "description": "Build the code in the executor as a version's is, with its signal frame on bars that hold\nno rows: `valid`, with the instrument and the timeframe it names, its parameters' schema,\nand the lint's findings, or `refused`, with the line of the code the refusal is at.",
+        "operationId": "validate_strategy_v1_strategies_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyCode"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "refused": "#/components/schemas/RefusedCode",
+                      "valid": "#/components/schemas/ValidStrategy"
+                    },
+                    "propertyName": "verdict"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ValidStrategy"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RefusedCode"
+                    }
+                  ],
+                  "title": "Response Validate Strategy V1 Strategies Validate Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Validate Strategy",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/v1/strategies/{strategy_id}/diff": {
+      "get": {
+        "description": "The unified diff of the code of versions `from` and `to` of the strategy.",
+        "operationId": "strategy_diff_v1_strategies__strategy_id__diff_get",
+        "parameters": [
+          {
+            "description": "A strategy's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "description": "A strategy's id in the index, a UUIDv7.",
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The earlier version.",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "description": "The earlier version.",
+              "minimum": 1,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The later version.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "description": "The later version.",
+              "minimum": 1,
+              "title": "To",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionDiff"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Strategy Diff",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/v1/strategies/{strategy_id}/versions": {
+      "get": {
+        "description": "The versions of the strategy, in order, with their hypotheses and changelogs.",
+        "operationId": "strategy_versions_v1_strategies__strategy_id__versions_get",
+        "parameters": [
+          {
+            "description": "A strategy's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "description": "A strategy's id in the index, a UUIDv7.",
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IndexedStrategyVersion"
+                  },
+                  "title": "Response Strategy Versions V1 Strategies  Strategy Id  Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Strategy Versions",
+        "tags": [
+          "strategies"
+        ]
+      },
+      "post": {
+        "description": "Save the next version of the strategy in the executor, or answer the version of the same\ncode saved with the same words; the same code with other words is refused with 400, since a\nversion never changes.",
+        "operationId": "save_strategy_version_v1_strategies__strategy_id__versions_post",
+        "parameters": [
+          {
+            "description": "A strategy's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "description": "A strategy's id in the index, a UUIDv7.",
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewStrategyVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedStrategyVersion"
+                }
+              }
+            },
+            "description": "The code was saved before with the same words: its version, unchanged."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedStrategyVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusedCodeProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Save Strategy Version",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/v1/strategies/{strategy_id}/versions/{number}": {
+      "get": {
+        "description": "Version `number` of the strategy as its file keeps it, with the lint's findings in its\ncode.",
+        "operationId": "strategy_version_v1_strategies__strategy_id__versions__number__get",
+        "parameters": [
+          {
+            "description": "A strategy's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "description": "A strategy's id in the index, a UUIDv7.",
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A version's number, from 1.",
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "description": "A version's number, from 1.",
+              "minimum": 1,
+              "title": "Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedStrategyVersion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Strategy Version",
+        "tags": [
+          "strategies"
         ]
       }
     },
