@@ -15,7 +15,12 @@ import pytest
 
 import dev
 import e2e_server
+from fefat.backtest import saved_runs_in
 from fefat.config import resolve_paths
+from fefat_app.database.job_records import JobTables
+from fefat_app.database.library_index import LibraryTables
+from fefat_app.database.run_records import RunTables
+from fefat_app.database.schema import opened_database
 
 
 def test_the_seeded_home_is_made_afresh_with_its_port_and_the_fixtures(tmp_path: Path) -> None:
@@ -132,3 +137,28 @@ def test_dev_refuses_a_port_another_server_answers_on_before_starting_anything(
         with pytest.raises(SystemExit, match=f"Expected port {port} free for fefat up"):
             dev.main()
         other.shutdown()
+
+
+def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.3 (D-93): the specs' `demo-run-01` is the first run of the strategy `demo` that
+    # `GET /v1/runs` lists; the seed makes it through the SDK on the fixtures and indexes both as
+    # `fefat db import-workspace` does, leaving no job. The seed sets the variables itself.
+    for name in ("FEFAT_HOME", "FEFAT_DATA_DIR", "PYTHON_KEYRING_BACKEND"):
+        monkeypatch.setenv(name, os.environ[name])
+
+    e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
+
+    paths = resolve_paths(os.environ)
+    with opened_database(paths.database_file) as engine:
+        strategies = LibraryTables(engine, paths).strategies()
+        runs = RunTables(engine, paths).newest(10)
+        jobs = JobTables(engine).recent(10)
+    (run,) = runs
+    (saved,) = saved_runs_in(paths.runs_dir)
+    assert [strategy.name for strategy in strategies] == ["demo"]
+    assert run.strategy is not None
+    assert (run.strategy.name, run.status, run.run_key) == ("demo", "succeeded", saved.hash)
+    assert saved.record.summary.trades >= 3
+    assert jobs == ()
