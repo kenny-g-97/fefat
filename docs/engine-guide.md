@@ -45,6 +45,7 @@ A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions ov
 | `size_mult` | a multiple of the size on each bar, which must make whole lots |
 | `wake` | whether a bar may enter at all, true by default; a null counts as true |
 | `execution` | the execution template below |
+| `saved_version` | the saved version the strategy was built from by `version.strategy()`, with its parameters, which a run's record names; none for a strategy written in a notebook, or a copy that changes a field |
 
 - Prices in the columns are whole numbers of billionths of a point, like the bars' prices: `close - 4 * 250_000_000` is four MES ticks below the close.
 - A feature must be prefix-invariant: its value at a bar may depend only on that bar and the bars before it. Use `shift(1)` to read the bar before; never `shift(-1)`, a centred window, a backward fill, or a rank or a normalisation over the whole sample (D-12). A feature written with `@ff.feature` takes a slot as an expression does, and the leak detector below checks it.
@@ -64,7 +65,10 @@ ff.strategy.library()  # name, version, hash, instrument, timeframe, created_at
 print(ff.strategy.diff("breakout", 1, 2))  # the unified diff of two versions' code
 definition = ff.strategy.from_source(version.code)
 definition(stop_atr=2.0)  # the strategy with a parameter of its own
+run = ff.backtest.run(version.strategy(stop_atr=2.0), "2026-03-05", "2026-03-09")
 ```
+
+- **A run of a version.** `version.strategy(**parameters)` builds the strategy from the version's code, its defaults filling the parameters left out, and stamps it with the version as `saved_version`, which the run's record names with the parameters. The robustness summary then counts the parameters the version declares, a flag or a word too, in place of the numbers its execution template sets, and the run key covers that count; a copy that changes a field drops the stamp. Where the version's code now reads another version of a feature than it pinned, as when an update of FEFAT changes one of its indicators, `version.strategy()` is refused: save the code again as a new version.
 
 - **The code** is the whole record, as a feature's is: it keeps whatever the expressions call, Python included. The function's parameters, each with its type and its default, are the strategy's: `int`, `float`, `bool`, `str`, or a `Literal` of words, which the app's form renders; a strict model refuses `lookback="20"`. A version keeps the instrument and the timeframe its strategy names with its defaults.
 - **What a save checks**, before anything is written: the name, a lower-case identifier of at most 64 characters; the hypothesis, one line; and the code: its syntax, the module run, the function and its parameters, the strategy built with its defaults, and its signal frame built on bars that hold no rows, which reads no data and catches a column the bars lack or a signal that is not a boolean. A refusal is an `ff.strategy.StrategyCodeError`, whose `line` is the line of your code it is at, or the line that defines `strategy` where the error is in FEFAT's own code. A batch function (`map_batches`) that cannot take an empty column is refused there too, though it would run on bars.

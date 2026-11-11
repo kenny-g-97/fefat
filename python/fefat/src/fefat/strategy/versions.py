@@ -7,6 +7,7 @@ the record, which the app's database indexes (ADR-0020), and the app saves throu
     ff.strategy.load("breakout", 1)
     ff.strategy.diff("breakout", 1, 2)  # the unified diff of their code
     ff.strategy.library()  # a row for each saved version
+    version.strategy(lookback=24)  # the strategy it gives, which a run's record names (step 5.3)
 
 A version holds the strategy's name, number, and kind; its code, a module whose function
 `strategy` gives the `SignalStrategy` (`fefat.strategy.source_code`), the only complete record of
@@ -42,7 +43,7 @@ from fefat.features.versions import save as save_feature
 from fefat.market.schema import FrozenModel
 from fefat.market.snapshot import Sha256
 from fefat.market.store_files import parsed_json
-from fefat.strategy.signal_strategy import SignalStrategy
+from fefat.strategy.signal_strategy import SignalStrategy, StrategyPin
 from fefat.strategy.source_code import from_source
 from fefat.strategy.source_lint import lint
 from fefat.strategy.spec import InstrumentRoot, TimeframeText
@@ -103,6 +104,19 @@ class StrategyVersion(FrozenModel):
     def content_hash(self) -> str:
         """The hash its code, its parameter schema, and the feature versions it pins give."""
         return content_hash(self.code, self.parameter_schema, self.pinned_features)
+
+    def strategy(self, **parameters: object) -> SignalStrategy:
+        """The strategy this version's code gives with `parameters`, its defaults filling those
+        left out, validated strictly, and stamped with the version (`saved_version`), which a
+        run's record names (step 5.3). Refused where the code now reads another version of a
+        feature than the version pinned, as an indicator of the SDK does once the SDK changes
+        it: its runs would read values the version never read, so save the code again."""
+        definition = from_source(self.code)
+        _require_its_pins(self, definition.with_defaults)
+        built = definition(**parameters)
+        bound = definition.parameter_model(**parameters).model_dump(mode="json")
+        pin = StrategyPin(name=self.name, version=self.version, hash=self.hash, parameters=bound)
+        return built.model_copy(update={"saved_version": pin})
 
 
 def content_hash(
@@ -181,6 +195,26 @@ def _pinned(strategy: SignalStrategy) -> tuple[PinnedFeature, ...]:
         for each in saved
     }
     return tuple(pins[key] for key in sorted(pins))
+
+
+def _require_its_pins(record: StrategyVersion, strategy: SignalStrategy) -> None:
+    """Refuse `strategy`, built from `record`'s code with its defaults, where its slots read other
+    feature versions, by name and hash, than `record` pins (`StrategyVersion.strategy`)."""
+    read = {
+        (feature.definition.name, feature.definition.hash)
+        for feature in strategy.features.values()
+        if isinstance(feature, FeatureSpec)
+    }
+    pinned = {(pin.name, pin.hash) for pin in record.pinned_features}
+    if read == pinned:
+        return
+    changed = sorted({name for name, _ in read ^ pinned})
+    raise ValueError(
+        f"Expected the code of version {record.version} of strategy {record.name} to read the "
+        f"feature versions it pinned, got another {', '.join(changed)}: its code names a feature, "
+        "such as an indicator of the SDK, whose version changed since it was saved; save the code "
+        "again as a new version, which pins the features it reads now."
+    )
 
 
 def _with_its_words(saved: StrategyVersion, hypothesis: str, changelog: str) -> StrategyVersion:

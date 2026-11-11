@@ -25,6 +25,7 @@ from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
 from fefat.market.schema import FrozenDocument, FrozenModel, frozen
 from fefat.market.snapshot import Sha256
+from fefat.strategy.signal_strategy import StrategyPin
 
 Hash = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 """A BLAKE3 hash as 64 lower-case hexadecimal digits."""
@@ -62,11 +63,13 @@ class FeaturePin(FrozenModel):
 class StrategyRecord(FrozenModel):
     """The strategy's specification as its document writes it, the names of its features'
     columns, and, from step 3.7, the version of each feature its slots read, none for a plain
-    expression or in a record written before."""
+    expression or in a record written before; and, from step 5.3, the saved strategy version it
+    was built from, with its parameters, none for a strategy written in a notebook."""
 
     spec: FrozenDocument
     features: tuple[str, ...]
     feature_versions: tuple[FeaturePin, ...] = ()
+    saved_version: StrategyPin | None = None
 
 
 class Window(FrozenModel):

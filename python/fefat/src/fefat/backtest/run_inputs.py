@@ -9,7 +9,9 @@ it replays, built from the same files (D-56); the fronts it trades and the rolls
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
 perpetual's funding rates from the store (F-FND-01); its fee table (F-FEE-01); and the config the
 engine reads, every setting applied (D-51), with the config of its rerun at one more tick of
-slippage and its exchange's time zone, which its metrics read (step 2.11)."""
+slippage and its exchange's time zone, which its metrics read (step 2.11); and, from step 5.3, the
+count of the parameters a saved strategy version declares, in that config, so that the run key
+covers it, which the engine never reads and its metrics count."""
 
 import json
 from collections.abc import Sequence
@@ -87,6 +89,7 @@ class RunInputs:
     warnings: tuple[str, ...]
     time_zone: str
     signal_bar_eras: tuple[FidelityEra, ...]
+    declared_parameters: int | None
 
     def spec_json(self) -> str:
         return json.dumps(self.spec.document())
@@ -164,6 +167,9 @@ def run_inputs(
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)
     engine_config = _engine_config(market, applied, signals, snapshots, window, rolls)
+    declared = strategy.declared_parameters
+    if declared is not None:
+        engine_config = {**engine_config, "declared_parameters": declared}
     return RunInputs(
         spec=spec,
         signals=with_engine_columns(spec, signals, market.sessions),
@@ -181,6 +187,7 @@ def run_inputs(
         warnings=(*produced.warnings, *_features_below_a_tick(spec, signals, parameters.tick)),
         time_zone=market.sessions.time_zone(),
         signal_bar_eras=_signal_bar_eras(market, strategy, window, signals),
+        declared_parameters=declared,
     )
 
 

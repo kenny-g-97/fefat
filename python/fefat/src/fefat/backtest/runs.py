@@ -203,6 +203,7 @@ def _run_or_open(
         spec=inputs.spec.document(),
         features=strategy.feature_columns(),
         feature_versions=_pins(strategy),
+        saved_version=strategy.saved_version,
     )
     progress(RunStage.ENGINE_RUNNING)
     saved = _ran(inputs, inputs.cache_paths(paths), written, folder, key, frame_hash)
@@ -315,10 +316,19 @@ def _metrics(
         window=inputs.window,
         time_zone=inputs.time_zone,
         pnl_at_plus_one_tick=int(pl.DataFrame(slipped["trades"]).get_column("pnl").sum()),
-        parameters=parameters_of(inputs.spec.execution),
+        parameters=_counted_parameters(inputs),
         friction_tested=friction_tested(inputs.config.slippage_ticks, artifacts["fills"]),
     )
     return Metrics.model_validate_json(fefat_engine.metrics(document))
+
+
+def _counted_parameters(inputs: RunInputs) -> int:
+    """The parameters the robustness summary counts: those the saved version the strategy was
+    built from declares, each a value to tune, a flag or a word too (step 5.3); else the numbers
+    its execution template sets apart from their defaults (`parameters_of`)."""
+    if inputs.declared_parameters is not None:
+        return inputs.declared_parameters
+    return parameters_of(inputs.spec.execution)
 
 
 def _path_fidelities(trades: pl.DataFrame) -> tuple[PathFidelity, ...]:

@@ -25,15 +25,27 @@ A forward return of `fefat.analytics`, a `Label`, reads the future and never fee
 (`02-engine-and-data.md` §6, D-12): a strategy refuses one in a slot, a slot named like a label's
 column, an expression of a slot or a signal that names one, and bars that hold one, which a
 selector such as `pl.all()` would read without naming it.
+
+From step 5.3 a strategy built from a saved version, `version.strategy(**parameters)`
+(`fefat.strategy.versions`), carries the version in `saved_version`, which a run's record names,
+and whose parameters the robustness summary counts.
 """
 
 from collections.abc import Mapping
 from datetime import date
 from types import MappingProxyType
-from typing import Annotated
+from typing import Annotated, Any, Self
 
 import polars as pl
-from pydantic import AfterValidator, ConfigDict, Field, InstanceOf, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    ConfigDict,
+    Field,
+    InstanceOf,
+    JsonValue,
+    field_validator,
+    model_validator,
+)
 
 from fefat.analytics.labels import Label
 from fefat.features.evaluation import FeatureSpec
@@ -42,7 +54,8 @@ from fefat.features.label_columns import LABEL_REFUSED, reads_ahead, refuse_labe
 from fefat.features.runtime import FeatureGraph, clashing, slot_columns
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import counted, utc_text
-from fefat.market.schema import FrozenModel, Timeframe
+from fefat.market.schema import FrozenModel, Timeframe, frozen
+from fefat.market.snapshot import Sha256
 from fefat.strategy.signal_frame import (
     OPTIONAL_SIGNAL_COLUMNS,
     PRICE_COLUMNS,
@@ -85,6 +98,17 @@ def _read_only(
     return MappingProxyType(dict(features))
 
 
+class StrategyPin(FrozenModel):
+    """The saved strategy version a strategy was built from (step 5.3): its name, number, and
+    content hash, and the parameters it was built with, every default applied, which a run's
+    record names (`StrategyVersion.strategy`)."""
+
+    name: str
+    version: int = Field(ge=1)
+    hash: Sha256
+    parameters: Annotated[Mapping[str, JsonValue], AfterValidator(frozen)]
+
+
 class SignalStrategy(FrozenModel):
     """A signal strategy on `instrument`, deciding at the closes of its `timeframe` bars: its
     `features` (each expression evaluated in turn over the bars and the features before it, and
@@ -112,6 +136,7 @@ class SignalStrategy(FrozenModel):
     size_mult: pl.Expr | None = None
     wake: pl.Expr | None = None
     execution: Execution
+    saved_version: StrategyPin | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -146,6 +171,23 @@ class SignalStrategy(FrozenModel):
             )
         return features
 
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
+        """A copy of the strategy, with `update` where it is given: a copy that changes a field
+        is no longer the saved version the strategy was built from, so it drops `saved_version`
+        unless `update` names it."""
+        if update and "saved_version" not in update:
+            update = {**update, "saved_version": None}
+        return super().model_copy(update=update, deep=deep)
+
+    @property
+    def declared_parameters(self) -> int | None:
+        """How many parameters the saved version the strategy was built from declares, which
+        the robustness summary counts in place of the execution template's numbers (step 5.3);
+        None for a strategy built otherwise, or from a version that declares none."""
+        if self.saved_version is None or not self.saved_version.parameters:
+            return None
+        return len(self.saved_version.parameters)
+
     def feature_columns(self) -> tuple[str, ...]:
         """The signal frame's columns of the features, in their slots' order: an expression's
         slot, and a column for each output of a `FeatureSpec` (`slot_columns`)."""
@@ -177,10 +219,12 @@ class SignalStrategy(FrozenModel):
         specification's document; each slot in its order, a feature by its name, content hash,
         and parameters, or an expression as Polars writes it; and the expression of each signal
         field the strategy gives, every field of the model that holds one, so that a field added
-        later joins it. None where an expression calls a Python function, as `map_elements`
-        and `pl.fold` do, which Polars writes only through cloudpickle, a function of a module by
-        its name alone, so that a document would miss an edit of its code, and where Polars
-        cannot write an expression at all."""
+        later joins it; and, from step 5.3, the count of the parameters a saved version declares
+        (`declared_parameters`), which the run key covers, for a strategy built from one. None
+        where an expression calls a Python function, as `map_elements` and `pl.fold` do, which
+        Polars writes only through cloudpickle, a function of a module by its name alone, so that
+        a document would miss an edit of its code, and where Polars cannot write an expression at
+        all."""
         signals = {name: value for name, value in self if isinstance(value, pl.Expr)}
         expressions = [
             *(feature for feature in self.features.values() if isinstance(feature, pl.Expr)),
@@ -189,13 +233,16 @@ class SignalStrategy(FrozenModel):
         if any(call in str(expression) for expression in expressions for call in _PYTHON_CALLS):
             return None
         try:
-            return {
+            document: dict[str, object] = {
                 "spec": self.to_spec().document(),
                 "features": [_slot_document(slot, each) for slot, each in self.features.items()],
                 "signals": {name: _expression_text(each) for name, each in signals.items()},
             }
         except pl.exceptions.ComputeError:
             return None
+        if self.declared_parameters is not None:
+            document["declared_parameters"] = self.declared_parameters
+        return document
 
     def signals(
         self,
