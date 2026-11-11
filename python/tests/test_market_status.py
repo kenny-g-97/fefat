@@ -1,4 +1,5 @@
 import hashlib
+import os
 import shutil
 from datetime import date
 from pathlib import Path, PurePosixPath
@@ -10,7 +11,7 @@ from fefat.market.catalog import Catalog, parse_catalog
 from fefat.market.fidelity import fidelity_in_words
 from fefat.market.layout import Dataset, Partition
 from fefat.market.quality import assess_quality
-from fefat.market.quality_report import write_quality_report
+from fefat.market.quality_report import DAYS_FILE_NAME, write_quality_report
 from fefat.market.schema import parse_schema_name
 from fefat.market.status import STATUS_COLUMNS, product_status
 from fefat.market.store import Store
@@ -21,6 +22,8 @@ FIXTURES = Store(ROOT / "fixtures")
 MARCH_5, MARCH_7, MARCH_9 = (date(2026, 3, day) for day in (5, 7, 9))
 SCHEMAS = (("ohlcv-1m", "1m"), ("ohlcv-1s", "1s"), ("trades", "trades"))
 LISTED = ("root", "coverage", "provider", "schema", "fidelity", "first_trade_date")
+MINUTE = 60_000_000_000
+DAY = 1_440 * MINUTE
 
 
 def catalog_of_mes_and_es(es_history_from: date) -> Catalog:
@@ -153,6 +156,48 @@ def test_a_report_older_than_its_dataset_is_stale(tmp_path: Path) -> None:
         ("ohlcv-1s", "clean", MARCH_9),
         ("trades", "stale", MARCH_9),
     ]
+
+
+def written_at(path: Path, nanoseconds: int) -> None:
+    """Give `path` the time a write at `nanoseconds` since the Unix epoch would have given it."""
+    os.utime(path, ns=(nanoseconds, nanoseconds))
+
+
+def test_a_report_older_than_a_backfill_of_its_dataset_is_stale_until_written_again(
+    tmp_path: Path,
+) -> None:
+    # Step 5.1 (from `BACKLOG.md`): a session imported before the data's first leaves the last
+    # trade date the report checked through as it was, so only the files' times tell that the
+    # report never read it. The times are set, since Windows' clock can give two writes one time.
+    store = copied_fixtures(tmp_path / "store")
+    reports = tmp_path / "store" / "reports"
+    cache = tmp_path / "cache"
+    folder = write_quality_report(assess_quality(store, "synthetic", "ES", cache), reports)
+    days = folder / DAYS_FILE_NAME
+    copied = max(path.stat().st_mtime_ns for path in store.folder.rglob("part.parquet"))
+    written_at(days, copied + MINUTE)
+    trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
+    march_4 = Partition(dataset=trades, contract="ESH2026", key=date(2026, 3, 4))
+    march_5 = store.scan_partition(Partition(dataset=trades, contract="ESH2026", key=MARCH_5))
+    store.write_partition(
+        march_4,
+        march_5.collect().with_columns(pl.col("ts_recv") - DAY, pl.col("ts_event") - DAY),
+    )
+    written_at(store.folder / march_4.relative_path(), copied + 2 * MINUTE)
+
+    backfilled = product_status(store, reports, catalog_of_mes_and_es(MARCH_5))
+    write_quality_report(assess_quality(store, "synthetic", "ES", cache), reports)
+    written_at(days, copied + 3 * MINUTE)
+    checked_again = product_status(store, reports, catalog_of_mes_and_es(MARCH_5))
+
+    es = pl.col("root") == "ES"
+    shown = ("schema", "first_trade_date", "quality", "checked_through")
+    assert backfilled.filter(es).select(shown).rows() == [
+        ("ohlcv-1m", MARCH_5, "clean", MARCH_9),
+        ("ohlcv-1s", MARCH_5, "clean", MARCH_9),
+        ("trades", date(2026, 3, 4), "stale", MARCH_9),
+    ]
+    assert checked_again.filter(es).get_column("quality").to_list() == ["clean"] * 3
 
 
 @pytest.mark.parametrize(

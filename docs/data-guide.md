@@ -195,7 +195,7 @@ MES databento ohlcv-1m: 2019-05-06 to 2026-09-23, complete at 1-minute fidelity,
 - its coverage: `complete` when it starts by the first trade date of the product's history in the catalog, `partial` when it starts later (the line gives the history's start), `missing` when the store holds none of the product (the line names its first recommended source), and `not in the catalog` for a product the catalog does not list;
 - its fidelity: `trades`, `tbbo`, or the timeframe of its bars;
 - the last day a file that fed it was imported;
-- its quality: `clean` when the report found nothing, `flagged` when it found something (read the report), `unchecked` before a first report (run `fefat data quality`), and `stale` when a clean report checked fewer trade dates than the data now holds (run it again).
+- its quality: `clean` when the report found nothing, `flagged` when it found something (read the report), `unchecked` before a first report (run `fefat data quality`), and `stale` when a clean report checked fewer trade dates than the data now holds, or when a file of the dataset was written after the report, as an import of older months writes one (run it again).
 
 **The quality report.** `fefat data quality` writes `<FEFAT_DATA_DIR>\reports\<provider>\<root>\quality.md` for you to read, beside `days.parquet`, a row per session, and `findings.parquet`, a row per finding. It prints each product's summary and the report's path, and exits with 1 when any product is flagged. The report has six sections:
 

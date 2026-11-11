@@ -7,12 +7,14 @@ integer parameters here, once, for the reference engine and for `ff.backtest` al
     parameters = instrument_parameters(instruments.get("ES"))
     parameters.tick  # 250_000_000, a tick of 0.25
     price_text(4_990_250_000_000)  # "4990.25"
+    bars.select(price_in_units("close"))  # 4990.25, a float, as the API sends it
 """
 
 from decimal import Decimal
 from fractions import Fraction
 from typing import Protocol
 
+import polars as pl
 from pydantic import Field
 
 from fefat.market.schema import FrozenModel
@@ -28,6 +30,12 @@ PRICE_SCALE = 10**PRICE_DECIMALS
 def price_text(units: int) -> str:
     """A price in 1e-9 units as the decimal it is written as, such as 4990.25."""
     return format(Decimal(units).scaleb(-PRICE_DECIMALS).normalize(), "f")
+
+
+def price_in_units(column: str) -> pl.Expr:
+    """The prices of `column`, in 1e-9 units, in the instrument's units, each the float nearest
+    its decimal, as the API sends them (step 5.1): 4_990_250_000_000 is 4990.25."""
+    return pl.col(column) / PRICE_SCALE
 
 
 def money_text(units: int) -> str:

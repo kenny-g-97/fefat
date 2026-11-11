@@ -13,6 +13,7 @@ from argon2 import PasswordHasher
 from sqlalchemy import Engine
 
 from fefat.config import FefatPaths, Settings, load_settings
+from fefat.market.store import Store
 from fefat_app.credentials import KeyringCredentialStore
 from fefat_app.database.access_records import AccessTables
 from fefat_app.database.job_records import JobTables
@@ -23,6 +24,7 @@ from fefat_app.jobs.dispatcher import LocalDispatcher
 from fefat_app.jobs.worker import JobTimings
 from fefat_app.ports import CredentialStore, Dispatcher, Executor, Preferences
 from fefat_app.services.api_tokens import ApiTokenIssuer
+from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 
@@ -31,8 +33,9 @@ from fefat_app.services.logins import LoginAttempts, Logins
 class Container:
     """What the server's routes reach: the settings of `config.toml`, the folders of
     `FEFAT_HOME` and the data, the credential store, the logins, the API tokens, the trader's
-    preferences, the jobs, and their dispatcher, which the server starts and closes, and the
-    executor of the trader's code, whose warm runner `opened_container` ends."""
+    preferences, the jobs, and their dispatcher, which the server starts and closes, the
+    executor of the trader's code, whose warm runner `opened_container` ends, and the data
+    catalog over the store in the data folder (step 5.1)."""
 
     settings: Settings
     paths: FefatPaths
@@ -43,6 +46,7 @@ class Container:
     jobs: Jobs
     dispatcher: Dispatcher
     executor: Executor
+    catalog: MarketCatalog
 
 
 def credential_store() -> CredentialStore:
@@ -54,15 +58,17 @@ def credential_store() -> CredentialStore:
 def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Container:
     """The adapters of this machine over the database of `engine`: the access records, the
     preferences, and the jobs in its tables, Argon2 at argon2-cffi's default cost, the system's
-    clock in UTC, the jobs' process pool of `config.toml`'s size, and the executor with its warm
+    clock in UTC, the jobs' process pool of `config.toml`'s size, the executor with its warm
     runner for the previews, one for the workspace, neither starting a process before its first
-    job or execution."""
+    job or execution, and the store of the data folder, built once, which holds its folder
+    alone, so that it sees every file an import writes (D-93)."""
     records = AccessTables(engine)
     clock = partial(datetime.now, UTC)
     job_records = JobTables(engine)
     dispatcher = LocalDispatcher(
         job_records, paths, clock, JobTimings(), settings.process_pool_size
     )
+    jobs = Jobs(job_records, dispatcher, clock)
     return Container(
         settings=settings,
         paths=paths,
@@ -70,9 +76,10 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         logins=Logins(records, PasswordHasher(), LoginAttempts(), clock),
         api_tokens=ApiTokenIssuer(records, clock),
         preferences=PreferenceRows(engine),
-        jobs=Jobs(job_records, dispatcher, clock),
+        jobs=jobs,
         dispatcher=dispatcher,
         executor=SubprocessExecutor(paths, warm_previews=True),
+        catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir, jobs),
     )
 
 

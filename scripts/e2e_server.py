@@ -11,7 +11,7 @@ data; keeps keyring at its null backend, so that no secret of this machine is re
 sets the password, since `fefat up` would ask for it at a console that a harness has not (from
 `BACKLOG.md`); and runs `fefat up` until it is stopped. Playwright stops it with taskkill on
 Windows, which runs no cleanup, so the home is one folder wiped at each start rather than a new
-one each run.
+one each run. `just dev` seeds a home of its own the same way (`seed`, step 5.1).
 """
 
 import os
@@ -51,21 +51,28 @@ def seeded_home(home: Path, port: int) -> None:
     shutil.copytree(FIXTURES, home / "data" / "synthetic")
 
 
-def main() -> int:
-    port = int(required("FEFAT_E2E_PORT"))
-    password = required("FEFAT_E2E_PASSWORD")
-    home = Path(tempfile.gettempdir()) / HOME_NAME
+def seed(home: Path, port: int, password: str, data_dir: Path | None = None) -> None:
+    """`home` seeded (`seeded_home`) and named FEAT's home in this process's environment, which
+    the server it starts inherits, with its copy of the fixtures as the data folder, or
+    `data_dir` where one is named; keyring at its null backend; and `password` set."""
     seeded_home(home, port)
     os.environ["FEFAT_HOME"] = str(home)
-    os.environ["FEFAT_DATA_DIR"] = str(home / "data")
+    os.environ["FEFAT_DATA_DIR"] = str(home / "data" if data_dir is None else data_dir)
     os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
     # Imported once the environment is set, which keyring reads when it first picks a backend.
     from fefat.config import resolve_paths
-    from fefat_app.cli import main as fefat
     from fefat_app.container import opened_container
 
     with opened_container(resolve_paths(os.environ)) as container:
         container.logins.set_password(password)
+
+
+def main() -> int:
+    port = int(required("FEFAT_E2E_PORT"))
+    password = required("FEFAT_E2E_PASSWORD")
+    seed(Path(tempfile.gettempdir()) / HOME_NAME, port, password)
+    from fefat_app.cli import main as fefat
+
     return fefat(["up"])
 
 

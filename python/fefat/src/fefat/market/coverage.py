@@ -40,14 +40,21 @@ def session_datasets(store: Store) -> tuple[Dataset, ...]:
     )
 
 
-def dataset_coverage(store: Store, dataset: Dataset) -> DatasetCoverage | None:
-    """The coverage of a dataset of trades, TBBO, or bars, read from its partitions at either
-    end (all of them where its schema has no keys); None while it has no partition."""
+def dataset_coverage(
+    store: Store, dataset: Dataset, contract: str | None = None
+) -> DatasetCoverage | None:
+    """The coverage of a dataset of trades, TBBO, or bars, or of `contract`'s partitions of it
+    where one is named, read from its partitions at either end (all of them where its schema has
+    no keys); None while it has no partition."""
     if dataset.schema_name.kind not in SESSION_KINDS:
         raise ValueError(
             f"Expected a dataset of trades, TBBO, or bars, got {dataset.relative_folder()}."
         )
-    partitions = [file.partition for file in store.list_partitions(dataset)]
+    partitions = [
+        file.partition
+        for file in store.list_partitions(dataset)
+        if contract is None or file.partition.contract == contract
+    ]
     if not partitions:
         return None
     keys = sorted({str(partition.key) for partition in partitions if partition.key is not None})

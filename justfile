@@ -127,6 +127,6 @@ mutants *ARGS:
 strip-notebooks:
     uv run python scripts/strip_notebooks.py
 
-# Start the local server, then the web dev server on http://localhost:5173 with its proxy to the server, and open the app (step 4.3); Ctrl+C stops both
+# Start the local server on a throwaway home of the synthetic fixtures, or on FEFAT_HOME's when set, starting it again when the SDK's or the app's source changes, then the web dev server on http://localhost:5173 with its proxy to the server, and open the app (steps 4.3 and 5.1); Ctrl+C stops both
 dev:
     uv run python scripts/dev.py

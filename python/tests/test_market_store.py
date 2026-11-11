@@ -178,6 +178,23 @@ def test_listing_one_dataset_lists_its_partitions_and_no_others() -> None:
     assert len(files) == 6
 
 
+def test_a_partition_carries_the_time_its_file_was_last_written(tmp_path: Path) -> None:
+    # Step 5.1: a quality report older than a partition of its dataset reads stale.
+    store = Store(tmp_path)
+    store.write_dataset_metadata(ES_TRADES.dataset, ES_SIZE)
+    rows = FIXTURE_STORE.scan_partition(TRADES_OF_MARCH_5).collect()
+    written = store.write_partition(TRADES_OF_MARCH_5, rows)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    when_written = path.stat().st_mtime_ns
+    an_hour_earlier = when_written - 3_600_000_000_000
+    os.utime(path, ns=(an_hour_earlier, an_hour_earlier))
+
+    (listed,) = store.list_partitions(ES_TRADES.dataset)
+
+    assert written.modified_ns == when_written
+    assert listed.modified_ns == an_hour_earlier
+
+
 def test_a_listed_store_lists_a_dataset_once_until_it_writes_a_partition(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

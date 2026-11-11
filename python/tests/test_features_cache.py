@@ -34,8 +34,8 @@ from fefat.features.cache_index import (
 )
 from fefat.features.examples import atr, in_session_window, rsi
 from fefat.features.runtime import FeatureGraph
-from fefat.market import api as market_api
 from fefat.market import instruments
+from fefat.market import series_source as bar_source
 from fefat.market.api import SIGNAL_BAR_COLUMNS
 from fefat.market.calendar import SessionTable, sessions_of
 from fefat.market.continuous import RollCalendar
@@ -130,7 +130,7 @@ def test_a_range_computed_in_chunks_is_the_range_computed_at_once(
             chunk: ff.features.compute(SLOTS, "ES", "5m", *chunk).collect() for chunk in chunks
         }
         with monkeypatch.context() as patched:
-            patched.setattr(market_api, "gridded_bars", refused)
+            patched.setattr(bar_source, "gridded_bars", refused)
             again = ff.features.compute(SLOTS, "ES", "5m", first, last).collect()
 
         assert again.equals(whole)
@@ -171,7 +171,7 @@ def test_a_second_computation_reads_the_cache_and_one_after_a_change_computes_ag
     first = ff.features.compute(SLOTS, "ES", "5m", *window).collect()
     before = written()
     with monkeypatch.context() as patched:
-        patched.setattr(market_api, "gridded_bars", refused)
+        patched.setattr(bar_source, "gridded_bars", refused)
         again = ff.features.compute(SLOTS, "ES", "5m", *window).collect()
     february = Partition(dataset=MINUTES, contract="ESH2026", key=YearMonth(year=2026, month=2))
     rows = store.scan_partition(february).collect().with_row_index("row")
@@ -237,7 +237,7 @@ def test_a_second_computation_of_a_years_feature_reads_the_cache_in_well_under_a
     began = time.perf_counter()
     first = ff.features.compute(slots, "ES", "5m", *window).collect()
     computing = time.perf_counter() - began
-    monkeypatch.setattr(market_api, "gridded_bars", refused)
+    monkeypatch.setattr(bar_source, "gridded_bars", refused)
     began = time.perf_counter()
     again = ff.features.compute(slots, "ES", "5m", *window).collect()
     reading = time.perf_counter() - began
@@ -757,7 +757,7 @@ def test_a_features_folder_is_the_same_whatever_order_the_slots_come_in(
     window = ("2026-03-06", "2026-03-09")
     first = {"both": rsi_change(), "change": change(), "rsi": rsi(n=7)}
     ff.features.compute(first, "ES", "5m", *window).collect()
-    monkeypatch.setattr(market_api, "gridded_bars", refused)
+    monkeypatch.setattr(bar_source, "gridded_bars", refused)
 
     again = {"change": change(), "rsi": rsi(n=7), "both": rsi_change()}
     ff.features.compute(again, "ES", "5m", *window).collect()

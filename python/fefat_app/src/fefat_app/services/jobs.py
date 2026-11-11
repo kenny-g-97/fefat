@@ -1,9 +1,12 @@
-"""The jobs (step 4.4, `01-architecture.md` section 6): the demo job starts here, the list of
+"""The jobs (step 4.4, `01-architecture.md` section 6): a job of each kind starts here, the demo
+job and, through each area's service, the others, such as the catalog sync (step 5.1); the list of
 jobs and each job read from here, a job is cancelled here, and a stream's events are read from
 here for the server's streams. A queued job is cancelled at once; a running one is asked to stop,
 which its worker reads at its next report, or after which the reaper ends it."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from fefat_app.ports import Clock, Dispatcher, Job, JobKind, JobRecords, JobStatus, StreamEvent
 
@@ -33,11 +36,24 @@ class Jobs:
     dispatcher: Dispatcher
     clock: Clock
 
-    def start_demo(self, seconds: int) -> Job:
-        """Queue a demo job that counts `seconds`, and give it to the dispatcher."""
-        job = self.records.add(JobKind.DEMO, {"seconds": seconds}, MAX_ATTEMPTS, self.clock())
+    def start(self, kind: JobKind, payload: Mapping[str, Any]) -> Job:
+        """Queue a job of `kind` with `payload`, and give it to the dispatcher."""
+        job = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
         self.dispatcher.submit(job.id)
         return job
+
+    def start_demo(self, seconds: int) -> Job:
+        """Queue a demo job that counts `seconds`, and give it to the dispatcher."""
+        return self.start(JobKind.DEMO, {"seconds": seconds})
+
+    def active(self, kind: JobKind) -> tuple[Job, ...]:
+        """The jobs of `kind` that are queued, then those that run, each oldest first."""
+        return tuple(
+            job
+            for status in (JobStatus.QUEUED, JobStatus.RUNNING)
+            for job in self.records.with_status(status)
+            if job.kind == kind
+        )
 
     def recent(self) -> tuple[Job, ...]:
         """The newest jobs, newest first, then the running jobs older than them, which a queue

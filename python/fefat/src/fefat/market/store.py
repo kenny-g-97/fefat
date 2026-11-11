@@ -57,10 +57,13 @@ from fefat.market.store_files import (
 
 
 class PartitionFile(FrozenModel):
-    """A partition the store holds, with the size of its file."""
+    """A partition the store holds, with the size of its file and the time it was last written,
+    in nanoseconds since the Unix epoch, which a quality report older than it reads stale by
+    (`fefat.market.status`, step 5.1)."""
 
     partition: Partition
     size_bytes: int = Field(ge=0)
+    modified_ns: int
 
 
 class Store:
@@ -150,7 +153,10 @@ class Store:
         self.dataset_metadata(partition.dataset)
         path = self._folder / partition.relative_path()
         write_atomically(path, lambda temporary: frame.write_parquet(temporary, compression="zstd"))
-        return PartitionFile(partition=partition, size_bytes=record_digest(path).size_bytes)
+        digest = record_digest(path)
+        return PartitionFile(
+            partition=partition, size_bytes=digest.size_bytes, modified_ns=digest.modified_ns
+        )
 
     def has_dataset_metadata(self, dataset: Dataset) -> bool:
         """Whether the store holds the dataset's `dataset.json`."""
@@ -220,8 +226,11 @@ class Store:
     def _partition_files(self, folder: Path) -> Iterator[PartitionFile]:
         for path in folder.rglob(PARTITION_FILE_NAME):
             relative = PurePosixPath(path.relative_to(self._folder).as_posix())
+            status = path.stat()
             yield PartitionFile(
-                partition=Partition.from_relative_path(relative), size_bytes=path.stat().st_size
+                partition=Partition.from_relative_path(relative),
+                size_bytes=status.st_size,
+                modified_ns=status.st_mtime_ns,
             )
 
     def _selected(self, request: PartitionRequest) -> tuple[PartitionFile, ...]:
@@ -275,7 +284,7 @@ class Store:
 class ListedStore(Store):
     """A `Store` that lists each dataset's partitions once and keeps the listing, for a reader of
     many windows of a store that does not change meanwhile, as `load` and the feature cache read
-    one (`fefat.market.api.series_source`): listing a dataset of years of files is most of the
+    one (`fefat.market.series_source`): listing a dataset of years of files is most of the
     time a month's load takes. A partition written through it lists the store again."""
 
     def __init__(self, folder: Path) -> None:

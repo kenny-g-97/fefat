@@ -33,6 +33,9 @@ minutes.
     paths = resolve_paths(os.environ)
     report = assess_quality(Store(paths.data_dir), "databento", "MES", paths.cache_dir)
     write_quality_report(report, paths.reports_dir)
+
+`reported_products` names the reports a store calls for, the provider and root of each, which
+`fefat data quality` and the app's catalog sync (step 5.1) write.
 """
 
 from collections.abc import Mapping
@@ -96,6 +99,29 @@ def assess_quality(store: Store, provider: str, root: str, cache_folder: Path) -
         days=_days(bounds, records, differences, _conditions(bounds, vendor_days), received_until),
         findings=_findings(records, gaps(records, covered, bounds), differences),
     )
+
+
+class NothingToReportError(ValueError):
+    """A report asked of a product, or of every product, that the store holds no trades, TBBO,
+    or bars of."""
+
+
+def reported_products(store: Store, root: str | None = None) -> tuple[tuple[str, str], ...]:
+    """The provider and root of each report the store's trades, TBBO, and bars call for, of
+    `root` alone where it is named, sorted: those of its datasets that hold a partition, since a
+    report refuses a dataset without one, as an import that stopped after its `dataset.json`
+    leaves it; none is refused with `NothingToReportError`."""
+    held = sorted(
+        {
+            (dataset.provider, dataset.root)
+            for dataset in session_datasets(store)
+            if (root is None or dataset.root == root) and store.list_partitions(dataset)
+        }
+    )
+    if not held:
+        named = "any product" if root is None else root
+        raise NothingToReportError(f"Expected trades or bars of {named} in the store, got none.")
+    return tuple(held)
 
 
 def _covered_datasets(store: Store, provider: str, root: str) -> dict[Dataset, DatasetCoverage]:

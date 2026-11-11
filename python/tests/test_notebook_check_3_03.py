@@ -9,7 +9,7 @@ from typing import Any
 import polars as pl
 import pytest
 
-import fefat.market.api as market_api
+from fefat.market import series_source as bar_source
 from fefat.market.signal_grid import gridded_bars
 from notebook_runs import run_notebook, store_with
 
@@ -26,7 +26,7 @@ def test_the_check_notebook_computes_a_year_twice_and_lists_what_the_cache_holds
         built.append(arguments)
         return gridded_bars(*arguments, **keywords)
 
-    monkeypatch.setattr(market_api, "gridded_bars", counted_bars)
+    monkeypatch.setattr(bar_source, "gridded_bars", counted_bars)
 
     check = run_notebook(NOTEBOOK)
 

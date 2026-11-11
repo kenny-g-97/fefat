@@ -79,7 +79,6 @@ from fefat.config import FefatPaths, resolve_paths
 from fefat.market.api import datasets
 from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
-from fefat.market.coverage import session_datasets
 from fefat.market.fidelity import fidelity_in_words
 from fefat.market.importers.databento import import_databento
 from fefat.market.importers.file_import import (
@@ -95,7 +94,7 @@ from fefat.market.importers.profiles import (
     save_profile,
     saved_profiles,
 )
-from fefat.market.quality import assess_quality
+from fefat.market.quality import assess_quality, reported_products
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.sources import SOURCE_GUIDE, Source
@@ -329,17 +328,7 @@ def _quality(row: dict[str, Any]) -> str:
 def report_the_quality(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     root: str | None = arguments.root
-    datasets = session_datasets(Store(paths.data_dir))
-    held = sorted(
-        {
-            (dataset.provider, dataset.root)
-            for dataset in datasets
-            if root is None or dataset.root == root
-        }
-    )
-    if not held:
-        named = "any product" if root is None else root
-        raise ValueError(f"Expected trades or bars of {named} in the store, got none.")
+    held = reported_products(Store(paths.data_dir), root)
     statuses = [_write_the_report(paths, provider, held_root) for provider, held_root in held]
     clean = all(status is QualityStatus.CLEAN for status in statuses)
     return EXIT_OK if clean else EXIT_REFUSED

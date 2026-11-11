@@ -172,7 +172,7 @@ Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Id
 | Area | Endpoints |
 | --- | --- |
 | Session | `POST /auth/login`, `POST /auth/logout`, `POST /auth/password`, `GET /me`, `GET/PUT /settings`, `GET/POST /api-tokens`, `DELETE /api-tokens/{name}` |
-| Data | `GET /instruments`, `GET /datasets`, `GET /datasets/{id}/quality`, `GET /market/bars?instrument&timeframe&from&to&origin&provider`, `GET /catalog`, `POST /catalog/sync` (the quality report as a job until the connectors, D-93), `GET /sources`, `POST /sources` (connect one; the key goes to the credential store; with the connectors, D-93), `GET/POST /import-profiles`, `POST /imports/preview`, `POST /imports` |
+| Data | `GET /instruments`, `GET /datasets`, `GET /datasets/{id}/quality`, `GET /market/bars?instrument&timeframe&from&to&continuous&provider&origin`, `GET /catalog`, `POST /catalog/sync` (the quality report as a job until the connectors, D-93), `GET /sources`, `POST /sources` (connect one; the key goes to the credential store; with the connectors, D-93), `GET/POST /import-profiles`, `POST /imports/preview`, `POST /imports` |
 | Features | `GET/POST /features`, `GET /features/{id}/versions`, `POST /features/{id}/versions`, `POST /features/preview`, `POST /features/validate`, `GET /features/{id}/analytics` |
 | Strategies | `GET/POST /strategies`, `GET /strategies/templates`, `POST /strategies/validate`, `GET /strategies/{id}/versions`, `POST /strategies/{id}/versions`, `POST /strategies/build` (spec → code), `GET /strategies/{id}/diff?from&to` |
 | Runs | `POST /runs` (202 or the cached run), `GET /runs`, `GET /runs/{id}`, `/runs/{id}/trades`, `/equity?max_points`, `/chart?from&to`, `/stats`, `/distribution`, `POST /runs/{id}/query` (DuckDB SQL, row cap), `POST /runs/compare`, `POST /runs/{id}/explain/{trade_id}` (202, an `explain` job, D-93) |
@@ -184,6 +184,8 @@ Base path `/v1`, JSON, cursor pagination, `application/problem+json` errors, `Id
 | Health | `GET /healthz`, `GET /version` |
 
 The web app's TypeScript types are generated from `web/openapi.json` by `openapi-typescript`; CI regenerates and fails on a diff.
+
+As step 5.1 built the Data row (D-94): its routes read the SDK through `fefat_app.services.catalog` over a `Store` the container builds once, and keep nothing in the database; a dataset's id is `provider:schema:root`; `GET /market/bars` takes its window in trade dates and answers `load`'s bars a page of at most 20,000 at a time, their opens in whole seconds and their prices as floats in the instrument's units, with `next_from`, the instant the next page opens at, which comes back as `from`; and `POST /catalog/sync` answers 202 with the `catalog_sync` job, or 404 where the store holds nothing to report.
 
 ## 8. Local server security
 
@@ -207,6 +209,8 @@ The web app's TypeScript types are generated from `web/openapi.json` by `openapi
 | `release` (P14) | CI builds wheels and installers, signed | — |
 
 CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for every pull request, builds the `fefat_engine` wheel on both, and asserts identical golden-run hashes on both systems.
+
+As step 5.1 built `just dev` (D-94): without `FEFAT_HOME`, it serves `fefat-dev` in the temporary folder, made afresh at each start as the UI harness's home is, with the synthetic fixtures, or the data folder `FEFAT_DATA_DIR` names, and prints its password; with `FEFAT_HOME`, that home; and it starts the server again whenever the SDK's or the app's source changes, since `fefat up` hands uvicorn an app object, which uvicorn cannot reload.
 
 ## 10. Seams that keep options open
 

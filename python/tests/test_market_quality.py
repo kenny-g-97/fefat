@@ -1,5 +1,6 @@
 import hashlib
 import json
+import pickle
 import shutil
 from collections.abc import Callable
 from datetime import UTC, date, datetime
@@ -20,7 +21,7 @@ from fefat.market.layout import (
     SizeUnit,
     YearMonth,
 )
-from fefat.market.quality import assess_quality
+from fefat.market.quality import NothingToReportError, assess_quality, reported_products
 from fefat.market.quality_report import (
     DAY_COLUMNS,
     FINDING_COLUMNS,
@@ -28,6 +29,7 @@ from fefat.market.quality_report import (
     QualityStanding,
     QualityStatus,
     quality_standing,
+    stored_findings,
     write_quality_report,
 )
 from fefat.market.raw_manifest import BatchJob
@@ -414,6 +416,63 @@ def test_a_written_report_reads_back_with_its_status_and_last_trade_date(
         status=QualityStatus.CLEAN, checked_through=MARCH_9
     )
     assert Store(tmp_path / "data").list_datasets() == ()
+
+
+def test_a_reports_findings_read_back_and_none_while_it_is_unwritten(
+    tmp_path: Path, cache: Path
+) -> None:
+    # Step 5.1: a dataset's quality over the API lists its root's findings.
+    store = copied_fixtures(tmp_path / "data")
+    reports = tmp_path / "data" / "reports"
+    unwritten = stored_findings(reports, "synthetic", "ES")
+    rewrite(store, es_trades("ESH2026", MARCH_5), with_a_duplicate_and_a_print_a_day_late)
+    report = assess_quality(store, "synthetic", "ES", cache)
+    write_quality_report(report, reports)
+
+    findings = stored_findings(reports, "synthetic", "ES")
+
+    assert (unwritten.schema, unwritten.height) == (FINDING_COLUMNS, 0)
+    assert findings.height > 0
+    assert_frame_equal(findings, report.findings)
+
+
+def test_the_reports_to_write_are_each_providers_of_each_root_the_store_holds(
+    tmp_path: Path,
+) -> None:
+    # Step 5.1: what `fefat data quality` and the catalog sync write, the same pairs.
+    every = reported_products(FIXTURES)
+    one = reported_products(FIXTURES, "ES")
+
+    assert every == (("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES"))
+    assert one == (("synthetic", "ES"),)
+    with pytest.raises(NothingToReportError, match="Expected trades or bars of ZZ in the store"):
+        reported_products(FIXTURES, "ZZ")
+    with pytest.raises(NothingToReportError, match="trades or bars of any product in the store"):
+        reported_products(Store(tmp_path))
+
+
+def test_a_dataset_without_a_partition_calls_for_no_report(tmp_path: Path) -> None:
+    # Step 5.1's review: an import that wrote its `dataset.json` and no partition, which the
+    # report refuses, stopped every sync of the products sorted after it.
+    store = copied_fixtures(tmp_path)
+    store.write_dataset_metadata(
+        Dataset(provider="databento", schema_name=parse_schema_name("ohlcv-1m"), root="MCL"),
+        CONTRACT_SIZES,
+    )
+
+    assert reported_products(store) == (("synthetic", "BTCUSDT-PERP"), ("synthetic", "ES"))
+    with pytest.raises(NothingToReportError, match="Expected trades or bars of MCL"):
+        reported_products(store, "MCL")
+
+
+def test_a_refusal_of_a_report_crosses_a_process_whole() -> None:
+    # Step 5.1's review: a notebook's pool of loads sends its workers' errors back pickled.
+    with pytest.raises(NothingToReportError) as refused:
+        reported_products(FIXTURES, "ZZ")
+
+    again = pickle.loads(pickle.dumps(refused.value))
+
+    assert (type(again), str(again)) == (NothingToReportError, str(refused.value))
 
 
 def test_a_root_without_trades_or_bars_from_the_provider_is_refused(cache: Path) -> None:

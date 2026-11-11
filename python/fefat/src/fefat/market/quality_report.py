@@ -86,8 +86,9 @@ class QualityFinding(StrEnum):
 
 
 class QualityStatus(StrEnum):
-    """A root's verdict from one provider: no finding, some, no report yet, or a clean report
-    whose last trade date checked is before a dataset's last (step 1.9)."""
+    """A root's verdict from one provider: no finding, some, no report yet, or a clean report a
+    dataset outgrew, whose last trade date checked is before the dataset's last (step 1.9) or
+    that is older than a partition of the dataset (step 5.1)."""
 
     CLEAN = "clean"
     FLAGGED = "flagged"
@@ -202,29 +203,66 @@ def write_quality_report(report: QualityReport, reports_folder: Path) -> Path:
 def quality_standing(reports_folder: Path, provider: str, root: str) -> QualityStanding:
     """The status of the root's report from `provider` and the last trade date it checked;
     unchecked while no report is written. Tables whose columns differ are refused."""
-    folder = reports_folder / provider / root
-    days_path, findings_path = folder / DAYS_FILE_NAME, folder / FINDINGS_FILE_NAME
-    if not (days_path.is_file() and findings_path.is_file()):
+    tables = _stored_tables(reports_folder, provider, root)
+    if tables is None:
         return QualityStanding(status=QualityStatus.UNCHECKED, checked_through=None)
-    days = pl.read_parquet(days_path)
-    findings = pl.read_parquet(findings_path)
-    again = f"; write it again with `fefat data quality {root}`"
-    require_columns(DAY_COLUMNS, days.schema, f"{days_path}{again}")
-    require_columns(FINDING_COLUMNS, findings.schema, f"{findings_path}{again}")
+    days, findings = tables
     status = QualityStatus.CLEAN if findings.is_empty() else QualityStatus.FLAGGED
     checked_through = days.select(pl.col("trade_date").max()).item()
     return QualityStanding(status=status, checked_through=checked_through)
 
 
-def quality_verdict(standing: QualityStanding, last_trade_date: date) -> QualityStanding:
+def stored_findings(reports_folder: Path, provider: str, root: str) -> pl.DataFrame:
+    """The findings of the root's report from `provider`, with the columns of
+    `FINDING_COLUMNS`; none while no report is written. Tables whose columns differ are
+    refused."""
+    tables = _stored_tables(reports_folder, provider, root)
+    if tables is None:
+        return pl.DataFrame(schema=FINDING_COLUMNS)
+    return tables[1]
+
+
+def _stored_tables(
+    reports_folder: Path, provider: str, root: str
+) -> tuple[pl.DataFrame, pl.DataFrame] | None:
+    """The days and the findings of the root's report from `provider`, each with its columns;
+    None while either is not written."""
+    folder = reports_folder / provider / root
+    days_path, findings_path = folder / DAYS_FILE_NAME, folder / FINDINGS_FILE_NAME
+    if not (days_path.is_file() and findings_path.is_file()):
+        return None
+    days = pl.read_parquet(days_path)
+    findings = pl.read_parquet(findings_path)
+    again = f"; write it again with `fefat data quality {root}`"
+    require_columns(DAY_COLUMNS, days.schema, f"{days_path}{again}")
+    require_columns(FINDING_COLUMNS, findings.schema, f"{findings_path}{again}")
+    return days, findings
+
+
+def report_written_ns(reports_folder: Path, provider: str, root: str) -> int | None:
+    """When the root's report from `provider` was last written: the time its days' table was, in
+    nanoseconds since the Unix epoch; None while no report is written."""
+    days_path = reports_folder / provider / root / DAYS_FILE_NAME
+    if not days_path.is_file():
+        return None
+    return days_path.stat().st_mtime_ns
+
+
+def quality_verdict(
+    standing: QualityStanding, last_trade_date: date, written_since: bool
+) -> QualityStanding:
     """The standing as a dataset whose last trade date is `last_trade_date` reads it: a clean
-    report that checked up to an earlier trade date is stale, since it would vouch for days it
-    never read, while a flagged one stays flagged, its last trade date showing how far it got."""
-    # shortcut: compares trade dates only, so a backfill or a rewrite that keeps the last trade
-    # date reads as current; compare the report's time with the partitions' when imports backfill.
+    report that checked up to an earlier trade date is stale, and so is one older than a
+    partition of the dataset, `written_since` it, as an import that backfills older months
+    writes one (step 5.1), since it would vouch for data it never read; a flagged one stays
+    flagged, its last trade date showing how far it got."""
+    # shortcut: a partition written while its report was assessed reads as checked; stamp the
+    # report with its assessment's start when imports run beside reports.
     checked_through = standing.checked_through
     clean = standing.status is QualityStatus.CLEAN
-    if not clean or checked_through is None or checked_through >= last_trade_date:
+    if not clean or checked_through is None:
+        return standing
+    if checked_through >= last_trade_date and not written_since:
         return standing
     return QualityStanding(status=QualityStatus.STALE, checked_through=checked_through)
 

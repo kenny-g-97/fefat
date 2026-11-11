@@ -117,6 +117,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Catalog Status
+         * @description The products of the catalog, each with its history's first trade date, its first
+         *     recommended source, and the datasets that cover it, complete or partial, none where it is
+         *     missing; then the datasets of the roots the catalog does not list.
+         */
+        get: operations["catalog_status_v1_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/catalog/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Catalog Sync
+         * @description Start the catalog sync of `root`, or of every product: a job that writes the quality
+         *     report of each provider's data of it, as `fefat data quality` does, queued until a worker of
+         *     the pool is free; refused with 404 where the store holds no trades or bars of it.
+         */
+        post: operations["start_catalog_sync_v1_catalog_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stored Datasets
+         * @description Every dataset of trades, TBBO, or bars the store holds, by provider, root, and schema,
+         *     with its trade dates, fidelity, and quality.
+         */
+        get: operations["stored_datasets_v1_datasets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/datasets/{dataset_id}/quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dataset Quality
+         * @description The quality of the dataset `dataset_id` names, `provider:schema:root` such as
+         *     `databento:ohlcv-1m:MES`, with the findings of its root's report; refused with 404 where the
+         *     store holds no such dataset.
+         */
+        get: operations["dataset_quality_v1_datasets__dataset_id__quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/healthz": {
         parameters: {
             query?: never;
@@ -129,6 +216,27 @@ export interface paths {
          * @description Whether the server answers; no login needed.
          */
         get: operations["health_v1_healthz_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/instruments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Instruments
+         * @description Every version of every instrument's specification, FEAT's and those your imports saved,
+         *     with its tick size, point value, lot step, currency, and session calendar.
+         */
+        get: operations["instruments_v1_instruments_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -220,6 +328,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/market/bars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Market Bars
+         * @description A page of at most 20,000 of the instrument's bars on the trade dates from `from` to `to`,
+         *     as `ff.market.load` gives them, column by column; `next_from` is the instant the next page
+         *     opens at, to send as `from`, none on the last page. Refused with 404 for an instrument that
+         *     names no root and no contract of one, and with 400, in the SDK's words, for a window it
+         *     refuses, such as one a provider named does not hold.
+         */
+        get: operations["market_bars_v1_market_bars_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -261,6 +393,28 @@ export interface paths {
          *     never a secret's value.
          */
         put: operations["change_settings_v1_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Source Guide
+         * @description The source guide: each source of market data with what it offers and costs, its terms
+         *     and their page, whether a desktop app may use your own account or files, and the import
+         *     presets that read its files.
+         */
+        get: operations["source_guide_v1_sources_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -369,6 +523,161 @@ export interface components {
             theme: components["schemas"]["Theme"];
         };
         /**
+         * BarColumns
+         * @description A page's bars, column by column, by their open, the bars of one open by their contract:
+         *     each bar's open in whole seconds since the Unix epoch, UTC; its trade date; its prices in the
+         *     instrument's units, adjusted on a spliced series; its volume, in lots of the dataset's size
+         *     unit, a contract, or 0.001 BTC for bitcoin's perpetual; and its contract.
+         */
+        BarColumns: {
+            /** Close */
+            close: number[];
+            /** Contract */
+            contract: string[];
+            /** High */
+            high: number[];
+            /** Low */
+            low: number[];
+            /** Open */
+            open: number[];
+            /** Time */
+            time: number[];
+            /** Trade Date */
+            trade_date: string[];
+            /** Volume */
+            volume: number[];
+        };
+        /**
+         * BarsPage
+         * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
+         *     datasets the bars come from, the bars, and the instant the next page opens at, which the
+         *     caller sends as the window's start, none on the last page.
+         */
+        BarsPage: {
+            bars: components["schemas"]["BarColumns"];
+            /** Instrument */
+            instrument: string;
+            /** Next From */
+            next_from: string | null;
+            /** Provider */
+            provider: string;
+            /** Timeframe */
+            timeframe: string;
+        };
+        /**
+         * CatalogProductStatus
+         * @description A product of the catalog: its root, the first trade date of its history, the name of its
+         *     first recommended source, and the datasets of it the store holds, none while it is missing.
+         */
+        CatalogProductStatus: {
+            /** Datasets */
+            datasets: components["schemas"]["CoveringDataset"][];
+            /**
+             * History From
+             * Format: date
+             */
+            history_from: string;
+            /** Recommended Source */
+            recommended_source: string;
+            /** Root */
+            root: string;
+        };
+        /**
+         * CatalogStatus
+         * @description The catalog at its version: its products in its order, then the datasets of the roots it
+         *     does not list.
+         */
+        CatalogStatus: {
+            /** Products */
+            products: components["schemas"]["CatalogProductStatus"][];
+            /** Unlisted */
+            unlisted: components["schemas"]["StoredDataset"][];
+            /** Version */
+            version: number;
+        };
+        /**
+         * CatalogSyncRequest
+         * @description The product, such as `MES`, whose quality reports a catalog sync writes; every product
+         *     the store holds where it is left out.
+         */
+        CatalogSyncRequest: {
+            /** Root */
+            root?: string | null;
+        };
+        /**
+         * CoveringDataset
+         * @description A dataset of a catalog product: complete when it starts by the first trade date of the
+         *     product's history, partial when it starts after it.
+         */
+        CoveringDataset: {
+            /** Checked Through */
+            checked_through: string | null;
+            /** Contracts */
+            contracts: number;
+            /**
+             * Coverage
+             * @enum {string}
+             */
+            coverage: "complete" | "partial";
+            /** Fidelity */
+            fidelity: string;
+            /**
+             * First Trade Date
+             * Format: date
+             */
+            first_trade_date: string;
+            /** Id */
+            id: string;
+            /** Last Import */
+            last_import: string | null;
+            /**
+             * Last Trade Date
+             * Format: date
+             */
+            last_trade_date: string;
+            /** Licence Scope */
+            licence_scope: string;
+            origin: components["schemas"]["DatasetOrigin"];
+            /** Provider */
+            provider: string;
+            quality: components["schemas"]["QualityStatus"];
+            /** Root */
+            root: string;
+            /** Schema Name */
+            schema_name: string;
+        };
+        /**
+         * Currency
+         * @description The currency of an instrument's prices and of what a point is worth.
+         * @enum {string}
+         */
+        Currency: "USD" | "USDT" | "EUR" | "GBP" | "JPY" | "CHF" | "AUD" | "CAD";
+        /**
+         * DatasetOrigin
+         * @description How a dataset came into the store (D-37): imported from the trader's files, or synced
+         *     through a connector to a source the trader connects, which waits for a later phase (D-38).
+         * @enum {string}
+         */
+        DatasetOrigin: "import" | "sync";
+        /**
+         * DatasetQuality
+         * @description A dataset's quality: the verdict of its root's report from its provider, as the dataset
+         *     reads it, and the last trade date the report checked; and the report's findings, those of
+         *     every schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many
+         *     there are.
+         */
+        DatasetQuality: {
+            /** Checked Through */
+            checked_through: string | null;
+            /** Findings */
+            findings: components["schemas"]["ReportedFinding"][];
+            /** Findings Total */
+            findings_total: number;
+            /** Id */
+            id: string;
+            quality: components["schemas"]["QualityStatus"];
+        };
+        /**
          * DemoJobRequest
          * @description How many seconds a demo job counts, one a second, from 1 to an hour.
          */
@@ -376,6 +685,14 @@ export interface components {
             /** Seconds */
             seconds: number;
         };
+        /**
+         * DesktopUse
+         * @description Whether a desktop app on the trader's machine may use the trader's own account or files:
+         *     confirmed by the source in writing (none is yet: the confirmations are a Phase 14 kickoff
+         *     decision, ADR-0018), to be checked against its terms, or forbidden by them.
+         * @enum {string}
+         */
+        DesktopUse: "confirmed" | "check-the-terms" | "forbidden";
         /**
          * FieldError
          * @description Where a request broke the API's schema and why, without the value it sent.
@@ -399,6 +716,42 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /**
+         * InstrumentKind
+         * @description What trades: a dated futures contract, a perpetual swap, or the asset itself.
+         * @enum {string}
+         */
+        InstrumentKind: "futures" | "perpetual" | "spot";
+        /**
+         * InstrumentVersion
+         * @description A version of an instrument's specification (`fefat.market.instruments`): its root and
+         *     kind; its tick size, what a point is worth, and its lot step, in its currency's units; the
+         *     name of its session calendar; the trade dates it is in force, from `valid_from` to the day
+         *     before `valid_to`; and whether an import saved it, where FEAT does not know the product.
+         */
+        InstrumentVersion: {
+            /** Calendar */
+            calendar: string;
+            currency: components["schemas"]["Currency"];
+            kind: components["schemas"]["InstrumentKind"];
+            /** Lot Step */
+            lot_step: number;
+            /** Point Value */
+            point_value: number;
+            /** Root */
+            root: string;
+            /** Saved */
+            saved: boolean;
+            /** Tick Size */
+            tick_size: number;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to: string | null;
         };
         /**
          * IssuedApiToken
@@ -498,6 +851,26 @@ export interface components {
             new_password: string;
         };
         /**
+         * Preset
+         * @description A file layout FEFAT imports; its id is the provider its datasets are stored under.
+         */
+        Preset: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Reads */
+            reads: string;
+            status: components["schemas"]["PresetStatus"];
+        };
+        /**
+         * PresetStatus
+         * @description Whether FEFAT reads a preset's files yet: the Databento importer of step 1.6 does, and
+         *     the presets of step 1.10 are planned.
+         * @enum {string}
+         */
+        PresetStatus: "available" | "planned";
+        /**
          * Problem
          * @description An error the API answered (RFC 9457), with the id of the request it ended.
          */
@@ -517,6 +890,43 @@ export interface components {
              * @default about:blank
              */
             type: string;
+        };
+        /**
+         * QualityFinding
+         * @description What a report finds wrong with a dataset on a trade date: a session without records,
+         *     repeated records, records outside their session and its break, decreases of the clock
+         *     between stored rows, prices of zero or below where none are allowed, and bars that differ
+         *     from those rebuilt from finer data.
+         * @enum {string}
+         */
+        QualityFinding: "gap" | "duplicates" | "out-of-session" | "clock-decreases" | "non-positive-prices" | "bar-differences";
+        /**
+         * QualityStatus
+         * @description A root's verdict from one provider: no finding, some, no report yet, or a clean report a
+         *     dataset outgrew, whose last trade date checked is before the dataset's last (step 1.9) or
+         *     that is older than a partition of the dataset (step 5.1).
+         * @enum {string}
+         */
+        QualityStatus: "clean" | "flagged" | "unchecked" | "stale";
+        /**
+         * ReportedFinding
+         * @description A finding of a quality report: its trade date, its kind, the schema and the contract it
+         *     was found in, none for a gap, which no contract fills, and how many records or bars it
+         *     counts.
+         */
+        ReportedFinding: {
+            /** Contract */
+            contract: string | null;
+            /** Count */
+            count: number;
+            kind: components["schemas"]["QualityFinding"];
+            /** Schema Name */
+            schema_name: string;
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
         };
         SecretChanges: {
             [key: string]: string | null;
@@ -599,6 +1009,94 @@ export interface components {
         SettingsChange: {
             secrets?: components["schemas"]["SecretChanges"];
             theme?: components["schemas"]["Theme"] | null;
+        };
+        /**
+         * Source
+         * @description A source of market data as the guide describes it; `terms_page` is null where the source
+         *     publishes no terms page, and `licence_scope` is copied into every dataset imported from it.
+         */
+        Source: {
+            /** Cost */
+            cost: string;
+            desktop_use: components["schemas"]["DesktopUse"];
+            /** Desktop Use Note */
+            desktop_use_note: string;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["SourceKind"];
+            /** Licence Scope */
+            licence_scope: string;
+            /** Name */
+            name: string;
+            /** Offers */
+            offers: string;
+            /** Presets */
+            presets: components["schemas"]["Preset"][];
+            /** Terms */
+            terms: string;
+            /** Terms Page */
+            terms_page: string | null;
+        };
+        /**
+         * SourceGuide
+         * @description Every known source in the order the guide prints them, as read on `researched_on`.
+         */
+        SourceGuide: {
+            /**
+             * Researched On
+             * Format: date
+             */
+            researched_on: string;
+            /** Sources */
+            sources: components["schemas"]["Source"][];
+        };
+        /**
+         * SourceKind
+         * @description What a source is: a data vendor, an exchange's own archive, or a trading platform whose
+         *     exports a preset reads.
+         * @enum {string}
+         */
+        SourceKind: "vendor" | "exchange-archive" | "platform";
+        /**
+         * StoredDataset
+         * @description A dataset of trades, TBBO, or bars the store holds (`fefat.market.status`): its id; its
+         *     provider, root, schema, and fidelity, `trades`, `tbbo`, or the timeframe of its bars; how
+         *     many contracts it holds and its first and last trade date; the quality of its root's report
+         *     from its provider, with the last trade date the report checked, none while unchecked; its
+         *     origin and the licence scope of its source; and the last day a file of its provider that fed
+         *     its root was imported, none without a record of one.
+         */
+        StoredDataset: {
+            /** Checked Through */
+            checked_through: string | null;
+            /** Contracts */
+            contracts: number;
+            /** Fidelity */
+            fidelity: string;
+            /**
+             * First Trade Date
+             * Format: date
+             */
+            first_trade_date: string;
+            /** Id */
+            id: string;
+            /** Last Import */
+            last_import: string | null;
+            /**
+             * Last Trade Date
+             * Format: date
+             */
+            last_trade_date: string;
+            /** Licence Scope */
+            licence_scope: string;
+            origin: components["schemas"]["DatasetOrigin"];
+            /** Provider */
+            provider: string;
+            quality: components["schemas"]["QualityStatus"];
+            /** Root */
+            root: string;
+            /** Schema Name */
+            schema_name: string;
         };
         /**
          * Theme
@@ -957,6 +1455,173 @@ export interface operations {
             };
         };
     };
+    catalog_status_v1_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogStatus"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    start_catalog_sync_v1_catalog_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    stored_datasets_v1_datasets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredDataset"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    dataset_quality_v1_datasets__dataset_id__quality_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetQuality"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     health_v1_healthz_get: {
         parameters: {
             query?: never;
@@ -973,6 +1638,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    instruments_v1_instruments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentVersion"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -1164,6 +1858,77 @@ export interface operations {
             };
         };
     };
+    market_bars_v1_market_bars_get: {
+        parameters: {
+            query: {
+                /** @description A root such as `ES`, or a contract such as `ESH2026`. */
+                instrument: string;
+                /** @description The bars' timeframe, such as `5m`. */
+                timeframe: string;
+                /** @description The trade date the window starts on, such as `2026-03-06`, or the instant a page opens at, a page's `next_from`, such as `2026-03-06T03:20:00Z`. */
+                from: string;
+                /** @description The trade date the window ends on. */
+                to: string;
+                /** @description Whether a futures root's contracts are spliced, by default true. */
+                continuous?: boolean | null;
+                /** @description The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument. */
+                provider?: string | null;
+                /** @description Only datasets of this origin; every dataset is an import for now. */
+                origin?: "import" | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BarsPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     me_v1_me_get: {
         parameters: {
             query?: never;
@@ -1269,6 +2034,35 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    source_guide_v1_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceGuide"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
