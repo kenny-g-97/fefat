@@ -3,11 +3,14 @@ each trade date's from the finest level that holds it, read from as many session
 window as its features' warm-up needs (`FeatureGraph.lead_in`, D-71), its features' values read
 from the feature cache, as `ff.features.compute` keeps them (`fefat.features.cache`), its signals
 evaluated over them and cut to the window, and the warnings of the load and of the datasets its
-features read, which the run's record keeps."""
+features read, which the run's record keeps. From step 5.3 a run tells its stages as it reaches
+them (`RunStage`)."""
 
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 
 import polars as pl
 
@@ -16,6 +19,27 @@ from fefat.market.api import load
 from fefat.market.calendar import SessionTable
 from fefat.market.contracts import parse_contract_name
 from fefat.strategy.signal_strategy import SignalStrategy
+
+
+class RunStage(StrEnum):
+    """A stage `ff.backtest.run` tells its `progress` callable as it reaches it (step 5.3): its
+    bars loaded; its features and signals computed; its engine running, which spans the engine
+    cache's build, the engine, the fidelity check's reruns, and the rerun at one more tick of
+    slippage; and its artifacts written. A run found saved tells only the stages it went
+    through."""
+
+    DATA_LOADED = "data_loaded"
+    FEATURES_COMPUTED = "features_computed"
+    ENGINE_RUNNING = "engine_running"
+    ARTIFACTS_WRITTEN = "artifacts_written"
+
+
+type RunProgress = Callable[[RunStage], None]
+"""What a run tells each stage it reaches."""
+
+
+def tell_no_one(stage: RunStage) -> None:
+    """The progress of a run that no one follows."""
 
 
 @dataclass(frozen=True)
@@ -36,10 +60,12 @@ def signal_frame(
     provider: str,
     dates: tuple[date, date],
     contract: str | None,
+    progress: RunProgress = tell_no_one,
 ) -> SignalFrame:
     """The signal frame of `strategy` on the trade dates from `dates`' start to its end, from
-    `provider`'s data, of the root's fronts or of the one `contract` (module docstring); a window
-    without bars is refused, as `load` refuses one."""
+    `provider`'s data, of the root's fronts or of the one `contract` (module docstring), telling
+    `progress` its data loaded and its features computed; a window without bars is refused, as
+    `load` refuses one."""
     start, end = dates
     graph = strategy.feature_graph()
     first = graph.lead_in(sessions, start)
@@ -47,10 +73,12 @@ def signal_frame(
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         bars = load(symbol, strategy.timeframe, first, end, provider=provider).collect()
+    progress(RunStage.DATA_LOADED)
     slots = cached_slots(
         graph, (first, end), provider, contract=None if contract is None else symbol
     )
     signals = strategy.signals_with(bars, slots.values, start=start).collect()
+    progress(RunStage.FEATURES_COMPUTED)
     first_read = bars.get_column("trade_date").min()
     if signals.is_empty() or not isinstance(first_read, date):
         raise ValueError(f"Expected bars of {symbol} from {start} to {end} in the store, got none.")

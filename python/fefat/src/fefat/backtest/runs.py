@@ -9,7 +9,8 @@ days finer than a minute (step 2.12), which reruns them coarser; and each trade'
 mix of their fidelities (step 2.13), which the reruns leave out. From step 3.7 its record pins
 the version of each feature its strategy's slots read, and a run whose request, what it is made
 from as it is known before a bar is loaded, made a saved run opens that run without loading its
-bars or evaluating its signals (`fefat.backtest.requests`).
+bars or evaluating its signals (`fefat.backtest.requests`). From step 5.3 it tells a callable each
+stage it reaches (`RunStage`), which the app's backtest job reports as its progress.
 
     run = ff.backtest.run(strategy, "2026-03-05", "2026-03-09")
     run.trades, run.fills, run.trade_paths, run.equity("1d"), run.config, run.hash, run.metrics
@@ -54,6 +55,7 @@ from fefat.backtest.report import report_text
 from fefat.backtest.requests import remember, request_of, saved_run_of
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
+from fefat.backtest.run_signals import RunProgress, RunStage, tell_no_one
 from fefat.config import FefatPaths, resolve_paths
 from fefat.features.evaluation import FeatureSpec
 from fefat.features.versions import save
@@ -158,17 +160,20 @@ def run(
     start: str | date,
     end: str | date,
     config: RunConfig | None = None,
+    *,
+    progress: RunProgress = tell_no_one,
 ) -> Run:
     """The backtest of `strategy` on the trade dates from `start` to `end` under `config`, the
     defaults where it is left out: read back when the run of its request, or of its key, is
-    saved, else run and saved, its request kept (`fefat.backtest.requests`). The warnings its
-    record holds are raised on every call, as `load` raises its own."""
+    saved, else run and saved, its request kept (`fefat.backtest.requests`), each stage it
+    reaches told to `progress` (`RunStage`). The warnings its record holds are raised on every
+    call, as `load` raises its own."""
     paths = resolve_paths(os.environ)
     settings = RunConfig() if config is None else config
     request = request_of(strategy, start, end, settings, paths)
     found = None if request is None else saved_run_of(request, paths)
     if found is None:
-        saved = _run_or_open(strategy, (start, end), settings, paths)
+        saved = _run_or_open(strategy, (start, end), settings, paths, progress)
         if request is not None:
             remember(request, saved.hash, paths)
     else:
@@ -183,10 +188,12 @@ def _run_or_open(
     window: tuple[str | date, str | date],
     config: RunConfig,
     paths: FefatPaths,
+    progress: RunProgress,
 ) -> Run:
     """The run of what `strategy` reads on the trade dates `window` spans under `config`: the run
-    saved under its key, else run and saved with the features it pins."""
-    inputs = run_inputs(strategy, *window, config, paths)
+    saved under its key, else run and saved with the features it pins, each stage told to
+    `progress`."""
+    inputs = run_inputs(strategy, *window, config, paths, progress)
     frame_hash = fefat_engine.table_hash(inputs.signals)
     key = run_key(inputs, frame_hash)
     folder = paths.runs_dir / key
@@ -197,7 +204,10 @@ def _run_or_open(
         features=strategy.feature_columns(),
         feature_versions=_pins(strategy),
     )
-    return _ran(inputs, inputs.cache_paths(paths), written, folder, key, frame_hash)
+    progress(RunStage.ENGINE_RUNNING)
+    saved = _ran(inputs, inputs.cache_paths(paths), written, folder, key, frame_hash)
+    progress(RunStage.ARTIFACTS_WRITTEN)
+    return saved
 
 
 def run_key(inputs: RunInputs, frame_hash: str) -> str:

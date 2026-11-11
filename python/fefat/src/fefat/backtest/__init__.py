@@ -9,6 +9,7 @@ run of the same key instead of running it again:
     run.trades; run.fills; run.trade_paths; run.equity("1d"); run.config; run.hash
     run.metrics.fidelity_check; run.report()
 
+From step 5.3 `run` tells a callable each stage it reaches (`RunStage`): `progress=print`.
 `RunConfig` holds the run's settings (`fefat.backtest.run_config`), the artifacts' schemas are
 `fefat.backtest.schemas`, and the record is `fefat.backtest.record`. `fidelity_check` works a
 saved run's fidelity check out again (`fefat.backtest.fidelity`, step 2.12), and `reconcile`
@@ -26,6 +27,7 @@ from fefat.backtest.metrics import (
 from fefat.backtest.reconcile import reconcile
 from fefat.backtest.record import FeaturePin, RunRecord
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
+from fefat.backtest.run_signals import RunStage
 from fefat.backtest.runs import Run, run
 from fefat.backtest.schemas import (
     ARTIFACT_SCHEMAS,
@@ -62,6 +64,7 @@ __all__ = [
     "Run",
     "RunConfig",
     "RunRecord",
+    "RunStage",
     "fidelity_check",
     "reconcile",
     "run",

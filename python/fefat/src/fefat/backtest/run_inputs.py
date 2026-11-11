@@ -22,7 +22,7 @@ import polars as pl
 
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
-from fefat.backtest.run_signals import signal_frame
+from fefat.backtest.run_signals import RunProgress, signal_frame, tell_no_one
 from fefat.backtest.snapshots import (
     Market,
     dataset_record,
@@ -141,12 +141,16 @@ def run_inputs(
     end: str | date,
     config: RunConfig,
     paths: FefatPaths,
+    progress: RunProgress = tell_no_one,
 ) -> RunInputs:
-    """Everything a run of `strategy` on the trade dates from `start` to `end` reads."""
+    """Everything a run of `strategy` on the trade dates from `start` to `end` reads, telling
+    `progress` its data loaded and its features computed."""
     market = market_of(strategy.instrument, config.provider, paths)
     applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
-    produced = signal_frame(strategy, market.sessions, market.provider, dates, applied.contract)
+    produced = signal_frame(
+        strategy, market.sessions, market.provider, dates, applied.contract, progress
+    )
     signals = produced.signals
     spec = strategy.to_spec()
     require_named_columns(spec.execution, signals.columns)
