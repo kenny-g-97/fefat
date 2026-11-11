@@ -11,7 +11,9 @@ import tempfile
 import threading
 from pathlib import Path
 
+import keyring
 import pytest
+from keyring.backends import null
 
 import dev
 import e2e_server
@@ -140,15 +142,21 @@ def test_dev_refuses_a_port_another_server_answers_on_before_starting_anything(
         other.shutdown()
 
 
-def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Step 5.3 (D-93): the specs' `demo-run-01` is the first run of the strategy `demo` that
-    # `GET /v1/runs` lists; the seed makes it through the SDK on the fixtures and indexes both as
-    # `fefat db import-workspace` does, leaving no job. The seed sets the variables itself.
+@pytest.fixture
+def seeding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The variables the seed sets, given back after the test, and a keyring of its own for the
+    container the seed builds: keyring keeps the backend of its first use in the process, which
+    would be the seed's null one for every test after (the step's ponytail review)."""
     for name in ("FEFAT_HOME", "FEFAT_DATA_DIR", "PYTHON_KEYRING_BACKEND"):
         monkeypatch.setenv(name, os.environ[name])
+    monkeypatch.setattr(keyring, "get_keyring", null.Keyring)
 
+
+@pytest.mark.usefixtures("seeding")
+def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(tmp_path: Path) -> None:
+    # Step 5.3 (D-93): the specs' `demo-run-01` is the first run of the strategy `demo` that
+    # `GET /v1/runs` lists; the seed makes it through the SDK on the fixtures and indexes both as
+    # `fefat db import-workspace` does, leaving no job.
     e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
 
     paths = resolve_paths(os.environ)
@@ -165,14 +173,12 @@ def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(
     assert jobs == ()
 
 
+@pytest.mark.usefixtures("seeding")
 def test_the_seed_stops_where_the_index_refuses_what_it_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Step 5.3 (its code review): a seed whose index refused would start a server without the
     # run the specs call demo-run-01, failing them far from the cause.
-    for name in ("FEFAT_HOME", "FEFAT_DATA_DIR", "PYTHON_KEYRING_BACKEND"):
-        monkeypatch.setenv(name, os.environ[name])
-
     def refused(*arguments: object, **named: object) -> object:
         raise ValueError("Expected the files as indexed, got one changed by hand.")
 
