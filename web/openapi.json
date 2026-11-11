@@ -3208,7 +3208,7 @@
     },
     "/v1/auth/password": {
       "post": {
-        "description": "Change the password, from a login session alone: every session ends, and the response\nsets the cookie of a new one for this browser and returns its CSRF token; refused with 403\nfor a wrong current password, and with 429 after five attempts in a minute, the logins'\nattempts included.",
+        "description": "Change the password, from a login session alone: every session ends, every API token is\nrevoked, and the response sets the cookie of a new one for this browser and returns its CSRF\ntoken; refused with 403 for a wrong current password, and with 429 after five attempts in a\nminute, the logins' attempts included.",
         "operationId": "change_password_v1_auth_password_post",
         "requestBody": {
           "content": {

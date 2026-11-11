@@ -226,3 +226,24 @@ def test_a_password_hash_argon2_cannot_read_is_refused_with_the_remedy(
 
     with pytest.raises(ValueError, match="run `fefat password set`"):
         container.logins.login(PASSWORD)
+
+
+def test_a_password_that_replaces_another_revokes_every_api_token(container: Container) -> None:
+    # Step 5.2 (from `BACKLOG.md`, the Phase 4 exit's security review): a token outlived the
+    # password it was made under.
+    container.logins.set_password(PASSWORD)
+    token = container.api_tokens.create("notebook")
+
+    container.logins.set_password("another password")
+
+    assert container.api_tokens.identity_of_token(token) is None
+    assert container.api_tokens.live_tokens() == ()
+
+
+def test_a_first_password_revokes_no_api_token(container: Container) -> None:
+    # A token `fefat token create` made before the first `fefat up` set a password stays live.
+    token = container.api_tokens.create("notebook")
+
+    container.logins.set_password(PASSWORD)
+
+    assert container.api_tokens.identity_of_token(token) is not None

@@ -105,10 +105,10 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change the password, from a login session alone: every session ends, and the response
-         *     sets the cookie of a new one for this browser and returns its CSRF token; refused with 403
-         *     for a wrong current password, and with 429 after five attempts in a minute, the logins'
-         *     attempts included.
+         * @description Change the password, from a login session alone: every session ends, every API token is
+         *     revoked, and the response sets the cookie of a new one for this browser and returns its CSRF
+         *     token; refused with 403 for a wrong current password, and with 429 after five attempts in a
+         *     minute, the logins' attempts included.
          */
         post: operations["change_password_v1_auth_password_post"];
         delete?: never;

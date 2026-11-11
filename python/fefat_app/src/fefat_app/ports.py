@@ -93,9 +93,10 @@ class AccessRecords(Protocol):
         """The password's Argon2 hash, or None before a password is set."""
         ...
 
-    def replace_password_hash(self, password_hash: str) -> None:
+    def replace_password_hash(self, password_hash: str, changed_at: datetime) -> None:
         """Keep `password_hash` as the password's, in place of any before, and end every login
-        session in the same transaction."""
+        session in the same transaction; one that replaces another revokes every live API
+        token at `changed_at` too (step 5.2)."""
         ...
 
     def add_session(self, token_hash: str, created_at: datetime, expires_at: datetime) -> None:

@@ -56,9 +56,9 @@ saved as files, which stay the record (`fefat_app.database_commands`).
 
 `up` serves the local app on 127.0.0.1 at the port of `config.toml` until Ctrl+C, asking for a
 password on its first run (`fefat_app.server_commands`); `password set` replaces the password,
-ending every login session (`fefat_app.password_commands`); `token create` prints an API token
-for a notebook or a script once, and `token revoke` makes every request refuse it from then on
-(`fefat_app.token_commands`).
+ending every login session and revoking every token (`fefat_app.password_commands`); `token
+create` prints an API token for a notebook or a script once, and `token revoke` makes every
+request refuse it from then on (`fefat_app.token_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
