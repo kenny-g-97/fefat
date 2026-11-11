@@ -33,15 +33,11 @@ from fefat_app.jobs.backtests import run_backtest
 from fefat_app.jobs.catalog_sync import run_catalog_sync
 from fefat_app.jobs.demo import run_demo
 from fefat_app.jobs.executions import ExecutionFailedError, ExecutionTimedOutError, run_execution
-from fefat_app.jobs.progress import JobCancelledError, JobProgress
+from fefat_app.jobs.progress import JobCancelledError, JobProgress, tried_while_busy
 from fefat_app.ports import Executor, JobRecords, RunRecords
 
 type JobWork = Callable[[Mapping[str, Any], JobProgress], dict[str, Any]]
 """A kind's work: it takes the job's payload and reports through its progress; its result."""
-
-END_TRIES = 12
-"""How many times a worker writes its job's end while a writer holds the database past its busy
-timeout of five seconds: a minute, while the heartbeat keeps the lease."""
 
 
 @dataclass(frozen=True)
@@ -92,13 +88,11 @@ def _run(records: JobRecords, job: Job, worker_pid: int, works: Mapping[JobKind,
     holds the database past its busy timeout, so that a job whose work ended never stays
     running until its lease runs out."""
     end, result, error = _outcome(records, job, worker_pid, works)
-    for attempt in range(1, END_TRIES + 1):
-        try:
-            records.finish(job.id, worker_pid, end, datetime.now(UTC), result=result, error=error)
-            return
-        except OperationalError:
-            if attempt == END_TRIES:
-                raise
+    tried_while_busy(
+        lambda: records.finish(
+            job.id, worker_pid, end, datetime.now(UTC), result=result, error=error
+        )
+    )
 
 
 def _outcome(

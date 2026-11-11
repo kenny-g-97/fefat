@@ -8,15 +8,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from fefat_app.job_models import Job, JobKind, JobStatus, StreamEvent
+from fefat_app.job_models import ACTIVE, Job, JobKind, JobStatus, StreamEvent
 from fefat_app.ports import Clock, Dispatcher, JobRecords
 
 MAX_ATTEMPTS = 3
 """How many times a job runs before a worker that stops answering fails it."""
 RECENT_JOBS = 100
 """How many of the newest jobs the list holds, beside the running jobs older than them."""
-ACTIVE = frozenset({JobStatus.QUEUED, JobStatus.RUNNING})
-"""The statuses of a job that has not ended."""
 CANCEL_TRIES = 3
 """How many times a cancel reads its job again after the job changed under it, as when the
 reaper queues it again; a race that repeats faster than a read takes is no race."""
@@ -55,10 +53,7 @@ class Jobs:
     def active(self, kind: JobKind) -> tuple[Job, ...]:
         """The jobs of `kind` that are queued, then those that run, each oldest first."""
         return tuple(
-            job
-            for status in (JobStatus.QUEUED, JobStatus.RUNNING)
-            for job in self.records.with_status(status)
-            if job.kind == kind
+            job for status in ACTIVE for job in self.records.with_status(status) if job.kind == kind
         )
 
     def recent(self) -> tuple[Job, ...]:

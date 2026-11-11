@@ -25,7 +25,7 @@ from fefat.strategy import StrategyPin
 from fefat_app.database.job_records import queued_job
 from fefat_app.database.models import JobRow, RunRow, StrategyRow, StrategyVersionRow
 from fefat_app.database.schema import reading
-from fefat_app.job_models import JobKind, JobStatus
+from fefat_app.job_models import ACTIVE, JobKind, JobStatus
 from fefat_app.runs import (
     IndexedRun,
     NewRun,
@@ -34,9 +34,6 @@ from fefat_app.runs import (
     RunWithMetrics,
     Submitted,
 )
-
-ACTIVE = (JobStatus.QUEUED, JobStatus.RUNNING)
-"""The statuses of a job that has not ended."""
 
 
 @dataclass(frozen=True)

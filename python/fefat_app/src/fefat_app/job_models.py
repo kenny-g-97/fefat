@@ -43,6 +43,9 @@ class JobStatus(StrEnum):
     TIMED_OUT = "timed_out"
 
 
+ACTIVE = (JobStatus.QUEUED, JobStatus.RUNNING)
+"""The statuses of a job that has not ended, queued before running."""
+
 type JobEnd = Literal[
     JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMED_OUT
 ]

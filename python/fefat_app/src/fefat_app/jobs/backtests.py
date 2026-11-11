@@ -11,19 +11,14 @@ unindexed (the step review). The job reports nothing after the save."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
-
-from sqlalchemy.exc import OperationalError
 
 from fefat_app.execution import BacktestOutput, BacktestSpec, ExecutionProgress
 from fefat_app.jobs.executions import advancing, executed
-from fefat_app.jobs.progress import JobCancelledError, JobProgress
+from fefat_app.jobs.progress import JobCancelledError, JobProgress, tried_while_busy
 from fefat_app.ports import Executor, RunRecords
-from fefat_app.runs import IndexedRun
 
-SAVE_TRIES = 12
-"""How many times a job indexes its run while a writer holds the database past its busy timeout
-of five seconds: a minute, while the heartbeat keeps the lease."""
 SAVED_PERCENT = 100.0
 """The percent of the runner's report once its run is saved, written or opened."""
 
@@ -38,7 +33,7 @@ def run_backtest(
     output = executed(executor, spec, following.report, following.check).output
     if not isinstance(output, BacktestOutput):
         raise ValueError(f"Expected the output of a backtest, got that of a {output.kind}.")
-    run = _saved(runs, output.run_key, progress.job_id)
+    run = tried_while_busy(partial(runs.saved, output.run_key, job_id=progress.job_id))
     return {"run_id": run.id, "run_key": run.run_key}
 
 
@@ -62,14 +57,3 @@ class _UntilSaved:
     def check(self) -> None:
         if not self.saved:
             self.progress.check()
-
-
-def _saved(runs: RunRecords, run_key: str, job_id: str) -> IndexedRun:
-    """The run of `run_key`, indexed into the row of the job `job_id`; the last try's refusal by
-    a busy database comes through."""
-    for _ in range(SAVE_TRIES - 1):
-        try:
-            return runs.saved(run_key, job_id=job_id)
-        except OperationalError:
-            continue
-    return runs.saved(run_key, job_id=job_id)

@@ -20,11 +20,10 @@ from fefat_app.execution import (
     BacktestSpec,
     ExecutionProgress,
     ProgressReport,
-    RefusedCode,
     RunLookupOutput,
     RunLookupSpec,
 )
-from fefat_app.executor.protocol import ERROR_CHARS, problems
+from fefat_app.executor.protocol import problems, refused_code
 from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
 
 STAGES = {
@@ -44,11 +43,11 @@ def run_lookup_output(spec: RunLookupSpec) -> RunLookupOutput:
     try:
         return RunLookupOutput(answer=_looked_up(spec.run))
     except StrategyCodeError as refused:
-        return RunLookupOutput(answer=_refused(str(refused), refused.line))
+        return RunLookupOutput(answer=refused_code(str(refused), refused.line))
     except ValidationError as refused:
-        return RunLookupOutput(answer=_refused(problems(refused), None))
+        return RunLookupOutput(answer=refused_code(problems(refused), None))
     except (ValueError, OSError) as refused:
-        return RunLookupOutput(answer=_refused(str(refused), None))
+        return RunLookupOutput(answer=refused_code(str(refused), None))
 
 
 def backtest_output(spec: BacktestSpec, report: ProgressReport) -> BacktestOutput:
@@ -112,7 +111,3 @@ def _reporting(report: ProgressReport, told: list[RunStage]) -> Callable[[RunSta
         report(ExecutionProgress(percent=percent, message=message, details={}))
 
     return tell
-
-
-def _refused(message: str, line: int | None) -> RefusedCode:
-    return RefusedCode(line=line, message=message[:ERROR_CHARS])
