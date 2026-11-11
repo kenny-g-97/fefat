@@ -50,6 +50,121 @@ A `ff.SignalStrategy` holds what the strategy computes, as Polars expressions ov
 - A feature must be prefix-invariant: its value at a bar may depend only on that bar and the bars before it. Use `shift(1)` to read the bar before; never `shift(-1)`, a centred window, a backward fill, or a rank or a normalisation over the whole sample (D-12). A feature written with `@ff.feature` takes a slot as an expression does, and the leak detector below checks it.
 - A feature name may not repeat a column of the bars or of the signal frame.
 
+## Strategy versions
+
+A strategy you keep is saved as a version: its code, a module whose function `strategy` gives the `SignalStrategy`, with a hypothesis, one sentence on one line stating the edge, and a changelog. `ff.strategy.save` writes it to your workspace as `strategies/<name>/v<n>.json`, a file written once and never changed, which the app lists too, and the app saves through the same function:
+
+```python
+template = ff.strategy.templates()[0]  # the breakout below
+version = ff.strategy.save("breakout", template.code, hypothesis=template.hypothesis)
+ff.strategy.load("breakout", 1)
+ff.strategy.library()  # name, version, hash, instrument, timeframe, created_at
+print(ff.strategy.diff("breakout", 1, 2))  # the unified diff of two versions' code
+definition = ff.strategy.from_source(version.code)
+definition(stop_atr=2.0)  # the strategy with a parameter of its own
+```
+
+- **The code** is the whole record, as a feature's is: it keeps whatever the expressions call, Python included. The function's parameters, each with its type and its default, are the strategy's: `int`, `float`, `bool`, `str`, or a `Literal` of words, which the app's form renders; a strict model refuses `lookback="20"`. A version keeps the instrument and the timeframe its strategy names with its defaults.
+- **What a save checks**, before anything is written: the name, a lower-case identifier of at most 64 characters; the hypothesis, one line; and the code: its syntax, the module run, the function and its parameters, the strategy built with its defaults, and its signal frame built on bars that hold no rows, which reads no data and catches a column the bars lack or a signal that is not a boolean. A refusal is an `ff.strategy.StrategyCodeError`, whose `line` is the line of your code it is at, or the line that defines `strategy` where the error is in FEFAT's own code. A batch function (`map_batches`) that cannot take an empty column is refused there too, though it would run on bars.
+- **Pins.** The features the slots read with the defaults, such as `ff.indicators.rsi(14)` or `ff.features.ref("rsi", version=1)`, are saved in your library and named in the version by name, number, and hash, as a run names them. A feature defined in the strategy's own code is saved as any feature is; where its body reads a name of the module, a constant or a helper, its saved version cannot be built again alone, so write such a feature in a cell of its own.
+- **The hash** covers the code, the parameters' schema, and the pinned features. Saving the same code again with the same hypothesis and changelog returns its version and writes nothing; with other words it is refused, since a version never changes: change the code to save a new version.
+- **The lint** reads the version's code with the leak detector's rules on calls and warns of each line that reads ahead, a negative shift, a backward fill, a centred window, or an aggregate over the whole frame or a session; a save raises them as warnings and saves, and `ff.strategy.lint(code)` lists them. Nothing cuts a strategy's own expressions as the leak detector cuts a feature, so these warnings are their only check: put an expression you doubt in a feature, which the detector validates.
+
+### The templates
+
+`ff.strategy.templates()` gives three strategies to start from, kept in `python/fefat/src/fefat/strategy/starting_points/`, which the app offers as templates: this guide's breakout, a mean reversion reading the RSI, and a breakout in the morning's entry window, closed by a flat-by time. Each states its hypothesis in its docstring, and together their parameters take every type the app's form renders.
+
+```python
+"""A five-minute close above the highest close of the hour before it starts a move that reaches
+twice its risk more often than it reaches its stop."""
+
+import polars as pl
+
+import fefat as ff
+
+
+def strategy(lookback: int = 12, stop_atr: float = 1.5) -> ff.SignalStrategy:
+    close = pl.col("close")
+    return ff.SignalStrategy(
+        instrument="MES",
+        timeframe="5m",
+        features={
+            "highest": close.rolling_max(lookback).shift(1),
+            "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
+        },
+        long_entry=close > pl.col("highest"),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(
+            entry=ff.Market(),
+            stop=ff.Stop(atr=stop_atr),
+            targets=[ff.Target(r=2)],
+            sizing=ff.Fixed(1),
+        ),
+    )
+```
+
+```python
+"""A fall that takes the five-minute RSI below its oversold level is followed by a bounce back to
+the middle of its range."""
+
+import polars as pl
+
+import fefat as ff
+
+
+def strategy(oversold: float = 30.0, long_only: bool = True) -> ff.SignalStrategy:
+    rsi = pl.col("rsi")
+    return ff.SignalStrategy(
+        instrument="MES",
+        timeframe="5m",
+        features={"rsi": ff.indicators.rsi(14), "atr": ff.indicators.atr(14)},
+        long_entry=rsi < oversold,
+        short_entry=pl.lit(False) if long_only else rsi > 100 - oversold,
+        long_exit=rsi > 50,
+        short_exit=rsi < 50,
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(atr=2.0), sizing=ff.Fixed(1)),
+    )
+```
+
+```python
+"""A breakout in the first two hours after the cash open runs on into the afternoon, so a position
+closed before the session ends keeps the move without the risk of the night."""
+
+from typing import Literal
+
+import polars as pl
+
+import fefat as ff
+
+
+def strategy(
+    side: Literal["long", "short", "both"] = "both", flat_by: str = "15:05"
+) -> ff.SignalStrategy:
+    close = pl.col("close")
+    return ff.SignalStrategy(
+        instrument="MES",
+        timeframe="5m",
+        features={
+            "highest": close.rolling_max(12).shift(1),
+            "lowest": close.rolling_min(12).shift(1),
+            "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
+        },
+        long_entry=close > pl.col("highest") if side != "short" else pl.lit(False),
+        short_entry=close < pl.col("lowest") if side != "long" else pl.lit(False),
+        execution=ff.Execution(
+            entry=ff.Market(),
+            stop=ff.Stop(atr=1.5),
+            targets=[ff.Target(r=2)],
+            time=ff.TimeRules(
+                tz="America/Chicago",
+                windows=[ff.EntryWindow(start="08:30", end="10:30")],
+                flat_by=flat_by,
+            ),
+            sizing=ff.Fixed(1),
+        ),
+    )
+```
+
 ## Writing a feature
 
 A feature is a function of the signal bars, written with `@ff.feature`, that returns a Polars expression, or one for each of its outputs, on the bars' rows. `ff.features.compute` gives the bars of a window with a column for each feature, as a run reads them:
