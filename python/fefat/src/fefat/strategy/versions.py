@@ -108,9 +108,11 @@ class StrategyVersion(FrozenModel):
     def strategy(self, **parameters: object) -> SignalStrategy:
         """The strategy this version's code gives with `parameters`, its defaults filling those
         left out, validated strictly, and stamped with the version (`saved_version`), which a
-        run's record names (step 5.3). Refused where the code now reads another version of a
-        feature than the version pinned, as an indicator of the SDK does once the SDK changes
-        it: its runs would read values the version never read, so save the code again."""
+        run's record names (step 5.3). Refused where the code, with its defaults, now reads
+        another version of a feature than the version pinned, as an indicator of the SDK does
+        once the SDK changes it: its runs would read values the version never read, so save the
+        code again. A version pins what its slots read with its defaults; a feature only other
+        parameters read is pinned by the run that reads it (`feature_versions` in `run.json`)."""
         definition = from_source(self.code)
         _require_its_pins(self, definition.with_defaults)
         built = definition(**parameters)
