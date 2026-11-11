@@ -59,7 +59,7 @@ from fefat.features.cache_index import (
     FEATURE_CACHE_FOLDER_NAME,
     KEY_METADATA,
     CachedPartition,
-    write_cache_index,
+    write_merged_index,
 )
 from fefat.features.cache_keys import (
     CachePartition,
@@ -354,21 +354,21 @@ class _Computation:
         frames: Mapping[Place, pl.DataFrame],
         computed: set[Place],
     ) -> None:
-        """Write each frame computed, then the index of each folder that gained a partition,
-        or whose partitions read here were last used more than `LAST_USE_STEP` ago, so that
-        a computation read back within the hour writes nothing."""
+        """Write each frame computed, then merge into its folder's index (`write_merged_index`)
+        those partitions and those read here last used `LAST_USE_STEP` ago or more."""
         now = datetime.now(UTC)
         for folder in folders:
-            partitions = dict(folder.index.partitions)
+            written: dict[str, CachedPartition] = {}
+            renewed: dict[str, CachedPartition] = {}
             for partition in self._partitions:
                 place = (folder.path, partition.name)
-                held = partitions.get(partition.name)
-                if place in computed or held is None or now - held.last_used >= LAST_USE_STEP:
-                    partitions[partition.name] = _kept(
-                        place, frames[place], keys[place], now, place in computed
-                    )
-            if partitions != folder.index.partitions:
-                write_cache_index(folder.path, folder.index.with_partitions(partitions))
+                held = folder.index.partitions.get(partition.name)
+                if place in computed:
+                    written[partition.name] = _kept(place, frames[place], keys[place], now, True)
+                elif held is None or now - held.last_used >= LAST_USE_STEP:
+                    renewed[partition.name] = _kept(place, frames[place], keys[place], now, False)
+            if written or renewed:
+                write_merged_index(folder.path, folder.index, written=written, renewed=renewed)
 
     def _assembled(self, frames: Mapping[Place, pl.DataFrame]) -> CachedWindow:
         order = ("ts_open",) if self._signal.calendar is not None else ("contract", "ts_open")
