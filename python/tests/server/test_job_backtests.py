@@ -6,6 +6,7 @@ fails its run with its own words; and a run asked to stop ends `cancelled` withi
 runner stopped and no folder saved. Run in this process, as `test_job_executions` runs a job."""
 
 import os
+import shutil
 import threading
 import time
 from datetime import UTC, date, datetime
@@ -21,8 +22,21 @@ from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.run_records import RunTables
-from fefat_app.execution import BacktestSpec, ExecutionLimits
+from fefat_app.execution import (
+    BacktestOutput,
+    BacktestSpec,
+    ExecutionLimits,
+    ExecutionProgress,
+    ExecutionResult,
+    ExecutionSpec,
+    ExecutionSucceeded,
+    ProgressReport,
+    StopCheck,
+    keep_running,
+)
 from fefat_app.job_models import JobStatus, job_stream
+from fefat_app.jobs.backtests import run_backtest
+from fefat_app.jobs.progress import JobCancelledError, JobProgress
 from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.runs import NewRun, RequestedRun, Submitted
 from local_server import STARTED_AT, running_runners
@@ -181,3 +195,84 @@ def _progress_of(job_records: JobTables, job_id: str) -> float:
     now = job_records.by_id(job_id)
     assert now is not None
     return now.progress
+
+
+class AskedToStopAt:
+    """An executor whose backtest reports a stage once its job was asked to stop, then lets a
+    second pass, and answers the run saved under `run_key`."""
+
+    def __init__(self, records: JobTables, job_id: str, run_key: str, percent: float) -> None:
+        self.records, self.job_id, self.run_key, self.percent = records, job_id, run_key, percent
+
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
+        self.records.request_cancel(self.job_id, STARTED_AT)
+        report(ExecutionProgress(percent=self.percent, message="a stage", details={}))
+        check()
+        return ExecutionSucceeded(output=BacktestOutput(run_key=self.run_key))
+
+    def close(self) -> None:
+        """Nothing to end."""
+
+
+def a_running_backtest(
+    engine: Engine, workspace: Path
+) -> tuple[str, dict[str, object], str, RunTables]:
+    """The job of a run of the saved breakout, started by the worker 4242, with its payload, the
+    key of the run the workspace holds saved, and the runs' records."""
+    paths = resolve_paths(os.environ)
+    shutil.copytree(workspace, paths.workspace_dir)
+    LibraryTables(engine, paths).refresh()
+    (saved,) = saved_runs_in(paths.runs_dir)
+    runs = RunTables(engine, paths)
+    (strategy,) = LibraryTables(engine, paths).strategies()
+    version = strategy.versions[0]
+    run = RequestedRun(
+        strategy="breakout",
+        version=1,
+        hash=version.hash,
+        parameters={},
+        start=WINDOW[0],
+        end=WINDOW[1],
+        settings=RunConfig(),
+    )
+    payload = BacktestSpec(run=run, limits=LIMITS).model_dump(mode="json")
+    new = NewRun(
+        strategy_version_id=version.id,
+        payload=payload,
+        parameters={},
+        start=WINDOW[0],
+        end=WINDOW[1],
+        settings=saved.config,
+        request_key=None,
+    )
+    job_id = runs.submitted(new, 3, STARTED_AT).queued_job_id or "none"
+    JobTables(engine).start(job_id, 4242, STARTED_AT, STARTED_AT)
+    return job_id, payload, saved.hash, runs
+
+
+def test_a_stop_asked_once_the_artifacts_are_written_leaves_the_run_saved(
+    engine: Engine, job_records: JobTables, breakout_workspace: Path
+) -> None:
+    # Step 5.3 (its step review): the run is saved by its last report, which a request to stop
+    # can no longer undo; the job indexes it and succeeds, rather than ending cancelled while
+    # its folder stays unindexed.
+    job_id, payload, run_key, runs = a_running_backtest(engine, breakout_workspace)
+    executor = AskedToStopAt(job_records, job_id, run_key, 100.0)
+
+    result = run_backtest(executor, runs, payload, JobProgress(job_records, job_id, 4242))
+
+    run = runs.by_id(str(result["run_id"]))
+    assert run is not None
+    assert (result["run_key"], run.status) == (run_key, JobStatus.SUCCEEDED)
+
+
+def test_a_stop_asked_before_the_artifacts_are_written_stops_the_backtest(
+    engine: Engine, job_records: JobTables, breakout_workspace: Path
+) -> None:
+    job_id, payload, run_key, runs = a_running_backtest(engine, breakout_workspace)
+    executor = AskedToStopAt(job_records, job_id, run_key, 60.0)
+
+    with pytest.raises(JobCancelledError):
+        run_backtest(executor, runs, payload, JobProgress(job_records, job_id, 4242))

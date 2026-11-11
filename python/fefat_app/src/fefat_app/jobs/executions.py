@@ -15,12 +15,14 @@ from fefat_app.execution import (
     ExecutionSucceeded,
     ExecutionTimedOut,
     FeaturePreviewSpec,
+    ProgressReport,
     PythonSnippetSpec,
+    StopCheck,
 )
 from fefat_app.jobs.progress import JobProgress
 from fefat_app.ports import Executor
 
-type JobSpecKind = type[FeaturePreviewSpec] | type[PythonSnippetSpec] | type[BacktestSpec]
+type JobSpec = FeaturePreviewSpec | PythonSnippetSpec | BacktestSpec
 """The spec of an execution a job runs."""
 
 
@@ -33,24 +35,30 @@ class ExecutionFailedError(Exception):
 
 
 def run_execution(
-    executor: Executor, kind: JobSpecKind, payload: Mapping[str, Any], progress: JobProgress
+    executor: Executor,
+    kind: type[FeaturePreviewSpec] | type[PythonSnippetSpec],
+    payload: Mapping[str, Any],
+    progress: JobProgress,
 ) -> dict[str, Any]:
     """Run the execution of `payload`, a spec of `kind`, reporting through `progress`; its result,
     or the error the job ends with."""
-    return executed(executor, kind, payload, progress).model_dump(mode="json")
+    spec = kind.model_validate(payload)
+    return executed(executor, spec, advancing(progress), progress.check).model_dump(mode="json")
+
+
+def advancing(progress: JobProgress) -> ProgressReport:
+    """Each report of the runner's progress as the job's (`JobProgress.advance`), which stops the
+    execution where the job was asked to stop."""
+    return lambda reported: progress.advance(reported.percent, reported.message, **reported.details)
 
 
 def executed(
-    executor: Executor, kind: JobSpecKind, payload: Mapping[str, Any], progress: JobProgress
+    executor: Executor, spec: JobSpec, report: ProgressReport, check: StopCheck
 ) -> ExecutionSucceeded:
-    """The execution of `payload`, a spec of `kind`, run to its end, reporting through
-    `progress`; `ExecutionTimedOutError` or `ExecutionFailedError` where it did not."""
-    spec = kind.model_validate(payload)
-    result = executor.run(
-        spec,
-        lambda reported: progress.advance(reported.percent, reported.message, **reported.details),
-        progress.check,
-    )
+    """The execution of `spec`, run to its end, its reports given to `report` and `check` asked
+    each second without one; `ExecutionTimedOutError` or `ExecutionFailedError` where it did not
+    end."""
+    result = executor.run(spec, report, check)
     if isinstance(result, ExecutionTimedOut):
         raise ExecutionTimedOutError(
             f"Expected the execution to end within {spec.limits.timeout_seconds:g} s, got it "
