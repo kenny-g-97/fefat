@@ -4,7 +4,9 @@ file through the SDK, with the lint's findings in its code; the diff of two vers
 templates; and a strategy's code validated and a version saved, each in the executor
 (`fefat_app.services.code_runs`), never in the server. A save indexes the library first, so that
 a strategy a notebook saved is seen and a library the index cannot follow refuses the save before
-anything is written, and again once the runner has ended, whatever its end."""
+anything is written, and again once a version is saved; a refusal of the code writes no version,
+so it comes back as it is, with its line, and the next indexing reads any feature its pins
+saved."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -123,10 +125,8 @@ class SavedStrategies:
             changelog=new.changelog,
             limits=LIBRARY_LIMITS,
         )
-        try:
-            saved = saved_strategy(self.executor, spec)
-        finally:
-            self.index.refresh()
+        saved = saved_strategy(self.executor, spec)
+        self.index.refresh()
         strategy = self._named(saved.name)
         created = saved.version not in {version.version for version in before}
         return Saved(version=self._read(strategy, saved.version), created=created)

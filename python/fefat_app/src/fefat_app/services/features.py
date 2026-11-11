@@ -2,7 +2,8 @@
 the feature lab of Phase 6: the features and their versions listed from the index
 (`fefat_app.ports.LibraryIndex`), a version's record read from its file through the SDK, the diff
 of two versions' code, and a version saved in the executor (`fefat_app.services.code_runs`),
-never in the server, the library indexed before and after it, as a strategy's save does."""
+never in the server, the library indexed before it and once a version is saved, as a strategy's
+save does."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -93,10 +94,8 @@ class SavedFeatures:
         self, name: str, before: Sequence[IndexedVersion], code: str
     ) -> Saved[SavedFeatureVersion]:
         spec = FeatureSaveSpec(name=name, code=code, limits=LIBRARY_LIMITS)
-        try:
-            saved = saved_feature(self.executor, spec)
-        finally:
-            self.index.refresh()
+        saved = saved_feature(self.executor, spec)
+        self.index.refresh()
         feature = self._named(saved.name)
         created = saved.version not in {version.version for version in before}
         return Saved(version=self._read(feature, saved.version), created=created)
