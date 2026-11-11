@@ -16,7 +16,7 @@ from polars.expr.meta import ExprMetaNameSpace
 import fefat as ff
 import fefat.backtest.runs as runs
 from fefat.backtest import RunConfig
-from fefat.backtest.requests import request_of
+from fefat.backtest.requests import looked_up, request_of
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.config import resolve_paths
 from fefat.market import instruments
@@ -325,3 +325,30 @@ def rewrite_a_february_minute() -> None:
     )
     partition = Partition(dataset=MINUTES, contract=listed.contract, key=YearMonth.parse("2026-02"))
     Store(paths.data_dir).write_partition(partition, rows)
+
+
+def test_a_lookup_gives_the_applied_settings_the_request_and_the_saved_run() -> None:
+    # Step 5.3: the app looks a run up before it queues a job, so that a run saved already is
+    # answered at once, and a row shows every setting from its submission.
+    store_with("ohlcv-1m")
+    paths = resolve_paths(os.environ)
+
+    before = looked_up(breakout(), *WINDOW, RunConfig(), paths)
+    run = ff.backtest.run(breakout(), *WINDOW)
+    after = looked_up(breakout(), *WINDOW, RunConfig(), paths)
+
+    assert before.saved is None
+    assert before.request is not None
+    assert before.config == run.config
+    assert after.saved == run.folder
+    assert after.request == before.request
+
+
+def test_a_lookup_refuses_a_contract_of_another_root_for_every_strategy() -> None:
+    # Step 5.3: a strategy whose expressions call Python keys no request, so the request alone
+    # never built its market; the app's lookup must refuse such a run before a job is queued.
+    store_with("ohlcv-1m")
+    calling = breakout_probing(pl.col("close").map_batches(lambda closes: closes))
+
+    with pytest.raises(ValueError, match="Expected a contract of ES, the strategy's root"):
+        looked_up(calling, *WINDOW, RunConfig(contract="BTCH2026"), resolve_paths(os.environ))

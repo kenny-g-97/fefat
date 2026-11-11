@@ -15,7 +15,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BeforeValidator, Field, PlainSerializer
+from pydantic import BeforeValidator, Field, PlainSerializer, WithJsonSchema
 
 from fefat.market.schema import FrozenModel, Timeframe, TimeUnit
 
@@ -57,8 +57,10 @@ FidelityText = Annotated[
     TickFidelity | Timeframe,
     BeforeValidator(parse_fidelity),
     PlainSerializer(str, return_type=str),
+    WithJsonSchema({"type": "string"}),
 ]
-"""A fidelity as a field written as its text, `trades` or `1m`, and read back from it."""
+"""A fidelity as a field written as its text, `trades` or `1m`, and read back from it, which a
+JSON schema, such as the API's, gives as text (step 5.3)."""
 
 
 class FidelityEra(FrozenModel):

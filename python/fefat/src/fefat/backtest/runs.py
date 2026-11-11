@@ -22,7 +22,7 @@ import os
 import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -52,7 +52,7 @@ from fefat.backtest.record import (
     StrategyRecord,
 )
 from fefat.backtest.report import report_text
-from fefat.backtest.requests import remember, request_of, saved_run_of
+from fefat.backtest.requests import looked_up, remember
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.backtest.run_signals import RunProgress, RunStage, tell_no_one
@@ -92,6 +92,11 @@ class Run:
     def config(self) -> AppliedRunConfig:
         """The settings the run ran under, every default applied."""
         return self.record.config
+
+    @property
+    def saved_at(self) -> datetime:
+        """When the run was saved: when its `run.json` was written, in UTC (step 5.3)."""
+        return datetime.fromtimestamp((self.folder / RECORD_FILE).stat().st_mtime, UTC)
 
     @property
     def metrics(self) -> Metrics:
@@ -170,14 +175,13 @@ def run(
     call, as `load` raises its own."""
     paths = resolve_paths(os.environ)
     settings = RunConfig() if config is None else config
-    request = request_of(strategy, start, end, settings, paths)
-    found = None if request is None else saved_run_of(request, paths)
-    if found is None:
+    lookup = looked_up(strategy, start, end, settings, paths)
+    if lookup.saved is None:
         saved = _run_or_open(strategy, (start, end), settings, paths, progress)
-        if request is not None:
-            remember(request, saved.hash, paths)
+        if lookup.request is not None:
+            remember(lookup.request, saved.hash, paths)
     else:
-        saved = Run.open(found)
+        saved = Run.open(lookup.saved)
     for warning in saved.record.warnings:
         warnings.warn(warning, UserWarning, stacklevel=2)
     return saved

@@ -71,3 +71,11 @@ def test_the_catalog_names_the_fidelity_of_trades_as_the_scenarios_do() -> None:
     trades = datasets().filter(schema="trades")
 
     assert trades.get_column("fidelity").unique().to_list() == ["trades"]
+
+
+def test_a_fidelity_reads_as_text_in_a_json_schema() -> None:
+    # Step 5.3: `RunConfig` is the body of `POST /v1/runs`, whose schema the web app's types are
+    # written from; a fidelity is read from its text alone, never from a timeframe's fields.
+    schema = ff.backtest.RunConfig.model_json_schema()
+
+    assert schema["properties"]["fidelity"]["anyOf"] == [{"type": "string"}, {"type": "null"}]

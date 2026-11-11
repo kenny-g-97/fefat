@@ -19,11 +19,13 @@ version of a feature whose values are the same maps to the run its first version
 strategy with an expression that calls a Python function, as `map_elements` does, keys no
 request and runs as before, since Polars writes such a function by its name alone where it writes
 it at all; a request file that cannot be read, or names a run no longer saved, is no lookup, and
-the run keeps it again."""
+the run keeps it again. From step 5.3 `looked_up` gives what the app's lookup answers before it
+queues a backtest: the settings applied, the request, and the saved run."""
 
 import hashlib
 import json
 import warnings
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -33,7 +35,7 @@ from fefat.backtest.artifacts import RECORD_FILE
 from fefat.backtest.record import EngineVersions, Hash, InstrumentRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
 from fefat.backtest.run_signals import contract_of
-from fefat.backtest.snapshots import finest_level, market_of, snapshots_of
+from fefat.backtest.snapshots import Market, finest_level, market_of, snapshots_of
 from fefat.config import FefatPaths
 from fefat.features.cache import first_date_read
 from fefat.features.cache_keys import PartitionKeys, runtime_key
@@ -75,6 +77,40 @@ class RunRequestRecord(FrozenModel):
     created_at: datetime
 
 
+@dataclass(frozen=True)
+class RunLookup:
+    """What `looked_up` knows of a run before a bar is loaded: its settings, every default
+    applied; its request, None for a strategy that keys none; and the folder of the saved run
+    that request made, None where none is saved."""
+
+    config: AppliedRunConfig
+    request: RunRequest | None
+    saved: Path | None
+
+
+def looked_up(
+    strategy: SignalStrategy,
+    start: str | date,
+    end: str | date,
+    config: RunConfig,
+    paths: FefatPaths,
+) -> RunLookup:
+    """A run of `strategy` on the trade dates from `start` to `end` under `config`, as it is
+    known before a bar is loaded (`RunLookup`). Its market is built for every strategy, so that
+    an unknown instrument, provider, or contract is refused here, before the app queues a job
+    (step 5.3)."""
+    market = market_of(strategy.instrument, config.provider, paths)
+    applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
+    window = Window(start=parse_trade_date(start, "start"), end=parse_trade_date(end, "end"))
+    root, contract = strategy.instrument, applied.contract
+    symbol = root if contract is None else contract_of(root, contract)
+    document = strategy.signal_document()
+    if document is None:
+        return RunLookup(config=applied, request=None, saved=None)
+    request = _request(strategy, document, (market, applied), window, symbol)
+    return RunLookup(config=applied, request=request, saved=saved_run_of(request, paths))
+
+
 def request_of(
     strategy: SignalStrategy,
     start: str | date,
@@ -85,15 +121,20 @@ def request_of(
     """The request of a run of `strategy` on the trade dates from `start` to `end` under
     `config` (module docstring); None where an expression of it calls a Python function, whose
     code no request could hold (`SignalStrategy.signal_document`)."""
-    document = strategy.signal_document()
-    if document is None:
-        return None
-    market = market_of(strategy.instrument, config.provider, paths)
-    applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
-    window = Window(start=parse_trade_date(start, "start"), end=parse_trade_date(end, "end"))
+    return looked_up(strategy, start, end, config, paths).request
+
+
+def _request(
+    strategy: SignalStrategy,
+    document: dict[str, object],
+    market_and_settings: tuple[Market, AppliedRunConfig],
+    window: Window,
+    symbol: str,
+) -> RunRequest:
+    """The request of a run of `strategy`, whose signal document is `document`, on the `symbol`
+    of its market under its settings over `window` (module docstring)."""
+    market, applied = market_and_settings
     graph = strategy.feature_graph()
-    root, contract = strategy.instrument, applied.contract
-    symbol = root if contract is None else contract_of(root, contract)
     signal = series_source(symbol, provider=market.provider)
     keys = PartitionKeys({graph.root: signal, **input_sources(graph, signal)})
     lead_in = graph.lead_in(market.sessions, window.start)
