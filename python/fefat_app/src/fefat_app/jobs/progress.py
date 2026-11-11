@@ -9,7 +9,8 @@ from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
-from fefat_app.ports import Job, JobRecords, JobStatus
+from fefat_app.job_models import Job, JobStatus
+from fefat_app.ports import JobRecords
 
 
 class JobCancelledError(Exception):

@@ -16,9 +16,9 @@ from sqlalchemy.exc import OperationalError
 
 from fefat.config import FefatPaths, resolve_paths
 from fefat_app.database.job_records import JobTables
+from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus, job_stream
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
 from fefat_app.jobs.worker import JobTimings, run_job
-from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
 from local_server import STARTED_AT
 
 DEADLINE_SECONDS = 30

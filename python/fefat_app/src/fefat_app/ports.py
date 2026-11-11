@@ -4,7 +4,8 @@ what uses it, so that swapping an adapter is a module of its own and a line of t
 
 The credential store is the first (step 4.1), the records of who may use the local server the
 second (step 4.2), the trader's preferences the third (step 4.3), the jobs' records and their
-dispatcher the fourth and fifth (step 4.4), the executor the sixth (step 4.5), its specs and
+dispatcher the fourth and fifth (step 4.4), their models in `fefat_app.job_models` (step 5.3),
+the executor the sixth (step 4.5), its specs and
 results in `fefat_app.execution`, and the library's index the seventh (step 5.2), its rows in
 `fefat_app.library`; the blob store, the agent's runtime, and the licence arrive with the steps
 that first use them."""
@@ -12,7 +13,7 @@ that first use them."""
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
@@ -23,6 +24,7 @@ from fefat_app.execution import (
     StopCheck,
     keep_running,
 )
+from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus, StreamEvent
 from fefat_app.library import IndexedFeature, IndexedStrategy
 
 type Clock = Callable[[], datetime]
@@ -163,98 +165,6 @@ class Preferences(Protocol):
     def replace_theme(self, theme: Theme) -> None:
         """Keep `theme` as the theme, in place of any chosen before."""
         ...
-
-
-class JobKind(StrEnum):
-    """What a job runs (`01-architecture.md` section 6); a later phase adds its kinds."""
-
-    BACKTEST = "backtest"
-    FEATURE_PREVIEW = "feature_preview"
-    FEATURE_VALIDATE = "feature_validate"
-    ANALYTICS = "analytics"
-    STUDY = "study"
-    PROP_SIM = "prop_sim"
-    SOURCE_SYNC = "source_sync"
-    IMPORT = "import"
-    TRADE_IMPORT = "trade_import"
-    CATALOG_SYNC = "catalog_sync"
-    REPRODUCE = "reproduce"
-    AGENT_TURN = "agent_turn"
-    INGEST = "ingest"
-    DEMO = "demo"
-    PYTHON_SNIPPET = "python_snippet"
-
-
-class JobStatus(StrEnum):
-    """Where a job stands (`01-architecture.md` section 6): queued, then running, then one of
-    four ends, each change a compare-and-set update; a running job whose worker stopped
-    answering is queued again while it has attempts left (step 4.4, D-90)."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    TIMED_OUT = "timed_out"
-
-
-type JobEnd = Literal[
-    JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMED_OUT
-]
-"""The statuses a running job ends in."""
-
-
-class JobEventType(StrEnum):
-    """What an event of a job's stream says: how far the job has come, with its message and any
-    figures its kind reports, or the status it moved to."""
-
-    PROGRESS = "progress"
-    STATUS = "status"
-
-
-def job_stream(job_id: str) -> str:
-    """The stream of the job `job_id`'s events (`01-architecture.md` section 6)."""
-    return f"job:{job_id}"
-
-
-class Job(BaseModel):
-    """A job as the app keeps it (`01-architecture.md` section 6): what it runs and with what,
-    where it stands, how far it has come, in percent, with its last message, its attempts, the
-    worker process that holds it and until when its lease runs, when it was asked to stop, and
-    how it ended."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    kind: JobKind
-    payload: dict[str, Any]
-    status: JobStatus
-    progress: float
-    message: str | None
-    attempt: int
-    max_attempts: int
-    worker_pid: int | None
-    lease_expires_at: AwareDatetime | None
-    cancel_requested_at: AwareDatetime | None
-    result: dict[str, Any] | None
-    error: str | None
-    created_at: AwareDatetime
-    started_at: AwareDatetime | None
-    finished_at: AwareDatetime | None
-
-
-class StreamEvent(BaseModel):
-    """An event of a stream, such as `job:<id>` (`01-architecture.md` section 6): its id, which
-    counts up and which a reader resumes after, its type, what it says, and when it was kept. The
-    jobs' types are the only ones so far; the agent's turns add theirs (Phase 8)."""
-
-    model_config = ConfigDict(frozen=True)
-
-    id: int
-    stream_id: str
-    event_type: JobEventType
-    said: dict[str, Any]
-    created_at: AwareDatetime
 
 
 class JobRecords(Protocol):

@@ -8,7 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from fefat_app.ports import Clock, Dispatcher, Job, JobKind, JobRecords, JobStatus, StreamEvent
+from fefat_app.job_models import Job, JobKind, JobStatus, StreamEvent
+from fefat_app.ports import Clock, Dispatcher, JobRecords
 
 MAX_ATTEMPTS = 3
 """How many times a job runs before a worker that stops answering fails it."""

@@ -19,8 +19,9 @@ from sqlalchemy.exc import OperationalError
 
 from fefat.config import FefatPaths
 from fefat.market.calendar import counted
+from fefat_app.job_models import Job, JobStatus
 from fefat_app.jobs.worker import JobTimings, run_job
-from fefat_app.ports import Clock, Job, JobRecords, JobStatus
+from fefat_app.ports import Clock, JobRecords
 
 LOG = logging.getLogger("fefat_app.jobs")
 MOST_WORKERS = 61

@@ -26,11 +26,12 @@ from fefat_app.database.job_records import JobTables
 from fefat_app.database.schema import opened_database
 from fefat_app.execution import FeaturePreviewSpec, PythonSnippetSpec
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
+from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus
 from fefat_app.jobs.catalog_sync import run_catalog_sync
 from fefat_app.jobs.demo import run_demo
 from fefat_app.jobs.executions import ExecutionFailedError, ExecutionTimedOutError, run_execution
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
-from fefat_app.ports import Executor, Job, JobEnd, JobKind, JobRecords, JobStatus
+from fefat_app.ports import Executor, JobRecords
 
 type JobWork = Callable[[Mapping[str, Any], JobProgress], dict[str, Any]]
 """A kind's work: it takes the job's payload and reports through its progress; its result."""

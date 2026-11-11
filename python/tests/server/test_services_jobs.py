@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from fefat_app.database.job_records import JobTables
-from fefat_app.ports import Job, JobKind, JobStatus
+from fefat_app.job_models import Job, JobKind, JobStatus
 from fefat_app.services.jobs import Jobs, NoSuchJobError
 from local_server import STARTED_AT, RecordingDispatcher, SettableClock
 

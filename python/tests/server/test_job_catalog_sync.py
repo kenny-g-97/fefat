@@ -13,8 +13,8 @@ from fefat.config import resolve_paths
 from fefat.market.quality_report import DAYS_FILE_NAME, FINDINGS_FILE_NAME, MARKDOWN_FILE_NAME
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
+from fefat_app.job_models import Job, JobEventType, JobKind, JobStatus, job_stream
 from fefat_app.jobs.worker import JobTimings, run_job
-from fefat_app.ports import Job, JobEventType, JobKind, JobStatus, job_stream
 from local_server import STARTED_AT, logged_in
 from notebook_runs import store_with
 

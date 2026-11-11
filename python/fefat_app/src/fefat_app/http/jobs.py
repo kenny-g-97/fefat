@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
 from fefat_app.http.problems import problem_responses
-from fefat_app.ports import Job
+from fefat_app.job_models import Job
 from fefat_app.services.jobs import NoSuchJobError
 
 router = APIRouter(prefix=API_PREFIX, tags=["jobs"], dependencies=[Depends(the_identity)])

@@ -35,7 +35,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from fefat.market.importers.profiles import ProfileKind
 from fefat.strategy import StrategyKind
 from fefat_app.database.uuid7 import new_uuid7
-from fefat_app.ports import JobKind, JobStatus
+from fefat_app.job_models import JobKind, JobStatus
 
 ID = String(36)
 """A UUIDv7 as text."""
@@ -272,8 +272,8 @@ class StrategyVersionFeatureRow(Base):
 
 class JobRow(Base):
     """A job of the app's process pool (`01-architecture.md` section 6), which step 4.4 runs; its
-    kinds and states are the ports' (`fefat_app.ports.JobKind`, `JobStatus`), so that a service
-    names them without SQLAlchemy."""
+    kinds and states are the jobs' models' (`fefat_app.job_models.JobKind`, `JobStatus`), so that
+    a service names them without SQLAlchemy."""
 
     __tablename__ = "jobs"
 

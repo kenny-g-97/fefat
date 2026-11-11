@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
-from fefat_app.ports import Job, JobKind
+from fefat_app.job_models import Job, JobKind
 from local_server import STARTED_AT, SettableClock, logged_in
 
 PROBLEM = "application/problem+json"

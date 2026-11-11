@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from fefat_app.database.models import EventRow, JobRow
 from fefat_app.database.schema import reading
-from fefat_app.ports import (
+from fefat_app.job_models import (
     Job,
     JobEnd,
     JobEventType,

@@ -35,7 +35,7 @@ from fefat.market.status import (
     product_status,
 )
 from fefat.market.store import ListedStore, Store
-from fefat_app.ports import Job, JobKind
+from fefat_app.job_models import Job, JobKind
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.market_bars import BarsPage, BarsRequest, bars_page
 
