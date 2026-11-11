@@ -24,6 +24,7 @@ from fefat.features.versions import (
     load_in,
     saved_versions,
     saved_versions_in,
+    version_numbers,
 )
 from fefat.market.schema import Timeframe
 from notebook_runs import features_of_cell
@@ -210,6 +211,47 @@ def test_a_version_another_process_saved_first_is_never_replaced(
         ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
     assert (folder("gap") / "v1.json").read_bytes() == before
     assert ff.features.load("gap", 1) == first
+
+
+def listing_another_process_missed(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """The first listing of the versions a save reads misses the ones saved, as a process that
+    listed them before another process saved its version does; the calls are counted."""
+    listings: list[int] = []
+
+    def listed(found: Path) -> list[int]:
+        listings.append(len(listings))
+        return [] if len(listings) == 1 else version_numbers(found)
+
+    monkeypatch.setattr("fefat.features.versions.version_numbers", listed)
+    return listings
+
+
+def test_a_save_another_process_saved_first_returns_that_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.3 (from the Phase 3 exit's ponytail review): two backtest jobs running one new
+    # feature save it at once; the second takes the first's number, finds its file there, and
+    # returns the version of the same hash the first saved.
+    first = ff.features.save(features_of_cell(GAP)["gap"])
+    listings = listing_another_process_missed(monkeypatch)
+
+    again = ff.features.save(features_of_cell(GAP)["gap"])
+
+    assert again == first
+    assert listings == [0, 1]
+    assert sorted(path.name for path in folder("gap").iterdir()) == ["v1.json"]
+
+
+def test_a_save_whose_number_another_version_took_first_takes_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = ff.features.save(features_of_cell(GAP)["gap"])
+    listing_another_process_missed(monkeypatch)
+
+    wider = ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
+
+    assert (wider.version, first.version) == (2, 1)
+    assert ff.features.load("gap", 2) == wider
 
 
 def test_a_record_renamed_and_moved_under_another_name_is_refused() -> None:

@@ -11,8 +11,10 @@ the app's database of step 4.1 indexes (`01-architecture.md` §4 and §5, D-84).
     ff.features.library()  # a row for each saved version
 
 A version's file is only ever created, whole: written beside its place, flushed, and linked in, so
-a second process saving under the same number at the same moment is refused, to save again,
-rather than replacing the first, and a crash never leaves half a record. A Pydantic release that
+a second process saving under the same number at the same moment is refused rather than replacing
+the first, and a crash never leaves half a record; from step 5.3 `save` then lists the versions
+once more and returns the first's where it is of the same hash, as two backtest jobs running one
+new feature save it at once. A Pydantic release that
 writes the JSON schema of the same parameters otherwise gives unchanged code a new version; a
 version saved before still loads, since its hash is worked out again from the schema it keeps.
 The leak detector keeps each hash's latest validation beside the versions, in `validations/`.
@@ -97,12 +99,23 @@ class FeatureVersion(FrozenModel):
 
 def save(definition: FeatureDef) -> FeatureVersion:
     """Save `definition` as the next version of its name, or return the saved version whose
-    hash it has, writing nothing; the features it reads that this process defined first."""
+    hash it has, writing nothing; the features it reads that this process defined first. Where
+    another process saved a version under the number it took, it lists the versions once more
+    (step 5.3): the version of its hash that process saved, or the next number."""
     for declared in definition.inputs:
         read = registered(declared.hash) if isinstance(declared, FeatureInput) else None
         if read is not None:
             save(read)
     folder = _folder(definition.name)
+    try:
+        return _saved_in(folder, definition)
+    except SavedFirstError:
+        return _saved_in(folder, definition)
+
+
+def _saved_in(folder: Path, definition: FeatureDef) -> FeatureVersion:
+    """The version of `definition`'s hash among those saved in `folder`, else a new one under
+    the next number, refused with `SavedFirstError` where another process saved that first."""
     numbers = version_numbers(folder)
     for number in numbers:
         saved = load(definition.name, number)
@@ -310,10 +323,15 @@ def create_version(path: Path, record: BaseModel, described: str) -> None:
     try:
         create_atomically(path, json_writer(record))
     except FileExistsError as error:
-        raise ValueError(
+        raise SavedFirstError(
             f"Expected to save {described} as a new file, got {path} saved by another process "
             "first: save it again."
         ) from error
+
+
+class SavedFirstError(ValueError):
+    """A version file another process created first under the number a save took
+    (`create_version`)."""
 
 
 def validation_file(name: str, content_hash: str) -> Path:
