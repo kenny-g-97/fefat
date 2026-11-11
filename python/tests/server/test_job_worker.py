@@ -102,14 +102,14 @@ def test_the_worker_keeps_its_lease_while_the_work_runs(job_records: JobTables) 
 
 
 def test_a_kind_the_worker_cannot_run_fails_with_the_reason(job_records: JobTables) -> None:
-    job = job_records.add(JobKind.BACKTEST, {}, 3, STARTED_AT)
+    job = job_records.add(JobKind.STUDY, {}, 3, STARTED_AT)
 
     ended = ran(job_records, job)
 
     assert ended.status == JobStatus.FAILED
     assert ended.error == (
         "ValueError: Expected a job kind the worker runs (demo, feature_preview, python_snippet, "
-        "catalog_sync), got backtest."
+        "catalog_sync, backtest), got study."
     )
 
 

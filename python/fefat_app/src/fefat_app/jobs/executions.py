@@ -3,19 +3,25 @@ feature's preview or a snippet, its payload the spec of its kind, run by the wor
 each report of the runner's progress a `progress` event of the job's stream, and the job's
 request to stop read each second between them, so that the worker stops the runner itself rather
 than the reaper ending the worker; an execution that ran out of time ends its job `timed_out`,
-and one that failed ends it `failed` with the runner's error."""
+and one that failed ends it `failed` with the runner's error. From step 5.3 a backtest's job runs
+its execution through `executed` too (`fefat_app.jobs.backtests`)."""
 
 from collections.abc import Mapping
 from typing import Any
 
 from fefat_app.execution import (
+    BacktestSpec,
     ExecutionFailed,
+    ExecutionSucceeded,
     ExecutionTimedOut,
     FeaturePreviewSpec,
     PythonSnippetSpec,
 )
 from fefat_app.jobs.progress import JobProgress
 from fefat_app.ports import Executor
+
+type JobSpecKind = type[FeaturePreviewSpec] | type[PythonSnippetSpec] | type[BacktestSpec]
+"""The spec of an execution a job runs."""
 
 
 class ExecutionTimedOutError(Exception):
@@ -27,13 +33,18 @@ class ExecutionFailedError(Exception):
 
 
 def run_execution(
-    executor: Executor,
-    kind: type[FeaturePreviewSpec] | type[PythonSnippetSpec],
-    payload: Mapping[str, Any],
-    progress: JobProgress,
+    executor: Executor, kind: JobSpecKind, payload: Mapping[str, Any], progress: JobProgress
 ) -> dict[str, Any]:
     """Run the execution of `payload`, a spec of `kind`, reporting through `progress`; its result,
     or the error the job ends with."""
+    return executed(executor, kind, payload, progress).model_dump(mode="json")
+
+
+def executed(
+    executor: Executor, kind: JobSpecKind, payload: Mapping[str, Any], progress: JobProgress
+) -> ExecutionSucceeded:
+    """The execution of `payload`, a spec of `kind`, run to its end, reporting through
+    `progress`; `ExecutionTimedOutError` or `ExecutionFailedError` where it did not."""
     spec = kind.model_validate(payload)
     result = executor.run(
         spec,
@@ -47,4 +58,4 @@ def run_execution(
         )
     if isinstance(result, ExecutionFailed):
         raise ExecutionFailedError(result.error)
-    return result.model_dump(mode="json")
+    return result

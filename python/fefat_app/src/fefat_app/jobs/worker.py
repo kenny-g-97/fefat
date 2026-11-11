@@ -6,8 +6,9 @@ The worker opens the database itself, in WAL mode with the busy timeout of
 `fefat_app.database.schema`, since it runs in another process from the server's, and it reads the
 system's clock, the server's `Clock` being a seam of the server's own process. It runs the
 trader's code through an executor of its own, which starts a runner for each execution, since a
-worker runs one job at a time (step 4.5), and reads the store of the data folder through a
-`Store` of its own (step 5.1)."""
+worker runs one job at a time (step 4.5), reads the store of the data folder through a
+`Store` of its own (step 5.1), and indexes a backtest's run into the runs' records of its own
+database (step 5.3)."""
 
 import os
 import threading
@@ -23,15 +24,17 @@ from sqlalchemy.exc import OperationalError
 from fefat.config import FefatPaths
 from fefat.market.store import Store
 from fefat_app.database.job_records import JobTables
+from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import opened_database
 from fefat_app.execution import FeaturePreviewSpec, PythonSnippetSpec
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus
+from fefat_app.jobs.backtests import run_backtest
 from fefat_app.jobs.catalog_sync import run_catalog_sync
 from fefat_app.jobs.demo import run_demo
 from fefat_app.jobs.executions import ExecutionFailedError, ExecutionTimedOutError, run_execution
 from fefat_app.jobs.progress import JobCancelledError, JobProgress
-from fefat_app.ports import Executor, JobRecords
+from fefat_app.ports import Executor, JobRecords, RunRecords
 
 type JobWork = Callable[[Mapping[str, Any], JobProgress], dict[str, Any]]
 """A kind's work: it takes the job's payload and reports through its progress; its result."""
@@ -53,15 +56,18 @@ class JobTimings:
     cancel_grace_seconds: float = 10.0
 
 
-def works_of(executor: Executor, store: Store, paths: FefatPaths) -> Mapping[JobKind, JobWork]:
-    """The work of each kind a worker runs, the trader's code run by `executor`, and the catalog
-    sync over `store`, its reports and session tables in the folders of `paths`; the steps of
-    later phases add theirs."""
+def works_of(
+    executor: Executor, store: Store, paths: FefatPaths, runs: RunRecords
+) -> Mapping[JobKind, JobWork]:
+    """The work of each kind a worker runs, the trader's code run by `executor`, the catalog
+    sync over `store`, its reports and session tables in the folders of `paths`, and a backtest
+    whose run `runs` indexes; the steps of later phases add theirs."""
     return {
         JobKind.DEMO: run_demo,
         JobKind.FEATURE_PREVIEW: partial(run_execution, executor, FeaturePreviewSpec),
         JobKind.PYTHON_SNIPPET: partial(run_execution, executor, PythonSnippetSpec),
         JobKind.CATALOG_SYNC: partial(run_catalog_sync, store, paths.reports_dir, paths.cache_dir),
+        JobKind.BACKTEST: partial(run_backtest, executor, runs),
     }
 
 
@@ -76,7 +82,7 @@ def run_job(job_id: str, paths: FefatPaths, timings: JobTimings) -> None:
         if job is None:
             return
         executor = SubprocessExecutor(paths, warm_previews=False)
-        works = works_of(executor, Store(paths.data_dir), paths)
+        works = works_of(executor, Store(paths.data_dir), paths, RunTables(engine, paths))
         with _lease_kept(records, job_id, worker_pid, timings):
             _run(records, job, worker_pid, works)
 
