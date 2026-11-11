@@ -37,6 +37,7 @@ REPORTS_FOLDER_NAME = "reports"
 WORKSPACE_FOLDER = Path("workspaces") / "default"
 RUNS_FOLDER = Path("artifacts") / "runs"
 FEATURES_FOLDER_NAME = "features"
+STRATEGIES_FOLDER_NAME = "strategies"
 CONFIG_FILE_NAME = "config.toml"
 DATABASE_FILE_NAME = "fefat.sqlite"
 LOGS_FOLDER_NAME = "logs"
@@ -81,6 +82,13 @@ class FefatPaths:
         the feature, as `v<n>.json` (`fefat.features`, step 3.1), the record the app's database
         indexes (D-84)."""
         return self.workspace_dir / FEATURES_FOLDER_NAME
+
+    @property
+    def strategies_dir(self) -> Path:
+        """`<workspace>/strategies`: each saved strategy's versions in a folder of its own, named
+        by the strategy, as `v<n>.json` (`fefat.strategy`, step 5.2), the record the app's
+        database indexes (D-84)."""
+        return self.workspace_dir / STRATEGIES_FOLDER_NAME
 
     @property
     def config_file(self) -> Path:

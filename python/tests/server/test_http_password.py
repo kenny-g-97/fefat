@@ -1,6 +1,7 @@
 """`POST /v1/auth/password` of step 4.3 (from `BACKLOG.md`, D-86): the settings page changes the
 password with the current one, counted with the logins' attempts; every login session ends, and
-the browser that asked gets the cookie of a new one; an API token manages nothing."""
+the browser that asked gets the cookie of a new one; an API token manages nothing; and from step
+5.2 every API token is revoked."""
 
 from fastapi.testclient import TestClient
 
@@ -28,6 +29,20 @@ def test_a_change_keeps_this_browser_logged_in_and_ends_every_other_session(
     assert old_session.status_code == 401
     assert client.post("/v1/auth/login", json={"password": PASSWORD}).status_code == 401
     assert client.post("/v1/auth/login", json={"password": NEW_PASSWORD}).status_code == 200
+
+
+def test_a_change_revokes_every_api_token(client: TestClient, container: Container) -> None:
+    # Step 5.2 (from `BACKLOG.md`, the Phase 4 exit's security review): a token outlived the
+    # password it was made under.
+    csrf = logged_in(client, container)
+    bearer = {"Authorization": f"Bearer {container.api_tokens.create('notebook')}"}
+    before = client.get("/v1/me", headers=bearer).status_code
+
+    changed = client.post("/v1/auth/password", json=CHANGE, headers=csrf)
+
+    assert (before, changed.status_code) == (200, 200)
+    assert client.get("/v1/me", headers=bearer).status_code == 401
+    assert client.get("/v1/api-tokens").json() == []
 
 
 def test_a_wrong_current_password_is_refused_and_changes_nothing(

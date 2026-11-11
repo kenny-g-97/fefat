@@ -16,9 +16,12 @@ from fefat_app.execution import (
     ExecutionFailed,
     ExecutionKind,
     ExecutionOutcome,
+    FeatureSaveOutput,
     PythonSnippetOutput,
     SeriesPoint,
     SeriesStatistics,
+    StrategySaveOutput,
+    StrategyValidationOutput,
 )
 
 SPEC_FILE = "spec.json"
@@ -62,7 +65,14 @@ class RunnerSucceeded(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     outcome: Literal[ExecutionOutcome.SUCCEEDED] = ExecutionOutcome.SUCCEEDED
-    output: Annotated[PreviewSummary | PythonSnippetOutput, Field(discriminator="kind")]
+    output: Annotated[
+        PreviewSummary
+        | PythonSnippetOutput
+        | StrategyValidationOutput
+        | StrategySaveOutput
+        | FeatureSaveOutput,
+        Field(discriminator="kind"),
+    ]
 
 
 type RunnerResult = Annotated[RunnerSucceeded | ExecutionFailed, Field(discriminator="outcome")]

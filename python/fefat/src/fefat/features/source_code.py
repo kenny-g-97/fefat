@@ -36,6 +36,8 @@ from fefat.market.calendar_definition import LocalTime, TimeZoneName
 
 NO_READS: Mapping[str, FeatureDef] = MappingProxyType({})
 """No features read by name."""
+SOURCE_FILENAME_PREFIX = "<feature source "
+"""How the file name of a text `from_source` runs begins, as a traceback names its lines."""
 
 
 def from_source(code: str, reads: Mapping[str, FeatureDef] = NO_READS) -> FeatureDef:
@@ -56,7 +58,7 @@ def from_source(code: str, reads: Mapping[str, FeatureDef] = NO_READS) -> Featur
             f"{', '.join(unbound)}: a helper a feature calls is not versioned with it "
             "(BACKLOG.md), so define the feature in a file or a cell that imports it."
         )
-    filename = f"<feature source {hashlib.sha256(code.encode()).hexdigest()[:12]}>"
+    filename = f"{SOURCE_FILENAME_PREFIX}{hashlib.sha256(code.encode()).hexdigest()[:12]}>"
     linecache.cache[filename] = (len(code), None, code.splitlines(keepends=True), filename)
     try:
         exec(compile(code, filename, "exec"), namespace)

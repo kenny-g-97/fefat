@@ -3,7 +3,11 @@ features and signals are Polars expressions over the signal bars and whose execu
 `Execution`, is written as a `StrategySpec` document validated by the schema generated from the
 engine's Rust types; the helpers that build the template's rules (`Market`, `Stop`, `Target`,
 `Breakeven`, `Trailing`, `Fixed`, ...); and the signal frame a strategy gives the engine
-(`validated_signal_frame`)."""
+(`validated_signal_frame`). From step 5.2, a strategy's versions: `save`, `load`, `library`, and
+`diff` keep them in the workspace (`fefat.strategy.versions`), `from_source` builds a strategy from
+a version's code (`fefat.strategy.source_code`), `lint` reads that code for the usual ways of
+reading ahead (`fefat.strategy.source_lint`), and `templates` gives the strategies to start from
+(`fefat.strategy.starting_points`)."""
 
 from fefat.strategy.exits import (
     AfterTargetTrigger,
@@ -56,6 +60,8 @@ from fefat.strategy.signal_frame import (
     validated_signal_frame,
 )
 from fefat.strategy.signal_strategy import SignalStrategy
+from fefat.strategy.source_code import StrategyCodeError, StrategyDefinition, from_source
+from fefat.strategy.source_lint import StrategyLintFinding, lint
 from fefat.strategy.spec import (
     SPEC_SCHEMA_PATH,
     EntryOrder,
@@ -73,6 +79,16 @@ from fefat.strategy.spec import (
     StopEntryOffset,
     StrategySpec,
     spec_schema,
+)
+from fefat.strategy.starting_points import StrategyTemplate, templates
+from fefat.strategy.versions import (
+    PinnedFeature,
+    StrategyKind,
+    StrategyVersion,
+    diff,
+    library,
+    load,
+    save,
 )
 
 __all__ = [
@@ -107,6 +123,7 @@ __all__ = [
     "NotionalSize",
     "OppositeSignal",
     "PercentStop",
+    "PinnedFeature",
     "ProfitTarget",
     "ProfitTrigger",
     "RMultipleTarget",
@@ -121,7 +138,13 @@ __all__ = [
     "StopEntryAtColumn",
     "StopEntryOffset",
     "StopRule",
+    "StrategyCodeError",
+    "StrategyDefinition",
+    "StrategyKind",
+    "StrategyLintFinding",
     "StrategySpec",
+    "StrategyTemplate",
+    "StrategyVersion",
     "Target",
     "TargetPrice",
     "TicksStop",
@@ -134,7 +157,14 @@ __all__ = [
     "Trailing",
     "TrailingStop",
     "Weekday",
+    "diff",
+    "from_source",
+    "library",
+    "lint",
+    "load",
     "require_one_entry_per_bar",
+    "save",
     "spec_schema",
+    "templates",
     "validated_signal_frame",
 ]

@@ -25,9 +25,16 @@ code and the features it reads build again (`ff.features.from_source`), kept und
 hash, refused where its code reads other features than its version read, or calls a helper its
 version does not keep. A Pydantic release that writes the parameters' schema otherwise changes
 nothing there, since the version keeps the schema its hash covers (step 4.1). `library` lists
-the saved versions, and `saved_versions` gives their records."""
+the saved versions, and `saved_versions` gives their records.
+
+From step 5.2, `load_in` and `saved_versions_in` read the library of the folder they are given,
+as the app's index does (D-93), whatever folder the environment names; `code_diff` gives the
+unified diff of two versions' code, which the API serves for features and strategies; and a
+strategy's versions are kept as these are, through `version_numbers` and `create_version`
+(`fefat.strategy.versions`)."""
 
 import dataclasses
+import difflib
 import os
 import re
 from datetime import UTC, datetime
@@ -35,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from fefat.config import resolve_paths
 from fefat.features.combinations import Combination
@@ -96,7 +103,7 @@ def save(definition: FeatureDef) -> FeatureVersion:
         if read is not None:
             save(read)
     folder = _folder(definition.name)
-    numbers = _version_numbers(folder)
+    numbers = version_numbers(folder)
     for number in numbers:
         saved = load(definition.name, number)
         if saved.hash == definition.hash:
@@ -115,7 +122,8 @@ def save(definition: FeatureDef) -> FeatureVersion:
         combination=definition.combination,
     )
     _require_content_of_its_hash(record)
-    _create(folder / f"v{record.version}.json", record)
+    described = f"version {record.version} of feature {record.name}"
+    create_version(folder / f"v{record.version}.json", record, described)
     return record
 
 
@@ -135,10 +143,15 @@ def _require_content_of_its_hash(record: FeatureVersion) -> None:
 
 
 def load(name: str, version: int) -> FeatureVersion:
-    """The saved version `version` of the feature `name`, refused when its file holds another
-    feature or version, when its content no longer gives its hash, or when its declarations are
-    not those its code writes."""
-    path = _folder(name) / f"v{version}.json"
+    """The saved version `version` of the feature `name` (`load_in`)."""
+    return load_in(resolve_paths(os.environ).features_dir, name, version)
+
+
+def load_in(features_dir: Path, name: str, version: int) -> FeatureVersion:
+    """The saved version `version` of the feature `name` in `features_dir`, refused when its file
+    holds another feature or version, when its content no longer gives its hash, or when its
+    declarations are not those its code writes; its code is read, never run."""
+    path = _folder_in(features_dir, name) / f"v{version}.json"
     if not path.is_file():
         raise FileNotFoundError(
             f"Expected version {version} of feature {name} at {path}, got no such file."
@@ -221,7 +234,7 @@ def saved_definition(name: str, content_hash: str, reader: str) -> FeatureDef:
     defined = registered(content_hash)
     if defined is not None:
         return defined
-    for number in _version_numbers(_folder(name)):
+    for number in version_numbers(_folder(name)):
         record = load(name, number)
         if record.hash == content_hash:
             return definition_of(record)
@@ -243,13 +256,32 @@ def library() -> pl.DataFrame:
 
 
 def saved_versions() -> list[FeatureVersion]:
-    """Every saved version, by name and then number, each read through `load`, which refuses a
-    file changed after it was written; none while nothing is saved."""
-    folder = resolve_paths(os.environ).features_dir
+    """Every saved version (`saved_versions_in`)."""
+    return saved_versions_in(resolve_paths(os.environ).features_dir)
+
+
+def saved_versions_in(features_dir: Path) -> list[FeatureVersion]:
+    """Every version saved in `features_dir`, by name and then number, each read through
+    `load_in`, which refuses a file changed after it was written; none while nothing is saved."""
     names = (
-        sorted(each.name for each in folder.iterdir() if each.is_dir()) if folder.is_dir() else []
+        sorted(each.name for each in features_dir.iterdir() if each.is_dir())
+        if features_dir.is_dir()
+        else []
     )
-    return [load(name, number) for name in names for number in _version_numbers(folder / name)]
+    return [
+        load_in(features_dir, name, number)
+        for name in names
+        for number in version_numbers(features_dir / name)
+    ]
+
+
+def code_diff(earlier: str, later: str, labels: tuple[str, str]) -> str:
+    """The unified diff of two versions' code, `earlier`'s and `later`'s, its header naming them
+    by `labels`, such as `("gap v1", "gap v2")`; empty where their code is the same."""
+    lines = difflib.unified_diff(
+        earlier.splitlines(keepends=True), later.splitlines(keepends=True), *labels
+    )
+    return "".join(lines)
 
 
 def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> None:
@@ -270,16 +302,17 @@ def _require_declarations_of_its_code(record: FeatureVersion, path: Path) -> Non
     )
 
 
-def _create(path: Path, record: FeatureVersion) -> None:
-    """Write `record` whole to a new file at `path` (`create_atomically`): a version another
-    process saved there first is refused, never replaced (D-11), and none is ever seen
-    half-written, since every later save of the name reads it."""
+def create_version(path: Path, record: BaseModel, described: str) -> None:
+    """Write `record`, the version `described` names, such as "version 2 of feature gap", whole
+    to a new file at `path` (`create_atomically`): a version another process saved there first is
+    refused, never replaced (D-11), and none is ever seen half-written, since every later save of
+    the name reads it."""
     try:
         create_atomically(path, json_writer(record))
     except FileExistsError as error:
         raise ValueError(
-            f"Expected to save version {record.version} of feature {record.name} as a new file, "
-            f"got {path} saved by another process first: save it again."
+            f"Expected to save {described} as a new file, got {path} saved by another process "
+            "first: save it again."
         ) from error
 
 
@@ -295,14 +328,19 @@ def validation_file(name: str, content_hash: str) -> Path:
 
 
 def _folder(name: str) -> Path:
-    """The folder of the feature `name`'s versions in the workspace, refused unless `name` is a
+    """The folder of the feature `name`'s versions in the workspace (`_folder_in`)."""
+    return _folder_in(resolve_paths(os.environ).features_dir, name)
+
+
+def _folder_in(features_dir: Path, name: str) -> Path:
+    """The folder of the feature `name`'s versions in `features_dir`, refused unless `name` is a
     feature's, a Python identifier, so that no name reaches outside the folder of features."""
     if not name.isidentifier():
         raise ValueError(f"Expected a feature's name, a Python identifier, got {name!r}.")
-    return resolve_paths(os.environ).features_dir / name
+    return features_dir / name
 
 
-def _version_numbers(folder: Path) -> list[int]:
+def version_numbers(folder: Path) -> list[int]:
     """The numbers of the versions saved in `folder`, in order, v10 after v9."""
     numbers = []
     for path in folder.glob("v*.json"):

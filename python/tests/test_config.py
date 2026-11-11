@@ -45,6 +45,14 @@ def test_feature_versions_are_kept_in_the_default_workspace(tmp_path: Path) -> N
     assert paths.features_dir == tmp_path / "workspaces" / "default" / "features"
 
 
+def test_strategy_versions_are_kept_in_the_default_workspace(tmp_path: Path) -> None:
+    # Step 5.2 (D-93): a strategy's versions are files beside the features', which the app's
+    # database indexes.
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
+
+    assert paths.strategies_dir == tmp_path / "workspaces" / "default" / "strategies"
+
+
 def test_fefat_data_dir_points_the_market_data_at_another_folder(tmp_path: Path) -> None:
     market_data = tmp_path / "market-data"
 

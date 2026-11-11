@@ -8,10 +8,10 @@
 prints the revision it is at; `downgrade base` runs every migration down, which drops every
 table but Alembic's own, as `alembic downgrade base` does with the migrations that ship inside
 the package; `import-workspace` upgrades the database, then indexes the feature versions, the
-leak detector's reports, and the saved import profiles it has not seen, and prints how many
-(`fefat_app.database.workspace_index`, D-84). The files stay the record, and it may run again at
-any time; with `--rebuild` it empties the index first, so that it holds the files as they are
-now, after a version file was deleted or replaced by hand (D-92).
+strategy versions (step 5.2), the leak detector's reports, and the saved import profiles it has
+not seen, and prints how many (`fefat_app.database.workspace_index`, D-84). The files stay the
+record, and it may run again at any time; with `--rebuild` it empties the index first, so that
+it holds the files as they are now, after a version file was deleted or replaced by hand (D-92).
 """
 
 import argparse
@@ -39,7 +39,7 @@ def add_the_database_commands(database: argparse.ArgumentParser) -> None:
     downgrade.set_defaults(run=downgrade_the_database)
     workspace = database_commands.add_parser(
         "import-workspace",
-        help="index the feature versions, reports, and import profiles saved as files",
+        help="index the feature and strategy versions, reports, and import profiles saved as files",
     )
     workspace.add_argument(
         "--rebuild",
@@ -67,9 +67,9 @@ def downgrade_the_database(arguments: argparse.Namespace) -> int:
 
 
 def index_the_workspace(arguments: argparse.Namespace) -> int:
-    database_file = resolve_paths(os.environ).database_file
-    with opened_database(database_file) as engine:
+    paths = resolve_paths(os.environ)
+    with opened_database(paths.database_file) as engine:
         upgrade_schema(engine)
-        indexed = index_workspace(engine, rebuild=arguments.rebuild)
+        indexed = index_workspace(engine, paths, rebuild=arguments.rebuild)
     print(indexed.summary())
     return EXIT_OK

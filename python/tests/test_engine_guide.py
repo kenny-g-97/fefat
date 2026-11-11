@@ -1,8 +1,9 @@
 """The engine guide (step 2.15) gives every option of the execution template a one-line meaning,
 names every option of its rules and every run setting, describes every file of a run folder, and
 links only to files and fill-rule sections that exist; from step 3.7 it gives every kind of a
-combination's description a row with its fields, and from step 3.8 it names every analysis of
-a feature study, every field of their results, and every column of their frames."""
+combination's description a row with its fields, from step 3.8 it names every analysis of a
+feature study, every field of their results, and every column of their frames, and from step
+5.2 it writes each strategy template whole."""
 
 import dataclasses
 import inspect
@@ -148,6 +149,15 @@ def test_every_kind_of_a_combinations_description_has_a_row_with_its_fields() ->
         for kind, fields in kinds.items()
         for field in fields
         if f"`{field}`" not in documented[kind]
+    ] == []
+
+
+def test_every_template_is_written_whole_in_the_guide() -> None:
+    # Step 5.2: the templates the app offers are the guide's own code, block for block.
+    blocks = re.findall(r"```python\n(.*?)```", guide_text(), re.DOTALL)
+
+    assert [
+        template.name for template in ff.strategy.templates() if template.code not in blocks
     ] == []
 
 

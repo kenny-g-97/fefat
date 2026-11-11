@@ -46,6 +46,21 @@ class ValidationProblem(Problem):
     errors: tuple[FieldError, ...]
 
 
+class RefusedCodeProblem(Problem):
+    """The trader's code the SDK refused (step 5.2), with the line of the code the refusal is
+    at, None where it has none, which an editor underlines."""
+
+    line: int | None
+
+
+class CodeRefused(StarletteHTTPException):
+    """A refusal of the trader's code, which the API answers as a `RefusedCodeProblem`, 400."""
+
+    def __init__(self, line: int | None, detail: str) -> None:
+        super().__init__(HTTPStatus.BAD_REQUEST, detail)
+        self.line = line
+
+
 def problem_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
     """The OpenAPI entries of a route's error statuses, each a problem, 422 a validation one;
     `problems_as_problem_json` files them under `application/problem+json`."""
@@ -55,6 +70,11 @@ def problem_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
         }
         for status in statuses
     }
+
+
+def code_refusal_responses(*statuses: int) -> dict[int | str, dict[str, Any]]:
+    """`problem_responses` of `statuses`, and 400, a refusal of the trader's code with its line."""
+    return {**problem_responses(*statuses), HTTPStatus.BAD_REQUEST: {"model": RefusedCodeProblem}}
 
 
 def problems_as_problem_json(document: dict[str, Any]) -> dict[str, Any]:
@@ -110,7 +130,21 @@ def _response(problem: Problem, headers: Mapping[str, str] | None = None) -> JSO
 def _refused(request: Request, error: Exception) -> Response:
     if not isinstance(error, StarletteHTTPException):
         raise error
+    if isinstance(error, CodeRefused):
+        return _response(_refused_code(request, error))
     return problem_response(request, error.status_code, str(error.detail), error.headers)
+
+
+def _refused_code(request: Request, error: CodeRefused) -> RefusedCodeProblem:
+    status = HTTPStatus.BAD_REQUEST
+    return RefusedCodeProblem(
+        title=status.phrase,
+        status=status,
+        detail=str(error.detail),
+        instance=request.url.path,
+        request_id=request_id_of(request),
+        line=error.line,
+    )
 
 
 def _invalid(request: Request, error: Exception) -> Response:

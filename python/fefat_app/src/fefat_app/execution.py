@@ -2,7 +2,12 @@
 the spec of each kind the executor runs, the code with the bars it reads and the limits it runs
 within; the progress its runner reports; and its result, validated before the app trusts it.
 Frozen Pydantic models, as at every boundary (`08-code-design.md` section 3.3), kept apart from
-the port in `fefat_app.ports` so that the runner reads them without the app's other seams."""
+the port in `fefat_app.ports` so that the runner reads them without the app's other seams.
+
+From step 5.2 (D-93), the library's kinds: a strategy's code validated, a strategy version saved,
+and a feature version saved, each through the SDK in the runner, never in the server; what the
+SDK refuses comes back as the runner's answer, with the line of the code it is at, rather than as
+a failure."""
 
 from collections.abc import Callable
 from datetime import date
@@ -11,13 +16,19 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from fefat.strategy.source_lint import StrategyLintFinding
+
 
 class ExecutionKind(StrEnum):
     """What an execution runs: a feature's preview, or a snippet of Python, which the job kinds
-    of the same names run (step 4.5)."""
+    of the same names run (step 4.5); a strategy's code validated, a strategy version saved, or a
+    feature version saved, which the library's routes run (step 5.2)."""
 
     FEATURE_PREVIEW = "feature_preview"
     PYTHON_SNIPPET = "python_snippet"
+    STRATEGY_VALIDATION = "strategy_validation"
+    STRATEGY_SAVE = "strategy_save"
+    FEATURE_SAVE = "feature_save"
 
 
 MOST_SECONDS = 24 * 60 * 60
@@ -76,9 +87,56 @@ class PythonSnippetSpec(BaseModel):
     limits: ExecutionLimits
 
 
-type ExecutionSpec = Annotated[FeaturePreviewSpec | PythonSnippetSpec, Field(discriminator="kind")]
+class StrategyValidationSpec(BaseModel):
+    """A strategy's code, built as a version's is (`ff.strategy.from_source`), with its signal
+    frame on bars with no rows; nothing is saved."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.STRATEGY_VALIDATION] = ExecutionKind.STRATEGY_VALIDATION
+    code: str
+    limits: ExecutionLimits
+
+
+class StrategySaveSpec(BaseModel):
+    """A strategy version saved as a notebook saves it (`ff.strategy.save`): the strategy's name,
+    its code, its hypothesis, and its changelog."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.STRATEGY_SAVE] = ExecutionKind.STRATEGY_SAVE
+    name: str
+    code: str
+    hypothesis: str
+    changelog: str
+    limits: ExecutionLimits
+
+
+class FeatureSaveSpec(BaseModel):
+    """A feature version saved as a notebook saves it: the feature `code` defines
+    (`ff.features.from_source`), refused unless it is the feature `name`, saved with
+    `ff.features.save`."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.FEATURE_SAVE] = ExecutionKind.FEATURE_SAVE
+    name: str
+    code: str
+    limits: ExecutionLimits
+
+
+type LibrarySpec = StrategyValidationSpec | StrategySaveSpec | FeatureSaveSpec
+"""An execution of the library's kinds (step 5.2)."""
+type ExecutionSpec = Annotated[
+    FeaturePreviewSpec
+    | PythonSnippetSpec
+    | StrategyValidationSpec
+    | StrategySaveSpec
+    | FeatureSaveSpec,
+    Field(discriminator="kind"),
+]
 EXECUTION_SPEC: TypeAdapter[ExecutionSpec] = TypeAdapter(ExecutionSpec)
-"""Reads and writes a spec of either kind, told apart by its `kind`."""
+"""Reads and writes a spec of any kind, told apart by its `kind`."""
 
 
 class ExecutionProgress(BaseModel):
@@ -167,13 +225,95 @@ class PythonSnippetOutput(BaseModel):
     stdout_tail: str
 
 
+class CodeVerdict(StrEnum):
+    """What the runner made of the trader's code for the library: a strategy that builds, a
+    version saved, or found saved with the same content, or code the SDK refused."""
+
+    VALID = "valid"
+    SAVED = "saved"
+    REFUSED = "refused"
+
+
+class RefusedCode(BaseModel):
+    """Code the SDK refused: the line of the code the refusal is at, None where it has none, and
+    why, in the SDK's words."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    verdict: Literal[CodeVerdict.REFUSED] = CodeVerdict.REFUSED
+    line: int | None
+    message: str
+
+
+class ValidStrategy(BaseModel):
+    """A strategy's code that builds: the instrument and the timeframe its strategy names with
+    its defaults, the JSON schema of its parameters, and the lint's findings in its code, which
+    warn (`ff.strategy.lint`)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    verdict: Literal[CodeVerdict.VALID] = CodeVerdict.VALID
+    instrument: str
+    timeframe: str
+    parameter_schema: dict[str, Any]
+    lint: tuple[StrategyLintFinding, ...]
+
+
+class SavedVersion(BaseModel):
+    """A version saved, or found saved with the same content: its name and its number."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    verdict: Literal[CodeVerdict.SAVED] = CodeVerdict.SAVED
+    name: str
+    version: int = Field(ge=1)
+
+
+class StrategyValidationOutput(BaseModel):
+    """What a strategy's validation gives: its code valid, or refused."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.STRATEGY_VALIDATION] = ExecutionKind.STRATEGY_VALIDATION
+    answer: Annotated[ValidStrategy | RefusedCode, Field(discriminator="verdict")]
+
+
+class StrategySaveOutput(BaseModel):
+    """What a strategy version's save gives: the version saved, or its code refused."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.STRATEGY_SAVE] = ExecutionKind.STRATEGY_SAVE
+    answer: Annotated[SavedVersion | RefusedCode, Field(discriminator="verdict")]
+
+
+class FeatureSaveOutput(BaseModel):
+    """What a feature version's save gives: the version saved, or its code refused."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.FEATURE_SAVE] = ExecutionKind.FEATURE_SAVE
+    answer: Annotated[SavedVersion | RefusedCode, Field(discriminator="verdict")]
+
+
+type LibraryOutput = StrategyValidationOutput | StrategySaveOutput | FeatureSaveOutput
+"""What an execution of the library's kinds gives (step 5.2)."""
+
+
 class ExecutionSucceeded(BaseModel):
     """An execution that ran to its end, with what its kind gives."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     outcome: Literal[ExecutionOutcome.SUCCEEDED] = ExecutionOutcome.SUCCEEDED
-    output: Annotated[FeaturePreviewOutput | PythonSnippetOutput, Field(discriminator="kind")]
+    output: Annotated[
+        FeaturePreviewOutput
+        | PythonSnippetOutput
+        | StrategyValidationOutput
+        | StrategySaveOutput
+        | FeatureSaveOutput,
+        Field(discriminator="kind"),
+    ]
 
 
 class ExecutionFailed(BaseModel):

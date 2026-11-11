@@ -105,10 +105,10 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change the password, from a login session alone: every session ends, and the response
-         *     sets the cookie of a new one for this browser and returns its CSRF token; refused with 403
-         *     for a wrong current password, and with 429 after five attempts in a minute, the logins'
-         *     attempts included.
+         * @description Change the password, from a login session alone: every session ends, every API token is
+         *     revoked, and the response sets the cookie of a new one for this browser and returns its CSRF
+         *     token; refused with 403 for a wrong current password, and with 429 after five attempts in a
+         *     minute, the logins' attempts included.
          */
         post: operations["change_password_v1_auth_password_post"];
         delete?: never;
@@ -196,6 +196,97 @@ export interface paths {
          *     store holds no such dataset.
          */
         get: operations["dataset_quality_v1_datasets__dataset_id__quality_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved Features
+         * @description The saved features by name, each with its versions in order.
+         */
+        get: operations["saved_features_v1_features_get"];
+        put?: never;
+        /**
+         * Create Feature
+         * @description Create the feature `name` with its first version, saved in the executor; refused with 400
+         *     and the line of the code where it defines no feature, or another, and with 409 where a saved
+         *     feature has the name or the library holds files the index cannot follow.
+         */
+        post: operations["create_feature_v1_features_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/features/{feature_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feature Diff
+         * @description The unified diff of the code of versions `from` and `to` of the feature.
+         */
+        get: operations["feature_diff_v1_features__feature_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/features/{feature_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feature Versions
+         * @description The versions of the feature, in order.
+         */
+        get: operations["feature_versions_v1_features__feature_id__versions_get"];
+        put?: never;
+        /**
+         * Save Feature Version
+         * @description Save the next version of the feature in the executor, or answer the version of the same
+         *     content.
+         */
+        post: operations["save_feature_version_v1_features__feature_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/features/{feature_id}/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feature Version
+         * @description Version `number` of the feature as its file keeps it.
+         */
+        get: operations["feature_version_v1_features__feature_id__versions__number__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -422,6 +513,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/strategies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved Strategies
+         * @description The saved strategies by name, each with its versions in order.
+         */
+        get: operations["saved_strategies_v1_strategies_get"];
+        put?: never;
+        /**
+         * Create Strategy
+         * @description Create the strategy `name` with its first version, saved in the executor; refused with
+         *     400 and the line of the code where the code gives no strategy, and with 409 where a saved
+         *     strategy has the name or the library holds files the index cannot follow.
+         */
+        post: operations["create_strategy_v1_strategies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/strategies/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Strategy Templates
+         * @description The strategies to start from, each with its hypothesis and its code: the engine guide's
+         *     breakout, a mean reversion reading the RSI, and a breakout in an entry window.
+         */
+        get: operations["strategy_templates_v1_strategies_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/strategies/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Strategy
+         * @description Build the code in the executor as a version's is, with its signal frame on bars that hold
+         *     no rows: `valid`, with the instrument and the timeframe it names, its parameters' schema,
+         *     and the lint's findings, or `refused`, with the line of the code the refusal is at.
+         */
+        post: operations["validate_strategy_v1_strategies_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/strategies/{strategy_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Strategy Diff
+         * @description The unified diff of the code of versions `from` and `to` of the strategy.
+         */
+        get: operations["strategy_diff_v1_strategies__strategy_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/strategies/{strategy_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Strategy Versions
+         * @description The versions of the strategy, in order, with their hypotheses and changelogs.
+         */
+        get: operations["strategy_versions_v1_strategies__strategy_id__versions_get"];
+        put?: never;
+        /**
+         * Save Strategy Version
+         * @description Save the next version of the strategy in the executor, or answer the version of the same
+         *     code saved with the same words; the same code with other words is refused with 400, since a
+         *     version never changes.
+         */
+        post: operations["save_strategy_version_v1_strategies__strategy_id__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/strategies/{strategy_id}/versions/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Strategy Version
+         * @description Version `number` of the strategy as its file keeps it, with the lint's findings in its
+         *     code.
+         */
+        get: operations["strategy_version_v1_strategies__strategy_id__versions__number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/streams/{stream_id}": {
         parameters: {
             query?: never;
@@ -523,6 +750,21 @@ export interface components {
             theme: components["schemas"]["Theme"];
         };
         /**
+         * AtTimeframe
+         * @description A term evaluated on the bars of `timeframe`, each value seen from its bar's close.
+         */
+        AtTimeframe: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "at_timeframe";
+            /** Of */
+            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            /** Timeframe */
+            timeframe: string;
+        };
+        /**
          * BarColumns
          * @description A page's bars, column by column, by their open, the bars of one open by their contract:
          *     each bar's open in whole seconds since the Unix epoch, UTC; its trade date; its prices in the
@@ -565,6 +807,21 @@ export interface components {
             timeframe: string;
         };
         /**
+         * BinaryOperation
+         * @description An operation on a `left` and a `right` term (module docstring).
+         */
+        BinaryOperation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "add" | "and" | "crosses_above" | "crosses_below" | "divide" | "greater_than" | "multiply" | "or" | "ratio_to" | "subtract";
+            /** Left */
+            left: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+            /** Right */
+            right: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+        };
+        /**
          * CatalogProductStatus
          * @description A product of the catalog: its root, the first trade date of its history, the name of its
          *     first recommended source, and the datasets of it the store holds, none while it is missing.
@@ -603,6 +860,38 @@ export interface components {
         CatalogSyncRequest: {
             /** Root */
             root?: string | null;
+        };
+        /**
+         * Column
+         * @description A column of the signal bars, or of another `instrument`'s bars at the same timeframe,
+         *     joined as of each close (`InstrumentInput`).
+         */
+        Column: {
+            /**
+             * Column
+             * @enum {string}
+             */
+            column: "open" | "high" | "low" | "close" | "close_raw" | "vwap" | "volume" | "trade_count";
+            /** Instrument */
+            instrument?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "column";
+        };
+        /**
+         * Constant
+         * @description A number or a flag, the same on every bar; a price in the bars' 1e-9 units.
+         */
+        Constant: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "constant";
+            /** Value */
+            value: boolean | number;
         };
         /**
          * CoveringDataset
@@ -653,6 +942,19 @@ export interface components {
          */
         Currency: "USD" | "USDT" | "EUR" | "GBP" | "JPY" | "CHF" | "AUD" | "CAD";
         /**
+         * DatasetInput
+         * @description A dataset of alternative data by its name, reserved for Phase 10.
+         */
+        DatasetInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "dataset";
+            /** Name */
+            name: string;
+        };
+        /**
          * DatasetOrigin
          * @description How a dataset came into the store (D-37): imported from the trader's files, or synced
          *     through a connector to a source the trader connects, which waits for a later phase (D-38).
@@ -694,6 +996,60 @@ export interface components {
          */
         DesktopUse: "confirmed" | "check-the-terms" | "forbidden";
         /**
+         * FeatureCode
+         * @description A feature's code: one function under its `@ff.feature(...)` call.
+         */
+        FeatureCode: {
+            /** Code */
+            code: string;
+        };
+        /**
+         * FeatureInput
+         * @description Another feature the feature reads, by its name and its content hash; with the
+         *     `parameters` it reads it with, where its reader binds them, as a combination does, else those
+         *     of the slot given for it, or its defaults; and under the columns of an `alias`, as a slot's,
+         *     where its reader names one, else under its outputs' names (step 3.7).
+         */
+        FeatureInput: {
+            /** Alias */
+            alias?: string | null;
+            /** Hash */
+            hash: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "feature";
+            /** Name */
+            name: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /**
+         * FeatureOutput
+         * @description The output `output` of the feature `name` with its `parameters`, the feature found by its
+         *     content hash.
+         */
+        FeatureOutput: {
+            /** Hash */
+            hash: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "feature";
+            /** Name */
+            name: string;
+            /** Output */
+            output: string;
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
          * FieldError
          * @description Where a request broke the API's schema and why, without the value it sent.
          */
@@ -716,6 +1072,91 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /**
+         * IndexedFeature
+         * @description A saved feature as the index holds it: its row's id, its name, and its versions in order.
+         */
+        IndexedFeature: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Versions */
+            versions: components["schemas"]["IndexedVersion"][];
+        };
+        /**
+         * IndexedStrategy
+         * @description A saved strategy as the index holds it: its row's id, its name, its kind, and its versions
+         *     in order.
+         */
+        IndexedStrategy: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["StrategyKind"];
+            /** Name */
+            name: string;
+            /** Versions */
+            versions: components["schemas"]["IndexedStrategyVersion"][];
+        };
+        /**
+         * IndexedStrategyVersion
+         * @description A strategy's version as the index holds it, with the instrument and the timeframe its
+         *     strategy names, its hypothesis, and its changelog.
+         */
+        IndexedStrategyVersion: {
+            /** Changelog */
+            changelog: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Hash */
+            hash: string;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Id */
+            id: string;
+            /** Instrument */
+            instrument: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * IndexedVersion
+         * @description A saved version as the index holds it: its row's id, its number, its content hash, and when
+         *     it was saved.
+         */
+        IndexedVersion: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Hash */
+            hash: string;
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * InstrumentInput
+         * @description Another instrument's signal bars at the feature's timeframe, such as MNQ's for a feature
+         *     of MES, each column suffixed with its root, as `close_MNQ`, with `staleness_MNQ`, the
+         *     nanoseconds from that bar's close, joined as of each row's close (step 3.2).
+         */
+        InstrumentInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "instrument";
+            /** Root */
+            root: string;
         };
         /**
          * InstrumentKind
@@ -823,6 +1264,14 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
+        JsonValue: unknown;
+        /**
+         * LintRule
+         * @description What a finding of the lint is: a way of reading ahead (`looks_ahead`), a read of data the
+         *     detector cannot cut (`fails_validation`), or a warning of what the content hash leaves out.
+         * @enum {string}
+         */
+        LintRule: "negative_shift" | "backward_fill" | "centred_window" | "full_sample" | "partition_aggregate" | "reversed" | "forward_join" | "join_on_open" | "reads_data" | "reads_labels" | "name_read_outside" | "non_literal_default";
         /**
          * LoginRequest
          * @description The password, set at `fefat up`'s first run or by `fefat password set`.
@@ -834,6 +1283,73 @@ export interface components {
              */
             password: string;
         };
+        /**
+         * Negation
+         * @description `not` of a flag.
+         */
+        Negation: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "not";
+            /** Of */
+            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+        };
+        /**
+         * NewFeature
+         * @description A new feature: its name, the name of the function its code defines, and its first
+         *     version's code.
+         */
+        NewFeature: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * NewStrategy
+         * @description A new strategy: its name, a lower-case identifier of at most 64 characters, and its first
+         *     version.
+         */
+        NewStrategy: {
+            /**
+             * Changelog
+             * @default
+             */
+            changelog: string;
+            /** Code */
+            code: string;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * NewStrategyVersionRequest
+         * @description A version to save: its code, its hypothesis, one sentence on one line stating the edge,
+         *     and its changelog.
+         */
+        NewStrategyVersionRequest: {
+            /**
+             * Changelog
+             * @default
+             */
+            changelog: string;
+            /** Code */
+            code: string;
+            /** Hypothesis */
+            hypothesis: string;
+        };
+        /**
+         * OutputKind
+         * @description What an output's values are (D-71), which its column must admit and its version keeps; the
+         *     leak detector compares values by their column's type. A `price` (a level, such as a moving
+         *     average) and a `price_distance` (such as an ATR) are in the bars' 1e-9 units, the units in
+         *     which the execution template reads them (F-RND-01, D-60), never in points.
+         * @enum {string}
+         */
+        OutputKind: "price" | "price_distance" | "ratio" | "count" | "flag" | "other";
         /**
          * PasswordChange
          * @description The password the session's login used, and the one to keep in its place.
@@ -849,6 +1365,19 @@ export interface components {
              * Format: password
              */
             new_password: string;
+        };
+        /**
+         * PinnedFeature
+         * @description A feature version a strategy's slots read, as the library keeps it: its name, its number,
+         *     and its content hash.
+         */
+        PinnedFeature: {
+            /** Hash */
+            hash: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
         };
         /**
          * Preset
@@ -909,6 +1438,46 @@ export interface components {
          */
         QualityStatus: "clean" | "flagged" | "unchecked" | "stale";
         /**
+         * RefusedCode
+         * @description Code the SDK refused: the line of the code the refusal is at, None where it has none, and
+         *     why, in the SDK's words.
+         */
+        RefusedCode: {
+            /** Line */
+            line: number | null;
+            /** Message */
+            message: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            verdict: "refused";
+        };
+        /**
+         * RefusedCodeProblem
+         * @description The trader's code the SDK refused (step 5.2), with the line of the code the refusal is
+         *     at, None where it has none, which an editor underlines.
+         */
+        RefusedCodeProblem: {
+            /** Detail */
+            detail: string;
+            /** Instance */
+            instance: string;
+            /** Line */
+            line: number | null;
+            /** Request Id */
+            request_id: string;
+            /** Status */
+            status: number;
+            /** Title */
+            title: string;
+            /**
+             * Type
+             * @default about:blank
+             */
+            type: string;
+        };
+        /**
          * ReportedFinding
          * @description A finding of a quality report: its trade date, its kind, the schema and the contract it
          *     was found in, none for a gap, which no contract fills, and how many records or bars it
@@ -927,6 +1496,91 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+        };
+        /**
+         * SavedFeatureVersion
+         * @description A feature version as the API gives it: its file's record (`fefat.features.versions`), and
+         *     its row's id and its feature's in the index.
+         */
+        SavedFeatureVersion: {
+            /** Code */
+            code: string;
+            /** Combination */
+            combination?: (components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"]) | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Feature Id */
+            feature_id: string;
+            /** Hash */
+            hash: string;
+            /** Id */
+            id: string;
+            /** Inputs */
+            inputs: (components["schemas"]["FeatureInput"] | components["schemas"]["InstrumentInput"] | components["schemas"]["TimeframeInput"] | components["schemas"]["DatasetInput"] | components["schemas"]["TradesInput"])[];
+            /** Name */
+            name: string;
+            /** Outputs */
+            outputs: {
+                [key: string]: components["schemas"]["OutputKind"];
+            };
+            /** Parameter Schema */
+            parameter_schema: {
+                [key: string]: unknown;
+            };
+            /** Version */
+            version: number;
+            /** Warmup */
+            warmup: number | string;
+            /**
+             * Warmup Sessions
+             * @default 0
+             */
+            warmup_sessions: number | string;
+        };
+        /**
+         * SavedStrategyVersion
+         * @description A strategy version as the API gives it: its file's record (`fefat.strategy.versions`),
+         *     its row's id and its strategy's in the index, and the lint's findings in its code, which
+         *     warn.
+         */
+        SavedStrategyVersion: {
+            /** Changelog */
+            changelog: string;
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Hash */
+            hash: string;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Id */
+            id: string;
+            /** Instrument */
+            instrument: string;
+            kind: components["schemas"]["StrategyKind"];
+            /** Lint */
+            lint: components["schemas"]["StrategyLintFinding"][];
+            /** Name */
+            name: string;
+            /** Parameter Schema */
+            parameter_schema: {
+                [key: string]: unknown;
+            };
+            /** Pinned Features */
+            pinned_features: components["schemas"]["PinnedFeature"][];
+            /** Strategy Id */
+            strategy_id: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Version */
+            version: number;
         };
         SecretChanges: {
             [key: string]: string | null;
@@ -1099,12 +1753,104 @@ export interface components {
             schema_name: string;
         };
         /**
+         * StrategyCode
+         * @description A strategy's code, a module whose function `strategy` gives the `SignalStrategy`.
+         */
+        StrategyCode: {
+            /** Code */
+            code: string;
+        };
+        /**
+         * StrategyKind
+         * @description What a strategy is: a signal strategy (`SignalStrategy`), the only kind until the event
+         *     strategies of Phase 9.
+         * @enum {string}
+         */
+        StrategyKind: "signal";
+        /**
+         * StrategyLintFinding
+         * @description A finding of a strategy's lint: its rule, the line of the code it is on, the line's text,
+         *     and why it reads ahead or reads data.
+         */
+        StrategyLintFinding: {
+            /** Explanation */
+            explanation: string;
+            /** Line */
+            line: number;
+            rule: components["schemas"]["LintRule"];
+            /** Source */
+            source: string;
+        };
+        /**
+         * StrategyTemplate
+         * @description A strategy to start from: its name, its hypothesis, one sentence stating the edge, and its
+         *     code, a strategy version's (`fefat.strategy.source_code`).
+         */
+        StrategyTemplate: {
+            /** Code */
+            code: string;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Name */
+            name: string;
+        };
+        /**
          * Theme
          * @description The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or
          *     light.
          * @enum {string}
          */
         Theme: "dark" | "light";
+        /**
+         * TimeframeInput
+         * @description The timeframe of the bars the feature is evaluated on, such as `15m` for a feature that a
+         *     strategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2).
+         */
+        TimeframeInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "timeframe";
+            /** Timeframe */
+            timeframe: string;
+        };
+        /**
+         * TradesInput
+         * @description The instrument's prints of each bucket of the feature's bars by aggressor side, available
+         *     at the bucket's close, as `buy_volume`, `sell_volume`, and `unknown_side_volume`, null where
+         *     no prints are in hand (step 3.6, `fefat.market.aggressor`), as cumulative delta reads them.
+         */
+        TradesInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "trades";
+        };
+        /**
+         * ValidStrategy
+         * @description A strategy's code that builds: the instrument and the timeframe its strategy names with
+         *     its defaults, the JSON schema of its parameters, and the lint's findings in its code, which
+         *     warn (`ff.strategy.lint`).
+         */
+        ValidStrategy: {
+            /** Instrument */
+            instrument: string;
+            /** Lint */
+            lint: components["schemas"]["StrategyLintFinding"][];
+            /** Parameter Schema */
+            parameter_schema: {
+                [key: string]: unknown;
+            };
+            /** Timeframe */
+            timeframe: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            verdict: "valid";
+        };
         /**
          * ValidationProblem
          * @description A request the API's schema refused, with each of its errors.
@@ -1129,6 +1875,20 @@ export interface components {
             type: string;
         };
         /**
+         * VersionDiff
+         * @description The unified diff of the code of two versions, `earlier`'s and `later`'s, empty where their
+         *     code is the same; the structured diff of a builder's spec joins it with the builder of
+         *     Phase 6.
+         */
+        VersionDiff: {
+            /** Code Diff */
+            code_diff: string;
+            /** Earlier */
+            earlier: number;
+            /** Later */
+            later: number;
+        };
+        /**
          * Versions
          * @description The versions the server runs: the app's, the SDK's, and the engine's three, which every
          *     run records (`02-engine-and-data.md` section 4).
@@ -1144,6 +1904,21 @@ export interface components {
             fefat_app: string;
             /** Fill Model */
             fill_model: number;
+        };
+        /**
+         * Window
+         * @description A window over the last `n` bars of a term, `lag` the term `n` bars before.
+         */
+        Window: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "lag" | "percent_rank" | "rolling_max" | "rolling_mean" | "rolling_min" | "rolling_rank" | "rolling_std" | "z_score";
+            /** N */
+            n: number;
+            /** Of */
+            of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
         };
     };
     responses: never;
@@ -1622,6 +2397,369 @@ export interface operations {
             };
         };
     };
+    saved_features_v1_features_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedFeature"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_feature_v1_features_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewFeature"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedFeatureVersion"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["RefusedCodeProblem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    feature_diff_v1_features__feature_id__diff_get: {
+        parameters: {
+            query: {
+                /** @description The earlier version. */
+                from: number;
+                /** @description The later version. */
+                to: number;
+            };
+            header?: never;
+            path: {
+                /** @description A feature's id in the index, a UUIDv7. */
+                feature_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDiff"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    feature_versions_v1_features__feature_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A feature's id in the index, a UUIDv7. */
+                feature_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedVersion"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    save_feature_version_v1_features__feature_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A feature's id in the index, a UUIDv7. */
+                feature_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeatureCode"];
+            };
+        };
+        responses: {
+            /** @description The code was saved before: its version, unchanged. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedFeatureVersion"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedFeatureVersion"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["RefusedCodeProblem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    feature_version_v1_features__feature_id__versions__number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A feature's id in the index, a UUIDv7. */
+                feature_id: string;
+                /** @description A version's number, from 1. */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedFeatureVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     health_v1_healthz_get: {
         parameters: {
             query?: never;
@@ -2063,6 +3201,449 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    saved_strategies_v1_strategies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedStrategy"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    create_strategy_v1_strategies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewStrategy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedStrategyVersion"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["RefusedCodeProblem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    strategy_templates_v1_strategies_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyTemplate"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    validate_strategy_v1_strategies_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyCode"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidStrategy"] | components["schemas"]["RefusedCode"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    strategy_diff_v1_strategies__strategy_id__diff_get: {
+        parameters: {
+            query: {
+                /** @description The earlier version. */
+                from: number;
+                /** @description The later version. */
+                to: number;
+            };
+            header?: never;
+            path: {
+                /** @description A strategy's id in the index, a UUIDv7. */
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDiff"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    strategy_versions_v1_strategies__strategy_id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A strategy's id in the index, a UUIDv7. */
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedStrategyVersion"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    save_strategy_version_v1_strategies__strategy_id__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A strategy's id in the index, a UUIDv7. */
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewStrategyVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description The code was saved before with the same words: its version, unchanged. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedStrategyVersion"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedStrategyVersion"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["RefusedCodeProblem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    strategy_version_v1_strategies__strategy_id__versions__number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A strategy's id in the index, a UUIDv7. */
+                strategy_id: string;
+                /** @description A version's number, from 1. */
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedStrategyVersion"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
         };

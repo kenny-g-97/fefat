@@ -43,13 +43,18 @@ class AccessTables:
             )
         return kept
 
-    def replace_password_hash(self, password_hash: str) -> None:
+    def replace_password_hash(self, password_hash: str, changed_at: datetime) -> None:
         with Session(self.engine) as session, session.begin():
             row = session.get(SettingRow, PASSWORD_HASH_KEY)
             if row is None:
                 session.add(SettingRow(key=PASSWORD_HASH_KEY, value_json=password_hash))
             else:
                 row.value_json = password_hash
+                session.execute(
+                    update(ApiTokenRow)
+                    .where(ApiTokenRow.revoked_at.is_(None))
+                    .values(revoked_at=changed_at)
+                )
             session.execute(delete(LoginSessionRow))
 
     def add_session(self, token_hash: str, created_at: datetime, expires_at: datetime) -> None:

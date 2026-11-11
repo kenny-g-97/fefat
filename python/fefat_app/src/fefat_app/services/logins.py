@@ -2,7 +2,8 @@
 `01-architecture.md` section 8): the password is set at `fefat up`'s first run or by `fefat
 password set`, or changed on the settings page with the current one, and kept as its Argon2
 hash; a login checks it, at most five attempts a minute, and opens a session of 30 days whose
-token the cookie carries; a new password ends every session."""
+token the cookie carries; a new password ends every session, and from step 5.2 one that replaces
+another revokes every API token too, which outlived it before."""
 
 import math
 import threading
@@ -96,14 +97,15 @@ class Logins:
         return self.records.password_hash() is not None
 
     def set_password(self, password: str) -> None:
-        """Keep `password`'s Argon2 hash as the password, which ends every login session; one
-        of fewer than 8 or more than 1,024 characters is refused."""
+        """Keep `password`'s Argon2 hash as the password, which ends every login session and,
+        where it replaces another, revokes every API token; one of fewer than 8 or more than
+        1,024 characters is refused."""
         if not MINIMUM_PASSWORD_LENGTH <= len(password) <= MAXIMUM_PASSWORD_LENGTH:
             raise ValueError(
                 f"Expected a password of {MINIMUM_PASSWORD_LENGTH} to {MAXIMUM_PASSWORD_LENGTH} "
                 f"characters, got {len(password)}."
             )
-        self.records.replace_password_hash(self.hasher.hash(password))
+        self.records.replace_password_hash(self.hasher.hash(password), self.clock())
 
     def login(self, password: str) -> OpenedLoginSession:
         """A new login session when `password` is the password; refused with `WrongPasswordError`,
@@ -115,9 +117,10 @@ class Logins:
 
     def change_password(self, current: str, new: str) -> OpenedLoginSession:
         """Keep `new` as the password once `current` is checked, as a login is, against the same
-        five attempts a minute; every login session ends, and the new one returned keeps the
-        browser that asked logged in. Refused with `WrongPasswordError`, with
-        `TooManyLoginAttemptsError`, or, for a new password of the wrong length, `ValueError`."""
+        five attempts a minute; every login session ends, every API token is revoked, and the new
+        session returned keeps the browser that asked logged in. Refused with
+        `WrongPasswordError`, with `TooManyLoginAttemptsError`, or, for a new password of the
+        wrong length, `ValueError`."""
         now = self.clock()
         self._check(current, now)
         self.set_password(new)

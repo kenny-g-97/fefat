@@ -93,10 +93,10 @@ def me(identity: IdentityDependency) -> Identity:
 def change_password(
     request: Request, response: Response, change: PasswordChange, container: ContainerDependency
 ) -> SessionIdentity:
-    """Change the password, from a login session alone: every session ends, and the response
-    sets the cookie of a new one for this browser and returns its CSRF token; refused with 403
-    for a wrong current password, and with 429 after five attempts in a minute, the logins'
-    attempts included."""
+    """Change the password, from a login session alone: every session ends, every API token is
+    revoked, and the response sets the cookie of a new one for this browser and returns its CSRF
+    token; refused with 403 for a wrong current password, and with 429 after five attempts in a
+    minute, the logins' attempts included."""
     try:
         opened = container.logins.change_password(
             change.current_password.get_secret_value(), change.new_password.get_secret_value()

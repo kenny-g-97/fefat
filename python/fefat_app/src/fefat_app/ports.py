@@ -4,9 +4,10 @@ what uses it, so that swapping an adapter is a module of its own and a line of t
 
 The credential store is the first (step 4.1), the records of who may use the local server the
 second (step 4.2), the trader's preferences the third (step 4.3), the jobs' records and their
-dispatcher the fourth and fifth (step 4.4), and the executor the sixth (step 4.5), its specs and
-results in `fefat_app.execution`; the blob store, the agent's runtime, and the licence arrive
-with the steps that first use them."""
+dispatcher the fourth and fifth (step 4.4), the executor the sixth (step 4.5), its specs and
+results in `fefat_app.execution`, and the library's index the seventh (step 5.2), its rows in
+`fefat_app.library`; the blob store, the agent's runtime, and the licence arrive with the steps
+that first use them."""
 
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -22,6 +23,7 @@ from fefat_app.execution import (
     StopCheck,
     keep_running,
 )
+from fefat_app.library import IndexedFeature, IndexedStrategy
 
 type Clock = Callable[[], datetime]
 """Now, as an aware instant in UTC: the system's clock in the server, a settable one in tests."""
@@ -91,9 +93,10 @@ class AccessRecords(Protocol):
         """The password's Argon2 hash, or None before a password is set."""
         ...
 
-    def replace_password_hash(self, password_hash: str) -> None:
+    def replace_password_hash(self, password_hash: str, changed_at: datetime) -> None:
         """Keep `password_hash` as the password's, in place of any before, and end every login
-        session in the same transaction."""
+        session in the same transaction; one that replaces another revokes every live API
+        token at `changed_at` too (step 5.2)."""
         ...
 
     def add_session(self, token_hash: str, created_at: datetime, expires_at: datetime) -> None:
@@ -374,4 +377,22 @@ class Executor(Protocol):
 
     def close(self) -> None:
         """End any process the executor keeps between executions, as the server stops."""
+        ...
+
+
+class LibraryIndex(Protocol):
+    """The index of the saved features and strategies (step 5.2, ADR-0020): their version files
+    stay the record, and the lists read the index (`fefat_app.library`)."""
+
+    def refresh(self) -> None:
+        """Index the versions saved since, by the app or a notebook; refused with
+        `LibraryRefusedError` where the files are not as indexed."""
+        ...
+
+    def strategies(self) -> tuple[IndexedStrategy, ...]:
+        """The saved strategies by name, each with its versions in order."""
+        ...
+
+    def features(self) -> tuple[IndexedFeature, ...]:
+        """The saved features by name, each with its versions in order."""
         ...

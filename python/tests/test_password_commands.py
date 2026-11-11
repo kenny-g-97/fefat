@@ -44,7 +44,14 @@ def test_password_set_replaces_the_password_and_ends_every_session(
             logins.login(PASSWORD)
         logins.login(NEW_PASSWORD)
     assert (code, ended) == (0, None)
-    assert capsys.readouterr().out == "Set the password; every login session ended.\n" * 2
+    assert (
+        capsys.readouterr().out
+        == (
+            "Set the password; every login session ended, and where it replaced another, every API "
+            "token was revoked.\n"
+        )
+        * 2
+    )
 
 
 def test_a_password_too_short_is_refused(

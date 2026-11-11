@@ -18,7 +18,13 @@ from fefat.config import resolve_paths
 from fefat.features import FeatureDef, FeatureInput, InstrumentInput, OutputKind, combine, registry
 from fefat.features.definition import content_hash
 from fefat.features.runtime import FeatureGraph
-from fefat.features.versions import LIBRARY_COLUMNS, saved_versions
+from fefat.features.versions import (
+    LIBRARY_COLUMNS,
+    code_diff,
+    load_in,
+    saved_versions,
+    saved_versions_in,
+)
 from fefat.market.schema import Timeframe
 from notebook_runs import features_of_cell
 
@@ -198,7 +204,7 @@ def test_a_version_another_process_saved_first_is_never_replaced(
     refused rather than replacing the first, as here, where the versions on disk go unseen."""
     first = ff.features.save(features_of_cell(GAP)["gap"])
     before = (folder("gap") / "v1.json").read_bytes()
-    monkeypatch.setattr("fefat.features.versions._version_numbers", lambda folder: [])
+    monkeypatch.setattr("fefat.features.versions.version_numbers", lambda folder: [])
 
     with pytest.raises(ValueError, match="saved by another process first: save it again"):
         ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
@@ -409,6 +415,39 @@ def test_the_library_lists_each_saved_version_by_name_then_number() -> None:
         ff.features.load("gap", number).hash for number in (1, 2)
     ]
     assert saved_versions() == [ff.features.load("gap", number) for number in (1, 2)]
+
+
+def test_a_library_is_read_from_the_folder_it_is_given(tmp_path: Path) -> None:
+    # Step 5.2 (D-93): the app reads and indexes the library of the folders its container holds,
+    # whatever folder the environment names.
+    first = ff.features.save(features_of_cell(GAP)["gap"])
+    second = ff.features.save(features_of_cell(GAP.replace('"n": 3', '"n": 4'))["gap"])
+    moved = tmp_path / "moved-features"
+    shutil.copytree(folder("gap").parent, moved)
+    shutil.rmtree(folder("gap"))
+
+    assert load_in(moved, "gap", 2) == second
+    assert saved_versions_in(moved) == [first, second]
+    assert saved_versions() == []
+
+
+def test_the_diff_of_two_versions_is_the_unified_diff_of_their_code() -> None:
+    # Step 5.2: the diff the API serves for the versions of a feature or a strategy.
+    first = ff.features.save(features_of_cell(GAP)["gap"])
+    second = ff.features.save(features_of_cell(GAP.replace(" - ", " + "))["gap"])
+
+    changed = code_diff(first.code, second.code, ("gap v1", "gap v2"))
+
+    assert changed == (
+        "--- gap v1\n"
+        "+++ gap v2\n"
+        "@@ -1,3 +1,3 @@\n"
+        ' @ff.feature(params={"n": 3}, warmup=lambda n: n, outputs={"gap": "price_distance"})\n'
+        " def gap(bars: pl.LazyFrame, n: int) -> pl.Expr:\n"
+        '-    return pl.col("close") - pl.col("close").rolling_mean(n)\n'
+        '+    return pl.col("close") + pl.col("close").rolling_mean(n)\n'
+    )
+    assert code_diff(first.code, first.code, ("gap v1", "gap v1")) == ""
 
 
 def test_a_combination_named_as_the_feature_it_reads_is_built_again(

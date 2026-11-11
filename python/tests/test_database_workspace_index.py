@@ -1,13 +1,14 @@
 """The index of the workspace's files, step 4.1 (D-84, ADR-0020): the feature versions, the leak
 detector's reports, and the saved import profiles the SDK wrote get a row each in the app's
 database, the files they index staying the record; indexing again adds only the files it has
-not seen, and moves or changes none."""
+not seen, and moves or changes none. From step 5.2 (D-93), the strategy versions with the feature
+versions they pin, under the folders the index is given."""
 
 import hashlib
 import json
 import os
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -18,12 +19,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import fefat as ff
-from fefat.config import resolve_paths
+from fefat.config import FefatPaths, resolve_paths
 from fefat.features import combine
 from fefat.features.validation_report import StartCheck, ValidationReport
-from fefat.features.versions import validation_file
+from fefat.features.versions import saved_versions_in, validation_file
 from fefat.market.importers.profiles import ProfileKind, preset_profiles
 from fefat.market.store_files import json_writer, write_atomically
+from fefat.strategy import StrategyKind
+from fefat.strategy.versions import saved_versions_in as saved_strategy_versions_in
+from fefat_app.database import version_index
 from fefat_app.database.models import (
     ApiTokenRow,
     Base,
@@ -31,11 +35,16 @@ from fefat_app.database.models import (
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
+    StrategyRow,
+    StrategyVersionFeatureRow,
+    StrategyVersionRow,
     WorkspaceRow,
 )
-from fefat_app.database.schema import opened_database, upgrade_schema
+from fefat_app.database.schema import not_waiting, opened_database, upgrade_schema
+from fefat_app.database.version_index import index_library
 from fefat_app.database.workspace_index import IndexSummary, index_workspace
 from notebook_runs import features_of_cell
+from strategy_code import BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
 GAP = """\
 @ff.feature(params={"n": 3}, warmup=lambda n: n, outputs={"gap": "price_distance"})
@@ -106,6 +115,11 @@ def a_saved_profile(name: str) -> Path:
     return path
 
 
+def paths() -> FefatPaths:
+    """The folders of the test's `FEFAT_HOME`, which the SDK saved into."""
+    return resolve_paths(os.environ)
+
+
 def row_counts(engine: Engine) -> dict[str, int]:
     with Session(engine) as session:
         return {
@@ -129,9 +143,11 @@ def test_the_first_indexing_adds_a_row_for_each_file(engine: Engine) -> None:
     report_file = kept(a_report(second, later_from=date(2026, 2, 3)))
     profile_file = a_saved_profile("es-tradingview-5m")
 
-    indexed = index_workspace(engine)
+    indexed = index_workspace(engine, paths())
 
-    assert indexed == IndexSummary(versions=2, validations=1, profiles=1)
+    assert indexed == IndexSummary(
+        feature_versions=2, strategy_versions=0, validations=1, profiles=1
+    )
     with Session(engine) as session:
         workspace = session.scalars(select(WorkspaceRow)).one()
         feature = session.scalars(select(FeatureRow)).one()
@@ -175,15 +191,17 @@ def test_indexing_again_adds_only_the_files_it_has_not_seen_and_keeps_a_replaced
     second = (gap_with(3), gap_with(4))[1]
     kept(a_report(second, later_from=date(2026, 2, 2)))
     a_saved_profile("es-tradingview-5m")
-    index_workspace(engine)
+    index_workspace(engine, paths())
 
-    unchanged = index_workspace(engine)
+    unchanged = index_workspace(engine, paths())
     gap_with(5)
     kept(a_report(second, later_from=date(2026, 2, 3)))
-    added = index_workspace(engine)
+    added = index_workspace(engine, paths())
 
-    assert unchanged == IndexSummary(versions=0, validations=0, profiles=0)
-    assert added == IndexSummary(versions=1, validations=1, profiles=0)
+    assert unchanged == IndexSummary(
+        feature_versions=0, strategy_versions=0, validations=0, profiles=0
+    )
+    assert added == IndexSummary(feature_versions=1, strategy_versions=0, validations=1, profiles=0)
     with Session(engine) as session:
         verdicts = session.scalars(select(FeatureValidationRow.passed)).all()
     assert sorted(verdicts) == [False, True]
@@ -198,6 +216,9 @@ def test_indexing_again_adds_only_the_files_it_has_not_seen_and_keeps_a_replaced
         "events": 0,
         "sessions": 0,
         "api_tokens": 0,
+        "strategies": 0,
+        "strategy_versions": 0,
+        "strategy_version_features": 0,
     }
 
 
@@ -206,7 +227,7 @@ def test_indexing_moves_and_changes_no_file(engine: Engine) -> None:
     a_saved_profile("es-tradingview-5m")
     before = file_digests()
 
-    index_workspace(engine)
+    index_workspace(engine, paths())
 
     assert len(before) == 3
     assert file_digests() == before
@@ -217,7 +238,7 @@ def test_a_profile_copied_by_hand_under_another_name_is_indexed_once(engine: Eng
     saved = a_saved_profile("es-tradingview-5m")
     shutil.copyfile(saved, saved.with_name("es-tradingview-5m - Copy.yaml"))
 
-    indexed = index_workspace(engine)
+    indexed = index_workspace(engine, paths())
 
     assert indexed.profiles == 1
     assert row_counts(engine)["import_profiles"] == 1
@@ -228,26 +249,31 @@ def test_a_report_of_a_hash_no_version_has_is_indexed_without_a_link(engine: Eng
     unsaved = gap_with(3).model_copy(update={"name": "unsaved", "hash": "d" * 64})
     kept(a_report(unsaved, later_from=date(2026, 2, 3)))
 
-    index_workspace(engine)
+    index_workspace(engine, paths())
 
     with Session(engine) as session:
         validation = session.scalars(select(FeatureValidationRow)).one()
     assert (validation.feature_name, validation.feature_version_id) == ("unsaved", None)
 
 
-def test_a_report_in_a_form_the_sdk_no_longer_reads_stops_the_indexing_with_the_way_out(
-    engine: Engine,
-) -> None:
-    # A report written while step 3.4 was being built, its lint's findings without the feature
-    # they read, as one on the builder's PC is.
+def a_report_the_sdk_no_longer_reads() -> Path:
+    """A report written while step 3.4 was being built, its lint's findings without the feature
+    they read, as one on the builder's PC is."""
     report = a_report(gap_with(3), later_from=date(2026, 2, 3)).model_dump(mode="json")
     finding = {"rule": "negative_shift", "line": 3, "source": "shift(-1)", "explanation": "ahead"}
     path = validation_file(report["feature"], report["hash"])
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({**report, "lint": [finding]}), encoding="utf-8")
+    return path
+
+
+def test_a_report_in_a_form_the_sdk_no_longer_reads_stops_the_indexing_with_the_way_out(
+    engine: Engine,
+) -> None:
+    path = a_report_the_sdk_no_longer_reads()
 
     with pytest.raises(ValueError, match="Validate the feature again") as refused:
-        index_workspace(engine)
+        index_workspace(engine, paths())
 
     assert str(path) in str(refused.value)
     assert set(row_counts(engine).values()) == {0}
@@ -261,7 +287,7 @@ def test_a_version_file_changed_after_it_was_written_stops_the_indexing(engine: 
     path.write_text(changed, encoding="utf-8", newline="\n")
 
     with pytest.raises(ValueError, match=r"the file was changed after it was written"):
-        index_workspace(engine)
+        index_workspace(engine, paths())
 
     assert set(row_counts(engine).values()) == {0}
 
@@ -269,7 +295,7 @@ def test_a_version_file_changed_after_it_was_written_stops_the_indexing(engine: 
 def test_a_version_saved_again_under_an_indexed_number_is_refused(engine: Engine) -> None:
     # A version file deleted by hand and its number saved again holds another hash.
     first = gap_with(3)
-    index_workspace(engine)
+    index_workspace(engine, paths())
     (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
     other = gap_with(4)
     expected = (
@@ -278,14 +304,14 @@ def test_a_version_saved_again_under_an_indexed_number_is_refused(engine: Engine
     )
 
     with pytest.raises(ValueError, match=expected):
-        index_workspace(engine)
+        index_workspace(engine, paths())
 
 
 def test_a_version_saved_again_under_another_number_is_refused(engine: Engine) -> None:
     # A version file deleted by hand and its code saved again takes the next number.
     first = gap_with(3)
     gap_with(4)
-    index_workspace(engine)
+    index_workspace(engine, paths())
     (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
     again = gap_with(3)
     expected = (
@@ -294,7 +320,7 @@ def test_a_version_saved_again_under_another_number_is_refused(engine: Engine) -
     )
 
     with pytest.raises(ValueError, match=expected):
-        index_workspace(engine)
+        index_workspace(engine, paths())
     assert (again.hash, again.version) == (first.hash, 3)
 
 
@@ -306,17 +332,19 @@ def test_a_rebuild_indexes_the_files_as_they_are_and_keeps_the_apps_own_state(
     # password, the sessions, and the API tokens; a rebuild indexes the files as they are now.
     gap_with(3)
     a_saved_profile("es-tradingview-5m")
-    index_workspace(engine)
+    index_workspace(engine, paths())
     with Session(engine) as session, session.begin():
         session.add(ApiTokenRow(name="notebook", token_hash="e" * 64, created_at=VALIDATED_AT))
     (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
     again = gap_with(4)
 
     with pytest.raises(ValueError, match="fefat db import-workspace --rebuild"):
-        index_workspace(engine)
-    rebuilt = index_workspace(engine, rebuild=True)
+        index_workspace(engine, paths())
+    rebuilt = index_workspace(engine, paths(), rebuild=True)
 
-    assert rebuilt == IndexSummary(versions=1, validations=0, profiles=1, rebuilt=True)
+    assert rebuilt == IndexSummary(
+        feature_versions=1, strategy_versions=0, validations=0, profiles=1, rebuilt=True
+    )
     with Session(engine) as session:
         assert session.scalars(select(FeatureVersionRow.content_hash)).all() == [again.hash]
         assert session.scalars(select(ApiTokenRow.name)).all() == ["notebook"]
@@ -336,13 +364,159 @@ def test_a_combination_is_indexed_with_its_description_and_the_features_it_reads
     saved = ff.features.save(stretch)
     written = saved.model_dump(mode="json")
 
-    indexed = index_workspace(engine)
+    indexed = index_workspace(engine, paths())
 
     with Session(engine) as session:
         row = session.scalars(
             select(FeatureVersionRow).where(FeatureVersionRow.content_hash == saved.hash)
         ).one()
-    assert indexed.versions == 2
+    assert indexed.feature_versions == 2
     assert row.combination_json == written["combination"]
     assert row.inputs_json == written["inputs"]
     assert [each["name"] for each in row.inputs_json] == ["rsi"]
+
+
+OVERSOLD = WITH_A_SLOT.format(feature="ff.indicators.rsi(14)", entry='pl.col("read") < 30')
+"""A strategy reading the SDK's RSI in a slot, which its version pins."""
+
+
+def test_strategy_versions_are_indexed_with_the_feature_versions_they_pin(
+    engine: Engine,
+) -> None:
+    # Step 5.2 (D-93): a strategy's versions are files the index reads as it reads a feature's.
+    oversold = ff.strategy.save("oversold", OVERSOLD, hypothesis=HYPOTHESIS, changelog="First.")
+    breakout = ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+
+    indexed = index_workspace(engine, paths())
+    again = index_workspace(engine, paths())
+
+    assert indexed == IndexSummary(
+        feature_versions=1, strategy_versions=2, validations=0, profiles=0
+    )
+    assert again == IndexSummary(feature_versions=0, strategy_versions=0, validations=0, profiles=0)
+    with Session(engine) as session:
+        strategies = session.scalars(select(StrategyRow).order_by(StrategyRow.name)).all()
+        versions = {row.content_hash: row for row in session.scalars(select(StrategyVersionRow))}
+        pin = session.scalars(select(StrategyVersionFeatureRow)).one()
+        rsi = session.scalars(select(FeatureVersionRow)).one()
+    row = versions[oversold.hash]
+    assert [(each.name, each.kind) for each in strategies] == [
+        ("breakout", StrategyKind.SIGNAL),
+        ("oversold", StrategyKind.SIGNAL),
+    ]
+    assert (row.version_no, row.hypothesis, row.changelog) == (1, HYPOTHESIS, "First.")
+    assert (row.instrument, row.timeframe, row.code) == ("MES", "5m", oversold.code)
+    assert (row.params_schema_json, row.created_at) == (
+        oversold.parameter_schema,
+        oversold.created_at,
+    )
+    assert (pin.strategy_version_id, pin.feature_version_id) == (row.id, rsi.id)
+    assert versions[breakout.hash].version_no == 1
+
+
+def test_a_strategy_version_pinning_a_feature_version_the_library_lacks_stops_the_indexing(
+    engine: Engine,
+) -> None:
+    ff.strategy.save("oversold", OVERSOLD, hypothesis=HYPOTHESIS)
+    (paths().features_dir / "rsi" / "v1.json").unlink()
+
+    with pytest.raises(ValueError, match="which version 1 of strategy oversold pins"):
+        index_workspace(engine, paths())
+
+    assert set(row_counts(engine).values()) == {0}
+
+
+def test_a_rebuild_empties_the_strategies_before_the_feature_versions_they_pin(
+    engine: Engine,
+) -> None:
+    # The foreign keys hold during a rebuild, so a pin leaves before the versions it names.
+    ff.strategy.save("oversold", OVERSOLD, hypothesis=HYPOTHESIS)
+    index_workspace(engine, paths())
+
+    rebuilt = index_workspace(engine, paths(), rebuild=True)
+
+    assert rebuilt == IndexSummary(
+        feature_versions=1, strategy_versions=1, validations=0, profiles=0, rebuilt=True
+    )
+    assert row_counts(engine)["strategy_version_features"] == 1
+    with (
+        pytest.raises(IntegrityError, match="strategy_versions rows are never deleted"),
+        engine.begin() as connection,
+    ):
+        connection.exec_driver_sql("DELETE FROM strategy_versions")
+
+
+def test_the_library_is_read_before_the_index_takes_the_write_lock(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The step review: a save indexes the library twice, and every other writer, a job renewing
+    # its lease among them, would wait while the version files are read under the lock.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    read: list[Path] = []
+
+    def while_another_writes[Record](
+        reader: Callable[[Path], list[Record]],
+    ) -> Callable[[Path], list[Record]]:
+        def reading(folder: Path) -> list[Record]:
+            with not_waiting(engine).begin() as connection:
+                connection.exec_driver_sql("SELECT 1")
+            read.append(folder)
+            return reader(folder)
+
+        return reading
+
+    with monkeypatch.context() as patch:
+        patch.setattr(version_index, "saved_versions_in", while_another_writes(saved_versions_in))
+        patch.setattr(
+            version_index,
+            "saved_strategy_versions_in",
+            while_another_writes(saved_strategy_versions_in),
+        )
+        index_library(engine, paths())
+
+    assert read == [paths().features_dir, paths().strategies_dir]
+    assert row_counts(engine)["strategy_versions"] == 1
+
+
+def test_a_version_file_copied_by_hand_under_another_number_is_refused(engine: Engine) -> None:
+    # The step review: the copy gives its original's hash, which one strategy holds once.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    folder = paths().strategies_dir / "breakout"
+    record = json.loads((folder / "v1.json").read_text(encoding="utf-8"))
+    (folder / "v2.json").write_text(json.dumps({**record, "version": 2}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="of strategy breakout as version 1, as indexed, got"):
+        index_library(engine, paths())
+
+    assert set(row_counts(engine).values()) == {0}
+
+
+@pytest.mark.parametrize(
+    ("deleted", "named"),
+    [("strategies/oversold/v1.json", "strategy oversold"), ("features/rsi/v1.json", "feature rsi")],
+)
+def test_a_version_file_deleted_by_hand_after_it_was_indexed_is_refused(
+    engine: Engine, deleted: str, named: str
+) -> None:
+    # The step review: a save would otherwise write the next version under the deleted number.
+    ff.strategy.save("oversold", OVERSOLD, hypothesis=HYPOTHESIS)
+    index_library(engine, paths())
+    (paths().workspace_dir / deleted).unlink()
+
+    with pytest.raises(ValueError, match=f"version 1 of {named}, as indexed, got no file"):
+        index_library(engine, paths())
+
+
+def test_the_library_is_indexed_beside_a_report_the_sdk_refuses(engine: Engine) -> None:
+    # A save of the app indexes the versions alone (step 5.2), so that a report left from step
+    # 3.4's development, as one on the builder's PC is, holds up no save.
+    a_report_the_sdk_no_longer_reads()
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+
+    index_library(engine, paths())
+
+    counts = row_counts(engine)
+    assert (counts["feature_versions"], counts["strategy_versions"]) == (1, 1)
+    assert counts["feature_validations"] == 0
+    with pytest.raises(ValueError, match="Validate the feature again"):
+        index_workspace(engine, paths())
