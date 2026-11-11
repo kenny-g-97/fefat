@@ -1,6 +1,8 @@
 """The executor (step 4.5, `01-architecture.md` section 6, D-16): the trader's code, a feature's
-preview or a snippet of Python, runs in a runner, a process of the workspace's interpreter started
-as `python -P -m fefat_app.executor`, never in the server's own process.
+preview or a snippet of Python, and from step 5.2 a strategy's code validated or a strategy or
+feature version saved (`fefat_app.executor.versions`), runs in a runner, a process of the
+workspace's interpreter started as `python -P -m fefat_app.executor`, never in the server's own
+process.
 
 What it protects the app against: code that loops for ever, which the runner's timeout stops with
 every process the code started, as a job's request to stop does within a second; code that

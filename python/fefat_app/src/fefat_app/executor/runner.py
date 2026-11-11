@@ -21,6 +21,7 @@ from fefat_app.execution import (
     ExecutionSpec,
     FeaturePreviewSpec,
     ProgressReport,
+    PythonSnippetSpec,
 )
 from fefat_app.executor.preview import preview
 from fefat_app.executor.protocol import (
@@ -32,6 +33,7 @@ from fefat_app.executor.protocol import (
     write_result_file,
 )
 from fefat_app.executor.snippet import snippet
+from fefat_app.executor.versions import library_output
 
 
 def serve(folder: Path | None) -> int:
@@ -68,7 +70,9 @@ def _serve_folder(folder: Path, channel: TextIO) -> None:
 def _ran(spec: ExecutionSpec, folder: Path, report: ProgressReport) -> RunnerResult:
     if isinstance(spec, FeaturePreviewSpec):
         return RunnerSucceeded(output=preview(spec, folder, report))
-    return snippet(spec, report)
+    if isinstance(spec, PythonSnippetSpec):
+        return snippet(spec, report)
+    return RunnerSucceeded(output=library_output(spec))
 
 
 def _report(channel: TextIO, progress: ExecutionProgress) -> None:
