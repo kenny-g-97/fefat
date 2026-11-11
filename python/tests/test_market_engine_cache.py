@@ -6,20 +6,29 @@ contract-month with its levels (Done means 3)."""
 import json
 import re
 import shutil
+import threading
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path, PurePosixPath
+from typing import Any
 
+import fefat_engine
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from fefat.market.engine_cache import MonthOutcome, build_engine_cache
+from fefat.market import engine_cache
+from fefat.market.engine_cache import (
+    CachedMonths,
+    MonthOutcome,
+    build_cache_months,
+    build_engine_cache,
+)
 from fefat.market.engine_cache_index import (
     ENGINE_CACHE_FOLDER_NAME,
     engine_cache_status,
     read_cache_month_index,
 )
-from fefat.market.layout import Dataset, DatasetMetadata, Partition
+from fefat.market.layout import Dataset, DatasetMetadata, Partition, YearMonth
 from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
 from fefat.market.store_files import DIGEST_SUFFIX
@@ -410,3 +419,49 @@ def test_a_month_the_engine_cannot_read_is_refused_and_the_others_built(tmp_path
     folder = month_folder(tmp_path / "cache", "ESM2026")
     assert not folder.exists()
     assert not folder.with_name("2026-03.partial").exists()
+
+
+def test_a_second_builder_of_a_month_being_built_waits_on_its_lock_and_never_writes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.3 (your answer at its plan): two backtests of one product on a cold engine cache
+    # build its months at once; the second waits on the contract's lock, here refused past a
+    # short wait, rather than writing the month the first is writing.
+    store = store_copy(tmp_path)
+    writing, written = threading.Event(), threading.Event()
+    months_written: list[str] = []
+    write = fefat_engine.write_cache_month
+
+    def held_in_the_writer(*arguments: Any) -> None:
+        months_written.append(arguments[2])
+        writing.set()
+        written.wait(5)
+        write(*arguments)
+
+    monkeypatch.setattr(engine_cache, "write_cache_month", held_in_the_writer)
+    monkeypatch.setattr(engine_cache, "CONTRACT_LOCK_WAIT", timedelta(seconds=0.5))
+    builds: dict[str, CachedMonths] = {}
+
+    def build(name: str) -> None:
+        march = [YearMonth(year=2026, month=3)]
+        cache = tmp_path / "cache"
+        builds[name] = build_cache_months(store, cache, "ES", march, contracts=("ESH2026",))
+
+    first = threading.Thread(target=build, args=("first",))
+    first.start()
+    try:
+        assert writing.wait(30)
+        build("second")
+        assert months_written == ["2026-03"]
+    finally:
+        written.set()
+        first.join(30)
+    build("third")
+
+    assert [month.outcome for month in builds["first"].months] == [MonthOutcome.BUILT]
+    assert builds["second"].months == ()
+    assert "held by another process" in builds["second"].refused[0]
+    assert [month.outcome for month in builds["third"].months] == [MonthOutcome.UP_TO_DATE]
+    assert months_written == ["2026-03"]
+    root_folder = tmp_path / "cache" / ENGINE_CACHE_FOLDER_NAME / "synthetic" / "ES"
+    assert sorted(path.name for path in root_folder.iterdir()) == ["ESH2026", "ESH2026.lock"]

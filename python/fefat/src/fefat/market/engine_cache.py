@@ -14,14 +14,15 @@ out of it, and the partitions the month was built from, by path and SHA-256: the
 snapshot pins (ADR-0019). The builder reads the store through snapshots, one partition at a
 time, and records each partition's digest beside it, so that a later build reads only the
 partitions that changed. What a month holds, and the status of the cache, are
-`fefat.market.engine_cache_index`.
+`fefat.market.engine_cache_index`. From step 5.3 a month is written under its contract's lock,
+`<contract>.lock` beside the contract's folder, so that two runs side by side build it once.
 """
 
 import shutil
 from collections import defaultdict
 from collections.abc import Collection, Iterator, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -44,8 +45,15 @@ from fefat.market.layout import Dataset, Partition, PartitionRequest, YearMonth
 from fefat.market.schema import BarSchemaName, FrozenModel, SchemaKind, Timeframe
 from fefat.market.snapshot import FileDigest, Snapshot
 from fefat.market.store import Store
+from fefat.market.store_files import held_alone
 
 type Level = TickFidelity | Timeframe
+
+LOCK_SUFFIX = ".lock"
+"""The suffix of a contract's lock file beside its folder, `ESH2026.lock`."""
+CONTRACT_LOCK_WAIT = timedelta(minutes=30)
+"""How long a build waits for another process building a month of the same contract: a month
+of prints is built in minutes, so a lock held longer is refused with the month."""
 
 _TRADE_COLUMNS = {"ts_recv": "ts_recv", "price": "price", "size": "size"}
 _TBBO_COLUMNS = {
@@ -255,12 +263,40 @@ def _build_contract_month(
     store: Store, contract_folder: Path, month: YearMonth, pinned: list[_PinnedPartition]
 ) -> CachedMonthBuild | None:
     """The contract-month as cached, written again unless its index names the same partitions;
-    None for a month whose partitions hold no record of it."""
+    None for a month whose partitions hold no record of it. A month to write is written under
+    the contract's lock, `<contract>.lock` beside its folder (step 5.3), and checked again once
+    the lock is held, so that of two runs building it at once the second finds it built."""
     month_folder = contract_folder / str(month)
     sources = sorted((item.digest.path, item.digest.sha256) for item in pinned)
+    cached = _up_to_date(month_folder, sources)
+    if cached is not None:
+        return cached
+    lock_file = contract_folder.with_name(f"{contract_folder.name}{LOCK_SUFFIX}")
+    with held_alone(lock_file, CONTRACT_LOCK_WAIT):
+        cached = _up_to_date(month_folder, sources)
+        if cached is not None:
+            return cached
+        return _written(store, contract_folder, month, pinned, sources)
+
+
+def _up_to_date(month_folder: Path, sources: list[tuple[str, str]]) -> CachedMonthBuild | None:
+    """The month as cached while its index names `sources`, the partitions it is built from."""
     cached = _reusable_index(month_folder)
-    if cached is not None and _is_built_from(cached, sources):
-        return CachedMonthBuild(outcome=MonthOutcome.UP_TO_DATE, index=cached)
+    if cached is None or not _is_built_from(cached, sources):
+        return None
+    return CachedMonthBuild(outcome=MonthOutcome.UP_TO_DATE, index=cached)
+
+
+def _written(
+    store: Store,
+    contract_folder: Path,
+    month: YearMonth,
+    pinned: list[_PinnedPartition],
+    sources: list[tuple[str, str]],
+) -> CachedMonthBuild | None:
+    """The contract-month written from its partitions, its stale cache removed first; None for a
+    month whose partitions hold no record of it."""
+    month_folder = contract_folder / str(month)
     frames = _MonthFrames.of(store, pinned)
     _remove_stale(month_folder)
     if not frames.trade_dates:
