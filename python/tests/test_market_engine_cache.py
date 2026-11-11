@@ -31,7 +31,7 @@ from fefat.market.engine_cache_index import (
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, YearMonth
 from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.store import Store
-from fefat.market.store_files import DIGEST_SUFFIX
+from fefat.market.store_files import DIGEST_SUFFIX, held_alone
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "fixtures"
@@ -465,3 +465,51 @@ def test_a_second_builder_of_a_month_being_built_waits_on_its_lock_and_never_wri
     assert months_written == ["2026-03"]
     root_folder = tmp_path / "cache" / ENGINE_CACHE_FOLDER_NAME / "synthetic" / "ES"
     assert sorted(path.name for path in root_folder.iterdir()) == ["ESH2026", "ESH2026.lock"]
+
+
+def test_a_second_builder_waiting_on_the_lock_finds_the_month_the_first_built(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.3 (its step review): the second builder found the month missing before it waited on
+    # the lock, so only the check made again under the lock keeps it from writing the month the
+    # first wrote meanwhile.
+    store = store_copy(tmp_path)
+    writing, written, waiting = threading.Event(), threading.Event(), threading.Event()
+    months_written: list[str] = []
+    write = fefat_engine.write_cache_month
+
+    def held_in_the_writer(*arguments: Any) -> None:
+        months_written.append(arguments[2])
+        writing.set()
+        written.wait(30)
+        write(*arguments)
+
+    def held_once_said(lock_file: Path, wait: timedelta) -> Any:
+        if threading.current_thread().name == "second":
+            waiting.set()
+        return held_alone(lock_file, wait)
+
+    monkeypatch.setattr(engine_cache, "write_cache_month", held_in_the_writer)
+    monkeypatch.setattr(engine_cache, "held_alone", held_once_said)
+    builds: dict[str, CachedMonths] = {}
+
+    def build(name: str) -> None:
+        march = [YearMonth(year=2026, month=3)]
+        cache = tmp_path / "cache"
+        builds[name] = build_cache_months(store, cache, "ES", march, contracts=("ESH2026",))
+
+    first = threading.Thread(target=build, args=("first",), name="first")
+    second = threading.Thread(target=build, args=("second",), name="second")
+    first.start()
+    try:
+        assert writing.wait(30)
+        second.start()
+        assert waiting.wait(30)
+    finally:
+        written.set()
+        first.join(30)
+        second.join(30)
+
+    assert [month.outcome for month in builds["first"].months] == [MonthOutcome.BUILT]
+    assert [month.outcome for month in builds["second"].months] == [MonthOutcome.UP_TO_DATE]
+    assert months_written == ["2026-03"]
