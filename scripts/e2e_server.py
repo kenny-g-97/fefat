@@ -94,7 +94,11 @@ def demo_run() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # the fixtures' fee table and the like; the run keeps them
         ff.backtest.run(version.strategy(), *DEMO_WINDOW)
-    fefat(["db", "import-workspace"])
+    if fefat(["db", "import-workspace"]) != 0:
+        raise SystemExit(
+            "Expected `fefat db import-workspace` to index the demo strategy and its run, got "
+            "its refusal above: the seeded server would start without demo-run-01."
+        )
 
 
 def main() -> int:

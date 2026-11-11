@@ -17,6 +17,7 @@ import dev
 import e2e_server
 from fefat.backtest import saved_runs_in
 from fefat.config import resolve_paths
+from fefat_app import database_commands
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.run_records import RunTables
@@ -162,3 +163,20 @@ def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(
     assert (run.strategy.name, run.status, run.run_key) == ("demo", "succeeded", saved.hash)
     assert saved.record.summary.trades >= 3
     assert jobs == ()
+
+
+def test_the_seed_stops_where_the_index_refuses_what_it_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.3 (its code review): a seed whose index refused would start a server without the
+    # run the specs call demo-run-01, failing them far from the cause.
+    for name in ("FEFAT_HOME", "FEFAT_DATA_DIR", "PYTHON_KEYRING_BACKEND"):
+        monkeypatch.setenv(name, os.environ[name])
+
+    def refused(*arguments: object, **named: object) -> object:
+        raise ValueError("Expected the files as indexed, got one changed by hand.")
+
+    monkeypatch.setattr(database_commands, "index_workspace", refused)
+
+    with pytest.raises(SystemExit, match="Expected `fefat db import-workspace` to index"):
+        e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
