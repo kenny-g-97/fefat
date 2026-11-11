@@ -170,6 +170,25 @@ def test_a_run_asked_to_stop_is_no_run_a_new_submission_waits_on(
     assert again.status == JobStatus.QUEUED
 
 
+def test_a_running_run_is_waited_on_until_it_is_asked_to_stop(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    # Cancel, then Run again before the worker has stopped the first: the second submission must
+    # not be the run that is about to end cancelled (the step's ponytail review).
+    executor, dispatcher = LookingUp(to_make()), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    first = runs.submit(asked(workspace))
+    JobTables(engine).start(first.job_id or "none", 4242, STARTED_AT, STARTED_AT)
+
+    while_running = runs.submit(asked(workspace))
+    stopping = runs.cancel(first.id)
+    again = runs.submit(asked(workspace))
+
+    assert while_running.id == first.id
+    assert stopping.status == JobStatus.RUNNING
+    assert (again.id != first.id, again.status) == (True, JobStatus.QUEUED)
+
+
 def test_a_runs_status_is_its_jobs_until_it_is_saved(
     engine: Engine, workspace: LibraryTables
 ) -> None:
