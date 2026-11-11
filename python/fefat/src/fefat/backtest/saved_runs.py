@@ -29,20 +29,29 @@ def saved_run_folders(runs_dir: Path) -> tuple[Path, ...]:
 
 def saved_runs_in(runs_dir: Path) -> tuple[Run, ...]:
     """Each run saved in `runs_dir` (`saved_run_folders`) by this engine, in the order of their
-    keys; a run another version of the engine or of the artifacts' layout saved is left out, as
-    it cannot be read, and a record whose key is not its folder's name is refused, as one copied
-    or renamed by hand is, since a run's folder is named by its key."""
+    keys (`saved_run`); a run another version of the engine or of the artifacts' layout saved is
+    left out, as it cannot be read."""
     runs: list[Run] = []
     for folder in saved_run_folders(runs_dir):
         try:
-            run = Run.open(folder)
+            runs.append(saved_run(runs_dir, folder.name))
         except OtherEngineRunError:
             continue
-        if run.hash != folder.name:
-            raise ValueError(
-                f"Expected the run of key {folder.name} in {folder}, got the record of run "
-                f"{run.hash}: a run's folder was copied or renamed by hand; move it back under "
-                "its key, or delete the copy."
-            )
-        runs.append(run)
     return tuple(runs)
+
+
+def saved_run(runs_dir: Path, run_key: str) -> Run:
+    """The run saved under `run_key` in `runs_dir`, refused unless the key is a run key, so that
+    no text reaches outside the folder, and unless its folder's record is that run's, as one
+    copied or renamed by hand is not, since a run's folder is named by its key."""
+    if _RUN_KEY.fullmatch(run_key) is None:
+        raise ValueError(f"Expected a run key, 64 hexadecimal digits, got {run_key!r}.")
+    folder = runs_dir / run_key
+    run = Run.open(folder)
+    if run.hash != run_key:
+        raise ValueError(
+            f"Expected the run of key {run_key} in {folder}, got the record of run {run.hash}: "
+            "a run's folder was copied or renamed by hand; move it back under its key, or "
+            "delete the copy."
+        )
+    return run

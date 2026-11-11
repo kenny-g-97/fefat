@@ -110,34 +110,44 @@ def require_named_columns(execution: Execution, columns: Collection[str]) -> Non
             )
 
 
+def rule_features(execution: Execution) -> dict[str, str]:
+    """The features the exit plan's rules read as distances, each under the name of its rule's
+    column, which the Rust template reads: `stop_feature`, `target_feature_1` to
+    `target_feature_3`, and `trail_feature` (`fefat.reference.run_documents.exit_features`)."""
+    named: dict[str, str] = {}
+    if isinstance(execution.stop, AtrStop):
+        named["stop_feature"] = execution.stop.feature
+    for number, target in enumerate(execution.targets, start=1):
+        if isinstance(target.price, AtrTarget):
+            named[f"target_feature_{number}"] = target.price.feature
+    trailing = execution.trailing
+    if trailing is not None and isinstance(trailing.by, AtrTrail):
+        named["trail_feature"] = trailing.by.feature
+    return named
+
+
 def require_rule_features(execution: Execution, columns: Collection[str]) -> None:
-    """Refuse a signal frame, whose column names are `columns`, without the feature a rule of
-    `execution` reads as a distance (step 5.3): a stop, a target, or a trailing stop a multiple
-    of a feature, such as `Stop(atr=1.5)`, which reads the slot `atr`. Without it the engine
-    refuses the run at its first entry, after its data is loaded; a save and a run's start
-    refuse it first. The reference engine's template does not call it, so that a scenario keeps
-    F-RND-01's refusal at the entry."""
-    stop, trailing = execution.stop, execution.trailing
-    read = [
-        *([("a stop", stop.feature)] if isinstance(stop, AtrStop) else []),
-        *(
-            ("a target", target.price.feature)
-            for target in execution.targets
-            if isinstance(target.price, AtrTarget)
-        ),
-        *(
-            [("a trailing stop", trailing.by.feature)]
-            if trailing is not None and isinstance(trailing.by, AtrTrail)
-            else []
-        ),
-    ]
-    for rule, feature in read:
+    """Refuse a signal frame, whose column names are `columns`, without a feature a rule of
+    `execution` reads as a distance (`rule_features`, step 5.3), such as `Stop(atr=1.5)`, which
+    reads the slot `atr`. Without it the engine refuses the run at its first entry, after its
+    data is loaded; a save and a run's start refuse it first. The reference engine's template
+    does not call it, so that a scenario keeps F-RND-01's refusal at the entry."""
+    for column, feature in rule_features(execution).items():
         if feature not in columns:
             raise ValueError(
-                f"Expected the signal frame's {feature} for {rule} a multiple of it, got no such "
-                f"column: give the strategy a slot named {feature}, or name the slot it has with "
-                "the rule's `feature`."
+                f"Expected the signal frame's {feature} for {_rule_in_words(column)} a multiple "
+                f"of it, got no such column: give the strategy a slot named {feature}, or name "
+                "the slot it has with the rule's `feature`."
             )
+
+
+def _rule_in_words(column: str) -> str:
+    """The rule whose column of the Rust template is `column` (`rule_features`), in words."""
+    if column == "stop_feature":
+        return "a stop"
+    if column == "trail_feature":
+        return "a trailing stop"
+    return "a target"
 
 
 def require_one_entry_per_bar(frame: pl.DataFrame) -> None:

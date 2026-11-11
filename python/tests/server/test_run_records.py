@@ -178,7 +178,7 @@ def test_a_run_key_that_names_no_run_of_its_own_folder_is_refused(records: RunTa
 
     with pytest.raises(ValueError, match="Expected a run key, 64 hexadecimal digits"):
         records.saved("../" + run.hash)
-    with pytest.raises(ValueError, match=f"Expected the record of run {'e' * 64} in its folder"):
+    with pytest.raises(ValueError, match=f"Expected the run of key {'e' * 64}"):
         records.saved("e" * 64)
 
 

@@ -158,11 +158,21 @@ class SavedStrategies:
                 f"Expected a version of strategy {strategy.name}, from 1 to "
                 f"{len(strategy.versions)}, got {number}."
             )
-        try:
-            record = load_in(self.strategies_dir, strategy.name, number)
-        except (ValueError, FileNotFoundError) as refused:
-            raise LibraryRefusedError(str(refused)) from refused
-        require_as_indexed(indexed[0], record.hash, f"version {number} of strategy {strategy.name}")
+        record = read_as_indexed(self.strategies_dir, strategy.name, indexed[0])
         return SavedStrategyVersion(
             **dict(record), id=indexed[0].id, strategy_id=strategy.id, lint=lint(record.code)
         )
+
+
+def read_as_indexed(
+    strategies_dir: Path, name: str, indexed: IndexedStrategyVersion
+) -> StrategyVersion:
+    """The version `indexed` of the strategy `name`, read from its file in `strategies_dir`
+    through the SDK; refused with `LibraryRefusedError` where the SDK refuses the file, or where
+    it is gone or replaced since it was indexed (`require_as_indexed`)."""
+    try:
+        record = load_in(strategies_dir, name, indexed.version)
+    except (ValueError, FileNotFoundError) as refused:
+        raise LibraryRefusedError(str(refused)) from refused
+    require_as_indexed(indexed, record.hash, f"version {indexed.version} of strategy {name}")
+    return record

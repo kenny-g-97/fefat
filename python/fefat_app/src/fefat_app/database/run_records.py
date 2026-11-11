@@ -8,7 +8,6 @@ taken, so that no writer waits on a file read. A row's columns, once its run key
 those of its folder's record, whatever its submission asked, so that the index holds the folders
 as `--rebuild` would."""
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,6 +18,7 @@ from sqlalchemy.orm import Session, undefer
 from fefat.backtest import Run
 from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
+from fefat.backtest.saved_runs import saved_run
 from fefat.config import FefatPaths
 from fefat.market.fidelity import FidelityEra
 from fefat.strategy import StrategyPin
@@ -37,7 +37,6 @@ from fefat_app.runs import (
 
 ACTIVE = (JobStatus.QUEUED, JobStatus.RUNNING)
 """The statuses of a job that has not ended."""
-_RUN_KEY = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -71,7 +70,7 @@ class RunTables:
     def saved(
         self, run_key: str, *, job_id: str | None = None, request_key: str | None = None
     ) -> IndexedRun:
-        run = _saved_run(self.paths, run_key)
+        run = saved_run(self.paths.runs_dir, run_key)
         with Session(self.engine) as session, session.begin():
             held = session.scalars(select(RunRow).where(RunRow.run_key == run_key)).one_or_none()
             own = None if job_id is None else _unsaved_of_job(session, job_id)
@@ -115,20 +114,6 @@ class RunTables:
                 select(RunRow).order_by(RunRow.created_at.desc(), RunRow.id.desc()).limit(limit)
             ).all()
             return tuple(_indexed(session, row) for row in rows)
-
-
-def _saved_run(paths: FefatPaths, run_key: str) -> Run:
-    """The run saved under `run_key` in the runs' folder of `paths`, refused unless the key is a
-    run key, so that no text reaches outside the folder, and unless the record is the key's."""
-    if _RUN_KEY.fullmatch(run_key) is None:
-        raise ValueError(f"Expected a run key, 64 hexadecimal digits, got {run_key!r}.")
-    run = Run.open(paths.runs_dir / run_key)
-    if run.hash != run_key:
-        raise ValueError(
-            f"Expected the record of run {run_key} in its folder, got that of run {run.hash}: a "
-            "run's folder was copied or renamed by hand; move it back under its key."
-        )
-    return run
 
 
 def index_runs(session: Session, runs: Sequence[Run]) -> int:

@@ -14,13 +14,10 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from fefat.backtest import RunConfig
-from fefat.strategy.versions import load_in
 from fefat_app.execution import BacktestSpec
 from fefat_app.library import (
     IndexedStrategy,
     IndexedStrategyVersion,
-    LibraryRefusedError,
-    require_as_indexed,
 )
 from fefat_app.ports import Clock, Executor, LibraryIndex, RunRecords
 from fefat_app.runs import (
@@ -33,7 +30,7 @@ from fefat_app.runs import (
 )
 from fefat_app.services.code_runs import BACKTEST_LIMITS, looked_up_run
 from fefat_app.services.jobs import MAX_ATTEMPTS, Jobs
-from fefat_app.services.strategies import NoSuchStrategyError
+from fefat_app.services.strategies import NoSuchStrategyError, read_as_indexed
 
 NEWEST_RUNS = 100
 """How many of the newest runs the list holds; filters and paging come with the runs' page
@@ -71,7 +68,7 @@ class Runs:
         refused with `NoSuchStrategyError`, `LibraryRefusedError`, or `CodeRefusedError`."""
         self.index.refresh()
         strategy, version = self._version(asked.strategy_version_id)
-        self._require_file_as_indexed(strategy, version)
+        read_as_indexed(self.strategies_dir, strategy.name, version)
         requested = RequestedRun(
             strategy=strategy.name,
             version=version.version,
@@ -125,15 +122,3 @@ class Runs:
         raise NoSuchStrategyError(
             f"Expected the id of a saved strategy version, got {version_id!r}, which names none."
         )
-
-    def _require_file_as_indexed(
-        self, strategy: IndexedStrategy, version: IndexedStrategyVersion
-    ) -> None:
-        """Refuse the version whose file the SDK refuses, or one gone or replaced since it was
-        indexed (`require_as_indexed`), with `LibraryRefusedError`."""
-        try:
-            record = load_in(self.strategies_dir, strategy.name, version.version)
-        except (ValueError, FileNotFoundError) as refused:
-            raise LibraryRefusedError(str(refused)) from refused
-        described = f"version {version.version} of strategy {strategy.name}"
-        require_as_indexed(version, record.hash, described)
