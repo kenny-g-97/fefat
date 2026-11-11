@@ -41,11 +41,10 @@ from fefat_app.jobs.worker import JobTimings, run_job
 from fefat_app.runs import NewRun, RequestedRun, Submitted
 from local_server import STARTED_AT, running_runners
 from notebook_runs import store_with
-from strategy_code import BREAKOUT, HYPOTHESIS
+from strategy_code import ES_BREAKOUT, HYPOTHESIS
 
 WINDOW = (date(2026, 3, 5), date(2026, 3, 9))
 LIMITS = ExecutionLimits(timeout_seconds=300, memory_bytes=8 * 1024**3)
-ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 REFUSING = """\
 import polars as pl
 
@@ -149,7 +148,7 @@ def test_a_backtest_job_saves_the_run_a_notebook_makes_of_its_version(
 
 
 def test_a_strategy_that_fails_on_real_bars_fails_its_run_with_its_words(
-    engine: Engine, job_records: JobTables
+    engine: Engine,
 ) -> None:
     store_with("ohlcv-1m")
     made = submitted(engine, "refusing", REFUSING)

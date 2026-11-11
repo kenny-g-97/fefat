@@ -834,9 +834,9 @@ def test_two_computations_of_one_folder_keep_each_others_partitions(
     indexes = [read_cache_index(folder) for folder in folders]
     assert meanwhile == ["2026-03-06"]
     assert len(folders) == 2
-    assert all(
-        sorted(index.partitions) == ["2026-03-06", "2026-03-09"] for index in indexes if index
-    )
+    assert [None if index is None else sorted(index.partitions) for index in indexes] == [
+        ["2026-03-06", "2026-03-09"]
+    ] * 2
 
 
 def test_a_renewed_last_use_leaves_a_partition_another_process_computed_again() -> None:

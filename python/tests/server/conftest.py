@@ -41,9 +41,8 @@ from fefat_app.services.strategies import SavedStrategies
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
 from memory_keyring import MemoryKeyring
 from notebook_runs import store_with
-from strategy_code import BREAKOUT, HYPOTHESIS
+from strategy_code import ES_BREAKOUT, HYPOTHESIS
 
-ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 """The engine guide's breakout on ES, which the synthetic fixtures hold."""
 RUN_WINDOW = ("2026-03-05", "2026-03-09")
 

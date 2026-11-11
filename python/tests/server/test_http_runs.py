@@ -18,7 +18,7 @@ from fefat.config import resolve_paths
 from fefat_app.container import Container
 from local_server import logged_in
 from notebook_runs import store_with
-from strategy_code import BREAKOUT, HYPOTHESIS
+from strategy_code import ES_BREAKOUT, HYPOTHESIS
 from test_http_streams import next_events
 
 DEADLINE_SECONDS = 240
@@ -45,7 +45,7 @@ def noting_its_processes(processes: Path) -> str:
         f"with Path({str(processes)!r}).open('a', encoding='utf-8') as noted:\n"
         "    noted.write(f'{os.getpid()}\\n')\n\n"
     )
-    return noted + BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
+    return noted + ES_BREAKOUT
 
 
 def ended(client: TestClient, run_id: str) -> dict[str, Any]:

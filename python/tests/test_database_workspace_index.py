@@ -41,11 +41,12 @@ from fefat_app.database.models import (
     StrategyVersionRow,
     WorkspaceRow,
 )
+from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import not_waiting, opened_database, upgrade_schema
 from fefat_app.database.version_index import index_library
 from fefat_app.database.workspace_index import IndexSummary, index_workspace
-from notebook_runs import features_of_cell, store_with
-from strategy_code import BREAKOUT, HYPOTHESIS, WITH_A_SLOT
+from notebook_runs import breakout, features_of_cell, store_with
+from strategy_code import BREAKOUT, ES_BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
 GAP = """\
 @ff.feature(params={"n": 3}, warmup=lambda n: n, outputs={"gap": "price_distance"})
@@ -55,7 +56,6 @@ def gap(bars: pl.LazyFrame, n: int) -> pl.Expr:
 """A feature with one parameter, as a notebook cell defines it; another default of `n` gives
 another version."""
 VALIDATED_AT = datetime(2026, 11, 6, 9, 30, tzinfo=UTC)
-ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 
 
 @pytest.fixture
@@ -557,3 +557,14 @@ def test_a_saved_run_is_indexed_with_its_strategy_version_and_again_at_a_rebuild
         engine.begin() as connection,
     ):
         connection.exec_driver_sql("DELETE FROM runs")
+
+
+def test_a_run_a_notebook_made_is_indexed_without_a_strategy_version(engine: Engine) -> None:
+    # Step 5.3 (its ponytail review): a strategy written in a notebook names no saved version, the
+    # SDK's own way of making a run; its row names no version and no parameters.
+    store_with("ohlcv-1m")
+    run = ff.backtest.run(breakout(), "2026-03-05", "2026-03-09")
+
+    assert index_workspace(engine, paths()).runs == 1
+    (indexed,) = RunTables(engine, paths()).newest(10)
+    assert (indexed.run_key, indexed.strategy, indexed.parameters) == (run.hash, None, {})

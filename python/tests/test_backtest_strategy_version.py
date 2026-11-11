@@ -12,10 +12,9 @@ import pytest
 import fefat as ff
 import fefat.indicators
 from notebook_runs import store_with
-from strategy_code import BREAKOUT, HYPOTHESIS, WITH_A_SLOT
+from strategy_code import ES_BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
 WINDOW = ("2026-03-05", "2026-03-09")
-ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 """The engine guide's breakout on ES, which the fixtures hold; it declares two parameters, and its
 execution template sets three numbers."""
 WITHOUT_PARAMETERS = (

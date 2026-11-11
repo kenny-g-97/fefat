@@ -7,13 +7,13 @@ job's until its folder is saved, `succeeded` after."""
 
 import os
 import shutil
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine
 
-from fefat.backtest import AppliedRunConfig, Run, saved_runs_in
+from fefat.backtest import Run, saved_runs_in
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
@@ -108,8 +108,19 @@ def test_a_second_submission_of_one_request_is_the_first_while_its_job_is_active
 def test_a_saved_run_takes_its_key_and_the_columns_of_its_record(
     records: RunTables, engine: Engine
 ) -> None:
-    submitted = records.submitted(a_submission(engine), 3, STARTED_AT)
+    # The submission asks for other parameters, another window, and other settings than its
+    # run's record holds: the row takes the record's, as a rebuild of the index would.
     run = the_run()
+    other_settings = run.config.model_copy(update={"latency_ms": run.config.latency_ms + 1})
+    asked = a_submission(engine).model_copy(
+        update={
+            "parameters": {"lookback": 24},
+            "start": run.record.window.start - timedelta(days=3),
+            "end": run.record.window.end + timedelta(days=3),
+            "settings": other_settings,
+        }
+    )
+    submitted = records.submitted(asked, 3, STARTED_AT)
 
     saved = records.saved(run.hash, job_id=submitted.queued_job_id)
     read = records.by_id(saved.id)
@@ -183,7 +194,8 @@ def test_a_run_key_that_names_no_run_of_its_own_folder_is_refused(records: RunTa
 
 
 def test_a_saved_runs_settings_read_back_whole(records: RunTables) -> None:
-    saved = records.saved(the_run().hash)
+    run = the_run()
+    saved = records.saved(run.hash)
 
-    assert isinstance(saved.settings, AppliedRunConfig)
+    assert saved.settings == run.config
     assert saved.settings.provider == "synthetic"

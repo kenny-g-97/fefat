@@ -28,6 +28,8 @@ def strategy(lookback: int = 12, stop_atr: float = 1.5) -> ff.SignalStrategy:
 """
 """The engine guide's breakout as a strategy version's code, its function on line 6."""
 HYPOTHESIS = "A close above the highest of the hour before it runs on to twice its risk."
+ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
+"""The breakout on ES, which the synthetic fixtures hold (step 5.3)."""
 WITH_A_SLOT = """\
 import polars as pl
 

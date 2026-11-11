@@ -26,11 +26,10 @@ from fefat_app.execution import (
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
 from notebook_runs import store_with
-from strategy_code import BREAKOUT, HYPOTHESIS
+from strategy_code import ES_BREAKOUT, HYPOTHESIS
 
 ROOMY = ExecutionLimits(timeout_seconds=120, memory_bytes=8 * 1024**3)
 WINDOW = (date(2026, 3, 5), date(2026, 3, 9))
-ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 DEFAULTS = {"lookback": 12, "stop_atr": 1.5}
 
 
