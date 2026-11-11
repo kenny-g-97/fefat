@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
-import fefat as ff
 from fefat.backtest import AppliedRunConfig, Run, saved_runs_in
 from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
@@ -22,34 +21,17 @@ from fefat_app.database.run_records import RunTables
 from fefat_app.job_models import JobKind, JobStatus
 from fefat_app.runs import NewRun, RunOrigin
 from local_server import STARTED_AT
-from notebook_runs import store_with
-from strategy_code import BREAKOUT, HYPOTHESIS
 
 WINDOW = (date(2026, 3, 5), date(2026, 3, 9))
-ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 REQUEST = "c" * 64
 
 
-@pytest.fixture(scope="module")
-def made(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """A workspace holding the breakout saved as version 1 of `breakout` and its run on the
-    fixtures' minute bars, made once for the module."""
-    home = tmp_path_factory.mktemp("made")
-    with pytest.MonkeyPatch.context() as environment:
-        environment.setenv("FEFAT_HOME", str(home / "fefat-home"))
-        environment.setenv("FEFAT_DATA_DIR", str(home / "fefat-data"))
-        store_with("ohlcv-1m")
-        version = ff.strategy.save("breakout", ES_BREAKOUT, hypothesis=HYPOTHESIS)
-        ff.backtest.run(version.strategy(), *WINDOW)
-        return resolve_paths(os.environ).workspace_dir
-
-
 @pytest.fixture
-def records(made: Path, engine: Engine) -> RunTables:
+def records(breakout_workspace: Path, engine: Engine) -> RunTables:
     """The runs' records over the test's database, its workspace a copy of the one made, its
     library indexed."""
     paths = resolve_paths(os.environ)
-    shutil.copytree(made, paths.workspace_dir)
+    shutil.copytree(breakout_workspace, paths.workspace_dir)
     LibraryTables(engine, paths).refresh()
     return RunTables(engine, paths)
 

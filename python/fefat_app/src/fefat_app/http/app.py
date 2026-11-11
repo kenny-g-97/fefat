@@ -25,6 +25,7 @@ from fefat_app.http import (
     health,
     jobs,
     login,
+    runs,
     strategies,
     streams,
 )
@@ -77,6 +78,7 @@ def build_api() -> FastAPI:
         catalog.router,
         strategies.router,
         features.router,
+        runs.router,
         docs.router,
     ):
         api.include_router(router)

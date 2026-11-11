@@ -464,6 +464,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Newest Runs
+         * @description The hundred newest runs, newest first, without their metrics.
+         */
+        get: operations["newest_runs_v1_runs_get"];
+        put?: never;
+        /**
+         * Submit Run
+         * @description Backtest the version, the strategy built from its code in the executor: 200 with the run
+         *     its request finds saved, else 202 with the run whose `backtest` job is queued, the run of
+         *     the same request waiting already being that run; refused with 400 and the line of the code
+         *     where the code gives no strategy, 404 where no version has the id, and 409 where the library
+         *     holds files the index cannot follow.
+         */
+        post: operations["submit_run_v1_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run By Id
+         * @description The run, with its metrics, its fidelity eras, and its warnings once saved.
+         */
+        get: operations["run_by_id_v1_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Run
+         * @description Cancel the run's job, at once while it is queued, asked while it runs; a saved run, or
+         *     one whose job has ended, is answered as it is.
+         */
+        post: operations["cancel_run_v1_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/settings": {
         parameters: {
             query?: never;
@@ -750,6 +819,29 @@ export interface components {
             theme: components["schemas"]["Theme"];
         };
         /**
+         * AppliedRunConfig
+         * @description A run's settings with every default applied (D-51), as its record keeps them: those of
+         *     `RunConfig`, each given.
+         */
+        AppliedRunConfig: {
+            /** Capital */
+            capital: string;
+            /** Contract */
+            contract?: string | null;
+            /** Fee Table */
+            fee_table: string;
+            /** Fidelity */
+            fidelity: string;
+            /** Latency Ms */
+            latency_ms: number;
+            limit_fill: components["schemas"]["LimitFill"];
+            /** Provider */
+            provider: string;
+            replay: components["schemas"]["Replay"];
+            roll_handling: components["schemas"]["RollHandling"];
+            slippage_ticks: components["schemas"]["SlippageTicks"];
+        };
+        /**
          * AtTimeframe
          * @description A term evaluated on the bars of `timeframe`, each value seen from its bar's close.
          */
@@ -820,6 +912,34 @@ export interface components {
             left: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
             /** Right */
             right: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
+        };
+        /**
+         * Breakdowns
+         * @description A run's trades by the role of the fill that left them flat (F-TAG-01), the hour of their
+         *     entry's fill in the exchange's time zone, the weekday and the year of their entry's trade
+         *     date, and the fidelity their entry filled on, each held read-only (`frozen`).
+         */
+        Breakdowns: {
+            /** Exit Reason */
+            exit_reason: {
+                [key: string]: components["schemas"]["Outcome"];
+            };
+            /** Fidelity */
+            fidelity: {
+                [key: string]: components["schemas"]["Outcome"];
+            };
+            /** Hour */
+            hour: {
+                [key: string]: components["schemas"]["Outcome"];
+            };
+            /** Weekday */
+            weekday: {
+                [key: string]: components["schemas"]["Outcome"];
+            };
+            /** Year */
+            year: {
+                [key: string]: components["schemas"]["Outcome"];
+            };
         };
         /**
          * CatalogProductStatus
@@ -942,6 +1062,36 @@ export interface components {
          */
         Currency: "USD" | "USDT" | "EUR" | "GBP" | "JPY" | "CHF" | "AUD" | "CAD";
         /**
+         * DailyStatistics
+         * @description The statistics of a run's days: a day's profit and loss is the change of the equity at
+         *     its trade date's last decision, the first day's from the capital.
+         */
+        DailyStatistics: {
+            /** Best Day Share */
+            best_day_share: number | null;
+            /** Cvar 95 */
+            cvar_95: number | null;
+            /** Days */
+            days: number;
+            /** Deflated Sharpe */
+            deflated_sharpe: number | null;
+            /** Large Daily Loss Frequency */
+            large_daily_loss_frequency: number | null;
+            /** Large Daily Loss Threshold */
+            large_daily_loss_threshold: string;
+            /** Large Daily Losses */
+            large_daily_losses: number;
+            /** Probabilistic Sharpe */
+            probabilistic_sharpe: number | null;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Sortino */
+            sortino: number | null;
+            /** Trials */
+            trials: number;
+            worst_day: components["schemas"]["DayPnl"] | null;
+        };
+        /**
          * DatasetInput
          * @description A dataset of alternative data by its name, reserved for Phase 10.
          */
@@ -980,6 +1130,19 @@ export interface components {
             quality: components["schemas"]["QualityStatus"];
         };
         /**
+         * DayPnl
+         * @description A trade date's profit and loss.
+         */
+        DayPnl: {
+            /** Pnl */
+            pnl: string;
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+        };
+        /**
          * DemoJobRequest
          * @description How many seconds a demo job counts, one a second, from 1 to an hour.
          */
@@ -995,6 +1158,39 @@ export interface components {
          * @enum {string}
          */
         DesktopUse: "confirmed" | "check-the-terms" | "forbidden";
+        /**
+         * Dimension
+         * @description A dimension's score, out of 20.
+         */
+        Dimension: {
+            /** Max Score */
+            max_score: number;
+            name: components["schemas"]["DimensionName"];
+            /** Score */
+            score: number;
+        };
+        /**
+         * DimensionName
+         * @description A dimension of the robustness summary, in the script's order.
+         * @enum {string}
+         */
+        DimensionName: "sample_size" | "expectancy" | "risk_management" | "robustness" | "execution_realism";
+        /**
+         * DrawdownStatistics
+         * @description The deepest fall of the account below a peak, and its longest spell under one.
+         */
+        DrawdownStatistics: {
+            /** Longest Drawdown Days */
+            longest_drawdown_days: number;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Max Drawdown Share */
+            max_drawdown_share: number;
+            /** Peak */
+            peak: string | null;
+            /** Trough */
+            trough: string | null;
+        };
         /**
          * FeatureCode
          * @description A feature's code: one function under its `@ff.feature(...)` call.
@@ -1050,6 +1246,79 @@ export interface components {
             };
         };
         /**
+         * FidelityCheck
+         * @description The error bar of a run's days at lower fidelity (`02` §1.6, step 2.12), `kind` checked:
+         *     the period its trade dates finer than a minute span, from `first` to `last`, run from flat
+         *     at the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity, the
+         *     rerun at 1 second none where the period holds no 1-second bars, its dates filling on the
+         *     1-minute bars as the rerun at 1 minute does.
+         */
+        FidelityCheck: {
+            at_one_minute: components["schemas"]["FidelityRerun"];
+            at_one_second: components["schemas"]["FidelityRerun"] | null;
+            baseline: components["schemas"]["PeriodOutcome"];
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "checked";
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+        };
+        /**
+         * FidelityEra
+         * @description Trade dates in a row on one level, from `first` to `last`, `trade_dates` of them: those a
+         *     run filled on, each the finest it held at or coarser than the run's fidelity (`02` §1.6,
+         *     D-58), or those whose signal bars `load` built, each from the finest level it holds that
+         *     builds the bars (D-71).
+         */
+        FidelityEra: {
+            /** Fidelity */
+            fidelity: string;
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /** Trade Dates */
+            trade_dates: number;
+        };
+        /**
+         * FidelityRerun
+         * @description The period rerun at a coarser fidelity against the baseline: its outcome; the differences
+         *     in trades, net profit and loss, and maximum drawdown, the rerun's less the baseline's; the
+         *     fill prices of the trades both entered at one decision on one side; and the trades of the
+         *     baseline and of the rerun that the other did not enter.
+         */
+        FidelityRerun: {
+            /** Extra Trades */
+            extra_trades: number;
+            /** Fill Prices */
+            fill_prices: components["schemas"]["FillPriceDifference"][];
+            /** Max Drawdown Delta */
+            max_drawdown_delta: string;
+            outcome: components["schemas"]["PeriodOutcome"];
+            /** Pnl Delta */
+            pnl_delta: string;
+            /** Trades Delta */
+            trades_delta: number;
+            /** Unmatched Trades */
+            unmatched_trades: number;
+        };
+        /**
          * FieldError
          * @description Where a request broke the API's schema and why, without the value it sent.
          */
@@ -1060,6 +1329,24 @@ export interface components {
             message: string;
             /** Type */
             type: string;
+        };
+        /**
+         * FillPriceDifference
+         * @description A trade entered at one decision on one side in the baseline and in a rerun: how far the
+         *     rerun's entry price and its exits' average price lie from the baseline's, in ticks, the
+         *     rerun's less the baseline's.
+         */
+        FillPriceDifference: {
+            /**
+             * Entry Decision
+             * Format: date-time
+             */
+            entry_decision: string;
+            /** Entry Ticks */
+            entry_ticks: number;
+            /** Exit Ticks */
+            exit_ticks: number | null;
+            side: components["schemas"]["PositionSide"];
         };
         /**
          * Health
@@ -1084,6 +1371,52 @@ export interface components {
             name: string;
             /** Versions */
             versions: components["schemas"]["IndexedVersion"][];
+        };
+        /**
+         * IndexedRun
+         * @description A run as the index holds it: its row's id; when it was asked for, or saved where the index
+         *     found it saved; its origin; the strategy version it names, None for one written in a notebook;
+         *     its parameters as bound; the trade dates its window spans, its signal bars' once saved; its
+         *     settings, every default applied; its status, `succeeded` once its folder is indexed, else its
+         *     job's, with the job's progress, message, and error; its job's id, None where the index found
+         *     it saved; and its run key once saved, the name of its folder.
+         */
+        IndexedRun: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            /** Message */
+            message: string | null;
+            origin: components["schemas"]["RunOrigin"];
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Progress */
+            progress: number;
+            /** Run Key */
+            run_key: string | null;
+            settings: components["schemas"]["AppliedRunConfig"];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            status: components["schemas"]["JobStatus"];
+            strategy: components["schemas"]["RunStrategy"] | null;
         };
         /**
          * IndexedStrategy
@@ -1266,6 +1599,13 @@ export interface components {
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out";
         JsonValue: unknown;
         /**
+         * LimitFill
+         * @description When a limit fills: once the market trades through its price (F-LMT-01, the default)
+         *     or once it touches it (F-LMT-02).
+         * @enum {string}
+         */
+        LimitFill: "through" | "touch";
+        /**
          * LintRule
          * @description What a finding of the lint is: a way of reading ahead (`looks_ahead`), a read of data the
          *     detector cannot cut (`fails_validation`), or a warning of what the content hash leaves out.
@@ -1282,6 +1622,24 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /**
+         * Metrics
+         * @description A run's metrics (`02` §7), as `fefat_engine.metrics` works them out, and its fidelity
+         *     check, which `fefat.backtest.fidelity_check` adds, told apart by its `kind`.
+         */
+        Metrics: {
+            breakdowns: components["schemas"]["Breakdowns"];
+            daily: components["schemas"]["DailyStatistics"];
+            drawdown: components["schemas"]["DrawdownStatistics"];
+            /** Fidelity Check */
+            fidelity_check?: (components["schemas"]["FidelityCheck"] | components["schemas"]["RefusedCheck"]) | null;
+            /** Pnl */
+            pnl: string;
+            /** Pnl At Plus One Tick */
+            pnl_at_plus_one_tick: string;
+            robustness: components["schemas"]["Robustness"];
+            trades: components["schemas"]["TradeStatistics"];
         };
         /**
          * Negation
@@ -1342,6 +1700,27 @@ export interface components {
             hypothesis: string;
         };
         /**
+         * OrderRole
+         * @description What an order does for a position, which its fill records (F-TAG-01): open it, protect it
+         *     (an exit plan's stop), take its profit (target 1 to 3), close it at the market, for the
+         *     strategy's own reason (`exit`) or an execution template's exit reason (§20), or carry it
+         *     across a roll, a leg of the roll for its reason (F-ROL-02).
+         * @enum {string}
+         */
+        OrderRole: "entry" | "stop" | "target_1" | "target_2" | "target_3" | "exit" | "flat_by" | "no_overnight" | "no_weekend" | "max_bars" | "max_minutes" | "opposite_signal" | "signal_exit" | "roll_volume" | "roll_open_interest" | "roll_calendar" | "roll_expiry";
+        /**
+         * Outcome
+         * @description A group of trades: how many, how many won, and their profit and loss.
+         */
+        Outcome: {
+            /** Pnl */
+            pnl: string;
+            /** Trades */
+            trades: number;
+            /** Wins */
+            wins: number;
+        };
+        /**
          * OutputKind
          * @description What an output's values are (D-71), which its column must admit and its version keeps; the
          *     leak detector compares values by their column's type. A `price` (a level, such as a moving
@@ -1367,6 +1746,23 @@ export interface components {
             new_password: string;
         };
         /**
+         * PeriodOutcome
+         * @description The fidelity check's period run from flat at one fidelity: the eras its trade dates filled
+         *     on, its trades, their net profit and loss, and its maximum drawdown, the capital first.
+         */
+        PeriodOutcome: {
+            /** Eras */
+            eras: components["schemas"]["FidelityEra"][];
+            /** Fidelity */
+            fidelity: string;
+            /** Max Drawdown */
+            max_drawdown: string;
+            /** Pnl */
+            pnl: string;
+            /** Trades */
+            trades: number;
+        };
+        /**
          * PinnedFeature
          * @description A feature version a strategy's slots read, as the library keeps it: its name, its number,
          *     and its content hash.
@@ -1379,6 +1775,11 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * PositionSide
+         * @enum {string}
+         */
+        PositionSide: "long" | "short";
         /**
          * Preset
          * @description A file layout FEFAT imports; its id is the provider its datasets are stored under.
@@ -1438,6 +1839,49 @@ export interface components {
          */
         QualityStatus: "clean" | "flagged" | "unchecked" | "stale";
         /**
+         * RedFlag
+         * @description A red flag that fires, with the script's message.
+         */
+        RedFlag: {
+            id: components["schemas"]["RedFlagId"];
+            /** Message */
+            message: string;
+            severity: components["schemas"]["Severity"];
+        };
+        /**
+         * RedFlagId
+         * @description A red flag of the script's checklist.
+         * @enum {string}
+         */
+        RedFlagId: "small_sample" | "no_slippage_test" | "excessive_drawdown" | "over_optimized" | "short_test_period" | "negative_expectancy" | "too_good";
+        /**
+         * RefusedCheck
+         * @description A fidelity check, `kind` refused, whose rerun at `fidelity` the engine refused, with its
+         *     message, as when a trade date of the period holds no level at or coarser than it, ticks
+         *     without bars.
+         */
+        RefusedCheck: {
+            /** Fidelity */
+            fidelity: string;
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "refused";
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /** Refused */
+            refused: string;
+        };
+        /**
          * RefusedCode
          * @description Code the SDK refused: the line of the code the refusal is at, None where it has none, and
          *     why, in the SDK's words.
@@ -1478,6 +1922,14 @@ export interface components {
             type: string;
         };
         /**
+         * Replay
+         * @description How the Rust engine replays a run: every record in turn, or skipping the blocks of
+         *     records that no order can act on, by the coarser bars above them (`02` §4). Both give the
+         *     same fills, so a run's key leaves it out.
+         * @enum {string}
+         */
+        Replay: "full" | "skipping";
+        /**
          * ReportedFinding
          * @description A finding of a quality report: its trade date, its kind, the schema and the contract it
          *     was found in, none for a gap, which no contract fills, and how many records or bars it
@@ -1497,6 +1949,190 @@ export interface components {
              */
             trade_date: string;
         };
+        /**
+         * Robustness
+         * @description The robustness summary of a run: what the script read, its five scores, their total and
+         *     verdict, its red flags, the sample size the run reaches, the script's profit factor (none
+         *     where the script's is infinite) and expectancy in percent of the capital per trade, and the
+         *     profit and loss at one more tick of slippage, `fragile_to_slippage` when the run's profit is
+         *     gone at it. The regimes a run covers arrive with step 11.4 (D-51).
+         */
+        Robustness: {
+            /** Dimensions */
+            dimensions: [
+                components["schemas"]["Dimension"],
+                components["schemas"]["Dimension"],
+                components["schemas"]["Dimension"],
+                components["schemas"]["Dimension"],
+                components["schemas"]["Dimension"]
+            ];
+            /** Expectancy */
+            expectancy: number;
+            /** Fragile To Slippage */
+            fragile_to_slippage: boolean;
+            inputs: components["schemas"]["ScriptInputs"];
+            /** Pnl At Plus One Tick */
+            pnl_at_plus_one_tick: string;
+            /** Profit Factor */
+            profit_factor: number | null;
+            /** Red Flags */
+            red_flags: components["schemas"]["RedFlag"][];
+            sample_size: components["schemas"]["SampleSize"];
+            /** Total Score */
+            total_score: number;
+            verdict: components["schemas"]["Verdict"];
+        };
+        /**
+         * RollHandling
+         * @description What a roll does with an open position: transfer it to the new front (F-ROL-02, the
+         *     default), or close it (F-ROL-04).
+         * @enum {string}
+         */
+        RollHandling: "transfer" | "flatten";
+        /**
+         * RunConfig
+         * @description A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its
+         *     finest level at or coarser than it (D-58), the finest the store holds when left out;
+         *     `latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market
+         *     and stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity
+         *     setting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`
+         *     (F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of
+         *     `fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;
+         *     `capital`, in the instrument's currency; `replay`, skipping what no order can act on or in
+         *     full, which give the same fills (`02` §4); `provider`, as `load` takes it; and `contract`,
+         *     one contract of the strategy's root read unspliced, as `load` reads a contract, so that the
+         *     run crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll
+         *     calendar's fronts.
+         */
+        RunConfig: {
+            /**
+             * Capital
+             * @default 50000
+             */
+            capital: number | string;
+            /** Contract */
+            contract?: string | null;
+            /** Fee Table */
+            fee_table?: string | null;
+            /** Fidelity */
+            fidelity?: string | null;
+            /**
+             * Latency Ms
+             * @default 100
+             */
+            latency_ms: number;
+            /** @default through */
+            limit_fill: components["schemas"]["LimitFill"];
+            /** Provider */
+            provider?: string | null;
+            /** @default skipping */
+            replay: components["schemas"]["Replay"];
+            /** @default transfer */
+            roll_handling: components["schemas"]["RollHandling"];
+            slippage_ticks?: components["schemas"]["SlippageTicks"] | null;
+        };
+        /**
+         * RunOrigin
+         * @description Where a run's row comes from: asked for through the API, or found saved by the index; the
+         *     batches of later phases add theirs.
+         * @enum {string}
+         */
+        RunOrigin: "manual";
+        /**
+         * RunStrategy
+         * @description The saved strategy version a run names, as the index holds it: the strategy's row's id and
+         *     name, and the version's row's id and number.
+         */
+        RunStrategy: {
+            /** Name */
+            name: string;
+            /** Strategy Id */
+            strategy_id: string;
+            /** Version */
+            version: number;
+            /** Version Id */
+            version_id: string;
+        };
+        /**
+         * RunSubmission
+         * @description A backtest of a saved strategy version: the id of the version's row, which
+         *     `GET /v1/strategies` gives; its parameters, its defaults filling those left out; the trade
+         *     dates from `start` to `end`; and its settings, each left out taking its default, which the
+         *     run's answer gives with every default applied.
+         */
+        RunSubmission: {
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Parameters */
+            parameters?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            settings?: components["schemas"]["RunConfig"];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Strategy Version Id */
+            strategy_version_id: string;
+        };
+        /**
+         * RunWithMetrics
+         * @description A run with what its record says of how it went, once saved: its metrics, the fidelity era
+         *     of each trade date it filled on, and its warnings; none of them before.
+         */
+        RunWithMetrics: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Error */
+            error: string | null;
+            /** Fidelity Eras */
+            fidelity_eras: components["schemas"]["FidelityEra"][];
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id: string | null;
+            /** Message */
+            message: string | null;
+            metrics: components["schemas"]["Metrics"] | null;
+            origin: components["schemas"]["RunOrigin"];
+            /** Parameters */
+            parameters: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Progress */
+            progress: number;
+            /** Run Key */
+            run_key: string | null;
+            settings: components["schemas"]["AppliedRunConfig"];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            status: components["schemas"]["JobStatus"];
+            strategy: components["schemas"]["RunStrategy"] | null;
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * SampleSize
+         * @description Which of the skill's trade counts a run reaches: an absolute minimum of 30, 100
+         *     preferred, and 200 for high confidence.
+         * @enum {string}
+         */
+        SampleSize: "below_minimum" | "minimum" | "preferred" | "high_confidence";
         /**
          * SavedFeatureVersion
          * @description A feature version as the API gives it: its file's record (`fefat.features.versions`), and
@@ -1582,6 +2218,33 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * ScriptInputs
+         * @description What the skill's script reads of a run, under its own names: the trades, the win rate in
+         *     percent, the average win, the average loss over the trades that did not win (the script takes
+         *     every trade that is not a win as a loss, so it differs from `TradeStatistics.average_loss`
+         *     when a trade breaks even), and the maximum drawdown, in percent of the capital, the years the
+         *     window spans rounded to the nearest, the parameters (the numbers the execution template sets
+         *     apart from their defaults), and whether the run paid slippage or fees.
+         */
+        ScriptInputs: {
+            /** Avg Loss Pct */
+            avg_loss_pct: number;
+            /** Avg Win Pct */
+            avg_win_pct: number;
+            /** Max Drawdown Pct */
+            max_drawdown_pct: number;
+            /** Num Parameters */
+            num_parameters: number;
+            /** Slippage Tested */
+            slippage_tested: boolean;
+            /** Total Trades */
+            total_trades: number;
+            /** Win Rate */
+            win_rate: number;
+            /** Years Tested */
+            years_tested: number;
+        };
         SecretChanges: {
             [key: string]: string | null;
         };
@@ -1663,6 +2326,22 @@ export interface components {
         SettingsChange: {
             secrets?: components["schemas"]["SecretChanges"];
             theme?: components["schemas"]["Theme"] | null;
+        };
+        /**
+         * Severity
+         * @description How serious a red flag is.
+         * @enum {string}
+         */
+        Severity: "high" | "medium";
+        /**
+         * SlippageTicks
+         * @description Ticks by which market and stop-market fills are worse than their reference (F-SLP-01).
+         */
+        SlippageTicks: {
+            /** Market */
+            market: number;
+            /** Stop */
+            stop: number;
         };
         /**
          * Source
@@ -1802,6 +2481,27 @@ export interface components {
          */
         Theme: "dark" | "light";
         /**
+         * TickFidelity
+         * @description Tick data: trades with the quote just before each, or trades alone.
+         * @enum {string}
+         */
+        TickFidelity: "tbbo" | "trades";
+        /**
+         * TimeUnit
+         * @description The unit of a bar timeframe, as the schema name writes it.
+         * @enum {string}
+         */
+        TimeUnit: "s" | "m" | "h" | "d";
+        /**
+         * Timeframe
+         * @description A bar's length, written `1s`, `5m`, `1h`, or `1d`; a daily bar spans its trade date.
+         */
+        Timeframe: {
+            /** Count */
+            count: number;
+            unit: components["schemas"]["TimeUnit"];
+        };
+        /**
          * TimeframeInput
          * @description The timeframe of the bars the feature is evaluated on, such as `15m` for a feature that a
          *     strategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2).
@@ -1814,6 +2514,34 @@ export interface components {
             kind: "timeframe";
             /** Timeframe */
             timeframe: string;
+        };
+        /**
+         * TradeStatistics
+         * @description The statistics of a run's trades, money in the instrument's currency.
+         */
+        TradeStatistics: {
+            /** Average Loss */
+            average_loss: number | null;
+            /** Average Win */
+            average_win: number | null;
+            /** Expectancy */
+            expectancy: number | null;
+            /** Expectancy R */
+            expectancy_r: number | null;
+            /** Expectancy Ticks */
+            expectancy_ticks: number | null;
+            /** Losses */
+            losses: number;
+            /** Mae Mfe Efficiency */
+            mae_mfe_efficiency: number | null;
+            /** Profit Factor */
+            profit_factor: number | null;
+            /** Trades */
+            trades: number;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Wins */
+            wins: number;
         };
         /**
          * TradesInput
@@ -1875,6 +2603,12 @@ export interface components {
             type: string;
         };
         /**
+         * Verdict
+         * @description The plain verdict of the total: 70 points or more, 40 or more, or fewer.
+         * @enum {string}
+         */
+        Verdict: "deploy_grade_evidence" | "refine" | "abandon";
+        /**
          * VersionDiff
          * @description The unified diff of the code of two versions, `earlier`'s and `later`'s, empty where their
          *     code is the same; the structured diff of a builder's spec joins it with the builder of
@@ -1905,6 +2639,12 @@ export interface components {
             /** Fill Model */
             fill_model: number;
         };
+        /**
+         * Weekday
+         * @description A day of the week, as the specification spells it.
+         * @enum {string}
+         */
+        Weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
         /**
          * Window
          * @description A window over the last `n` bars of a term, `lag` the term `n` bars before.
@@ -3092,6 +3832,231 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    newest_runs_v1_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedRun"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    submit_run_v1_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSubmission"];
+            };
+        };
+        responses: {
+            /** @description The run its request found saved, indexed where it was not: no job runs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedRun"];
+                };
+            };
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedRun"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["RefusedCodeProblem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    run_by_id_v1_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunWithMetrics"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    cancel_run_v1_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A run's id in the index, a UUIDv7. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunWithMetrics"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
         };

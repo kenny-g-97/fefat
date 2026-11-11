@@ -43,6 +43,11 @@ class Jobs:
         self.dispatcher.submit(job.id)
         return job
 
+    def submit(self, job_id: str) -> None:
+        """Give the dispatcher the queued job `job_id`, which another area's records queued, as
+        the runs' records queue a run's job with its row (step 5.3)."""
+        self.dispatcher.submit(job_id)
+
     def start_demo(self, seconds: int) -> Job:
         """Queue a demo job that counts `seconds`, and give it to the dispatcher."""
         return self.start(JobKind.DEMO, {"seconds": seconds})

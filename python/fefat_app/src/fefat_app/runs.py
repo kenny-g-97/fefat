@@ -56,13 +56,15 @@ class LookupVerdict(StrEnum):
 
 
 class SavedRunFound(BaseModel):
-    """A run whose request found it saved (`fefat.backtest.requests`): its run key, with the
-    parameters as the version bound them and the settings as the SDK applied them."""
+    """A run whose request found it saved (`fefat.backtest.requests`): its run key and the key
+    of that request, which a submission of it waiting may hold, with the parameters as the
+    version bound them and the settings as the SDK applied them."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     verdict: Literal[LookupVerdict.SAVED] = LookupVerdict.SAVED
     run_key: Hash
+    request_key: Sha256
     parameters: dict[str, JsonValue]
     settings: AppliedRunConfig
 

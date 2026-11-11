@@ -84,7 +84,10 @@ def test_a_lookup_and_a_backtest_answer_the_run_and_its_stages(
         (100, "Wrote the artifacts"),
     ]
     assert after == SavedRunFound(
-        run_key=made.run_key, parameters=DEFAULTS, settings=before.settings
+        run_key=made.run_key,
+        request_key=before.request_key,
+        parameters=DEFAULTS,
+        settings=before.settings,
     )
     assert again == made
     assert [(each.percent, each.message) for each in reported_again] == [

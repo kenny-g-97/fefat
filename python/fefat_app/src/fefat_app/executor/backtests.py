@@ -72,11 +72,14 @@ def _looked_up(run: RequestedRun) -> SavedRunFound | RunToMake:
     lookup = looked_up(strategy, run.start, run.end, run.settings, resolve_paths(os.environ))
     pin = strategy.saved_version
     parameters: dict[str, JsonValue] = {} if pin is None else dict(pin.parameters)
-    if lookup.saved is not None:
-        return SavedRunFound(
-            run_key=lookup.saved.name, parameters=parameters, settings=lookup.config
-        )
     request_key = None if lookup.request is None else lookup.request.key()
+    if lookup.saved is not None and request_key is not None:
+        return SavedRunFound(
+            run_key=lookup.saved.name,
+            request_key=request_key,
+            parameters=parameters,
+            settings=lookup.config,
+        )
     return RunToMake(request_key=request_key, parameters=parameters, settings=lookup.config)
 
 
