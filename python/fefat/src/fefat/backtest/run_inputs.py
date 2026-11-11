@@ -63,7 +63,7 @@ from fefat.reference.run_documents import (
     settings_document,
     with_engine_columns,
 )
-from fefat.strategy.signal_frame import require_named_columns
+from fefat.strategy.signal_frame import require_named_columns, require_rule_features
 from fefat.strategy.signal_strategy import SignalStrategy
 from fefat.strategy.spec import StrategySpec
 
@@ -157,6 +157,7 @@ def run_inputs(
     signals = produced.signals
     spec = strategy.to_spec()
     require_named_columns(spec.execution, signals.columns)
+    require_rule_features(spec.execution, signals.columns)
     window = _window(signals)
     snapshots = (
         *snapshots_of(market, produced.first_read, window),
@@ -314,8 +315,6 @@ def _features_below_a_tick(spec: StrategySpec, signals: pl.DataFrame, tick: int)
     entries = signals.filter(pl.col("long_entry") | pl.col("short_entry"))
     found = []
     for column, feature in sorted(exit_features(spec).items()):
-        if feature not in entries.columns:
-            continue
         below = entries.filter((pl.col(feature) > 0) & (pl.col(feature) < tick)).height
         if below:
             found.append(

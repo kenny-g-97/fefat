@@ -9,7 +9,14 @@ from collections.abc import Collection, Mapping
 import polars as pl
 
 from fefat.market.calendar import counted, utc_text
-from fefat.strategy.exits import ColumnStop, ColumnTarget, ColumnTrail
+from fefat.strategy.exits import (
+    AtrStop,
+    AtrTarget,
+    AtrTrail,
+    ColumnStop,
+    ColumnTarget,
+    ColumnTrail,
+)
 from fefat.strategy.spec import Execution, LimitEntryAtColumn, StopEntryAtColumn
 
 REQUIRED_SIGNAL_COLUMNS = pl.Schema(
@@ -100,6 +107,36 @@ def require_named_columns(execution: Execution, columns: Collection[str]) -> Non
         if needs and column not in columns:
             raise ValueError(
                 f"Expected the signal frame's {column} for {rule}, got no such column."
+            )
+
+
+def require_rule_features(execution: Execution, columns: Collection[str]) -> None:
+    """Refuse a signal frame, whose column names are `columns`, without the feature a rule of
+    `execution` reads as a distance (step 5.3): a stop, a target, or a trailing stop a multiple
+    of a feature, such as `Stop(atr=1.5)`, which reads the slot `atr`. Without it the engine
+    refuses the run at its first entry, after its data is loaded; a save and a run's start
+    refuse it first. The reference engine's template does not call it, so that a scenario keeps
+    F-RND-01's refusal at the entry."""
+    stop, trailing = execution.stop, execution.trailing
+    read = [
+        *([("a stop", stop.feature)] if isinstance(stop, AtrStop) else []),
+        *(
+            ("a target", target.price.feature)
+            for target in execution.targets
+            if isinstance(target.price, AtrTarget)
+        ),
+        *(
+            [("a trailing stop", trailing.by.feature)]
+            if trailing is not None and isinstance(trailing.by, AtrTrail)
+            else []
+        ),
+    ]
+    for rule, feature in read:
+        if feature not in columns:
+            raise ValueError(
+                f"Expected the signal frame's {feature} for {rule} a multiple of it, got no such "
+                f"column: give the strategy a slot named {feature}, or name the slot it has with "
+                "the rule's `feature`."
             )
 
 

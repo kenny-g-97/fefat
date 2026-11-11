@@ -223,3 +223,63 @@ def test_every_indicator_of_the_sdk_gives_its_columns_on_bars_with_no_rows(name:
     definition = from_source(WITH_A_SLOT.format(feature=call, entry="pl.lit(True)"))
 
     assert definition.with_defaults.feature_columns()
+
+
+STOP_WITHOUT_ITS_FEATURE = """import polars as pl
+
+import fefat as ff
+
+
+def strategy() -> ff.SignalStrategy:
+    return ff.SignalStrategy(
+        instrument="MES",
+        timeframe="5m",
+        long_entry=pl.col("close") > pl.col("open"),
+        short_entry=pl.lit(False),
+        execution=ff.Execution(entry=ff.Market(), stop=ff.Stop(atr=1.5), sizing=ff.Fixed(1)),
+    )
+"""
+"""A stop 1.5 times the slot `atr`, which the strategy has none of."""
+READS_ITS_MODULE = """import polars as pl
+
+import fefat as ff
+
+LOOKBACK = 12
+
+
+@ff.feature(warmup=12, outputs={"range_mean": "price_distance"})
+def range_mean(bars: pl.LazyFrame) -> pl.Expr:
+    return (pl.col("high") - pl.col("low")).rolling_mean(LOOKBACK)
+
+
+def strategy() -> ff.SignalStrategy:
+    return ff.SignalStrategy(
+        instrument="MES",
+        timeframe="5m",
+        features={"range": range_mean()},
+        long_entry=pl.col("range") > 0,
+        short_entry=pl.lit(False),
+        execution=ff.Execution(entry=ff.Market(), sizing=ff.Fixed(1)),
+    )
+"""
+"""A feature whose body reads the module's `LOOKBACK`, on line 10."""
+
+
+def test_a_stop_a_multiple_of_a_feature_the_strategy_lacks_is_refused() -> None:
+    # Step 5.3 (from step 5.2's plan review): it validated and saved, and the engine refused
+    # it at its first entry.
+    refused = refusal(STOP_WITHOUT_ITS_FEATURE)
+
+    assert refused.line == DEFINED_ON
+    assert "Expected the signal frame's atr for a stop" in str(refused)
+
+
+def test_a_feature_the_code_defines_that_reads_its_module_is_refused_at_that_line() -> None:
+    # Step 5.3 (from step 5.2's plan review and leakage audit): its saved version cannot be built
+    # again from its own code, so ff.features.ref and a preview of it fail, and its hash leaves
+    # the constant out, so a version changing it would read the values cached for the old one.
+    refused = refusal(READS_ITS_MODULE)
+
+    assert refused.line == 10
+    assert "range_mean" in str(refused)
+    assert "LOOKBACK" in str(refused)

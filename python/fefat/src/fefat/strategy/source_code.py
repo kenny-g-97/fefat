@@ -34,10 +34,18 @@ from typing import Any
 import polars as pl
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
 
+from fefat.features.declarations import written_declarations
+from fefat.features.definition import FeatureDef
+from fefat.features.evaluation import FeatureSpec
 from fefat.features.grids import Grid, PrintsGrid
+from fefat.features.inputs import FeatureInput
+from fefat.features.registry import registered
+from fefat.features.source_code import from_source as feature_from_source
+from fefat.features.source_lint import LintRule
+from fefat.features.source_lint import lint as feature_lint
 from fefat.market.aggressor import SIDE_VOLUME_COLUMNS
 from fefat.market.series_source import SIGNAL_BAR_COLUMNS
-from fefat.strategy.signal_frame import require_named_columns
+from fefat.strategy.signal_frame import require_named_columns, require_rule_features
 from fefat.strategy.signal_strategy import SignalStrategy
 
 FUNCTION_NAME = "strategy"
@@ -113,6 +121,7 @@ def _defined(text: str, digest: str, filename: str) -> StrategyDefinition:
     model = _parameter_model(function, line)
     strategy = _given_strategy(function(), line)
     _build_on_no_bars(strategy)
+    _require_own_features_alone(strategy, filename)
     return StrategyDefinition(
         code=text, function=function, parameter_model=model, with_defaults=strategy
     )
@@ -244,6 +253,53 @@ def _build_on_no_bars(strategy: SignalStrategy) -> None:
     others = {grid: _no_rows(grid) for grid in graph.grids() if grid != graph.signal_grid}
     frame = strategy.signals(pl.DataFrame(schema=SIGNAL_BAR_COLUMNS), others).collect()
     require_named_columns(strategy.execution, frame.columns)
+    require_rule_features(strategy.execution, frame.columns)
+
+
+def _require_own_features_alone(strategy: SignalStrategy, filename: str) -> None:
+    """Refuse a feature in a slot that the code, run as `filename`, defines itself, where its own
+    code does not build it again, as its saved version is built by `ff.features.ref` and a
+    preview: one whose body or decorator reads a name of the strategy's module, a constant or a
+    helper, which the feature's hash leaves out (step 5.3, `BACKLOG.md`); the features it reads
+    that the code defines too, alike. A feature defined elsewhere, such as an indicator of the
+    SDK or one of the library, is the library's to check."""
+    for feature in strategy.features.values():
+        if isinstance(feature, FeatureSpec):
+            _require_alone(feature.definition, filename)
+
+
+def _require_alone(definition: FeatureDef, filename: str) -> None:
+    function = definition.function
+    if not isinstance(function, FunctionType) or function.__code__.co_filename != filename:
+        return
+    written = written_declarations(definition.name, definition.code).input_names
+    reads: dict[str, FeatureDef] = {}
+    for declared, name in zip(definition.inputs, written, strict=True):
+        read = registered(declared.hash) if isinstance(declared, FeatureInput) else None
+        if read is not None:
+            _require_alone(read, filename)
+            if name is not None:
+                reads[name] = read
+    try:
+        feature_from_source(definition.code, reads)
+    except ValueError as error:
+        raise StrategyCodeError(
+            f"Expected feature {definition.name}, which this code defines, to build again from "
+            f"its own code, as its saved version is built, got: {error}",
+            _line_read_outside(definition, function),
+        ) from error
+
+
+def _line_read_outside(definition: FeatureDef, function: FunctionType) -> int:
+    """The line of the code at which the feature reads a name of the module, as the feature
+    lint finds it, counting from its decorator's line; else its decorator's."""
+    first = function.__code__.co_firstlineno
+    outside = [
+        finding.line
+        for finding in feature_lint(definition)
+        if finding.rule is LintRule.NAME_READ_OUTSIDE
+    ]
+    return first + outside[0] - 1 if outside else first
 
 
 def _no_rows(grid: Grid) -> pl.DataFrame:

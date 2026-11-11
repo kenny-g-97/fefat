@@ -23,8 +23,10 @@ from fefat.strategy import (
     SignalStrategy,
     Stop,
     Target,
+    Trailing,
     validated_signal_frame,
 )
+from fefat.strategy.signal_frame import require_rule_features
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 MES_TICK = 250_000_000
@@ -276,3 +278,32 @@ def test_a_frame_of_the_contract_passes_with_its_feature_columns() -> None:
 def test_a_frame_that_breaks_the_contract_is_refused(frame: pl.DataFrame, refusal: str) -> None:
     with pytest.raises(ValueError, match=refusal):
         validated_signal_frame(frame)
+
+
+@pytest.mark.parametrize(
+    ("execution", "rule"),
+    [
+        (Execution(entry=Market(), stop=Stop(atr=1.5), sizing=Fixed(1)), "a stop"),
+        (
+            Execution(
+                entry=Market(), stop=Stop(ticks=8), targets=[Target(atr=2.0)], sizing=Fixed(1)
+            ),
+            "a target",
+        ),
+        (
+            Execution(
+                entry=Market(), stop=Stop(ticks=8), trailing=Trailing(atr=1.0), sizing=Fixed(1)
+            ),
+            "a trailing stop",
+        ),
+    ],
+)
+def test_an_exit_rule_a_multiple_of_a_feature_no_column_holds_is_refused(
+    execution: Execution, rule: str
+) -> None:
+    # Step 5.3 (from step 5.2's plan review): `Stop(atr=1.5)` reads the slot `atr`; a strategy
+    # without it built and saved, and only the engine refused it, at its first entry.
+    with pytest.raises(ValueError, match=f"Expected the signal frame's atr for {rule}"):
+        require_rule_features(execution, ["ts_close", "close"])
+
+    require_rule_features(execution, ["ts_close", "close", "atr"])
