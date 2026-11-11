@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -22,11 +22,10 @@ import fefat as ff
 from fefat.config import FefatPaths, resolve_paths
 from fefat.features import combine
 from fefat.features.validation_report import StartCheck, ValidationReport
-from fefat.features.versions import validation_file
+from fefat.features.versions import saved_versions_in, validation_file
 from fefat.market.importers.profiles import ProfileKind, preset_profiles
 from fefat.market.store_files import json_writer, write_atomically
 from fefat.strategy import StrategyKind
-from fefat.strategy.versions import StrategyVersion
 from fefat.strategy.versions import saved_versions_in as saved_strategy_versions_in
 from fefat_app.database import version_index
 from fefat_app.database.models import (
@@ -455,17 +454,27 @@ def test_the_library_is_read_before_the_index_takes_the_write_lock(
     ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
     read: list[Path] = []
 
-    def read_while_another_writes(strategies_dir: Path) -> list[StrategyVersion]:
-        with not_waiting(engine).begin() as connection:
-            connection.exec_driver_sql("SELECT 1")
-        read.append(strategies_dir)
-        return saved_strategy_versions_in(strategies_dir)
+    def while_another_writes[Record](
+        reader: Callable[[Path], list[Record]],
+    ) -> Callable[[Path], list[Record]]:
+        def reading(folder: Path) -> list[Record]:
+            with not_waiting(engine).begin() as connection:
+                connection.exec_driver_sql("SELECT 1")
+            read.append(folder)
+            return reader(folder)
+
+        return reading
 
     with monkeypatch.context() as patch:
-        patch.setattr(version_index, "saved_strategy_versions_in", read_while_another_writes)
+        patch.setattr(version_index, "saved_versions_in", while_another_writes(saved_versions_in))
+        patch.setattr(
+            version_index,
+            "saved_strategy_versions_in",
+            while_another_writes(saved_strategy_versions_in),
+        )
         index_library(engine, paths())
 
-    assert read == [paths().strategies_dir]
+    assert read == [paths().features_dir, paths().strategies_dir]
     assert row_counts(engine)["strategy_versions"] == 1
 
 

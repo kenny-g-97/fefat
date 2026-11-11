@@ -7,8 +7,10 @@ save, and `fefat_app.database.workspace_index` with the rest of the workspace.
 
 A version is seen by its feature or strategy, number, and hash. A version file the SDK refuses,
 such as one changed after it was written, or one deleted, copied, or replaced by hand after it was
-indexed, stops the indexing with the reason, and no row is added. The files are read before the
-first statement, which takes SQLite's write lock, so that no other writer waits on them."""
+indexed, stops the indexing with the reason, and no row is added. The version files are read
+before the indexing's first statement, which takes SQLite's write lock, so that a save through
+the app holds up no other writer while they are read; a rebuild, which empties the index first,
+reads them under the lock."""
 
 from collections.abc import Iterable, Mapping
 from typing import Literal
@@ -32,9 +34,9 @@ from fefat_app.database.uuid7 import new_uuid7
 
 DEFAULT_WORKSPACE = "default"
 _REDONE = (
-    "a version file was deleted or replaced by hand after it was indexed, which the index, kept "
-    "insert-only, cannot follow: put the files back as they were, or index the files as they are "
-    "now with `fefat db import-workspace --rebuild`."
+    "a version file was deleted, copied, or replaced by hand after it was indexed, which the "
+    "index, kept insert-only, cannot follow: put the files back as they were, a copy removed, or "
+    "index the files as they are now with `fefat db import-workspace --rebuild`."
 )
 
 type VersionKind = Literal["feature", "strategy"]
