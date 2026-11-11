@@ -263,6 +263,12 @@ def strategy() -> ff.SignalStrategy:
     )
 """
 """A feature whose body reads the module's `LOOKBACK`, on line 10."""
+UNDER_A_COMBINATION = READS_ITS_MODULE.replace(
+    "\n\ndef strategy()",
+    '\n\nsmoothed = ff.features.combine.define(\n    "smoothed", ff.features.combine.rolling_mean'
+    "(range_mean(), 3)\n)\n\n\ndef strategy()",
+).replace('features={"range": range_mean()}', 'features={"range": smoothed()}')
+"""The same feature read through a combination, which the SDK compiles from code of its own."""
 
 
 def test_a_stop_a_multiple_of_a_feature_the_strategy_lacks_is_refused() -> None:
@@ -279,6 +285,17 @@ def test_a_feature_the_code_defines_that_reads_its_module_is_refused_at_that_lin
     # again from its own code, so ff.features.ref and a preview of it fail, and its hash leaves
     # the constant out, so a version changing it would read the values cached for the old one.
     refused = refusal(READS_ITS_MODULE)
+
+    assert refused.line == 10
+    assert "range_mean" in str(refused)
+    assert "LOOKBACK" in str(refused)
+
+
+def test_a_feature_the_code_defines_read_through_a_combination_is_refused_alike() -> None:
+    # Step 5.3 (its ponytail review): a combination's code is the SDK's, so the check passed over
+    # it, and the feature it reads went unchecked.
+    assert "smoothed()" in UNDER_A_COMBINATION
+    refused = refusal(UNDER_A_COMBINATION)
 
     assert refused.line == 10
     assert "range_mean" in str(refused)

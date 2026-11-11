@@ -261,25 +261,31 @@ def _require_own_features_alone(strategy: SignalStrategy, filename: str) -> None
     code does not build it again, as its saved version is built by `ff.features.ref` and a
     preview: one whose body or decorator reads a name of the strategy's module, a constant or a
     helper, which the feature's hash leaves out (step 5.3, `BACKLOG.md`); the features it reads
-    that the code defines too, alike. A feature defined elsewhere, such as an indicator of the
-    SDK or one of the library, is the library's to check."""
+    that the code defines too, alike, at any depth, also below a feature defined elsewhere, such
+    as a combination, whose code the SDK writes. A feature defined elsewhere, such as an indicator
+    of the SDK or one of the library, is the library's to check."""
     for feature in strategy.features.values():
         if isinstance(feature, FeatureSpec):
             _require_alone(feature.definition, filename)
 
 
 def _require_alone(definition: FeatureDef, filename: str) -> None:
+    read_by_input = [
+        registered(declared.hash) if isinstance(declared, FeatureInput) else None
+        for declared in definition.inputs
+    ]
+    for read in read_by_input:
+        if read is not None:
+            _require_alone(read, filename)
     function = definition.function
     if not isinstance(function, FunctionType) or function.__code__.co_filename != filename:
         return
     written = written_declarations(definition.name, definition.code).input_names
-    reads: dict[str, FeatureDef] = {}
-    for declared, name in zip(definition.inputs, written, strict=True):
-        read = registered(declared.hash) if isinstance(declared, FeatureInput) else None
-        if read is not None:
-            _require_alone(read, filename)
-            if name is not None:
-                reads[name] = read
+    reads = {
+        name: read
+        for name, read in zip(written, read_by_input, strict=True)
+        if name is not None and read is not None
+    }
     try:
         feature_from_source(definition.code, reads)
     except ValueError as error:
