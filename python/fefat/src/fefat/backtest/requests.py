@@ -80,10 +80,12 @@ class RunRequestRecord(FrozenModel):
 @dataclass(frozen=True)
 class RunLookup:
     """What `looked_up` knows of a run before a bar is loaded: its settings, every default
-    applied; its request, None for a strategy that keys none; and the folder of the saved run
-    that request made, None where none is saved."""
+    applied; what it reads of the store, as a request pins it, which a run works out again once
+    it is done, so that data changed meanwhile refuses it; its request, None for a strategy that
+    keys none; and the folder of the saved run that request made, None where none is saved."""
 
     config: AppliedRunConfig
+    pins: tuple[str, ...]
     request: RunRequest | None
     saved: Path | None
 
@@ -104,11 +106,20 @@ def looked_up(
     window = Window(start=parse_trade_date(start, "start"), end=parse_trade_date(end, "end"))
     root, contract = strategy.instrument, applied.contract
     symbol = root if contract is None else contract_of(root, contract)
+    pins = _pins_of(strategy, market, window, symbol)
     document = strategy.signal_document()
     if document is None:
-        return RunLookup(config=applied, request=None, saved=None)
-    request = _request(strategy, document, (market, applied), window, symbol)
-    return RunLookup(config=applied, request=request, saved=saved_run_of(request, paths))
+        return RunLookup(config=applied, pins=pins, request=None, saved=None)
+    request = RunRequest(
+        strategy=document,
+        window=window,
+        config=applied,
+        instrument=InstrumentRecord.of(market.instrument),
+        pins=pins,
+        sdk_key=runtime_key(),
+        versions=EngineVersions.running(),
+    )
+    return RunLookup(config=applied, pins=pins, request=request, saved=saved_run_of(request, paths))
 
 
 def request_of(
@@ -124,31 +135,19 @@ def request_of(
     return looked_up(strategy, start, end, config, paths).request
 
 
-def _request(
-    strategy: SignalStrategy,
-    document: dict[str, object],
-    market_and_settings: tuple[Market, AppliedRunConfig],
-    window: Window,
-    symbol: str,
-) -> RunRequest:
-    """The request of a run of `strategy`, whose signal document is `document`, on the `symbol`
-    of its market under its settings over `window` (module docstring)."""
-    market, applied = market_and_settings
+def _pins_of(
+    strategy: SignalStrategy, market: Market, window: Window, symbol: str
+) -> tuple[str, ...]:
+    """What a run of `strategy` on its market's `symbol` over `window` reads of the store, from
+    the first trade date it reads (module docstring): each instrument's pins as the feature
+    cache's keys name them, and the snapshots the run key reads."""
     graph = strategy.feature_graph()
     signal = series_source(symbol, provider=market.provider)
     keys = PartitionKeys({graph.root: signal, **input_sources(graph, signal)})
     lead_in = graph.lead_in(market.sessions, window.start)
     first = min(lead_in, first_date_read(graph, signal, (lead_in, window.end)))
     read = snapshots_of(market, first, window)
-    return RunRequest(
-        strategy=document,
-        window=window,
-        config=applied,
-        instrument=InstrumentRecord.of(market.instrument),
-        pins=(*keys.pins(graph, (first, window.end)), *(each.sha256 for each in read)),
-        sdk_key=runtime_key(),
-        versions=EngineVersions.running(),
-    )
+    return (*keys.pins(graph, (first, window.end)), *(each.sha256 for each in read))
 
 
 def saved_run_of(request: RunRequest, paths: FefatPaths) -> Path | None:

@@ -177,7 +177,7 @@ def run(
     settings = RunConfig() if config is None else config
     lookup = looked_up(strategy, start, end, settings, paths)
     if lookup.saved is None:
-        saved = _run_or_open(strategy, (start, end), settings, paths, progress)
+        saved = _run_or_open(strategy, (start, end), settings, paths, progress, lookup.pins)
         if lookup.request is not None:
             remember(lookup.request, saved.hash, paths)
     else:
@@ -193,10 +193,12 @@ def _run_or_open(
     config: RunConfig,
     paths: FefatPaths,
     progress: RunProgress,
+    pinned: tuple[str, ...],
 ) -> Run:
     """The run of what `strategy` reads on the trade dates `window` spans under `config`: the run
     saved under its key, else run and saved with the features it pins, each stage told to
-    `progress`."""
+    `progress`, and refused before anything is saved where the store no longer holds what
+    `pinned` pins, the data the run found before it loaded a bar (step 5.3)."""
     inputs = run_inputs(strategy, *window, config, paths, progress)
     frame_hash = fefat_engine.table_hash(inputs.signals)
     key = run_key(inputs, frame_hash)
@@ -210,9 +212,25 @@ def _run_or_open(
         saved_version=strategy.saved_version,
     )
     progress(RunStage.ENGINE_RUNNING)
-    saved = _ran(inputs, inputs.cache_paths(paths), written, folder, key, frame_hash)
+    artifacts, record = _ran(inputs, inputs.cache_paths(paths), written, key, frame_hash)
+    _require_data_as_found(pinned, looked_up(strategy, *window, config, paths).pins, inputs)
+    write_run(folder, artifacts, record)
     progress(RunStage.ARTIFACTS_WRITTEN)
-    return saved
+    return Run(folder=folder, record=record)
+
+
+def _require_data_as_found(found: tuple[str, ...], now: tuple[str, ...], inputs: RunInputs) -> None:
+    """Refuse a run whose data changed while it ran: what it reads of the store, as it found it
+    before a bar was loaded (`found`), is not what the store holds once the run is done (`now`),
+    a partition added, replaced, or removed, so that its signals, its fills, and its key could
+    come from two versions of the data (D-11)."""
+    if now == found:
+        return
+    raise ValueError(
+        f"Expected the data of {inputs.instrument.root} from {inputs.window.start} to "
+        f"{inputs.window.end} as the run found it before it loaded a bar, got other data once it "
+        "was done: the store changed while the run read it: run it again."
+    )
 
 
 def run_key(inputs: RunInputs, frame_hash: str) -> str:
@@ -244,12 +262,11 @@ def _ran(
     inputs: RunInputs,
     cache_paths: tuple[Path, ...],
     strategy: StrategyRecord,
-    folder: Path,
     key: str,
     frame_hash: str,
-) -> Run:
-    """The run of `inputs` through the engine over its fronts' caches in `cache_paths`, its
-    artifacts and record, which names `strategy`, written to `folder`."""
+) -> tuple[dict[str, pl.DataFrame], RunRecord]:
+    """The run of `inputs` through the engine over its fronts' caches in `cache_paths`: its
+    artifacts and its record, which names `strategy`."""
     caches = [str(path) for path in cache_paths]
     replay = str(inputs.config.replay)
     outputs = fefat_engine.run_signal_backtest(
@@ -294,8 +311,7 @@ def _ran(
         ),
         metrics=metrics,
     )
-    write_run(folder, artifacts, record)
-    return Run(folder=folder, record=record)
+    return artifacts, record
 
 
 def _metrics(

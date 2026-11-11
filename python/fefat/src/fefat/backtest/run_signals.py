@@ -24,9 +24,9 @@ from fefat.strategy.signal_strategy import SignalStrategy
 class RunStage(StrEnum):
     """A stage `ff.backtest.run` tells its `progress` callable as it reaches it (step 5.3): its
     bars loaded; its features and signals computed; its engine running, which spans the engine
-    cache's build, the engine, the fidelity check's reruns, and the rerun at one more tick of
-    slippage; and its artifacts written. A run found saved tells only the stages it went
-    through."""
+    cache's build, the engine, the fidelity check's reruns, the rerun at one more tick of
+    slippage, and the second look at the store; and its artifacts written. A run found saved
+    tells only the stages it went through."""
 
     DATA_LOADED = "data_loaded"
     FEATURES_COMPUTED = "features_computed"
