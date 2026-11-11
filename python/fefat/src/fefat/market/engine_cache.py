@@ -311,10 +311,11 @@ def _written(
 
 def _reusable_index(month_folder: Path) -> CacheMonthIndex | None:
     """The month's index, or None while it has none or one this layout cannot read, such as
-    another layout's or one cut short, which the build then writes again."""
+    another layout's or one cut short, which the build then writes again, or one another process
+    removes while it is read, which the build then waits on the contract's lock for (step 5.3)."""
     try:
         return read_cache_month_index(month_folder)
-    except ValueError:
+    except (ValueError, OSError):
         return None
 
 

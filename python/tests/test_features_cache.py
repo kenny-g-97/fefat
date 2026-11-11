@@ -25,7 +25,7 @@ from polars.testing import assert_frame_equal
 import fefat as ff
 import gen_fixtures
 from fefat.config import resolve_paths
-from fefat.features import InstrumentInput, cache, cache_evaluation
+from fefat.features import InstrumentInput, cache, cache_evaluation, cache_index
 from fefat.features.cache_evaluation import evaluated_features
 from fefat.features.cache_index import (
     PrunedCache,
@@ -886,3 +886,31 @@ def test_pruning_removes_what_a_write_left_a_day_ago_and_passes_over_one_under_w
     assert not left_tmp.exists()
     assert writing_tmp.is_file()
     assert (pruned.removed, pruned.kept) == (1, 2)
+
+
+def test_pruning_passes_over_a_file_gone_while_it_reads_its_folder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.3 (its code review): a file a writer renames, or another prune removes, between
+    # pruning's look at its time and its size must not stop the prune.
+    store_with("ohlcv-1m")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    (feature,) = cache_folder().glob("synthetic/ES/5m/rsi-*")
+    left = feature.with_name("rsi-left")
+    left.mkdir()
+    (left / "2026-03.parquet").write_bytes(b"a partition written without its index")
+    written_before = cache_index._written_before
+
+    def gone_once_read(path: Path, instant: datetime) -> bool:
+        before = written_before(path, instant + timedelta(days=2))
+        path.unlink(missing_ok=True)
+        return before
+
+    monkeypatch.setattr(cache_index, "_written_before", gone_once_read)
+
+    pruned = prune_feature_cache(
+        resolve_paths(os.environ).cache_dir, timedelta(days=30), datetime.now(UTC)
+    )
+
+    assert not left.exists()
+    assert pruned.removed == 0

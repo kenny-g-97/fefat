@@ -513,3 +513,28 @@ def test_a_second_builder_waiting_on_the_lock_finds_the_month_the_first_built(
     assert [month.outcome for month in builds["first"].months] == [MonthOutcome.BUILT]
     assert [month.outcome for month in builds["second"].months] == [MonthOutcome.UP_TO_DATE]
     assert months_written == ["2026-03"]
+
+
+def test_a_month_whose_index_goes_while_it_is_read_is_built(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.3 (its engine accuracy review): another process removing a stale month between the
+    # check that its index is there and its read must leave this build to wait on the lock and
+    # build, not fail the run.
+    store = store_copy(tmp_path)
+    read = read_cache_month_index
+    removed: list[Path] = []
+
+    def removed_once(month_folder: Path) -> object:
+        if not removed:
+            removed.append(month_folder)
+            raise FileNotFoundError(f"[WinError 2] The system cannot find the file: {month_folder}")
+        return read(month_folder)
+
+    monkeypatch.setattr(engine_cache, "read_cache_month_index", removed_once)
+    march = [YearMonth(year=2026, month=3)]
+
+    built = build_cache_months(store, tmp_path / "cache", "ES", march, contracts=("ESH2026",))
+
+    assert [month.outcome for month in built.months] == [MonthOutcome.BUILT]
+    assert built.refused == ()

@@ -238,7 +238,10 @@ def _pruned_without_index(
     for path in sorted(folder.glob("*.parquet")):
         if not _written_before(path, written_before):
             continue
-        size = path.stat().st_size
+        try:
+            size = path.stat().st_size
+        except OSError:  # renamed or removed since it was listed
+            continue
         if _unlinked(path, held):
             removed, removed_bytes = removed + 1, removed_bytes + size
     return pruned._replace(
