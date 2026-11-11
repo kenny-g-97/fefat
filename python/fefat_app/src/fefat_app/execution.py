@@ -7,7 +7,8 @@ the port in `fefat_app.ports` so that the runner reads them without the app's ot
 From step 5.2 (D-93), the library's kinds: a strategy's code validated, a strategy version saved,
 and a feature version saved, each through the SDK in the runner, never in the server; what the
 SDK refuses comes back as the runner's answer, with the line of the code it is at, rather than as
-a failure."""
+a failure. From step 5.3, a saved strategy version's lookup, before a backtest is queued, and its
+backtest, which a job runs (`fefat_app.runs`)."""
 
 from collections.abc import Callable
 from datetime import date
@@ -16,19 +17,25 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from fefat.backtest.record import Hash
 from fefat.strategy.source_lint import StrategyLintFinding
+from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
 
 
 class ExecutionKind(StrEnum):
     """What an execution runs: a feature's preview, or a snippet of Python, which the job kinds
     of the same names run (step 4.5); a strategy's code validated, a strategy version saved, or a
-    feature version saved, which the library's routes run (step 5.2)."""
+    feature version saved, which the library's routes run (step 5.2); and a saved version's run
+    looked up, which `POST /v1/runs` runs, and its backtest, which a `backtest` job runs (step
+    5.3)."""
 
     FEATURE_PREVIEW = "feature_preview"
     PYTHON_SNIPPET = "python_snippet"
     STRATEGY_VALIDATION = "strategy_validation"
     STRATEGY_SAVE = "strategy_save"
     FEATURE_SAVE = "feature_save"
+    RUN_LOOKUP = "run_lookup"
+    BACKTEST = "backtest"
 
 
 MOST_SECONDS = 24 * 60 * 60
@@ -125,6 +132,29 @@ class FeatureSaveSpec(BaseModel):
     limits: ExecutionLimits
 
 
+class RunLookupSpec(BaseModel):
+    """A saved strategy version's run looked up before a backtest is queued: the strategy built
+    from the version's code with its parameters (`StrategyVersion.strategy`), its settings
+    applied, and its request found saved or not (`fefat.backtest.requests.looked_up`)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.RUN_LOOKUP] = ExecutionKind.RUN_LOOKUP
+    run: RequestedRun
+    limits: ExecutionLimits
+
+
+class BacktestSpec(BaseModel):
+    """A saved strategy version's backtest, run as a notebook runs it (`ff.backtest.run`), its
+    stages reported as they come; the payload of a `backtest` job."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.BACKTEST] = ExecutionKind.BACKTEST
+    run: RequestedRun
+    limits: ExecutionLimits
+
+
 type LibrarySpec = StrategyValidationSpec | StrategySaveSpec | FeatureSaveSpec
 """An execution of the library's kinds (step 5.2)."""
 type ExecutionSpec = Annotated[
@@ -132,7 +162,9 @@ type ExecutionSpec = Annotated[
     | PythonSnippetSpec
     | StrategyValidationSpec
     | StrategySaveSpec
-    | FeatureSaveSpec,
+    | FeatureSaveSpec
+    | RunLookupSpec
+    | BacktestSpec,
     Field(discriminator="kind"),
 ]
 EXECUTION_SPEC: TypeAdapter[ExecutionSpec] = TypeAdapter(ExecutionSpec)
@@ -300,6 +332,25 @@ type LibraryOutput = StrategyValidationOutput | StrategySaveOutput | FeatureSave
 """What an execution of the library's kinds gives (step 5.2)."""
 
 
+class RunLookupOutput(BaseModel):
+    """What a run's lookup gives: the run its request found saved, the run to make, or the
+    refusal of the version's code, with its line where it has one."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.RUN_LOOKUP] = ExecutionKind.RUN_LOOKUP
+    answer: Annotated[SavedRunFound | RunToMake | RefusedCode, Field(discriminator="verdict")]
+
+
+class BacktestOutput(BaseModel):
+    """What a backtest gives: the key of its run, saved in the runs' folder."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal[ExecutionKind.BACKTEST] = ExecutionKind.BACKTEST
+    run_key: Hash
+
+
 class ExecutionSucceeded(BaseModel):
     """An execution that ran to its end, with what its kind gives."""
 
@@ -311,7 +362,9 @@ class ExecutionSucceeded(BaseModel):
         | PythonSnippetOutput
         | StrategyValidationOutput
         | StrategySaveOutput
-        | FeatureSaveOutput,
+        | FeatureSaveOutput
+        | RunLookupOutput
+        | BacktestOutput,
         Field(discriminator="kind"),
     ]
 

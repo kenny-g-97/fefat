@@ -13,11 +13,13 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from fefat_app.execution import (
+    BacktestOutput,
     ExecutionFailed,
     ExecutionKind,
     ExecutionOutcome,
     FeatureSaveOutput,
     PythonSnippetOutput,
+    RunLookupOutput,
     SeriesPoint,
     SeriesStatistics,
     StrategySaveOutput,
@@ -70,7 +72,9 @@ class RunnerSucceeded(BaseModel):
         | PythonSnippetOutput
         | StrategyValidationOutput
         | StrategySaveOutput
-        | FeatureSaveOutput,
+        | FeatureSaveOutput
+        | RunLookupOutput
+        | BacktestOutput,
         Field(discriminator="kind"),
     ]
 
