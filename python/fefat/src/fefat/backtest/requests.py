@@ -26,7 +26,6 @@ import json
 import warnings
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
 
 from pydantic import ValidationError
 
@@ -40,7 +39,7 @@ from fefat.features.cache import first_date_read
 from fefat.features.cache_keys import PartitionKeys, runtime_key
 from fefat.features.grids import input_sources
 from fefat.market.api import parse_trade_date, series_source
-from fefat.market.schema import FrozenModel
+from fefat.market.schema import FrozenDocument, FrozenModel
 from fefat.market.snapshot import Sha256
 from fefat.market.store_files import json_writer, write_atomically
 from fefat.strategy.signal_strategy import SignalStrategy
@@ -50,9 +49,10 @@ REQUESTS_FOLDER_NAME = "requests"
 
 
 class RunRequest(FrozenModel):
-    """What a run is made from, as it is known before a bar is loaded (module docstring)."""
+    """What a run is made from, as it is known before a bar is loaded (module docstring), its
+    strategy's document held read-only."""
 
-    strategy: dict[str, Any]
+    strategy: FrozenDocument
     window: Window
     config: AppliedRunConfig
     instrument: InstrumentRecord

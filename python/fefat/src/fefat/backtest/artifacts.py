@@ -16,7 +16,13 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict
 
 from fefat.backtest.record import EngineVersions, RunRecord
-from fefat.backtest.schemas import ARTIFACT_SCHEMAS, ENGINE_EQUITY, ENGINE_TRADES, EQUITY
+from fefat.backtest.schemas import (
+    ARTIFACT_SCHEMAS,
+    ENGINE_EQUITY,
+    ENGINE_TRADES,
+    EQUITY,
+    require_states,
+)
 from fefat.market.engine_units import InstrumentParameters
 from fefat.market.store_files import parsed_json
 from fefat.strategy.signal_frame import require_column_types
@@ -162,9 +168,11 @@ def read_record(folder: Path) -> RunRecord:
 
 
 def read_artifact(folder: Path, name: str) -> pl.DataFrame:
-    """The artifact `name` of the run in `folder`, refused unless it holds its columns."""
+    """The artifact `name` of the run in `folder`, refused unless it holds its columns, each
+    state among its words (`require_states`)."""
     if name not in ARTIFACT_SCHEMAS:
         raise ValueError(f"Expected an artifact ({', '.join(ARTIFACT_SCHEMAS)}), got {name!r}.")
     frame = pl.read_parquet(folder / f"{name}.parquet")
     require_column_types(frame, ARTIFACT_SCHEMAS[name], f"the {name} artifact's of {folder}")
+    require_states(frame, name, folder)
     return frame

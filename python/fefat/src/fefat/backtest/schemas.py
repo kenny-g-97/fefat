@@ -21,11 +21,42 @@ nanoseconds since the Unix epoch, UTC. Each artifact is a Parquet file of the ru
 - `equity`: the account after each decision, at each signal bar's close;
 - `equity_daily`: the account at each trade date's last decision and the day's profit and loss;
 - `signals`: the signal frame the engine read, the strategy's features among its columns.
+
+From step 5.3 each column of states, such as a fill's role, is read back as one of its `StrEnum`'s
+words, and each fidelity as a fidelity (`require_states`), as the Phase 2 exit's review asked:
+text the engine never writes is refused, not read as a state. The `rule` columns stay text.
 """
+
+from enum import StrEnum
+from pathlib import Path
 
 import polars as pl
 
+from fefat.market.fidelity import parse_fidelity
+from fefat.reference.event_log import EventKind
+from fefat.reference.ledger import Liquidity
+from fefat.reference.orders import OrderKind, OrderRole, OrderState, PositionSide, Side
 from fefat.strategy.signal_frame import REQUIRED_SIGNAL_COLUMNS
+
+
+class CostReason(StrEnum):
+    """What a row of `costs` paid: a fill's fee (F-FEE-01) or a perpetual's funding (F-FND-01)."""
+
+    FEE = "fee"
+    FUNDING = "funding"
+
+
+class PathPointKind(StrEnum):
+    """A point of a trade's path (`TRADE_PATHS`): a fill, the mark at a whole minute, a new
+    favourable extreme, a new adverse one since the last favourable, or a bar's possible adverse
+    extreme (`03-prop-simulator.md` §4.2)."""
+
+    FILL = "fill"
+    MINUTE = "minute"
+    FAVOURABLE = "favourable"
+    ADVERSE = "adverse"
+    POSSIBLE_ADVERSE = "possible_adverse"
+
 
 FILLS = pl.Schema(
     {
@@ -167,3 +198,44 @@ ARTIFACT_SCHEMAS: dict[str, pl.Schema] = {
     "signals": SIGNALS,
 }
 """Each artifact of a run by name, its file `<name>.parquet`, with the columns it holds at least."""
+
+STATE_COLUMNS: dict[str, dict[str, type[StrEnum]]] = {
+    "fills": {"role": OrderRole, "side": Side, "liquidity": Liquidity},
+    "orders": {"side": Side, "kind": OrderKind, "role": OrderRole, "state": OrderState},
+    "log": {"kind": EventKind},
+    "costs": {"reason": CostReason},
+    "trades": {"side": PositionSide, "exit_reason": OrderRole},
+    "trade_paths": {"kind": PathPointKind},
+}
+"""Each artifact's columns of states, with the `StrEnum` whose words they hold."""
+FIDELITY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "fills": ("fidelity",),
+    "trades": ("path_fidelity",),
+}
+"""Each artifact's columns of fidelities, `trades` or `1m` (`parse_fidelity`)."""
+
+
+def require_states(frame: pl.DataFrame, name: str, folder: Path) -> None:
+    """Refuse the artifact `name` of the run in `folder` where a state, nulls aside, is none of
+    its `StrEnum`'s words, or a fidelity no fidelity (module docstring)."""
+    for column, words in STATE_COLUMNS.get(name, {}).items():
+        unknown = [word for word in _words(frame, column) if word not in words]
+        if unknown:
+            raise ValueError(
+                f"Expected the {name} artifact's {column} among {', '.join(words)}, got "
+                f"{', '.join(unknown)} in {folder}."
+            )
+    for column in FIDELITY_COLUMNS.get(name, ()):
+        for word in _words(frame, column):
+            try:
+                parse_fidelity(word)
+            except ValueError as error:
+                raise ValueError(
+                    f"Expected the {name} artifact's {column} among the fidelities, got {word!r} "
+                    f"in {folder}."
+                ) from error
+
+
+def _words(frame: pl.DataFrame, column: str) -> list[str]:
+    """The column's distinct words, nulls aside, in order."""
+    return frame.get_column(column).drop_nulls().unique().sort().to_list()
