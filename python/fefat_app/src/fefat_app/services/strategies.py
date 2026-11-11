@@ -23,6 +23,7 @@ from fefat_app.library import (
     LibraryRefusedError,
     Saved,
     VersionDiff,
+    require_as_indexed,
 )
 from fefat_app.ports import Executor, LibraryIndex
 from fefat_app.services.code_runs import LIBRARY_LIMITS, saved_strategy, validated
@@ -149,7 +150,7 @@ class SavedStrategies:
 
     def _read(self, strategy: IndexedStrategy, number: int) -> SavedStrategyVersion:
         """Version `number` of `strategy`, read from its file through the SDK, with its row's
-        id; a file the SDK refuses, or one gone since it was indexed, is refused with
+        id; a file the SDK refuses, or one gone or replaced since it was indexed, is refused with
         `LibraryRefusedError`."""
         indexed = [version for version in strategy.versions if version.version == number]
         if not indexed:
@@ -161,6 +162,7 @@ class SavedStrategies:
             record = load_in(self.strategies_dir, strategy.name, number)
         except (ValueError, FileNotFoundError) as refused:
             raise LibraryRefusedError(str(refused)) from refused
+        require_as_indexed(indexed[0], record.hash, f"version {number} of strategy {strategy.name}")
         return SavedStrategyVersion(
             **dict(record), id=indexed[0].id, strategy_id=strategy.id, lint=lint(record.code)
         )

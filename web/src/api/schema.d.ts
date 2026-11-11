@@ -1770,7 +1770,7 @@ export interface components {
         /**
          * StrategyLintFinding
          * @description A finding of a strategy's lint: its rule, the line of the code it is on, the line's text,
-         *     and why it reads ahead.
+         *     and why it reads ahead or reads data.
          */
         StrategyLintFinding: {
             /** Explanation */
@@ -2439,15 +2439,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The code was saved before: its version, unchanged. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SavedFeatureVersion"];
-                };
-            };
             /** @description Successful Response */
             201: {
                 headers: {
@@ -3256,15 +3247,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The code was saved before with the same words: its version, unchanged. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SavedStrategyVersion"];
-                };
-            };
             /** @description Successful Response */
             201: {
                 headers: {

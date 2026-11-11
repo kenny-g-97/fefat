@@ -2528,7 +2528,7 @@
       },
       "StrategyLintFinding": {
         "additionalProperties": false,
-        "description": "A finding of a strategy's lint: its rule, the line of the code it is on, the line's text,\nand why it reads ahead.",
+        "description": "A finding of a strategy's lint: its rule, the line of the code it is on, the line's text,\nand why it reads ahead or reads data.",
         "properties": {
           "explanation": {
             "title": "Explanation",
@@ -3596,16 +3596,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedFeatureVersion"
-                }
-              }
-            },
-            "description": "The code was saved before: its version, unchanged."
-          },
           "201": {
             "content": {
               "application/json": {
@@ -4895,16 +4885,6 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SavedStrategyVersion"
-                }
-              }
-            },
-            "description": "The code was saved before with the same words: its version, unchanged."
-          },
           "201": {
             "content": {
               "application/json": {

@@ -5,9 +5,12 @@ version and writes nothing, while other words are refused, since a version never
 refuses a file changed after it was written; and `diff` gives the unified diff of two versions'
 code, from a notebook as from the app (Done means 1)."""
 
+import json
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
@@ -113,6 +116,30 @@ def test_a_version_whose_file_was_changed_is_refused() -> None:
 
     with pytest.raises(ValueError, match="the file was changed after it was written"):
         ff.strategy.load("breakout", 1)
+
+
+def a_default_changed(record: dict[str, Any]) -> None:
+    record["parameter_schema"]["properties"]["oversold"]["default"] = 35.0
+
+
+def a_pin_changed(record: dict[str, Any]) -> None:
+    record["pinned_features"][0]["hash"] = "0" * 64
+
+
+@pytest.mark.parametrize("change", [a_default_changed, a_pin_changed])
+def test_a_version_whose_schema_or_pins_were_changed_is_refused(
+    change: Callable[[dict[str, Any]], None],
+) -> None:
+    # The hash covers the parameters' schema and the pins as well as the code (the step review).
+    template = next(each for each in ff.strategy.templates() if each.name == "mean_reversion")
+    ff.strategy.save("oversold", template.code, hypothesis=template.hypothesis)
+    path = folder("oversold") / "v1.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    change(record)
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="the file was changed after it was written"):
+        ff.strategy.load("oversold", 1)
 
 
 def test_a_version_not_saved_is_named_when_it_is_missing() -> None:

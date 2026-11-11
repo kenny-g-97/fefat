@@ -104,6 +104,11 @@ def test_a_feature_version_is_saved_where_the_sdk_reads_it(executor: SubprocessE
             GAP.replace("return", "return return"),
             RefusedCode(line=3, message="SyntaxError: invalid syntax"),
         ),
+        (
+            "gap",
+            GAP.replace('{"n": 3}', '{"n": 3 // 0}'),
+            RefusedCode(line=1, message="ZeroDivisionError: integer division or modulo by zero"),
+        ),
     ],
 )
 def test_a_features_code_is_refused_in_the_sdks_words_with_its_line(

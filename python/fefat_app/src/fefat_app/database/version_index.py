@@ -6,10 +6,12 @@ which the app does around each save, so that a report or a profile the SDK refus
 save, and `fefat_app.database.workspace_index` with the rest of the workspace.
 
 A version is seen by its feature or strategy, number, and hash. A version file the SDK refuses,
-such as one changed after it was written, or one deleted or replaced by hand after it was
-indexed, stops the indexing with the reason, and no row is added."""
+such as one changed after it was written, or one deleted, copied, or replaced by hand after it was
+indexed, stops the indexing with the reason, and no row is added. The files are read before the
+first statement, which takes SQLite's write lock, so that no other writer waits on them."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Literal
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
@@ -29,6 +31,17 @@ from fefat_app.database.models import (
 from fefat_app.database.uuid7 import new_uuid7
 
 DEFAULT_WORKSPACE = "default"
+_REDONE = (
+    "a version file was deleted or replaced by hand after it was indexed, which the index, kept "
+    "insert-only, cannot follow: put the files back as they were, or index the files as they are "
+    "now with `fefat db import-workspace --rebuild`."
+)
+
+type VersionKind = Literal["feature", "strategy"]
+type IndexedHashes = dict[tuple[str, int], str]
+"""The content hash of each indexed version, by its feature's or strategy's row and its number."""
+type IndexedNumbers = dict[tuple[str, str], int]
+"""The number of each indexed version, by its feature's or strategy's row and its hash."""
 
 
 def index_library(engine: Engine, paths: FefatPaths) -> None:
@@ -40,13 +53,14 @@ def index_library(engine: Engine, paths: FefatPaths) -> None:
 
 def index_versions(session: Session, paths: FefatPaths) -> tuple[int, int]:
     """Index the feature versions, then the strategy versions that pin them; how many of each
-    were added."""
+    were added. The files are read first (module docstring)."""
+    features = saved_versions_in(paths.features_dir)
+    strategies = saved_strategy_versions_in(paths.strategies_dir)
     workspace_id = _default_workspace(session)
-    features = _index_feature_versions(session, workspace_id, saved_versions_in(paths.features_dir))
-    strategies = _index_strategy_versions(
-        session, workspace_id, saved_strategy_versions_in(paths.strategies_dir)
+    return (
+        _index_feature_versions(session, workspace_id, features),
+        _index_strategy_versions(session, workspace_id, strategies),
     )
-    return features, strategies
 
 
 def _default_workspace(session: Session) -> str:
@@ -82,17 +96,18 @@ def _index_feature_versions(
     ).all()
     hashes = {(feature_id, number): content_hash for feature_id, number, content_hash in indexed}
     numbers = {(feature_id, content_hash): number for feature_id, number, content_hash in indexed}
+    gone = dict(hashes)
     added = 0
     for record in records:
         if record.name not in feature_ids:
             feature_ids[record.name] = _new_feature(session, workspace_id, record.name)
         feature_id = feature_ids[record.name]
-        indexed_hash = hashes.get((feature_id, record.version))
-        indexed_number = numbers.get((feature_id, record.hash))
-        if _seen("feature", record, indexed_hash, indexed_number):
+        gone.pop((feature_id, record.version), None)
+        if _seen("feature", feature_id, record, hashes, numbers):
             continue
         session.add(_feature_version_row(feature_id, record))
         added += 1
+    _require_no_file_gone("feature", feature_ids, gone)
     session.flush()
     return added
 
@@ -105,33 +120,48 @@ def _new_feature(session: Session, workspace_id: str, name: str) -> str:
 
 
 def _seen(
-    kind: str,
+    kind: VersionKind,
+    owner_id: str,
     record: FeatureVersion | StrategyVersion,
-    indexed_hash: str | None,
-    indexed_number: int | None,
+    hashes: IndexedHashes,
+    numbers: IndexedNumbers,
 ) -> bool:
-    """Whether the version of a feature or a strategy, as `kind` names it, is indexed, given the
-    hash the index holds for its number and the number it holds for its hash; refused where
-    either holds another, as a version file deleted or replaced by hand after it was indexed
-    leaves them."""
+    """Whether the version of a feature or a strategy, as `kind` names it, of the row `owner_id`,
+    is indexed, given the hash the index holds for its number and the number it holds for its
+    hash; refused where either holds another, as a version file deleted, copied, or replaced by
+    hand after it was indexed leaves them. A version not indexed yet is counted in them from then
+    on, so that a file copied under another number is refused in the same indexing."""
+    indexed_hash = hashes.get((owner_id, record.version))
+    indexed_number = numbers.get((owner_id, record.hash))
     if indexed_hash is None and indexed_number is None:
+        hashes[(owner_id, record.version)] = record.hash
+        numbers[(owner_id, record.hash)] = record.version
         return False
-    redone = (
-        "a version file was deleted or replaced by hand after it was indexed, which the index, "
-        "kept insert-only, cannot follow: put the files back as they were, or index the files "
-        "as they are now with `fefat db import-workspace --rebuild`."
-    )
     if indexed_hash is not None and indexed_hash != record.hash:
         raise ValueError(
             f"Expected version {record.version} of {kind} {record.name} with the hash "
-            f"{indexed_hash[:12]} as indexed, got {record.hash[:12]}: {redone}"
+            f"{indexed_hash[:12]} as indexed, got {record.hash[:12]}: {_REDONE}"
         )
     if indexed_number is not None and indexed_number != record.version:
         raise ValueError(
             f"Expected the hash {record.hash[:12]} of {kind} {record.name} as version "
-            f"{indexed_number}, as indexed, got version {record.version}: {redone}"
+            f"{indexed_number}, as indexed, got version {record.version}: {_REDONE}"
         )
     return True
+
+
+def _require_no_file_gone(
+    kind: VersionKind, owner_ids: Mapping[str, str], gone: IndexedHashes
+) -> None:
+    """Refuse the first indexed version, of the rows `owner_ids` names, whose file is gone, as
+    one deleted by hand leaves it."""
+    if not gone:
+        return
+    names = {owner_id: name for name, owner_id in owner_ids.items()}
+    owner_id, number = min(gone)
+    raise ValueError(
+        f"Expected version {number} of {kind} {names[owner_id]}, as indexed, got no file: {_REDONE}"
+    )
 
 
 def _feature_version_row(feature_id: str, record: FeatureVersion) -> FeatureVersionRow:
@@ -172,6 +202,7 @@ def _index_strategy_versions(
     ).all()
     hashes = {(strategy_id, number): found for strategy_id, number, found in indexed}
     numbers = {(strategy_id, found): number for strategy_id, number, found in indexed}
+    gone = dict(hashes)
     feature_versions = _feature_versions(session, workspace_id)
     versions: list[StrategyVersionRow] = []
     pins: list[StrategyVersionFeatureRow] = []
@@ -179,13 +210,13 @@ def _index_strategy_versions(
         if record.name not in strategy_ids:
             strategy_ids[record.name] = _new_strategy(session, workspace_id, record)
         strategy_id = strategy_ids[record.name]
-        indexed_hash = hashes.get((strategy_id, record.version))
-        indexed_number = numbers.get((strategy_id, record.hash))
-        if _seen("strategy", record, indexed_hash, indexed_number):
+        gone.pop((strategy_id, record.version), None)
+        if _seen("strategy", strategy_id, record, hashes, numbers):
             continue
         version = _strategy_version_row(strategy_id, record)
         versions.append(version)
         pins.extend(_pin_rows(version.id, record, feature_versions))
+    _require_no_file_gone("strategy", strategy_ids, gone)
     session.add_all(versions)
     session.flush()
     session.add_all(pins)

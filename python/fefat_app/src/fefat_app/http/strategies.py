@@ -2,9 +2,9 @@
 session's or an API token's, over `fefat_app.services.strategies`: `GET /v1/strategies` and the
 templates, `POST /v1/strategies/validate`, which builds the code in the executor and answers its
 verdict, `POST /v1/strategies` and `POST /v1/strategies/{strategy_id}/versions`, which save a
-version in the executor, 201 where they wrote one and 200 where the same code was saved with the
-same words, and the versions, a version, and the diff of two. The literal routes come before
-those of a strategy's id, so that no id is read from `templates` or `validate`."""
+version in the executor, 201 where they wrote one and the second 200 where the same code was saved
+with the same words, and the versions, a version, and the diff of two. The literal routes come
+before those of a strategy's id, so that no id is read from `templates` or `validate`."""
 
 from collections.abc import Callable
 from typing import Annotated
@@ -91,11 +91,7 @@ def validate_strategy(
     return container.strategies.validate(request.code)
 
 
-@router.post(
-    "/strategies",
-    status_code=201,
-    responses={**SAVED_BEFORE, **code_refusal_responses(401, 403, 409, 422)},
-)
+@router.post("/strategies", status_code=201, responses=code_refusal_responses(401, 403, 409, 422))
 def create_strategy(
     request: NewStrategy, response: Response, container: ContainerDependency
 ) -> SavedStrategyVersion:

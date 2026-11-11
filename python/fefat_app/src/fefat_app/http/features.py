@@ -1,8 +1,8 @@
 """The features' routes (step 5.2, `01-architecture.md` section 7, D-93), the strategies' mirror,
 behind the login, a session's or an API token's, over `fefat_app.services.features`:
 `GET /v1/features`; `POST /v1/features` and `POST /v1/features/{feature_id}/versions`, which save
-a version in the executor, 201 where they wrote one and 200 where the same content was saved;
-and the versions, a version, and the diff of two."""
+a version in the executor, 201 where they wrote one and the second 200 where the same content was
+saved; and the versions, a version, and the diff of two."""
 
 from collections.abc import Callable
 from typing import Annotated
@@ -60,11 +60,7 @@ def saved_features(container: ContainerDependency) -> tuple[IndexedFeature, ...]
     return container.features.features()
 
 
-@router.post(
-    "/features",
-    status_code=201,
-    responses={**SAVED_BEFORE, **code_refusal_responses(401, 403, 409, 422)},
-)
+@router.post("/features", status_code=201, responses=code_refusal_responses(401, 403, 409, 422))
 def create_feature(
     request: NewFeature, response: Response, container: ContainerDependency
 ) -> SavedFeatureVersion:

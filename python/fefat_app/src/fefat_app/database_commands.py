@@ -9,9 +9,9 @@ prints the revision it is at; `downgrade base` runs every migration down, which 
 table but Alembic's own, as `alembic downgrade base` does with the migrations that ship inside
 the package; `import-workspace` upgrades the database, then indexes the feature versions, the
 strategy versions (step 5.2), the leak detector's reports, and the saved import profiles it has
-not seen, and prints how many (`fefat_app.database.workspace_index`, D-84). The files stay the record, and it may run again at
-any time; with `--rebuild` it empties the index first, so that it holds the files as they are
-now, after a version file was deleted or replaced by hand (D-92).
+not seen, and prints how many (`fefat_app.database.workspace_index`, D-84). The files stay the
+record, and it may run again at any time; with `--rebuild` it empties the index first, so that
+it holds the files as they are now, after a version file was deleted or replaced by hand (D-92).
 """
 
 import argparse

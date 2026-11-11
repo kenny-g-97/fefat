@@ -9,6 +9,7 @@ import traceback
 
 import fefat as ff
 from fefat.features import FeatureDef
+from fefat.features.source_code import SOURCE_FILENAME_PREFIX
 from fefat.strategy import StrategyCodeError
 from fefat_app.execution import (
     FeatureSaveOutput,
@@ -24,9 +25,6 @@ from fefat_app.execution import (
     ValidStrategy,
 )
 from fefat_app.executor.protocol import ERROR_CHARS
-
-FEATURE_SOURCE = "<feature source "
-"""How the file names of the code `ff.features.from_source` runs begin."""
 
 
 def library_output(spec: LibrarySpec) -> LibraryOutput:
@@ -91,7 +89,7 @@ def _feature_line(error: BaseException) -> int | None:
     if isinstance(error, SyntaxError):
         return error.lineno
     frames = traceback.extract_tb(error.__traceback__)
-    lines = [frame.lineno for frame in frames if frame.filename.startswith(FEATURE_SOURCE)]
+    lines = [frame.lineno for frame in frames if frame.filename.startswith(SOURCE_FILENAME_PREFIX)]
     return lines[-1] if lines else None
 
 

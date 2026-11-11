@@ -140,6 +140,44 @@ def test_a_version_is_never_changed_through_the_api(
         assert session.execute(select(func.count()).select_from(StrategyVersionRow)).scalar() == 1
 
 
+def test_a_version_file_replaced_by_hand_is_refused_rather_than_served(
+    client: TestClient, container: Container
+) -> None:
+    # The step review: a version deleted by hand and saved again from a notebook takes its number
+    # with other code, which the index, kept insert-only, cannot follow (D-11).
+    csrf = logged_in(client, container)
+    strategy_id = created(client, csrf)
+    (resolve_paths(os.environ).strategies_dir / "breakout" / "v1.json").unlink()
+    ff.strategy.save("breakout", WIDER_STOP, hypothesis=HYPOTHESIS)
+    second = {"code": WIDER_STOP, "hypothesis": HYPOTHESIS, "changelog": ""}
+
+    answers = [
+        client.get(f"/v1/strategies/{strategy_id}/versions/1"),
+        client.get(f"/v1/strategies/{strategy_id}/diff", params={"from": 1, "to": 1}),
+        client.post(f"/v1/strategies/{strategy_id}/versions", json=second, headers=csrf),
+    ]
+
+    assert [answer.status_code for answer in answers] == [409, 409, 409]
+    assert all("by hand" in answer.json()["detail"] for answer in answers)
+
+
+def test_the_lint_warns_through_the_api_and_the_version_is_saved(
+    client: TestClient, container: Container
+) -> None:
+    # The lint warns and never refuses (D-95): its findings come back with a validation and with
+    # the version saved.
+    csrf = logged_in(client, container)
+    reads_ahead = BREAKOUT.replace(".shift(1)", ".shift(-1)")
+
+    validated = client.post("/v1/strategies/validate", json={"code": reads_ahead}, headers=csrf)
+    saved = client.post("/v1/strategies", json={**FIRST, "code": reads_ahead}, headers=csrf)
+
+    findings = [(each["rule"], each["line"]) for each in validated.json()["lint"]]
+    assert findings == [("negative_shift", 12)]
+    assert saved.status_code == 201
+    assert saved.json()["lint"] == validated.json()["lint"]
+
+
 def test_a_strategy_reading_a_feature_version_never_saved_is_refused_at_its_line(
     client: TestClient, container: Container
 ) -> None:

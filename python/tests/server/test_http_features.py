@@ -3,9 +3,12 @@ feature created and given a second version through the API, each saved in the ex
 `ff.features.save` saves it, read back, and diffed; the same code answering its version; code
 that defines another feature refused; and the routes behind the login."""
 
+import os
+
 from fastapi.testclient import TestClient
 
 import fefat as ff
+from fefat.config import resolve_paths
 from fefat.features.versions import code_diff
 from fefat_app.container import Container
 from local_server import logged_in
@@ -61,6 +64,27 @@ def test_code_that_defines_another_feature_is_refused_and_a_taken_name_too(
     )
     assert taken.status_code == 409
     assert "which a saved feature has" in taken.json()["detail"]
+
+
+def test_a_feature_version_file_replaced_by_hand_is_refused_rather_than_served(
+    client: TestClient, container: Container
+) -> None:
+    # The step review: a version deleted by hand and saved again from a notebook takes its number
+    # with other code, which the index, kept insert-only, cannot follow (D-11).
+    csrf = logged_in(client, container)
+    created = client.post("/v1/features", json={"name": "gap", "code": GAP}, headers=csrf)
+    feature_id = created.json()["feature_id"]
+    (resolve_paths(os.environ).features_dir / "gap" / "v1.json").unlink()
+    ff.features.save(features_of_cell(WIDER)["gap"])
+
+    answers = [
+        client.get(f"/v1/features/{feature_id}/versions/1"),
+        client.get(f"/v1/features/{feature_id}/diff", params={"from": 1, "to": 1}),
+        client.post(f"/v1/features/{feature_id}/versions", json={"code": GAP}, headers=csrf),
+    ]
+
+    assert [answer.status_code for answer in answers] == [409, 409, 409]
+    assert all("by hand" in answer.json()["detail"] for answer in answers)
 
 
 def test_the_features_need_a_login_and_an_api_token_is_one(

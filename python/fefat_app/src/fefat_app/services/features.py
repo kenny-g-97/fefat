@@ -17,6 +17,7 @@ from fefat_app.library import (
     LibraryRefusedError,
     Saved,
     VersionDiff,
+    require_as_indexed,
 )
 from fefat_app.ports import Executor, LibraryIndex
 from fefat_app.services.code_runs import LIBRARY_LIMITS, saved_feature
@@ -118,7 +119,7 @@ class SavedFeatures:
 
     def _read(self, feature: IndexedFeature, number: int) -> SavedFeatureVersion:
         """Version `number` of `feature`, read from its file through the SDK, with its row's id;
-        a file the SDK refuses, or one gone since it was indexed, is refused with
+        a file the SDK refuses, or one gone or replaced since it was indexed, is refused with
         `LibraryRefusedError`."""
         indexed = [version for version in feature.versions if version.version == number]
         if not indexed:
@@ -130,4 +131,5 @@ class SavedFeatures:
             record = load_in(self.features_dir, feature.name, number)
         except (ValueError, FileNotFoundError) as refused:
             raise LibraryRefusedError(str(refused)) from refused
+        require_as_indexed(indexed[0], record.hash, f"version {number} of feature {feature.name}")
         return SavedFeatureVersion(**dict(record), id=indexed[0].id, feature_id=feature.id)

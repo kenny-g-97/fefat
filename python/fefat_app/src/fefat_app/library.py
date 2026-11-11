@@ -81,3 +81,16 @@ class Saved[Version]:
 class LibraryRefusedError(ValueError):
     """Files of the library the index cannot follow, in the indexer's words: a version file the
     SDK refuses, or one deleted or replaced by hand after it was indexed."""
+
+
+def require_as_indexed(indexed: IndexedVersion, found_hash: str, described: str) -> None:
+    """Refuse the file of `indexed`, the version `described` names, such as "version 3 of strategy
+    breakout", where its content gives another hash than the index holds, as a version deleted by
+    hand leaves it once another takes its number: one id never names two contents (D-11)."""
+    if found_hash != indexed.hash:
+        raise LibraryRefusedError(
+            f"Expected {described} with the hash {indexed.hash[:12]} as indexed, got "
+            f"{found_hash[:12]}: its file was deleted or replaced by hand after it was indexed, "
+            "which the index, kept insert-only, cannot follow; put the file back as it was, or "
+            "index the files as they are now with `fefat db import-workspace --rebuild`."
+        )

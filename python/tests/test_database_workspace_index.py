@@ -26,6 +26,9 @@ from fefat.features.versions import validation_file
 from fefat.market.importers.profiles import ProfileKind, preset_profiles
 from fefat.market.store_files import json_writer, write_atomically
 from fefat.strategy import StrategyKind
+from fefat.strategy.versions import StrategyVersion
+from fefat.strategy.versions import saved_versions_in as saved_strategy_versions_in
+from fefat_app.database import version_index
 from fefat_app.database.models import (
     ApiTokenRow,
     Base,
@@ -38,7 +41,7 @@ from fefat_app.database.models import (
     StrategyVersionRow,
     WorkspaceRow,
 )
-from fefat_app.database.schema import opened_database, upgrade_schema
+from fefat_app.database.schema import not_waiting, opened_database, upgrade_schema
 from fefat_app.database.version_index import index_library
 from fefat_app.database.workspace_index import IndexSummary, index_workspace
 from notebook_runs import features_of_cell
@@ -442,6 +445,57 @@ def test_a_rebuild_empties_the_strategies_before_the_feature_versions_they_pin(
         engine.begin() as connection,
     ):
         connection.exec_driver_sql("DELETE FROM strategy_versions")
+
+
+def test_the_library_is_read_before_the_index_takes_the_write_lock(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The step review: a save indexes the library twice, and every other writer, a job renewing
+    # its lease among them, would wait while the version files are read under the lock.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    read: list[Path] = []
+
+    def read_while_another_writes(strategies_dir: Path) -> list[StrategyVersion]:
+        with not_waiting(engine).begin() as connection:
+            connection.exec_driver_sql("SELECT 1")
+        read.append(strategies_dir)
+        return saved_strategy_versions_in(strategies_dir)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(version_index, "saved_strategy_versions_in", read_while_another_writes)
+        index_library(engine, paths())
+
+    assert read == [paths().strategies_dir]
+    assert row_counts(engine)["strategy_versions"] == 1
+
+
+def test_a_version_file_copied_by_hand_under_another_number_is_refused(engine: Engine) -> None:
+    # The step review: the copy gives its original's hash, which one strategy holds once.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    folder = paths().strategies_dir / "breakout"
+    record = json.loads((folder / "v1.json").read_text(encoding="utf-8"))
+    (folder / "v2.json").write_text(json.dumps({**record, "version": 2}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="of strategy breakout as version 1, as indexed, got"):
+        index_library(engine, paths())
+
+    assert set(row_counts(engine).values()) == {0}
+
+
+@pytest.mark.parametrize(
+    ("deleted", "named"),
+    [("strategies/oversold/v1.json", "strategy oversold"), ("features/rsi/v1.json", "feature rsi")],
+)
+def test_a_version_file_deleted_by_hand_after_it_was_indexed_is_refused(
+    engine: Engine, deleted: str, named: str
+) -> None:
+    # The step review: a save would otherwise write the next version under the deleted number.
+    ff.strategy.save("oversold", OVERSOLD, hypothesis=HYPOTHESIS)
+    index_library(engine, paths())
+    (paths().workspace_dir / deleted).unlink()
+
+    with pytest.raises(ValueError, match=f"version 1 of {named}, as indexed, got no file"):
+        index_library(engine, paths())
 
 
 def test_the_library_is_indexed_beside_a_report_the_sdk_refuses(engine: Engine) -> None:
