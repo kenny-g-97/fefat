@@ -1,9 +1,9 @@
 """The app's tables (`01-architecture.md` section 5, D-83, D-84, D-85, D-86): its own state, the
 settings it edits, the workspaces, the login sessions, the API tokens, the jobs, and their
 events; and an index of the workspace's
-files, the feature versions, the leak detector's reports, and the saved import profiles, which
-stay the record (ADR-0020). The migrations under `migrations/` make them, and a test holds the
-two alike.
+files, the feature versions, the leak detector's reports, the saved import profiles, and from
+step 5.2 the strategy versions with the feature versions they pin, which stay the record
+(ADR-0020). The migrations under `migrations/` make them, and a test holds the two alike.
 
 Every id is a UUIDv7 (`fefat_app.database.uuid7`) but an event's, which counts up, since a
 stream's reader resumes after the last event it saw (`01` section 6). Every row carries
@@ -33,6 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from fefat.market.importers.profiles import ProfileKind
+from fefat.strategy import StrategyKind
 from fefat_app.database.uuid7 import new_uuid7
 from fefat_app.ports import JobKind, JobStatus
 
@@ -210,6 +211,62 @@ class ImportProfileRow(Base):
     )
     name: Mapped[str] = mapped_column(String)
     sha256: Mapped[str] = mapped_column(SHA256, unique=True)
+    created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
+
+
+class StrategyRow(Base):
+    """A saved strategy by its name in a workspace, with its kind; its latest version is its
+    highest number (D-85, step 5.2)."""
+
+    __tablename__ = "strategies"
+    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_uuid7)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"))
+    name: Mapped[str] = mapped_column(String)
+    kind: Mapped[StrategyKind] = mapped_column(
+        Enum(StrategyKind, native_enum=False, length=16, values_callable=_values)
+    )
+    created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
+
+
+class StrategyVersionRow(Base):
+    """A saved version as its file `strategies/<name>/v<n>.json` keeps it
+    (`fefat.strategy.StrategyVersion`): its number, its content hash, its code, its hypothesis,
+    the instrument and the timeframe its strategy names, its parameter schema, its changelog,
+    and when it was saved; the feature versions it pins are rows of
+    `strategy_version_features`."""
+
+    __tablename__ = "strategy_versions"
+    __table_args__ = (
+        UniqueConstraint("strategy_id", "version_no"),
+        UniqueConstraint("strategy_id", "content_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_uuid7)
+    strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id"))
+    version_no: Mapped[int] = mapped_column(Integer)
+    content_hash: Mapped[str] = mapped_column(SHA256)
+    code: Mapped[str] = mapped_column(Text)
+    hypothesis: Mapped[str] = mapped_column(Text)
+    instrument: Mapped[str] = mapped_column(String)
+    timeframe: Mapped[str] = mapped_column(String)
+    params_schema_json: Mapped[dict[str, Any]] = mapped_column(JSON)
+    changelog: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
+
+
+class StrategyVersionFeatureRow(Base):
+    """A feature version a strategy version pins (D-79), as its file names it."""
+
+    __tablename__ = "strategy_version_features"
+
+    strategy_version_id: Mapped[str] = mapped_column(
+        ForeignKey("strategy_versions.id"), primary_key=True
+    )
+    feature_version_id: Mapped[str] = mapped_column(
+        ForeignKey("feature_versions.id"), primary_key=True
+    )
     created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
 
 

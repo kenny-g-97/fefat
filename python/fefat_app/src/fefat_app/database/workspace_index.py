@@ -1,13 +1,12 @@
 """The index of the workspace's files (step 4.1, D-84, ADR-0020): `index_workspace` reads the
-feature versions, the leak detector's reports, and the saved import profiles that the SDK wrote
-under `FEFAT_HOME`, through the SDK, and adds a row for each file it has not seen, in one
+feature versions and, from step 5.2, the strategy versions (`fefat_app.database.version_index`),
+the leak detector's reports, and the saved import profiles that the SDK wrote under the folders
+it is given (D-93), through the SDK, and adds a row for each file it has not seen, in one
 transaction, moving and changing no file, so that it can run at any time.
 
-A version is seen by its feature, number, and hash, a report and a profile by their file's
-SHA-256, since the leak detector replaces a report with the next of its hash, whose row is added
-beside the last. A file the SDK refuses, such as a version changed after it was written, or a
-version file deleted or replaced by hand after it was indexed, stops the indexing with the
-reason, and no row is added.
+A report and a profile are seen by their file's SHA-256, since the leak detector replaces a
+report with the next of its hash, whose row is added beside the last. A file the SDK refuses
+stops the indexing with the reason, and no row is added.
 
 A rebuild (the Phase 4 exit, D-92) empties the tables that index the files first, in the same
 transaction, lifting the triggers that keep them insert-only and laying them again from their own
@@ -16,7 +15,6 @@ sessions, the API tokens, and the jobs, stays, and the rows of the reports a val
 leave with their files."""
 
 import hashlib
-import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,9 +22,8 @@ from pathlib import Path
 from sqlalchemy import Engine, bindparam, delete, select, text
 from sqlalchemy.orm import Session
 
-from fefat.config import WORKSPACE_FOLDER, resolve_paths
+from fefat.config import FefatPaths
 from fefat.features.validation_report import ValidationReport
-from fefat.features.versions import FeatureVersion, saved_versions
 from fefat.market.calendar import counted
 from fefat.market.importers.profiles import parse_profile
 from fefat.market.store_files import parsed_json
@@ -35,24 +32,42 @@ from fefat_app.database.models import (
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
-    WorkspaceRow,
+    StrategyRow,
+    StrategyVersionFeatureRow,
+    StrategyVersionRow,
 )
+from fefat_app.database.version_index import index_versions
 
-DEFAULT_WORKSPACE = "default"
-
-
-INDEX_TABLES = ("feature_validations", "feature_versions", "import_profiles")
-"""The tables whose rows each index a file, which triggers keep insert-only (migration 0001)."""
+INDEX_TABLES = (
+    "feature_validations",
+    "feature_versions",
+    "import_profiles",
+    "strategy_versions",
+    "strategy_version_features",
+)
+"""The tables whose rows each index a file, which triggers keep insert-only (migrations 0001 and
+0004)."""
 INDEX_TRIGGERS = text(
     "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN :tables"
 ).bindparams(bindparam("tables", expanding=True))
+INDEXED_ROWS = (
+    FeatureValidationRow,
+    StrategyVersionFeatureRow,
+    StrategyVersionRow,
+    StrategyRow,
+    FeatureVersionRow,
+    FeatureRow,
+    ImportProfileRow,
+)
+"""The rows a rebuild deletes, each before the rows it names, since the foreign keys hold."""
 
 
 @dataclass(frozen=True)
 class IndexSummary:
     """The rows an indexing added, for each kind of file, and whether it rebuilt the index."""
 
-    versions: int
+    feature_versions: int
+    strategy_versions: int
     validations: int
     profiles: int
     rebuilt: bool = False
@@ -61,137 +76,43 @@ class IndexSummary:
         if self.rebuilt:
             return (
                 "Rebuilt the index from the files as they are: "
-                f"{counted(self.versions, 'feature version')}, "
+                f"{counted(self.feature_versions, 'feature version')}, "
+                f"{counted(self.strategy_versions, 'strategy version')}, "
                 f"{counted(self.validations, 'validation report')}, and "
                 f"{counted(self.profiles, 'import profile')}."
             )
         return (
-            f"Indexed {counted(self.versions, 'new feature version')}, "
+            f"Indexed {counted(self.feature_versions, 'new feature version')}, "
+            f"{counted(self.strategy_versions, 'new strategy version')}, "
             f"{counted(self.validations, 'new validation report')}, and "
             f"{counted(self.profiles, 'new import profile')}."
         )
 
 
-def index_workspace(engine: Engine, *, rebuild: bool = False) -> IndexSummary:
-    """Index the files under `FEFAT_HOME` that the database has not seen, or with `rebuild` every
-    file, the index emptied first (module docstring); the home is the one the SDK reads,
-    `resolve_paths(os.environ)`."""
-    paths = resolve_paths(os.environ)
+def index_workspace(engine: Engine, paths: FefatPaths, *, rebuild: bool = False) -> IndexSummary:
+    """Index the files under `paths` that the database has not seen, or with `rebuild` every
+    file, the index emptied first (module docstring)."""
     with Session(engine) as session, session.begin():
         if rebuild:
             _emptied_index(session)
-        workspace_id = _default_workspace(session)
-        versions = _index_versions(session, workspace_id)
+        feature_versions, strategy_versions = index_versions(session, paths)
         validations = _index_validations(session, paths.features_dir.glob("*/validations/*.json"))
         profiles = _index_profiles(session, paths.profiles_dir.glob("*.yaml"))
-    return IndexSummary(versions, validations, profiles, rebuild)
+    return IndexSummary(feature_versions, strategy_versions, validations, profiles, rebuild)
 
 
 def _emptied_index(session: Session) -> None:
-    """Delete every row that indexes a file, and the features they name, in the session's
-    transaction, the triggers that refuse it dropped for it and made again from their own text."""
+    """Delete every row that indexes a file, and the features and strategies they name, in the
+    session's transaction, the triggers that refuse it dropped for it and made again from their
+    own text."""
     connection = session.connection()
     triggers = session.execute(INDEX_TRIGGERS, {"tables": list(INDEX_TABLES)}).all()
     for name, _ in triggers:
         connection.exec_driver_sql(f'DROP TRIGGER "{name}"')
-    for model in (FeatureValidationRow, FeatureVersionRow, FeatureRow, ImportProfileRow):
+    for model in INDEXED_ROWS:
         session.execute(delete(model))
     for _, made in triggers:
         connection.exec_driver_sql(made)
-
-
-def _default_workspace(session: Session) -> str:
-    """The id of the one workspace of the first release, added where it has no row."""
-    found = session.scalars(
-        select(WorkspaceRow.id).where(WorkspaceRow.name == DEFAULT_WORKSPACE)
-    ).one_or_none()
-    if found is not None:
-        return found
-    workspace = WorkspaceRow(name=DEFAULT_WORKSPACE, path=WORKSPACE_FOLDER.as_posix())
-    session.add(workspace)
-    session.flush()
-    return workspace.id
-
-
-def _index_versions(session: Session, workspace_id: str) -> int:
-    """A row for each saved version not indexed yet, and one for its feature where it has none;
-    the number of versions added."""
-    feature_ids = {
-        name: feature_id
-        for name, feature_id in session.execute(
-            select(FeatureRow.name, FeatureRow.id).where(FeatureRow.workspace_id == workspace_id)
-        )
-    }
-    indexed = session.execute(
-        select(
-            FeatureVersionRow.feature_id,
-            FeatureVersionRow.version_no,
-            FeatureVersionRow.content_hash,
-        )
-    ).all()
-    hashes = {(feature_id, number): content_hash for feature_id, number, content_hash in indexed}
-    numbers = {(feature_id, content_hash): number for feature_id, number, content_hash in indexed}
-    added = 0
-    for record in saved_versions():
-        if record.name not in feature_ids:
-            feature_ids[record.name] = _new_feature(session, workspace_id, record.name)
-        feature_id = feature_ids[record.name]
-        if _seen(
-            record, hashes.get((feature_id, record.version)), numbers.get((feature_id, record.hash))
-        ):
-            continue
-        session.add(_version_row(feature_id, record))
-        added += 1
-    session.flush()
-    return added
-
-
-def _new_feature(session: Session, workspace_id: str, name: str) -> str:
-    feature = FeatureRow(workspace_id=workspace_id, name=name)
-    session.add(feature)
-    session.flush()
-    return feature.id
-
-
-def _seen(record: FeatureVersion, indexed_hash: str | None, indexed_number: int | None) -> bool:
-    """Whether the version is indexed, given the hash the index holds for its number and the
-    number it holds for its hash; refused where either holds another, as a version file deleted
-    or replaced by hand after it was indexed leaves them."""
-    if indexed_hash is None and indexed_number is None:
-        return False
-    redone = (
-        "a version file was deleted or replaced by hand after it was indexed, which the index, "
-        "kept insert-only, cannot follow: put the files back as they were, or index the files "
-        "as they are now with `fefat db import-workspace --rebuild`."
-    )
-    if indexed_hash is not None and indexed_hash != record.hash:
-        raise ValueError(
-            f"Expected version {record.version} of feature {record.name} with the hash "
-            f"{indexed_hash[:12]} as indexed, got {record.hash[:12]}: {redone}"
-        )
-    if indexed_number is not None and indexed_number != record.version:
-        raise ValueError(
-            f"Expected the hash {record.hash[:12]} of feature {record.name} as version "
-            f"{indexed_number}, as indexed, got version {record.version}: {redone}"
-        )
-    return True
-
-
-def _version_row(feature_id: str, record: FeatureVersion) -> FeatureVersionRow:
-    written = record.model_dump(mode="json")
-    return FeatureVersionRow(
-        feature_id=feature_id,
-        version_no=record.version,
-        content_hash=record.hash,
-        code=record.code,
-        params_schema_json=record.parameter_schema,
-        inputs_json=written["inputs"],
-        outputs_json=written["outputs"],
-        warmup=record.warmup,
-        warmup_sessions=record.warmup_sessions,
-        combination_json=written["combination"],
-        created_at=record.created_at,
-    )
 
 
 def _index_validations(session: Session, files: Iterable[Path]) -> int:

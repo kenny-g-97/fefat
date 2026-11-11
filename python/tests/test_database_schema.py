@@ -1,8 +1,8 @@
 """The app's database of step 4.1 (`01-architecture.md` section 5, D-83, D-85): `fefat.sqlite` in
 WAL mode with foreign keys on; its schema made and emptied by the migrations that ship in the
 package (Done means 1), alike with the models, with the login sessions and API tokens of step
-4.2 (D-86); and the rows that index a file insert-only, an update or a delete of one refused
-(Done means 2, ADR-0020)."""
+4.2 (D-86) and the strategies' tables of step 5.2 (D-93); and the rows that index a file
+insert-only, an update or a delete of one refused (Done means 2, ADR-0020)."""
 
 import sqlite3
 from collections.abc import Iterator
@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
 from fefat.market.importers.profiles import ProfileKind
+from fefat.strategy import StrategyKind
 from fefat_app.database.models import (
     ApiTokenRow,
     Base,
@@ -25,6 +26,9 @@ from fefat_app.database.models import (
     FeatureVersionRow,
     ImportProfileRow,
     LoginSessionRow,
+    StrategyRow,
+    StrategyVersionFeatureRow,
+    StrategyVersionRow,
     WorkspaceRow,
 )
 from fefat_app.database.schema import empty_schema, opened_database, upgrade_schema
@@ -41,9 +45,18 @@ TABLES = {
     "events",
     "sessions",
     "api_tokens",
+    "strategies",
+    "strategy_versions",
+    "strategy_version_features",
 }
-INDEX_TABLES = ["feature_versions", "feature_validations", "import_profiles"]
-LATEST_REVISION = "0003"
+INDEX_TABLES = [
+    "feature_versions",
+    "feature_validations",
+    "import_profiles",
+    "strategy_versions",
+    "strategy_version_features",
+]
+LATEST_REVISION = "0004"
 SAVED_AT = datetime(2026, 11, 6, 12, 30, tzinfo=UTC)
 
 
@@ -61,6 +74,7 @@ def table_names(engine: Engine) -> set[str]:
 def index_one_of_each(engine: Engine) -> None:
     """A row of each table that indexes a file, with the rows they refer to."""
     workspace_id, feature_id, version_id = new_uuid7(), new_uuid7(), new_uuid7()
+    strategy_id, strategy_version_id = new_uuid7(), new_uuid7()
     with Session(engine) as session, session.begin():
         session.add(WorkspaceRow(id=workspace_id, name="default", path="workspaces/default"))
         session.flush()
@@ -100,6 +114,35 @@ def index_one_of_each(engine: Engine) -> None:
             )
         )
         session.add(ImportProfileRow(kind=ProfileKind.MARKET_DATA, name="mine", sha256="c" * 64))
+        session.add(
+            StrategyRow(
+                id=strategy_id, workspace_id=workspace_id, name="breakout", kind=StrategyKind.SIGNAL
+            )
+        )
+        session.flush()
+        session.add(
+            StrategyVersionRow(
+                id=strategy_version_id,
+                strategy_id=strategy_id,
+                version_no=1,
+                content_hash="f" * 64,
+                code="def strategy() -> ff.SignalStrategy: ...\n",
+                hypothesis="A close above the highest of the hour runs on.",
+                instrument="MES",
+                timeframe="5m",
+                params_schema_json={"properties": {}, "type": "object"},
+                changelog="",
+                created_at=SAVED_AT,
+            )
+        )
+        session.flush()
+        session.add(
+            StrategyVersionFeatureRow(
+                strategy_version_id=strategy_version_id,
+                feature_version_id=version_id,
+                created_at=SAVED_AT,
+            )
+        )
 
 
 def log_in_once(engine: Engine) -> None:
