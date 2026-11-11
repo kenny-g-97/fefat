@@ -90,3 +90,17 @@ def test_a_version_whose_feature_changed_since_its_save_is_refused(
 
     with pytest.raises(ValueError, match="save the code again as a new version"):
         version.strategy()
+
+
+def test_a_saved_versions_fidelity_check_reruns_its_config_with_its_count() -> None:
+    # Step 5.3 (its engine accuracy review): the fidelity check reruns the run's days finer than
+    # a minute from its config, which a saved version's count joins; the minute fixtures alone
+    # hold none, so the check runs on prints here.
+    store_with("trades", "ohlcv-1s", "ohlcv-1m")
+    version = ff.strategy.save("breakout", ES_BREAKOUT, hypothesis=HYPOTHESIS)
+
+    run = ff.backtest.run(version.strategy(), *WINDOW)
+
+    assert run.record.engine_config["declared_parameters"] == 2
+    assert run.metrics.fidelity_check is not None
+    assert ff.backtest.fidelity_check(run) == run.metrics.fidelity_check
