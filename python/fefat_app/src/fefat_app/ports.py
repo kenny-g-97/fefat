@@ -6,8 +6,9 @@ The credential store is the first (step 4.1), the records of who may use the loc
 second (step 4.2), the trader's preferences the third (step 4.3), the jobs' records and their
 dispatcher the fourth and fifth (step 4.4), their models in `fefat_app.job_models` (step 5.3),
 the executor the sixth (step 4.5), its specs and
-results in `fefat_app.execution`, and the library's index the seventh (step 5.2), its rows in
-`fefat_app.library`; the blob store, the agent's runtime, and the licence arrive with the steps
+results in `fefat_app.execution`, the library's index the seventh (step 5.2), its rows in
+`fefat_app.library`, and the runs' records the eighth (step 5.3), their models in
+`fefat_app.runs`; the blob store, the agent's runtime, and the licence arrive with the steps
 that first use them."""
 
 from collections.abc import Callable, Mapping
@@ -26,6 +27,7 @@ from fefat_app.execution import (
 )
 from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus, StreamEvent
 from fefat_app.library import IndexedFeature, IndexedStrategy
+from fefat_app.runs import IndexedRun, NewRun, RunWithMetrics, Submitted
 
 type Clock = Callable[[], datetime]
 """Now, as an aware instant in UTC: the system's clock in the server, a settable one in tests."""
@@ -305,4 +307,35 @@ class LibraryIndex(Protocol):
 
     def features(self) -> tuple[IndexedFeature, ...]:
         """The saved features by name, each with its versions in order."""
+        ...
+
+
+class RunRecords(Protocol):
+    """The runs (step 5.3, ADR-0020): a row for each backtest asked for through the API, a
+    submission with its queued `backtest` job until its folder is saved, then the index of that
+    folder, which stays the record and is never updated or deleted again; and a row for each saved
+    folder no submission made, which the jobs and `fefat db import-workspace` index. One row holds
+    a run key, whichever submissions made its run."""
+
+    def submitted(self, new: NewRun, max_attempts: int, now: datetime) -> Submitted:
+        """The run of `new` in one transaction: the unsaved run of its request key whose job is
+        active and not asked to stop, or else a new row with its queued `backtest` job, made
+        with `max_attempts`, which the caller gives to the dispatcher."""
+        ...
+
+    def saved(
+        self, run_key: str, *, job_id: str | None = None, request_key: str | None = None
+    ) -> IndexedRun:
+        """The run saved under `run_key`, its folder's record read and indexed: the row that
+        holds the key, the unsaved row of `job_id` removed where it is another; else the unsaved
+        row of `job_id`, or the one whose active job waits on `request_key`, which takes the key
+        and the record's columns; else a new row from the record."""
+        ...
+
+    def by_id(self, run_id: str) -> RunWithMetrics | None:
+        """The run `run_id` with its metrics once saved, or None."""
+        ...
+
+    def newest(self, limit: int) -> tuple[IndexedRun, ...]:
+        """The `limit` newest runs, newest first, without their metrics."""
         ...

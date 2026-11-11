@@ -35,6 +35,7 @@ from fefat_app.database.models import (
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
+    RunRow,
     StrategyRow,
     StrategyVersionFeatureRow,
     StrategyVersionRow,
@@ -43,7 +44,7 @@ from fefat_app.database.models import (
 from fefat_app.database.schema import not_waiting, opened_database, upgrade_schema
 from fefat_app.database.version_index import index_library
 from fefat_app.database.workspace_index import IndexSummary, index_workspace
-from notebook_runs import features_of_cell
+from notebook_runs import features_of_cell, store_with
 from strategy_code import BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
 GAP = """\
@@ -54,6 +55,7 @@ def gap(bars: pl.LazyFrame, n: int) -> pl.Expr:
 """A feature with one parameter, as a notebook cell defines it; another default of `n` gives
 another version."""
 VALIDATED_AT = datetime(2026, 11, 6, 9, 30, tzinfo=UTC)
+ES_BREAKOUT = BREAKOUT.replace('instrument="MES"', 'instrument="ES"')
 
 
 @pytest.fixture
@@ -146,7 +148,7 @@ def test_the_first_indexing_adds_a_row_for_each_file(engine: Engine) -> None:
     indexed = index_workspace(engine, paths())
 
     assert indexed == IndexSummary(
-        feature_versions=2, strategy_versions=0, validations=1, profiles=1
+        feature_versions=2, strategy_versions=0, validations=1, profiles=1, runs=0
     )
     with Session(engine) as session:
         workspace = session.scalars(select(WorkspaceRow)).one()
@@ -199,9 +201,11 @@ def test_indexing_again_adds_only_the_files_it_has_not_seen_and_keeps_a_replaced
     added = index_workspace(engine, paths())
 
     assert unchanged == IndexSummary(
-        feature_versions=0, strategy_versions=0, validations=0, profiles=0
+        feature_versions=0, strategy_versions=0, validations=0, profiles=0, runs=0
     )
-    assert added == IndexSummary(feature_versions=1, strategy_versions=0, validations=1, profiles=0)
+    assert added == IndexSummary(
+        feature_versions=1, strategy_versions=0, validations=1, profiles=0, runs=0
+    )
     with Session(engine) as session:
         verdicts = session.scalars(select(FeatureValidationRow.passed)).all()
     assert sorted(verdicts) == [False, True]
@@ -219,6 +223,7 @@ def test_indexing_again_adds_only_the_files_it_has_not_seen_and_keeps_a_replaced
         "strategies": 0,
         "strategy_versions": 0,
         "strategy_version_features": 0,
+        "runs": 0,
     }
 
 
@@ -343,7 +348,7 @@ def test_a_rebuild_indexes_the_files_as_they_are_and_keeps_the_apps_own_state(
     rebuilt = index_workspace(engine, paths(), rebuild=True)
 
     assert rebuilt == IndexSummary(
-        feature_versions=1, strategy_versions=0, validations=0, profiles=1, rebuilt=True
+        feature_versions=1, strategy_versions=0, validations=0, profiles=1, runs=0, rebuilt=True
     )
     with Session(engine) as session:
         assert session.scalars(select(FeatureVersionRow.content_hash)).all() == [again.hash]
@@ -391,9 +396,11 @@ def test_strategy_versions_are_indexed_with_the_feature_versions_they_pin(
     again = index_workspace(engine, paths())
 
     assert indexed == IndexSummary(
-        feature_versions=1, strategy_versions=2, validations=0, profiles=0
+        feature_versions=1, strategy_versions=2, validations=0, profiles=0, runs=0
     )
-    assert again == IndexSummary(feature_versions=0, strategy_versions=0, validations=0, profiles=0)
+    assert again == IndexSummary(
+        feature_versions=0, strategy_versions=0, validations=0, profiles=0, runs=0
+    )
     with Session(engine) as session:
         strategies = session.scalars(select(StrategyRow).order_by(StrategyRow.name)).all()
         versions = {row.content_hash: row for row in session.scalars(select(StrategyVersionRow))}
@@ -436,7 +443,7 @@ def test_a_rebuild_empties_the_strategies_before_the_feature_versions_they_pin(
     rebuilt = index_workspace(engine, paths(), rebuild=True)
 
     assert rebuilt == IndexSummary(
-        feature_versions=1, strategy_versions=1, validations=0, profiles=0, rebuilt=True
+        feature_versions=1, strategy_versions=1, validations=0, profiles=0, runs=0, rebuilt=True
     )
     assert row_counts(engine)["strategy_version_features"] == 1
     with (
@@ -520,3 +527,33 @@ def test_the_library_is_indexed_beside_a_report_the_sdk_refuses(engine: Engine) 
     assert counts["feature_validations"] == 0
     with pytest.raises(ValueError, match="Validate the feature again"):
         index_workspace(engine, paths())
+
+
+def test_a_saved_run_is_indexed_with_its_strategy_version_and_again_at_a_rebuild(
+    engine: Engine,
+) -> None:
+    # Step 5.3 (D-84): the run folders are the record, which the index reads as it reads the
+    # versions; a run of a saved version names it.
+    store_with("ohlcv-1m")
+    version = ff.strategy.save("breakout", ES_BREAKOUT, hypothesis=HYPOTHESIS)
+    run = ff.backtest.run(version.strategy(), "2026-03-05", "2026-03-09")
+
+    indexed = index_workspace(engine, paths())
+    again = index_workspace(engine, paths())
+    rebuilt = index_workspace(engine, paths(), rebuild=True)
+
+    assert (indexed.runs, again.runs, rebuilt.runs) == (1, 0, 1)
+    with Session(engine) as session:
+        row = session.scalars(select(RunRow)).one()
+        pinned = session.get_one(StrategyVersionRow, row.strategy_version_id)
+    assert (row.run_key, row.job_id, row.created_at) == (run.hash, None, run.saved_at)
+    assert (pinned.content_hash, row.parameters_json) == (
+        version.hash,
+        {"lookback": 12, "stop_atr": 1.5},
+    )
+    assert row.settings_json == run.config.model_dump(mode="json")
+    with (
+        pytest.raises(IntegrityError, match="runs rows are never deleted once saved"),
+        engine.begin() as connection,
+    ):
+        connection.exec_driver_sql("DELETE FROM runs")

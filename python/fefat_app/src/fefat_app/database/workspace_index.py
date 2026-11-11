@@ -1,8 +1,10 @@
 """The index of the workspace's files (step 4.1, D-84, ADR-0020): `index_workspace` reads the
 feature versions and, from step 5.2, the strategy versions (`fefat_app.database.version_index`),
-the leak detector's reports, and the saved import profiles that the SDK wrote under the folders
-it is given (D-93), through the SDK, and adds a row for each file it has not seen, in one
-transaction, moving and changing no file, so that it can run at any time.
+the leak detector's reports, the saved import profiles, and, from step 5.3, the saved runs
+(`fefat_app.database.run_records`) that the SDK wrote under the folders it is given (D-93),
+through the SDK, and adds a row for each file it has not seen, in one transaction, moving and
+changing no file, so that it can run at any time; the run folders are read before the write
+lock is taken.
 
 A report and a profile are seen by their file's SHA-256, since the leak detector replaces a
 report with the next of its hash, whose row is added beside the last. A file the SDK refuses
@@ -12,7 +14,8 @@ A rebuild (the Phase 4 exit, D-92) empties the tables that index the files first
 transaction, lifting the triggers that keep them insert-only and laying them again from their own
 text, so that the index holds the files as they are now; the app's own state, the password, the
 sessions, the API tokens, and the jobs, stays, and the rows of the reports a validation replaced
-leave with their files."""
+leave with their files, as do the runs asked for through the API that were never saved, whose
+jobs keep their errors."""
 
 import hashlib
 from collections.abc import Iterable, Iterator
@@ -22,6 +25,7 @@ from pathlib import Path
 from sqlalchemy import Engine, bindparam, delete, select, text
 from sqlalchemy.orm import Session
 
+from fefat.backtest import saved_runs_in
 from fefat.config import FefatPaths
 from fefat.features.validation_report import ValidationReport
 from fefat.market.calendar import counted
@@ -32,10 +36,12 @@ from fefat_app.database.models import (
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
+    RunRow,
     StrategyRow,
     StrategyVersionFeatureRow,
     StrategyVersionRow,
 )
+from fefat_app.database.run_records import index_runs
 from fefat_app.database.version_index import index_versions
 
 INDEX_TABLES = (
@@ -44,13 +50,15 @@ INDEX_TABLES = (
     "import_profiles",
     "strategy_versions",
     "strategy_version_features",
+    "runs",
 )
-"""The tables whose rows each index a file, which triggers keep insert-only (migrations 0001 and
-0004)."""
+"""The tables whose rows each index a file, which triggers keep insert-only (migrations 0001,
+0004, and 0005, a run's row once saved)."""
 INDEX_TRIGGERS = text(
     "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN :tables"
 ).bindparams(bindparam("tables", expanding=True))
 INDEXED_ROWS = (
+    RunRow,
     FeatureValidationRow,
     StrategyVersionFeatureRow,
     StrategyVersionRow,
@@ -70,6 +78,7 @@ class IndexSummary:
     strategy_versions: int
     validations: int
     profiles: int
+    runs: int
     rebuilt: bool = False
 
     def summary(self) -> str:
@@ -78,27 +87,38 @@ class IndexSummary:
                 "Rebuilt the index from the files as they are: "
                 f"{counted(self.feature_versions, 'feature version')}, "
                 f"{counted(self.strategy_versions, 'strategy version')}, "
-                f"{counted(self.validations, 'validation report')}, and "
-                f"{counted(self.profiles, 'import profile')}."
+                f"{counted(self.validations, 'validation report')}, "
+                f"{counted(self.profiles, 'import profile')}, and "
+                f"{counted(self.runs, 'run')}."
             )
         return (
             f"Indexed {counted(self.feature_versions, 'new feature version')}, "
             f"{counted(self.strategy_versions, 'new strategy version')}, "
-            f"{counted(self.validations, 'new validation report')}, and "
-            f"{counted(self.profiles, 'new import profile')}."
+            f"{counted(self.validations, 'new validation report')}, "
+            f"{counted(self.profiles, 'new import profile')}, and "
+            f"{counted(self.runs, 'new run')}."
         )
 
 
 def index_workspace(engine: Engine, paths: FefatPaths, *, rebuild: bool = False) -> IndexSummary:
     """Index the files under `paths` that the database has not seen, or with `rebuild` every
     file, the index emptied first (module docstring)."""
+    runs = saved_runs_in(paths.runs_dir)
     with Session(engine) as session, session.begin():
         if rebuild:
             _emptied_index(session)
         feature_versions, strategy_versions = index_versions(session, paths)
         validations = _index_validations(session, paths.features_dir.glob("*/validations/*.json"))
         profiles = _index_profiles(session, paths.profiles_dir.glob("*.yaml"))
-    return IndexSummary(feature_versions, strategy_versions, validations, profiles, rebuild)
+        indexed_runs = index_runs(session, runs)
+    return IndexSummary(
+        feature_versions=feature_versions,
+        strategy_versions=strategy_versions,
+        validations=validations,
+        profiles=profiles,
+        runs=indexed_runs,
+        rebuilt=rebuild,
+    )
 
 
 def _emptied_index(session: Session) -> None:

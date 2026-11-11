@@ -1,8 +1,9 @@
 """The app's database of step 4.1 (`01-architecture.md` section 5, D-83, D-85): `fefat.sqlite` in
 WAL mode with foreign keys on; its schema made and emptied by the migrations that ship in the
 package (Done means 1), alike with the models, with the login sessions and API tokens of step
-4.2 (D-86) and the strategies' tables of step 5.2 (D-93); and the rows that index a file
-insert-only, an update or a delete of one refused (Done means 2, ADR-0020)."""
+4.2 (D-86), the strategies' tables of step 5.2 (D-93), and the runs of step 5.3; and the rows
+that index a file insert-only, an update or a delete of one refused (Done means 2, ADR-0020), a
+run's once its folder is saved."""
 
 import sqlite3
 from collections.abc import Iterator
@@ -25,7 +26,9 @@ from fefat_app.database.models import (
     FeatureValidationRow,
     FeatureVersionRow,
     ImportProfileRow,
+    JobRow,
     LoginSessionRow,
+    RunRow,
     StrategyRow,
     StrategyVersionFeatureRow,
     StrategyVersionRow,
@@ -33,6 +36,8 @@ from fefat_app.database.models import (
 )
 from fefat_app.database.schema import empty_schema, opened_database, upgrade_schema
 from fefat_app.database.uuid7 import new_uuid7
+from fefat_app.job_models import JobKind, JobStatus
+from fefat_app.runs import RunOrigin
 
 TABLES = {
     "settings",
@@ -48,6 +53,7 @@ TABLES = {
     "strategies",
     "strategy_versions",
     "strategy_version_features",
+    "runs",
 }
 INDEX_TABLES = [
     "feature_versions",
@@ -56,7 +62,7 @@ INDEX_TABLES = [
     "strategy_versions",
     "strategy_version_features",
 ]
-LATEST_REVISION = "0004"
+LATEST_REVISION = "0005"
 SAVED_AT = datetime(2026, 11, 6, 12, 30, tzinfo=UTC)
 
 
@@ -279,3 +285,66 @@ def test_an_instant_is_kept_in_utc_and_a_naive_one_is_refused(engine: Engine) ->
 
     assert saved_at == SAVED_AT
     assert saved_at.tzinfo is not None
+
+
+def a_run_waiting_on_its_job(engine: Engine) -> str:
+    """A run's row with its queued job, as a submission makes it; its id."""
+    with Session(engine) as session, session.begin():
+        job = JobRow(
+            kind=JobKind.BACKTEST,
+            payload_json={},
+            status=JobStatus.QUEUED,
+            progress=0.0,
+            attempt=0,
+            max_attempts=3,
+            created_at=SAVED_AT,
+        )
+        session.add(job)
+        session.flush()
+        run = RunRow(
+            origin=RunOrigin.MANUAL,
+            parameters_json={},
+            window_start=date(2026, 3, 5),
+            window_end=date(2026, 3, 9),
+            settings_json={},
+            job_id=job.id,
+            created_at=SAVED_AT,
+        )
+        session.add(run)
+        session.flush()
+        return run.id
+
+
+def test_a_runs_row_takes_its_key_once_and_is_never_changed_after(engine: Engine) -> None:
+    # Step 5.3 (ADR-0020): a submission's row is its job's until its folder is saved, then the
+    # index of that folder; a row whose job's run proved saved under another row's key is removed.
+    upgrade_schema(engine)
+    saved, removed = a_run_waiting_on_its_job(engine), a_run_waiting_on_its_job(engine)
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f"UPDATE runs SET run_key = '{'a' * 64}' WHERE id = '{saved}'")
+        connection.exec_driver_sql(f"DELETE FROM runs WHERE id = '{removed}'")
+
+    with (
+        pytest.raises(IntegrityError, match="runs rows are never updated once saved"),
+        engine.begin() as connection,
+    ):
+        connection.exec_driver_sql("UPDATE runs SET warnings_json = '[]'")
+    with (
+        pytest.raises(IntegrityError, match="runs rows are never deleted once saved"),
+        engine.begin() as connection,
+    ):
+        connection.exec_driver_sql("DELETE FROM runs")
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("SELECT id FROM runs").scalars().all() == [saved]
+
+
+def test_a_runs_row_holds_its_job_or_its_key(engine: Engine) -> None:
+    upgrade_schema(engine)
+    waiting = a_run_waiting_on_its_job(engine)
+
+    with (
+        pytest.raises(IntegrityError, match="ck_runs_job_or_run_key"),
+        engine.begin() as connection,
+    ):
+        connection.exec_driver_sql(f"UPDATE runs SET job_id = NULL WHERE id = '{waiting}'")

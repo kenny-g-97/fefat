@@ -37,19 +37,7 @@ class JobTables:
         self, kind: JobKind, payload: Mapping[str, Any], max_attempts: int, now: datetime
     ) -> Job:
         with Session(self.engine) as session, session.begin():
-            row = JobRow(
-                kind=kind,
-                payload_json=dict(payload),
-                status=JobStatus.QUEUED,
-                progress=0.0,
-                attempt=0,
-                max_attempts=max_attempts,
-                created_at=now,
-            )
-            session.add(row)
-            session.flush()
-            _add_event(session, row.id, JobEventType.STATUS, {"status": JobStatus.QUEUED.value})
-            return _job(row)
+            return _job(queued_job(session, kind, payload, max_attempts, now))
 
     def by_id(self, job_id: str) -> Job | None:
         with Session(reading(self.engine)) as session:
@@ -174,6 +162,27 @@ class JobTables:
                 .limit(limit)
             )
             return tuple(_stream_event(row) for row in rows)
+
+
+def queued_job(
+    session: Session, kind: JobKind, payload: Mapping[str, Any], max_attempts: int, now: datetime
+) -> JobRow:
+    """A new job of `kind` with `payload`, queued at its first attempt yet to start, with the
+    `status` event of its queueing, in the session's transaction, which the runs' records share
+    to make a run's row and its job together (step 5.3)."""
+    row = JobRow(
+        kind=kind,
+        payload_json=dict(payload),
+        status=JobStatus.QUEUED,
+        progress=0.0,
+        attempt=0,
+        max_attempts=max_attempts,
+        created_at=now,
+    )
+    session.add(row)
+    session.flush()
+    _add_event(session, row.id, JobEventType.STATUS, {"status": JobStatus.QUEUED.value})
+    return row
 
 
 def _compare_and_set(
