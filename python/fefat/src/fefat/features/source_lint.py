@@ -36,10 +36,14 @@ from fefat.features.declarations import feature_call
 from fefat.features.definition import FeatureDef
 from fefat.features.reading_ahead import (
     EXPLANATIONS,
+    LABEL_MAKERS,
+    READER_PREFIXES,
+    READERS,
     LintRule,
     calls_in,
     line_of,
     ways_of_reading_ahead,
+    ways_of_reading_data,
     written_text,
 )
 from fefat.features.source_names import names_read_outside
@@ -55,39 +59,6 @@ _WHY = {
     "the feature cache's key never pins, so neither can vouch for its values; declare what it "
     "reads as an input: another feature, instrument, or timeframe.",
 }
-_READERS = frozenset(
-    {
-        "compute",
-        "connect",
-        "load",
-        "open",
-        "read",
-        "roll_calendar",
-        "scan",
-        "series_source",
-        "series_source_in",
-        "side_volumes",
-        "signal_bars",
-        "urlopen",
-    }
-)
-"""Methods that read data, such as `ff.market.load`, `ff.features.compute`, and a store's `scan`."""
-_NAMED_READERS = frozenset(
-    {
-        "compute",
-        "connect",
-        "load",
-        "open",
-        "roll_calendar",
-        "series_source",
-        "series_source_in",
-        "urlopen",
-    }
-)
-"""Functions called by their name that read data, such as Python's `open`."""
-_READER_PREFIXES = ("read_", "scan_")
-_LABEL_MAKERS = frozenset({"excursions", "exit_open", "forward_returns"})
-"""The functions of `fefat.analytics.labels` that compute columns reading the future."""
 _PLATFORM = frozenset({"builtins", "fefat", "polars"})
 
 
@@ -142,27 +113,8 @@ def _reading_ahead(statement: ast.stmt, source: _Source) -> Iterator[LintFinding
     calls = calls_in(body)
     for call, rule in ways_of_reading_ahead(calls):
         yield source.finding(rule, line_of(call), EXPLANATIONS[rule])
-    for call in calls:
-        for rule in _reads(call):
-            yield source.finding(rule, line_of(call), _WHY[rule])
-
-
-def _reads(call: ast.Call) -> Iterator[LintRule]:
-    """The rules a call breaks by what it reads: data, by a reader's name, and the labels of
-    `fefat.analytics`."""
-    method = _called(call)
-    readers = _READERS if isinstance(call.func, ast.Attribute) else _NAMED_READERS
-    if method in readers or method.startswith(_READER_PREFIXES):
-        yield LintRule.READS_DATA
-    if method in _LABEL_MAKERS:
-        yield LintRule.READS_LABELS
-
-
-def _called(call: ast.Call) -> str:
-    """The name a call calls: a method's, or a function's called by its name, as `open`."""
-    if isinstance(call.func, ast.Name):
-        return call.func.id
-    return call.func.attr if isinstance(call.func, ast.Attribute) else ""
+    for call, rule in ways_of_reading_data(calls):
+        yield source.finding(rule, line_of(call), _WHY[rule])
 
 
 def _names_read_outside(
@@ -197,7 +149,7 @@ def _a_reader(value: object) -> bool:
     name = getattr(value, "__name__", None)
     if not inspect.isroutine(value) or not isinstance(name, str):
         return False
-    reads = name in _READERS or name.startswith(_READER_PREFIXES)
+    reads = name in READERS or name.startswith(READER_PREFIXES)
     return reads and _of_the_platform(value)
 
 
@@ -205,7 +157,7 @@ def _a_label_maker(value: object) -> bool:
     """Whether `value` is a function of `fefat.analytics.labels` that computes columns reading
     the future, whatever name it is bound to."""
     module, name = getattr(value, "__module__", None), getattr(value, "__name__", None)
-    return module == "fefat.analytics.labels" and name in _LABEL_MAKERS
+    return module == "fefat.analytics.labels" and name in LABEL_MAKERS
 
 
 def _of_the_platform(value: object) -> bool:

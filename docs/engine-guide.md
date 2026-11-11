@@ -58,6 +58,8 @@ A strategy you keep is saved as a version: its code, a module whose function `st
 template = ff.strategy.templates()[0]  # the breakout below
 version = ff.strategy.save("breakout", template.code, hypothesis=template.hypothesis)
 ff.strategy.load("breakout", 1)
+wider = template.code.replace("stop_atr: float = 1.5", "stop_atr: float = 2.0")
+ff.strategy.save("breakout", wider, hypothesis=template.hypothesis, changelog="A wider stop.")
 ff.strategy.library()  # name, version, hash, instrument, timeframe, created_at
 print(ff.strategy.diff("breakout", 1, 2))  # the unified diff of two versions' code
 definition = ff.strategy.from_source(version.code)
@@ -68,7 +70,7 @@ definition(stop_atr=2.0)  # the strategy with a parameter of its own
 - **What a save checks**, before anything is written: the name, a lower-case identifier of at most 64 characters; the hypothesis, one line; and the code: its syntax, the module run, the function and its parameters, the strategy built with its defaults, and its signal frame built on bars that hold no rows, which reads no data and catches a column the bars lack or a signal that is not a boolean. A refusal is an `ff.strategy.StrategyCodeError`, whose `line` is the line of your code it is at, or the line that defines `strategy` where the error is in FEFAT's own code. A batch function (`map_batches`) that cannot take an empty column is refused there too, though it would run on bars.
 - **Pins.** The features the slots read with the defaults, such as `ff.indicators.rsi(14)` or `ff.features.ref("rsi", version=1)`, are saved in your library and named in the version by name, number, and hash, as a run names them. A feature defined in the strategy's own code is saved as any feature is; where its body reads a name of the module, a constant or a helper, its saved version cannot be built again alone, so write such a feature in a cell of its own.
 - **The hash** covers the code, the parameters' schema, and the pinned features. Saving the same code again with the same hypothesis and changelog returns its version and writes nothing; with other words it is refused, since a version never changes: change the code to save a new version.
-- **The lint** reads the version's code with the leak detector's rules on calls and warns of each line that reads ahead, a negative shift, a backward fill, a centred window, or an aggregate over the whole frame or a session; a save raises them as warnings and saves, and `ff.strategy.lint(code)` lists them. Nothing cuts a strategy's own expressions as the leak detector cuts a feature, so these warnings are their only check: put an expression you doubt in a feature, which the detector validates.
+- **The lint** reads the version's code with the leak detector's rules on calls and warns of each line that reads ahead, a negative shift, a backward fill, a centred window, or an aggregate over the whole frame or a session, and of each line that computes the labels of `ff.analytics` or reads data itself, such as `pl.scan_parquet(...)`; a save raises them as warnings and saves, and `ff.strategy.lint(code)` lists them. Nothing cuts a strategy's own expressions as the leak detector cuts a feature, and a save pins a feature without validating it, so these warnings are their only check at a save: put an expression you doubt in a feature, and validate it with `ff.features.validate`.
 
 ### The templates
 

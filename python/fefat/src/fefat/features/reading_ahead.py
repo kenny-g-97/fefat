@@ -4,9 +4,10 @@ lint's reading of a feature's names (`fefat.features.source_lint`), so that a st
 shift or difference, a backward fill or an interpolation, a centred window or a peak, an aggregate
 over the whole frame (a normalisation, a scaling, a rank, quantile bins, the last value, a fill of
 nulls with the mean) or over a partition such as `.over("trade_date")`, an as-of join forward, to
-the nearest row, or on `ts_open`, and a reversed column. A method of a namespace of each row's own
-values, such as `.str`, and an aggregate of a group-by, a rolling window, a `rolling_map`, or a
-list's `eval` are left to the cuts."""
+the nearest row, or on `ts_open`, and a reversed column; and, by the name a call calls, data read
+by a reader, which the cuts never cut, and the labels of `fefat.analytics`, which read the future
+by design. A method of a namespace of each row's own values, such as `.str`, and an aggregate of a
+group-by, a rolling window, a `rolling_map`, or a list's `eval` are left to the cuts."""
 
 import ast
 from collections.abc import Iterable, Iterator, Sequence
@@ -115,6 +116,39 @@ _PER_WINDOW = frozenset({"agg", "eval", "map_elements", "rolling_map"})
 """Methods whose arguments' aggregates reduce a group, a window, a list, or an element."""
 _OF_NUMBERS = frozenset({"math", "statistics"})
 """Modules of the standard library whose aggregates reduce Python's own numbers."""
+READERS = frozenset(
+    {
+        "compute",
+        "connect",
+        "load",
+        "open",
+        "read",
+        "roll_calendar",
+        "scan",
+        "series_source",
+        "series_source_in",
+        "side_volumes",
+        "signal_bars",
+        "urlopen",
+    }
+)
+"""Methods that read data, such as `ff.market.load`, `ff.features.compute`, and a store's `scan`."""
+_NAMED_READERS = frozenset(
+    {
+        "compute",
+        "connect",
+        "load",
+        "open",
+        "roll_calendar",
+        "series_source",
+        "series_source_in",
+        "urlopen",
+    }
+)
+"""Functions called by their name that read data, such as Python's `open`."""
+READER_PREFIXES = ("read_", "scan_")
+LABEL_MAKERS = frozenset({"excursions", "exit_open", "forward_returns"})
+"""The functions of `fefat.analytics.labels` that compute columns reading the future."""
 
 
 def calls_in(statements: Iterable[ast.AST]) -> list[ast.Call]:
@@ -137,6 +171,18 @@ def ways_of_reading_ahead(calls: Sequence[ast.Call]) -> Iterator[tuple[ast.Call,
     for call in calls:
         for rule in _rules_of(call, over, windowed | within):
             yield call, rule
+
+
+def ways_of_reading_data(calls: Iterable[ast.Call]) -> Iterator[tuple[ast.Call, LintRule]]:
+    """Each call of `calls` that reads data, by a reader's name, or computes the labels of
+    `fefat.analytics`, with the rule it breaks."""
+    for call in calls:
+        called = call.func.id if isinstance(call.func, ast.Name) else _method(call)
+        readers = READERS if isinstance(call.func, ast.Attribute) else _NAMED_READERS
+        if called in readers or called.startswith(READER_PREFIXES):
+            yield call, LintRule.READS_DATA
+        if called in LABEL_MAKERS:
+            yield call, LintRule.READS_LABELS
 
 
 def _rules_of(call: ast.Call, over: set[int], left_to_the_cuts: set[int]) -> Iterator[LintRule]:
