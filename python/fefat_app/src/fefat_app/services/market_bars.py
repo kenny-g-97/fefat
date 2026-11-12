@@ -15,7 +15,7 @@ of a product that does not expire join to one `load` of the window; with `contin
 contract that stopped trading before a page's first session has no rows on it, as `load` reads
 one session of lead-in (`SeriesSource.dates_read`)."""
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -179,7 +179,7 @@ def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPag
 
 
 @contextmanager
-def _refusals() -> Iterator[None]:
+def _refusals() -> Generator[None]:
     """The SDK's refusals as the service's: `NoSuchInstrumentError` for a symbol that names no
     root and no contract of one, and `BarsRefusedError` for any other."""
     try:
