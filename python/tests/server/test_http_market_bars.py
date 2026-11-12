@@ -3,6 +3,7 @@ window, a page of at most 20,000 at a time, column by column, with no number pas
 instant the next page opens at. Done means 2: a day of 5-minute ES bars in under 300 ms warm, on
 the synthetic fixtures."""
 
+import os
 import time
 from typing import Any
 
@@ -11,6 +12,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import fefat as ff
+from fefat.config import resolve_paths
+from fefat.market.layout import Dataset, SeriesKind
+from fefat.market.schema import parse_schema_name
+from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.services import market_bars
 from generated_minutes import SPRING, write_minutes
@@ -231,6 +236,38 @@ def test_each_contract_comes_beside_the_others_at_an_open_without_splicing(
     whole = ff.market.load("ES", "1m", "2026-03-05", "2026-03-09", continuous=False).collect()
     assert page["bars"] == as_sent(whole)
     assert sorted(set(page["bars"]["contract"])) == ["ESH2026", "ESM2026"]
+
+
+def continuous_bitcoin() -> None:
+    """The fixtures' bitcoin bars in the data folder described as a continuous series, which
+    every load warns of."""
+    store = Store(resolve_paths(os.environ).data_dir)
+    bitcoin = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="BTCUSDT-PERP"
+    )
+    continuous = store.dataset_metadata(bitcoin).model_copy(
+        update={"series": SeriesKind.CONTINUOUS}
+    )
+    store.write_dataset_metadata(bitcoin, continuous)
+
+
+def test_a_page_says_what_load_warns_of_its_bars(client: TestClient, container: Container) -> None:
+    # Step 5.4 (from `BACKLOG.md`): the chart says what a notebook's load warns of, which the
+    # server only wrote to its console.
+    store_with("ohlcv-1m")
+    continuous_bitcoin()
+    logged_in(client, container)
+    saturday = {"timeframe": "5m", "from": "2026-03-07", "to": "2026-03-07"}
+
+    warned = client.get(BARS, params={"instrument": "BTCUSDT-PERP", **saturday}).json()
+    plain = client.get(BARS, params=ONE_DAY_OF_ES).json()
+
+    assert warned["warnings"] == [
+        "synthetic/ohlcv-1m/root=BTCUSDT-PERP is a continuous series, one synthetic contract "
+        "with roll handling off"
+    ]
+    assert len(warned["bars"]["time"]) == 288
+    assert plain["warnings"] == []
 
 
 @pytest.mark.parametrize(

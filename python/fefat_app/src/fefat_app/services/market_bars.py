@@ -82,8 +82,9 @@ class BarColumns(BaseModel):
 
 class BarsPage(BaseModel):
     """A page of a window's bars: the instrument and the timeframe asked for, the provider whose
-    datasets the bars come from, the bars, and the instant the next page opens at, which the
-    caller sends as the window's start, none on the last page."""
+    datasets the bars come from, the bars, the instant the next page opens at, which the caller
+    sends as the window's start, none on the last page, and what `load` warns of the datasets
+    the page's bars come from, as a notebook shows it (step 5.4)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -92,6 +93,7 @@ class BarsPage(BaseModel):
     provider: str
     bars: BarColumns
     next_from: AwareDatetime | None
+    warnings: tuple[str, ...]
 
 
 class NoSuchInstrumentError(ValueError):
@@ -104,11 +106,13 @@ class BarsRefusedError(ValueError):
 
 
 class _Page(NamedTuple):
-    """A page's rows, with the columns of `SIGNAL_BAR_COLUMNS`, and the instant the next page
-    opens at, in nanoseconds since the Unix epoch, none on the last page."""
+    """A page's rows, with the columns of `SIGNAL_BAR_COLUMNS`, the instant the next page opens
+    at, in nanoseconds since the Unix epoch, none on the last page, and what `load` warns of
+    them."""
 
     rows: pl.DataFrame
     next_open: int | None
+    warnings: tuple[str, ...]
 
 
 def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPage:
@@ -136,6 +140,7 @@ def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPag
         provider=source.provider,
         bars=_columns(page.rows),
         next_from=next_from,
+        warnings=page.warnings,
     )
 
 
@@ -148,23 +153,23 @@ def _page(source: SeriesSource, timeframe: Timeframe, request: BarsRequest) -> _
         )
     held = _held_dates(source, timeframe)
     if held is None or held[1] < first or request.end < held[0]:
-        return _Page(pl.DataFrame(schema=SIGNAL_BAR_COLUMNS), None)
+        return _Page(pl.DataFrame(schema=SIGNAL_BAR_COLUMNS), None, ())
     first, last = max(first, held[0]), min(request.end, held[1])
     # shortcut: a page counts the bars it sends, not the data it reads: a page of 1d bars built
     # from trades reads every print of its window; cap a page's sessions by the finest dataset
     # that builds it when a store holds years of ticks (BACKLOG, step 5.4).
     through = _page_end(source.sessions, timeframe, first, last)
-    rows = source.signal_bars(timeframe, (first, through))
+    rows, warned = source.warned_signal_bars(timeframe, (first, through))
     if opens_from is not None:
         rows = rows.filter(pl.col("ts_open") >= opens_from)
     rows = rows.sort("ts_open", "contract")
     if rows.height > BARS_PER_PAGE:
         next_open: int = rows.item(BARS_PER_PAGE, "ts_open")
-        return _Page(rows.filter(pl.col("ts_open") < next_open), next_open)
+        return _Page(rows.filter(pl.col("ts_open") < next_open), next_open, warned)
     if through == last:
-        return _Page(rows, None)
+        return _Page(rows, None, warned)
     following = source.sessions.following(through)
-    return _Page(rows, following.open if following.trade_date <= last else None)
+    return _Page(rows, following.open if following.trade_date <= last else None, warned)
 
 
 def _start(text: str, sessions: SessionTable) -> tuple[date, int | None]:

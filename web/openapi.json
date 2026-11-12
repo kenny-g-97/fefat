@@ -315,7 +315,7 @@
         "type": "object"
       },
       "BarsPage": {
-        "description": "A page of a window's bars: the instrument and the timeframe asked for, the provider whose\ndatasets the bars come from, the bars, and the instant the next page opens at, which the\ncaller sends as the window's start, none on the last page.",
+        "description": "A page of a window's bars: the instrument and the timeframe asked for, the provider whose\ndatasets the bars come from, the bars, the instant the next page opens at, which the caller\nsends as the window's start, none on the last page, and what `load` warns of the datasets\nthe page's bars come from, as a notebook shows it (step 5.4).",
         "properties": {
           "bars": {
             "$ref": "#/components/schemas/BarColumns"
@@ -343,6 +343,13 @@
           "timeframe": {
             "title": "Timeframe",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -350,7 +357,8 @@
           "timeframe",
           "provider",
           "bars",
-          "next_from"
+          "next_from",
+          "warnings"
         ],
         "title": "BarsPage",
         "type": "object"

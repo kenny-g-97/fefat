@@ -884,8 +884,9 @@ export interface components {
         /**
          * BarsPage
          * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
-         *     datasets the bars come from, the bars, and the instant the next page opens at, which the
-         *     caller sends as the window's start, none on the last page.
+         *     datasets the bars come from, the bars, the instant the next page opens at, which the caller
+         *     sends as the window's start, none on the last page, and what `load` warns of the datasets
+         *     the page's bars come from, as a notebook shows it (step 5.4).
          */
         BarsPage: {
             bars: components["schemas"]["BarColumns"];
@@ -897,6 +898,8 @@ export interface components {
             provider: string;
             /** Timeframe */
             timeframe: string;
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * BinaryOperation
