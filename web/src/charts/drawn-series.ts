@@ -9,7 +9,7 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts"
-import type { ChartLook } from "./chart-look"
+import { type ChartLook, lastBarColour } from "./chart-look"
 import { type ChartMarker, sessionSpans } from "./chart-marks"
 import { type ChartTime, chartTime } from "./chart-time"
 import { SessionShading } from "./session-shading"
@@ -182,6 +182,7 @@ function paintedCandles(
     wickDownColor: look.down,
     borderVisible: true,
     wickVisible: true,
+    priceLineColor: lastBarColour(look, series.open, series.close),
     priceFormat: { type: "price", ...format },
   })
   if (bars) {

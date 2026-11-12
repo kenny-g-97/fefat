@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { ChartStyle } from "@/api/settings"
 import {
   chartLook,
+  lastBarColour,
   type ThemeTokens,
   tokenColour,
   withAlpha,
@@ -77,6 +78,16 @@ describe("chartLook", () => {
       true,
     ])
     expect([light.up, light.background]).toEqual(["#10b981", CLEAR])
+  })
+})
+
+describe("lastBarColour", () => {
+  it("colours the last price as its bar's direction, which a hollow body leaves clear", () => {
+    const look = chartLook(FEATS, "dark", DARK)
+
+    expect(lastBarColour(look, [10, 12], [11, 12])).toBe("#10b981")
+    expect(lastBarColour(look, [10, 12], [11, 11.75])).toBe("#ff4d6d")
+    expect(lastBarColour(look, [], [])).toBe("#10b981")
   })
 })
 

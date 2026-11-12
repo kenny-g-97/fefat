@@ -89,6 +89,18 @@ export function chartLook(
   }
 }
 
+/** The colour of the last price's label and line: its bar's direction, rising where it closed at
+ * or above its open as the library counts it, since the library would paint a hollow body's
+ * clear colour as black; the rising colour while no bar is drawn. */
+export function lastBarColour(
+  look: ChartLook,
+  open: readonly number[],
+  close: readonly number[]
+): string {
+  const last = close.length - 1
+  return last < 0 || close[last] >= open[last] ? look.up : look.down
+}
+
 /** The tokens of the theme the page shows now, as `#rrggbb`. */
 export function readThemeTokens(): ThemeTokens {
   const computed = getComputedStyle(document.documentElement)
