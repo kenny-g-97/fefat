@@ -50,7 +50,7 @@ The library has no time zones. The chart keeps true UTC seconds, and its labels 
 
 ## Look
 
-`chartLook` turns the style and the theme into colours (`chart-look.ts`): FEAT's default is hollow candles, green rising and red falling, in `--positive` and `--negative`, the builder's exception to "colour means sign" (web/DESIGN.md), on a clear background so that the card shows through, with the grid in `--border` and the axis text in `--muted-foreground`; volume in `--input`, or by direction at half strength. A change of the look recolours the series without setting their bars again, but for volume by direction, whose bars carry their own colours.
+`chartLook` turns the style and the theme into colours (`chart-look.ts`): FEAT's default is hollow candles, green rising and red falling, in `--positive` and `--negative`, the builder's exception to "colour means sign" (web/DESIGN.md), on a clear background so that the card shows through, with the grid in `--border` and the axis text in `--muted-foreground`; volume in `--input`, or by direction at half strength. The last price's label and line take its bar's direction colour (`lastBarColour`), since the library colours them as the bar's body, which it would draw black where the body is hollow. A change of the look recolours the series without setting their bars again, but for volume by direction, whose bars carry their own colours.
 
 The library's attribution logo stays in the chart's corner (`attributionLogo`), as TradingView asks; it writes a style element for it, which the content security policy allows from step 5.4, and `src/index.css` gives it the subtle text colour.
 
