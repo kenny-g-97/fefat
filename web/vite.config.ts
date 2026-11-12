@@ -25,5 +25,9 @@ export default defineConfig({
   server: {
     proxy: { "/v1": proxied, "/docs": proxied, "/openapi.json": proxied },
   },
-  test: { exclude: [...configDefaults.exclude, "e2e/**"] },
+  // A zone with daylight saving, so that a test of a time shown in the browser's zone is exact.
+  test: {
+    exclude: [...configDefaults.exclude, "e2e/**"],
+    env: { TZ: "America/Chicago" },
+  },
 })
