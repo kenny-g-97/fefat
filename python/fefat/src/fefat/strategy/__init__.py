@@ -59,7 +59,7 @@ from fefat.strategy.signal_frame import (
     require_one_entry_per_bar,
     validated_signal_frame,
 )
-from fefat.strategy.signal_strategy import SignalStrategy
+from fefat.strategy.signal_strategy import SignalStrategy, StrategyPin
 from fefat.strategy.source_code import StrategyCodeError, StrategyDefinition, from_source
 from fefat.strategy.source_lint import StrategyLintFinding, lint
 from fefat.strategy.spec import (
@@ -142,6 +142,7 @@ __all__ = [
     "StrategyDefinition",
     "StrategyKind",
     "StrategyLintFinding",
+    "StrategyPin",
     "StrategySpec",
     "StrategyTemplate",
     "StrategyVersion",

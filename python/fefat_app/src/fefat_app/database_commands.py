@@ -8,10 +8,11 @@
 prints the revision it is at; `downgrade base` runs every migration down, which drops every
 table but Alembic's own, as `alembic downgrade base` does with the migrations that ship inside
 the package; `import-workspace` upgrades the database, then indexes the feature versions, the
-strategy versions (step 5.2), the leak detector's reports, and the saved import profiles it has
-not seen, and prints how many (`fefat_app.database.workspace_index`, D-84). The files stay the
-record, and it may run again at any time; with `--rebuild` it empties the index first, so that
-it holds the files as they are now, after a version file was deleted or replaced by hand (D-92).
+strategy versions (step 5.2), the leak detector's reports, the saved import profiles, and the
+saved runs (step 5.3) it has not seen, and prints how many (`fefat_app.database.workspace_index`,
+D-84). The files stay the record, and it may run again at any time; with `--rebuild` it empties
+the index first, so that it holds the files as they are now, after a version file was deleted or
+replaced by hand (D-92), forgetting the runs asked for that were never saved.
 """
 
 import argparse
@@ -39,13 +40,14 @@ def add_the_database_commands(database: argparse.ArgumentParser) -> None:
     downgrade.set_defaults(run=downgrade_the_database)
     workspace = database_commands.add_parser(
         "import-workspace",
-        help="index the feature and strategy versions, reports, and import profiles saved as files",
+        help="index the feature and strategy versions, reports, import profiles, and runs saved "
+        "as files",
     )
     workspace.add_argument(
         "--rebuild",
         action="store_true",
         help="empty the index first, so that it holds the files as they are now; the reports a "
-        "validation replaced leave it",
+        "validation replaced leave it, and so do the runs asked for that were never saved",
     )
     workspace.set_defaults(run=index_the_workspace)
 

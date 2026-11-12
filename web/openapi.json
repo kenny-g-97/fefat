@@ -101,6 +101,69 @@
         "title": "AppSettings",
         "type": "object"
       },
+      "AppliedRunConfig": {
+        "additionalProperties": false,
+        "description": "A run's settings with every default applied (D-51), as its record keeps them: those of\n`RunConfig`, each given.",
+        "properties": {
+          "capital": {
+            "title": "Capital",
+            "type": "string"
+          },
+          "contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          },
+          "fee_table": {
+            "title": "Fee Table",
+            "type": "string"
+          },
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "latency_ms": {
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "limit_fill": {
+            "$ref": "#/components/schemas/LimitFill"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "replay": {
+            "$ref": "#/components/schemas/Replay"
+          },
+          "roll_handling": {
+            "$ref": "#/components/schemas/RollHandling"
+          },
+          "slippage_ticks": {
+            "$ref": "#/components/schemas/SlippageTicks"
+          }
+        },
+        "required": [
+          "fidelity",
+          "latency_ms",
+          "slippage_ticks",
+          "limit_fill",
+          "roll_handling",
+          "fee_table",
+          "capital",
+          "replay",
+          "provider"
+        ],
+        "title": "AppliedRunConfig",
+        "type": "object"
+      },
       "AtTimeframe": {
         "additionalProperties": false,
         "description": "A term evaluated on the bars of `timeframe`, each value seen from its bar's close.",
@@ -429,6 +492,62 @@
         "title": "BinaryOperation",
         "type": "object"
       },
+      "Breakdowns": {
+        "additionalProperties": false,
+        "description": "A run's trades by the role of the fill that left them flat (F-TAG-01), the hour of their\nentry's fill in the exchange's time zone, the weekday and the year of their entry's trade\ndate, and the fidelity their entry filled on, each held read-only (`frozen`).",
+        "properties": {
+          "exit_reason": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Outcome"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/OrderRole"
+            },
+            "title": "Exit Reason",
+            "type": "object"
+          },
+          "fidelity": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Outcome"
+            },
+            "title": "Fidelity",
+            "type": "object"
+          },
+          "hour": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Outcome"
+            },
+            "title": "Hour",
+            "type": "object"
+          },
+          "weekday": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Outcome"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/Weekday"
+            },
+            "title": "Weekday",
+            "type": "object"
+          },
+          "year": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Outcome"
+            },
+            "title": "Year",
+            "type": "object"
+          }
+        },
+        "required": [
+          "exit_reason",
+          "hour",
+          "weekday",
+          "year",
+          "fidelity"
+        ],
+        "title": "Breakdowns",
+        "type": "object"
+      },
       "CatalogProductStatus": {
         "description": "A product of the catalog: its root, the first trade date of its history, the name of its\nfirst recommended source, and the datasets of it the store holds, none while it is missing.",
         "properties": {
@@ -699,6 +818,134 @@
         "title": "Currency",
         "type": "string"
       },
+      "DailyStatistics": {
+        "additionalProperties": false,
+        "description": "The statistics of a run's days: a day's profit and loss is the change of the equity at\nits trade date's last decision, the first day's from the capital.",
+        "properties": {
+          "best_day_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Day Share"
+          },
+          "cvar_95": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvar 95"
+          },
+          "days": {
+            "minimum": 0.0,
+            "title": "Days",
+            "type": "integer"
+          },
+          "deflated_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deflated Sharpe"
+          },
+          "large_daily_loss_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Large Daily Loss Frequency"
+          },
+          "large_daily_loss_threshold": {
+            "title": "Large Daily Loss Threshold",
+            "type": "string"
+          },
+          "large_daily_losses": {
+            "minimum": 0.0,
+            "title": "Large Daily Losses",
+            "type": "integer"
+          },
+          "probabilistic_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probabilistic Sharpe"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "sortino": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sortino"
+          },
+          "trials": {
+            "minimum": 1.0,
+            "title": "Trials",
+            "type": "integer"
+          },
+          "worst_day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DayPnl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "days",
+          "worst_day",
+          "best_day_share",
+          "cvar_95",
+          "large_daily_losses",
+          "large_daily_loss_frequency",
+          "large_daily_loss_threshold",
+          "sharpe",
+          "sortino",
+          "probabilistic_sharpe",
+          "deflated_sharpe",
+          "trials"
+        ],
+        "title": "DailyStatistics",
+        "type": "object"
+      },
       "DatasetInput": {
         "additionalProperties": false,
         "description": "A dataset of alternative data by its name, reserved for Phase 10.",
@@ -774,6 +1021,27 @@
         "title": "DatasetQuality",
         "type": "object"
       },
+      "DayPnl": {
+        "additionalProperties": false,
+        "description": "A trade date's profit and loss.",
+        "properties": {
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "pnl"
+        ],
+        "title": "DayPnl",
+        "type": "object"
+      },
       "DemoJobRequest": {
         "additionalProperties": false,
         "description": "How many seconds a demo job counts, one a second, from 1 to an hour.",
@@ -800,6 +1068,96 @@
         ],
         "title": "DesktopUse",
         "type": "string"
+      },
+      "Dimension": {
+        "additionalProperties": false,
+        "description": "A dimension's score, out of 20.",
+        "properties": {
+          "max_score": {
+            "title": "Max Score",
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/components/schemas/DimensionName"
+          },
+          "score": {
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "score",
+          "max_score"
+        ],
+        "title": "Dimension",
+        "type": "object"
+      },
+      "DimensionName": {
+        "description": "A dimension of the robustness summary, in the script's order.",
+        "enum": [
+          "sample_size",
+          "expectancy",
+          "risk_management",
+          "robustness",
+          "execution_realism"
+        ],
+        "title": "DimensionName",
+        "type": "string"
+      },
+      "DrawdownStatistics": {
+        "additionalProperties": false,
+        "description": "The deepest fall of the account below a peak, and its longest spell under one.",
+        "properties": {
+          "longest_drawdown_days": {
+            "minimum": 0.0,
+            "title": "Longest Drawdown Days",
+            "type": "integer"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "max_drawdown_share": {
+            "title": "Max Drawdown Share",
+            "type": "number"
+          },
+          "peak": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak"
+          },
+          "trough": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trough"
+          }
+        },
+        "required": [
+          "max_drawdown",
+          "max_drawdown_share",
+          "peak",
+          "trough",
+          "longest_drawdown_days"
+        ],
+        "title": "DrawdownStatistics",
+        "type": "object"
       },
       "FeatureCode": {
         "additionalProperties": false,
@@ -912,6 +1270,135 @@
         "title": "FeatureOutput",
         "type": "object"
       },
+      "FidelityCheck": {
+        "additionalProperties": false,
+        "description": "The error bar of a run's days at lower fidelity (`02` \u00a71.6, step 2.12), `kind` checked:\nthe period its trade dates finer than a minute span, from `first` to `last`, run from flat\nat the run's own fidelity, the baseline, and again at 1-second and at 1-minute fidelity, the\nrerun at 1 second none where the period holds no 1-second bars, its dates filling on the\n1-minute bars as the rerun at 1 minute does.",
+        "properties": {
+          "at_one_minute": {
+            "$ref": "#/components/schemas/FidelityRerun"
+          },
+          "at_one_second": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FidelityRerun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/PeriodOutcome"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "kind": {
+            "const": "checked",
+            "default": "checked",
+            "title": "Kind",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "baseline",
+          "at_one_second",
+          "at_one_minute"
+        ],
+        "title": "FidelityCheck",
+        "type": "object"
+      },
+      "FidelityEra": {
+        "additionalProperties": false,
+        "description": "Trade dates in a row on one level, from `first` to `last`, `trade_dates` of them: those a\nrun filled on, each the finest it held at or coarser than the run's fidelity (`02` \u00a71.6,\nD-58), or those whose signal bars `load` built, each from the finest level it holds that\nbuilds the bars (D-71).",
+        "properties": {
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          },
+          "trade_dates": {
+            "minimum": 1.0,
+            "title": "Trade Dates",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "trade_dates",
+          "fidelity"
+        ],
+        "title": "FidelityEra",
+        "type": "object"
+      },
+      "FidelityRerun": {
+        "additionalProperties": false,
+        "description": "The period rerun at a coarser fidelity against the baseline: its outcome; the differences\nin trades, net profit and loss, and maximum drawdown, the rerun's less the baseline's; the\nfill prices of the trades both entered at one decision on one side; and the trades of the\nbaseline and of the rerun that the other did not enter.",
+        "properties": {
+          "extra_trades": {
+            "minimum": 0.0,
+            "title": "Extra Trades",
+            "type": "integer"
+          },
+          "fill_prices": {
+            "items": {
+              "$ref": "#/components/schemas/FillPriceDifference"
+            },
+            "title": "Fill Prices",
+            "type": "array"
+          },
+          "max_drawdown_delta": {
+            "title": "Max Drawdown Delta",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PeriodOutcome"
+          },
+          "pnl_delta": {
+            "title": "Pnl Delta",
+            "type": "string"
+          },
+          "trades_delta": {
+            "title": "Trades Delta",
+            "type": "integer"
+          },
+          "unmatched_trades": {
+            "minimum": 0.0,
+            "title": "Unmatched Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "outcome",
+          "trades_delta",
+          "pnl_delta",
+          "max_drawdown_delta",
+          "fill_prices",
+          "unmatched_trades",
+          "extra_trades"
+        ],
+        "title": "FidelityRerun",
+        "type": "object"
+      },
       "FieldError": {
         "description": "Where a request broke the API's schema and why, without the value it sent.",
         "properties": {
@@ -944,6 +1431,43 @@
           "type"
         ],
         "title": "FieldError",
+        "type": "object"
+      },
+      "FillPriceDifference": {
+        "additionalProperties": false,
+        "description": "A trade entered at one decision on one side in the baseline and in a rerun: how far the\nrerun's entry price and its exits' average price lie from the baseline's, in ticks, the\nrerun's less the baseline's.",
+        "properties": {
+          "entry_decision": {
+            "format": "date-time",
+            "title": "Entry Decision",
+            "type": "string"
+          },
+          "entry_ticks": {
+            "title": "Entry Ticks",
+            "type": "number"
+          },
+          "exit_ticks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Ticks"
+          },
+          "side": {
+            "$ref": "#/components/schemas/PositionSide"
+          }
+        },
+        "required": [
+          "entry_decision",
+          "side",
+          "entry_ticks",
+          "exit_ticks"
+        ],
+        "title": "FillPriceDifference",
         "type": "object"
       },
       "Health": {
@@ -984,6 +1508,123 @@
           "versions"
         ],
         "title": "IndexedFeature",
+        "type": "object"
+      },
+      "IndexedRun": {
+        "description": "A run as the index holds it: its row's id; when it was asked for, or saved where the index\nfound it saved; its origin; the strategy version it names, None for one written in a notebook;\nits parameters as bound; the trade dates its window spans, its signal bars' once saved; its\nsettings, every default applied; its status, `succeeded` once its folder is indexed, else its\njob's, with the job's progress, message, and error; its job's id, None where the index found\nit saved; and its run key once saved, the name of its folder.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RunOrigin"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "run_key": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Key"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunStrategy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "origin",
+          "strategy",
+          "parameters",
+          "start",
+          "end",
+          "settings",
+          "status",
+          "progress",
+          "message",
+          "error",
+          "job_id",
+          "run_key"
+        ],
+        "title": "IndexedRun",
         "type": "object"
       },
       "IndexedStrategy": {
@@ -1400,6 +2041,15 @@
         "type": "string"
       },
       "JsonValue": {},
+      "LimitFill": {
+        "description": "When a limit fills: once the market trades through its price (F-LMT-01, the default)\nor once it touches it (F-LMT-02).",
+        "enum": [
+          "through",
+          "touch"
+        ],
+        "title": "LimitFill",
+        "type": "string"
+      },
       "LintRule": {
         "description": "What a finding of the lint is: a way of reading ahead (`looks_ahead`), a read of data the\ndetector cannot cut (`fails_validation`), or a warning of what the content hash leaves out.",
         "enum": [
@@ -1436,6 +2086,71 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "Metrics": {
+        "additionalProperties": false,
+        "description": "A run's metrics (`02` \u00a77), as `fefat_engine.metrics` works them out, and its fidelity\ncheck, which `fefat.backtest.fidelity_check` adds, told apart by its `kind`.",
+        "properties": {
+          "breakdowns": {
+            "$ref": "#/components/schemas/Breakdowns"
+          },
+          "daily": {
+            "$ref": "#/components/schemas/DailyStatistics"
+          },
+          "drawdown": {
+            "$ref": "#/components/schemas/DrawdownStatistics"
+          },
+          "fidelity_check": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "checked": "#/components/schemas/FidelityCheck",
+                    "refused": "#/components/schemas/RefusedCheck"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FidelityCheck"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RefusedCheck"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fidelity Check"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "pnl_at_plus_one_tick": {
+            "title": "Pnl At Plus One Tick",
+            "type": "string"
+          },
+          "robustness": {
+            "$ref": "#/components/schemas/Robustness"
+          },
+          "trades": {
+            "$ref": "#/components/schemas/TradeStatistics"
+          }
+        },
+        "required": [
+          "trades",
+          "daily",
+          "drawdown",
+          "pnl",
+          "pnl_at_plus_one_tick",
+          "breakdowns",
+          "robustness"
+        ],
+        "title": "Metrics",
         "type": "object"
       },
       "Negation": {
@@ -1586,6 +2301,57 @@
         "title": "NewStrategyVersionRequest",
         "type": "object"
       },
+      "OrderRole": {
+        "description": "What an order does for a position, which its fill records (F-TAG-01): open it, protect it\n(an exit plan's stop), take its profit (target 1 to 3), close it at the market, for the\nstrategy's own reason (`exit`) or an execution template's exit reason (\u00a720), or carry it\nacross a roll, a leg of the roll for its reason (F-ROL-02).",
+        "enum": [
+          "entry",
+          "stop",
+          "target_1",
+          "target_2",
+          "target_3",
+          "exit",
+          "flat_by",
+          "no_overnight",
+          "no_weekend",
+          "max_bars",
+          "max_minutes",
+          "opposite_signal",
+          "signal_exit",
+          "roll_volume",
+          "roll_open_interest",
+          "roll_calendar",
+          "roll_expiry"
+        ],
+        "title": "OrderRole",
+        "type": "string"
+      },
+      "Outcome": {
+        "additionalProperties": false,
+        "description": "A group of trades: how many, how many won, and their profit and loss.",
+        "properties": {
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "trades": {
+            "minimum": 0.0,
+            "title": "Trades",
+            "type": "integer"
+          },
+          "wins": {
+            "minimum": 0.0,
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trades",
+          "wins",
+          "pnl"
+        ],
+        "title": "Outcome",
+        "type": "object"
+      },
       "OutputKind": {
         "description": "What an output's values are (D-71), which its column must admit and its version keeps; the\nleak detector compares values by their column's type. A `price` (a level, such as a moving\naverage) and a `price_distance` (such as an ATR) are in the bars' 1e-9 units, the units in\nwhich the execution template reads them (F-RND-01, D-60), never in points.",
         "enum": [
@@ -1627,6 +2393,45 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PeriodOutcome": {
+        "additionalProperties": false,
+        "description": "The fidelity check's period run from flat at one fidelity: the eras its trade dates filled\non, its trades, their net profit and loss, and its maximum drawdown, the capital first.",
+        "properties": {
+          "eras": {
+            "items": {
+              "$ref": "#/components/schemas/FidelityEra"
+            },
+            "title": "Eras",
+            "type": "array"
+          },
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "max_drawdown": {
+            "title": "Max Drawdown",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "trades": {
+            "minimum": 0.0,
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fidelity",
+          "eras",
+          "trades",
+          "pnl",
+          "max_drawdown"
+        ],
+        "title": "PeriodOutcome",
+        "type": "object"
+      },
       "PinnedFeature": {
         "additionalProperties": false,
         "description": "A feature version a strategy's slots read, as the library keeps it: its name, its number,\nand its content hash.",
@@ -1653,6 +2458,14 @@
         ],
         "title": "PinnedFeature",
         "type": "object"
+      },
+      "PositionSide": {
+        "enum": [
+          "long",
+          "short"
+        ],
+        "title": "PositionSide",
+        "type": "string"
       },
       "Preset": {
         "additionalProperties": false,
@@ -1758,6 +2571,81 @@
         "title": "QualityStatus",
         "type": "string"
       },
+      "RedFlag": {
+        "additionalProperties": false,
+        "description": "A red flag that fires, with the script's message.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/RedFlagId"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "message"
+        ],
+        "title": "RedFlag",
+        "type": "object"
+      },
+      "RedFlagId": {
+        "description": "A red flag of the script's checklist.",
+        "enum": [
+          "small_sample",
+          "no_slippage_test",
+          "excessive_drawdown",
+          "over_optimized",
+          "short_test_period",
+          "negative_expectancy",
+          "too_good"
+        ],
+        "title": "RedFlagId",
+        "type": "string"
+      },
+      "RefusedCheck": {
+        "additionalProperties": false,
+        "description": "A fidelity check, `kind` refused, whose rerun at `fidelity` the engine refused, with its\nmessage, as when a trade date of the period holds no level at or coarser than it, ticks\nwithout bars.",
+        "properties": {
+          "fidelity": {
+            "title": "Fidelity",
+            "type": "string"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "kind": {
+            "const": "refused",
+            "default": "refused",
+            "title": "Kind",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "fidelity",
+          "refused"
+        ],
+        "title": "RefusedCheck",
+        "type": "object"
+      },
       "RefusedCode": {
         "additionalProperties": false,
         "description": "Code the SDK refused: the line of the code the refusal is at, None where it has none, and\nwhy, in the SDK's words.",
@@ -1842,6 +2730,15 @@
         "title": "RefusedCodeProblem",
         "type": "object"
       },
+      "Replay": {
+        "description": "How the Rust engine replays a run: every record in turn, or skipping the blocks of\nrecords that no order can act on, by the coarser bars above them (`02` \u00a74). Both give the\nsame fills, so a run's key leaves it out.",
+        "enum": [
+          "full",
+          "skipping"
+        ],
+        "title": "Replay",
+        "type": "string"
+      },
       "ReportedFinding": {
         "description": "A finding of a quality report: its trade date, its kind, the schema and the contract it\nwas found in, none for a gap, which no contract fills, and how many records or bars it\ncounts.",
         "properties": {
@@ -1882,6 +2779,425 @@
         ],
         "title": "ReportedFinding",
         "type": "object"
+      },
+      "Robustness": {
+        "additionalProperties": false,
+        "description": "The robustness summary of a run: what the script read, its five scores, their total and\nverdict, its red flags, the sample size the run reaches, the script's profit factor (none\nwhere the script's is infinite) and expectancy in percent of the capital per trade, and the\nprofit and loss at one more tick of slippage, `fragile_to_slippage` when the run's profit is\ngone at it. The regimes a run covers arrive with step 11.4 (D-51).",
+        "properties": {
+          "dimensions": {
+            "maxItems": 5,
+            "minItems": 5,
+            "prefixItems": [
+              {
+                "$ref": "#/components/schemas/Dimension"
+              },
+              {
+                "$ref": "#/components/schemas/Dimension"
+              },
+              {
+                "$ref": "#/components/schemas/Dimension"
+              },
+              {
+                "$ref": "#/components/schemas/Dimension"
+              },
+              {
+                "$ref": "#/components/schemas/Dimension"
+              }
+            ],
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "expectancy": {
+            "title": "Expectancy",
+            "type": "number"
+          },
+          "fragile_to_slippage": {
+            "title": "Fragile To Slippage",
+            "type": "boolean"
+          },
+          "inputs": {
+            "$ref": "#/components/schemas/ScriptInputs"
+          },
+          "pnl_at_plus_one_tick": {
+            "title": "Pnl At Plus One Tick",
+            "type": "string"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "red_flags": {
+            "items": {
+              "$ref": "#/components/schemas/RedFlag"
+            },
+            "title": "Red Flags",
+            "type": "array"
+          },
+          "sample_size": {
+            "$ref": "#/components/schemas/SampleSize"
+          },
+          "total_score": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Total Score",
+            "type": "integer"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict"
+          }
+        },
+        "required": [
+          "inputs",
+          "dimensions",
+          "total_score",
+          "verdict",
+          "red_flags",
+          "sample_size",
+          "profit_factor",
+          "expectancy",
+          "pnl_at_plus_one_tick",
+          "fragile_to_slippage"
+        ],
+        "title": "Robustness",
+        "type": "object"
+      },
+      "RollHandling": {
+        "description": "What a roll does with an open position: transfer it to the new front (F-ROL-02, the\ndefault), or close it (F-ROL-04).",
+        "enum": [
+          "transfer",
+          "flatten"
+        ],
+        "title": "RollHandling",
+        "type": "string"
+      },
+      "RunConfig": {
+        "additionalProperties": false,
+        "description": "A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its\nfinest level at or coarser than it (D-58), the finest the store holds when left out;\n`latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market\nand stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity\nsetting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`\n(F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of\n`fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;\n`capital`, in the instrument's currency; `replay`, skipping what no order can act on or in\nfull, which give the same fills (`02` \u00a74); `provider`, as `load` takes it; and `contract`,\none contract of the strategy's root read unspliced, as `load` reads a contract, so that the\nrun crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll\ncalendar's fronts.",
+        "properties": {
+          "capital": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": "50000",
+            "title": "Capital"
+          },
+          "contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          },
+          "fee_table": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee Table"
+          },
+          "fidelity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fidelity"
+          },
+          "latency_ms": {
+            "default": 100,
+            "minimum": 0.0,
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "limit_fill": {
+            "$ref": "#/components/schemas/LimitFill",
+            "default": "through"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "replay": {
+            "$ref": "#/components/schemas/Replay",
+            "default": "skipping"
+          },
+          "roll_handling": {
+            "$ref": "#/components/schemas/RollHandling",
+            "default": "transfer"
+          },
+          "slippage_ticks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlippageTicks"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "RunConfig",
+        "type": "object"
+      },
+      "RunOrigin": {
+        "description": "Where a run's row comes from: asked for through the API, or found saved by the index; the\nbatches of later phases add theirs.",
+        "enum": [
+          "manual"
+        ],
+        "title": "RunOrigin",
+        "type": "string"
+      },
+      "RunStrategy": {
+        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, and the version's row's id and number.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "strategy_id": {
+            "title": "Strategy Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_id",
+          "name",
+          "version_id",
+          "version"
+        ],
+        "title": "RunStrategy",
+        "type": "object"
+      },
+      "RunSubmission": {
+        "additionalProperties": false,
+        "description": "A backtest of a saved strategy version: the id of the version's row, which\n`GET /v1/strategies` gives; its parameters, its defaults filling those left out; the trade\ndates from `start` to `end`; and its settings, each left out taking its default, which the\nrun's answer gives with every default applied.",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/RunConfig"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "strategy_version_id": {
+            "title": "Strategy Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_version_id",
+          "start",
+          "end"
+        ],
+        "title": "RunSubmission",
+        "type": "object"
+      },
+      "RunWithMetrics": {
+        "description": "A run with what its record says of how it went, once saved: its metrics, the fidelity era\nof each trade date it filled on, and its warnings; none of them before.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "fidelity_eras": {
+            "items": {
+              "$ref": "#/components/schemas/FidelityEra"
+            },
+            "title": "Fidelity Eras",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Metrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "$ref": "#/components/schemas/RunOrigin"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Parameters",
+            "type": "object"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "run_key": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Key"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AppliedRunConfig"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunStrategy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "origin",
+          "strategy",
+          "parameters",
+          "start",
+          "end",
+          "settings",
+          "status",
+          "progress",
+          "message",
+          "error",
+          "job_id",
+          "run_key",
+          "metrics",
+          "fidelity_eras",
+          "warnings"
+        ],
+        "title": "RunWithMetrics",
+        "type": "object"
+      },
+      "SampleSize": {
+        "description": "Which of the skill's trade counts a run reaches: an absolute minimum of 30, 100\npreferred, and 200 for high confidence.",
+        "enum": [
+          "below_minimum",
+          "minimum",
+          "preferred",
+          "high_confidence"
+        ],
+        "title": "SampleSize",
+        "type": "string"
       },
       "SavedFeatureVersion": {
         "additionalProperties": false,
@@ -2161,6 +3477,59 @@
         "title": "SavedStrategyVersion",
         "type": "object"
       },
+      "ScriptInputs": {
+        "additionalProperties": false,
+        "description": "What the skill's script reads of a run, under its own names: the trades, the win rate in\npercent, the average win, the average loss over the trades that did not win (the script takes\nevery trade that is not a win as a loss, so it differs from `TradeStatistics.average_loss`\nwhen a trade breaks even), and the maximum drawdown, in percent of the capital, the years the\nwindow spans rounded to the nearest, the parameters (the numbers the execution template sets\napart from their defaults), and whether the run paid slippage or fees.",
+        "properties": {
+          "avg_loss_pct": {
+            "title": "Avg Loss Pct",
+            "type": "number"
+          },
+          "avg_win_pct": {
+            "title": "Avg Win Pct",
+            "type": "number"
+          },
+          "max_drawdown_pct": {
+            "title": "Max Drawdown Pct",
+            "type": "number"
+          },
+          "num_parameters": {
+            "minimum": 0.0,
+            "title": "Num Parameters",
+            "type": "integer"
+          },
+          "slippage_tested": {
+            "title": "Slippage Tested",
+            "type": "boolean"
+          },
+          "total_trades": {
+            "minimum": 0.0,
+            "title": "Total Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "title": "Win Rate",
+            "type": "number"
+          },
+          "years_tested": {
+            "minimum": 0.0,
+            "title": "Years Tested",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_trades",
+          "win_rate",
+          "avg_win_pct",
+          "avg_loss_pct",
+          "max_drawdown_pct",
+          "years_tested",
+          "num_parameters",
+          "slippage_tested"
+        ],
+        "title": "ScriptInputs",
+        "type": "object"
+      },
       "SecretChanges": {
         "additionalProperties": {
           "anyOf": [
@@ -2295,6 +3664,37 @@
           }
         },
         "title": "SettingsChange",
+        "type": "object"
+      },
+      "Severity": {
+        "description": "How serious a red flag is.",
+        "enum": [
+          "high",
+          "medium"
+        ],
+        "title": "Severity",
+        "type": "string"
+      },
+      "SlippageTicks": {
+        "additionalProperties": false,
+        "description": "Ticks by which market and stop-market fills are worse than their reference (F-SLP-01).",
+        "properties": {
+          "market": {
+            "minimum": 0.0,
+            "title": "Market",
+            "type": "integer"
+          },
+          "stop": {
+            "minimum": 0.0,
+            "title": "Stop",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "market",
+          "stop"
+        ],
+        "title": "SlippageTicks",
         "type": "object"
       },
       "Source": {
@@ -2589,6 +3989,46 @@
         "title": "Theme",
         "type": "string"
       },
+      "TickFidelity": {
+        "description": "Tick data: trades with the quote just before each, or trades alone.",
+        "enum": [
+          "tbbo",
+          "trades"
+        ],
+        "title": "TickFidelity",
+        "type": "string"
+      },
+      "TimeUnit": {
+        "description": "The unit of a bar timeframe, as the schema name writes it.",
+        "enum": [
+          "s",
+          "m",
+          "h",
+          "d"
+        ],
+        "title": "TimeUnit",
+        "type": "string"
+      },
+      "Timeframe": {
+        "additionalProperties": false,
+        "description": "A bar's length, written `1s`, `5m`, `1h`, or `1d`; a daily bar spans its trade date.",
+        "properties": {
+          "count": {
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/TimeUnit"
+          }
+        },
+        "required": [
+          "count",
+          "unit"
+        ],
+        "title": "Timeframe",
+        "type": "object"
+      },
       "TimeframeInput": {
         "additionalProperties": false,
         "description": "The timeframe of the bars the feature is evaluated on, such as `15m` for a feature that a\nstrategy of 5-minute bars reads, which sees each value from its bar's close (step 3.2).",
@@ -2608,6 +4048,130 @@
           "timeframe"
         ],
         "title": "TimeframeInput",
+        "type": "object"
+      },
+      "TradeStatistics": {
+        "additionalProperties": false,
+        "description": "The statistics of a run's trades, money in the instrument's currency.",
+        "properties": {
+          "average_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Loss"
+          },
+          "average_win": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Win"
+          },
+          "expectancy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy"
+          },
+          "expectancy_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy R"
+          },
+          "expectancy_ticks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy Ticks"
+          },
+          "losses": {
+            "minimum": 0.0,
+            "title": "Losses",
+            "type": "integer"
+          },
+          "mae_mfe_efficiency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mae Mfe Efficiency"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "trades": {
+            "minimum": 0.0,
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "wins": {
+            "minimum": 0.0,
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trades",
+          "wins",
+          "losses",
+          "win_rate",
+          "profit_factor",
+          "expectancy",
+          "expectancy_ticks",
+          "expectancy_r",
+          "average_win",
+          "average_loss",
+          "mae_mfe_efficiency"
+        ],
+        "title": "TradeStatistics",
         "type": "object"
       },
       "TradesInput": {
@@ -2711,6 +4275,16 @@
         "title": "ValidationProblem",
         "type": "object"
       },
+      "Verdict": {
+        "description": "The plain verdict of the total: 70 points or more, 40 or more, or fewer.",
+        "enum": [
+          "deploy_grade_evidence",
+          "refine",
+          "abandon"
+        ],
+        "title": "Verdict",
+        "type": "string"
+      },
       "VersionDiff": {
         "description": "The unified diff of the code of two versions, `earlier`'s and `later`'s, empty where their\ncode is the same; the structured diff of a builder's spec joins it with the builder of\nPhase 6.",
         "properties": {
@@ -2768,6 +4342,20 @@
         ],
         "title": "Versions",
         "type": "object"
+      },
+      "Weekday": {
+        "description": "A day of the week, as the specification spells it.",
+        "enum": [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+          "sunday"
+        ],
+        "title": "Weekday",
+        "type": "string"
       },
       "Window": {
         "additionalProperties": false,
@@ -4665,6 +6253,326 @@
         "summary": "Me",
         "tags": [
           "login"
+        ]
+      }
+    },
+    "/v1/runs": {
+      "get": {
+        "description": "The hundred newest runs, newest first, without their metrics.",
+        "operationId": "newest_runs_v1_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IndexedRun"
+                  },
+                  "title": "Response Newest Runs V1 Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Newest Runs",
+        "tags": [
+          "runs"
+        ]
+      },
+      "post": {
+        "description": "Backtest the version, the strategy built from its code in the executor: 200 with the run\nits request finds saved, else 202 with the run whose `backtest` job is queued, the run of\nthe same request waiting already being that run; refused with 400 and the line of the code\nwhere the code gives no strategy, 404 where no version has the id, and 409 where the library\nholds files the index cannot follow.",
+        "operationId": "submit_run_v1_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexedRun"
+                }
+              }
+            },
+            "description": "The run its request found saved, indexed where it was not: no job runs."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexedRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusedCodeProblem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Submit Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}": {
+      "get": {
+        "description": "The run, with its metrics, its fidelity eras, and its warnings once saved.",
+        "operationId": "run_by_id_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7.",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunWithMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Run By Id",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/cancel": {
+      "post": {
+        "description": "Cancel the run's job, at once while it is queued, asked while it runs; a saved run, or\none whose job has ended, is answered as it is.",
+        "operationId": "cancel_run_v1_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "description": "A run's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "A run's id in the index, a UUIDv7.",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunWithMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Cancel Run",
+        "tags": [
+          "runs"
         ]
       }
     },

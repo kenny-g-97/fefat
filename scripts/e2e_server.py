@@ -11,18 +11,23 @@ data; keeps keyring at its null backend, so that no secret of this machine is re
 sets the password, since `fefat up` would ask for it at a console that a harness has not (from
 `BACKLOG.md`); and runs `fefat up` until it is stopped. Playwright stops it with taskkill on
 Windows, which runs no cleanup, so the home is one folder wiped at each start rather than a new
-one each run. `just dev` seeds a home of its own the same way (`seed`, step 5.1).
+one each run. `just dev` seeds a home of its own the same way (`seed`, step 5.1). On the fixtures,
+the seed also saves the breakout template as the strategy `demo` and runs it, the run the specs
+call `demo-run-01`, and indexes both as `fefat db import-workspace` does (step 5.3).
 """
 
 import os
 import shutil
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "synthetic"
 HOME_NAME = "fefat-e2e"
+DEMO_WINDOW = ("2026-03-05", "2026-03-09")
+"""The fixtures' trade dates the demo run spans, across their roll of 2026-03-09."""
 
 
 def required(name: str) -> str:
@@ -54,7 +59,8 @@ def seeded_home(home: Path, port: int) -> None:
 def seed(home: Path, port: int, password: str, data_dir: Path | None = None) -> None:
     """`home` seeded (`seeded_home`) and named FEAT's home in this process's environment, which
     the server it starts inherits, with its copy of the fixtures as the data folder, or
-    `data_dir` where one is named; keyring at its null backend; and `password` set."""
+    `data_dir` where one is named; keyring at its null backend; `password` set; and, on the
+    fixtures, the demo strategy and its first run (`demo_run`)."""
     seeded_home(home, port)
     os.environ["FEFAT_HOME"] = str(home)
     os.environ["FEFAT_DATA_DIR"] = str(home / "data" if data_dir is None else data_dir)
@@ -65,6 +71,34 @@ def seed(home: Path, port: int, password: str, data_dir: Path | None = None) -> 
 
     with opened_container(resolve_paths(os.environ)) as container:
         container.logins.set_password(password)
+    if data_dir is None:
+        demo_run()
+
+
+def demo_run() -> None:
+    """The engine guide's breakout template saved as the strategy `demo`, on ES, which the
+    fixtures hold, its run on the fixtures over `DEMO_WINDOW`, made through the SDK as a notebook
+    makes it, and both indexed as `fefat db import-workspace` indexes them, so that the server
+    starts with a run and no job (step 5.3)."""
+    import fefat as ff
+    from fefat_app.cli import main as fefat
+
+    (breakout,) = [each for each in ff.strategy.templates() if each.name == "breakout"]
+    code = breakout.code.replace('instrument="MES"', 'instrument="ES"')
+    if code == breakout.code:
+        raise SystemExit(
+            "Expected the breakout template on MES, to run it on the fixtures' ES, got another "
+            "instrument: seed the demo run on the template's own."
+        )
+    version = ff.strategy.save("demo", code, hypothesis=breakout.hypothesis)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the fixtures' fee table and the like; the run keeps them
+        ff.backtest.run(version.strategy(), *DEMO_WINDOW)
+    if fefat(["db", "import-workspace"]) != 0:
+        raise SystemExit(
+            "Expected `fefat db import-workspace` to index the demo strategy and its run, got "
+            "its refusal above: the seeded server would start without demo-run-01."
+        )
 
 
 def main() -> int:

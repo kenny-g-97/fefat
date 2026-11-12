@@ -1,5 +1,6 @@
 """How the store writes and checks its files (ADR-0019): in one step, as JSON models, and with
-each partition's digest kept once beside it (step 2.5).
+each partition's digest kept once beside it (step 2.5); from step 5.3, a lock file that one
+process holds alone while it writes what two would otherwise write at once (`held_alone`).
 
 A partition's digest, `part.digest.json` beside `part.parquet`, holds the file's size, its
 modification time in nanoseconds, and its SHA-256, all read through the one open handle that
@@ -11,9 +12,11 @@ as the one the snapshot pinned.
 
 import hashlib
 import os
+import sqlite3
 import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
@@ -115,6 +118,27 @@ def _flushed_beside(path: Path, write: Callable[[Path], object]) -> Iterator[Pat
         yield temporary
     finally:
         temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def held_alone(lock_file: Path, wait: timedelta) -> Iterator[None]:
+    """Hold `lock_file` alone while the block runs (step 5.3): another holder, a process or a
+    thread of this one, waits until it is released, and is refused past `wait` with a
+    `ValueError`. The lock is SQLite's exclusive lock on the file, which stays empty: one way on
+    every system, which the system releases when its holder ends, however it ends."""
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(lock_file, timeout=wait.total_seconds(), isolation_level=None)
+    try:
+        try:
+            connection.execute("BEGIN EXCLUSIVE")
+        except sqlite3.OperationalError as error:
+            raise ValueError(
+                f"Expected to hold {lock_file} alone within {wait}, got it held by another "
+                f"process all that time ({error}): try again once it is done."
+            ) from error
+        yield
+    finally:
+        connection.close()
 
 
 def json_writer(model: BaseModel) -> Callable[[Path], object]:

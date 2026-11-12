@@ -16,7 +16,7 @@ from fefat.market.sources import SourceGuide
 from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
 from fefat_app.http.problems import problem_responses
-from fefat_app.ports import Job
+from fefat_app.job_models import Job
 from fefat_app.services.catalog import (
     CatalogStatus,
     DatasetQuality,

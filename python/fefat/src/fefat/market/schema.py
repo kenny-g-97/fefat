@@ -16,11 +16,13 @@ Where the files live is `fefat.market.layout`.
 """
 
 import re
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Any, NoReturn, Self
 
 import polars as pl
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -34,6 +36,69 @@ class FrozenModel(BaseModel):
     """A value: validated when it is built, immutable after, and strict about unknown fields."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+def _refused(self: object, *arguments: object, **named: object) -> NoReturn:
+    raise TypeError(
+        f"Expected a record left as it was read, got a change to its {type(self).__name__}: "
+        "build a new value from a copy, `dict(...)` or `list(...)`."
+    )
+
+
+class FrozenDict[Key, Value](dict[Key, Value]):
+    """A dict no one can change once it is built, which a model's mapping holds (`frozen`): it
+    equals, writes, and pickles as the dict it was built from."""
+
+    __setitem__ = _refused
+    __delitem__ = _refused
+    __ior__ = _refused
+    clear = _refused
+    pop = _refused
+    popitem = _refused
+    setdefault = _refused
+    update = _refused
+
+    def __reduce__(self) -> tuple[type["FrozenDict[Key, Value]"], tuple[dict[Key, Value]]]:
+        return (FrozenDict, (dict(self),))
+
+
+class FrozenList[Item](list[Item]):
+    """A list no one can change once it is built, which a model's mapping holds (`frozen`): it
+    equals, writes, and pickles as the list it was built from."""
+
+    __setitem__ = _refused
+    __delitem__ = _refused
+    __iadd__ = _refused
+    __imul__ = _refused
+    append = _refused
+    extend = _refused
+    insert = _refused
+    pop = _refused
+    remove = _refused
+    clear = _refused
+    sort = _refused
+    reverse = _refused
+
+    def __reduce__(self) -> tuple[type["FrozenList[Item]"], tuple[list[Item]]]:
+        return (FrozenList, (list(self),))
+
+
+def frozen(value: object) -> object:
+    """`value` with each mapping and list in it, at every depth, held as a `FrozenDict` or a
+    `FrozenList`, so that a model's field annotated `Annotated[Mapping[...],
+    AfterValidator(frozen)]` holds what its file says, and writes it as a `dict` field did."""
+    if isinstance(value, Mapping):
+        return FrozenDict({key: frozen(each) for key, each in value.items()})
+    if isinstance(value, list):
+        return FrozenList(frozen(each) for each in value)
+    if isinstance(value, tuple):
+        return tuple(frozen(each) for each in value)
+    return value
+
+
+FrozenDocument = Annotated[Mapping[str, Any], AfterValidator(frozen)]
+"""A JSON document as a model's field, such as a strategy's specification, held read-only at
+every depth (`frozen`)."""
 
 
 class SchemaKind(StrEnum):

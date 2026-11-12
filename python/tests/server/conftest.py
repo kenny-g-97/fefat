@@ -2,8 +2,9 @@
 made and migrated; a clock the test moves; keyring in memory; Argon2 at its lowest cost, so that
 many logins take no time, while the server keeps argon2-cffi's defaults; a client of the app;
 the server's log; the executors, cold and warm (step 4.5); the data catalog over the store of
-its `FEFAT_DATA_DIR` (step 5.1); and the library's strategies and features over their index
-(step 5.2)."""
+its `FEFAT_DATA_DIR` (step 5.1); the library's strategies and features over their index
+(step 5.2); and the runs (step 5.3), with a workspace holding a saved version and its run, made
+once a module."""
 
 import os
 from collections.abc import Iterator
@@ -14,6 +15,7 @@ from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
+import fefat as ff
 from fefat.config import Settings, resolve_paths
 from fefat.market.store import Store
 from fefat_app.container import Container
@@ -22,6 +24,7 @@ from fefat_app.database.access_records import AccessTables
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.preferences import PreferenceRows
+from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import opened_database, upgrade_schema
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.http.app import create_app
@@ -33,9 +36,15 @@ from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.features import SavedFeatures
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
+from fefat_app.services.runs import Runs
 from fefat_app.services.strategies import SavedStrategies
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
 from memory_keyring import MemoryKeyring
+from notebook_runs import store_with
+from strategy_code import ES_BREAKOUT, HYPOTHESIS
+
+"""The engine guide's breakout on ES, which the synthetic fixtures hold."""
+RUN_WINDOW = ("2026-03-05", "2026-03-09")
 
 
 @pytest.fixture
@@ -97,6 +106,9 @@ def container(
             catalog=MarketCatalog(store, paths.reports_dir, paths.cache_dir, jobs),
             strategies=SavedStrategies(library, warm_executor, paths.strategies_dir),
             features=SavedFeatures(library, warm_executor, paths.features_dir),
+            runs=Runs(
+                RunTables(engine, paths), library, warm_executor, jobs, paths.strategies_dir, clock
+            ),
         )
     finally:
         dispatcher.close()
@@ -140,3 +152,18 @@ def _executor_leaving_nothing(warm_previews: bool) -> Iterator[SubprocessExecuto
         opened.close()
     assert running_runners() == []
     assert sorted(paths.executions_dir.glob("*")) == []
+
+
+@pytest.fixture(scope="module")
+def breakout_workspace(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A workspace holding `ES_BREAKOUT` saved as version 1 of `breakout` and its run on the
+    fixtures' minute bars over `RUN_WINDOW`, made once for the module; a test copies it into its
+    own home (step 5.3)."""
+    home = tmp_path_factory.mktemp("breakout-workspace")
+    with pytest.MonkeyPatch.context() as environment:
+        environment.setenv("FEFAT_HOME", str(home / "fefat-home"))
+        environment.setenv("FEFAT_DATA_DIR", str(home / "fefat-data"))
+        store_with("ohlcv-1m")
+        version = ff.strategy.save("breakout", ES_BREAKOUT, hypothesis=HYPOTHESIS)
+        ff.backtest.run(version.strategy(), *RUN_WINDOW)
+        return resolve_paths(os.environ).workspace_dir

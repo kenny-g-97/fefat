@@ -2,14 +2,32 @@
 report, made between two chunks of the work, writes the job's progress and a `progress` event,
 and stops the work where the job was asked to stop, or where its worker no longer holds it; and,
 for work that reports seldom, as the trader's code run by the executor does, a check that stops it
-alike without a report (step 4.5)."""
+alike without a report (step 4.5); and the writes a worker must not lose, a job's end and its run's
+index, tried again while the database is busy (step 5.3)."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
-from fefat_app.ports import Job, JobRecords, JobStatus
+from fefat_app.job_models import Job, JobStatus
+from fefat_app.ports import JobRecords
+
+BUSY_TRIES = 12
+"""How many times a worker makes a write it must not lose while a writer holds the database past
+its busy timeout of five seconds: a minute, while the heartbeat keeps the lease."""
+
+
+def tried_while_busy[T](write: Callable[[], T]) -> T:
+    """What `write()` gives, tried again while a writer holds the database past its busy timeout,
+    `BUSY_TRIES` times at most; the last try's refusal comes through."""
+    for _ in range(BUSY_TRIES - 1):
+        try:
+            return write()
+        except OperationalError:
+            continue
+    return write()
 
 
 class JobCancelledError(Exception):

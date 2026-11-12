@@ -9,7 +9,9 @@ it replays, built from the same files (D-56); the fronts it trades and the rolls
 the roll calendar gives them (D-44, F-ROL-01); the hours its market trades in (F-SES-02); a
 perpetual's funding rates from the store (F-FND-01); its fee table (F-FEE-01); and the config the
 engine reads, every setting applied (D-51), with the config of its rerun at one more tick of
-slippage and its exchange's time zone, which its metrics read (step 2.11)."""
+slippage and its exchange's time zone, which its metrics read (step 2.11); and, from step 5.3, the
+count of the parameters a saved strategy version declares, in that config, so that the run key
+covers it, which the engine never reads and its metrics count."""
 
 import json
 from collections.abc import Sequence
@@ -22,7 +24,7 @@ import polars as pl
 
 from fefat.backtest.record import DatasetRecord, FeeTableRecord, RollRecord, Window
 from fefat.backtest.run_config import AppliedRunConfig, RunConfig
-from fefat.backtest.run_signals import signal_frame
+from fefat.backtest.run_signals import RunProgress, signal_frame, tell_no_one
 from fefat.backtest.snapshots import (
     Market,
     dataset_record,
@@ -61,7 +63,7 @@ from fefat.reference.run_documents import (
     settings_document,
     with_engine_columns,
 )
-from fefat.strategy.signal_frame import require_named_columns
+from fefat.strategy.signal_frame import require_named_columns, require_rule_features
 from fefat.strategy.signal_strategy import SignalStrategy
 from fefat.strategy.spec import StrategySpec
 
@@ -87,6 +89,7 @@ class RunInputs:
     warnings: tuple[str, ...]
     time_zone: str
     signal_bar_eras: tuple[FidelityEra, ...]
+    declared_parameters: int | None
 
     def spec_json(self) -> str:
         return json.dumps(self.spec.document())
@@ -141,15 +144,20 @@ def run_inputs(
     end: str | date,
     config: RunConfig,
     paths: FefatPaths,
+    progress: RunProgress = tell_no_one,
 ) -> RunInputs:
-    """Everything a run of `strategy` on the trade dates from `start` to `end` reads."""
+    """Everything a run of `strategy` on the trade dates from `start` to `end` reads, telling
+    `progress` its data loaded and its features computed."""
     market = market_of(strategy.instrument, config.provider, paths)
     applied = config.applied(finest_level(market.datasets), market.instrument.kind, market.provider)
     dates = (parse_trade_date(start, "start"), parse_trade_date(end, "end"))
-    produced = signal_frame(strategy, market.sessions, market.provider, dates, applied.contract)
+    produced = signal_frame(
+        strategy, market.sessions, market.provider, dates, applied.contract, progress
+    )
     signals = produced.signals
     spec = strategy.to_spec()
     require_named_columns(spec.execution, signals.columns)
+    require_rule_features(spec.execution, signals.columns)
     window = _window(signals)
     snapshots = (
         *snapshots_of(market, produced.first_read, window),
@@ -160,6 +168,9 @@ def run_inputs(
     fronts, rolls = _fronts_and_rolls(signals, market, window)
     parameters = instrument_parameters(market.instrument)
     engine_config = _engine_config(market, applied, signals, snapshots, window, rolls)
+    declared = strategy.declared_parameters
+    if declared is not None:
+        engine_config = {**engine_config, "declared_parameters": declared}
     return RunInputs(
         spec=spec,
         signals=with_engine_columns(spec, signals, market.sessions),
@@ -177,6 +188,7 @@ def run_inputs(
         warnings=(*produced.warnings, *_features_below_a_tick(spec, signals, parameters.tick)),
         time_zone=market.sessions.time_zone(),
         signal_bar_eras=_signal_bar_eras(market, strategy, window, signals),
+        declared_parameters=declared,
     )
 
 
@@ -303,8 +315,6 @@ def _features_below_a_tick(spec: StrategySpec, signals: pl.DataFrame, tick: int)
     entries = signals.filter(pl.col("long_entry") | pl.col("short_entry"))
     found = []
     for column, feature in sorted(exit_features(spec).items()):
-        if feature not in entries.columns:
-            continue
         below = entries.filter((pl.col(feature) > 0) & (pl.col(feature) < tick)).height
         if below:
             found.append(

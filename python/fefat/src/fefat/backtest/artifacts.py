@@ -8,7 +8,9 @@ and read back."""
 import math
 import shutil
 import tempfile
+import time
 from collections.abc import Mapping, Sequence
+from datetime import timedelta
 from pathlib import Path
 
 import fefat_engine
@@ -16,7 +18,13 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict
 
 from fefat.backtest.record import EngineVersions, RunRecord
-from fefat.backtest.schemas import ARTIFACT_SCHEMAS, ENGINE_EQUITY, ENGINE_TRADES, EQUITY
+from fefat.backtest.schemas import (
+    ARTIFACT_SCHEMAS,
+    ENGINE_EQUITY,
+    ENGINE_TRADES,
+    EQUITY,
+    require_states,
+)
 from fefat.market.engine_units import InstrumentParameters
 from fefat.market.store_files import parsed_json
 from fefat.strategy.signal_frame import require_column_types
@@ -25,6 +33,9 @@ ENGINE_TABLES = ("fills", "orders", "log", "costs", "trades", "trade_paths", "eq
 """The tables the engine gives for a run (`fefat_engine.run_signal_backtest`)."""
 RECORD_FILE = "run.json"
 _PARTIAL = ".partial"
+PARTIAL_KEPT = timedelta(days=1)
+"""How long a writer's folder is left before a later save removes it: a run writes for minutes,
+so one a day old was left by a writer killed before it finished."""
 _FIRST_SCHEMA_WITH_PATHS = 2
 """The artifact schema from which every run keeps its trades' paths (step 2.13)."""
 
@@ -115,8 +126,10 @@ def _equity_daily(equity: pl.DataFrame, capital: int) -> pl.DataFrame:
 def write_run(folder: Path, artifacts: Mapping[str, pl.DataFrame], record: RunRecord) -> None:
     """The run's artifacts and record in `folder`, written into a folder of this writer's own
     beside it and renamed into place once whole, so that a folder holds a whole run or none, a
-    writer never touches another's folder, and a run another process saved first is kept."""
+    writer never touches another's folder, and a run another process saved first is kept; the
+    folders a killed writer left beside it more than a day ago are removed first (step 5.3)."""
     folder.parent.mkdir(parents=True, exist_ok=True)
+    _remove_partials_left(folder.parent)
     partial = Path(tempfile.mkdtemp(prefix=f"{folder.name}.", suffix=_PARTIAL, dir=folder.parent))
     try:
         for name, frame in artifacts.items():
@@ -131,6 +144,25 @@ def write_run(folder: Path, artifacts: Mapping[str, pl.DataFrame], record: RunRe
             raise
 
 
+def _remove_partials_left(runs_dir: Path) -> None:
+    """Remove each writer's folder in `runs_dir` last changed more than `PARTIAL_KEPT` ago, which
+    only a writer killed before its rename leaves, since a writer removes its own on any error;
+    one another program holds open stays for the next save."""
+    left_before = time.time() - PARTIAL_KEPT.total_seconds()
+    for partial in runs_dir.glob(f"*{_PARTIAL}"):
+        try:
+            left = partial.stat().st_mtime < left_before
+        except OSError:  # renamed into place, or removed, since it was listed
+            continue
+        if left:
+            shutil.rmtree(partial, ignore_errors=True)
+
+
+class OtherEngineRunError(ValueError):
+    """A run another version of the engine, or of the artifacts' layout, saved, whose record
+    this engine does not read (`read_record`)."""
+
+
 class _WrittenBy(BaseModel):
     """The versions of the engine that wrote a record, read before the record itself."""
 
@@ -141,20 +173,21 @@ class _WrittenBy(BaseModel):
 
 def read_record(folder: Path) -> RunRecord:
     """The record of the run in `folder`, refused by name when another version of the engine
-    or of the artifacts' layout wrote it, since a record holds what its own versions' runs
-    produce; a run saved before step 2.13 has no trade paths, and its refusal says so."""
+    or of the artifacts' layout wrote it (`OtherEngineRunError`), since a record holds what its
+    own versions' runs produce; a run saved before step 2.13 has no trade paths, and its refusal
+    says so."""
     path = folder / RECORD_FILE
     content = path.read_bytes()
     written = parsed_json(_WrittenBy, content, str(path)).versions
     if written.engine != fefat_engine.ENGINE_VERSION:
-        raise ValueError(
+        raise OtherEngineRunError(
             f"Expected a run of engine version {fefat_engine.ENGINE_VERSION}, got one of version "
             f"{written.engine} in {folder}: run it again with this engine."
         )
     if written.artifact_schema != fefat_engine.ARTIFACT_SCHEMA_VERSION:
         without = written.artifact_schema < _FIRST_SCHEMA_WITH_PATHS
         reason = ", which has no trade paths" if without else ""
-        raise ValueError(
+        raise OtherEngineRunError(
             f"Expected a run of artifact schema {fefat_engine.ARTIFACT_SCHEMA_VERSION}, got one of "
             f"schema {written.artifact_schema} in {folder}{reason}: run it again with this engine."
         )
@@ -162,9 +195,11 @@ def read_record(folder: Path) -> RunRecord:
 
 
 def read_artifact(folder: Path, name: str) -> pl.DataFrame:
-    """The artifact `name` of the run in `folder`, refused unless it holds its columns."""
+    """The artifact `name` of the run in `folder`, refused unless it holds its columns, each
+    state among its words (`require_states`)."""
     if name not in ARTIFACT_SCHEMAS:
         raise ValueError(f"Expected an artifact ({', '.join(ARTIFACT_SCHEMAS)}), got {name!r}.")
     frame = pl.read_parquet(folder / f"{name}.parquet")
     require_column_types(frame, ARTIFACT_SCHEMAS[name], f"the {name} artifact's of {folder}")
+    require_states(frame, name, folder)
     return frame

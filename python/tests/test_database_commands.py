@@ -30,7 +30,7 @@ def test_db_upgrade_makes_the_database_under_fefat_home(
 
     assert code == 0
     assert database_file.is_file()
-    assert capsys.readouterr().out == f"Upgraded {database_file} to revision 0004.\n"
+    assert capsys.readouterr().out == f"Upgraded {database_file} to revision 0005.\n"
     with opened_database(database_file) as engine:
         assert "feature_versions" in inspect(engine).get_table_names()
 
@@ -71,12 +71,12 @@ def test_db_import_workspace_makes_the_database_and_indexes_what_the_sdk_saved(
 
     assert (empty, saved) == (0, 0)
     assert printed_empty == (
-        "Indexed 0 new feature versions, 0 new strategy versions, 0 new validation reports, and "
-        "0 new import profiles.\n"
+        "Indexed 0 new feature versions, 0 new strategy versions, 0 new validation reports, "
+        "0 new import profiles, and 0 new runs.\n"
     )
     assert capsys.readouterr().out == (
-        "Indexed 1 new feature version, 0 new strategy versions, 0 new validation reports, and "
-        "0 new import profiles.\n"
+        "Indexed 1 new feature version, 0 new strategy versions, 0 new validation reports, "
+        "0 new import profiles, and 0 new runs.\n"
     )
 
 
@@ -90,8 +90,8 @@ def test_db_import_workspace_indexes_the_strategy_versions_a_notebook_saved(
 
     assert code == 0
     assert capsys.readouterr().out == (
-        "Indexed 0 new feature versions, 1 new strategy version, 0 new validation reports, and "
-        "0 new import profiles.\n"
+        "Indexed 0 new feature versions, 1 new strategy version, 0 new validation reports, "
+        "0 new import profiles, and 0 new runs.\n"
     )
 
 
@@ -113,7 +113,7 @@ def test_db_import_workspace_rebuild_indexes_the_files_as_they_are(
     assert "fefat db import-workspace --rebuild" in refusal
     assert capsys.readouterr().out == (
         "Rebuilt the index from the files as they are: 1 feature version, 0 strategy versions, "
-        "0 validation reports, and 0 import profiles.\n"
+        "0 validation reports, 0 import profiles, and 0 runs.\n"
     )
 
 

@@ -20,6 +20,7 @@ counted, such as the profit factor of a run without a losing trade.
   Python by `fefat.backtest.fidelity_check`, none for a run without days finer than a minute.
 """
 
+from collections.abc import Mapping
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -27,10 +28,10 @@ from typing import Annotated, Literal
 
 import fefat_engine
 import polars as pl
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
 from fefat.market.fidelity import FidelityEra, FidelityText
-from fefat.market.schema import FrozenModel
+from fefat.market.schema import FrozenModel, frozen
 from fefat.reference.orders import OrderRole, PositionSide
 from fefat.strategy.exits import Weekday
 
@@ -109,13 +110,13 @@ Hour = Annotated[int, Field(ge=0, le=23)]
 class Breakdowns(FrozenModel):
     """A run's trades by the role of the fill that left them flat (F-TAG-01), the hour of their
     entry's fill in the exchange's time zone, the weekday and the year of their entry's trade
-    date, and the fidelity their entry filled on."""
+    date, and the fidelity their entry filled on, each held read-only (`frozen`)."""
 
-    exit_reason: dict[OrderRole, Outcome]
-    hour: dict[Hour, Outcome]
-    weekday: dict[Weekday, Outcome]
-    year: dict[int, Outcome]
-    fidelity: dict[FidelityText, Outcome]
+    exit_reason: Annotated[Mapping[OrderRole, Outcome], AfterValidator(frozen)]
+    hour: Annotated[Mapping[Hour, Outcome], AfterValidator(frozen)]
+    weekday: Annotated[Mapping[Weekday, Outcome], AfterValidator(frozen)]
+    year: Annotated[Mapping[int, Outcome], AfterValidator(frozen)]
+    fidelity: Annotated[Mapping[FidelityText, Outcome], AfterValidator(frozen)]
 
 
 class ScriptInputs(FrozenModel):

@@ -5,23 +5,27 @@ applied, its fee table, the rolls it crossed, the config the engine read, the wa
 of its end, and, from step 2.11, its metrics; from step 2.12, the fidelity era of each trade
 date, in place of the fills by fidelity; from step 2.13, the mix of its trades' path
 fidelities; from step 3.2, the era of each trade date's signal bars, the level each was built
-from; and, from step 3.7, the version of each feature its strategy's slots read."""
+from; and, from step 3.7, the version of each feature its strategy's slots read. From step 5.3 its
+mappings are held read-only at every depth (`frozen`), so that a record read back says what its
+`run.json` says."""
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated
 
 import fefat_engine
-from pydantic import Field, JsonValue
+from pydantic import AfterValidator, Field, JsonValue
 
 from fefat.backtest.metrics import Metrics
 from fefat.backtest.run_config import AppliedRunConfig
 from fefat.market.fidelity import FidelityEra, FidelityText
-from fefat.market.instruments import Instrument, InstrumentKind
+from fefat.market.instruments import Currency, Instrument, InstrumentKind
 from fefat.market.layout import DatasetOrigin
 from fefat.market.roll_decisions import RollReason
-from fefat.market.schema import FrozenModel
+from fefat.market.schema import FrozenDocument, FrozenModel, frozen
 from fefat.market.snapshot import Sha256
+from fefat.strategy.signal_strategy import StrategyPin
 
 Hash = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 """A BLAKE3 hash as 64 lower-case hexadecimal digits."""
@@ -53,17 +57,19 @@ class FeaturePin(FrozenModel):
     name: str
     version: int = Field(ge=1)
     hash: Sha256
-    parameters: dict[str, JsonValue]
+    parameters: Annotated[Mapping[str, JsonValue], AfterValidator(frozen)]
 
 
 class StrategyRecord(FrozenModel):
     """The strategy's specification as its document writes it, the names of its features'
     columns, and, from step 3.7, the version of each feature its slots read, none for a plain
-    expression or in a record written before."""
+    expression or in a record written before; and, from step 5.3, the saved strategy version it
+    was built from, with its parameters, none for a strategy written in a notebook."""
 
-    spec: dict[str, Any]
+    spec: FrozenDocument
     features: tuple[str, ...]
     feature_versions: tuple[FeaturePin, ...] = ()
+    saved_version: StrategyPin | None = None
 
 
 class Window(FrozenModel):
@@ -78,7 +84,7 @@ class InstrumentRecord(FrozenModel):
 
     root: str
     kind: InstrumentKind
-    currency: str
+    currency: Currency
     tick_size: Decimal
     point_value: Decimal
     lot_step: Decimal
@@ -88,7 +94,7 @@ class InstrumentRecord(FrozenModel):
         return cls(
             root=instrument.root,
             kind=instrument.kind,
-            currency=str(instrument.currency),
+            currency=instrument.currency,
             tick_size=instrument.tick_size,
             point_value=instrument.point_value,
             lot_step=instrument.lot_step,
@@ -165,7 +171,7 @@ class RunRecord(FrozenModel):
     config: AppliedRunConfig
     fee_table: FeeTableRecord
     rolls: tuple[RollRecord, ...]
-    engine_config: dict[str, Any]
+    engine_config: FrozenDocument
     fidelity_eras: tuple[FidelityEra, ...] = Field(min_length=1)
     path_fidelities: tuple[PathFidelity, ...]
     warnings: tuple[str, ...]

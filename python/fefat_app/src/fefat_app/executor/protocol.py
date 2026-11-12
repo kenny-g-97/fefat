@@ -13,11 +13,14 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from fefat_app.execution import (
+    BacktestOutput,
     ExecutionFailed,
     ExecutionKind,
     ExecutionOutcome,
     FeatureSaveOutput,
     PythonSnippetOutput,
+    RefusedCode,
+    RunLookupOutput,
     SeriesPoint,
     SeriesStatistics,
     StrategySaveOutput,
@@ -40,7 +43,8 @@ SERIES_SCHEMA = pl.Schema({"output": pl.String, "ts_close": pl.Int64, "value": p
 END_OF_EXECUTION = "\n"
 """The line the runner prints once an execution's result is in its folder."""
 ERROR_CHARS = 4000
-"""How much of a failure's traceback its result keeps, from its end."""
+"""How much of a failure's traceback its result keeps, from its end, and of a refusal of the
+trader's code, from its start."""
 
 
 class RunnerOutputError(ValueError):
@@ -70,7 +74,9 @@ class RunnerSucceeded(BaseModel):
         | PythonSnippetOutput
         | StrategyValidationOutput
         | StrategySaveOutput
-        | FeatureSaveOutput,
+        | FeatureSaveOutput
+        | RunLookupOutput
+        | BacktestOutput,
         Field(discriminator="kind"),
     ]
 
@@ -85,6 +91,12 @@ def failed_with(failure: BaseException, stdout_tail: str) -> ExecutionFailed:
     of what a snippet printed before."""
     trace = "".join(traceback.format_exception(failure))
     return ExecutionFailed(error=trace[-ERROR_CHARS:], stdout_tail=stdout_tail)
+
+
+def refused_code(message: str, line: int | None) -> RefusedCode:
+    """The SDK's refusal of the trader's code in `message`, at the code's `line` where it has
+    one, which the runner answers rather than failing (steps 5.2 and 5.3)."""
+    return RefusedCode(line=line, message=message[:ERROR_CHARS])
 
 
 def write_result_file(folder: Path, result: RunnerResult) -> None:

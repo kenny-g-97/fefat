@@ -25,12 +25,14 @@ from polars.testing import assert_frame_equal
 import fefat as ff
 import gen_fixtures
 from fefat.config import resolve_paths
-from fefat.features import InstrumentInput, cache_evaluation
+from fefat.features import InstrumentInput, cache, cache_evaluation, cache_index
+from fefat.features.cache_evaluation import evaluated_features
 from fefat.features.cache_index import (
     PrunedCache,
     prune_feature_cache,
     read_cache_index,
     write_cache_index,
+    write_merged_index,
 )
 from fefat.features.examples import atr, in_session_window, rsi
 from fefat.features.runtime import FeatureGraph
@@ -808,3 +810,107 @@ def test_the_refusal_of_a_feature_remembering_more_quotes_no_value() -> None:
     message = str(refused.value)
     assert re.search(r"two values apart by \d\.\de-\d+ of the larger", message), message
     assert not re.search(r"\d{7,}", message), message
+
+
+def test_two_computations_of_one_folder_keep_each_others_partitions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.3 (from step 3.3): backtest jobs compute features in several processes at once; a
+    # computation of 2026-03-06 that writes its index while one of 2026-03-09 evaluates, which
+    # read the folders' indexes before it, must not lose its partition to the second's write.
+    store_with("trades", "ohlcv-1s", "ohlcv-1m")
+    meanwhile: list[str] = []
+
+    def another_process_writing_first(*arguments: Any, **named: Any) -> Any:
+        if not meanwhile:
+            meanwhile.append("2026-03-06")
+            ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-06").collect()
+        return evaluated_features(*arguments, **named)
+
+    monkeypatch.setattr(cache, "evaluated_features", another_process_writing_first)
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-09", "2026-03-09").collect()
+
+    folders = sorted(cache_folder().glob("synthetic/ES/5m/*"))
+    indexes = [read_cache_index(folder) for folder in folders]
+    assert meanwhile == ["2026-03-06"]
+    assert len(folders) == 2
+    assert [None if index is None else sorted(index.partitions) for index in indexes] == [
+        ["2026-03-06", "2026-03-09"]
+    ] * 2
+
+
+def test_a_renewed_last_use_leaves_a_partition_another_process_computed_again() -> None:
+    # Step 5.3: a computation that only read a partition renews its last use; where another
+    # process computed it again under another key meanwhile, its entry stays the other's.
+    store_with("ohlcv-1m")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    (folder,) = cache_folder().glob("synthetic/ES/5m/bars")
+    read_before = read_cache_index(folder)
+    assert read_before is not None
+    computed_again = read_before.partitions["2026-03"].model_copy(update={"key": "a" * 64})
+    write_cache_index(folder, read_before.with_partitions({"2026-03": computed_again}))
+    later = datetime.now(UTC) + timedelta(hours=2)
+    renewed = read_before.partitions["2026-03"].model_copy(update={"last_used": later})
+
+    write_merged_index(folder, read_before, written={}, renewed={"2026-03": renewed})
+
+    after = read_cache_index(folder)
+    assert after is not None
+    assert after.partitions == {"2026-03": computed_again}
+
+
+def test_pruning_removes_what_a_write_left_a_day_ago_and_passes_over_one_under_way() -> None:
+    # Step 5.3 (the code review of the Phase 3 exit): a folder whose first write never wrote its
+    # index, and the `.tmp` files a refused write leaves, were never pruned; a write under way
+    # may hold them for a moment, so only what is a day old goes.
+    store_with("ohlcv-1m")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    (feature,) = cache_folder().glob("synthetic/ES/5m/rsi-*")
+    two_days_ago = time.time() - timedelta(days=2).total_seconds()
+    left, under_way = feature.with_name("rsi-left"), feature.with_name("rsi-under-way")
+    for folder in (left, under_way):
+        folder.mkdir()
+        (folder / "2026-03.parquet").write_bytes(b"a partition written without its index")
+    left_tmp, writing_tmp = feature / "2026-03.k1.tmp", feature / "2026-03.k2.tmp"
+    for path in (left_tmp, writing_tmp):
+        path.write_bytes(b"half a partition")
+    for path in (left / "2026-03.parquet", left_tmp):
+        os.utime(path, (two_days_ago, two_days_ago))
+
+    pruned = prune_feature_cache(
+        resolve_paths(os.environ).cache_dir, timedelta(days=30), datetime.now(UTC)
+    )
+
+    assert not left.exists()
+    assert (under_way / "2026-03.parquet").is_file()
+    assert not left_tmp.exists()
+    assert writing_tmp.is_file()
+    assert (pruned.removed, pruned.kept) == (1, 2)
+
+
+def test_pruning_passes_over_a_file_gone_while_it_reads_its_folder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.3 (its code review): a file a writer renames, or another prune removes, between
+    # pruning's look at its time and its size must not stop the prune.
+    store_with("ohlcv-1m")
+    ff.features.compute({"rsi": rsi(n=7)}, "ES", "5m", "2026-03-06", "2026-03-09").collect()
+    (feature,) = cache_folder().glob("synthetic/ES/5m/rsi-*")
+    left = feature.with_name("rsi-left")
+    left.mkdir()
+    (left / "2026-03.parquet").write_bytes(b"a partition written without its index")
+    written_before = cache_index._written_before
+
+    def gone_once_read(path: Path, instant: datetime) -> bool:
+        before = written_before(path, instant + timedelta(days=2))
+        path.unlink(missing_ok=True)
+        return before
+
+    monkeypatch.setattr(cache_index, "_written_before", gone_once_read)
+
+    pruned = prune_feature_cache(
+        resolve_paths(os.environ).cache_dir, timedelta(days=30), datetime.now(UTC)
+    )
+
+    assert not left.exists()
+    assert pruned.removed == 0

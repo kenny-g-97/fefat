@@ -194,6 +194,30 @@ fn a_config_writes_the_json_it_reads() {
 }
 
 #[test]
+fn a_saved_versions_parameter_count_joins_the_config_and_no_other_config_changes() {
+    // Step 5.3: the robustness summary counts a saved version's declared parameters, so the run
+    // key, which hashes the config as serde writes it, covers the count; a config without one
+    // writes the bytes it wrote before, so every earlier run keeps its key.
+    let config: RunConfig = serde_json::from_str(CONFIG).unwrap();
+    let counted_text = CONFIG.replacen('{', r#"{"declared_parameters": 2, "#, 1);
+
+    let counted: RunConfig = serde_json::from_str(&counted_text).unwrap();
+    let written = serde_json::to_string(&counted).unwrap();
+
+    assert!(
+        !serde_json::to_string(&config)
+            .unwrap()
+            .contains("declared_parameters")
+    );
+    assert!(written.ends_with(r#","declared_parameters":2}"#));
+    assert_eq!(
+        serde_json::from_str::<RunConfig>(&written).unwrap(),
+        counted
+    );
+    assert_ne!(counted, config);
+}
+
+#[test]
 fn a_time_of_day_hashes_as_its_count_of_nanoseconds_under_its_own_type() {
     // A feature such as the bar's local close is a time of day, Arrow's Time64(ns).
     let nanoseconds = vec![30_600_000_000_000, 54_000_000_000_000];

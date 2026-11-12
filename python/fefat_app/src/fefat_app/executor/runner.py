@@ -17,12 +17,15 @@ from typing import TextIO
 
 from fefat_app.execution import (
     EXECUTION_SPEC,
+    BacktestSpec,
     ExecutionProgress,
     ExecutionSpec,
     FeaturePreviewSpec,
     ProgressReport,
     PythonSnippetSpec,
+    RunLookupSpec,
 )
+from fefat_app.executor.backtests import backtest_output, run_lookup_output
 from fefat_app.executor.preview import preview
 from fefat_app.executor.protocol import (
     END_OF_EXECUTION,
@@ -72,6 +75,10 @@ def _ran(spec: ExecutionSpec, folder: Path, report: ProgressReport) -> RunnerRes
         return RunnerSucceeded(output=preview(spec, folder, report))
     if isinstance(spec, PythonSnippetSpec):
         return snippet(spec, report)
+    if isinstance(spec, RunLookupSpec):
+        return RunnerSucceeded(output=run_lookup_output(spec))
+    if isinstance(spec, BacktestSpec):
+        return RunnerSucceeded(output=backtest_output(spec, report))
     return RunnerSucceeded(output=library_output(spec))
 
 

@@ -25,9 +25,9 @@ from fefat.config import resolve_paths
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.models import JobRow
 from fefat_app.execution import ExecutionLimits, PythonSnippetSpec
+from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus, job_stream
 from fefat_app.jobs.dispatcher import LocalDispatcher, _made_before
 from fefat_app.jobs.worker import JobTimings
-from fefat_app.ports import Job, JobEnd, JobKind, JobStatus, job_stream
 from local_server import SettableClock
 from write_lock import hung_inside_a_write
 

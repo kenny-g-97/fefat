@@ -9,13 +9,15 @@ lists the cache and `prune_feature_cache` removes the partitions unused for a wh
 
 The cache is `<FEFAT_HOME>/cache/features/<provider>/<symbol>/<timeframe>/`, a folder `bars` of
 the signal bars and a folder `<feature>-<key>` for each feature with its parameters and the
-features it reads (`fefat.features.cache`). Each index is written whole in one step; two
-processes writing one folder at once keep the index of the one that writes last, and a partition
-that index leaves out is computed again when it is next asked for.
+features it reads (`fefat.features.cache`). Each index is written whole in one step; from step
+5.3 a computation reads it again as it writes it, laying its own partitions over those another
+process wrote meanwhile (`write_merged_index`), and a partition one written in the moment between
+leaves out is computed again when it is next asked for.
 """
 
 import os
-from datetime import date, datetime, timedelta
+from collections.abc import Mapping
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -35,6 +37,9 @@ BARS_FOLDER_NAME = "bars"
 """The folder of a timeframe's signal bars, which every feature of it reads."""
 KEY_METADATA = "fefat_key"
 """The entry of a partition file's own metadata that holds the key it was computed under."""
+WRITE_KEPT = timedelta(days=1)
+"""How long pruning leaves a file no index names yet, which a write under way may hold: a
+computation writes its partitions, then their index, within minutes (step 5.3)."""
 FEATURE_CACHE_COLUMNS = pl.Schema(
     {
         "provider": pl.String,
@@ -115,6 +120,30 @@ def write_cache_index(folder: Path, index: FeatureCacheIndex) -> None:
     write_atomically(folder / INDEX_FILE_NAME, json_writer(index))
 
 
+def write_merged_index(
+    folder: Path,
+    read_before: FeatureCacheIndex,
+    written: Mapping[str, CachedPartition],
+    renewed: Mapping[str, CachedPartition],
+) -> None:
+    """Write the folder's index as it is now, which another process may have written since
+    `read_before` was read, with `written`, the partitions a computation wrote, laid over its
+    partitions, and `renewed`, those it only read with their last use renewed, where the index
+    still holds their key; nothing where that changes nothing (step 5.3). Two processes
+    computing one folder then keep each other's partitions, but for one written in the moment
+    between this read and this write, which a computation computes again."""
+    now = readable_index(folder)
+    base = read_before if now is None else now
+    partitions = {**base.partitions, **written}
+    for name, partition in renewed.items():
+        held = partitions.get(name)
+        if held is not None and held.key == partition.key:
+            partitions[name] = partition
+    if now is not None and partitions == now.partitions:
+        return
+    write_cache_index(folder, base.with_partitions(partitions))
+
+
 def partition_dates(name: str) -> tuple[date, date]:
     """The first and last day of a partition: its month's, or its one trade date."""
     if len(name) == len("2026-03"):
@@ -179,13 +208,56 @@ def prune_feature_cache(cache_folder: Path, older_than: timedelta, now: datetime
     """Remove from the feature cache in `cache_folder` each partition last used `older_than`
     or longer before `now`, each file of a folder its index does not name, all of a folder whose
     index this code cannot read, and a folder left without partitions, so that what remains is
-    what was used since; a file another program holds open stays, named in `held`."""
+    what was used since; a file another program holds open stays, named in `held`. From step
+    5.3 a folder without an index, whose first write never wrote it, and the `.tmp` files a
+    refused write leaves, lose what is older than `WRITE_KEPT`, a write under way holding them
+    for a moment."""
+    features = cache_folder / FEATURE_CACHE_FOLDER_NAME
+    written_before = now - WRITE_KEPT
     pruned = PrunedCache(0, 0, 0, 0, ())
-    folders = sorted((cache_folder / FEATURE_CACHE_FOLDER_NAME).glob(f"*/*/*/*/{INDEX_FILE_NAME}"))
-    for path in folders:
-        pruned = _pruned(path.parent, now - older_than, pruned)
-    _remove_empty_folders(cache_folder / FEATURE_CACHE_FOLDER_NAME)
-    return pruned
+    for folder in sorted(path for path in features.glob("*/*/*/*") if path.is_dir()):
+        if (folder / INDEX_FILE_NAME).is_file():
+            pruned = _pruned(folder, now - older_than, pruned)
+        else:
+            pruned = _pruned_without_index(folder, written_before, pruned)
+    held: list[Path] = []
+    for path in sorted(features.rglob("*.tmp")):
+        if _written_before(path, written_before):
+            _unlinked(path, held)
+    _remove_empty_folders(features)
+    return pruned._replace(held=(*pruned.held, *held))
+
+
+def _pruned_without_index(
+    folder: Path, written_before: datetime, pruned: PrunedCache
+) -> PrunedCache:
+    """`pruned` with the partitions of a folder without an index removed where they were written
+    before `written_before`, which no index will name."""
+    held: list[Path] = []
+    removed, removed_bytes = 0, 0
+    for path in sorted(folder.glob("*.parquet")):
+        if not _written_before(path, written_before):
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:  # renamed or removed since it was listed
+            continue
+        if _unlinked(path, held):
+            removed, removed_bytes = removed + 1, removed_bytes + size
+    return pruned._replace(
+        removed=pruned.removed + removed,
+        removed_bytes=pruned.removed_bytes + removed_bytes,
+        held=(*pruned.held, *held),
+    )
+
+
+def _written_before(path: Path, instant: datetime) -> bool:
+    """Whether the file was last written before `instant`; not where it is gone since it was
+    listed, as a write under way renames its own."""
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime, UTC) < instant
+    except OSError:
+        return False
 
 
 def _pruned(folder: Path, used_after: datetime, pruned: PrunedCache) -> PrunedCache:

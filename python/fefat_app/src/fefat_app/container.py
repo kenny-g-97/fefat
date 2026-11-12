@@ -19,6 +19,7 @@ from fefat_app.database.access_records import AccessTables
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
 from fefat_app.database.preferences import PreferenceRows
+from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import opened_database, upgrade_schema
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.jobs.dispatcher import LocalDispatcher
@@ -29,6 +30,7 @@ from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.features import SavedFeatures
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
+from fefat_app.services.runs import Runs
 from fefat_app.services.strategies import SavedStrategies
 
 
@@ -38,8 +40,8 @@ class Container:
     `FEFAT_HOME` and the data, the credential store, the logins, the API tokens, the trader's
     preferences, the jobs, and their dispatcher, which the server starts and closes, the
     executor of the trader's code, whose warm runner `opened_container` ends, the data
-    catalog over the store in the data folder (step 5.1), and the library's strategies and
-    features over their index (step 5.2)."""
+    catalog over the store in the data folder (step 5.1), the library's strategies and
+    features over their index (step 5.2), and the runs (step 5.3)."""
 
     settings: Settings
     paths: FefatPaths
@@ -53,6 +55,7 @@ class Container:
     catalog: MarketCatalog
     strategies: SavedStrategies
     features: SavedFeatures
+    runs: Runs
 
 
 def credential_store() -> CredentialStore:
@@ -67,8 +70,8 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
     clock in UTC, the jobs' process pool of `config.toml`'s size, the executor with its warm
     runner for the previews, one for the workspace, neither starting a process before its first
     job or execution, and the store of the data folder, built once, which holds its folder
-    alone, so that it sees every file an import writes (D-93); the library's services share the
-    executor and the index of the workspace's versions (step 5.2)."""
+    alone, so that it sees every file an import writes (D-93); the library's services and the
+    runs share the executor and the index of the workspace's versions (steps 5.2 and 5.3)."""
     records = AccessTables(engine)
     clock = partial(datetime.now, UTC)
     job_records = JobTables(engine)
@@ -91,6 +94,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir, jobs),
         strategies=SavedStrategies(library, executor, paths.strategies_dir),
         features=SavedFeatures(library, executor, paths.features_dir),
+        runs=Runs(RunTables(engine, paths), library, executor, jobs, paths.strategies_dir, clock),
     )
 
 

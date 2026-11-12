@@ -5,7 +5,8 @@
 //! and rolls across (step 2.9), its fee table, a perpetual's funding rates, and a future's rolls,
 //! each left out where it has none. `fefat.reference.run_documents` writes it as JSON. The run
 //! key hashes it as serde writes it (`02` §4), so that two runs that differ in a setting have two
-//! keys.
+//! keys; from step 5.3 it also holds the parameter count of a saved strategy version, which the
+//! engine never reads and the run key covers.
 
 use fefat_core::costs::{FeeRate, FeeSchedule, FeeTable, FeeTableError, FundingRate, Rate};
 use fefat_core::fidelity::Fidelity;
@@ -41,6 +42,11 @@ pub struct RunConfig {
     /// A future's rolls, in the order of their opens.
     #[serde(default)]
     rolls: Vec<RollConfig>,
+    /// The parameters a saved strategy version declares, which its metrics' robustness summary
+    /// counts (step 5.3); the engine reads none of it, and a config without one writes the
+    /// JSON it wrote before, so that the run key covers the count and no other run's key moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    declared_parameters: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

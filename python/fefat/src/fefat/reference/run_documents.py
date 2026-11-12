@@ -27,7 +27,7 @@ from fefat.reference.settings import RunSettings
 from fefat.reference.tape import FundingRate
 from fefat.reference.time_rules import with_time_rules
 from fefat.reference.units import PRICE_DECIMALS, InstrumentParameters, day_number
-from fefat.strategy import exits as rules
+from fefat.strategy.signal_frame import rule_features
 from fefat.strategy.spec import StrategySpec
 
 TIME_RULE_COLUMNS = ("flat_by", "in_window", "session_end", "week_end")
@@ -188,18 +188,9 @@ def _blackout(spec: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:
 
 def exit_features(spec: StrategySpec) -> dict[str, str]:
     """The features the exit plan's rules read, each under the name of its rule's column:
-    `stop_feature`, `target_feature_1` to `target_feature_3`, and `trail_feature`."""
-    execution = spec.execution
-    named: dict[str, str] = {}
-    if isinstance(execution.stop, rules.AtrStop):
-        named["stop_feature"] = execution.stop.feature
-    for number, target in enumerate(execution.targets, start=1):
-        if isinstance(target.price, rules.AtrTarget):
-            named[f"target_feature_{number}"] = target.price.feature
-    trailing = execution.trailing
-    if trailing is not None and isinstance(trailing.by, rules.AtrTrail):
-        named["trail_feature"] = trailing.by.feature
-    return named
+    `stop_feature`, `target_feature_1` to `target_feature_3`, and `trail_feature`
+    (`fefat.strategy.signal_frame.rule_features`, which the strategy's checks share)."""
+    return rule_features(spec.execution)
 
 
 def _feature_columns(spec: StrategySpec, frame: pl.DataFrame) -> list[pl.Expr]:

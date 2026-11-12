@@ -24,7 +24,7 @@ from fefat_app.execution import (
     StrategyValidationSpec,
     ValidStrategy,
 )
-from fefat_app.executor.protocol import ERROR_CHARS
+from fefat_app.executor.protocol import refused_code
 
 
 def library_output(spec: LibrarySpec) -> LibraryOutput:
@@ -40,7 +40,7 @@ def _validated(code: str) -> ValidStrategy | RefusedCode:
     try:
         definition = ff.strategy.from_source(code)
     except StrategyCodeError as refused:
-        return _refused(str(refused), refused.line)
+        return refused_code(str(refused), refused.line)
     strategy = definition.with_defaults
     return ValidStrategy(
         instrument=strategy.instrument,
@@ -58,9 +58,9 @@ def _strategy_saved(spec: StrategySaveSpec) -> SavedVersion | RefusedCode:
             spec.name, spec.code, hypothesis=spec.hypothesis, changelog=spec.changelog
         )
     except StrategyCodeError as refused:
-        return _refused(str(refused), refused.line)
+        return refused_code(str(refused), refused.line)
     except ValueError as refused:
-        return _refused(str(refused), None)
+        return refused_code(str(refused), None)
     return SavedVersion(name=saved.name, version=saved.version)
 
 
@@ -70,7 +70,7 @@ def _feature_saved(spec: FeatureSaveSpec) -> SavedVersion | RefusedCode:
     try:
         saved = ff.features.save(_feature_of(spec))
     except (Exception, SystemExit) as refused:
-        return _refused(_described(refused), _feature_line(refused))
+        return refused_code(_described(refused), _feature_line(refused))
     return SavedVersion(name=saved.name, version=saved.version)
 
 
@@ -101,7 +101,3 @@ def _described(error: BaseException) -> str:
     if isinstance(error, ValueError):
         return str(error)
     return f"{type(error).__name__}: {error}"
-
-
-def _refused(message: str, line: int | None) -> RefusedCode:
-    return RefusedCode(line=line, message=message[:ERROR_CHARS])

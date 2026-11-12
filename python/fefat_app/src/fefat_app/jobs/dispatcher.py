@@ -19,8 +19,9 @@ from sqlalchemy.exc import OperationalError
 
 from fefat.config import FefatPaths
 from fefat.market.calendar import counted
+from fefat_app.job_models import Job, JobStatus
 from fefat_app.jobs.worker import JobTimings, run_job
-from fefat_app.ports import Clock, Job, JobRecords, JobStatus
+from fefat_app.ports import Clock, JobRecords
 
 LOG = logging.getLogger("fefat_app.jobs")
 MOST_WORKERS = 61
@@ -203,8 +204,9 @@ def _kill_worker(worker_pid: int, started_at: datetime) -> None:
 
     shortcut: the pool marks itself broken when one of its workers ends, ending the others, whose
     jobs the reaper queues again with an attempt spent, so that ends of other jobs' workers can
-    fail a job that never misbehaved; one process per job when step 5.3 runs backtests side by
-    side (`BACKLOG.md`)."""
+    fail a job that never misbehaved; one process per job at step 13.2 (`BACKLOG.md`), a
+    backtest's runner being stopped by its own worker at a cancel (D-91), so that a worker ends
+    here only when it hangs."""
     for worker in multiprocessing.active_children():
         if worker.pid == worker_pid and _made_before(worker_pid, started_at):
             worker.kill()
