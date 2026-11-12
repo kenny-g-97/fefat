@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { isSyncing, syncsUnderWay } from "./catalog"
+import { endedSyncs, isSyncing, syncEndedSince, syncsUnderWay } from "./catalog"
 import type { Job } from "./jobs"
 
 function aSync(id: string, status: Job["status"], root: string | null): Job {
@@ -22,6 +22,29 @@ function aSync(id: string, status: Job["status"], root: string | null): Job {
     finished_at: null,
   }
 }
+
+describe("syncEndedSince", () => {
+  it("tells of a sync that ended between two reads of the jobs, seen running or not", () => {
+    const older = aSync("1", "succeeded", "ES")
+    const ended = aSync("2", "succeeded", "MES")
+    const before = endedSyncs([older])
+
+    expect(syncEndedSince(before, endedSyncs([ended, older]))).toBe(true)
+    expect(
+      syncEndedSince(
+        endedSyncs([aSync("2", "running", "MES"), older]),
+        endedSyncs([ended, older])
+      )
+    ).toBe(true)
+    expect(syncEndedSince(before, endedSyncs([older]))).toBe(false)
+    expect(
+      syncEndedSince(endedSyncs([ended, older]), endedSyncs([ended]))
+    ).toBe(false)
+    expect(
+      syncEndedSince(before, endedSyncs([{ ...ended, kind: "demo" }, older]))
+    ).toBe(false)
+  })
+})
 
 describe("syncsUnderWay", () => {
   it("covers the roots of the queued and running syncs alone", () => {

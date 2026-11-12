@@ -1,3 +1,4 @@
+import { type Timeframe, timeframe, timeframeSeconds } from "@/api/bar-windows"
 import type { MonthCoverage, StoredDataset } from "@/api/catalog"
 import { formatCount } from "@/ui/figures"
 
@@ -15,6 +16,12 @@ const UNITS: Readonly<Record<string, string>> = {
   m: "minute",
   h: "hour",
   d: "day",
+}
+const SECONDS: Readonly<Record<string, number>> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86_400,
 }
 
 /** `datasets` grouped by their provider, each provider once, in the order the API lists them. */
@@ -44,6 +51,36 @@ export function fidelityLabel(fidelity: string): string {
     )
   }
   return `${parts[1]}-${UNITS[parts[2]]} bars`
+}
+
+/** The timeframe a provider's chart opens at: five minutes, or, where its finest bars are
+ * longer, the first the chart offers that a whole number of them builds; five minutes still
+ * where none does, which the chart then refuses in the SDK's words. */
+export function chartTimeframe(datasets: readonly StoredDataset[]): Timeframe {
+  const finest = Math.min(
+    ...datasets.map((dataset) => fidelitySeconds(dataset.fidelity))
+  )
+  const opening = timeframeSeconds("5m")
+  const built = timeframe.options.find(
+    (each) =>
+      timeframeSeconds(each) >= opening && timeframeSeconds(each) % finest === 0
+  )
+  return built === undefined ? "5m" : built
+}
+
+/** The seconds a bar of `fidelity` spans, one for prints, which build any timeframe. */
+function fidelitySeconds(fidelity: string): number {
+  if (fidelity === "trades" || fidelity === "tbbo") {
+    return 1
+  }
+  const parts = /^(\d+)([smhd])$/.exec(fidelity)
+  const unit = parts === null ? undefined : SECONDS[parts[2]]
+  if (parts === null || unit === undefined) {
+    throw new Error(
+      `Expected a fidelity such as trades or 1m, got ${JSON.stringify(fidelity)}.`
+    )
+  }
+  return Number(parts[1]) * unit
 }
 
 /** How `month` is held: every session with records, some, or none. */

@@ -264,6 +264,108 @@ test("the keys pan the focused chart to either end of what it loaded", async ({
     .toBeLessThan(1)
 })
 
+test("a chart without a provider asks every window of the provider its span names", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's engine review: each window asked for the recommended provider again, so an
+  // import between two windows could join one provider's bars to another's.
+  const providers: (string | null)[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === "/v1/market/bars") {
+      providers.push(url.searchParams.get("provider"))
+    }
+  })
+
+  await page.goto("/data/chart?instrument=ES")
+  await chartReady(page)
+
+  expect(providers.length).toBeGreaterThan(0)
+  expect(new Set(providers)).toEqual(new Set(["synthetic"]))
+})
+
+test("a provider chosen gives way to the recommended one again", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's code review: Recommended was the empty choice's placeholder alone, so once a
+  // provider was chosen nothing led back to the catalog's recommended source.
+  const catalog = z
+    .object({
+      products: z.array(
+        z.looseObject({
+          datasets: z.array(z.looseObject({ root: z.string() })),
+        })
+      ),
+    })
+    .loose()
+    .parse(await (await page.request.get("/v1/catalog")).json())
+  const withSecond = {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      datasets: product.datasets.flatMap((dataset) =>
+        dataset.root === "MES"
+          ? [dataset, { ...dataset, provider: "nt8" }]
+          : [dataset]
+      ),
+    })),
+  }
+  await page.route("**/v1/catalog", (route) =>
+    route.fulfill({ json: withSecond })
+  )
+  await page.goto("/data/chart?instrument=MES")
+  const provider = page.getByLabel("Provider")
+
+  await provider.click()
+  await page.getByRole("option", { name: "nt8" }).click()
+  await expect(page).toHaveURL(/provider=nt8/)
+  await provider.click()
+  await page.getByRole("option", { name: "Recommended" }).click()
+
+  await expect(page).not.toHaveURL(/provider=/)
+  await expect(provider).toHaveText("Recommended")
+  await chartReady(page)
+})
+
+test("the readout keeps the bar under the pointer while older bars arrive", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/data/chart?instrument=MES&provider=synthetic")
+  await chartReady(page)
+  let release: () => void = () => undefined
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(
+    (url) => url.pathname === "/v1/market/bars",
+    async (route) => {
+      await held
+      await route.continue()
+    }
+  )
+  const chart = page.getByTestId("price-chart")
+  const box = await chart.boundingBox()
+  if (box === null) {
+    throw new Error("Expected the chart on the page, got none.")
+  }
+
+  await chart.focus()
+  await chart.press("Home")
+  await expect(page.getByTestId("chart-view")).toHaveAttribute(
+    "data-loading",
+    "true"
+  )
+  const time = page.getByTestId("readout-time")
+  const last = await time.textContent()
+  await page.mouse.move(box.x + box.width / 3, box.y + box.height / 2)
+  await expect(time).not.toHaveText(last ?? "")
+  const pointed = await time.textContent()
+  release()
+  await chartReady(page)
+
+  await expect(time).toHaveText(pointed ?? "")
+})
+
 test("the wheel zooms the chart, and scrolls a page too short for the chart", async ({
   loggedIn: page,
 }) => {

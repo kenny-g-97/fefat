@@ -81,26 +81,38 @@ export function isSyncing(cover: SyncCover, root: string): boolean {
 }
 
 /** Read the catalog and the datasets' quality again once a catalog sync among `jobs` ends,
- * since it wrote the reports both read. */
+ * since it wrote the reports both read: a sync another read of the jobs lists as ended for the
+ * first time, so that one which ended before any read saw it running counts too. */
 export function useCatalogAfterSyncs(jobs: readonly Job[] | undefined): void {
-  const active =
-    jobs === undefined
-      ? ""
-      : activeSyncs(jobs)
-          .map((job) => job.id)
-          .join(" ")
-  const before = useRef(active)
+  const ended = jobs === undefined ? undefined : endedSyncs(jobs)
+  const before = useRef(ended)
   useEffect(() => {
-    const now = new Set(active.split(" "))
-    const ended = before.current
-      .split(" ")
-      .some((id) => id !== "" && !now.has(id))
-    before.current = active
-    if (ended) {
+    if (ended === undefined) {
+      return
+    }
+    const earlier = before.current
+    before.current = ended
+    if (earlier !== undefined && syncEndedSince(earlier, ended)) {
       void queryClient.invalidateQueries({ queryKey: catalogQuery.queryKey })
       void queryClient.invalidateQueries({ queryKey: ["datasets"] })
     }
-  }, [active])
+  }, [ended])
+}
+
+/** The ids of the catalog syncs among `jobs` that ended, as one text a hook's dependency can
+ * compare from one read of the jobs to the next. */
+export function endedSyncs(jobs: readonly Job[]): string {
+  return jobs
+    .filter((job) => job.kind === "catalog_sync" && !isActive(job))
+    .map((job) => job.id)
+    .join(" ")
+}
+
+/** Whether `later`, a read of the ended syncs, lists one that `earlier` does not, which ended
+ * between the two reads. */
+export function syncEndedSince(earlier: string, later: string): boolean {
+  const known = new Set(earlier.split(" "))
+  return later.split(" ").some((id) => id !== "" && !known.has(id))
 }
 
 function activeSyncs(jobs: readonly Job[]): readonly Job[] {

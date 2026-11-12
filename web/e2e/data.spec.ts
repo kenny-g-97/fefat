@@ -85,7 +85,7 @@ test("the catalog's products, your data, the instruments, and the sources each s
   await expect(mes.getByTestId("dataset-row")).toContainText("1-minute bars")
   await expect(mes.getByRole("link", { name: "Chart" })).toHaveAttribute(
     "href",
-    "/data/chart?instrument=MES&provider=synthetic"
+    "/data/chart?instrument=MES&provider=synthetic&timeframe=5m"
   )
   await expect(rootBlock(page, "Catalog products", "MCL")).toContainText(
     "No data yet"

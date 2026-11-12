@@ -3,10 +3,33 @@ import type { MonthCoverage, StoredDataset } from "@/api/catalog"
 import {
   byProvider,
   byRoot,
+  chartTimeframe,
   fidelityLabel,
   monthHeld,
   monthLabel,
 } from "./datasets"
+
+describe("chartTimeframe", () => {
+  it("opens at five minutes, or at the first timeframe a provider's longer bars build", () => {
+    // Step 5.4's code review: a provider of hourly bars alone opened its chart at five minutes,
+    // which the SDK refuses.
+    const of = (...fidelities: string[]) =>
+      chartTimeframe(fidelities.map((each) => aDataset("p", "ES", each)))
+
+    expect([of("1m", "trades"), of("tbbo"), of("1s"), of("5m")]).toEqual([
+      "5m",
+      "5m",
+      "5m",
+      "5m",
+    ])
+    expect([of("1h"), of("2h"), of("1d"), of("1d", "30m")]).toEqual([
+      "1h",
+      "4h",
+      "1d",
+      "30m",
+    ])
+  })
+})
 
 function aDataset(
   provider: string,

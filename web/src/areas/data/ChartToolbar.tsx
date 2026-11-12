@@ -31,6 +31,16 @@ const PRICES: readonly Readonly<{ value: BarPrices; label: string }>[] = [
   { value: "raw", label: "Raw" },
 ]
 
+/** The provider choice that leaves the provider out, for the catalog's recommended source: no
+ * provider's folder name holds parentheses (`fefat.market.layout.FolderName`). */
+const RECOMMENDED = "(recommended)"
+
+type Option = Readonly<{ value: string; label: string }>
+
+function named(values: readonly string[]): readonly Option[] {
+  return values.map((value) => ({ value, label: value }))
+}
+
 /** The chart's choices (web/DESIGN.md, Patterns, Price chart): the instrument, a contract of it
  * to chart alone, the provider where several hold it, the timeframe, adjusted or raw prices for
  * a futures root's spliced series, and the chart's style. */
@@ -49,7 +59,7 @@ export function ChartToolbar({
         <Picker
           id="chart-instrument"
           value={root}
-          options={roots}
+          options={named(roots)}
           onChange={(value) =>
             onChoose({
               instrument: value,
@@ -70,10 +80,14 @@ export function ChartToolbar({
         <Choice id="chart-provider" label="Provider">
           <Picker
             id="chart-provider"
-            value={shown.provider === undefined ? "" : shown.provider}
-            placeholder="Recommended"
-            options={providers}
-            onChange={(value) => onChoose({ provider: value })}
+            value={shown.provider === undefined ? RECOMMENDED : shown.provider}
+            options={[
+              { value: RECOMMENDED, label: "Recommended" },
+              ...named(providers),
+            ]}
+            onChange={(value) =>
+              onChoose({ provider: value === RECOMMENDED ? undefined : value })
+            }
           />
         </Choice>
       )}
@@ -81,7 +95,7 @@ export function ChartToolbar({
         <Picker
           id="chart-timeframe"
           value={shown.timeframe}
-          options={timeframe.options}
+          options={named(timeframe.options)}
           onChange={(value) => onChoose({ timeframe: timeframe.parse(value) })}
         />
       </Choice>
@@ -117,21 +131,20 @@ function Choice({
 type PickerProps = Readonly<{
   id: string
   value: string
-  placeholder?: string
-  options: readonly string[]
+  options: readonly Option[]
   onChange: (value: string) => void
 }>
 
-function Picker({ id, value, placeholder, options, onChange }: PickerProps) {
+function Picker({ id, value, options, onChange }: PickerProps) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={id} className="w-36">
-        <SelectValue placeholder={placeholder} />
+        <SelectValue />
       </SelectTrigger>
       <SelectContent position="popper">
         {options.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
           </SelectItem>
         ))}
       </SelectContent>

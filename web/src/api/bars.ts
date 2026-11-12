@@ -1,5 +1,10 @@
 import { queryOptions } from "@tanstack/react-query"
-import type { BarColumns, BarWindow, Timeframe } from "./bar-windows"
+import {
+  type BarColumns,
+  type BarWindow,
+  joinedBars,
+  type Timeframe,
+} from "./bar-windows"
 import { api } from "./client"
 import { answer } from "./problems"
 import type { components } from "./schema"
@@ -89,16 +94,7 @@ async function windowBars(
     throw new Error(`Expected a page of ${series.instrument}'s bars, got none.`)
   }
   return {
-    bars: {
-      time: pages.flatMap((page) => page.bars.time),
-      trade_date: pages.flatMap((page) => page.bars.trade_date),
-      open: pages.flatMap((page) => page.bars.open),
-      high: pages.flatMap((page) => page.bars.high),
-      low: pages.flatMap((page) => page.bars.low),
-      close: pages.flatMap((page) => page.bars.close),
-      volume: pages.flatMap((page) => page.bars.volume),
-      contract: pages.flatMap((page) => page.bars.contract),
-    },
+    bars: joinedBars(pages.map((page) => page.bars).toReversed()),
     provider: first.provider,
     warnings: [...new Set(pages.flatMap((page) => page.warnings))],
   }

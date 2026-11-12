@@ -29,9 +29,9 @@ type ChartViewProps = Readonly<{
   label: string
 }>
 
-/** A series' chart: the trade dates its data holds, then its bars a window at a time, the
- * newest first and each older one as the view nears the oldest bar loaded; or why the store
- * cannot give the series, in the SDK's words. */
+/** A series' chart: the trade dates its data holds and the provider that holds them, then its
+ * bars a window at a time from that provider, the newest first and each older one as the view
+ * nears the oldest bar loaded; or why the store cannot give the series, in the SDK's words. */
 export function ChartView(props: ChartViewProps) {
   const span = useQuery(barsSpanQuery(props.series))
   if (span.status === "pending") {
@@ -50,7 +50,9 @@ export function ChartView(props: ChartViewProps) {
       </p>
     )
   }
-  return <ChartWindows {...props} held={span.data.held} />
+  // An import between two windows could change the recommended provider for the later one.
+  const series = { ...props.series, provider: span.data.provider }
+  return <ChartWindows {...props} series={series} held={span.data.held} />
 }
 
 function ChartWindows({

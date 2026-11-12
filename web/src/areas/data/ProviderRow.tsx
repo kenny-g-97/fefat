@@ -5,6 +5,7 @@ import { IdentityChip } from "@/ui/identity-chip"
 import { SectionFailure } from "@/ui/section-failure"
 import { TextLink } from "@/ui/text-link"
 import { CoverageStrip } from "./CoverageStrip"
+import { chartTimeframe } from "./datasets"
 import { DatasetTable } from "./DatasetTable"
 import { Findings } from "./Findings"
 
@@ -80,7 +81,11 @@ export function ProviderRow({
         )}
         <TextLink
           to="/data/chart"
-          search={{ instrument: root, provider }}
+          search={{
+            instrument: root,
+            provider,
+            timeframe: chartTimeframe(datasets),
+          }}
           className="ml-auto"
         >
           Chart
