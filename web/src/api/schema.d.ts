@@ -20,8 +20,8 @@ export interface paths {
         put?: never;
         /**
          * Create Api Token
-         * @description Make an API token, shown in this response alone; refused with 409 for a name a token
-         *     has or had.
+         * @description Make an API token, shown in this response alone; refused with 409 for a name a live
+         *     token has, while a revoked token's name is free.
          */
         post: operations["create_api_token_v1_api_tokens_post"];
         delete?: never;

@@ -82,7 +82,8 @@ class ApiToken(BaseModel):
 
 
 class TokenNameInUseError(ValueError):
-    """A new API token under a name a token has, or had before its revocation."""
+    """A new API token under a name a live token has; a revoked token's name is free (step
+    5.4)."""
 
     def __init__(self, name: str) -> None:
         super().__init__(f"Expected a new token name, got {name!r}, which a token has.")
@@ -125,8 +126,8 @@ class AccessRecords(Protocol):
         ...
 
     def add_api_token(self, name: str, token_hash: str, created_at: datetime) -> None:
-        """Keep the API token of SHA-256 `token_hash` under `name`; a name in use is refused
-        with `TokenNameInUseError`."""
+        """Keep the API token of SHA-256 `token_hash` under `name`; a name a live token has is
+        refused with `TokenNameInUseError`."""
         ...
 
     def api_token_by_hash(self, token_hash: str) -> ApiToken | None:

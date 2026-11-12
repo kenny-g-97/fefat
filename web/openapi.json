@@ -4528,7 +4528,7 @@
         ]
       },
       "post": {
-        "description": "Make an API token, shown in this response alone; refused with 409 for a name a token\nhas or had.",
+        "description": "Make an API token, shown in this response alone; refused with 409 for a name a live\ntoken has, while a revoked token's name is free.",
         "operationId": "create_api_token_v1_api_tokens_post",
         "requestBody": {
           "content": {
