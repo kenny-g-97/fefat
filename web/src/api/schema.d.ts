@@ -1114,9 +1114,9 @@ export interface components {
         /**
          * DatasetQuality
          * @description A dataset's quality: the verdict of its root's report from its provider, as the dataset
-         *     reads it, and the last trade date the report checked; and the report's findings, those of
-         *     every schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many
-         *     there are.
+         *     reads it, and the last trade date the report checked; the report's findings, those of every
+         *     schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many there
+         *     are; and the report's coverage by month, none while unchecked (step 5.4).
          */
         DatasetQuality: {
             /** Checked Through */
@@ -1127,6 +1127,8 @@ export interface components {
             findings_total: number;
             /** Id */
             id: string;
+            /** Months */
+            months: components["schemas"]["MonthCoverage"][];
             quality: components["schemas"]["QualityStatus"];
         };
         /**
@@ -1640,6 +1642,30 @@ export interface components {
             pnl_at_plus_one_tick: string;
             robustness: components["schemas"]["Robustness"];
             trades: components["schemas"]["TradeStatistics"];
+        };
+        /**
+         * MonthCoverage
+         * @description A month of a quality report (`fefat.market.monthly_coverage`): the month, `2026-03`; its
+         *     sessions, those with records of any schema, those with ticks, with 1-second bars, and with
+         *     1-minute bars; its findings; and the sessions touching a UTC day the vendor flagged.
+         */
+        MonthCoverage: {
+            /** Findings */
+            findings: number;
+            /** Minute Days */
+            minute_days: number;
+            /** Month */
+            month: string;
+            /** Second Days */
+            second_days: number;
+            /** Sessions */
+            sessions: number;
+            /** Tick Days */
+            tick_days: number;
+            /** Vendor Flagged */
+            vendor_flagged: number;
+            /** With Records */
+            with_records: number;
         };
         /**
          * Negation

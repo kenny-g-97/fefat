@@ -20,7 +20,11 @@ from fefat.market.instruments import Currency, Instrument, InstrumentKind
 from fefat.market.last_trade_rules import ThirdFriday
 from fefat.market.layout import Dataset, Partition
 from fefat.market.quality import assess_quality
-from fefat.market.quality_report import FINDING_COLUMNS, write_quality_report
+from fefat.market.quality_report import (
+    FINDING_COLUMNS,
+    stored_coverage_by_month,
+    write_quality_report,
+)
 from fefat.market.saved_instruments import save_instrument
 from fefat.market.schema import parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE
@@ -117,12 +121,25 @@ def test_a_datasets_quality_flows_from_its_roots_report_with_every_schemas_findi
         "contract": "ESH2026",
         "count": 1,
     }
+    # Step 5.4: the report's coverage by month, as the SDK reads it back.
+    march = {
+        "month": "2026-03",
+        "sessions": 3,
+        "with_records": 3,
+        "tick_days": 3,
+        "second_days": 0,
+        "minute_days": 3,
+        "findings": 1,
+        "vendor_flagged": 0,
+    }
+    assert stored_coverage_by_month(paths.reports_dir, "synthetic", "ES").to_dicts() == [march]
     assert unchecked == {
         "id": "synthetic:trades:ES",
         "quality": "unchecked",
         "checked_through": None,
         "findings": [],
         "findings_total": 0,
+        "months": [],
     }
     assert of_trades == {
         "id": "synthetic:trades:ES",
@@ -130,6 +147,7 @@ def test_a_datasets_quality_flows_from_its_roots_report_with_every_schemas_findi
         "checked_through": "2026-03-09",
         "findings": [duplicate],
         "findings_total": 1,
+        "months": [march],
     }
     assert of_minutes == {**of_trades, "id": "synthetic:ohlcv-1m:ES"}
     assert (listed["synthetic:trades:ES"], listed["synthetic:ohlcv-1m:ES"]) == (

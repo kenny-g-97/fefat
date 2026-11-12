@@ -23,7 +23,12 @@ from fefat.market.coverage import SESSION_KINDS, DatasetCoverage, dataset_covera
 from fefat.market.instruments import STATIC_TABLE, Currency, Instrument, InstrumentKind
 from fefat.market.layout import Dataset, DatasetOrigin
 from fefat.market.quality import NothingToReportError, reported_products
-from fefat.market.quality_report import QualityFinding, QualityStatus, stored_findings
+from fefat.market.quality_report import (
+    QualityFinding,
+    QualityStatus,
+    stored_coverage_by_month,
+    stored_findings,
+)
 from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
@@ -112,11 +117,28 @@ class ReportedFinding(BaseModel):
     count: int
 
 
+class MonthCoverage(BaseModel):
+    """A month of a quality report (`fefat.market.monthly_coverage`): the month, `2026-03`; its
+    sessions, those with records of any schema, those with ticks, with 1-second bars, and with
+    1-minute bars; its findings; and the sessions touching a UTC day the vendor flagged."""
+
+    model_config = ConfigDict(frozen=True)
+
+    month: str
+    sessions: int
+    with_records: int
+    tick_days: int
+    second_days: int
+    minute_days: int
+    findings: int
+    vendor_flagged: int
+
+
 class DatasetQuality(BaseModel):
     """A dataset's quality: the verdict of its root's report from its provider, as the dataset
-    reads it, and the last trade date the report checked; and the report's findings, those of
-    every schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many
-    there are."""
+    reads it, and the last trade date the report checked; the report's findings, those of every
+    schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many there
+    are; and the report's coverage by month, none while unchecked (step 5.4)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -125,6 +147,7 @@ class DatasetQuality(BaseModel):
     checked_through: date | None
     findings: tuple[ReportedFinding, ...]
     findings_total: int
+    months: tuple[MonthCoverage, ...]
 
 
 class InstrumentVersion(BaseModel):
@@ -187,12 +210,14 @@ class MarketCatalog:
         standing = dataset_standing(listed, dataset, coverage.last_trade_date, self.reports_folder)
         findings = stored_findings(self.reports_folder, dataset.provider, dataset.root)
         shown = findings.head(FINDINGS_SHOWN).iter_rows(named=True)
+        months = stored_coverage_by_month(self.reports_folder, dataset.provider, dataset.root)
         return DatasetQuality(
             id=dataset_id,
             quality=standing.status,
             checked_through=standing.checked_through,
             findings=tuple(_finding(row) for row in shown),
             findings_total=findings.height,
+            months=tuple(MonthCoverage.model_validate(row) for row in months.iter_rows(named=True)),
         )
 
     def catalog_status(self) -> CatalogStatus:
