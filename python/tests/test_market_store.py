@@ -195,6 +195,34 @@ def test_a_partition_carries_the_time_its_file_was_last_written(tmp_path: Path) 
     assert listed.modified_ns == an_hour_earlier
 
 
+def test_a_dataset_is_listed_by_one_walk_of_its_folders_with_each_files_size_and_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Step 5.4 (from `BACKLOG.md`): on a store of 3,800 partitions, a path object and its status
+    # for each file were most of a listing's time; the walk reads both from the folder's entries.
+    folder = FIXTURES / ES_TRADES.dataset.relative_folder()
+    expected = sorted(
+        (path.relative_to(FIXTURES).as_posix(), path.stat().st_size, path.stat().st_mtime_ns)
+        for path in folder.rglob("part.parquet")
+    )
+
+    def refused(*arguments: object, **keywords: object) -> object:
+        raise AssertionError("Expected the listing to walk the folders, got a call of a Path.")
+
+    # Undone before pytest reports anything, which it does through Path.stat.
+    with monkeypatch.context() as patched:
+        patched.setattr(Path, "rglob", refused)
+        patched.setattr(Path, "stat", refused)
+        listed = FIXTURE_STORE.list_partitions(ES_TRADES.dataset)
+
+    found = [
+        (file.partition.relative_path().as_posix(), file.size_bytes, file.modified_ns)
+        for file in listed
+    ]
+    assert len(found) == 6
+    assert found == expected
+
+
 def test_a_listed_store_lists_a_dataset_once_until_it_writes_a_partition(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
