@@ -5,8 +5,9 @@ instrument's units, so that no number passes the 2^53 that JavaScript's numbers 
 phase's header); `next_from` is the instant the next page opens at, which the caller sends back
 as the window's start, none on the last page.
 
-A window is cut to the trade dates held by the datasets that build its timeframe, from a named
-contract's own first one, before anything is read, and a page's trade dates are counted ahead
+A window is cut to the trade dates held by the datasets that build its timeframe, a named
+contract's own first and last (step 5.4), before anything is read, which `bars_span` gives the
+chart before it asks for a window; and a page's trade dates are counted ahead
 from the session table, each session's buckets of the timeframe, so that a request reads the
 sessions of one page, not of its window, though the sessions of a page of coarse bars may hold
 many prints (the `shortcut:` in `_page_end`). The pages of a spliced series, of a contract, or
@@ -14,6 +15,8 @@ of a product that does not expire join to one `load` of the window; with `contin
 contract that stopped trading before a page's first session has no rows on it, as `load` reads
 one session of lead-in (`SeriesSource.dates_read`)."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -43,23 +46,51 @@ such as 2026-03-06T03:20:00Z, as a page's `next_from` gives it."""
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
-class BarsRequest(BaseModel):
-    """A page of a window's bars: the instrument, a root such as `ES` or a contract such as
-    `ESH2026`; the timeframe, such as `5m`; the trade date the window starts on, or the instant
-    the page opens at (`WINDOW_START`); the trade date the window ends on; and, as `load` takes
-    them, whether a futures root's contracts are spliced, which they are by default, the provider
-    whose datasets the bars come from, the catalog's recommended source among those that hold
-    the root by default, and the origin of its datasets, any by default."""
+class SeriesRequest(BaseModel):
+    """A series of bars: the instrument, a root such as `ES` or a contract such as `ESH2026`;
+    the timeframe, such as `5m`; and, as `load` takes them, whether a futures root's contracts
+    are spliced, which they are by default, the provider whose datasets the bars come from, the
+    catalog's recommended source among those that hold the root by default, and the origin of
+    its datasets, any by default."""
 
     model_config = ConfigDict(frozen=True)
 
     instrument: str
     timeframe: str
-    start: str = Field(pattern=WINDOW_START)
-    end: date
     continuous: bool | None = None
     provider: str | None = None
     origin: DatasetOrigin | None = None
+
+
+class BarsRequest(SeriesRequest):
+    """A page of a series' window: the trade date the window starts on, or the instant the page
+    opens at (`WINDOW_START`), and the trade date the window ends on."""
+
+    start: str = Field(pattern=WINDOW_START)
+    end: date
+
+
+class HeldDates(BaseModel):
+    """The first and the last trade date a series' data holds."""
+
+    model_config = ConfigDict(frozen=True)
+
+    first: date
+    last: date
+
+
+class BarsSpan(BaseModel):
+    """What a series' data holds (step 5.4): the instrument and the timeframe asked for, the
+    provider whose datasets the bars come from, and the trade dates its data that builds the
+    timeframe holds, a named contract's own, none while it holds none; the chart asks for its
+    windows within them."""
+
+    model_config = ConfigDict(frozen=True)
+
+    instrument: str
+    timeframe: str
+    provider: str
+    held: HeldDates | None
 
 
 class BarColumns(BaseModel):
@@ -115,24 +146,27 @@ class _Page(NamedTuple):
     warnings: tuple[str, ...]
 
 
+def bars_span(store: Store, cache_folder: Path, request: SeriesRequest) -> BarsSpan:
+    """What the series `request` names holds in `store`, the session tables cached in
+    `cache_folder`; refused as `bars_page` refuses."""
+    with _refusals():
+        source = _source(store, cache_folder, request)
+        held = _held_dates(source, Timeframe.parse(request.timeframe))
+    return BarsSpan(
+        instrument=request.instrument,
+        timeframe=request.timeframe,
+        provider=source.provider,
+        held=None if held is None else HeldDates(first=held[0], last=held[1]),
+    )
+
+
 def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPage:
     """The page of bars `request` asks for, read from `store`, the session tables cached in
     `cache_folder` (module docstring); `NoSuchInstrumentError` for an instrument that names no
     root and no contract of one, and `BarsRefusedError` for a window the SDK refuses."""
-    try:
-        source = series_source_in(
-            store,
-            cache_folder,
-            request.instrument,
-            request.continuous,
-            request.provider,
-            request.origin,
-        )
+    with _refusals():
+        source = _source(store, cache_folder, request)
         page = _page(source, Timeframe.parse(request.timeframe), request)
-    except UnknownSymbolError as unknown:
-        raise NoSuchInstrumentError(str(unknown)) from unknown
-    except ValueError as refused:
-        raise BarsRefusedError(str(refused)) from refused
     next_from = None if page.next_open is None else _instant(page.next_open)
     return BarsPage(
         instrument=request.instrument,
@@ -141,6 +175,30 @@ def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPag
         bars=_columns(page.rows),
         next_from=next_from,
         warnings=page.warnings,
+    )
+
+
+@contextmanager
+def _refusals() -> Iterator[None]:
+    """The SDK's refusals as the service's: `NoSuchInstrumentError` for a symbol that names no
+    root and no contract of one, and `BarsRefusedError` for any other."""
+    try:
+        yield
+    except UnknownSymbolError as unknown:
+        raise NoSuchInstrumentError(str(unknown)) from unknown
+    except ValueError as refused:
+        raise BarsRefusedError(str(refused)) from refused
+
+
+def _source(store: Store, cache_folder: Path, request: SeriesRequest) -> SeriesSource:
+    """What `load` builds the series `request` names from."""
+    return series_source_in(
+        store,
+        cache_folder,
+        request.instrument,
+        request.continuous,
+        request.provider,
+        request.origin,
     )
 
 
@@ -189,23 +247,19 @@ def _start(text: str, sessions: SessionTable) -> tuple[date, int | None]:
 
 
 def _held_dates(source: SeriesSource, timeframe: Timeframe) -> tuple[date, date] | None:
-    """The first and the last trade date the source's datasets that build `timeframe` hold,
-    the first of the contract's own partitions where the source names one, since `load` gives a
-    contract no bars before its first; none while they hold no partition of it."""
+    """The first and the last trade date the source's datasets that build `timeframe` hold, the
+    contract's own where the source names one, since `load` gives a contract no bars before its
+    first and only empty ones after its last (step 5.4); none while they hold no partition of
+    it."""
     building = building_datasets(source.datasets, timeframe)
-    held = [
-        found for each in building if (found := dataset_coverage(source.store, each)) is not None
+    named = [
+        found
+        for each in building
+        if (found := dataset_coverage(source.store, each, source.contract)) is not None
     ]
-    named = held
-    if source.contract is not None:
-        named = [
-            found
-            for each in building
-            if (found := dataset_coverage(source.store, each, source.contract)) is not None
-        ]
     if not named:
         return None
-    return min(each.first_trade_date for each in named), max(each.last_trade_date for each in held)
+    return min(each.first_trade_date for each in named), max(each.last_trade_date for each in named)
 
 
 def _page_end(sessions: SessionTable, timeframe: Timeframe, first: date, last: date) -> date:

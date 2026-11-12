@@ -42,7 +42,14 @@ from fefat.market.status import (
 from fefat.market.store import ListedStore, Store
 from fefat_app.job_models import Job, JobKind
 from fefat_app.services.jobs import Jobs
-from fefat_app.services.market_bars import BarsPage, BarsRequest, bars_page
+from fefat_app.services.market_bars import (
+    BarsPage,
+    BarsRequest,
+    BarsSpan,
+    SeriesRequest,
+    bars_page,
+    bars_span,
+)
 
 FINDINGS_SHOWN = 200
 """How many of a report's findings a dataset's quality lists, beside how many there are."""
@@ -248,6 +255,10 @@ class MarketCatalog:
     def bars(self, request: BarsRequest) -> BarsPage:
         """The page of bars `request` asks for (`fefat_app.services.market_bars`)."""
         return bars_page(self.store, self.cache_folder, request)
+
+    def bars_span(self, request: SeriesRequest) -> BarsSpan:
+        """What the series `request` names holds (`fefat_app.services.market_bars`)."""
+        return bars_span(self.store, self.cache_folder, request)
 
     def start_sync(self, root: str | None) -> Job:
         """Queue the catalog sync of `root`, or of every product where it is None, which writes

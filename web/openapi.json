@@ -363,6 +363,41 @@
         "title": "BarsPage",
         "type": "object"
       },
+      "BarsSpan": {
+        "description": "What a series' data holds (step 5.4): the instrument and the timeframe asked for, the\nprovider whose datasets the bars come from, and the trade dates its data that builds the\ntimeframe holds, a named contract's own, none while it holds none; the chart asks for its\nwindows within them.",
+        "properties": {
+          "held": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeldDates"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument",
+          "timeframe",
+          "provider",
+          "held"
+        ],
+        "title": "BarsSpan",
+        "type": "object"
+      },
       "BinaryOperation": {
         "additionalProperties": false,
         "description": "An operation on a `left` and a `right` term (module docstring).",
@@ -1497,6 +1532,27 @@
           }
         },
         "title": "Health",
+        "type": "object"
+      },
+      "HeldDates": {
+        "description": "The first and the last trade date a series' data holds.",
+        "properties": {
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last"
+        ],
+        "title": "HeldDates",
         "type": "object"
       },
       "IndexedFeature": {
@@ -6258,6 +6314,159 @@
           }
         ],
         "summary": "Market Bars",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/market/bars/span": {
+      "get": {
+        "description": "The first and the last trade date the instrument's data that builds the timeframe holds,\na contract's own, none while it holds none, with the provider its bars come from: the\nwindow a chart asks for its bars within. Refused as `GET /v1/market/bars` refuses.",
+        "operationId": "market_bars_span_v1_market_bars_span_get",
+        "parameters": [
+          {
+            "description": "A root such as `ES`, or a contract such as `ESH2026`.",
+            "in": "query",
+            "name": "instrument",
+            "required": true,
+            "schema": {
+              "description": "A root such as `ES`, or a contract such as `ESH2026`.",
+              "title": "Instrument",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The bars' timeframe, such as `5m`.",
+            "in": "query",
+            "name": "timeframe",
+            "required": true,
+            "schema": {
+              "description": "The bars' timeframe, such as `5m`.",
+              "pattern": "^[1-9][0-9]*[smhd]$",
+              "title": "Timeframe",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Whether a futures root's contracts are spliced, by default true.",
+            "in": "query",
+            "name": "continuous",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Whether a futures root's contracts are spliced, by default true.",
+              "title": "Continuous"
+            }
+          },
+          {
+            "description": "The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument.",
+              "title": "Provider"
+            }
+          },
+          {
+            "description": "Only datasets of this origin; every dataset is an import for now.",
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "import",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only datasets of this origin; every dataset is an import for now.",
+              "title": "Origin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BarsSpan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Market Bars Span",
         "tags": [
           "data"
         ]

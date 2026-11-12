@@ -24,6 +24,7 @@ from notebook_runs import store_with
 
 PROBLEM = "application/problem+json"
 BARS = "/v1/market/bars"
+SPAN = "/v1/market/bars/span"
 ONE_DAY_OF_ES = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-06", "to": "2026-03-06"}
 PRICE_SCALE = 1_000_000_000
 
@@ -180,6 +181,50 @@ def test_a_contracts_window_starts_at_its_first_trade_date(
     assert pages[0]["bars"]["trade_date"][0] == "2026-02-23"
     assert set(joined(pages)["contract"]) == {"ESM2026"}
     assert joined(pages) == as_sent(whole)
+
+
+def test_a_contracts_window_ends_at_its_last_trade_date_which_its_span_names(
+    client: TestClient, container: Container
+) -> None:
+    # Found at step 5.4's plan: ESH2026 stops on 2026-03-20 in a dataset ESM2026 holds to 04-30,
+    # so its later pages came empty and joined to no load; a contract's window is cut to its own
+    # last trade date as to its first, and the span the chart asks first says where both are.
+    write_minutes(SPRING)
+    logged_in(client, container)
+    asked = {"instrument": "ESH2026", "timeframe": "1m", "from": "2026-01-02", "to": "2026-04-30"}
+
+    pages = pages_of(client, asked)
+    span = client.get(SPAN, params={"instrument": "ESH2026", "timeframe": "1m"})
+
+    whole = ff.market.load("ESH2026", "1m", "2026-01-02", "2026-03-20").collect()
+    assert all(page["bars"]["time"] for page in pages)
+    assert joined(pages) == as_sent(whole)
+    assert (span.status_code, span.json()) == (
+        200,
+        {
+            "instrument": "ESH2026",
+            "timeframe": "1m",
+            "provider": "synthetic",
+            "held": {"first": "2026-01-02", "last": "2026-03-20"},
+        },
+    )
+
+
+def test_a_roots_span_is_its_datasets_and_none_is_held_of_one_it_lacks(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.4: the chart walks back from the span's last trade date to its first; the fixtures'
+    # spliced ES has its 1-minute bars from 2026-03-05 to 03-09.
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+
+    es = client.get(SPAN, params={"instrument": "ES", "timeframe": "5m"}).json()
+    seconds = client.get(SPAN, params={"instrument": "ES", "timeframe": "1s"})
+    unknown = client.get(SPAN, params={"instrument": "ZZ", "timeframe": "5m"})
+
+    assert es["held"] == {"first": "2026-03-05", "last": "2026-03-09"}
+    assert (seconds.status_code, unknown.status_code) == (400, 404)
+    assert "Expected a timeframe of 1m or coarser" in seconds.json()["detail"]
 
 
 def test_a_window_wider_than_the_data_is_cut_to_it_and_one_without_data_is_empty(

@@ -443,6 +443,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/market/bars/span": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Market Bars Span
+         * @description The first and the last trade date the instrument's data that builds the timeframe holds,
+         *     a contract's own, none while it holds none, with the provider its bars come from: the
+         *     window a chart asks for its bars within. Refused as `GET /v1/market/bars` refuses.
+         */
+        get: operations["market_bars_span_v1_market_bars_span_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -900,6 +922,22 @@ export interface components {
             timeframe: string;
             /** Warnings */
             warnings: string[];
+        };
+        /**
+         * BarsSpan
+         * @description What a series' data holds (step 5.4): the instrument and the timeframe asked for, the
+         *     provider whose datasets the bars come from, and the trade dates its data that builds the
+         *     timeframe holds, a named contract's own, none while it holds none; the chart asks for its
+         *     windows within them.
+         */
+        BarsSpan: {
+            held: components["schemas"]["HeldDates"] | null;
+            /** Instrument */
+            instrument: string;
+            /** Provider */
+            provider: string;
+            /** Timeframe */
+            timeframe: string;
         };
         /**
          * BinaryOperation
@@ -1364,6 +1402,22 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /**
+         * HeldDates
+         * @description The first and the last trade date a series' data holds.
+         */
+        HeldDates: {
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
         };
         /**
          * IndexedFeature
@@ -3796,6 +3850,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BarsPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    market_bars_span_v1_market_bars_span_get: {
+        parameters: {
+            query: {
+                /** @description A root such as `ES`, or a contract such as `ESH2026`. */
+                instrument: string;
+                /** @description The bars' timeframe, such as `5m`. */
+                timeframe: string;
+                /** @description Whether a futures root's contracts are spliced, by default true. */
+                continuous?: boolean | null;
+                /** @description The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument. */
+                provider?: string | null;
+                /** @description Only datasets of this origin; every dataset is an import for now. */
+                origin?: "import" | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BarsSpan"];
                 };
             };
             /** @description Bad Request */
