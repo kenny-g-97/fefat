@@ -827,9 +827,10 @@ export interface components {
         /**
          * AppSettings
          * @description The settings the page shows: the server's, from `config.toml`, the data folder, the
-         *     theme, and each secret's state.
+         *     theme, the charts' style (step 5.4), and each secret's state.
          */
         AppSettings: {
+            chart_style: components["schemas"]["ChartStyle"];
             /**
              * Data Dir
              * Format: path
@@ -991,6 +992,12 @@ export interface components {
             };
         };
         /**
+         * CandleBody
+         * @description A candle's body: outlined in its colour, or filled with it.
+         * @enum {string}
+         */
+        CandleBody: "hollow" | "filled";
+        /**
          * CatalogProductStatus
          * @description A product of the catalog: its root, the first trade date of its history, the name of its
          *     first recommended source, and the datasets of it the store holds, none while it is missing.
@@ -1029,6 +1036,39 @@ export interface components {
         CatalogSyncRequest: {
             /** Root */
             root?: string | null;
+        };
+        /**
+         * ChartStyle
+         * @description The charts' style (module docstring); its defaults are FEAT's, hollow green rising bars
+         *     and hollow red falling ones, the builder's answer at step 5.4's plan, with the volume pane,
+         *     the grid, and the sessions' shading shown.
+         */
+        ChartStyle: {
+            /** @default {} */
+            dark: components["schemas"]["ThemeColours"];
+            /** @default hollow */
+            down_body: components["schemas"]["CandleBody"];
+            /**
+             * Grid Shown
+             * @default true
+             */
+            grid_shown: boolean;
+            /** @default {} */
+            light: components["schemas"]["ThemeColours"];
+            /**
+             * Sessions Shaded
+             * @default true
+             */
+            sessions_shaded: boolean;
+            /** @default hollow */
+            up_body: components["schemas"]["CandleBody"];
+            /** @default neutral */
+            volume_colouring: components["schemas"]["VolumeColouring"];
+            /**
+             * Volume Shown
+             * @default true
+             */
+            volume_shown: boolean;
         };
         /**
          * Column
@@ -2412,9 +2452,11 @@ export interface components {
         /**
          * SettingsChange
          * @description A change of the settings: a secret named with a value stores it, one named with null
-         *     removes it, and one left out stays as it is; a theme, when given, replaces the theme.
+         *     removes it, and one left out stays as it is; a theme, when given, replaces the theme, and a
+         *     chart style the charts' style.
          */
         SettingsChange: {
+            chart_style?: components["schemas"]["ChartStyle"] | null;
             secrets?: components["schemas"]["SecretChanges"];
             theme?: components["schemas"]["Theme"] | null;
         };
@@ -2571,6 +2613,24 @@ export interface components {
          * @enum {string}
          */
         Theme: "dark" | "light";
+        /**
+         * ThemeColours
+         * @description The trader's own colours in one theme, each null for the theme's own: rising and falling
+         *     bars, which the theme gives its sign colours, the chart's background, its grid, and its
+         *     text.
+         */
+        ThemeColours: {
+            /** Background */
+            background?: string | null;
+            /** Down */
+            down?: string | null;
+            /** Grid */
+            grid?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Up */
+            up?: string | null;
+        };
         /**
          * TickFidelity
          * @description Tick data: trades with the quote just before each, or trades alone.
@@ -2730,6 +2790,12 @@ export interface components {
             /** Fill Model */
             fill_model: number;
         };
+        /**
+         * VolumeColouring
+         * @description The volume pane's bars: in one grey, or in their candle's colour.
+         * @enum {string}
+         */
+        VolumeColouring: "neutral" | "direction";
         /**
          * Weekday
          * @description A day of the week, as the specification spells it.

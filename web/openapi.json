@@ -71,8 +71,11 @@
         "type": "object"
       },
       "AppSettings": {
-        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\ntheme, and each secret's state.",
+        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\ntheme, the charts' style (step 5.4), and each secret's state.",
         "properties": {
+          "chart_style": {
+            "$ref": "#/components/schemas/ChartStyle"
+          },
           "data_dir": {
             "format": "path",
             "title": "Data Dir",
@@ -96,6 +99,7 @@
           "server",
           "data_dir",
           "theme",
+          "chart_style",
           "secrets"
         ],
         "title": "AppSettings",
@@ -600,6 +604,15 @@
         "title": "Breakdowns",
         "type": "object"
       },
+      "CandleBody": {
+        "description": "A candle's body: outlined in its colour, or filled with it.",
+        "enum": [
+          "hollow",
+          "filled"
+        ],
+        "title": "CandleBody",
+        "type": "string"
+      },
       "CatalogProductStatus": {
         "description": "A product of the catalog: its root, the first trade date of its history, the name of its\nfirst recommended source, and the datasets of it the store holds, none while it is missing.",
         "properties": {
@@ -680,6 +693,49 @@
           }
         },
         "title": "CatalogSyncRequest",
+        "type": "object"
+      },
+      "ChartStyle": {
+        "additionalProperties": false,
+        "description": "The charts' style (module docstring); its defaults are FEAT's, hollow green rising bars\nand hollow red falling ones, the builder's answer at step 5.4's plan, with the volume pane,\nthe grid, and the sessions' shading shown.",
+        "properties": {
+          "dark": {
+            "$ref": "#/components/schemas/ThemeColours",
+            "default": {}
+          },
+          "down_body": {
+            "$ref": "#/components/schemas/CandleBody",
+            "default": "hollow"
+          },
+          "grid_shown": {
+            "default": true,
+            "title": "Grid Shown",
+            "type": "boolean"
+          },
+          "light": {
+            "$ref": "#/components/schemas/ThemeColours",
+            "default": {}
+          },
+          "sessions_shaded": {
+            "default": true,
+            "title": "Sessions Shaded",
+            "type": "boolean"
+          },
+          "up_body": {
+            "$ref": "#/components/schemas/CandleBody",
+            "default": "hollow"
+          },
+          "volume_colouring": {
+            "$ref": "#/components/schemas/VolumeColouring",
+            "default": "neutral"
+          },
+          "volume_shown": {
+            "default": true,
+            "title": "Volume Shown",
+            "type": "boolean"
+          }
+        },
+        "title": "ChartStyle",
         "type": "object"
       },
       "Column": {
@@ -3777,8 +3833,18 @@
       },
       "SettingsChange": {
         "additionalProperties": false,
-        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is; a theme, when given, replaces the theme.",
+        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is; a theme, when given, replaces the theme, and a\nchart style the charts' style.",
         "properties": {
+          "chart_style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "secrets": {
             "$ref": "#/components/schemas/SecretChanges"
           },
@@ -4118,6 +4184,74 @@
         ],
         "title": "Theme",
         "type": "string"
+      },
+      "ThemeColours": {
+        "additionalProperties": false,
+        "description": "The trader's own colours in one theme, each null for the theme's own: rising and falling\nbars, which the theme gives its sign colours, the chart's background, its grid, and its\ntext.",
+        "properties": {
+          "background": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background"
+          },
+          "down": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Down"
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "up": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Up"
+          }
+        },
+        "title": "ThemeColours",
+        "type": "object"
       },
       "TickFidelity": {
         "description": "Tick data: trades with the quote just before each, or trades alone.",
@@ -4472,6 +4606,15 @@
         ],
         "title": "Versions",
         "type": "object"
+      },
+      "VolumeColouring": {
+        "description": "The volume pane's bars: in one grey, or in their candle's colour.",
+        "enum": [
+          "neutral",
+          "direction"
+        ],
+        "title": "VolumeColouring",
+        "type": "string"
       },
       "Weekday": {
         "description": "A day of the week, as the specification spells it.",

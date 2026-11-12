@@ -18,6 +18,7 @@ from typing import Any, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
+from fefat_app.chart_style import ChartStyle
 from fefat_app.execution import (
     ExecutionResult,
     ExecutionSpec,
@@ -159,7 +160,8 @@ class Theme(StrEnum):
 
 class Preferences(Protocol):
     """What the trader chooses in the app, which the app keeps for them in its database's
-    `settings` table (D-83), never in `config.toml`: the theme so far."""
+    `settings` table (D-83), never in `config.toml`: the theme, and from step 5.4 the charts'
+    style."""
 
     def theme(self) -> Theme:
         """The theme chosen, dark before any choice."""
@@ -167,6 +169,14 @@ class Preferences(Protocol):
 
     def replace_theme(self, theme: Theme) -> None:
         """Keep `theme` as the theme, in place of any chosen before."""
+        ...
+
+    def chart_style(self) -> ChartStyle:
+        """The charts' style chosen, FEAT's before any choice."""
+        ...
+
+    def replace_chart_style(self, style: ChartStyle) -> None:
+        """Keep `style` as the charts' style, in place of any chosen before."""
         ...
 
 

@@ -11,6 +11,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from fefat.config import Settings
+from fefat_app.chart_style import ChartStyle
 from fefat_app.ports import CredentialStore, Preferences, SecretName, Theme
 
 
@@ -32,13 +33,14 @@ class SecretStatus(BaseModel):
 
 class AppSettings(BaseModel):
     """The settings the page shows: the server's, from `config.toml`, the data folder, the
-    theme, and each secret's state."""
+    theme, the charts' style (step 5.4), and each secret's state."""
 
     model_config = ConfigDict(frozen=True)
 
     server: Settings
     data_dir: Path
     theme: Theme
+    chart_style: ChartStyle
     secrets: tuple[SecretStatus, ...]
 
 
@@ -53,12 +55,14 @@ def no_secret_changes() -> SecretChanges:
 
 class SettingsChange(BaseModel):
     """A change of the settings: a secret named with a value stores it, one named with null
-    removes it, and one left out stays as it is; a theme, when given, replaces the theme."""
+    removes it, and one left out stays as it is; a theme, when given, replaces the theme, and a
+    chart style the charts' style."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     secrets: SecretChanges = Field(default_factory=no_secret_changes)
     theme: Theme | None = None
+    chart_style: ChartStyle | None = None
 
 
 def current_settings(
@@ -74,7 +78,11 @@ def current_settings(
         for name in SecretName
     )
     return AppSettings(
-        server=settings, data_dir=data_dir, theme=preferences.theme(), secrets=statuses
+        server=settings,
+        data_dir=data_dir,
+        theme=preferences.theme(),
+        chart_style=preferences.chart_style(),
+        secrets=statuses,
     )
 
 
@@ -85,7 +93,8 @@ def apply_settings_change(
     credentials: CredentialStore,
     preferences: Preferences,
 ) -> AppSettings:
-    """Store and remove the secrets `change` names and keep its theme; the settings after it."""
+    """Store and remove the secrets `change` names and keep its theme and its chart style; the
+    settings after it."""
     for name, value in change.secrets.items():
         if value is not None:
             credentials.set(name, value.get_secret_value())
@@ -93,4 +102,6 @@ def apply_settings_change(
             credentials.delete(name)
     if change.theme is not None:
         preferences.replace_theme(change.theme)
+    if change.chart_style is not None:
+        preferences.replace_chart_style(change.chart_style)
     return current_settings(settings, data_dir, credentials, preferences)
