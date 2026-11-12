@@ -15,6 +15,8 @@ const PATHS = [
   "/prop",
   "/agent",
   "/data",
+  "/data/chart?instrument=MES",
+  "/data/import",
   "/settings",
   "/no-such-page",
 ]

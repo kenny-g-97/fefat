@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test"
+import { chartReady } from "./support/chart.ts"
 import { cancelActiveJobs, progressOf } from "./support/jobs.ts"
 import { E2E_PASSWORD } from "./support/password.ts"
 
 // The builders' checks of steps 4.3 and 4.4 as a clip for the pull request (the UI recipe): log
 // in, open each page of the sidebar, switch to the light theme and back, then start the demo
 // job, watch it in the jobs drawer, reload, and cancel it. The settings page's local path must
-// stay below the fold of 800 px, out of the clip, since a video cannot be masked (D-80).
+// stay below the fold of 800 px, out of the clip, since a video cannot be masked (D-80). Step
+// 5.4's checks follow on the seeded year of MES, which stands in for the builder's own store.
 
 test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
@@ -54,4 +56,51 @@ test("the builder's click path, recorded", async ({ page }) => {
   await page.keyboard.press("Escape")
   await expect(drawer).toBeHidden()
   await expect(page.getByTestId("data-folder")).not.toBeInViewport()
+})
+
+test("step 5.4's checks, recorded: Update on MES, its chart scrolled back, and the chart's style", async ({
+  page,
+}) => {
+  await page.goto("/")
+  await page.getByLabel("Password").fill(E2E_PASSWORD)
+  await page.getByRole("button", { name: "Log in" }).click()
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Data", exact: true })
+    .click()
+  const mes = page
+    .getByRole("region", { name: "Catalog products" })
+    .getByTestId("root-block")
+    .filter({ has: page.getByRole("heading", { name: "MES", exact: true }) })
+  await page.waitForTimeout(PAUSE_MS)
+
+  await mes.getByRole("button", { name: "Update MES" }).click()
+  await page.getByTestId("jobs-indicator").click()
+  const job = page
+    .getByRole("dialog", { name: "Jobs" })
+    .getByTestId("job-row")
+    .first()
+  await expect(job).toContainText("Catalog update")
+  await expect(job).toContainText("Succeeded", { timeout: 60_000 })
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await page.keyboard.press("Escape")
+  await expect(mes.getByTestId("coverage-month")).toHaveCount(12)
+  await page.waitForTimeout(PAUSE_MS * 2)
+
+  await mes.getByRole("link", { name: "Chart" }).click()
+  await chartReady(page)
+  const chart = page.getByTestId("price-chart")
+  await chart.focus()
+  for (let screen = 0; screen < 12; screen += 1) {
+    await chart.press("PageUp")
+    await page.waitForTimeout(PAUSE_MS / 2)
+  }
+  await chartReady(page)
+  await page.getByRole("button", { name: "Chart style" }).click()
+  await page.waitForTimeout(PAUSE_MS * 3)
+  await page
+    .getByRole("dialog", { name: "Chart style" })
+    .getByRole("button", { name: "Close" })
+    .click()
+  await page.waitForTimeout(PAUSE_MS)
 })
