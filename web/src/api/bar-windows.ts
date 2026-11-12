@@ -18,10 +18,12 @@ export type Timeframe = z.infer<typeof timeframe>
 const SECONDS_IN_A_DAY = 86_400
 const MILLISECONDS_IN_A_DAY = SECONDS_IN_A_DAY * 1000
 const SECONDS_IN: Readonly<Record<string, number>> = {
+  s: 1,
   m: 60,
   h: 3600,
   d: 86_400,
 }
+const BAR_LENGTH = /^(\d+)([smhd])$/
 /** The most buckets of its timeframe a window spans, were every hour of every day traded: far
  * under the 20,000 bars a request may hold, and two or three pages of a session table's reading
  * at most (`fefat_app.services.market_bars`). */
@@ -30,22 +32,24 @@ export const BUCKETS_PER_WINDOW = 8_000
 export const DAYS_PER_WINDOW = 366
 const TRADE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
-/** The seconds a bar of `chosen` spans: 300 for 5m. */
-export function timeframeSeconds(chosen: Timeframe): number {
-  const unit = SECONDS_IN[chosen.slice(-1)]
-  if (unit === undefined) {
+/** The seconds a bar `length` long spans, as a timeframe or a dataset's fidelity writes it: 300
+ * for 5m. */
+export function barSeconds(length: string): number {
+  const parts = BAR_LENGTH.exec(length)
+  const unit = parts === null ? undefined : SECONDS_IN[parts[2]]
+  if (parts === null || unit === undefined) {
     throw new Error(
-      `Expected a timeframe in minutes, hours, or days, got ${chosen}.`
+      `Expected a bar length such as 5m, got ${JSON.stringify(length)}.`
     )
   }
-  return Number(chosen.slice(0, -1)) * unit
+  return Number(parts[1]) * unit
 }
 
 /** The calendar days a window of `chosen` spans: as many as `BUCKETS_PER_WINDOW` buckets cover
  * on days traded around the clock, at least one and at most `DAYS_PER_WINDOW`. */
 export function windowDays(chosen: Timeframe): number {
   const days = Math.floor(
-    (BUCKETS_PER_WINDOW * timeframeSeconds(chosen)) / SECONDS_IN_A_DAY
+    (BUCKETS_PER_WINDOW * barSeconds(chosen)) / SECONDS_IN_A_DAY
   )
   return Math.min(DAYS_PER_WINDOW, Math.max(1, days))
 }

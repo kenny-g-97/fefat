@@ -12,9 +12,6 @@ import {
 
 type DatasetQuality = components["schemas"]["DatasetQuality"]
 
-const HEAD =
-  "h-10 px-3 text-xs font-semibold tracking-[0.125rem] text-foreground-secondary uppercase"
-
 /** A quality report's findings behind a disclosure (web/DESIGN.md, Patterns, Disclosure row):
  * how many there are, then the first ones the API sends, each its trade date, kind, schema,
  * contract, and count; nothing where it found none. */
@@ -33,11 +30,11 @@ export function Findings({ quality }: Readonly<{ quality: DatasetQuality }>) {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className={`${HEAD} pl-0`}>Trade date</TableHead>
-            <TableHead className={HEAD}>Kind</TableHead>
-            <TableHead className={HEAD}>Data</TableHead>
-            <TableHead className={HEAD}>Contract</TableHead>
-            <TableHead className={`${HEAD} pr-0 text-right`}>Count</TableHead>
+            <TableHead className="px-3 pl-0">Trade date</TableHead>
+            <TableHead className="px-3">Kind</TableHead>
+            <TableHead className="px-3">Data</TableHead>
+            <TableHead className="px-3">Contract</TableHead>
+            <TableHead className="px-3 pr-0 text-right">Count</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

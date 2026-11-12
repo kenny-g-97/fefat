@@ -13,8 +13,6 @@ import {
 } from "@/ui/table"
 import { QueryBody } from "./QueryBody"
 
-const HEAD =
-  "h-10 px-3 text-xs font-semibold tracking-[0.125rem] text-foreground-secondary uppercase"
 const KINDS: Readonly<Record<InstrumentVersion["kind"], string>> = {
   futures: "Futures",
   perpetual: "Perpetual",
@@ -49,7 +47,7 @@ export function InstrumentsPanel() {
                   {COLUMNS.map(({ label, numeric }, index) => (
                     <TableHead
                       key={label}
-                      className={`${HEAD} ${numeric ? "text-right" : ""} ${index === 0 ? "pl-6" : ""} ${index === COLUMNS.length - 1 ? "pr-6" : ""}`}
+                      className={`px-3 ${numeric ? "text-right" : ""} ${index === 0 ? "pl-6" : ""} ${index === COLUMNS.length - 1 ? "pr-6" : ""}`}
                     >
                       {label}
                     </TableHead>

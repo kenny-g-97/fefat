@@ -13,7 +13,7 @@ import {
 } from "@/api/bars"
 import type { ChartStyle } from "@/api/settings"
 import { PriceChart, type VisibleBars } from "@/charts/PriceChart"
-import type { PriceFormat } from "@/charts/drawn-series"
+import { decimalsOf } from "@/ui/figures"
 import { usePageScrolls } from "@/ui/page-scroll"
 import { SectionFailure } from "@/ui/section-failure"
 import { ChartReadout } from "./ChartReadout"
@@ -25,7 +25,7 @@ const PRELOAD_BARS = 500
 type ChartViewProps = Readonly<{
   series: Series
   style: ChartStyle
-  priceFormat: PriceFormat
+  tickSize: number
   label: string
 }>
 
@@ -58,13 +58,17 @@ export function ChartView(props: ChartViewProps) {
 function ChartWindows({
   series,
   style,
-  priceFormat,
+  tickSize,
   label,
   held,
 }: ChartViewProps & Readonly<{ held: HeldDates }>) {
   const windows = useMemo(
     () => barWindows(held, series.timeframe),
     [held, series.timeframe]
+  )
+  const priceFormat = useMemo(
+    () => ({ precision: decimalsOf(tickSize), minMove: tickSize }),
+    [tickSize]
   )
   const [wanted, setWanted] = useState(1)
   const [hovered, setHovered] = useState<number | null>(null)
@@ -75,14 +79,14 @@ function ChartWindows({
       .map((window) => barsWindowQuery(series, window)),
     combine: readWindows,
   })
-  const bars = useMemo(() => joinedBars(read.map((each) => each?.bars)), [read])
+  const bars = useMemo(() => joinedBars(read.map((each) => each.bars)), [read])
   const panes = useMemo(
     () => chartPanes(bars, series.timeframe, style.volume_shown),
     [bars, series.timeframe, style.volume_shown]
   )
   const older = settled && wanted < windows.length
   const scrolls = usePageScrolls()
-  const warnings = [...new Set(read.flatMap((each) => each?.warnings ?? []))]
+  const warnings = [...new Set(read.flatMap((each) => each.warnings))]
   const loading = !settled || (older && visible.before < PRELOAD_BARS)
 
   const moved = (bars: VisibleBars) => {
@@ -99,7 +103,7 @@ function ChartWindows({
         attributes={{
           "data-bars": String(bars.time.length),
           "data-first-date": bars.trade_date.at(0) ?? "",
-          "data-windows": `${read.filter((each) => each !== undefined).length} of ${windows.length}`,
+          "data-windows": `${read.length} of ${windows.length}`,
           "data-before": String(visible.before),
           "data-after": String(visible.after),
           "data-panes": String(panes.length),
@@ -135,11 +139,12 @@ function ChartWindows({
   )
 }
 
-/** The windows asked for so far, newest first: each one's bars once read, whether every one is
- * read, and the first that failed. TanStack keeps `read` from one answer to the next while no
- * window's bars change, so that a year of bars is joined again only when they do. */
+/** The windows asked for so far: the bars of those read in a row from the newest, whether every
+ * one is read, and the first that failed. TanStack keeps `read` from one answer to the next while
+ * no window joins it, a window asked for and not yet read included, so that a year of bars is
+ * joined and drawn again only when a window's bars arrive. */
 type ReadWindows = Readonly<{
-  read: readonly (WindowBars | undefined)[]
+  read: readonly WindowBars[]
   settled: boolean
   failure: Readonly<{ error: Error; retry: () => void }> | undefined
 }>
@@ -147,9 +152,12 @@ type ReadWindows = Readonly<{
 function readWindows(
   results: readonly UseQueryResult<WindowBars>[]
 ): ReadWindows {
+  const waiting = results.findIndex((result) => result.data === undefined)
   const failed = results.find((result) => result.status === "error")
   return {
-    read: results.map((result) => result.data),
+    read: results
+      .slice(0, waiting === -1 ? results.length : waiting)
+      .flatMap((result) => (result.data === undefined ? [] : [result.data])),
     settled: results.every((result) => result.status === "success"),
     failure:
       failed === undefined

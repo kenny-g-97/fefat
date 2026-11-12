@@ -10,9 +10,6 @@ import {
 } from "@/ui/table"
 import { fidelityLabel } from "./datasets"
 
-const HEAD =
-  "h-10 px-3 text-xs font-semibold tracking-[0.125rem] text-foreground-secondary uppercase"
-
 type Covered = StoredDataset & Readonly<{ coverage?: "complete" | "partial" }>
 
 /** A provider's datasets of a root (web/DESIGN.md, Patterns, Tables): what each holds, its
@@ -26,15 +23,11 @@ export function DatasetTable({
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className={`${HEAD} pl-0`}>Data</TableHead>
-          <TableHead className={`${HEAD} text-right`}>Contracts</TableHead>
-          <TableHead className={`${HEAD} text-right`}>
-            First trade date
-          </TableHead>
-          <TableHead className={`${HEAD} text-right`}>
-            Last trade date
-          </TableHead>
-          {product && <TableHead className={`${HEAD} pr-0`}>History</TableHead>}
+          <TableHead className="px-3 pl-0">Data</TableHead>
+          <TableHead className="px-3 text-right">Contracts</TableHead>
+          <TableHead className="px-3 text-right">First trade date</TableHead>
+          <TableHead className="px-3 text-right">Last trade date</TableHead>
+          {product && <TableHead className="px-3 pr-0">History</TableHead>}
         </TableRow>
       </TableHeader>
       <TableBody>

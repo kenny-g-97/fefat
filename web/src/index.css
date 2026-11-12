@@ -326,6 +326,17 @@ main[tabindex="-1"]:focus-visible {
   padding-bottom: 0.25rem;
 }
 
+/* A table's headers are 12 px at 600, uppercase with 0.125 rem of tracking, in body text; each
+   table pads its own first and last header to its card's edge. */
+[data-slot="table-head"] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.125rem;
+  text-transform: uppercase;
+  color: var(--foreground-secondary);
+}
+
 /* A select is a field (step 5.4): 40 px on the control surface with the field border, its focus
    the accent's border with a 1 px ring of the accent; its list is the skill's panel, the control
    surface with a hairline and the middle shadow, the row under the pointer or the keys on the

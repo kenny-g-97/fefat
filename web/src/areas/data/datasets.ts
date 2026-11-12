@@ -1,4 +1,4 @@
-import { type Timeframe, timeframe, timeframeSeconds } from "@/api/bar-windows"
+import { barSeconds, type Timeframe, timeframe } from "@/api/bar-windows"
 import type { MonthCoverage, StoredDataset } from "@/api/catalog"
 import { formatCount } from "@/ui/figures"
 
@@ -16,12 +16,6 @@ const UNITS: Readonly<Record<string, string>> = {
   m: "minute",
   h: "hour",
   d: "day",
-}
-const SECONDS: Readonly<Record<string, number>> = {
-  s: 1,
-  m: 60,
-  h: 3600,
-  d: 86_400,
 }
 
 /** `datasets` grouped by their provider, each provider once, in the order the API lists them. */
@@ -58,29 +52,17 @@ export function fidelityLabel(fidelity: string): string {
  * where none does, which the chart then refuses in the SDK's words. */
 export function chartTimeframe(datasets: readonly StoredDataset[]): Timeframe {
   const finest = Math.min(
-    ...datasets.map((dataset) => fidelitySeconds(dataset.fidelity))
+    ...datasets.map((dataset) =>
+      dataset.fidelity === "trades" || dataset.fidelity === "tbbo"
+        ? 1
+        : barSeconds(dataset.fidelity)
+    )
   )
-  const opening = timeframeSeconds("5m")
+  const opening = barSeconds("5m")
   const built = timeframe.options.find(
-    (each) =>
-      timeframeSeconds(each) >= opening && timeframeSeconds(each) % finest === 0
+    (each) => barSeconds(each) >= opening && barSeconds(each) % finest === 0
   )
   return built === undefined ? "5m" : built
-}
-
-/** The seconds a bar of `fidelity` spans, one for prints, which build any timeframe. */
-function fidelitySeconds(fidelity: string): number {
-  if (fidelity === "trades" || fidelity === "tbbo") {
-    return 1
-  }
-  const parts = /^(\d+)([smhd])$/.exec(fidelity)
-  const unit = parts === null ? undefined : SECONDS[parts[2]]
-  if (parts === null || unit === undefined) {
-    throw new Error(
-      `Expected a fidelity such as trades or 1m, got ${JSON.stringify(fidelity)}.`
-    )
-  }
-  return Number(parts[1]) * unit
 }
 
 /** How `month` is held: every session with records, some, or none. */

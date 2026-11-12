@@ -6,7 +6,7 @@ import {
   DAYS_PER_WINDOW,
   joinedBars,
   timeframe,
-  timeframeSeconds,
+  barSeconds,
   windowDays,
 } from "./bar-windows"
 
@@ -31,7 +31,7 @@ describe("windowDays", () => {
     // BUCKETS_PER_WINDOW, were every hour of every day traded.
     for (const each of timeframe.options) {
       const days = windowDays(each)
-      const buckets = (days * 86_400) / timeframeSeconds(each)
+      const buckets = (days * 86_400) / barSeconds(each)
       expect(buckets, each).toBeLessThanOrEqual(BUCKETS_PER_WINDOW)
       expect(buckets, each).toBeLessThan(20_000)
       expect(days, each).toBeLessThanOrEqual(DAYS_PER_WINDOW)

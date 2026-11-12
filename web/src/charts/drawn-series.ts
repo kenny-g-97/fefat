@@ -10,7 +10,7 @@ import {
   type Time,
 } from "lightweight-charts"
 import { type ChartLook, lastBarColour } from "./chart-look"
-import { type ChartMarker, sessionSpans } from "./chart-marks"
+import { type ChartMarker, type SessionSpan, sessionSpans } from "./chart-marks"
 import { type ChartTime, chartTime } from "./chart-time"
 import { SessionShading } from "./session-shading"
 
@@ -53,18 +53,18 @@ export type PriceFormat = Readonly<{ precision: number; minMove: number }>
 
 type DrawnCandles = {
   kind: "candles"
-  pane: number
   api: ISeriesApi<"Candlestick">
   markers: ISeriesMarkersPluginApi<Time>
   shading: SessionShading
+  spans: readonly SessionSpan[]
   primitives: readonly ISeriesPrimitive<Time>[]
   last: CandleSeries
 }
 
 type DrawnHistogram = {
   kind: "histogram"
-  pane: number
   api: ISeriesApi<"Histogram">
+  byDirection: boolean
   last: HistogramSeries
 }
 
@@ -73,9 +73,10 @@ export type Drawn = DrawnCandles | DrawnHistogram
 
 type Wanted = Readonly<{ series: ChartSeries; pane: number }>
 
-/** Draw `panes` on `chart`: remove the series `drawn` holds that `panes` lacks or moves, add
- * those it lacks in pane order, a pane made for each new one, and give each its bars, markers,
- * shading, and primitives in `look`. */
+/** Draw `panes` on `chart`: remove the series `drawn` holds that `panes` lacks or draws as
+ * another kind, and every series where one is left out of its pane, add those it lacks in pane
+ * order, a pane made for each new one, and give each its bars, markers, shading, and primitives
+ * in `look`. */
 export function drawPanes(
   chart: IChartApi,
   drawn: Map<string, Drawn>,
@@ -93,14 +94,18 @@ export function drawPanes(
   )
   for (const [id, each] of [...drawn]) {
     const want = wanted.get(id)
-    if (
-      want === undefined ||
-      want.series.kind !== each.kind ||
-      want.pane !== each.pane
-    ) {
+    if (want === undefined || want.series.kind !== each.kind) {
       chart.removeSeries(each.api)
       drawn.delete(id)
     }
+  }
+  // The library removes a pane with its last series and moves the panes below it up.
+  const misplaced = [...drawn].some(
+    ([id, each]) => wanted.get(id)?.pane !== each.api.getPane().paneIndex()
+  )
+  if (misplaced) {
+    drawn.forEach((each) => chart.removeSeries(each.api))
+    drawn.clear()
   }
   panes.forEach((pane, index) => {
     for (const series of pane.series) {
@@ -139,7 +144,7 @@ function added(chart: IChartApi, series: ChartSeries, pane: number): Drawn {
       { priceFormat: { type: "volume" } },
       pane
     )
-    return { kind: "histogram", pane, api, last: series }
+    return { kind: "histogram", api, byDirection: false, last: series }
   }
   const api = chart.addSeries(CandlestickSeries, {}, pane)
   const shading = new SessionShading()
@@ -147,10 +152,10 @@ function added(chart: IChartApi, series: ChartSeries, pane: number): Drawn {
   const markers = createSeriesMarkers(api, [])
   return {
     kind: "candles",
-    pane,
     api,
     markers,
     shading,
+    spans: [],
     primitives: [],
     last: series,
   }
@@ -161,7 +166,7 @@ function painted(each: Drawn, series: ChartSeries, painting: Painting): Drawn {
     return paintedCandles(each, series, painting)
   }
   if (each.kind === "histogram" && series.kind === "histogram") {
-    return paintedHistogram(each, series, painting.look)
+    return paintedHistogram(each, series, painting)
   }
   throw new Error(
     `Expected the series ${series.id} drawn as ${series.kind}, got ${each.kind}.`
@@ -199,10 +204,12 @@ function paintedCandles(
   each.markers.setMarkers(
     (series.markers ?? []).map((marker) => drawnMarker(marker, look))
   )
-  const spans =
-    series.sessions === undefined
+  const sessions = series.sessions
+  const spans = !bars
+    ? each.spans
+    : sessions === undefined
       ? []
-      : sessionSpans(series.time, series.sessions)
+      : sessionSpans(series.time, sessions)
   each.shading.shade(spans, look.sessionShade, look.sessionsShaded)
   const primitives = series.primitives ?? []
   each.primitives
@@ -211,26 +218,31 @@ function paintedCandles(
   primitives
     .filter((next) => !each.primitives.includes(next))
     .forEach((next) => each.api.attachPrimitive(next))
-  return { ...each, primitives, last: series }
+  return { ...each, spans, primitives, last: series }
 }
 
+/** Paint a histogram: its bars are set again with new bars, and where their colours follow the
+ * look, by direction now or before, since a bar's own colour stays until its bars are set. */
 function paintedHistogram(
   each: DrawnHistogram,
   series: HistogramSeries,
-  look: ChartLook
+  { look, bars }: Painting
 ): DrawnHistogram {
   each.api.applyOptions({ color: look.volume })
-  const rising = series.rising
-  each.api.setData(
-    series.time.map((time, index) => ({
-      time: chartTime(time),
-      value: series.value[index],
-      ...(look.volumeByDirection && rising !== undefined
-        ? { color: rising[index] ? look.volumeUp : look.volumeDown }
-        : {}),
-    }))
-  )
-  return { ...each, last: series }
+  const rising = look.volumeByDirection ? series.rising : undefined
+  const byDirection = rising !== undefined
+  if (bars || byDirection || each.byDirection) {
+    each.api.setData(
+      series.time.map((time, index) => ({
+        time: chartTime(time),
+        value: series.value[index],
+        ...(rising === undefined
+          ? {}
+          : { color: rising[index] ? look.volumeUp : look.volumeDown }),
+      }))
+    )
+  }
+  return { ...each, byDirection, last: series }
 }
 
 function drawnMarker(marker: ChartMarker, look: ChartLook): SeriesMarker<Time> {

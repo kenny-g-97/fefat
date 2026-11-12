@@ -10,7 +10,6 @@ import {
   instrumentsQuery,
 } from "@/api/catalog"
 import { type ChartStyle, settingsQuery } from "@/api/settings"
-import { decimalsOf } from "@/ui/figures"
 import { Page } from "@/ui/page"
 import { ChartStyleDrawer } from "./ChartStyleDrawer"
 import { ChartToolbar } from "./ChartToolbar"
@@ -123,10 +122,7 @@ function ChartWorkspace({
         ].join(" ")}
         series={series}
         style={style}
-        priceFormat={{
-          precision: decimalsOf(version.tick_size),
-          minMove: version.tick_size,
-        }}
+        tickSize={version.tick_size}
         label={`${series.instrument}, ${fidelityLabel(series.timeframe)}`}
       />
     </>

@@ -278,10 +278,12 @@ def test_a_roots_span_is_its_datasets_and_none_is_held_of_one_it_lacks(
     logged_in(client, container)
 
     es = client.get(SPAN, params={"instrument": "ES", "timeframe": "5m"}).json()
+    lacked = client.get(SPAN, params={"instrument": "ESZ2030", "timeframe": "5m"})
     seconds = client.get(SPAN, params={"instrument": "ES", "timeframe": "1s"})
     unknown = client.get(SPAN, params={"instrument": "ZZ", "timeframe": "5m"})
 
     assert es["held"] == {"first": "2026-03-06", "last": "2026-03-09"}
+    assert (lacked.status_code, lacked.json()["held"]) == (200, None)
     assert (seconds.status_code, unknown.status_code) == (400, 404)
     assert "Expected a timeframe of 1m or coarser" in seconds.json()["detail"]
 
