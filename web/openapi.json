@@ -314,6 +314,15 @@
         "title": "BarColumns",
         "type": "object"
       },
+      "BarPrices": {
+        "description": "The prices a page's bars carry (step 5.4): adjusted, a spliced series' prices plus the\noffset its rolls added, which every feature reads (`fefat.market.continuous`), or raw, the\nprices each bar's contract traded at; the two are one for a series that is not spliced.",
+        "enum": [
+          "adjusted",
+          "raw"
+        ],
+        "title": "BarPrices",
+        "type": "string"
+      },
       "BarsPage": {
         "description": "A page of a window's bars: the instrument and the timeframe asked for, the provider whose\ndatasets the bars come from, the bars, the instant the next page opens at, which the caller\nsends as the window's start, none on the last page, and what `load` warns of the datasets\nthe page's bars come from, as a notebook shows it (step 5.4).",
         "properties": {
@@ -6247,6 +6256,17 @@
               ],
               "description": "Only datasets of this origin; every dataset is an import for now.",
               "title": "Origin"
+            }
+          },
+          {
+            "description": "`adjusted`, a spliced series' prices with the offset its rolls added, which features read, or `raw`, the prices each bar's contract traded at.",
+            "in": "query",
+            "name": "prices",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BarPrices",
+              "default": "adjusted",
+              "description": "`adjusted`, a spliced series' prices with the offset its rolls added, which features read, or `raw`, the prices each bar's contract traded at."
             }
           }
         ],

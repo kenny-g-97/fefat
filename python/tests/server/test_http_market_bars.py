@@ -283,17 +283,53 @@ def test_each_contract_comes_beside_the_others_at_an_open_without_splicing(
     assert sorted(set(page["bars"]["contract"])) == ["ESH2026", "ESM2026"]
 
 
-def continuous_bitcoin() -> None:
+def continuous_bitcoin(series: SeriesKind = SeriesKind.CONTINUOUS) -> None:
     """The fixtures' bitcoin bars in the data folder described as a continuous series, which
-    every load warns of."""
+    every load warns of, or as `series`."""
     store = Store(resolve_paths(os.environ).data_dir)
     bitcoin = Dataset(
         provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="BTCUSDT-PERP"
     )
-    continuous = store.dataset_metadata(bitcoin).model_copy(
-        update={"series": SeriesKind.CONTINUOUS}
-    )
+    continuous = store.dataset_metadata(bitcoin).model_copy(update={"series": series})
     store.write_dataset_metadata(bitcoin, continuous)
+
+
+def test_raw_prices_are_the_prices_each_bars_contract_traded_at_across_a_roll(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.4, the builder's answer: Raw is the spliced series at the prices each session's
+    # front contract traded at, so the roll of 2026-03-09 shows its gap, where the adjusted
+    # prices, which every feature reads, add the offset.
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-06", "to": "2026-03-09"}
+
+    raw = client.get(BARS, params={**asked, "prices": "raw"}).json()
+    adjusted = client.get(BARS, params={**asked, "prices": "adjusted"}).json()
+
+    whole = ff.market.load("ES", "5m", "2026-03-06", "2026-03-09").collect()
+    traded = whole.with_columns(pl.col("open", "high", "low", "close") - pl.col("adj_offset"))
+    assert raw["bars"] == as_sent(traded)
+    assert raw["bars"]["close"] == [
+        close / PRICE_SCALE for close in whole.sort("ts_open")["close_raw"].to_list()
+    ]
+    assert adjusted == client.get(BARS, params=asked).json()
+    assert raw["bars"]["close"][-1] != adjusted["bars"]["close"][-1]
+
+
+def test_raw_prices_of_a_back_adjusted_series_are_refused(
+    client: TestClient, container: Container
+) -> None:
+    # A back-adjusted import's prices hold the gaps of later rolls and keep no raw ones (D-49).
+    store_with("ohlcv-1m")
+    continuous_bitcoin(SeriesKind.CONTINUOUS_BACK_ADJUSTED)
+    logged_in(client, container)
+    asked = {"instrument": "BTCUSDT-PERP", "timeframe": "5m", "from": "2026-03-07"}
+
+    refused = client.get(BARS, params={**asked, "to": "2026-03-07", "prices": "raw"})
+
+    assert (refused.status_code, refused.headers["content-type"]) == (400, PROBLEM)
+    assert "Expected adjusted prices of the back-adjusted series" in refused.json()["detail"]
 
 
 def test_a_page_says_what_load_warns_of_its_bars(client: TestClient, container: Container) -> None:
@@ -346,6 +382,7 @@ def test_a_window_the_sdk_refuses_is_a_problem_in_its_words(
         {"from": "2026-03-06T03:20:00"},
         {"timeframe": "5x"},
         {"origin": "sync"},
+        {"prices": "settled"},
     ],
 )
 def test_a_window_the_schema_refuses_is_a_validation_problem(

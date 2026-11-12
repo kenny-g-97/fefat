@@ -18,6 +18,7 @@ one session of lead-in (`SeriesSource.dates_read`)."""
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import NamedTuple
 
@@ -28,7 +29,7 @@ from fefat.market.calendar import SessionTable, utc_text
 from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import building_datasets
 from fefat.market.engine_units import price_in_units
-from fefat.market.layout import DatasetOrigin
+from fefat.market.layout import DatasetOrigin, SeriesKind
 from fefat.market.schema import Timeframe, TimeUnit
 from fefat.market.series_source import (
     SIGNAL_BAR_COLUMNS,
@@ -62,12 +63,23 @@ class SeriesRequest(BaseModel):
     origin: DatasetOrigin | None = None
 
 
+class BarPrices(StrEnum):
+    """The prices a page's bars carry (step 5.4): adjusted, a spliced series' prices plus the
+    offset its rolls added, which every feature reads (`fefat.market.continuous`), or raw, the
+    prices each bar's contract traded at; the two are one for a series that is not spliced."""
+
+    ADJUSTED = "adjusted"
+    RAW = "raw"
+
+
 class BarsRequest(SeriesRequest):
     """A page of a series' window: the trade date the window starts on, or the instant the page
-    opens at (`WINDOW_START`), and the trade date the window ends on."""
+    opens at (`WINDOW_START`), the trade date the window ends on, and the prices its bars
+    carry."""
 
     start: str = Field(pattern=WINDOW_START)
     end: date
+    prices: BarPrices = BarPrices.ADJUSTED
 
 
 class HeldDates(BaseModel):
@@ -166,13 +178,15 @@ def bars_page(store: Store, cache_folder: Path, request: BarsRequest) -> BarsPag
     root and no contract of one, and `BarsRefusedError` for a window the SDK refuses."""
     with _refusals():
         source = _source(store, cache_folder, request)
+        _require_prices(source, request.prices)
         page = _page(source, Timeframe.parse(request.timeframe), request)
+    rows = page.rows if request.prices is BarPrices.ADJUSTED else _traded(page.rows)
     next_from = None if page.next_open is None else _instant(page.next_open)
     return BarsPage(
         instrument=request.instrument,
         timeframe=request.timeframe,
         provider=source.provider,
-        bars=_columns(page.rows),
+        bars=_columns(rows),
         next_from=next_from,
         warnings=page.warnings,
     )
@@ -188,6 +202,22 @@ def _refusals() -> Generator[None]:
         raise NoSuchInstrumentError(str(unknown)) from unknown
     except ValueError as refused:
         raise BarsRefusedError(str(refused)) from refused
+
+
+def _require_prices(source: SeriesSource, prices: BarPrices) -> None:
+    """Refuse raw prices of a back-adjusted import, whose prices hold the gaps of later rolls and
+    which keeps no raw ones (D-49)."""
+    if prices is BarPrices.RAW and source.series is SeriesKind.CONTINUOUS_BACK_ADJUSTED:
+        raise ValueError(
+            f"Expected adjusted prices of the back-adjusted series of {source.symbol}, which keeps "
+            "no raw prices, got raw."
+        )
+
+
+def _traded(rows: pl.DataFrame) -> pl.DataFrame:
+    """`rows` at the prices each bar's contract traded at: less the offset a spliced series'
+    rolls added, 0 for any other series (`fefat.market.continuous`)."""
+    return rows.with_columns(pl.col("open", "high", "low", "close") - pl.col("adj_offset"))
 
 
 def _source(store: Store, cache_folder: Path, request: SeriesRequest) -> SeriesSource:

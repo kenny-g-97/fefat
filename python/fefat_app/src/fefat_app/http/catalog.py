@@ -27,6 +27,7 @@ from fefat_app.services.catalog import (
 )
 from fefat_app.services.market_bars import (
     WINDOW_START,
+    BarPrices,
     BarsPage,
     BarsRefusedError,
     BarsRequest,
@@ -169,6 +170,13 @@ def market_bars(
     continuous: ContinuousQuery = None,
     provider: ProviderQuery = None,
     origin: OriginQuery = None,
+    prices: Annotated[
+        BarPrices,
+        Query(
+            description="`adjusted`, a spliced series' prices with the offset its rolls added, "
+            "which features read, or `raw`, the prices each bar's contract traded at."
+        ),
+    ] = BarPrices.ADJUSTED,
 ) -> BarsPage:
     """A page of at most 20,000 of the instrument's bars on the trade dates from `from` to `to`,
     as `ff.market.load` gives them, column by column; `next_from` is the instant the next page
@@ -183,6 +191,7 @@ def market_bars(
         continuous=continuous,
         provider=provider,
         origin=None if origin is None else DatasetOrigin(origin),
+        prices=prices,
     )
     try:
         return container.catalog.bars(request)

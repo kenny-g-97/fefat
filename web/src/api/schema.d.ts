@@ -904,6 +904,14 @@ export interface components {
             volume: number[];
         };
         /**
+         * BarPrices
+         * @description The prices a page's bars carry (step 5.4): adjusted, a spliced series' prices plus the
+         *     offset its rolls added, which every feature reads (`fefat.market.continuous`), or raw, the
+         *     prices each bar's contract traded at; the two are one for a series that is not spliced.
+         * @enum {string}
+         */
+        BarPrices: "adjusted" | "raw";
+        /**
          * BarsPage
          * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
          *     datasets the bars come from, the bars, the instant the next page opens at, which the caller
@@ -3836,6 +3844,8 @@ export interface operations {
                 provider?: string | null;
                 /** @description Only datasets of this origin; every dataset is an import for now. */
                 origin?: "import" | null;
+                /** @description `adjusted`, a spliced series' prices with the offset its rolls added, which features read, or `raw`, the prices each bar's contract traded at. */
+                prices?: components["schemas"]["BarPrices"];
             };
             header?: never;
             path?: never;
