@@ -9,9 +9,11 @@ A window is cut to the trade dates held by the datasets that build its timeframe
 contract's own first and last (step 5.4), before anything is read, which `bars_span` gives the
 chart before it asks for a window; and a page's trade dates are counted ahead
 from the session table, each session's buckets of the timeframe, so that a request reads the
-sessions of one page, not of its window, though the sessions of a page of coarse bars may hold
-many prints (the `shortcut:` in `_page_end`). The pages of a spliced series, of a contract, or
-of a product that does not expire join to one `load` of the window; with `continuous` false, a
+sessions of one page, not of its window, and from step 5.4 at most `FINE_SESSIONS_PER_PAGE`
+sessions of prints or of bars finer than a minute and at most `SESSIONS_PER_PAGE` sessions, so
+that a page of coarse bars never reads its window's every print. A page that ends at a session
+hands over to the next session's open. The pages of a spliced series, of a contract, or of a
+product that does not expire join to one `load` of the window; with `continuous` false, a
 contract that stopped trading before a page's first session has no rows on it, as `load` reads
 one session of lead-in (`SeriesSource.dates_read`)."""
 
@@ -41,6 +43,10 @@ from fefat.market.store import Store
 
 BARS_PER_PAGE = 20_000
 """The most bars a page holds (step 5.1)."""
+FINE_SESSIONS_PER_PAGE = 20
+"""The most sessions of prints, or of bars finer than a minute, a page reads (step 5.4)."""
+SESSIONS_PER_PAGE = 260
+"""The most sessions a page reads, about a year of a futures product's (step 5.4)."""
 WINDOW_START = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$"
 """A window's start: a trade date, such as 2026-03-06, or the instant a page opens at in UTC,
 such as 2026-03-06T03:20:00Z, as a page's `next_from` gives it."""
@@ -243,10 +249,7 @@ def _page(source: SeriesSource, timeframe: Timeframe, request: BarsRequest) -> _
     if held is None or held[1] < first or request.end < held[0]:
         return _Page(pl.DataFrame(schema=SIGNAL_BAR_COLUMNS), None, ())
     first, last = max(first, held[0]), min(request.end, held[1])
-    # shortcut: a page counts the bars it sends, not the data it reads: a page of 1d bars built
-    # from trades reads every print of its window; cap a page's sessions by the finest dataset
-    # that builds it when a store holds years of ticks (BACKLOG, step 5.4).
-    through = _page_end(source.sessions, timeframe, first, last)
+    through = _page_end(source.sessions, timeframe, (first, last), _fine_dates(source, timeframe))
     rows, warned = source.warned_signal_bars(timeframe, (first, through))
     if opens_from is not None:
         rows = rows.filter(pl.col("ts_open") >= opens_from)
@@ -292,11 +295,37 @@ def _held_dates(source: SeriesSource, timeframe: Timeframe) -> tuple[date, date]
     return min(each.first_trade_date for each in named), max(each.last_trade_date for each in named)
 
 
-def _page_end(sessions: SessionTable, timeframe: Timeframe, first: date, last: date) -> date:
-    """The last trade date a page reads from `first`: the first whose sessions from `first` on
-    hold more than `BARS_PER_PAGE` buckets of `timeframe`, or `last`."""
-    counted = sessions.between(first, last).with_columns(total=_buckets(timeframe).cum_sum())
-    beyond = counted.filter(pl.col("total") > BARS_PER_PAGE)
+def _fine_dates(source: SeriesSource, timeframe: Timeframe) -> set[date]:
+    """The trade dates on which the datasets that build `timeframe` hold prints or bars finer
+    than a minute, a named contract's own: a partition of each trade date
+    (`fefat.market.layout`), which a page reads whole."""
+    return {
+        file.partition.key
+        for dataset in building_datasets(source.datasets, timeframe)
+        for file in source.store.list_partitions(dataset)
+        if isinstance(file.partition.key, date)
+        and source.contract in (None, file.partition.contract)
+    }
+
+
+def _page_end(
+    sessions: SessionTable, timeframe: Timeframe, dates: tuple[date, date], fine: set[date]
+) -> date:
+    """The last trade date a page reads from the first of `dates`: the first whose sessions from
+    there on hold more than `BARS_PER_PAGE` buckets of `timeframe`, the
+    `FINE_SESSIONS_PER_PAGE`th of the `fine` dates, or the `SESSIONS_PER_PAGE`th session, or
+    else the last of `dates`, so that a page reads a bounded part of its window (step 5.4)."""
+    first, last = dates
+    counted = sessions.between(first, last).with_columns(
+        buckets=_buckets(timeframe).cum_sum(),
+        fine=pl.col("trade_date").is_in(fine).cum_sum(),
+        read=pl.int_range(1, pl.len() + 1),
+    )
+    beyond = counted.filter(
+        (pl.col("buckets") > BARS_PER_PAGE)
+        | (pl.col("fine") >= FINE_SESSIONS_PER_PAGE)
+        | (pl.col("read") >= SESSIONS_PER_PAGE)
+    )
     if beyond.is_empty():
         return last
     return beyond.item(0, "trade_date")

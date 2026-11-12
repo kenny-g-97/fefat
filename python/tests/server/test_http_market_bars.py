@@ -165,6 +165,62 @@ def test_a_page_that_ends_at_a_close_under_its_cap_hands_over_to_the_next_open(
     assert joined(pages) == as_sent(whole)
 
 
+def test_a_page_reads_a_capped_number_of_sessions_of_prints_and_hands_over_at_a_close(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.4 (from `BACKLOG.md`): a page counted the bars it sends, not the data it reads, so a
+    # page of coarse bars built from trades read every print of its window. With one session of
+    # prints a page, ES's three sessions come one a page, the first spliced one empty.
+    monkeypatch.setattr(market_bars, "FINE_SESSIONS_PER_PAGE", 1)
+    store_with("trades", "ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-05", "to": "2026-03-09"}
+
+    pages = pages_of(client, asked)
+
+    whole = ff.market.load("ES", "5m", "2026-03-05", "2026-03-09").collect()
+    assert [len(page["bars"]["time"]) for page in pages] == [0, 276, 275]
+    assert [page["next_from"] for page in pages] == [
+        "2026-03-05T23:00:00Z",
+        "2026-03-08T22:00:00Z",
+        None,
+    ]
+    assert joined(pages) == as_sent(whole)
+
+
+def test_minutes_kept_by_month_count_no_session_of_prints(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.4: a month's minutes are read by the month, so they count against the sessions of
+    # any data alone, and four months of daily bars come in one page.
+    monkeypatch.setattr(market_bars, "FINE_SESSIONS_PER_PAGE", 1)
+    write_minutes(SPRING)
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "1d", "from": "2026-01-02", "to": "2026-04-30"}
+
+    pages = pages_of(client, asked)
+
+    assert len(pages) == 1
+    assert len(pages[0]["bars"]["time"]) > 60
+
+
+def test_a_page_reads_a_capped_number_of_sessions_of_any_data(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.4: a page of daily bars from minutes read every session of its window, 1,861 of
+    # them and 1.7 GB on the builder's MES; with one session a page, each comes alone.
+    monkeypatch.setattr(market_bars, "SESSIONS_PER_PAGE", 1)
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "1d", "from": "2026-03-05", "to": "2026-03-09"}
+
+    pages = pages_of(client, asked)
+
+    whole = ff.market.load("ES", "1d", "2026-03-05", "2026-03-09").collect()
+    assert len(pages) == 3
+    assert joined(pages) == as_sent(whole)
+
+
 def test_a_contracts_window_starts_at_its_first_trade_date(
     client: TestClient, container: Container
 ) -> None:
