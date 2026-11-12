@@ -161,6 +161,9 @@ test("the catalog's products, your data, the instruments, and the sources each s
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
   await expect(page.getByText("Not built yet")).toBeVisible()
   await screenshot(page, "data-import")
+  // From the builder's check of step 5.4: no way back to Data but the sidebar's row.
+  await page.getByRole("link", { name: "Back to Data" }).click()
+  await expect(page).toHaveURL("/data")
   expect(errors).toEqual([])
 })
 

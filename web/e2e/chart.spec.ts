@@ -196,6 +196,21 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
   expect(errors).toEqual([])
 })
 
+test("Back to Data leads from the chart to the Data page, and is not marked as the current page", async ({
+  loggedIn: page,
+}) => {
+  // From the builder's check of step 5.4: no way back to Data but the sidebar's row.
+  await page.goto("/data/chart?instrument=MES&provider=synthetic&timeframe=1h")
+  const back = page.getByRole("link", { name: "Back to Data" })
+
+  await expect(back).toBeVisible()
+  await expect(back).not.toHaveAttribute("aria-current")
+  await back.click()
+
+  await expect(page).toHaveURL("/data")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Data")
+})
+
 test("the chart ends at the last bar that traded, not at the flat rows after it", async ({
   loggedIn: page,
 }) => {

@@ -12,6 +12,7 @@ import {
 import { type ChartStyle, settingsQuery } from "@/api/settings"
 import { Page } from "@/ui/page"
 import { Sheet } from "@/ui/sheet"
+import { BackLink } from "@/ui/text-link"
 import { ChartStyleDrawer } from "./ChartStyleDrawer"
 import { ChartToolbar } from "./ChartToolbar"
 import { ChartView } from "./ChartView"
@@ -35,6 +36,7 @@ export function ChartPage() {
       <Page
         title="Chart"
         description="Your data's bars, a window at a time as you scroll back"
+        back={<BackLink to="/data">Back to Data</BackLink>}
         fill
       >
         <div
