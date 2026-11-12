@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useEffectEvent, useRef } from "react"
 import { Button } from "./button"
 
 type ColourFieldProps = Readonly<{
@@ -24,16 +24,24 @@ export function ColourField({
   onReset,
 }: ColourFieldProps) {
   const field = useRef<HTMLInputElement>(null)
+  const keep = useEffectEvent((picked: string) => onKeep(picked))
   // React's onChange is the field's every input; its change comes once, when the picker closes.
   useEffect(() => {
     const input = field.current
     if (input === null) {
       return
     }
-    const keep = () => onKeep(input.value)
-    input.addEventListener("change", keep)
-    return () => input.removeEventListener("change", keep)
-  }, [onKeep])
+    const kept = () => keep(input.value)
+    input.addEventListener("change", kept)
+    return () => input.removeEventListener("change", kept)
+  }, [])
+  // The field holds its own value while it is picked, which a preview drawn later than its
+  // change would otherwise put back; a colour from outside, the theme's or a reset, replaces it.
+  useEffect(() => {
+    if (field.current !== null && field.current.value !== colour) {
+      field.current.value = colour
+    }
+  }, [colour])
 
   return (
     <div className="flex h-10 items-center gap-3">
@@ -41,7 +49,7 @@ export function ColourField({
         ref={field}
         id={id}
         type="color"
-        value={colour}
+        defaultValue={colour}
         data-slot="colour-field"
         onChange={(event) => onPreview(event.target.value)}
       />

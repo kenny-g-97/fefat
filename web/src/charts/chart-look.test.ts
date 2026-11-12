@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest"
 import type { ChartStyle } from "@/api/settings"
-import { chartLook, type ThemeTokens, withAlpha } from "./chart-look"
+import {
+  chartLook,
+  type ThemeTokens,
+  tokenColour,
+  withAlpha,
+} from "./chart-look"
 
 const DARK: ThemeTokens = {
-  foreground: "#ededed",
+  card: "#0a0a0a",
   mutedForeground: "#7c7c7c",
   border: "#1a1a1a",
   input: "#666666",
@@ -72,6 +77,16 @@ describe("chartLook", () => {
       true,
     ])
     expect([light.up, light.background]).toEqual(["#10b981", CLEAR])
+  })
+})
+
+describe("tokenColour", () => {
+  it("reads a token as #rrggbb, the short form the built styles write as well", () => {
+    expect(tokenColour("--input", "#666")).toBe("#666666")
+    expect(tokenColour("--card", " #0a0a0a")).toBe("#0a0a0a")
+    expect(() => tokenColour("--brand", "oklch(0.7 0.2 40)")).toThrow(
+      'Expected the token --brand as #rrggbb, got "oklch(0.7 0.2 40)".'
+    )
   })
 })
 

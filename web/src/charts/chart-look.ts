@@ -3,7 +3,7 @@ import type { ChartStyle, Theme } from "@/api/settings"
 /** The design system's tokens a chart paints with (web/DESIGN.md, Palette), read from the page
  * in the theme it shows. */
 export type ThemeTokens = Readonly<{
-  foreground: string
+  card: string
   mutedForeground: string
   border: string
   input: string
@@ -39,7 +39,7 @@ export type ChartLook = Readonly<{
 
 const CLEAR = "rgba(0, 0, 0, 0)"
 const TOKENS: Readonly<Record<keyof ThemeTokens, string>> = {
-  foreground: "--foreground",
+  card: "--card",
   mutedForeground: "--muted-foreground",
   border: "--border",
   input: "--input",
@@ -92,17 +92,10 @@ export function chartLook(
 /** The tokens of the theme the page shows now, as `#rrggbb`. */
 export function readThemeTokens(): ThemeTokens {
   const computed = getComputedStyle(document.documentElement)
-  const read = (name: string) => {
-    const value = computed.getPropertyValue(name).trim()
-    if (!/^#[0-9a-f]{6}$/i.test(value)) {
-      throw new Error(
-        `Expected the token ${name} as #rrggbb, got ${JSON.stringify(value)}.`
-      )
-    }
-    return value
-  }
+  const read = (name: string) =>
+    tokenColour(name, computed.getPropertyValue(name))
   return {
-    foreground: read(TOKENS.foreground),
+    card: read(TOKENS.card),
     mutedForeground: read(TOKENS.mutedForeground),
     border: read(TOKENS.border),
     input: read(TOKENS.input),
@@ -111,6 +104,23 @@ export function readThemeTokens(): ThemeTokens {
     positive: read(TOKENS.positive),
     negative: read(TOKENS.negative),
   }
+}
+
+/** The token `name`'s `value` as `#rrggbb`: web/DESIGN.md writes each as `#rrggbb`, and the
+ * built styles shorten some to `#rgb`. */
+export function tokenColour(name: string, value: string): string {
+  const colour = value.trim()
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(colour)
+  if (short !== null) {
+    const [, red, green, blue] = short
+    return `#${red}${red}${green}${green}${blue}${blue}`
+  }
+  if (!/^#[0-9a-f]{6}$/i.test(colour)) {
+    throw new Error(
+      `Expected the token ${name} as #rrggbb, got ${JSON.stringify(colour)}.`
+    )
+  }
+  return colour
 }
 
 /** `colour`, `#rrggbb`, at `alpha`. */
