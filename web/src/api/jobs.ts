@@ -29,7 +29,7 @@ export const KIND_LABELS: Readonly<Record<Job["kind"], string>> = {
   source_sync: "Data sync",
   import: "Import",
   trade_import: "Trade log import",
-  catalog_sync: "Catalog sync",
+  catalog_sync: "Catalog update",
   reproduce: "Reproduction",
   agent_turn: "Agent turn",
   ingest: "Upload",

@@ -1,11 +1,28 @@
-import { PlaceholderPage } from "@/ui/placeholder"
+import { useQuery } from "@tanstack/react-query"
+import { syncsUnderWay, useCatalogAfterSyncs } from "@/api/catalog"
+import { jobsQuery } from "@/api/jobs"
+import { Page } from "@/ui/page"
+import { CatalogPanels } from "./CatalogPanels"
+import { InstrumentsPanel } from "./InstrumentsPanel"
+import { SourcesPanel } from "./SourcesPanel"
 
-/** The Data page, a placeholder until the step that builds it. */
+/** The Data page (step 5.4): the catalog's products and your own data, each root with its
+ * quality and its coverage by month, which Update checks again as a job; the instruments; and
+ * the source guide. Each section loads, and fails, on its own. */
 export function DataPage() {
+  const jobs = useQuery(jobsQuery)
+  useCatalogAfterSyncs(jobs.data)
+  const syncs = syncsUnderWay(jobs.data === undefined ? [] : jobs.data)
   return (
-    <PlaceholderPage
+    <Page
       title="Data"
-      purpose="Import market data from your own sources, and check its quality"
-    />
+      description="Your market data and how clean it is, the instruments, and where to get more"
+    >
+      <div className="flex flex-col gap-6">
+        <CatalogPanels syncs={syncs} />
+        <InstrumentsPanel />
+        <SourcesPanel />
+      </div>
+    </Page>
   )
 }
