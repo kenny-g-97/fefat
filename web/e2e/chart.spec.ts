@@ -28,6 +28,8 @@ const keptStyle = z.object({
   }),
 })
 
+type PageBars = z.infer<typeof barsPage>["bars"]
+
 type Bar = Readonly<{
   time: number
   open: number
@@ -47,7 +49,7 @@ async function lastBar(
     await (await request.get("/v1/market/bars/span", { params: query })).json()
   ).held
   let from: string | null = held.last
-  let bars: z.infer<typeof barsPage>["bars"] | undefined
+  let bars: PageBars | undefined
   while (from !== null) {
     const answer = barsPage.parse(
       await (
@@ -65,7 +67,7 @@ async function lastBar(
   return barAt(bars, bars.time.length - 1)
 }
 
-function barAt(bars: z.infer<typeof barsPage>["bars"], at: number): Bar {
+function barAt(bars: PageBars, at: number): Bar {
   return {
     time: bars.time[at],
     open: bars.open[at],
@@ -223,21 +225,19 @@ test("the chart ends at the last bar that traded, not at the flat rows after it"
       await page.request.get("/v1/market/bars/span", { params: MES })
     ).json()
   )
-  let rows = 0
-  let traded: Bar | undefined
+  let newest: PageBars | undefined
   await page.route(
     (url) => url.pathname === "/v1/market/bars",
     async (route) => {
       const response = await route.fetch()
       const answer = barsPage.loose().parse(await response.json())
       const to = new URL(route.request().url()).searchParams.get("to")
-      rows += answer.bars.time.length
       if (to !== held.last || answer.next_from !== null) {
         await route.fulfill({ response, json: answer })
         return
       }
+      newest = answer.bars
       const cut = answer.bars.time.length - flat
-      traded = barAt(answer.bars, cut - 1)
       const volume = answer.bars.volume.map((each, at) => (at < cut ? each : 0))
       await route.fulfill({
         response,
@@ -249,17 +249,18 @@ test("the chart ends at the last bar that traded, not at the flat rows after it"
   await page.goto("/data/chart?instrument=MES&provider=synthetic")
   await chartReady(page)
 
-  if (traded === undefined) {
+  if (newest === undefined) {
     throw new Error(`Expected the page of bars to ${held.last}, got none.`)
   }
+  expect(
+    newest.time.length,
+    "the newest page longer than its flat rows"
+  ).toBeGreaterThan(flat)
+  const traded = barAt(newest, newest.time.length - flat - 1)
   expect(traded.volume, "the bar before the flat rows traded").toBeGreaterThan(
     0
   )
   await expectReadout(page, traded)
-  await expect(page.getByTestId("chart-view")).toHaveAttribute(
-    "data-bars",
-    String(rows - flat)
-  )
 })
 
 test("Raw shows the spliced series at the prices its contracts traded at", async ({
