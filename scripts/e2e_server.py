@@ -13,7 +13,8 @@ sets the password, since `fefat up` would ask for it at a console that a harness
 Windows, which runs no cleanup, so the home is one folder wiped at each start rather than a new
 one each run. `just dev` seeds a home of its own the same way (`seed`, step 5.1). On the fixtures,
 the seed also saves the breakout template as the strategy `demo` and runs it, the run the specs
-call `demo-run-01`, and indexes both as `fefat db import-workspace` does (step 5.3).
+call `demo-run-01`, and indexes both as `fefat db import-workspace` does (step 5.3); and writes a
+year of MES's 1-minute bars, a product of the catalog, which the fixtures hold none of (step 5.4).
 """
 
 import os
@@ -21,6 +22,7 @@ import shutil
 import sys
 import tempfile
 import warnings
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +75,21 @@ def seed(home: Path, port: int, password: str, data_dir: Path | None = None) -> 
         container.logins.set_password(password)
     if data_dir is None:
         demo_run()
+        year_of_mes()
+
+
+def year_of_mes() -> None:
+    """A year of MES's 1-minute bars from 2025-04-01 to 2026-03-31 in five quarterly contracts
+    of the provider `synthetic`, written into the data folder by the tests' generator
+    (`python/tests/generated_minutes.py`), unchecked: a product of the catalog for the catalog
+    page's Update, and a year of 5-minute bars for the chart to scroll back through (step 5.4)."""
+    tests = str(ROOT / "python" / "tests")
+    sys.path.insert(0, tests)
+    try:
+        from generated_minutes import YEAR, write_minutes
+    finally:
+        sys.path.remove(tests)
+    write_minutes(tuple(replace(each, contract=f"M{each.contract}") for each in YEAR), root="MES")
 
 
 def demo_run() -> None:
