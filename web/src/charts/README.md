@@ -1,6 +1,6 @@
 # Charts
 
-`PriceChart` draws price charts over [Lightweight Charts](https://tradingview.github.io/lightweight-charts/) 5.2.1 (Apache 2.0, step 5.4, D-93). The Data area's chart viewer is its first user; step 5.9's trade review chart and Phase 6's feature panes reuse it. It is the one place the library is imported, but for the types a caller's own primitive implements.
+`PriceChart` draws price charts over [Lightweight Charts](https://tradingview.github.io/lightweight-charts/) 5.2.1 (Apache 2.0, step 5.4, D-93). The Data area's chart viewer is its first user; step 5.9's trade review chart and Phase 6's feature panes reuse it. `src/charts/` is the one place the library is imported, but for the types a caller's own primitive implements.
 
 ```tsx
 <PriceChart

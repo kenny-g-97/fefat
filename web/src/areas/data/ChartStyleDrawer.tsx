@@ -1,5 +1,4 @@
 import { X } from "lucide-react"
-import type { ReactNode } from "react"
 import type { components } from "@/api/schema"
 import {
   type ChartStyle,
@@ -19,12 +18,27 @@ import { useShownTheme } from "@/ui/theme"
 type ThemeColours = components["schemas"]["ThemeColours"]
 type Colour = keyof ThemeColours
 
-const BODIES: readonly Readonly<{
-  value: ChartStyle["up_body"]
+/** A setting's options, each a value and the word that names it. */
+type Options<Option extends string> = readonly Readonly<{
+  value: Option
   label: string
-}>[] = [
+}>[]
+
+const BODIES: Options<ChartStyle["up_body"]> = [
   { value: "hollow", label: "Hollow" },
   { value: "filled", label: "Filled" },
+]
+const SHOWN_OR_HIDDEN: Options<"shown" | "hidden"> = [
+  { value: "shown", label: "Shown" },
+  { value: "hidden", label: "Hidden" },
+]
+const VOLUME_COLOURS: Options<ChartStyle["volume_colouring"]> = [
+  { value: "neutral", label: "Grey" },
+  { value: "direction", label: "By direction" },
+]
+const SESSIONS: Options<"shaded" | "plain"> = [
+  { value: "shaded", label: "Shaded" },
+  { value: "plain", label: "Plain" },
 ]
 
 /** Each colour the trader may pick, and the token a theme gives it. */
@@ -56,7 +70,6 @@ export function ChartStyleDrawer({
 }: ChartStyleDrawerProps) {
   const theme = useShownTheme()
   const { keep, error } = useChartStyleChange()
-  const shown = shownSwitch(style)
   return (
     <Sheet modal={false} open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -83,35 +96,54 @@ export function ChartStyleDrawer({
           data-testid="chart-style-settings"
           className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5"
         >
-          <Setting label="Rising bars">
-            <Segmented
-              label="Rising bars"
-              options={BODIES}
-              value={style.up_body}
-              onChange={(up_body) => keep((drawn) => ({ ...drawn, up_body }))}
-            />
-          </Setting>
-          <Setting label="Falling bars">
-            <Segmented
-              label="Falling bars"
-              options={BODIES}
-              value={style.down_body}
-              onChange={(down_body) =>
-                keep((drawn) => ({ ...drawn, down_body }))
-              }
-            />
-          </Setting>
+          <Setting
+            label="Rising bars"
+            options={BODIES}
+            value={style.up_body}
+            onChange={(up_body) => keep((drawn) => ({ ...drawn, up_body }))}
+          />
+          <Setting
+            label="Falling bars"
+            options={BODIES}
+            value={style.down_body}
+            onChange={(down_body) => keep((drawn) => ({ ...drawn, down_body }))}
+          />
           <Colours style={style} theme={theme} onKeep={keep} />
-          {shown.map(({ label, options, value, change }) => (
-            <Setting key={label} label={label}>
-              <Segmented
-                label={label}
-                options={options}
-                value={value}
-                onChange={(chosen) => keep((drawn) => change(drawn, chosen))}
-              />
-            </Setting>
-          ))}
+          <Setting
+            label="Volume"
+            options={SHOWN_OR_HIDDEN}
+            value={style.volume_shown ? "shown" : "hidden"}
+            onChange={(chosen) =>
+              keep((drawn) => ({ ...drawn, volume_shown: chosen === "shown" }))
+            }
+          />
+          <Setting
+            label="Volume colour"
+            options={VOLUME_COLOURS}
+            value={style.volume_colouring}
+            onChange={(volume_colouring) =>
+              keep((drawn) => ({ ...drawn, volume_colouring }))
+            }
+          />
+          <Setting
+            label="Grid"
+            options={SHOWN_OR_HIDDEN}
+            value={style.grid_shown ? "shown" : "hidden"}
+            onChange={(chosen) =>
+              keep((drawn) => ({ ...drawn, grid_shown: chosen === "shown" }))
+            }
+          />
+          <Setting
+            label="Sessions"
+            options={SESSIONS}
+            value={style.sessions_shaded ? "shaded" : "plain"}
+            onChange={(chosen) =>
+              keep((drawn) => ({
+                ...drawn,
+                sessions_shaded: chosen === "shaded",
+              }))
+            }
+          />
           <Button
             variant="ghost"
             className="self-start"
@@ -176,73 +208,31 @@ function Colours({
   )
 }
 
-function Setting({
+type SettingProps<Option extends string> = Readonly<{
+  label: string
+  options: Options<Option>
+  value: Option
+  onChange: (chosen: Option) => void
+}>
+
+/** A setting of a few short options, in a row with its label. */
+function Setting<Option extends string>({
   label,
-  children,
-}: Readonly<{ label: string; children: ReactNode }>) {
+  options,
+  value,
+  onChange,
+}: SettingProps<Option>) {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="font-medium text-foreground">{label}</span>
-      {children}
+      <Segmented
+        label={label}
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
     </div>
   )
-}
-
-type Switch = Readonly<{
-  label: string
-  options: readonly Readonly<{ value: string; label: string }>[]
-  value: string
-  change: (drawn: ChartStyle, chosen: string) => ChartStyle
-}>
-
-/** The style's choices of two words each, as `style` has them: the volume pane shown and how it
- * is coloured, the grid, and the sessions' shading. */
-function shownSwitch(style: ChartStyle): readonly Switch[] {
-  const shownOrHidden = [
-    { value: "shown", label: "Shown" },
-    { value: "hidden", label: "Hidden" },
-  ]
-  return [
-    {
-      label: "Volume",
-      options: shownOrHidden,
-      value: style.volume_shown ? "shown" : "hidden",
-      change: (drawn, chosen) => ({
-        ...drawn,
-        volume_shown: chosen === "shown",
-      }),
-    },
-    {
-      label: "Volume colour",
-      options: [
-        { value: "neutral", label: "Grey" },
-        { value: "direction", label: "By direction" },
-      ],
-      value: style.volume_colouring,
-      change: (drawn, chosen) => ({
-        ...drawn,
-        volume_colouring: chosen === "direction" ? "direction" : "neutral",
-      }),
-    },
-    {
-      label: "Grid",
-      options: shownOrHidden,
-      value: style.grid_shown ? "shown" : "hidden",
-      change: (drawn, chosen) => ({ ...drawn, grid_shown: chosen === "shown" }),
-    },
-    {
-      label: "Sessions",
-      options: [
-        { value: "shaded", label: "Shaded" },
-        { value: "plain", label: "Plain" },
-      ],
-      value: style.sessions_shaded ? "shaded" : "plain",
-      change: (drawn, chosen) => ({
-        ...drawn,
-        sessions_shaded: chosen === "shaded",
-      }),
-    },
-  ]
 }
 
 /** `style` with the colour `key` of `theme` set to `colour`, or to the theme's own where null. */

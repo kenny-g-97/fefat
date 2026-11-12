@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test"
 import { z } from "zod"
+import { chartReady } from "./support/chart.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { cancelActiveJobs } from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
@@ -8,10 +9,15 @@ import { screenshot } from "./support/screenshots.ts"
 // The Data page of step 5.4 against the seeded server: the catalog's products, MES among them
 // with a year of synthetic minutes (`scripts/e2e_server.py`), your data, the fixtures' ES and
 // bitcoin, the instruments, and the source guide; Update checks a product's quality as a job
-// (Done means 1, the amended update flow). A sync writes reports no route removes, so the spec
-// that runs it leaves MES checked for the specs after it, which read the API's status.
+// (Done means 1, the amended update flow), MES unchecked until then, since no spec before this
+// one runs a sync (the specs run in file order on one worker). A sync writes reports no route
+// removes, so MES stays checked for the specs after it, which read the API's status; the spec
+// ends with the builder's checks recorded as a clip (the UI recipe), after its own Update.
+
+test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
 const MES_MINUTES = "synthetic:ohlcv-1m:MES"
+const PAUSE_MS = 500
 const QUALITY_LABELS: Readonly<Record<string, string>> = {
   clean: "Clean",
   flagged: "Flagged",
@@ -128,6 +134,14 @@ test("the catalog's products, your data, the instruments, and the sources each s
     })
   ).toHaveAttribute("href", "/data/import?preset=databento")
   await screenshot(page, "data-catalog")
+
+  await databento
+    .getByRole("link", { name: "Import with Databento DBN batch download" })
+    .click()
+  await expect(page).toHaveURL("/data/import?preset=databento")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
+  await expect(page.getByText("Not built yet")).toBeVisible()
+  await screenshot(page, "data-import")
   expect(errors).toEqual([])
 })
 
@@ -140,9 +154,11 @@ test("Update checks a product's quality as a job, and its coverage shows by mont
   await page.goto("/data")
   const mes = rootBlock(page, "Catalog products", "MES")
   const before = await qualityOf(page.request, MES_MINUTES)
-  await expect(mes.getByTestId("quality-badge")).toHaveText(
-    QUALITY_LABELS[before.quality]
+  expect(before.quality, "MES unchecked until this spec updates it").toBe(
+    "unchecked"
   )
+  await expect(mes.getByTestId("quality-badge")).toHaveText("Unchecked")
+  await expect(mes.getByTestId("coverage-month")).toHaveCount(0)
 
   await mes.getByRole("button", { name: "Update MES" }).click()
   await page.getByTestId("jobs-indicator").click()
@@ -221,4 +237,47 @@ test("a section that cannot load its data says why, and the others keep working"
   await expect(
     page.getByRole("region", { name: "Sources" }).getByTestId("source-row")
   ).toHaveCount(27)
+})
+
+test("step 5.4's checks, recorded: Update on MES, its chart scrolled back, and the chart's style", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/")
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Data", exact: true })
+    .click()
+  const mes = rootBlock(page, "Catalog products", "MES")
+  await page.waitForTimeout(PAUSE_MS)
+
+  await mes.getByRole("button", { name: "Update MES" }).click()
+  await page.getByTestId("jobs-indicator").click()
+  const job = page
+    .getByRole("dialog", { name: "Jobs" })
+    .getByTestId("job-row")
+    .first()
+  await expect(job).toContainText("Catalog update")
+  await expect(job).toContainText("Succeeded", { timeout: 60_000 })
+  // A clip shows each moment for a while; nothing here waits on the app.
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await page.keyboard.press("Escape")
+  await expect(mes.getByTestId("coverage-month")).toHaveCount(12)
+  await page.waitForTimeout(PAUSE_MS * 2)
+
+  await mes.getByRole("link", { name: "Chart" }).click()
+  await chartReady(page)
+  const chart = page.getByTestId("price-chart")
+  await chart.focus()
+  for (let screen = 0; screen < 12; screen += 1) {
+    await chart.press("PageUp")
+    await page.waitForTimeout(PAUSE_MS / 2)
+  }
+  await chartReady(page)
+  await page.getByRole("button", { name: "Chart style" }).click()
+  await page.waitForTimeout(PAUSE_MS * 3)
+  await page
+    .getByRole("dialog", { name: "Chart style" })
+    .getByRole("button", { name: "Close" })
+    .click()
+  await page.waitForTimeout(PAUSE_MS)
 })
