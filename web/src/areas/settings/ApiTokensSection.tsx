@@ -39,7 +39,7 @@ export function ApiTokensSection() {
         // with the name selected, until the name changes.
         if (isRefusal(error, 409)) {
           form.setError("name", {
-            message: `A token is already called ${name}, revoked or not. Choose another name.`,
+            message: `A token is already called ${name}. Choose another name.`,
           })
           form.setFocus("name", { shouldSelect: true })
         }

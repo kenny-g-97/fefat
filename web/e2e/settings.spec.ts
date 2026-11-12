@@ -136,12 +136,32 @@ test("a name already taken is refused at its field, which takes the focus", asyn
   await create.click()
 
   const taken = page.getByText(
-    "A token is already called e2e-taken, revoked or not. Choose another name."
+    "A token is already called e2e-taken. Choose another name."
   )
   await expect(taken).toBeVisible()
   await expect(name).toBeFocused()
   await name.fill("e2e-taken-again")
   await expect(taken).toBeHidden()
+})
+
+test("a revoked token's name can be given to a new token", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  const name = page.getByLabel("Token name")
+  const create = page.getByRole("button", { name: "Create token" })
+  const row = page.getByRole("row", { name: /e2e-reused/ })
+  await name.fill("e2e-reused")
+  await create.click()
+  await row.getByRole("button", { name: "Revoke" }).click()
+  await row.getByRole("button", { name: "Revoke now" }).click()
+  await expect(row).toBeHidden()
+
+  await name.fill("e2e-reused")
+  await create.click()
+
+  await expect(page.getByTestId("new-token")).toContainText("fefat_")
+  await expect(row).toBeVisible()
 })
 
 test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
@@ -253,6 +273,31 @@ test.describe("the password", () => {
     await page.getByLabel("Password").fill(NEW_PASSWORD)
     await page.getByRole("button", { name: "Log in" }).click()
     await expect(page).toHaveURL("/")
+  })
+
+  test("says it revokes the API tokens, and the list empties without a reload", async ({
+    loggedIn: page,
+  }) => {
+    await page.goto("/settings")
+    await page.getByLabel("Token name").fill("e2e-before-password")
+    await page.getByRole("button", { name: "Create token" }).click()
+    const row = page.getByRole("row", { name: /e2e-before-password/ })
+    await expect(row).toBeVisible()
+    await expect(
+      page.getByText(
+        "Changing it ends every other login session and revokes every API token"
+      )
+    ).toBeVisible()
+
+    await page.getByLabel("Current password").fill(E2E_PASSWORD)
+    await page.getByLabel("New password", { exact: true }).fill(NEW_PASSWORD)
+    await page.getByLabel("New password again").fill(NEW_PASSWORD)
+    await page.getByRole("button", { name: "Change password" }).click()
+    changed = true
+
+    await expect(page.getByText("Password changed")).toBeVisible()
+    await expect(row).toBeHidden()
+    await expect(page.getByTestId("new-token")).toBeHidden()
   })
 
   test("changed in one tab, leaves the other tab working", async ({

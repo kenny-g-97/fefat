@@ -56,7 +56,7 @@ export function PasswordSection() {
   return (
     <Panel
       title="Password"
-      description="Changing it ends every other login session"
+      description="Changing it ends every other login session and revokes every API token"
     >
       <form
         onSubmit={submit}
