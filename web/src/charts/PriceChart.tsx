@@ -16,6 +16,7 @@ import {
   useEffectEvent,
   useMemo,
   useRef,
+  useState,
 } from "react"
 import type { ChartStyle } from "@/api/settings"
 import { useShownTheme } from "@/ui/theme"
@@ -72,6 +73,7 @@ export function PriceChart({
   const host = useRef<HTMLDivElement>(null)
   const chart = useRef<IChartApi | null>(null)
   const drawn = useRef(new Map<string, Drawn>())
+  const [panesDrawn, setPanesDrawn] = useState(0)
   const theme = useShownTheme()
   const look = useMemo(
     () => chartLook(style, theme, readThemeTokens()),
@@ -105,6 +107,7 @@ export function PriceChart({
       return
     }
     drawPanes(current, drawn.current, panes, look, priceFormat)
+    setPanesDrawn(current.panes().length)
     reportVisibleBars(current.timeScale().getVisibleLogicalRange())
   })
 
@@ -151,6 +154,7 @@ export function PriceChart({
       onKeyDown={pressed}
       data-slot="price-chart"
       data-testid="price-chart"
+      data-panes={panesDrawn}
       className="relative min-h-0 min-w-0 flex-1 rounded-xl"
     >
       <div ref={host} className="absolute inset-0" />

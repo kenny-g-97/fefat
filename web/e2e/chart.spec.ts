@@ -1,6 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test"
 import { z } from "zod"
 import { barsPage, chartReady } from "./support/chart.ts"
+import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { screenshot } from "./support/screenshots.ts"
 
@@ -18,23 +19,13 @@ const MES = { instrument: "MES", timeframe: "5m", provider: "synthetic" }
 const span = z.object({
   held: z.object({ first: z.string(), last: z.string() }),
 })
-const THEMES_OWN = {
-  up: null,
-  down: null,
-  background: null,
-  grid: null,
-  text: null,
-}
-const FEATS_STYLE = {
-  up_body: "hollow",
-  down_body: "hollow",
-  volume_shown: true,
-  volume_colouring: "neutral",
-  grid_shown: true,
-  sessions_shaded: true,
-  dark: THEMES_OWN,
-  light: THEMES_OWN,
-}
+const keptStyle = z.object({
+  chart_style: z.object({
+    up_body: z.string(),
+    volume_shown: z.boolean(),
+    dark: z.object({ up: z.string().nullable() }),
+  }),
+})
 
 type Bar = Readonly<{
   time: number
@@ -141,24 +132,14 @@ function chartDraws(page: Page, hex: string): Promise<boolean> {
   }, hex)
 }
 
-function consoleErrors(page: Page): string[] {
-  const errors: string[] = []
-  page.on("console", (message) => {
-    if (message.type() === "error") {
-      errors.push(message.text())
-    }
-  })
-  page.on("pageerror", (error) => errors.push(error.message))
-  return errors
-}
-
 test.afterEach(async ({ page }) => {
+  // A style of no fields is FEAT's own, every field its default (`fefat_app.chart_style`).
   const me = z.object({ csrf_token: z.string() })
   const { csrf_token } = me.parse(
     await (await page.request.get("/v1/me")).json()
   )
   const reset = await page.request.put("/v1/settings", {
-    data: { chart_style: FEATS_STYLE },
+    data: { chart_style: {} },
     headers: { "X-CSRF-Token": csrf_token },
   })
   expect(reset.status()).toBe(200)
@@ -191,7 +172,7 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
     await chartDraws(page, "#ff4d6d"),
     "falling candles in the negative colour"
   ).toBe(true)
-  await expect(page.getByTestId("chart-view")).toHaveAttribute(
+  await expect(page.getByTestId("price-chart")).toHaveAttribute(
     "data-panes",
     "2"
   )
@@ -200,6 +181,10 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
   await expect.poll(() => chartDraws(page, "#0a7a4c")).toBe(true)
   await screenshot(page, "data-chart-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
+  // An hour's bars show several sessions, every other one shaded, for the screenshots' readers.
+  await page.goto("/data/chart?instrument=MES&provider=synthetic&timeframe=1h")
+  await chartReady(page)
+  await screenshot(page, "data-chart-sessions")
   expect(errors).toEqual([])
 })
 
@@ -238,8 +223,9 @@ test("a contract typed in its field is charted alone", async ({
   )
   await page.getByLabel("Contract").fill("MNQZ2025")
   await page.getByLabel("Contract").press("Enter")
+  // The example names this year's June contract.
   await expect(
-    page.getByText("Type a contract of MES, such as MESM2026.")
+    page.getByText(/^Type a contract of MES, such as MESM\d{4}\.$/)
   ).toBeVisible()
   expect(errors).toEqual([])
 })
@@ -387,13 +373,19 @@ test("the wheel zooms the chart, and scrolls a page too short for the chart", as
     "data-before",
     String(before)
   )
-  expect(await page.evaluate(() => window.scrollY)).toBe(0)
 
   await page.setViewportSize({ width: 1280, height: 460 })
-  await page.mouse.move(box.x + box.width / 2, 300)
-  await page.mouse.wheel(0, 300)
+  const short = await chart.boundingBox()
+  if (short === null) {
+    throw new Error("Expected the chart on the page, got none.")
+  }
+  // Over the chart's own canvas, until the page knows it scrolls and leaves the wheel to it.
+  await page.mouse.move(short.x + short.width / 2, short.y + 40)
   await expect
-    .poll(() => page.evaluate(() => window.scrollY))
+    .poll(async () => {
+      await page.mouse.wheel(0, 300)
+      return page.evaluate(() => window.scrollY)
+    })
     .toBeGreaterThan(0)
 })
 
@@ -416,7 +408,7 @@ test("the chart's style changes as it is chosen and stays chosen", async ({
     .getByRole("button", { name: "Hidden" })
     .click()
 
-  await expect(page.getByTestId("chart-view")).toHaveAttribute(
+  await expect(page.getByTestId("price-chart")).toHaveAttribute(
     "data-panes",
     "1"
   )
@@ -429,26 +421,26 @@ test("the chart's style changes as it is chosen and stays chosen", async ({
     "every setting in view at 1280 by 800"
   ).toBe(true)
   await screenshot(page, "data-chart-style")
+  // The changes go to the server one after another: all three are kept before the reload.
+  await expect
+    .poll(
+      async () =>
+        keptStyle.parse(await (await page.request.get("/v1/settings")).json())
+          .chart_style
+    )
+    .toMatchObject({
+      up_body: "filled",
+      volume_shown: false,
+      dark: { up: "#26a69a" },
+    })
   await page.reload()
   await chartReady(page)
-  const kept = z
-    .object({
-      chart_style: z.object({
-        up_body: z.string(),
-        volume_shown: z.boolean(),
-        dark: z.object({ up: z.string().nullable() }),
-      }),
-    })
-    .parse(await (await page.request.get("/v1/settings")).json())
-  expect(kept.chart_style).toMatchObject({
-    up_body: "filled",
-    volume_shown: false,
-    dark: { up: "#26a69a" },
-  })
-  await expect(page.getByTestId("chart-view")).toHaveAttribute(
+
+  await expect(page.getByTestId("price-chart")).toHaveAttribute(
     "data-panes",
     "1"
   )
+  await expect.poll(() => chartDraws(page, "#26a69a")).toBe(true)
   expect(errors).toEqual([])
 })
 

@@ -5,7 +5,8 @@ import { expect, test } from "./support/fixtures.ts"
 // larger than 20,000 bars, and requests cached. The seed's year of MES, 2025-04-01 to 2026-03-31,
 // comes in 14 windows of 27 days, each asked once, a window at a time as the view nears the
 // oldest bar, back to the first bar the API sends (its first session has no front, so it is the
-// second's); the clip of it is the builder's check (`docs/validation/screenshots/5.4/`).
+// second's); a chart drawn again, as Raw and back to Adjusted draw it, reads its windows from the
+// cache. The clip of it is the builder's check (`docs/validation/screenshots/5.4/`).
 
 test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
@@ -15,13 +16,19 @@ test("a year of 5-minute bars loads a window at a time, each request at most 20,
   const asked: string[] = []
   const sizes: number[] = []
   const firstDates: string[] = []
+  page.on("request", (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === "/v1/market/bars") {
+      const query = url.searchParams
+      asked.push(
+        `${query.get("prices")} ${query.get("from")} ${query.get("to")}`
+      )
+    }
+  })
   page.on("response", async (response) => {
-    const url = new URL(response.url())
-    if (url.pathname !== "/v1/market/bars") {
+    if (new URL(response.url()).pathname !== "/v1/market/bars") {
       return
     }
-    const query = url.searchParams
-    asked.push(`${query.get("prices")} ${query.get("from")} ${query.get("to")}`)
     const answer = barsPage.parse(await response.json())
     sizes.push(answer.bars.time.length)
     firstDates.push(...answer.bars.trade_date.slice(0, 1))
@@ -51,11 +58,13 @@ test("a year of 5-minute bars loads a window at a time, each request at most 20,
   await expect(view).toHaveAttribute("data-first-date", first)
   expect(Math.max(...sizes)).toBeLessThanOrEqual(20_000)
   expect(new Set(asked).size).toBe(asked.length)
-  const before = asked.length
-  await chart.press("End")
-  await page.waitForTimeout(300)
-  await chart.press("Home")
-  await page.waitForTimeout(300)
-  await chartReady(page)
-  expect(asked.length).toBe(before)
+
+  for (const prices of ["Raw", "Adjusted"]) {
+    const choice = page.getByRole("button", { name: prices })
+    await choice.click()
+    await expect(choice).toHaveAttribute("aria-pressed", "true")
+    await chartReady(page)
+  }
+  expect(asked.some((each) => each.startsWith("raw "))).toBe(true)
+  expect(new Set(asked).size).toBe(asked.length)
 })

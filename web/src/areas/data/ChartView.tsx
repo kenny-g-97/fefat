@@ -106,7 +106,6 @@ function ChartWindows({
           "data-windows": `${read.length} of ${windows.length}`,
           "data-before": String(visible.before),
           "data-after": String(visible.after),
-          "data-panes": String(panes.length),
         }}
       >
         <ChartReadout

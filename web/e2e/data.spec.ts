@@ -1,6 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test"
 import { z } from "zod"
 import { chartReady } from "./support/chart.ts"
+import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { cancelActiveJobs } from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
@@ -9,8 +10,9 @@ import { screenshot } from "./support/screenshots.ts"
 // The Data page of step 5.4 against the seeded server: the catalog's products, MES among them
 // with a year of synthetic minutes (`scripts/e2e_server.py`), your data, the fixtures' ES and
 // bitcoin, the instruments, and the source guide; Update checks a product's quality as a job
-// (Done means 1, the amended update flow), MES unchecked until then, since no spec before this
-// one runs a sync (the specs run in file order on one worker). A sync writes reports no route
+// (Done means 1, the amended update flow), MES unchecked until then, since no other spec runs a
+// sync; its check before Update fails at once if one ever does, whichever order Playwright runs
+// the files in (it groups those that record video apart). A sync writes reports no route
 // removes, so MES stays checked for the specs after it, which read the API's status; the spec
 // ends with the builder's checks recorded as a clip (the UI recipe), after its own Update.
 
@@ -42,17 +44,6 @@ const instruments = z.array(
 test.afterEach(async ({ page }) => {
   await cancelActiveJobs(page.request)
 })
-
-function consoleErrors(page: Page): string[] {
-  const errors: string[] = []
-  page.on("console", (message) => {
-    if (message.type() === "error") {
-      errors.push(message.text())
-    }
-  })
-  page.on("pageerror", (error) => errors.push(error.message))
-  return errors
-}
 
 async function qualityOf(request: APIRequestContext, datasetId: string) {
   const answer = await request.get(`/v1/datasets/${datasetId}/quality`)
