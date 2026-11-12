@@ -1,16 +1,30 @@
+import { cn } from "cn"
 import type { ReactNode } from "react"
 
 type PageProps = Readonly<{
   title: string
   description?: string
+  fill?: boolean
   children: ReactNode
 }>
 
 /** A page of the work area (web/DESIGN.md, Patterns): its tab's title, a header with the page
- * title and its one-line description, then the content, padded 32 px and at most 1600 px wide. */
-export function Page({ title, description, children }: PageProps) {
+ * title and its one-line description, then the content, padded 32 px and at most 1600 px wide.
+ * A page that `fill`s, such as a chart's, takes the window's height under the top bar, down to
+ * the least it reads at, so that its content grows into the rest. */
+export function Page({
+  title,
+  description,
+  fill = false,
+  children,
+}: PageProps) {
   return (
-    <div className="mx-auto w-full max-w-400 p-8">
+    <div
+      className={cn(
+        "mx-auto w-full max-w-400 p-8",
+        fill && "flex h-[calc(100dvh-4.5rem)] min-h-144 flex-col"
+      )}
+    >
       <title>{`${title} – FEAT`}</title>
       <header className="mb-8 flex flex-col gap-1">
         <h1 className="text-title">{title}</h1>
@@ -18,7 +32,11 @@ export function Page({ title, description, children }: PageProps) {
           <p className="max-w-2xl text-foreground-secondary">{description}</p>
         )}
       </header>
-      {children}
+      {fill ? (
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      ) : (
+        children
+      )}
     </div>
   )
 }

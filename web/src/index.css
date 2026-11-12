@@ -326,11 +326,92 @@ main[tabindex="-1"]:focus-visible {
   padding-bottom: 0.25rem;
 }
 
+/* A select is a field (step 5.4): 40 px on the control surface with the field border, its focus
+   the accent's border with a 1 px ring of the accent; its list is the skill's panel, the control
+   surface with a hairline and the middle shadow, the row under the pointer or the keys on the
+   hover step with its label in the accent. */
+[data-slot="select-trigger"] {
+  height: 2.5rem;
+  padding-inline: 1rem;
+  background-color: var(--muted);
+  border-color: var(--input);
+  color: var(--foreground);
+}
+
+[data-slot="select-trigger"]:hover {
+  background-color: var(--muted);
+}
+
+[data-slot="select-trigger"]:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 1px var(--ring);
+}
+
+[data-slot="select-content"] {
+  background-color: var(--muted);
+  box-shadow: var(--shadow-md);
+}
+
+[data-slot="select-item"] {
+  height: 2rem;
+  color: var(--foreground);
+}
+
+[data-slot="select-item"]:focus-visible {
+  outline: none;
+}
+
+[data-slot="select-item"][data-highlighted] {
+  background-color: var(--accent);
+  color: var(--brand);
+}
+
+/* A colour field is the browser's own swatch, 40 px square in the field border on the control
+   surface, its colour filling it within the one radius. */
+[data-slot="colour-field"] {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--input);
+  border-radius: 0.75rem;
+  background-color: var(--muted);
+  cursor: pointer;
+}
+
+[data-slot="colour-field"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+[data-slot="colour-field"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 0.75rem;
+}
+
+/* A disclosure's summary answers a press as a button does. */
+summary {
+  transition-property: color, background-color, border-color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-in-out);
+}
+
+summary:active {
+  transform: scale(0.98);
+}
+
+/* Lightweight Charts' logo, which its licence keeps in the chart's corner, picks its colours
+   from the chart's text; it takes the subtle text on the card instead, quiet in both themes. */
+[data-slot="price-chart"] a#tv-attr-logo {
+  --fill: var(--muted-foreground);
+  --stroke: var(--card);
+}
+
 /* A contrast theme of Windows forces colours and drops box-shadows, a field's focus ring among
    them, so every focus takes an outline in the system's highlight there. */
 @media (forced-colors: active) {
   :focus-visible,
-  [data-slot="input"]:focus-visible {
+  [data-slot="input"]:focus-visible,
+  [data-slot="select-trigger"]:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
