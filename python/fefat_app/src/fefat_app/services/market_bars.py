@@ -7,15 +7,17 @@ as the window's start, none on the last page.
 
 A window is cut to the trade dates held by the datasets that build its timeframe, a named
 contract's own first and last (step 5.4), before anything is read, which `bars_span` gives the
-chart before it asks for a window; and a page's trade dates are counted ahead
+chart before it asks for a window, for a spliced series within the sessions its roll calendar
+decides; and a page's trade dates are counted ahead
 from the session table, each session's buckets of the timeframe, so that a request reads the
 sessions of one page, not of its window, and from step 5.4 at most `FINE_SESSIONS_PER_PAGE`
 sessions of prints or of bars finer than a minute and at most `SESSIONS_PER_PAGE` sessions, so
 that a page of coarse bars never reads its window's every print. A page that ends at a session
 hands over to the next session's open. The pages of a spliced series, of a contract, or of a
-product that does not expire join to one `load` of the window; with `continuous` false, a
-contract that stopped trading before a page's first session has no rows on it, as `load` reads
-one session of lead-in (`SeriesSource.dates_read`)."""
+product that does not expire join to one `load` of the window, but that `load` reads one session
+of lead-in (`SeriesSource.dates_read`): a page that starts after a session without bars of a
+contract lacks the zero-volume rows that would lead to its first bar, and with `continuous`
+false, a contract that stopped trading before a page's first session has no rows on it."""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -28,6 +30,7 @@ import polars as pl
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from fefat.market.calendar import SessionTable, utc_text
+from fefat.market.continuous import RollCalendar
 from fefat.market.coverage import dataset_coverage
 from fefat.market.dataset_choice import building_datasets
 from fefat.market.engine_units import price_in_units
@@ -169,7 +172,7 @@ def bars_span(store: Store, cache_folder: Path, request: SeriesRequest) -> BarsS
     `cache_folder`; refused as `bars_page` refuses."""
     with _refusals():
         source = _source(store, cache_folder, request)
-        held = _held_dates(source, Timeframe.parse(request.timeframe))
+        held = _decided(_held_dates(source, Timeframe.parse(request.timeframe)), source.calendar)
     return BarsSpan(
         instrument=request.instrument,
         timeframe=request.timeframe,
@@ -293,6 +296,23 @@ def _held_dates(source: SeriesSource, timeframe: Timeframe) -> tuple[date, date]
     if not named:
         return None
     return min(each.first_trade_date for each in named), max(each.last_trade_date for each in named)
+
+
+def _decided(
+    held: tuple[date, date] | None, calendar: RollCalendar | None
+) -> tuple[date, date] | None:
+    """`held` cut to the sessions `calendar` decides a front for, where the series splices
+    contracts: `load` gives no bars before its first front and refuses those after its last
+    (`fefat.market.signal_grid.require_fronts_through`); none where they do not meet (step 5.4's
+    engine review)."""
+    if held is None or calendar is None:
+        return held
+    fronts = calendar.rows
+    if fronts.is_empty():
+        return None
+    first: date = max(held[0], fronts.item(0, "trade_date"))
+    last: date = min(held[1], fronts.item(-1, "trade_date"))
+    return None if last < first else (first, last)
 
 
 def _fine_dates(source: SeriesSource, timeframe: Timeframe) -> set[date]:

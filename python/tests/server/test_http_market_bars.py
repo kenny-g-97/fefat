@@ -5,6 +5,7 @@ the synthetic fixtures."""
 
 import os
 import time
+from datetime import date
 from typing import Any
 
 import polars as pl
@@ -27,6 +28,7 @@ BARS = "/v1/market/bars"
 SPAN = "/v1/market/bars/span"
 ONE_DAY_OF_ES = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-06", "to": "2026-03-06"}
 PRICE_SCALE = 1_000_000_000
+MARCH_6 = date(2026, 3, 6)
 
 
 def as_sent(bars: pl.DataFrame) -> dict[str, list[Any]]:
@@ -270,7 +272,8 @@ def test_a_roots_span_is_its_datasets_and_none_is_held_of_one_it_lacks(
     client: TestClient, container: Container
 ) -> None:
     # Step 5.4: the chart walks back from the span's last trade date to its first; the fixtures'
-    # spliced ES has its 1-minute bars from 2026-03-05 to 03-09.
+    # spliced ES has its 1-minute bars from 2026-03-05 to 03-09, and its first session no front,
+    # so its bars, and its span, start on 03-06.
     store_with("ohlcv-1m")
     logged_in(client, container)
 
@@ -278,9 +281,34 @@ def test_a_roots_span_is_its_datasets_and_none_is_held_of_one_it_lacks(
     seconds = client.get(SPAN, params={"instrument": "ES", "timeframe": "1s"})
     unknown = client.get(SPAN, params={"instrument": "ZZ", "timeframe": "5m"})
 
-    assert es["held"] == {"first": "2026-03-05", "last": "2026-03-09"}
+    assert es["held"] == {"first": "2026-03-06", "last": "2026-03-09"}
     assert (seconds.status_code, unknown.status_code) == (400, 404)
     assert "Expected a timeframe of 1m or coarser" in seconds.json()["detail"]
+
+
+def test_a_spliced_roots_span_is_the_sessions_its_roll_calendar_decides(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.4's engine review: the trades run to 2026-03-09 while the 1-minute bars that decide
+    # the fronts stop with 03-06, so the span named 03-09, the chart's newest window asked for a
+    # session no front was decided for, `load` refused it, and the chart showed no bars; the span
+    # is the sessions the roll calendar decides, from its first front, as `load`'s bars are.
+    store_with("trades", "ohlcv-1m")
+    store = Store(resolve_paths(os.environ).data_dir)
+    for file in store.list_partitions():
+        if str(file.partition.dataset.schema_name) == "ohlcv-1m":
+            rows = store.scan_partition(file.partition).collect()
+            store.write_partition(file.partition, rows.filter(pl.col("trade_date") <= MARCH_6))
+    logged_in(client, container)
+
+    held = client.get(SPAN, params={"instrument": "ES", "timeframe": "5m"}).json()["held"]
+    window = {"instrument": "ES", "timeframe": "5m", "from": held["first"], "to": held["last"]}
+    pages = pages_of(client, window)
+
+    assert held == {"first": "2026-03-06", "last": "2026-03-06"}
+    assert joined(pages) == as_sent(
+        ff.market.load("ES", "5m", "2026-03-06", "2026-03-06").collect()
+    )
 
 
 def test_a_window_wider_than_the_data_is_cut_to_it_and_one_without_data_is_empty(
