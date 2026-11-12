@@ -2,6 +2,7 @@ import type { APIRequestContext, Page } from "@playwright/test"
 import { z } from "zod"
 import { chartReady } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
+import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { cancelActiveJobs } from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
@@ -40,6 +41,19 @@ const quality = z.object({
 const instruments = z.array(
   z.object({ root: z.string(), tick_size: z.number() })
 )
+const storedDatasets = z.array(
+  z.looseObject({
+    id: z.string(),
+    contracts: z.number(),
+    first_trade_date: z.string(),
+    last_trade_date: z.string(),
+  })
+)
+const catalogStatus = z.looseObject({
+  products: z.array(
+    z.looseObject({ datasets: z.array(z.looseObject({ id: z.string() })) })
+  ),
+})
 
 test.afterEach(async ({ page }) => {
   await cancelActiveJobs(page.request)
@@ -74,6 +88,20 @@ test("the catalog's products, your data, the instruments, and the sources each s
   const mes = rootBlock(page, "Catalog products", "MES")
   await expect(mes.getByTestId("provider-chip")).toHaveText("synthetic")
   await expect(mes.getByTestId("dataset-row")).toContainText("1-minute bars")
+  // The table's figures are the API's.
+  const stored = storedDatasets
+    .parse(await (await page.request.get("/v1/datasets")).json())
+    .find((dataset) => dataset.id === MES_MINUTES)
+  if (stored === undefined) {
+    throw new Error(`Expected ${MES_MINUTES} among the datasets, got none.`)
+  }
+  for (const figure of [
+    String(stored.contracts),
+    stored.first_trade_date,
+    stored.last_trade_date,
+  ]) {
+    await expect(mes.getByTestId("dataset-row")).toContainText(figure)
+  }
   await expect(mes.getByRole("link", { name: "Chart" })).toHaveAttribute(
     "href",
     "/data/chart?instrument=MES&provider=synthetic&timeframe=5m"
@@ -230,6 +258,109 @@ test("a section that cannot load its data says why, and the others keep working"
   ).toHaveCount(27)
 })
 
+test("a flagged product shows its findings, its months held in part, and its last import", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's UI verification: the seed reaches no finding, no month held in part, and no last
+  // import, so the API's answers are given these here, the page drawn and measured with them.
+  const catalog = catalogStatus.parse(
+    await (await page.request.get("/v1/catalog")).json()
+  )
+  const flagged = {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      datasets: product.datasets.map((dataset) =>
+        dataset.id === MES_MINUTES
+          ? {
+              ...dataset,
+              quality: "flagged",
+              checked_through: "2026-03-31",
+              last_import: "2026-04-01",
+            }
+          : dataset
+      ),
+    })),
+  }
+  const month = { tick_days: 0, second_days: 0, vendor_flagged: 0 }
+  const report = {
+    id: MES_MINUTES,
+    quality: "flagged",
+    checked_through: "2026-03-31",
+    findings: [
+      {
+        trade_date: "2026-02-17",
+        kind: "gap",
+        schema_name: "ohlcv-1m",
+        contract: null,
+        count: 1,
+      },
+      {
+        trade_date: "2026-02-18",
+        kind: "duplicates",
+        schema_name: "ohlcv-1m",
+        contract: "MESH2026",
+        count: 12,
+      },
+    ],
+    findings_total: 2,
+    months: [
+      {
+        ...month,
+        month: "2026-01",
+        sessions: 20,
+        with_records: 20,
+        minute_days: 20,
+        findings: 0,
+      },
+      {
+        ...month,
+        month: "2026-02",
+        sessions: 19,
+        with_records: 15,
+        minute_days: 15,
+        findings: 2,
+      },
+      {
+        ...month,
+        month: "2026-03",
+        sessions: 22,
+        with_records: 0,
+        minute_days: 0,
+        findings: 0,
+      },
+    ],
+  }
+  await page.route("**/v1/catalog", (route) => route.fulfill({ json: flagged }))
+  await page.route(
+    (url) =>
+      decodeURIComponent(url.pathname) ===
+      `/v1/datasets/${MES_MINUTES}/quality`,
+    (route) => route.fulfill({ json: report })
+  )
+  await page.emulateMedia({ reducedMotion: "reduce" })
+
+  await page.goto("/data")
+
+  const mes = rootBlock(page, "Catalog products", "MES")
+  await expect(mes.getByTestId("quality-badge")).toHaveText("Flagged")
+  await expect(mes).toContainText("Imported, last on 2026-04-01")
+  const months = mes.getByTestId("coverage-month")
+  await expect(months).toHaveCount(3)
+  await expect(months.nth(1)).toHaveAccessibleName(
+    "2026-02: 15 of 19 sessions with records, 2 findings"
+  )
+  await expect(months.nth(2)).toHaveAccessibleName(
+    "2026-03: 0 of 22 sessions with records, no findings"
+  )
+  await expect(mes).toContainText("2026-02-18")
+  await expect(mes).toContainText("MESH2026")
+  await screenshot(page, "data-catalog-flagged")
+  // Measured in each theme, which leaves the page in the light one for its screenshot.
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await screenshot(page, "data-catalog-flagged-light")
+})
+
 test("step 5.4's checks, recorded: Update on MES, its chart scrolled back, and the chart's style", async ({
   loggedIn: page,
 }) => {
@@ -259,9 +390,10 @@ test("step 5.4's checks, recorded: Update on MES, its chart scrolled back, and t
   await chartReady(page)
   const chart = page.getByTestId("price-chart")
   await chart.focus()
-  for (let screen = 0; screen < 12; screen += 1) {
+  // A few weeks back, as the builder's check says, into the second window.
+  for (let screen = 0; screen < 32; screen += 1) {
     await chart.press("PageUp")
-    await page.waitForTimeout(PAUSE_MS / 2)
+    await page.waitForTimeout(PAUSE_MS / 4)
   }
   await chartReady(page)
   await page.getByRole("button", { name: "Chart style" }).click()

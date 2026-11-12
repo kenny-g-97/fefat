@@ -44,7 +44,7 @@ export function CatalogPanels({ syncs }: Readonly<{ syncs: SyncCover }>) {
           {(status) =>
             status.unlisted.length === 0 ? (
               <p className="text-foreground-secondary">
-                No data outside the catalog yet
+                No data outside the catalog yet.
               </p>
             ) : (
               <div className="flex flex-col gap-4">

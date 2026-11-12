@@ -37,6 +37,8 @@ test("a year of 5-minute bars loads a window at a time, each request at most 20,
   await chartReady(page)
   const view = page.getByTestId("chart-view")
   const chart = page.getByTestId("price-chart")
+  // The newest window alone, until the view nears its oldest bar.
+  await expect(view).toHaveAttribute("data-windows", "1 of 14")
   await chart.focus()
 
   for (let back = 0; back < 20; back += 1) {

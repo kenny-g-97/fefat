@@ -2,6 +2,7 @@ import type { APIRequestContext, Page } from "@playwright/test"
 import { z } from "zod"
 import { barsPage, chartReady } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
+import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { screenshot } from "./support/screenshots.ts"
 
@@ -250,6 +251,33 @@ test("the keys pan the focused chart to either end of what it loaded", async ({
     .toBeLessThan(1)
 })
 
+test("the chart, reached by Tab, shows its whole focus ring inside its card", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's UI verification: the card clips what lies outside the chart, which fills it, so
+  // the ring drawn outside the chart showed along its top edge alone.
+  await page.goto("/data/chart?instrument=MES&provider=synthetic")
+  await chartReady(page)
+  await page.getByRole("button", { name: "Chart style" }).focus()
+  await page.keyboard.press("Tab")
+  const chart = page.getByTestId("price-chart")
+  await expect(chart).toBeFocused()
+
+  const ring = await chart.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      style: style.outlineStyle,
+      reach: parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth),
+    }
+  })
+
+  expect(ring.style).toBe("solid")
+  expect(
+    ring.reach,
+    "the ring's outer edge, from the chart's own"
+  ).toBeLessThanOrEqual(0)
+})
+
 test("a chart without a provider asks every window of the provider its span names", async ({
   loggedIn: page,
 }) => {
@@ -421,6 +449,12 @@ test("the chart's style changes as it is chosen and stays chosen", async ({
     "every setting in view at 1280 by 800"
   ).toBe(true)
   await screenshot(page, "data-chart-style")
+  // Measured in each theme, without the theme's cross-fade, which leaves the page in the light
+  // one for its screenshot.
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await screenshot(page, "data-chart-style-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   // The changes go to the server one after another: all three are kept before the reload.
   await expect
     .poll(

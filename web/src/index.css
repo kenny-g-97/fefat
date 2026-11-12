@@ -410,6 +410,11 @@ summary:active {
   transform: scale(0.98);
 }
 
+/* The chart fills its card, which clips what lies outside it, so its focus ring lies inside. */
+[data-slot="price-chart"]:focus-visible {
+  outline-offset: -2px;
+}
+
 /* Lightweight Charts' logo, which its licence keeps in the chart's corner, picks its colours
    from the chart's text; it takes the subtle text on the card instead, quiet in both themes. */
 [data-slot="price-chart"] a#tv-attr-logo {

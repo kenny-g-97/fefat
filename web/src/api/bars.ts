@@ -53,7 +53,7 @@ export function barsSpanQuery(series: Series) {
   })
 }
 
-/** The bars of one window of the series, kept for the session once read, since a window's bars
+/** The bars of one window of the series, never asked again once read, since a window's bars
  * change only with an import, and dropped a few minutes after no chart shows them. */
 export function barsWindowQuery(series: Series, window: BarWindow) {
   return queryOptions({

@@ -66,7 +66,7 @@ export function RootBlock({
         </p>
       )}
       {providers.length === 0 && (
-        <p className="text-foreground-secondary">No data yet</p>
+        <p className="text-foreground-secondary">No data yet.</p>
       )}
       {providers.map(({ name, datasets: provided }) => {
         const [first, ...rest] = provided
