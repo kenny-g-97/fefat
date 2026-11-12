@@ -4,7 +4,12 @@ import {
   useQuery,
 } from "@tanstack/react-query"
 import { type ReactNode, useMemo, useState } from "react"
-import { barWindows, type HeldDates, joinedBars } from "@/api/bar-windows"
+import {
+  barWindows,
+  type HeldDates,
+  joinedBars,
+  tradedBars,
+} from "@/api/bar-windows"
 import {
   barsSpanQuery,
   barsWindowQuery,
@@ -31,7 +36,8 @@ type ChartViewProps = Readonly<{
 
 /** A series' chart: the trade dates its data holds and the provider that holds them, then its
  * bars a window at a time from that provider, the newest first and each older one as the view
- * nears the oldest bar loaded; or why the store cannot give the series, in the SDK's words. */
+ * nears the oldest bar loaded, up to the last bar that traded; or why the store cannot give the
+ * series, in the SDK's words. */
 export function ChartView(props: ChartViewProps) {
   const span = useQuery(barsSpanQuery(props.series))
   if (span.status === "pending") {
@@ -79,7 +85,10 @@ function ChartWindows({
       .map((window) => barsWindowQuery(series, window)),
     combine: readWindows,
   })
-  const bars = useMemo(() => joinedBars(read.map((each) => each.bars)), [read])
+  const bars = useMemo(
+    () => tradedBars(joinedBars(read.map((each) => each.bars))),
+    [read]
+  )
   const panes = useMemo(
     () => chartPanes(bars, series.timeframe, style.volume_shown),
     [bars, series.timeframe, style.volume_shown]

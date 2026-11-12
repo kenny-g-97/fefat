@@ -112,6 +112,27 @@ export function joinedBars(
   }
 }
 
+/** The bars up to the last that traded. `load` keeps a contract that stopped trading on the
+ * session grid, flat at its last close and without volume up to the session's close, and the
+ * chart ends at its last trade; the rows without volume between two trades stay. The bars come
+ * back as they are when the last one traded, or when none did. */
+export function tradedBars(bars: BarColumns): BarColumns {
+  const end = bars.volume.findLastIndex((volume) => volume > 0) + 1
+  if (end === 0 || end === bars.volume.length) {
+    return bars
+  }
+  return {
+    time: bars.time.slice(0, end),
+    trade_date: bars.trade_date.slice(0, end),
+    open: bars.open.slice(0, end),
+    high: bars.high.slice(0, end),
+    low: bars.low.slice(0, end),
+    close: bars.close.slice(0, end),
+    volume: bars.volume.slice(0, end),
+    contract: bars.contract.slice(0, end),
+  }
+}
+
 function dayNumber(date: string): number {
   const parts = TRADE_DATE.exec(date)
   if (parts === null) {

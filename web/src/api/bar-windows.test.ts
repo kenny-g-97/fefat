@@ -7,6 +7,7 @@ import {
   joinedBars,
   timeframe,
   barSeconds,
+  tradedBars,
   windowDays,
 } from "./bar-windows"
 
@@ -97,5 +98,38 @@ describe("joinedBars", () => {
 
   it("joins an empty window as nothing", () => {
     expect(joinedBars([bars(), bars(100)]).time).toEqual([100])
+  })
+})
+
+describe("tradedBars", () => {
+  it("ends at the last bar that traded, the rows without volume before it kept", () => {
+    // `load` keeps a contract that stopped trading on the session grid, flat and without
+    // volume up to the session's close: the chart ends at its last trade.
+    const stopped = {
+      ...bars(100, 200, 300, 400, 500),
+      volume: [10, 0, 10, 0, 0],
+    }
+
+    const traded = tradedBars(stopped)
+
+    expect(traded).toEqual({
+      time: [100, 200, 300],
+      trade_date: ["2026-03-06", "2026-03-06", "2026-03-06"],
+      open: [100.25, 200.25, 300.25],
+      high: [100.5, 200.5, 300.5],
+      low: [100, 200, 300],
+      close: [100.25, 200.25, 300.25],
+      volume: [10, 0, 10],
+      contract: ["MESM2026", "MESM2026", "MESM2026"],
+    })
+  })
+
+  it("gives the bars back unchanged when the last one traded, or none did", () => {
+    const trading = bars(100, 200)
+    const silent = { ...bars(100, 200), volume: [0, 0] }
+
+    expect(tradedBars(trading)).toBe(trading)
+    expect(tradedBars(silent)).toBe(silent)
+    expect(tradedBars(bars()).time).toEqual([])
   })
 })

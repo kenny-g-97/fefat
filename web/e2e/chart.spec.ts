@@ -8,10 +8,10 @@ import { screenshot } from "./support/screenshots.ts"
 
 // The chart viewer of step 5.4 against the seeded server's year of MES 5-minute bars, built from
 // its synthetic minutes (`scripts/e2e_server.py`): it opens from a product's row, draws hollow
-// candles in the sign colours, reads the API's own bar, shows raw prices and a contract alone,
-// pans by the keys, leaves the wheel to a page that scrolls, and keeps the trader's style
-// (Done means 1); `chart-scroll.spec.ts` scrolls back through the year (Done means 2). The
-// readout's times are in the browser's zone, pinned here.
+// candles in the sign colours, reads the API's own bar, ends at the last bar that traded, shows
+// raw prices and a contract alone, pans by the keys, leaves the wheel to a page that scrolls,
+// and keeps the trader's style (Done means 1); `chart-scroll.spec.ts` scrolls back through the
+// year (Done means 2). The readout's times are in the browser's zone, pinned here.
 
 const ZONE = "America/Chicago"
 test.use({ timezoneId: ZONE })
@@ -62,7 +62,10 @@ async function lastBar(
   if (bars === undefined) {
     throw new Error(`Expected bars of ${JSON.stringify(query)}, got none.`)
   }
-  const at = bars.time.length - 1
+  return barAt(bars, bars.time.length - 1)
+}
+
+function barAt(bars: z.infer<typeof barsPage>["bars"], at: number): Bar {
   return {
     time: bars.time[at],
     open: bars.open[at],
@@ -191,6 +194,57 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
   await chartReady(page)
   await screenshot(page, "data-chart-sessions")
   expect(errors).toEqual([])
+})
+
+test("the chart ends at the last bar that traded, not at the flat rows after it", async ({
+  loggedIn: page,
+}) => {
+  // From the builder's check of step 5.4: `load` keeps a contract that stopped trading on the
+  // session grid, flat and without volume up to the session's close, and the chart opened on
+  // that flat line with its candles out of view. The newest page's last bars stand for it here.
+  const flat = 200
+  const { held } = span.parse(
+    await (
+      await page.request.get("/v1/market/bars/span", { params: MES })
+    ).json()
+  )
+  let rows = 0
+  let traded: Bar | undefined
+  await page.route(
+    (url) => url.pathname === "/v1/market/bars",
+    async (route) => {
+      const response = await route.fetch()
+      const answer = barsPage.loose().parse(await response.json())
+      const to = new URL(route.request().url()).searchParams.get("to")
+      rows += answer.bars.time.length
+      if (to !== held.last || answer.next_from !== null) {
+        await route.fulfill({ response, json: answer })
+        return
+      }
+      const cut = answer.bars.time.length - flat
+      traded = barAt(answer.bars, cut - 1)
+      const volume = answer.bars.volume.map((each, at) => (at < cut ? each : 0))
+      await route.fulfill({
+        response,
+        json: { ...answer, bars: { ...answer.bars, volume } },
+      })
+    }
+  )
+
+  await page.goto("/data/chart?instrument=MES&provider=synthetic")
+  await chartReady(page)
+
+  if (traded === undefined) {
+    throw new Error(`Expected the page of bars to ${held.last}, got none.`)
+  }
+  expect(traded.volume, "the bar before the flat rows traded").toBeGreaterThan(
+    0
+  )
+  await expectReadout(page, traded)
+  await expect(page.getByTestId("chart-view")).toHaveAttribute(
+    "data-bars",
+    String(rows - flat)
+  )
 })
 
 test("Raw shows the spliced series at the prices its contracts traded at", async ({

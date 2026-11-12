@@ -11,10 +11,11 @@ type ChartReadoutProps = Readonly<{
   loading: boolean
 }>
 
-/** The bar under the crosshair, or else the last, as the API gave it (web/DESIGN.md, Patterns,
- * Price chart): its contract and its open in the browser's zone or its trade date, then its
- * open, high, low, close, and volume, its prices at its instrument's decimals, the two groups
- * wrapping apart, never within; and, while a window of bars loads, a word that it does. */
+/** The bar under the crosshair, or else the last that traded, as the API gave it
+ * (web/DESIGN.md, Patterns, Price chart): its contract and its open in the browser's zone or its
+ * trade date, then its open, high, low, close, and volume, its prices at its instrument's
+ * decimals, the two groups wrapping apart, never within; and, while a window of bars loads, a
+ * word that it does. */
 export function ChartReadout({
   bars,
   index,
