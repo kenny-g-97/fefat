@@ -99,14 +99,54 @@ class SeriesSource:
     ) -> pl.DataFrame:
         """`load`'s bars of `timeframe` on the trade dates `dates` spans, each date's from the
         level `wanted`, or else from the finest that holds it, read from the session before the
-        first: none where the store holds none, which `load` refuses."""
-        first, last = dates
+        first: none where the store holds none, which `load` refuses. It warns, before it reads
+        the bars, of what `dataset_warnings` names of each dataset they come from."""
+        spans = self._spans(timeframe, dates, wanted)
+        _warn_of(self._warnings(spans))
+        return self._gridded(timeframe, dates, wanted, spans)
+
+    def warned_signal_bars(
+        self,
+        timeframe: Timeframe,
+        dates: tuple[date, date],
+        wanted: TickFidelity | Timeframe | None = None,
+    ) -> tuple[pl.DataFrame, tuple[str, ...]]:
+        """`signal_bars`' bars with what it warns of, as text, each once, warning of nothing: for
+        the server, which sends them with the bars and answers in threads, where catching
+        warnings is not safe (step 5.4)."""
+        spans = self._spans(timeframe, dates, wanted)
+        return self._gridded(timeframe, dates, wanted, spans), self._warnings(spans)
+
+    def _spans(
+        self,
+        timeframe: Timeframe,
+        dates: tuple[date, date],
+        wanted: TickFidelity | Timeframe | None,
+    ) -> list[SourceSpan]:
+        """The levels of the trade dates `signal_bars` reads for the window `dates`."""
         dates_read = self.dates_read(dates)
         counted = self.counted(dates_read)
-        spans = source_spans(
+        return source_spans(
             self.store, self.datasets, timeframe, dates_read, wanted=wanted, contracts=counted
         )
-        _warn_of(spans, self.series)
+
+    def _warnings(self, spans: list[SourceSpan]) -> tuple[str, ...]:
+        """What `dataset_warnings` names of each dataset `spans` read, in their order."""
+        return tuple(
+            warning
+            for source in dict.fromkeys(span.dataset for span in spans)
+            for warning in dataset_warnings(source, self.series)
+        )
+
+    def _gridded(
+        self,
+        timeframe: Timeframe,
+        dates: tuple[date, date],
+        wanted: TickFidelity | Timeframe | None,
+        spans: list[SourceSpan],
+    ) -> pl.DataFrame:
+        """The bars of `signal_bars` from the levels `spans` names."""
+        first, last = dates
         building = (
             building_datasets(self.datasets, timeframe)
             if wanted is None
@@ -117,7 +157,7 @@ class SeriesSource:
             spans,
             timeframe,
             self.sessions,
-            dates_read,
+            self.dates_read(dates),
             self.contract,
             self.calendar,
             building,
@@ -258,12 +298,12 @@ def _splices(
     return continuous
 
 
-def _warn_of(spans: list[SourceSpan], series: SeriesKind) -> None:
+def _warn_of(found: tuple[str, ...]) -> None:
     """Warn, on every load, of what `dataset_warnings` names of each dataset the bars come from:
-    bars coarser than a minute as the finest data, and a continuous series."""
-    for source in dict.fromkeys(span.dataset for span in spans):
-        for warning in dataset_warnings(source, series):
-            warnings.warn(warning, UserWarning, stacklevel=4)
+    bars coarser than a minute as the finest data, and a continuous series; the warning points
+    at the caller of `load`."""
+    for warning in found:
+        warnings.warn(warning, UserWarning, stacklevel=4)
 
 
 def _unspliced(gridded: pl.DataFrame, series: SeriesKind) -> pl.DataFrame:
