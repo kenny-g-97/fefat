@@ -5,7 +5,8 @@ A report covers a root's trades and bars from one provider. It is kept in
 `<FEFAT_DATA_DIR>/reports/<provider>/<root>/` as two tables and a summary for a person:
 `days.parquet`, a row per session from the root's first trade date to its last
 (`DAY_COLUMNS`); `findings.parquet`, a row per finding (`FINDING_COLUMNS`); and `quality.md`,
-the coverage of each month beside what was found. No file is named `part.parquet`, and the
+the coverage of each month beside what was found, which `stored_coverage_by_month` reads back as
+a frame (`fefat.market.monthly_coverage`, step 5.4). No file is named `part.parquet`, and the
 store never reads `reports` as a provider (`fefat.market.layout`).
 
     report = assess_quality(store, "databento", "MES", paths.cache_dir)
@@ -23,7 +24,8 @@ import polars as pl
 from pydantic import model_validator
 
 from fefat.market.calendar import counted, utc_text
-from fefat.market.importers.report import ConditionDay, VendorCondition
+from fefat.market.importers.report import ConditionDay
+from fefat.market.monthly_coverage import MONTH_COLUMNS, coverage_by_month, flagged_by_the_vendor
 from fefat.market.schema import FrozenModel, require_columns
 from fefat.market.store_files import write_atomically
 
@@ -212,6 +214,15 @@ def quality_standing(reports_folder: Path, provider: str, root: str) -> QualityS
     return QualityStanding(status=status, checked_through=checked_through)
 
 
+def stored_coverage_by_month(reports_folder: Path, provider: str, root: str) -> pl.DataFrame:
+    """The coverage by month of the root's report from `provider`, with the columns of
+    `MONTH_COLUMNS`; none while no report is written. Tables whose columns differ are refused."""
+    tables = _stored_tables(reports_folder, provider, root)
+    if tables is None:
+        return pl.DataFrame(schema=MONTH_COLUMNS)
+    return coverage_by_month(*tables)
+
+
 def stored_findings(reports_folder: Path, provider: str, root: str) -> pl.DataFrame:
     """The findings of the root's report from `provider`, with the columns of
     `FINDING_COLUMNS`; none while no report is written. Tables whose columns differ are
@@ -280,32 +291,9 @@ def _dates(dates: pl.Series) -> str:
     return named
 
 
-def _flagged_by_the_vendor() -> pl.Expr:
-    condition = pl.col("vendor_condition")
-    return condition.is_not_null() & (condition != str(VendorCondition.AVAILABLE))
-
-
 def _coverage_by_month(report: QualityReport) -> list[str]:
-    """A table row per month: its sessions, those with records, the days with records at each
-    fidelity, the findings, and the sessions the vendor flagged."""
-    month = pl.col("trade_date").dt.strftime("%Y-%m").alias("month")
-    findings = report.findings.group_by(month).agg(findings=pl.len())
-    months = (
-        report.days.group_by(month)
-        .agg(
-            sessions=pl.len(),
-            with_records=(pl.col("records") > 0).sum(),
-            tick_days=(pl.col("ticks") > 0).sum(),
-            second_days=(pl.col("bars_1s") > 0).sum(),
-            minute_days=(pl.col("bars_1m") > 0).sum(),
-            flagged=_flagged_by_the_vendor().sum(),
-        )
-        .join(findings, on="month", how="left")
-        .with_columns(pl.col("findings").fill_null(0))
-        .sort("month")
-    )
-    order = ("month", "sessions", "with_records", "tick_days", "second_days", "minute_days")
-    rows = months.select(*order, "findings", "flagged").iter_rows()
+    """A table row per month (`fefat.market.monthly_coverage.MONTH_COLUMNS`)."""
+    rows = coverage_by_month(report.days, report.findings).iter_rows()
     table = ["| " + " | ".join(str(cell) for cell in row) + " |" for row in rows]
     return [_MONTH_HEADING, "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |", *table]
 
@@ -330,7 +318,7 @@ def _finding_table(findings: pl.DataFrame) -> list[str]:
 
 def _vendor_line(report: QualityReport) -> str:
     """The vendor's flagged days with the trade dates they touch, or why there are none."""
-    touched = report.days.filter(_flagged_by_the_vendor()).get_column("trade_date")
+    touched = report.days.filter(flagged_by_the_vendor()).get_column("trade_date")
     if report.vendor_days:
         flagged = ", ".join(f"{day.day} {day.condition}" for day in report.vendor_days)
         return f"The vendor's UTC days {flagged}; the trade dates they touch: {_dates(touched)}."
