@@ -3,13 +3,15 @@ import {
   createSeriesMarkers,
   HistogramSeries,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
   type ISeriesPrimitive,
+  LineStyle,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts"
-import { type ChartLook, lastBarColour } from "./chart-look"
+import { type ChartLook, lastBarColour, legibleText } from "./chart-look"
 import { type ChartMarker, type SessionSpan, sessionSpans } from "./chart-marks"
 import { type ChartTime, chartTime } from "./chart-time"
 import { SessionShading } from "./session-shading"
@@ -54,6 +56,7 @@ export type PriceFormat = Readonly<{ precision: number; minMove: number }>
 type DrawnCandles = {
   kind: "candles"
   api: ISeriesApi<"Candlestick">
+  lastPrice: IPriceLine
   markers: ISeriesMarkersPluginApi<Time>
   shading: SessionShading
   spans: readonly SessionSpan[]
@@ -138,21 +141,31 @@ type Painting = Readonly<{
 }>
 
 function added(chart: IChartApi, series: ChartSeries, pane: number): Drawn {
+  // The readout gives the volume, and the candles' last price is a line of the chart's own,
+  // which the library's would leave for the last bar in view as the trader scrolls back.
+  const unlabelled = { lastValueVisible: false, priceLineVisible: false }
   if (series.kind === "histogram") {
     const api = chart.addSeries(
       HistogramSeries,
-      { priceFormat: { type: "volume" } },
+      { ...unlabelled, priceFormat: { type: "volume" } },
       pane
     )
     return { kind: "histogram", api, byDirection: false, last: series }
   }
-  const api = chart.addSeries(CandlestickSeries, {}, pane)
+  const api = chart.addSeries(CandlestickSeries, unlabelled, pane)
+  const lastPrice = api.createPriceLine({
+    price: 0,
+    lineStyle: LineStyle.Dashed,
+    lineVisible: false,
+    axisLabelVisible: false,
+  })
   const shading = new SessionShading()
   api.attachPrimitive(shading)
   const markers = createSeriesMarkers(api, [])
   return {
     kind: "candles",
     api,
+    lastPrice,
     markers,
     shading,
     spans: [],
@@ -187,9 +200,22 @@ function paintedCandles(
     wickDownColor: look.down,
     borderVisible: true,
     wickVisible: true,
-    priceLineColor: lastBarColour(look, series.open, series.close),
     priceFormat: { type: "price", ...format },
   })
+  const close = series.close.at(-1)
+  const colour = lastBarColour(look, series.open, series.close)
+  each.lastPrice.applyOptions(
+    close === undefined
+      ? { lineVisible: false, axisLabelVisible: false }
+      : {
+          price: close,
+          color: colour,
+          lineVisible: true,
+          axisLabelVisible: true,
+          axisLabelColor: colour,
+          axisLabelTextColor: legibleText(colour),
+        }
+  )
   if (bars) {
     each.api.setData(
       series.time.map((time, index) => ({

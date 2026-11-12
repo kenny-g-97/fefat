@@ -10,6 +10,10 @@ const FILLS: Readonly<Record<MonthHeld, string>> = {
   none: "bg-accent",
 }
 
+/** A month with findings: a 2 px line in the negative colour under its cell, clear of its fill. */
+const FINDINGS_LINE =
+  "relative after:absolute after:inset-x-0 after:-bottom-1 after:h-0.5 after:rounded-xl after:bg-negative"
+
 /** A dataset's coverage by month (web/DESIGN.md, Patterns, Coverage strip): a cell a month of
  * its quality report, filled as `FILLS` says, a month with findings underlined in the negative
  * colour, each cell named in words for a screen reader and the pointer, with the first and the
@@ -34,7 +38,7 @@ export function CoverageStrip({
             className={cn(
               "min-w-0 flex-1 rounded-xl",
               FILLS[monthHeld(month)],
-              month.findings > 0 && "border-b-2 border-negative"
+              month.findings > 0 && FINDINGS_LINE
             )}
           />
         ))}
@@ -50,10 +54,10 @@ export function CoverageStrip({
 /** The strip's legend in words, under the panel's title: what each fill and the line mean. */
 export function CoverageLegend() {
   const entries: readonly Readonly<{ fill: string; label: string }>[] = [
-    { fill: FILLS.every, label: "Every session" },
-    { fill: FILLS.some, label: "Some sessions" },
-    { fill: FILLS.none, label: "No records" },
-    { fill: "bg-negative", label: "Findings" },
+    { fill: cn("size-2.5", FILLS.every), label: "Every session" },
+    { fill: cn("size-2.5", FILLS.some), label: "Some sessions" },
+    { fill: cn("size-2.5", FILLS.none), label: "No records" },
+    { fill: "h-0.5 w-2.5 bg-negative", label: "Findings" },
   ]
   return (
     <ul
@@ -62,10 +66,7 @@ export function CoverageLegend() {
     >
       {entries.map(({ fill, label }) => (
         <li key={label} className="flex items-center gap-2">
-          <span
-            aria-hidden="true"
-            className={cn("size-2.5 rounded-xl", fill)}
-          />
+          <span aria-hidden="true" className={cn("rounded-xl", fill)} />
           {label}
         </li>
       ))}

@@ -173,6 +173,10 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
     await chartDraws(page, "#ff4d6d"),
     "falling candles in the negative colour"
   ).toBe(true)
+  expect(
+    await chartDraws(page, "#050505"),
+    "the last price's label written in ink on its sign colour"
+  ).toBe(true)
   await expect(page.getByTestId("price-chart")).toHaveAttribute(
     "data-panes",
     "2"
@@ -212,8 +216,14 @@ test("a contract typed in its field is charted alone", async ({
   await page.goto("/data/chart?instrument=MES&provider=synthetic")
   await chartReady(page)
 
+  // Step 5.4's design review: the field took its contract on Enter alone, so one typed and left
+  // showed in the field while the chart drew the spliced series.
+  await expect(page.getByLabel("Contract")).toHaveAttribute(
+    "placeholder",
+    "Spliced"
+  )
   await page.getByLabel("Contract").fill("MESH2026")
-  await page.getByLabel("Contract").press("Enter")
+  await page.getByRole("heading", { level: 1, name: "Chart" }).click()
 
   await expect(page).toHaveURL(/contract=MESH2026/)
   await chartReady(page)
@@ -225,9 +235,17 @@ test("a contract typed in its field is charted alone", async ({
   await page.getByLabel("Contract").fill("MNQZ2025")
   await page.getByLabel("Contract").press("Enter")
   // The example names this year's June contract.
-  await expect(
-    page.getByText(/^Type a contract of MES, such as MESM\d{4}\.$/)
-  ).toBeVisible()
+  const refusal = page.getByText(
+    /^Type a contract of MES, such as MESM\d{4}\.$/
+  )
+  await expect(refusal).toBeVisible()
+  const below = await refusal.boundingBox()
+  const card = await page.getByTestId("chart-view").boundingBox()
+  expect(
+    below !== null && card !== null && below.y + below.height <= card.y,
+    "the refusal clear of the chart's card"
+  ).toBe(true)
+  await screenshot(page, "data-chart-refusal")
   expect(errors).toEqual([])
 })
 
@@ -246,8 +264,12 @@ test("the keys pan the focused chart to either end of what it loaded", async ({
     .toBeGreaterThan(5)
   await chart.press("End")
 
+  // At once, as Home goes: the library's own way to the newest bar slides for 400 ms, which
+  // reduced motion cannot stop on a canvas (step 5.4's design review).
   await expect
-    .poll(async () => Number(await view.getAttribute("data-after")))
+    .poll(async () => Number(await view.getAttribute("data-after")), {
+      timeout: 200,
+    })
     .toBeLessThan(1)
 })
 
@@ -369,6 +391,12 @@ test("the readout keeps the bar under the pointer while older bars arrive", asyn
     "data-loading",
     "true"
   )
+  // Step 5.4's design review: the chart said nothing of the window it waited for.
+  await expect(page.getByTestId("chart-view")).toHaveAttribute(
+    "aria-busy",
+    "true"
+  )
+  await expect(page.getByText("Loading bars")).toBeVisible()
   const time = page.getByTestId("readout-time")
   const last = await time.textContent()
   await page.mouse.move(box.x + box.width / 3, box.y + box.height / 2)
@@ -378,6 +406,7 @@ test("the readout keeps the bar under the pointer while older bars arrive", asyn
   await chartReady(page)
 
   await expect(time).toHaveText(pointed ?? "")
+  await expect(page.getByText("Loading bars")).toBeHidden()
 })
 
 test("the wheel zooms the chart, and scrolls a page too short for the chart", async ({
@@ -476,6 +505,56 @@ test("the chart's style changes as it is chosen and stays chosen", async ({
   )
   await expect.poll(() => chartDraws(page, "#26a69a")).toBe(true)
   expect(errors).toEqual([])
+})
+
+test("the style drawer undoes a reset, and gives the focus back to Chart style as it closes", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's design review: a reset took every colour of both themes with no way back, the
+  // volume's colour stayed a choice while the volume was hidden, and the focus fell to the page
+  // as the drawer closed.
+  await page.goto("/data/chart?instrument=MES&provider=synthetic")
+  await chartReady(page)
+  const opener = page.getByRole("button", { name: "Chart style" })
+  await opener.click()
+  await expect(opener).toHaveAttribute("aria-expanded", "true")
+  const drawer = page.getByRole("dialog", { name: "Chart style" })
+  const rising = drawer.getByRole("group", { name: "Rising bars" })
+  const grey = drawer
+    .getByRole("group", { name: "Volume colour" })
+    .getByRole("button", { name: "Grey" })
+
+  await rising.getByRole("button", { name: "Filled" }).click()
+  await drawer.getByRole("button", { name: "Reset to FEAT's style" }).click()
+  await expect(rising.getByRole("button", { name: "Hollow" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  )
+  await drawer.getByRole("button", { name: "Undo reset" }).click()
+  await expect(rising.getByRole("button", { name: "Filled" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  )
+  await expect(grey).toBeEnabled()
+  await drawer
+    .getByRole("group", { name: "Volume" })
+    .getByRole("button", { name: "Hidden" })
+    .click()
+  await expect(grey).toBeDisabled()
+  // The drawer starts under the top bar, whose jobs indicator stays in view.
+  await expect(page.getByTestId("jobs-indicator")).toBeInViewport()
+  const indicator = await page.getByTestId("jobs-indicator").boundingBox()
+  const panel = await page.getByTestId("chart-style-drawer").boundingBox()
+  expect(
+    indicator !== null &&
+      panel !== null &&
+      indicator.y + indicator.height <= panel.y,
+    "the jobs indicator above the drawer"
+  ).toBe(true)
+  await page.keyboard.press("Escape")
+
+  await expect(drawer).toBeHidden()
+  await expect(opener).toBeFocused()
 })
 
 test("a series the store cannot give says why in the SDK's words", async ({

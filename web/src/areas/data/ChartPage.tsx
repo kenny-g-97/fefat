@@ -11,6 +11,7 @@ import {
 } from "@/api/catalog"
 import { type ChartStyle, settingsQuery } from "@/api/settings"
 import { Page } from "@/ui/page"
+import { Sheet } from "@/ui/sheet"
 import { ChartStyleDrawer } from "./ChartStyleDrawer"
 import { ChartToolbar } from "./ChartToolbar"
 import { ChartView } from "./ChartView"
@@ -27,36 +28,38 @@ export function ChartPage() {
   const instruments = useQuery(instrumentsQuery)
   const { data: settings } = useSuspenseQuery(settingsQuery)
   const [styling, setStyling] = useState(false)
+  // The drawer's sheet holds the toolbar's Chart style as its trigger, which the focus goes back
+  // to when the drawer closes.
   return (
-    <Page
-      title="Chart"
-      description="Your data's bars, a window at a time as you scroll back"
-      fill
-    >
-      <div
-        className={cn("flex min-h-0 flex-1 flex-col gap-4", styling && "pr-96")}
+    <Sheet modal={false} open={styling} onOpenChange={setStyling}>
+      <Page
+        title="Chart"
+        description="Your data's bars, a window at a time as you scroll back"
+        fill
       >
-        <QueryBody query={catalog}>
-          {(status) => (
-            <QueryBody query={instruments}>
-              {(versions) => (
-                <ChartWorkspace
-                  catalog={status}
-                  versions={versions}
-                  style={settings.chart_style}
-                  onStyle={() => setStyling(true)}
-                />
-              )}
-            </QueryBody>
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col gap-5",
+            styling && "pr-96"
           )}
-        </QueryBody>
-      </div>
-      <ChartStyleDrawer
-        open={styling}
-        onOpenChange={setStyling}
-        style={settings.chart_style}
-      />
-    </Page>
+        >
+          <QueryBody query={catalog}>
+            {(status) => (
+              <QueryBody query={instruments}>
+                {(versions) => (
+                  <ChartWorkspace
+                    catalog={status}
+                    versions={versions}
+                    style={settings.chart_style}
+                  />
+                )}
+              </QueryBody>
+            )}
+          </QueryBody>
+        </div>
+        <ChartStyleDrawer style={settings.chart_style} />
+      </Page>
+    </Sheet>
   )
 }
 
@@ -64,15 +67,9 @@ type ChartWorkspaceProps = Readonly<{
   catalog: CatalogStatus
   versions: readonly InstrumentVersion[]
   style: ChartStyle
-  onStyle: () => void
 }>
 
-function ChartWorkspace({
-  catalog,
-  versions,
-  style,
-  onStyle,
-}: ChartWorkspaceProps) {
+function ChartWorkspace({ catalog, versions, style }: ChartWorkspaceProps) {
   const shown = useSearch({ from: "/_shell/data/chart" })
   const navigate = useNavigate({ from: "/data/chart" })
   const roots = chartRoots(catalog)
@@ -104,14 +101,12 @@ function ChartWorkspace({
   return (
     <>
       <ChartToolbar
-        key={`${root} ${shown.contract}`}
         roots={roots.includes(root) ? roots : [root, ...roots]}
         root={root}
         futures={futures}
         providers={rootProviders(catalog, root)}
         shown={shown}
         onChoose={choose}
-        onStyle={onStyle}
       />
       <ChartView
         key={[

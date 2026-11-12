@@ -90,8 +90,8 @@ export function chartLook(
 }
 
 /** The colour of the last price's label and line: its bar's direction, rising where it closed at
- * or above its open as the library counts it, since the library would paint a hollow body's
- * clear colour as black; the rising colour while no bar is drawn. */
+ * or above its open as the library counts it, as a filled body's; the rising colour while no
+ * bar is drawn. */
 export function lastBarColour(
   look: ChartLook,
   open: readonly number[],
@@ -99,6 +99,36 @@ export function lastBarColour(
 ): string {
   const last = close.length - 1
   return last < 0 || close[last] >= open[last] ? look.up : look.down
+}
+
+/** The text written on a label filled with `fill`, `#rrggbb`: the ink of text on the accent, or
+ * white, whichever stands further from it in WCAG's contrast (web/DESIGN.md, Palette, "Lifted
+ * for contrast"). */
+export function legibleText(fill: string): string {
+  const ink = "#050505"
+  const white = "#ffffff"
+  return contrast(fill, ink) >= contrast(fill, white) ? ink : white
+}
+
+function contrast(one: string, other: string): number {
+  const [lighter, darker] = [luminance(one), luminance(other)].toSorted(
+    (left, right) => right - left
+  )
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function luminance(colour: string): number {
+  const channels = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(colour)
+  if (channels === null) {
+    throw new Error(
+      `Expected a colour as #rrggbb, got ${JSON.stringify(colour)}.`
+    )
+  }
+  const [red, green, blue] = channels.slice(1).map((channel) => {
+    const share = parseInt(channel, 16) / 255
+    return share <= 0.04045 ? share / 12.92 : ((share + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
 }
 
 /** The tokens of the theme the page shows now, as `#rrggbb`. */

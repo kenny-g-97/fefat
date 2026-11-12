@@ -305,6 +305,13 @@ main[tabindex="-1"]:focus-visible {
   animation: sheet-in 150ms var(--ease-in-out);
 }
 
+/* A drawer that stays open beside the page, the chart's style, starts under the top bar, so that
+   the bar's jobs indicator and its count stay in view while it is open. */
+[data-slot="sheet-content"][data-beside="page"] {
+  top: 4.5rem;
+  height: auto;
+}
+
 [data-slot="sheet-content"][data-state="closed"] {
   animation: sheet-out 150ms var(--ease-in-out);
 }
@@ -399,15 +406,27 @@ main[tabindex="-1"]:focus-visible {
   border-radius: 0.75rem;
 }
 
-/* A disclosure's summary answers a press as a button does. */
+/* A press shows on the swatch's border, as a radio's does, before the browser's picker opens on
+   release. */
+[data-slot="colour-field"]:active {
+  border-color: var(--ring);
+}
+
+/* A disclosure's summary is a row as wide as its card, which a 2 % scale would move by several
+   pixels at its far end: it steps its surface under the pointer and again when pressed, as a
+   table's row does. */
 summary {
-  transition-property: color, background-color, border-color, transform;
+  transition-property: color, background-color, border-color;
   transition-duration: 150ms;
   transition-timing-function: var(--ease-in-out);
 }
 
+summary:hover {
+  background-color: var(--muted);
+}
+
 summary:active {
-  transform: scale(0.98);
+  background-color: var(--accent);
 }
 
 /* The chart fills its card, which clips what lies outside it, so its focus ring lies inside. */

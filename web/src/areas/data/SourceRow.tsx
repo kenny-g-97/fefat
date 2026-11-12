@@ -27,7 +27,7 @@ export function SourceRow({ source }: Readonly<{ source: Source }>) {
       data-testid="source-row"
       className="group border-b last:border-b-0"
     >
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-3 rounded-xl">
+      <summary className="-mx-2 flex h-10 cursor-pointer list-none items-center gap-3 rounded-xl px-2">
         <ChevronRight className="size-4 shrink-0 text-foreground-secondary transition-transform group-open:rotate-90" />
         <span className="font-medium text-foreground">{source.name}</span>
         <span className="text-xs text-muted-foreground">

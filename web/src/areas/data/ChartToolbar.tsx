@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/ui/select"
+import { SheetTrigger } from "@/ui/sheet"
 import { contractChoice } from "./chart-panes"
 import type { ChartSearch } from "./chart-search"
 
@@ -23,7 +24,6 @@ type ChartToolbarProps = Readonly<{
   providers: readonly string[]
   shown: ChartSearch
   onChoose: (change: Partial<ChartSearch>) => void
-  onStyle: () => void
 }>
 
 const PRICES: readonly Readonly<{ value: BarPrices; label: string }>[] = [
@@ -51,7 +51,6 @@ export function ChartToolbar({
   providers,
   shown,
   onChoose,
-  onStyle,
 }: ChartToolbarProps) {
   return (
     <div className="flex shrink-0 flex-wrap items-end gap-4">
@@ -71,6 +70,7 @@ export function ChartToolbar({
       </Choice>
       {futures && (
         <ContractField
+          key={`${root} ${shown.contract}`}
           root={root}
           contract={shown.contract}
           onChoose={onChoose}
@@ -107,10 +107,12 @@ export function ChartToolbar({
           onChange={(prices) => onChoose({ prices })}
         />
       )}
-      <Button variant="ghost" className="ml-auto" onClick={onStyle}>
-        <Palette className="size-4" />
-        Chart style
-      </Button>
+      <SheetTrigger asChild>
+        <Button data-slot="button" variant="ghost" className="ml-auto">
+          <Palette className="size-4" />
+          Chart style
+        </Button>
+      </SheetTrigger>
     </div>
   )
 }
@@ -158,7 +160,8 @@ type ContractFieldProps = Readonly<{
   onChoose: (change: Partial<ChartSearch>) => void
 }>
 
-/** A contract of the root to chart alone, typed and kept with Enter; nothing charts the root. */
+/** A contract of the root to chart alone, kept with Enter or once the field is left, as a field's
+ * rules are checked (web/DESIGN.md, Forms); nothing charts the root's spliced series. */
 function ContractField({ root, contract, onChoose }: ContractFieldProps) {
   const [typed, setTyped] = useState(contract === undefined ? "" : contract)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -180,11 +183,16 @@ function ContractField({ root, contract, onChoose }: ContractFieldProps) {
       <Input
         id="chart-contract"
         value={typed}
-        placeholder={`${root} alone`}
+        placeholder="Spliced"
         autoComplete="off"
         aria-invalid={refusal !== null}
         className="w-40"
         onChange={(event) => setTyped(event.target.value.toUpperCase())}
+        onBlur={(event) => {
+          if (typed !== (contract === undefined ? "" : contract)) {
+            event.currentTarget.form?.requestSubmit()
+          }
+        }}
       />
       {refusal !== null && (
         <p

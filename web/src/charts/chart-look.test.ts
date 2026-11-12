@@ -3,6 +3,7 @@ import type { ChartStyle } from "@/api/settings"
 import {
   chartLook,
   lastBarColour,
+  legibleText,
   type ThemeTokens,
   tokenColour,
   withAlpha,
@@ -88,6 +89,17 @@ describe("lastBarColour", () => {
     expect(lastBarColour(look, [10, 12], [11, 12])).toBe("#10b981")
     expect(lastBarColour(look, [10, 12], [11, 11.75])).toBe("#ff4d6d")
     expect(lastBarColour(look, [], [])).toBe("#10b981")
+  })
+})
+
+describe("legibleText", () => {
+  it("writes ink on the dark theme's sign colours and white on the light theme's", () => {
+    // Step 5.4's design review: the library wrote white on the dark theme's green, 2.5 : 1.
+    expect(
+      ["#10b981", "#ff4d6d", "#0a7a4c", "#c81e4a"].map((colour) =>
+        legibleText(colour)
+      )
+    ).toEqual(["#050505", "#050505", "#ffffff", "#ffffff"])
   })
 })
 

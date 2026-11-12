@@ -50,13 +50,13 @@ The library has no time zones. The chart keeps true UTC seconds, and its labels 
 
 ## Look
 
-`chartLook` turns the style and the theme into colours (`chart-look.ts`): FEAT's default is hollow candles, green rising and red falling, in `--positive` and `--negative`, the builder's exception to "colour means sign" (web/DESIGN.md), on a clear background so that the card shows through, with the grid in `--border` and the axis text in `--muted-foreground`; volume in `--input`, or by direction at half strength. The last price's label and line take its bar's direction colour (`lastBarColour`), since the library colours them as the bar's body, which it would draw black where the body is hollow. A change of the look recolours the series without setting their bars again, but for volume by direction, whose bars carry their own colours.
+`chartLook` turns the style and the theme into colours (`chart-look.ts`): FEAT's default is hollow candles, green rising and red falling, in `--positive` and `--negative`, the builder's exception to "colour means sign" (web/DESIGN.md), on a clear background so that the card shows through, with the grid in `--border` and the axis text in `--muted-foreground`; volume in `--input`, or by direction at half strength. The last price is a dashed line of the chart's own at the newest close, in its bar's direction colour (`lastBarColour`), its label on the axis written in ink or in white, whichever reads better on that colour (`legibleText`): the library's own label would follow the last bar in view as the trader scrolls back, and its text falls under 3 : 1 on the dark theme's sign colours. The volume shows no last value; the caller's readout gives it. A change of the look recolours the series without setting their bars again, but for volume by direction, whose bars carry their own colours.
 
 The library's attribution logo stays in the chart's corner (`attributionLogo`), as TradingView asks; it writes a style element for it, which the content security policy allows from step 5.4, and `src/index.css` gives it the subtle text colour.
 
 ## Keys
 
-The chart takes the focus on a click or Tab, and then: the arrows pan a tenth of the bars in view, PageUp and PageDown a screen, Home and End go to the earliest and the latest bar loaded, and plus and minus zoom (`chart-keys.ts`).
+The chart takes the focus on a click or Tab, and then: the arrows pan a tenth of the bars in view, PageUp and PageDown a screen, Home and End go at once to the earliest and the latest bar loaded, and plus and minus zoom (`chart-keys.ts`). Its focus outline lies 2 px inside it, since a card around it may clip what lies outside.
 
 ## Tests
 

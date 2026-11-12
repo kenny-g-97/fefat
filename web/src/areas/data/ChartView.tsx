@@ -87,7 +87,9 @@ function ChartWindows({
   const older = settled && wanted < windows.length
   const scrolls = usePageScrolls()
   const warnings = [...new Set(read.flatMap((each) => each.warnings))]
-  const loading = !settled || (older && visible.before < PRELOAD_BARS)
+  const loading =
+    failure === undefined &&
+    (!settled || (older && visible.before < PRELOAD_BARS))
 
   const moved = (bars: VisibleBars) => {
     setVisible(bars)
@@ -113,6 +115,7 @@ function ChartWindows({
           index={hovered}
           decimals={priceFormat.precision}
           daily={series.timeframe === "1d"}
+          loading={loading}
         />
         <PriceChart
           label={label}
@@ -171,7 +174,8 @@ type ChartFrameProps = Readonly<{
   children?: ReactNode
 }>
 
-/** The chart's card, which tells a test whether it is still loading and what it drew. */
+/** The chart's card, busy while bars load, which tells a test whether it is still loading and
+ * what it drew; before its first bars, it says that they load. */
 function ChartFrame({
   loading = true,
   attributes = {},
@@ -181,10 +185,17 @@ function ChartFrame({
     <div
       data-testid="chart-view"
       data-loading={String(loading)}
+      aria-busy={loading}
       {...attributes}
       className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-raised"
     >
-      {children}
+      {children === undefined ? (
+        <p className="flex min-h-12 items-center border-b px-4 text-xs text-muted-foreground">
+          Loading bars
+        </p>
+      ) : (
+        children
+      )}
     </div>
   )
 }

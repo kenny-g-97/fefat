@@ -1,5 +1,31 @@
 import { describe, expect, it } from "vitest"
-import { decimalsOf, formatCount, formatDecimal, formatPrice } from "./figures"
+import {
+  decimalsOf,
+  formatAligned,
+  formatCount,
+  formatDecimal,
+  formatPrice,
+} from "./figures"
+
+describe("formatAligned", () => {
+  it("lines up a column's decimal points with spaces, adding no digit", () => {
+    // Step 5.4's design review: GC's tick of 0.1 sat a place to the right of CL's 0.01.
+    expect([0.01, 0.1, 0.25].map((each) => formatAligned(each, 2))).toEqual([
+      "0.01",
+      "0.1 ",
+      "0.25",
+    ])
+    expect([0.00001, 0.001, 1].map((each) => formatAligned(each, 5))).toEqual([
+      "0.00001",
+      "0.001  ",
+      "1      ",
+    ])
+    expect(formatAligned(50, 0)).toBe("50")
+    expect(() => formatAligned(0.25, 1)).toThrow(
+      "Expected a decimal of at most 1 places, got 0.25."
+    )
+  })
+})
 
 describe("decimalsOf", () => {
   it("writes each tick, point value, and lot step with the decimals it has", () => {

@@ -18,6 +18,20 @@ export function formatDecimal(value: number): string {
   return value.toFixed(decimalsOf(value))
 }
 
+/** A decimal of the API written to line its point up in a column of `places` decimals, set in a
+ * monospace and kept with its spaces: its own digits, then a space for each place and for the
+ * point it lacks, so that no digit is added. */
+export function formatAligned(value: number, places: number): string {
+  const own = decimalsOf(value)
+  if (own > places) {
+    throw new Error(
+      `Expected a decimal of at most ${places} places, got ${value}.`
+    )
+  }
+  const point = own === 0 && places > 0 ? 1 : 0
+  return formatDecimal(value) + " ".repeat(places - own + point)
+}
+
 /** A price with its instrument's decimals, as the chart's axis writes it: 5012.25. */
 export function formatPrice(price: number, decimals: number): string {
   return price.toFixed(decimals)

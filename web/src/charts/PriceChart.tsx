@@ -222,7 +222,7 @@ function lookOptions(
 function moved(chart: IChartApi, action: KeyAction): void {
   const timeScale = chart.timeScale()
   if (action.kind === "latest") {
-    timeScale.scrollToRealTime()
+    timeScale.scrollToPosition(timeScale.options().rightOffset, false)
     return
   }
   if (action.kind === "zoom") {

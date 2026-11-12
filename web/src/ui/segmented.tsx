@@ -39,7 +39,7 @@ export function Segmented<Option extends string>({
           disabled={disabled}
           data-slot="segmented-option"
           onClick={() => onChange(option.value)}
-          className="h-8 rounded-xl border border-transparent px-3 font-semibold text-foreground-secondary hover:text-foreground disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+          className="h-7.5 rounded-xl border border-transparent px-3 font-semibold text-foreground-secondary hover:text-foreground disabled:opacity-50 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
         >
           {option.label}
         </button>

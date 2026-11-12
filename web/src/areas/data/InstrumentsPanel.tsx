@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { type InstrumentVersion, instrumentsQuery } from "@/api/catalog"
-import { formatDecimal } from "@/ui/figures"
+import { decimalsOf, formatAligned } from "@/ui/figures"
 import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
 import {
@@ -54,14 +54,7 @@ export function InstrumentsPanel() {
                   ))}
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {versions.map((version) => (
-                  <InstrumentRow
-                    key={`${version.root} ${version.valid_from}`}
-                    version={version}
-                  />
-                ))}
-              </TableBody>
+              <InstrumentRows versions={versions} />
             </Table>
           </div>
         )}
@@ -70,8 +63,42 @@ export function InstrumentsPanel() {
   )
 }
 
-function InstrumentRow({ version }: Readonly<{ version: InstrumentVersion }>) {
+function InstrumentRows({
+  versions,
+}: Readonly<{ versions: readonly InstrumentVersion[] }>) {
+  const places = placesOf(versions)
+  return (
+    <TableBody>
+      {versions.map((version) => (
+        <InstrumentRow
+          key={`${version.root} ${version.valid_from}`}
+          version={version}
+          places={places}
+        />
+      ))}
+    </TableBody>
+  )
+}
+
+/** The decimals of each figure's column, so that its points line up (web/DESIGN.md, Type). */
+type Places = Readonly<{ tick: number; point: number; lot: number }>
+
+function placesOf(versions: readonly InstrumentVersion[]): Places {
+  const most = (figure: (version: InstrumentVersion) => number) =>
+    Math.max(0, ...versions.map((version) => decimalsOf(figure(version))))
+  return {
+    tick: most((version) => version.tick_size),
+    point: most((version) => version.point_value),
+    lot: most((version) => version.lot_step),
+  }
+}
+
+function InstrumentRow({
+  version,
+  places,
+}: Readonly<{ version: InstrumentVersion; places: Places }>) {
   const cell = "px-3 py-0 text-foreground-secondary"
+  const figure = `${cell} text-right whitespace-pre`
   return (
     <TableRow className="h-10 hover:bg-muted">
       <TableCell className="py-0 pr-3 pl-6 font-medium text-foreground">
@@ -81,14 +108,14 @@ function InstrumentRow({ version }: Readonly<{ version: InstrumentVersion }>) {
         </span>
       </TableCell>
       <TableCell className={cell}>{KINDS[version.kind]}</TableCell>
-      <TableCell className={`${cell} text-right`}>
-        {formatDecimal(version.tick_size)}
+      <TableCell className={figure}>
+        {formatAligned(version.tick_size, places.tick)}
       </TableCell>
-      <TableCell className={`${cell} text-right`}>
-        {formatDecimal(version.point_value)}
+      <TableCell className={figure}>
+        {formatAligned(version.point_value, places.point)}
       </TableCell>
-      <TableCell className={`${cell} text-right`}>
-        {formatDecimal(version.lot_step)}
+      <TableCell className={figure}>
+        {formatAligned(version.lot_step, places.lot)}
       </TableCell>
       <TableCell className={cell}>{version.currency}</TableCell>
       <TableCell className={cell}>{version.calendar}</TableCell>
