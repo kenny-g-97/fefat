@@ -1,5 +1,5 @@
 import { barSeconds, type Timeframe, timeframe } from "@/api/bar-windows"
-import type { MonthCoverage, StoredDataset } from "@/api/catalog"
+import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
 import { formatCount } from "@/ui/figures"
 
 /** Datasets grouped under a name, a root or a provider, in the API's order. */
@@ -7,6 +7,43 @@ export type Grouped = Readonly<{
   name: string
   datasets: readonly StoredDataset[]
 }>
+
+/** A product the catalog lists, with the datasets that hold it. */
+export type CatalogProduct = CatalogStatus["products"][number]
+
+/** An instrument's data from one provider, as the trader imported it and as the Data page lists
+ * it: the store's datasets of it, one per kind of data; those kinds in words; the first and the
+ * last trade date among them; its quality, stale once a dataset outgrew the report the others
+ * still read clean; and its product, where the catalog lists the instrument. */
+export type ImportedDataset = Readonly<{
+  root: string
+  provider: string
+  stored: readonly [StoredDataset, ...StoredDataset[]]
+  kinds: string
+  from: string
+  to: string
+  quality: StoredDataset["quality"]
+  product: CatalogProduct | null
+}>
+
+/** The data the store holds, an instrument's from one provider at a time, in the API's order:
+ * the catalog's products, then the roots it does not list. */
+export function importedDatasets(
+  catalog: CatalogStatus
+): readonly ImportedDataset[] {
+  const listed = catalog.products.flatMap((product) =>
+    byProvider(product.datasets).map((held) => imported(held, product))
+  )
+  const unlisted = byRoot(catalog.unlisted).flatMap((root) =>
+    byProvider(root.datasets).map((held) => imported(held, null))
+  )
+  return [...listed, ...unlisted]
+}
+
+/** The catalog's products that hold no data yet. */
+export function notImported(catalog: CatalogStatus): readonly CatalogProduct[] {
+  return catalog.products.filter((product) => product.datasets.length === 0)
+}
 
 /** How a month of a quality report is held: every session with records, some, or none. */
 export type MonthHeld = "every" | "some" | "none"
@@ -87,6 +124,37 @@ export function monthLabel(month: MonthCoverage): string {
 
 function counted(count: number, noun: string): string {
   return `${formatCount(count)} ${noun}${count === 1 ? "" : "s"}`
+}
+
+function imported(
+  held: Grouped,
+  product: CatalogProduct | null
+): ImportedDataset {
+  const [first, ...rest] = held.datasets
+  if (first === undefined) {
+    throw new Error(`Expected datasets of the provider ${held.name}, got none.`)
+  }
+  const stored: ImportedDataset["stored"] = [first, ...rest]
+  return {
+    root: first.root,
+    provider: held.name,
+    stored,
+    kinds: stored.map((each) => fidelityLabel(each.fidelity)).join(", "),
+    from: stored.reduce(
+      (earliest, each) =>
+        each.first_trade_date < earliest ? each.first_trade_date : earliest,
+      first.first_trade_date
+    ),
+    to: stored.reduce(
+      (latest, each) =>
+        each.last_trade_date > latest ? each.last_trade_date : latest,
+      first.last_trade_date
+    ),
+    quality: stored.some((each) => each.quality === "stale")
+      ? "stale"
+      : first.quality,
+    product,
+  }
 }
 
 function grouped(

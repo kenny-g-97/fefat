@@ -1,13 +1,110 @@
 import { describe, expect, it } from "vitest"
-import type { MonthCoverage, StoredDataset } from "@/api/catalog"
+import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
 import {
   byProvider,
   byRoot,
   chartTimeframe,
   fidelityLabel,
+  importedDatasets,
   monthHeld,
   monthLabel,
+  notImported,
 } from "./datasets"
+
+type CatalogProduct = CatalogStatus["products"][number]
+
+describe("importedDatasets", () => {
+  it("gives a row for each instrument and provider that holds data, in the API's order", () => {
+    // From the builder's second check of step 5.4: the Data page lists what was imported, a
+    // row an instrument's data from one provider, a catalog product's or not.
+    const mnq: CatalogProduct = {
+      root: "MNQ",
+      history_from: "2019-05-06",
+      recommended_source: "Databento",
+      datasets: [
+        {
+          ...aDataset("databento", "MNQ", "1m"),
+          first_trade_date: "2019-05-06",
+          last_trade_date: "2026-09-23",
+          coverage: "complete",
+        },
+        {
+          ...aDataset("databento", "MNQ", "trades"),
+          first_trade_date: "2026-09-21",
+          last_trade_date: "2026-09-24",
+          coverage: "partial",
+        },
+        { ...aDataset("ninjatrader", "MNQ", "1m"), coverage: "partial" },
+      ],
+    }
+    const mcl: CatalogProduct = {
+      root: "MCL",
+      history_from: "2021-07-12",
+      recommended_source: "Databento",
+      datasets: [],
+    }
+    const catalog: CatalogStatus = {
+      version: 1,
+      products: [mnq, mcl],
+      unlisted: [
+        aDataset("synthetic", "ES", "1s"),
+        aDataset("synthetic", "BTCUSDT-PERP", "1m"),
+      ],
+    }
+
+    const rows = importedDatasets(catalog)
+
+    expect(
+      rows.map((row) => [row.root, row.provider, row.kinds, row.from, row.to])
+    ).toEqual([
+      ["MNQ", "databento", "1-minute bars, Trades", "2019-05-06", "2026-09-24"],
+      ["MNQ", "ninjatrader", "1-minute bars", "2026-03-05", "2026-03-09"],
+      ["ES", "synthetic", "1-second bars", "2026-03-05", "2026-03-09"],
+      [
+        "BTCUSDT-PERP",
+        "synthetic",
+        "1-minute bars",
+        "2026-03-05",
+        "2026-03-09",
+      ],
+    ])
+    expect(rows.map((row) => row.stored.length)).toEqual([2, 1, 1, 1])
+    expect(rows.map((row) => row.product)).toEqual([mnq, mnq, null, null])
+    expect(notImported(catalog)).toEqual([mcl])
+  })
+
+  it("reads a row's quality as stale once one of its datasets outgrew the report", () => {
+    // A clean report is stale for the dataset an import grew since (`quality_verdict`), so a
+    // provider's datasets of a root can read clean and stale side by side.
+    const minutes: StoredDataset = {
+      ...aDataset("databento", "MNQ", "1m"),
+      quality: "clean",
+    }
+    const trades: StoredDataset = {
+      ...aDataset("databento", "MNQ", "trades"),
+      quality: "stale",
+    }
+    const flagged: StoredDataset = {
+      ...aDataset("ninjatrader", "MNQ", "1m"),
+      quality: "flagged",
+    }
+    const catalog: CatalogStatus = {
+      version: 1,
+      products: [],
+      unlisted: [minutes, trades, flagged],
+    }
+
+    expect(importedDatasets(catalog).map((row) => row.quality)).toEqual([
+      "stale",
+      "flagged",
+    ])
+    expect(
+      importedDatasets({ ...catalog, unlisted: [minutes] }).map(
+        (row) => row.quality
+      )
+    ).toEqual(["clean"])
+  })
+})
 
 describe("chartTimeframe", () => {
   it("opens at five minutes, or at the first timeframe a provider's longer bars build", () => {
