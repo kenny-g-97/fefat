@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { syncsUnderWay, useCatalogAfterSyncs } from "@/api/catalog"
 import { jobsQuery } from "@/api/jobs"
+import { Button } from "@/ui/button"
 import { Page } from "@/ui/page"
 import { CatalogPanels } from "./CatalogPanels"
 import { InstrumentsPanel } from "./InstrumentsPanel"
@@ -17,6 +19,11 @@ export function DataPage() {
     <Page
       title="Data"
       description="Your market data and how clean it is, the instruments, and where to get more"
+      action={
+        <Button asChild>
+          <Link to="/data/import">Import data</Link>
+        </Button>
+      }
     >
       <div className="flex flex-col gap-6">
         <CatalogPanels syncs={syncs} />

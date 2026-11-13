@@ -167,6 +167,49 @@ test("the catalog's products, your data, the instruments, and the sources each s
   expect(errors).toEqual([])
 })
 
+test("Import data stands at the top of the Data page, on its title's line, and leads to the import page", async ({
+  loggedIn: page,
+}) => {
+  // From the builder's second check of step 5.4: the one way to the import was a source's row,
+  // at the bottom of the page.
+  await page.goto("/lab")
+  const untouched = await page.getByRole("heading", { level: 1 }).boundingBox()
+  await page.goto("/data")
+  const action = page
+    .getByRole("main")
+    .getByRole("link", { name: "Import data", exact: true })
+
+  await expect(action).toBeInViewport()
+  const title = await page.getByRole("heading", { level: 1 }).boundingBox()
+  const button = await action.boundingBox()
+  const content = await page
+    .getByRole("region", { name: "Instruments" })
+    .boundingBox()
+  if (
+    untouched === null ||
+    title === null ||
+    button === null ||
+    content === null
+  ) {
+    throw new Error("Expected the header and a card on the page, got none.")
+  }
+  expect(
+    Math.abs(button.y + button.height / 2 - (title.y + title.height / 2)),
+    "the action centred on the title's line"
+  ).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(button.x + button.width - (content.x + content.width)),
+    "the action ending at the content's right edge"
+  ).toBeLessThanOrEqual(1)
+  expect(title.y, "the title where a page without an action has its own").toBe(
+    untouched.y
+  )
+  await action.click()
+
+  await expect(page).toHaveURL("/data/import")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
+})
+
 test("Update checks a product's quality as a job, and its coverage shows by month", async ({
   loggedIn: page,
 }) => {
