@@ -132,6 +132,44 @@ test("the chart keeps its least size, never passes its column, and narrows besid
   await expectSize(card, { width: set, height: LEAST.height })
 })
 
+test("the chart's size outlives a change of timeframe and a reload, kept in this browser", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, right, bottom } = edges(page)
+  const filling = await boxOf(card)
+  const set = {
+    width: Math.floor(filling.width) - 200,
+    height: Math.floor(filling.height) - 80,
+  }
+  const kept = () =>
+    page.evaluate(() => localStorage.getItem("fefat_chart_frame_size"))
+  expect(await kept(), "nothing kept before an edge is dragged").toBeNull()
+
+  await drag(page, right, -200, 0)
+  await drag(page, bottom, 0, -80)
+  await expectSize(card, set)
+  // Another timeframe is another chart, drawn in the frame as the trader left it.
+  await page.getByLabel("Timeframe").click()
+  await page.getByRole("option", { name: "1h" }).click()
+  await expect(page).toHaveURL(/timeframe=1h/)
+  await chartReady(page)
+  await expectSize(card, set)
+  expect(await kept()).toBe(JSON.stringify(set))
+  await page.reload()
+  await chartReady(page)
+  await expectSize(card, set)
+
+  // What the browser keeps is the trader's to edit: a text that is no size fills the page.
+  await page.evaluate(() =>
+    localStorage.setItem("fefat_chart_frame_size", "{broken")
+  )
+  await page.reload()
+  await chartReady(page)
+  await expectSize(card, filling)
+})
+
 test("the edges follow the chart in the Tab order, say their size, and move by the keys", async ({
   loggedIn: page,
 }) => {
