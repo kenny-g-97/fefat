@@ -624,12 +624,12 @@ You keep a dataset current with new files: a download or an export that holds ol
 ```text
 Masterplan step 5.14 — Merge files that overlap stored data.
 
-Read docs/masterplan/02-engine-and-data.md §1.1 and §1.8, the import section of docs/data-guide.md, and `fefat.market.importers` (`partition_buffers`, `file_writer`, `databento`, `file_import`). Today a partition takes one import: a later file with other rows for a partition the store holds is refused whole, so a download that continues a month already stored, one that ends inside it, or one that fills a session the first lacked cannot come in (from `BACKLOG.md`, "Merge a file that overlaps an imported one"). Let `import_databento` and `import_file` merge such a file into the partitions it overlaps:
+Read docs/masterplan/02-engine-and-data.md §1.1 and §1.8, the import section of docs/data-guide.md, and `fefat.market.importers` (`partition_buffers`, `file_writer`, `databento`, `file_import`). Today a partition takes one import: a later file with other rows for a partition the store holds is refused whole, so a download that continues a month already stored, one that ends inside it, or one that fills a session the first lacked cannot come in (D-98, which took `BACKLOG.md`'s line on it, there since step 1.6). Let `import_databento` and `import_file` merge such a file into the partitions it overlaps:
 
 1. The rule, planned with the builder first: a record the store lacks is added in clock order; a record it already holds is dropped and counted; for a record it holds with other values, the plan asks which stands, the stored one, the file's, or neither (the file refused), and whether a merge is the importers' default or asked for by a flag.
 2. Nothing is written until the whole file is checked: the partitions a file touches, and what it adds to each, are known first, so a refused file leaves the store as it was, the DBN importer included, which today writes a file's earlier partitions before a later one refuses it.
 3. The record: the original file is kept under `raw/` and recorded in the manifest, as every import's is; `dataset.json` stays its first import's (D-11); the import's report says, per dataset, the sessions added, the records already held, and the records that differ, counts and dates alone; `fefat data import file --preview` says the same without writing, and `fefat data import databento` gains the same preview.
-4. What reads the store afterwards: a snapshot pins its files by content, so a run that pinned a merged partition is told, with the partition's name, that its data changed since, when it is read again or reproduced, its record and its results untouched; the quality report reads stale, as after a backfill (D-94); and the engine's cache, the feature cache, and the roll calendar build again for the partitions that changed, and for no others.
+4. What reads the store afterwards: a snapshot pins its files by content, so a run that pinned a merged partition is refused, with the partition's name and that its data changed since, when it is read again or reproduced, its record and its results untouched; the quality report reads stale, as after a backfill (D-94); and the engine's cache, the feature cache, and the roll calendar build again for the partitions that changed, and for no others.
 
 Property tests on generated files: a range imported as one file, or as two files that overlap, in either order, leaves the same rows in the same partitions; a merge run twice writes nothing; a refused file changes no byte of the store. Amend 02 §1.1 and §1.8 and docs/data-guide.md, and write the ADR of the rule, which replaces "the first import stands" (D-49, D-50).
 
@@ -643,7 +643,7 @@ Not in this step: the import wizard (5.12), which shows this step's preview; con
 3. The report and the preview name the sessions added and count the records already held and those that differ, and hold no prices (test).
 4. A run whose snapshot pinned a merged partition is refused on re-read with the partition's name, and a new run takes a new snapshot; the quality report reads stale after a merge (tests).
 5. The leak detector passes on a merged store, and the caches rebuild the changed partitions alone (test).
-6. `02-engine-and-data.md` §1.1 and §1.8, `docs/data-guide.md`, and the ADR say the rule, and `BACKLOG.md` no longer lists the merge.
+6. `02-engine-and-data.md` §1.1 and §1.8, `docs/data-guide.md`, and the ADR say the rule, and the data guide no longer says that a purchase can only add months the store lacks.
 
 #### Your checks
 
