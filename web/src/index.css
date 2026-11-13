@@ -430,6 +430,13 @@ summary:active {
   background-color: var(--accent);
 }
 
+/* A link row is as wide as its card too: pressed, it takes the hover step and keeps its size.
+   After the press of every link above, which it matches in weight, so that it wins. */
+a[data-slot="row-link"]:active {
+  transform: none;
+  background-color: var(--accent);
+}
+
 /* The chart fills its card, which clips what lies outside it, so its focus ring lies inside. */
 [data-slot="price-chart"]:focus-visible {
   outline-offset: -2px;

@@ -339,6 +339,66 @@ test("a row opens its dataset's page, with the figures the API gives and its cha
   expect(errors).toEqual([])
 })
 
+test("a row of the list shows its focus ring whole, and steps its surface when pressed, never scaling", async ({
+  loggedIn: page,
+}) => {
+  // Every link scales when pressed (the design brief), which would move a row as wide as its
+  // card by 9 px at each end: web/DESIGN.md's Motion steps such a row's surface instead.
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  await page.goto("/data")
+  const row = importedRow(page, "MES", "synthetic")
+  await expect(row).toBeVisible()
+  await page
+    .getByRole("main")
+    .getByRole("link", { name: "Import data", exact: true })
+    .focus()
+  await page.keyboard.press("Tab")
+  await expect(row).toBeFocused()
+
+  const ring = await row.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const reach =
+      parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth)
+    const card = element.closest("section")
+    if (card === null) {
+      throw new Error("Expected the row in its card, got none.")
+    }
+    const around = card.getBoundingClientRect()
+    const own = element.getBoundingClientRect()
+    return {
+      style: style.outlineStyle,
+      inside:
+        own.left - reach >= around.left && own.right + reach <= around.right,
+    }
+  })
+  expect(ring).toEqual({ style: "solid", inside: true })
+
+  const box = await row.boundingBox()
+  if (box === null) {
+    throw new Error("Expected the row on the page, got none.")
+  }
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  const pressed = await row.evaluate((element) => {
+    const probe = document.createElement("div")
+    probe.style.backgroundColor = "var(--accent)"
+    document.body.append(probe)
+    const hoverStep = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    const style = getComputedStyle(element)
+    return {
+      transform: style.transform,
+      onTheHoverStep: style.backgroundColor === hoverStep,
+    }
+  })
+  // Released away from the row, so that the press opens nothing.
+  await page.mouse.move(0, 0)
+  await page.mouse.up()
+
+  expect(pressed).toEqual({ transform: "none", onTheHoverStep: true })
+  await expect(page).toHaveURL("/data")
+})
+
 test("Check quality checks an instrument's quality as a job, and its coverage shows by month", async ({
   loggedIn: page,
 }) => {
