@@ -556,6 +556,8 @@ Not in this step: trade logs for the prop simulator (Phase 7), alternative non-p
 
 2026-11-10 (Phase 5 kickoff, D-93): `POST /v1/uploads` reads multipart forms through `python-multipart` 0.0.33, below 1, with its decision line, under a body limit of its own above the 1 MiB every other route keeps, and stores each file under `workspaces/default/uploads/<id>/` (`FefatPaths` gains the folder) with an `upload.json` of its name, size, SHA-256, and time; the folder is the record, and no `uploads` table arrives until Phase 10 writes state into one (D-83). A large file, or a Databento batch folder, which the wizard imports through the importer of step 1.6 since your bulk history comes in them (`docs/data-inventory.md`), is a path under the `import_roots` of `config.toml`, which this step reads first (D-85). The preview runs `preview_file` in the executor through a spec kind of its own, and the `import` job, a kind `JobKind` already names, hands the executor an import spec kind over `import_file` or `import_databento`, so that a file's size meets the executor's memory limit rather than ending a worker of the pool (D-90); neither importer reports progress, so the job reports its stages, the file read, the partitions written, and the quality report of step 5.1's sync. A new instrument is saved through `fefat.market.saved_instruments` under the data folder's `instruments/`, with no table (D-84); profiles stay files under `profiles/`, saved through `save_profile` and indexed (D-84). From `BACKLOG.md`: one writer of the raw manifest, a lock, since imports now run as jobs beside other writers; bars that keep the trade dates of the calendar they were imported with, dated again or refused after a calendar change; a file with bars in a daily break refused for those bars, with their dates, rather than for an offset; and a profile's error from Polars read as a problem of the preview, never a traceback. Your checks gain: export the three NinjaTrader MNQ contracts the store lacks (MNQZ2020, MNQH2024, and MNQH2025) again, and import those that read clean (from `BACKLOG.md`).
 
+2026-11-13 (D-98, from your check of step 5.4's pull request): this step runs after step 5.14, which merges a file into the partitions it overlaps. Step 5.14 carries the later number because IDs are never reused, and the checker lets a step depend on earlier numbers alone, so the order stands here, in D-98, and in the order of `PROGRESS.md`'s rows rather than on the meta line. The wizard also opens for a dataset the store holds: Import more data on a dataset's page (step 5.4, D-97) leads to `/data/import?preset=<provider>`, which the wizard reads as that provider's preset, a name that no preset and no saved profile has read as none, and its preview shows step 5.14's account of what the file adds to the dataset, the sessions added, the records already held, and those that differ, before anything is written. Imported datasets appear in the Data page's list of imported data, which replaced "Your data" (D-97), each with a page of its own. Home's Import data start leads to the wizard. The Playwright flow gains a second file that overlaps the first and adds sessions to it.
+
 ### 5.13 End-to-end suite and demo
 
 Depends on: 5.10, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
@@ -599,6 +601,54 @@ Not in this step: new features.
 2026-10-23 (D-54): no phone pass and no dependency on 5.11; the walk is at desktop size only.
 
 2026-11-10 (Phase 5 kickoff, D-93): the flow runs without a connector: log in, update a synthetic catalog product and see its quality job end, import a synthetic CSV through the wizard, create a strategy from a template, run it on synthetic data, wait for completion, open the results, select a trade and see it on the chart, create version 2 with a parameter change, run it, and compare. CI's Ubuntu leg already runs `just e2e` (D-92). The engine guide's "In the app" section names the templates of step 5.2.
+
+### 5.14 Merge files that overlap stored data
+
+Depends on: 1.10, 5.1 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, leakage-auditor, code-review · Security: no · Model hint: hard
+
+#### Purpose
+
+You keep a dataset current with new files: a download or an export that holds older, newer, or missing sessions of months the store already has is merged into them, where today it is refused.
+
+#### Prerequisites
+
+- Steps 1.10 and 5.1 merged.
+- For Your checks: a fresh export or pull, which costs nothing, that overlaps what the store holds.
+
+#### Prompt
+
+```text
+Masterplan step 5.14 — Merge files that overlap stored data.
+
+Read docs/masterplan/02-engine-and-data.md §1.1 and §1.8, the import section of docs/data-guide.md, and `fefat.market.importers` (`partition_buffers`, `file_writer`, `databento`, `file_import`). Today a partition takes one import: a later file with other rows for a partition the store holds is refused whole, so a download that continues a month already stored, one that ends inside it, or one that fills a session the first lacked cannot come in (from `BACKLOG.md`, "Merge a file that overlaps an imported one"). Let `import_databento` and `import_file` merge such a file into the partitions it overlaps:
+
+1. The rule, planned with the builder first: a record the store lacks is added in clock order; a record it already holds is dropped and counted; for a record it holds with other values, the plan asks which stands, the stored one, the file's, or neither (the file refused), and whether a merge is the importers' default or asked for by a flag.
+2. Nothing is written until the whole file is checked: the partitions a file touches, and what it adds to each, are known first, so a refused file leaves the store as it was, the DBN importer included, which today writes a file's earlier partitions before a later one refuses it.
+3. The record: the original file is kept under `raw/` and recorded in the manifest, as every import's is; `dataset.json` stays its first import's (D-11); the import's report says, per dataset, the sessions added, the records already held, and the records that differ, counts and dates alone; `fefat data import file --preview` says the same without writing, and `fefat data import databento` gains the same preview.
+4. What reads the store afterwards: a snapshot pins its files by content, so a run that pinned a merged partition is told, with the partition's name, that its data changed since, when it is read again or reproduced, its record and its results untouched; the quality report reads stale, as after a backfill (D-94); and the engine's cache, the feature cache, and the roll calendar build again for the partitions that changed, and for no others.
+
+Property tests on generated files: a range imported as one file, or as two files that overlap, in either order, leaves the same rows in the same partitions; a merge run twice writes nothing; a refused file changes no byte of the store. Amend 02 §1.1 and §1.8 and docs/data-guide.md, and write the ADR of the rule, which replaces "the first import stands" (D-49, D-50).
+
+Not in this step: the import wizard (5.12), which shows this step's preview; connectors and downloads (D-38); changing how datasets are partitioned.
+```
+
+#### Done means
+
+1. Two files that overlap, imported in either order, leave the store with the rows of one file covering both ranges, for bars kept by month and for ticks kept by trade date, through both importers (property test).
+2. A file that is refused changes no byte of the store, the DBN importer included, and a merge run a second time writes nothing (tests).
+3. The report and the preview name the sessions added and count the records already held and those that differ, and hold no prices (test).
+4. A run whose snapshot pinned a merged partition is refused on re-read with the partition's name, and a new run takes a new snapshot; the quality report reads stale after a merge (tests).
+5. The leak detector passes on a merged store, and the caches rebuild the changed partitions alone (test).
+6. `02-engine-and-data.md` §1.1 and §1.8, `docs/data-guide.md`, and the ADR say the rule, and `BACKLOG.md` no longer lists the merge.
+
+#### Your checks
+
+- Export again from NinjaTrader, or pull again from TWS, a contract whose data in the store ends inside a month, with later sessions in the file (your MNQZ2025 stops on 2025-12-15, and your IBKR MNQZ2026 sessions on 2026-09-23): preview it, import it, run `fefat data quality MNQ`, and open the chart at the join. It should show no gap and no doubled bar.
+- A new Databento download that continues MNQ past 2026-09-23 is the same check on your bulk history. It is paid, at the price Databento's site shows before the download, so do it when you would buy the data anyway.
+
+#### If it fails
+
+- Differing records where you expected none mean that the two files disagree on bars they share: another time zone or bar stamping in the profile, or a vendor's revision. The report names the first trade date, and nothing was written.
 
 ## Phase exit
 
