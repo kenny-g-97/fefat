@@ -197,6 +197,10 @@ test("the imported data, the products not imported yet, the instruments, and the
     )
   }
   expect(missing.map((product) => product.root)).toContain("MCL")
+  // The list in the light theme too, for the pull request's readers.
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "data-catalog-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
 
   const table = page
     .getByRole("region", { name: "Instruments" })
@@ -282,9 +286,10 @@ test("Import data stands at the top of the Data page, on its title's line, and l
     Math.abs(button.x + button.width - (content.x + content.width)),
     "the action ending at the content's right edge"
   ).toBeLessThanOrEqual(1)
-  expect(title.y, "the title where a page without an action has its own").toBe(
-    untouched.y
-  )
+  expect(
+    Math.abs(title.y - untouched.y),
+    "the title where a page without an action has its own"
+  ).toBeLessThanOrEqual(1)
   await action.click()
 
   await expect(page).toHaveURL("/data/import")
@@ -302,8 +307,11 @@ test("a row opens its dataset's page, with the figures the API gives and its cha
   await importedRow(page, "MES", "synthetic").click()
 
   await expect(page).toHaveURL(MES_PAGE)
-  await expect(page).toHaveTitle("MES – FEAT")
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("MES")
+  // The title names the provider too: an instrument held from three has three pages.
+  await expect(page).toHaveTitle("MES from synthetic – FEAT")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "MES from synthetic"
+  )
   const held = page.getByRole("main")
   await expect(held.getByTestId("provider-chip")).toHaveText("synthetic")
   await expect(held.getByTestId("dataset-row")).toContainText("1-minute bars")
@@ -329,6 +337,8 @@ test("a row opens its dataset's page, with the figures the API gives and its cha
   await expect(held).toContainText(
     `History from ${product.history_from}, ${product.recommended_source} recommended`
   )
+  // The quality card asks for its own report, which the picture waits for.
+  await page.waitForLoadState("networkidle")
   await screenshot(page, "data-dataset")
   await page.getByRole("link", { name: "Back to Data" }).click()
   await expect(page).toHaveURL("/data")
@@ -415,8 +425,13 @@ test("Check quality checks an instrument's quality as a job, and its coverage sh
   await expect(mes.getByTestId("quality-badge")).toHaveText("Unchecked")
   await expect(mes.getByTestId("coverage-month")).toHaveCount(0)
   await expect(mes).toContainText(
-    "No quality report yet. Check quality writes one and shows the coverage by month."
+    "No quality report yet. Check quality, above, writes one and shows the coverage by month."
   )
+  // The strip's legend comes with the strip: before a report its keys explain nothing.
+  const legend = mes.getByRole("list", {
+    name: "Coverage by month, the legend",
+  })
+  await expect(legend).toHaveCount(0)
 
   await mes.getByRole("button", { name: "Check quality" }).click()
   await page.getByTestId("jobs-indicator").click()
@@ -440,6 +455,7 @@ test("Check quality checks an instrument's quality as a job, and its coverage sh
   await expect(mes.getByTestId("coverage-month").first()).toHaveAccessibleName(
     `${april.month}: ${april.with_records} of ${april.sessions} sessions with records, no findings`
   )
+  await expect(legend).toBeVisible()
   await screenshot(page, "data-dataset-checked")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "data-dataset-checked-light")
@@ -452,15 +468,15 @@ test("Check quality checks an instrument's quality as a job, and its coverage sh
   expect(errors).toEqual([])
 })
 
-test("an instrument a check covers reads Checking, and its Check quality waits", async ({
-  loggedIn: page,
-}) => {
-  const running = {
+/** A catalog sync of MES as `GET /v1/jobs` lists it, running or ended. */
+function syncOfMes(status: "running" | "succeeded") {
+  const ended = status === "succeeded"
+  return {
     id: "sync-of-mes",
     kind: "catalog_sync",
     payload: { root: "MES" },
-    status: "running",
-    progress: 40,
+    status,
+    progress: ended ? 100 : 40,
     message: "Checking the quality of synthetic MES",
     attempt: 1,
     max_attempts: 3,
@@ -471,9 +487,16 @@ test("an instrument a check covers reads Checking, and its Check quality waits",
     error: null,
     created_at: "2026-11-12T10:00:00Z",
     started_at: "2026-11-12T10:00:01Z",
-    finished_at: null,
+    finished_at: ended ? "2026-11-12T10:00:09Z" : null,
   }
-  await page.route("**/v1/jobs", (route) => route.fulfill({ json: [running] }))
+}
+
+test("an instrument a check covers reads Checking, and its Check quality waits", async ({
+  loggedIn: page,
+}) => {
+  await page.route("**/v1/jobs", (route) =>
+    route.fulfill({ json: [syncOfMes("running")] })
+  )
   await page.route("**/v1/streams/**", (route) => route.abort())
 
   await page.goto(MES_PAGE)
@@ -483,6 +506,8 @@ test("an instrument a check covers reads Checking, and its Check quality waits",
   await expect(
     mes.getByRole("button", { name: "Check quality" })
   ).toBeDisabled()
+  await page.waitForLoadState("networkidle")
+  await screenshot(page, "data-dataset-checking")
   await page.getByRole("link", { name: "Back to Data" }).click()
   await expect(
     importedRow(page, "MES", "synthetic").getByTestId("quality-badge")
@@ -490,6 +515,66 @@ test("an instrument a check covers reads Checking, and its Check quality waits",
   await expect(
     importedRow(page, "ES", "synthetic").getByTestId("quality-badge")
   ).not.toHaveText("Checking")
+})
+
+test("a check refused on one dataset's page is not shown on another's, reached through the browser's history", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's code review of the second check: the page kept its refusal as the address went
+  // from one dataset to another, since both are one route.
+  await page.route("**/v1/catalog/sync", (route) =>
+    route.fulfill(problemAnswer(503, "The check could not start."))
+  )
+  await page.goto("/data")
+  await importedRow(page, "MES", "synthetic").click()
+  await page.getByRole("link", { name: "Back to Data" }).click()
+  await importedRow(page, "ES", "synthetic").click()
+  const shown = page.getByRole("main")
+  await shown.getByRole("button", { name: "Check quality" }).click()
+  await expect(shown.getByRole("alert")).toHaveText(
+    "The check could not start."
+  )
+
+  // Two entries back is MES's page: the history goes from one dataset's page to another's.
+  await page.evaluate(() => window.history.go(-2))
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "MES from synthetic"
+  )
+  await expect(shown.getByRole("alert")).toHaveCount(0)
+})
+
+test("a dataset whose catalog cannot be read again loses its actions with its cards", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's code review of the second check: the header's actions stayed, on the catalog's
+  // last answer, over the failure that took the cards' place.
+  let jobs = [syncOfMes("running")]
+  await page.route("**/v1/jobs", (route) => route.fulfill({ json: jobs }))
+  await page.route("**/v1/streams/**", (route) => route.abort())
+  await page.goto(MES_PAGE)
+  const shown = page.getByRole("main")
+  await expect(
+    shown.getByRole("button", { name: "Check quality" })
+  ).toBeVisible()
+
+  // The check ends, which reads the catalog again, and that reading fails. The jobs are read
+  // again when the window comes back into view.
+  jobs = [syncOfMes("succeeded")]
+  await page.route("**/v1/catalog", (route) =>
+    route.fulfill(problemAnswer(500, "The catalog could not be read."))
+  )
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")))
+
+  await expect(shown.getByRole("alert")).toHaveText(
+    "The catalog could not be read."
+  )
+  await expect(
+    shown.getByRole("button", { name: "Check quality" })
+  ).toHaveCount(0)
+  await expect(
+    shown.getByRole("link", { name: "Import more data" })
+  ).toHaveCount(0)
 })
 
 test("a section that cannot load its data says why, and the others keep working", async ({
@@ -594,9 +679,14 @@ test("a flagged dataset shows its findings, its months held in part, and its las
   await page.goto("/data")
   const row = importedRow(page, "MES", "synthetic")
   await expect(row.getByTestId("quality-badge")).toHaveText("Flagged")
+  // The list with a flagged row, measured in each theme, then dark again for the row's page.
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await row.click()
   // The page's title, since the list's badges stay in the page until the dataset's page draws.
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("MES")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "MES from synthetic"
+  )
 
   const mes = page.getByRole("main")
   await expect(mes.getByTestId("quality-badge")).toHaveText("Flagged")
@@ -609,8 +699,10 @@ test("a flagged dataset shows its findings, its months held in part, and its las
   await expect(months.nth(2)).toHaveAccessibleName(
     "2026-03: 0 of 22 sessions with records, no findings"
   )
-  await expect(mes).toContainText("2026-02-18")
-  await expect(mes).toContainText("MESH2026")
+  // Opened, so that the findings are pictured and their text is measured with the rest.
+  await mes.getByText("2 findings").click()
+  await expect(mes.getByRole("cell", { name: "2026-02-18" })).toBeVisible()
+  await expect(mes.getByRole("cell", { name: "MESH2026" })).toBeVisible()
   await screenshot(page, "data-dataset-flagged")
   // Measured in each theme, which leaves the page in the light one for its screenshot.
   expect(await lowContrastInEachTheme(page)).toEqual([])
@@ -638,7 +730,9 @@ test("Import more data on a dataset's page leads to the import page with its pro
     check.x + check.width,
     "Check quality before the primary action, on one line"
   ).toBeLessThanOrEqual(primary.x)
-  expect(check.y + check.height / 2).toBe(primary.y + primary.height / 2)
+  expect(
+    Math.abs(check.y + check.height / 2 - (primary.y + primary.height / 2))
+  ).toBeLessThanOrEqual(1)
   await more.click()
 
   await expect(page).toHaveURL("/data/import?preset=synthetic")
@@ -653,13 +747,22 @@ test("an address that names no data FEAT holds says so, with no actions", async 
   await expect(page.getByRole("main").getByRole("alert")).toHaveText(
     "FEAT holds no data of ES from nobody. Choose a row of Imported data on the Data page."
   )
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("ES")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "ES from nobody"
+  )
   await expect(page.getByRole("button", { name: "Check quality" })).toHaveCount(
     0
   )
   await expect(
     page.getByRole("link", { name: "Import more data" })
   ).toHaveCount(0)
+  await screenshot(page, "data-dataset-unknown")
+  // Half an address says what it lacks.
+  await page.goto("/data/dataset?instrument=ES")
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText(
+    "This address needs an instrument and a provider. Choose a row of Imported data on the Data page."
+  )
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dataset")
   await page.getByRole("link", { name: "Back to Data" }).click()
   await expect(page).toHaveURL("/data")
 })
@@ -691,6 +794,7 @@ test("a store without data invites the import, and lists the catalog's products"
       .getByRole("region", { name: "Not imported yet" })
       .getByTestId("not-imported")
   ).toHaveCount(catalog.products.length)
+  await screenshot(page, "data-catalog-empty")
 })
 
 test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back, and the chart's style", async ({

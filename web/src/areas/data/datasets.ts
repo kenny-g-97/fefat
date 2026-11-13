@@ -45,6 +45,12 @@ export function notImported(catalog: CatalogStatus): readonly CatalogProduct[] {
   return catalog.products.filter((product) => product.datasets.length === 0)
 }
 
+/** What the catalog says of a product, in one line: where its history starts and the source
+ * FEAT recommends for it. */
+export function catalogLine(product: CatalogProduct): string {
+  return `History from ${product.history_from}, ${product.recommended_source} recommended`
+}
+
 /** How a month of a quality report is held: every session with records, some, or none. */
 export type MonthHeld = "every" | "some" | "none"
 

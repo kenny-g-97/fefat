@@ -36,6 +36,8 @@ test("no page scrolls sideways at 1280 px or logs an error", async ({
   for (const path of PATHS) {
     await page.goto(path)
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    // Once its requests are answered, so that a page is measured with what it loads drawn.
+    await page.waitForLoadState("networkidle")
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
     )
@@ -141,6 +143,7 @@ test("reduced motion stops every transition, on every page", async ({
   for (const path of PATHS) {
     await page.goto(path)
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    await page.waitForLoadState("networkidle")
     const found = await page.evaluate(() =>
       [...document.querySelectorAll("a, button, input, summary")]
         .map((element) => getComputedStyle(element).transitionDuration)

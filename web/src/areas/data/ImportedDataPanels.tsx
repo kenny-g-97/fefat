@@ -7,6 +7,7 @@ import { IdentityChip } from "@/ui/identity-chip"
 import { Panel } from "@/ui/panel"
 import {
   type CatalogProduct,
+  catalogLine,
   type ImportedDataset,
   importedDatasets,
   notImported,
@@ -146,8 +147,7 @@ function NotImported({
               {product.root}
             </span>
             <span className="text-xs text-muted-foreground">
-              History from {product.history_from}, {product.recommended_source}{" "}
-              recommended
+              {catalogLine(product)}
             </span>
           </li>
         ))}

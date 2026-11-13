@@ -3,6 +3,7 @@ import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
 import {
   byProvider,
   byRoot,
+  catalogLine,
   chartTimeframe,
   fidelityLabel,
   importedDatasets,
@@ -21,16 +22,23 @@ describe("importedDatasets", () => {
       root: "MNQ",
       history_from: "2019-05-06",
       recommended_source: "Databento",
+      // The earliest and the latest trade date are neither the first dataset's.
       datasets: [
+        {
+          ...aDataset("databento", "MNQ", "1s"),
+          first_trade_date: "2026-09-21",
+          last_trade_date: "2026-09-23",
+          coverage: "partial",
+        },
         {
           ...aDataset("databento", "MNQ", "1m"),
           first_trade_date: "2019-05-06",
-          last_trade_date: "2026-09-23",
+          last_trade_date: "2026-09-22",
           coverage: "complete",
         },
         {
           ...aDataset("databento", "MNQ", "trades"),
-          first_trade_date: "2026-09-21",
+          first_trade_date: "2026-09-22",
           last_trade_date: "2026-09-24",
           coverage: "partial",
         },
@@ -57,7 +65,13 @@ describe("importedDatasets", () => {
     expect(
       rows.map((row) => [row.root, row.provider, row.kinds, row.from, row.to])
     ).toEqual([
-      ["MNQ", "databento", "1-minute bars, Trades", "2019-05-06", "2026-09-24"],
+      [
+        "MNQ",
+        "databento",
+        "1-second bars, 1-minute bars, Trades",
+        "2019-05-06",
+        "2026-09-24",
+      ],
       ["MNQ", "ninjatrader", "1-minute bars", "2026-03-05", "2026-03-09"],
       ["ES", "synthetic", "1-second bars", "2026-03-05", "2026-03-09"],
       [
@@ -68,9 +82,12 @@ describe("importedDatasets", () => {
         "2026-03-09",
       ],
     ])
-    expect(rows.map((row) => row.stored.length)).toEqual([2, 1, 1, 1])
+    expect(rows.map((row) => row.stored.length)).toEqual([3, 1, 1, 1])
     expect(rows.map((row) => row.product)).toEqual([mnq, mnq, null, null])
     expect(notImported(catalog)).toEqual([mcl])
+    expect(catalogLine(mcl)).toBe(
+      "History from 2021-07-12, Databento recommended"
+    )
   })
 
   it("reads a row's quality as stale once one of its datasets outgrew the report", () => {

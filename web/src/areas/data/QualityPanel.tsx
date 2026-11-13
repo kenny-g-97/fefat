@@ -13,14 +13,16 @@ type QualityPanelProps = Readonly<{
 }>
 
 /** A dataset's quality (web/DESIGN.md, Patterns, Dataset page): its badge, Checking while a
- * check covers its instrument, how far its report checked, the report's coverage by month under
- * the legend, and its findings; one report of the instrument covers every kind of its data from
+ * check covers its instrument, how far its report checked, the report's coverage by month with
+ * its legend, and its findings; one report of the instrument covers every kind of its data from
  * the provider. */
 export function QualityPanel({ dataset, syncing }: QualityPanelProps) {
   const [first] = dataset.stored
   const quality = useQuery(datasetQualityQuery(first.id))
+  // The legend comes with the strip it explains: before a report its keys would explain nothing.
+  const drawn = quality.data !== undefined && quality.data.months.length > 0
   return (
-    <Panel title="Quality" action={<CoverageLegend />}>
+    <Panel title="Quality" action={drawn ? <CoverageLegend /> : undefined}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <QualityBadge standing={syncing ? "checking" : dataset.quality} />
@@ -59,8 +61,8 @@ function Coverage({
   if (months.length === 0) {
     return (
       <p className="flex h-9 items-center text-foreground-secondary">
-        No quality report yet. Check quality writes one and shows the coverage
-        by month.
+        No quality report yet. Check quality, above, writes one and shows the
+        coverage by month.
       </p>
     )
   }

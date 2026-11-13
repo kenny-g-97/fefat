@@ -14,6 +14,7 @@ import { Panel } from "@/ui/panel"
 import { BackLink, TextLink } from "@/ui/text-link"
 import type { DatasetSearch } from "./chart-search"
 import {
+  catalogLine,
   chartTimeframe,
   type ImportedDataset,
   importedDatasets,
@@ -30,24 +31,38 @@ import { QueryBody } from "./QueryBody"
  * that names no data FEAT holds says so. */
 export function DatasetPage() {
   const shown = useSearch({ from: "/_shell/data/dataset" })
+  // Each dataset its own state: the route stays as the address goes from one to another, and a
+  // check refused for one is no word about the next.
+  return (
+    <ShownDataset key={`${shown.instrument} ${shown.provider}`} shown={shown} />
+  )
+}
+
+function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
   const catalog = useQuery(catalogQuery)
   const syncs = useSyncCover()
   const sync = useCatalogSync()
+  // From an answer alone: once the catalog cannot be read again, its last answer shows nothing
+  // to act on, as the cards show none.
   const dataset =
-    catalog.data === undefined
-      ? undefined
-      : importedDatasets(catalog.data).find(
+    catalog.status === "success"
+      ? importedDatasets(catalog.data).find(
           (each) =>
             each.root === shown.instrument && each.provider === shown.provider
         )
+      : undefined
   const syncing = dataset !== undefined && isSyncing(syncs, dataset.root)
   return (
     <Page
-      title={shown.instrument === undefined ? "Dataset" : shown.instrument}
+      title={
+        shown.instrument === undefined || shown.provider === undefined
+          ? "Dataset"
+          : `${shown.instrument} from ${shown.provider}`
+      }
       description={
         dataset === undefined
           ? undefined
-          : `What FEAT holds of ${dataset.root} from ${dataset.provider}, and how clean it is`
+          : "What FEAT holds of it, and how clean it is"
       }
       back={<BackLink to="/data">Back to Data</BackLink>}
       action={
@@ -118,8 +133,7 @@ function HeldPanel({ dataset }: Readonly<{ dataset: ImportedDataset }>) {
         <DatasetTable datasets={dataset.stored} />
         {dataset.product !== null && (
           <p className="text-xs text-muted-foreground">
-            History from {dataset.product.history_from},{" "}
-            {dataset.product.recommended_source} recommended
+            {catalogLine(dataset.product)}
           </p>
         )}
       </div>
@@ -130,7 +144,7 @@ function HeldPanel({ dataset }: Readonly<{ dataset: ImportedDataset }>) {
 function NoSuchDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
   const named =
     shown.instrument === undefined || shown.provider === undefined
-      ? "This address names no instrument and provider."
+      ? "This address needs an instrument and a provider."
       : `FEAT holds no data of ${shown.instrument} from ${shown.provider}.`
   return (
     <p role="alert" className="text-negative">
