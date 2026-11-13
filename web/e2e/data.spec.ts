@@ -4,7 +4,7 @@ import { chartReady } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
-import { cancelActiveJobs } from "./support/jobs.ts"
+import { aJob, cancelActiveJobs } from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
@@ -52,7 +52,9 @@ const stored = z.looseObject({
   first_trade_date: z.string(),
   last_trade_date: z.string(),
   quality: z.string(),
+  coverage: z.enum(["complete", "partial"]).optional(),
 })
+const HISTORY = { complete: "Complete", partial: "Partial" }
 const catalogStatus = z.looseObject({
   products: z.array(
     z.looseObject({
@@ -237,6 +239,9 @@ test("the imported data, the products not imported yet, the instruments, and the
       name: "Import with Databento DBN batch download",
     })
   ).toHaveAttribute("href", "/data/import?preset=databento")
+  // The pointer off the page's rows, onto the top bar's empty part, so that none is drawn
+  // under it when the picture starts from the top.
+  await page.mouse.move(700, 36)
   await screenshot(page, "data-catalog")
 
   await databento
@@ -314,22 +319,26 @@ test("a row opens its dataset's page, with the figures the API gives and its cha
   )
   const held = page.getByRole("main")
   await expect(held.getByTestId("provider-chip")).toHaveText("synthetic")
-  await expect(held.getByTestId("dataset-row")).toContainText("1-minute bars")
-  // The table's figures are the API's.
+  // The table's figures are the API's, each in its own cell: the count of contracts alone is
+  // a digit that a date holds too. A catalog product's row says how much of its history it has.
   const minutes = catalog.products
     .flatMap((product) => product.datasets)
     .find((dataset) => dataset.id === MES_MINUTES)
   const product = catalog.products.find((each) => each.root === "MES")
-  if (minutes === undefined || product === undefined) {
+  if (
+    minutes === undefined ||
+    minutes.coverage === undefined ||
+    product === undefined
+  ) {
     throw new Error(`Expected ${MES_MINUTES} in the catalog, got none.`)
   }
-  for (const figure of [
+  await expect(held.getByTestId("dataset-row").getByRole("cell")).toHaveText([
+    "1-minute bars",
     String(minutes.contracts),
     minutes.first_trade_date,
     minutes.last_trade_date,
-  ]) {
-    await expect(held.getByTestId("dataset-row")).toContainText(figure)
-  }
+    HISTORY[minutes.coverage],
+  ])
   await expect(held.getByRole("link", { name: "Chart" })).toHaveAttribute(
     "href",
     "/data/chart?instrument=MES&provider=synthetic&timeframe=5m"
@@ -470,25 +479,10 @@ test("Check quality checks an instrument's quality as a job, and its coverage sh
 
 /** A catalog sync of MES as `GET /v1/jobs` lists it, running or ended. */
 function syncOfMes(status: "running" | "succeeded") {
-  const ended = status === "succeeded"
-  return {
-    id: "sync-of-mes",
+  return aJob("sync-of-mes", status, {
     kind: "catalog_sync",
     payload: { root: "MES" },
-    status,
-    progress: ended ? 100 : 40,
-    message: "Checking the quality of synthetic MES",
-    attempt: 1,
-    max_attempts: 3,
-    worker_pid: null,
-    lease_expires_at: null,
-    cancel_requested_at: null,
-    result: null,
-    error: null,
-    created_at: "2026-11-12T10:00:00Z",
-    started_at: "2026-11-12T10:00:01Z",
-    finished_at: ended ? "2026-11-12T10:00:09Z" : null,
-  }
+  })
 }
 
 test("an instrument a check covers reads Checking, and its Check quality waits", async ({
@@ -574,6 +568,14 @@ test("a dataset whose catalog cannot be read again loses its actions with its ca
   ).toHaveCount(0)
   await expect(
     shown.getByRole("link", { name: "Import more data" })
+  ).toHaveCount(0)
+  // The Data page too: the products not imported yet go with the list that failed.
+  await page.getByRole("link", { name: "Back to Data" }).click()
+  await expect(
+    page.getByRole("region", { name: "Imported data" }).getByRole("alert")
+  ).toHaveText("The catalog could not be read.")
+  await expect(
+    page.getByRole("region", { name: "Not imported yet" })
   ).toHaveCount(0)
 })
 

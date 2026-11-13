@@ -20,7 +20,7 @@ export function QualityPanel({ dataset, syncing }: QualityPanelProps) {
   const [first] = dataset.stored
   const quality = useQuery(datasetQualityQuery(first.id))
   // The legend comes with the strip it explains: before a report its keys would explain nothing.
-  const drawn = quality.data !== undefined && quality.data.months.length > 0
+  const drawn = quality.status === "success" && quality.data.months.length > 0
   return (
     <Panel title="Quality" action={drawn ? <CoverageLegend /> : undefined}>
       <div className="flex flex-col gap-4">

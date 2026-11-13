@@ -3,6 +3,7 @@ import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
 import {
   byProvider,
   byRoot,
+  type CatalogProduct,
   catalogLine,
   chartTimeframe,
   fidelityLabel,
@@ -11,8 +12,6 @@ import {
   monthLabel,
   notImported,
 } from "./datasets"
-
-type CatalogProduct = CatalogStatus["products"][number]
 
 describe("importedDatasets", () => {
   it("gives a row for each instrument and provider that holds data, in the API's order", () => {

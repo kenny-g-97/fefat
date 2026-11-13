@@ -25,7 +25,7 @@ const COLUMNS =
  * `GET /v1/catalog` (web/DESIGN.md, Patterns, Link rows). */
 export function ImportedDataPanels({ syncs }: Readonly<{ syncs: SyncCover }>) {
   const catalog = useQuery(catalogQuery)
-  const missing = catalog.data === undefined ? [] : notImported(catalog.data)
+  const missing = catalog.status === "success" ? notImported(catalog.data) : []
   return (
     <>
       <Panel

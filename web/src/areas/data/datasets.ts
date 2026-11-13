@@ -3,7 +3,7 @@ import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
 import { formatCount } from "@/ui/figures"
 
 /** Datasets grouped under a name, a root or a provider, in the API's order. */
-export type Grouped = Readonly<{
+type Grouped = Readonly<{
   name: string
   datasets: readonly StoredDataset[]
 }>
