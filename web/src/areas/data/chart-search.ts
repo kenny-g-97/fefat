@@ -22,3 +22,12 @@ export const chartSearch = z.object({
 })
 
 export type ChartSearch = z.infer<typeof chartSearch>
+
+/** A dataset page's search parameters: the instrument and the provider whose data of it the
+ * page shows, read as the chart reads its own. */
+export const datasetSearch = chartSearch.pick({
+  instrument: true,
+  provider: true,
+})
+
+export type DatasetSearch = z.infer<typeof datasetSearch>

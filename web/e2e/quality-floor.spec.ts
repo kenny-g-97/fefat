@@ -15,6 +15,7 @@ const PATHS = [
   "/prop",
   "/agent",
   "/data",
+  "/data/dataset?instrument=MES&provider=synthetic",
   "/data/chart?instrument=MES",
   "/data/import",
   "/settings",

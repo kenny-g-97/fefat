@@ -2,13 +2,14 @@ import { Link } from "@tanstack/react-router"
 import { useSyncCover } from "@/api/catalog"
 import { Button } from "@/ui/button"
 import { Page } from "@/ui/page"
-import { CatalogPanels } from "./CatalogPanels"
+import { ImportedDataPanels } from "./ImportedDataPanels"
 import { InstrumentsPanel } from "./InstrumentsPanel"
 import { SourcesPanel } from "./SourcesPanel"
 
-/** The Data page (step 5.4): the catalog's products and your own data, each root with its
- * quality and its coverage by month, which Update checks again as a job; the instruments; and
- * the source guide. Each section loads, and fails, on its own. */
+/** The Data page (step 5.4): Import data in its header; the data the trader imported, a row an
+ * instrument's from one provider with its quality, which opens its dataset's page; the
+ * catalog's products without data; the instruments; and the source guide. Each section loads,
+ * and fails, on its own. */
 export function DataPage() {
   const syncs = useSyncCover()
   return (
@@ -22,7 +23,7 @@ export function DataPage() {
       }
     >
       <div className="flex flex-col gap-6">
-        <CatalogPanels syncs={syncs} />
+        <ImportedDataPanels syncs={syncs} />
         <InstrumentsPanel />
         <SourcesPanel />
       </div>

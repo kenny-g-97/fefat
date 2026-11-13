@@ -333,9 +333,10 @@ main[tabindex="-1"]:focus-visible {
   padding-bottom: 0.25rem;
 }
 
-/* A table's headers are 12 px at 600, uppercase with 0.125 rem of tracking, in body text; each
-   table pads its own first and last header to its card's edge. */
-[data-slot="table-head"] {
+/* A table's headers, and those over a list of link rows, are 12 px at 600, uppercase with
+   0.125 rem of tracking, in body text; each table pads its own first and last header to its
+   card's edge. */
+:is([data-slot="table-head"], [data-slot="list-head"]) {
   font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 600;

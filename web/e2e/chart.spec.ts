@@ -158,10 +158,11 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto("/data")
   await page
-    .getByRole("region", { name: "Catalog products" })
-    .getByRole("link", { name: "Chart" })
+    .getByRole("region", { name: "Imported data" })
+    .getByTestId("imported-row")
     .first()
     .click()
+  await page.getByRole("main").getByRole("link", { name: "Chart" }).click()
 
   await expect(page).toHaveURL(
     "/data/chart?instrument=MES&provider=synthetic&timeframe=5m&prices=adjusted"

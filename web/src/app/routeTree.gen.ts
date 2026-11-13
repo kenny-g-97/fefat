@@ -20,6 +20,7 @@ import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
 import { Route as ShellStrategiesRouteImport } from './routes/_shell/strategies'
 import { Route as ShellDataIndexRouteImport } from './routes/_shell/data/index'
 import { Route as ShellDataChartRouteImport } from './routes/_shell/data/chart'
+import { Route as ShellDataDatasetRouteImport } from './routes/_shell/data/dataset'
 import { Route as ShellDataImportRouteImport } from './routes/_shell/data/import'
 
 const ShellRoute = ShellRouteImport.update({
@@ -76,6 +77,11 @@ const ShellDataChartRoute = ShellDataChartRouteImport.update({
   path: '/data/chart',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellDataDatasetRoute = ShellDataDatasetRouteImport.update({
+  id: '/data/dataset',
+  path: '/data/dataset',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellDataImportRoute = ShellDataImportRouteImport.update({
   id: '/data/import',
   path: '/data/import',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ShellSettingsRoute
   '/strategies': typeof ShellStrategiesRoute
   '/data/chart': typeof ShellDataChartRoute
+  '/data/dataset': typeof ShellDataDatasetRoute
   '/data/import': typeof ShellDataImportRoute
   '/data/': typeof ShellDataIndexRoute
 }
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/strategies': typeof ShellStrategiesRoute
   '/': typeof ShellIndexRoute
   '/data/chart': typeof ShellDataChartRoute
+  '/data/dataset': typeof ShellDataDatasetRoute
   '/data/import': typeof ShellDataImportRoute
   '/data': typeof ShellDataIndexRoute
 }
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   '/_shell/strategies': typeof ShellStrategiesRoute
   '/_shell/': typeof ShellIndexRoute
   '/_shell/data/chart': typeof ShellDataChartRoute
+  '/_shell/data/dataset': typeof ShellDataDatasetRoute
   '/_shell/data/import': typeof ShellDataImportRoute
   '/_shell/data/': typeof ShellDataIndexRoute
 }
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/strategies'
     | '/data/chart'
+    | '/data/dataset'
     | '/data/import'
     | '/data/'
   fileRoutesByTo: FileRoutesByTo
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/strategies'
     | '/'
     | '/data/chart'
+    | '/data/dataset'
     | '/data/import'
     | '/data'
   id:
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/_shell/strategies'
     | '/_shell/'
     | '/_shell/data/chart'
+    | '/_shell/data/dataset'
     | '/_shell/data/import'
     | '/_shell/data/'
   fileRoutesById: FileRoutesById
@@ -250,6 +262,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellDataChartRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/data/dataset': {
+      id: '/_shell/data/dataset'
+      path: '/data/dataset'
+      fullPath: '/data/dataset'
+      preLoaderRoute: typeof ShellDataDatasetRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/data/import': {
       id: '/_shell/data/import'
       path: '/data/import'
@@ -269,6 +288,7 @@ interface ShellRouteChildren {
   ShellStrategiesRoute: typeof ShellStrategiesRoute
   ShellIndexRoute: typeof ShellIndexRoute
   ShellDataChartRoute: typeof ShellDataChartRoute
+  ShellDataDatasetRoute: typeof ShellDataDatasetRoute
   ShellDataImportRoute: typeof ShellDataImportRoute
   ShellDataIndexRoute: typeof ShellDataIndexRoute
 }
@@ -282,6 +302,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellStrategiesRoute: ShellStrategiesRoute,
   ShellIndexRoute: ShellIndexRoute,
   ShellDataChartRoute: ShellDataChartRoute,
+  ShellDataDatasetRoute: ShellDataDatasetRoute,
   ShellDataImportRoute: ShellDataImportRoute,
   ShellDataIndexRoute: ShellDataIndexRoute,
 }
