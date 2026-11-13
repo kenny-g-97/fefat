@@ -20,8 +20,10 @@ import type { ChartStyle } from "@/api/settings"
 import { PriceChart, type VisibleBars } from "@/charts/PriceChart"
 import { decimalsOf } from "@/ui/figures"
 import { usePageScrolls } from "@/ui/page-scroll"
+import { ResizableFrame } from "@/ui/resizable-frame"
 import { SectionFailure } from "@/ui/section-failure"
 import { ChartReadout } from "./ChartReadout"
+import { CHART_FRAME, useChartFrameSize } from "./chart-frame-size"
 import { chartPanes } from "./chart-panes"
 
 /** Fewer bars than this before the view ask for the window before them. */
@@ -184,27 +186,39 @@ type ChartFrameProps = Readonly<{
 }>
 
 /** The chart's card, busy while bars load, which tells a test whether it is still loading and
- * what it drew; before its first bars, it says that they load. */
+ * what it drew; before its first bars, it says that they load. It stands in a frame the trader
+ * sizes by its edges (web/DESIGN.md, Patterns, Resizable frame), while bars load too, so that
+ * the card they arrive in is the size it was. */
 function ChartFrame({
   loading = true,
   attributes = {},
   children,
 }: ChartFrameProps) {
+  const [size, resize] = useChartFrameSize()
   return (
-    <div
-      data-testid="chart-view"
-      data-loading={String(loading)}
-      aria-busy={loading}
-      {...attributes}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-raised"
+    <ResizableFrame
+      label="Chart"
+      size={size}
+      onResize={resize}
+      leastWidth={CHART_FRAME.leastWidth}
+      leastHeight={CHART_FRAME.leastHeight}
+      mostHeight={CHART_FRAME.mostHeight}
     >
-      {children === undefined ? (
-        <p className="flex min-h-12 items-center border-b px-4 text-xs text-muted-foreground">
-          Loading bars
-        </p>
-      ) : (
-        children
-      )}
-    </div>
+      <div
+        data-testid="chart-view"
+        data-loading={String(loading)}
+        aria-busy={loading}
+        {...attributes}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-raised"
+      >
+        {children === undefined ? (
+          <p className="flex min-h-12 items-center border-b px-4 text-xs text-muted-foreground">
+            Loading bars
+          </p>
+        ) : (
+          children
+        )}
+      </div>
+    </ResizableFrame>
   )
 }
