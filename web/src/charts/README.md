@@ -17,7 +17,7 @@
 />
 ```
 
-Give it a parent that sets its size: it fills the box it is in (`autoSize`, inside an absolutely placed host, since the library sizes its own table in pixels and would never shrink in a flex item otherwise).
+Give it a parent that sets its size: it fills the box it is in (`autoSize`, inside an absolutely placed host, since the library sizes its own table in pixels and would never shrink in a flex item otherwise). On the chart's page that parent is a card in a frame the trader drags by its edges (`ResizableFrame` in `src/ui/resizable-frame.tsx`), and the chart redraws to it at every move of the pointer.
 
 ## Props
 
@@ -52,7 +52,7 @@ The library has no time zones. The chart keeps true UTC seconds, and its labels 
 
 `chartLook` turns the style and the theme into colours (`chart-look.ts`): FEAT's default is hollow candles, green rising and red falling, in `--positive` and `--negative`, the builder's exception to "colour means sign" (web/DESIGN.md), on a clear background so that the card shows through, with the grid in `--border` and the axis text in `--muted-foreground`; volume in `--input`, or by direction at half strength. The last price is a dashed line of the chart's own at the newest close, in its bar's direction colour (`lastBarColour`), its label on the axis written in ink or in white, whichever reads better on that colour (`legibleText`): the library's own label would follow the last bar in view as the trader scrolls back, and its text falls under 3 : 1 on the dark theme's sign colours. The volume shows no last value; the caller's readout gives it. A change of the look recolours the series without setting their bars again, but for volume by direction, whose bars carry their own colours.
 
-The library's attribution logo stays in the chart's corner (`attributionLogo`), as TradingView asks; it writes a style element for it, which the content security policy allows from step 5.4, and `src/index.css` gives it the subtle text colour.
+The library's licence, Apache 2.0, asks an app for two things on a page its users see: a link to TradingView and the library's attribution notice. The link is the attribution logo, which stays in the chart's corner (`attributionLogo`); the library writes a style element for it, which the content security policy allows from step 5.4, and `src/index.css` gives it the subtle text colour. The notice is `CHART_NOTICE` in `attribution.ts`, word for word from the NOTICE file of the library's tag v5.2.1, which the settings' About shows; read that file again when the library is upgraded, since its text may change with the version.
 
 ## Keys
 
