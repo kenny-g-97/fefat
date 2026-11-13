@@ -105,6 +105,10 @@ test("dragging the right edge, the bottom edge, and the corner sizes the chart, 
   // The pointer off the frame, so that no edge is drawn under it.
   await page.mouse.move(700, 36)
   await screenshot(page, "data-chart-sized")
+  // The pointer on the right edge, whose line lies over the card's hairline.
+  const edge = await boxOf(right)
+  await page.mouse.move(edge.x + 1, edge.y + edge.height / 2)
+  await screenshot(page, "data-chart-edge-hover")
 
   // A double click on an edge gives its direction back to the page; the corner gives both.
   await right.dblclick()
@@ -116,6 +120,42 @@ test("dragging the right edge, the bottom edge, and the corner sizes the chart, 
   await corner.dblclick()
   await expectSize(card, filling)
   expect(errors).toEqual([])
+})
+
+test("a press on the card's own hairline drags the frame, the edge a pointer aims at", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card } = edges(page)
+  const filling = await boxOf(card)
+  const width = Math.floor(filling.width)
+  const height = Math.floor(filling.height)
+  /** Press at (x, y) and move by (dx, dy), as a pointer that grabbed the card's edge. */
+  const pull = async (x: number, y: number, dx: number, dy: number) => {
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y + dy, { steps: 8 })
+    await page.mouse.up()
+  }
+
+  // The card's last whole pixel at its right and at its foot, where the chart's axes end: a
+  // press there sizes the frame, rather than scale the chart's prices or its time.
+  await pull(
+    Math.ceil(filling.x + filling.width) - 1,
+    Math.round(filling.y + filling.height / 2),
+    -200,
+    0
+  )
+  await expectSize(card, { width: width - 200, height: filling.height })
+  const narrow = await boxOf(card)
+  await pull(
+    Math.round(narrow.x + narrow.width / 2),
+    Math.ceil(narrow.y + narrow.height) - 1,
+    0,
+    -80
+  )
+  await expectSize(card, { width: width - 200, height: height - 80 })
 })
 
 test("the chart keeps its least size, never passes its column, and narrows beside the style drawer", async ({
@@ -261,6 +301,7 @@ test("the edges follow the chart in the Tab order, say their size, and move by t
   await expect(right).toHaveAttribute("aria-valuemin", String(LEAST.width))
   await expect(right).toHaveAttribute("aria-valuemax", String(width))
   await expect(right).toHaveAttribute("title", HOW)
+  await screenshot(page, "data-chart-edge-focused")
 
   await page.keyboard.press("ArrowLeft")
   await page.keyboard.press("ArrowLeft")

@@ -39,6 +39,8 @@ export function useChartFrameSize(): readonly [
   const [size, setSize] = useState(keptFrameSize)
   const resize = (next: FrameSize) => {
     setSize(next)
+    // shortcut: written at every move of a drag, a few bytes some hundred times a second;
+    // write once as the drag ends if a profile ever shows it.
     keep(next)
   }
   return [size, resize]

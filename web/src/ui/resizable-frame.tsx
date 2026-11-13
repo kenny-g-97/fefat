@@ -50,7 +50,9 @@ const EDGE =
  * then keeps that width, that height, or both, never under its least, over its most height, or
  * wider than its column. The edges are separators named for `label`, after the frame's content
  * in the page, which the arrows, Home, End, and Enter move too; a double click fills again. The
- * handles stand outside the content, so that a card inside may clip its own. */
+ * handles are the content's siblings, so that a card inside may clip its own, and each edge's
+ * strip lies over the card's last 2 px, its hairline, and 6 px outside it: a pointer aiming at
+ * the edge it sees grabs the frame, not what the card draws beside it. */
 export function ResizableFrame({
   label,
   size,
@@ -148,7 +150,7 @@ export function ResizableFrame({
         {...grips("right", { ...size, width: null })}
         className={cn(
           EDGE,
-          "top-3 -right-2 bottom-4 w-2 cursor-ew-resize after:inset-y-0 after:left-0 after:w-0.5"
+          "top-3 -right-1.5 bottom-4 w-2 cursor-ew-resize after:inset-y-0 after:left-0 after:w-0.5"
         )}
       />
       <div
@@ -166,7 +168,7 @@ export function ResizableFrame({
         {...grips("bottom", { ...size, height: null })}
         className={cn(
           EDGE,
-          "right-4 -bottom-2 left-3 h-2 cursor-ns-resize after:inset-x-0 after:top-0 after:h-0.5"
+          "right-4 -bottom-1.5 left-3 h-2 cursor-ns-resize after:inset-x-0 after:top-0 after:h-0.5"
         )}
       />
       <div
