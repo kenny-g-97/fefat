@@ -81,8 +81,9 @@ def seed(home: Path, port: int, password: str, data_dir: Path | None = None) -> 
 def year_of_mes() -> None:
     """A year of MES's 1-minute bars from 2025-04-01 to 2026-03-31 in five quarterly contracts
     of the provider `synthetic`, written into the data folder by the tests' generator
-    (`python/tests/generated_minutes.py`), unchecked: a product of the catalog for the catalog
-    page's Update, and a year of 5-minute bars for the chart to scroll back through (step 5.4)."""
+    (`python/tests/generated_minutes.py`), unchecked: a product of the catalog for its dataset
+    page's Check quality, and a year of 5-minute bars for the chart to scroll back through (step
+    5.4)."""
     tests = str(ROOT / "python" / "tests")
     sys.path.insert(0, tests)
     try:

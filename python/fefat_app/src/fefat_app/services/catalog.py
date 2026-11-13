@@ -4,7 +4,8 @@ database until a step writes state of its own there (D-83): the datasets with th
 dataset's findings, the catalog's products with the datasets that cover them, the source guide,
 the instruments, and the bars of a window, a page at a time (`fefat_app.services.market_bars`);
 and the catalog sync, the quality report of a product, or of every product, as a job of the pool
-(`fefat_app.jobs.catalog_sync`), which a product's Update starts until the connectors (D-38).
+(`fefat_app.jobs.catalog_sync`), which Check quality on a dataset's page starts until the
+connectors (D-38).
 
 A dataset's id names its provider, schema, and root, `provider:schema:root`, such as
 `databento:ohlcv-1m:MES`, none of which holds a colon (`fefat.market.layout.FolderName`)."""

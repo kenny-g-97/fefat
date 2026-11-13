@@ -226,7 +226,7 @@ CI runs `just check` and `just test` on `windows-latest` and `ubuntu-latest` for
 
 As step 5.1 built `just dev` (D-94): without `FEFAT_HOME`, it serves `fefat-dev` in the temporary folder, made afresh at each start as the UI harness's home is, with the synthetic fixtures, or the data folder `FEFAT_DATA_DIR` names, and prints its password; with `FEFAT_HOME`, that home; and it starts the server again whenever the SDK's or the app's source changes, since `fefat up` hands uvicorn an app object, which uvicorn cannot reload.
 
-As step 5.4 seeded it (D-97): the harness's home, and `just dev`'s throwaway one, hold a generated year of MES one-minute bars, 2025-04-01 to 2026-03-31, beside the fixtures, so that the data page has a catalog product to update and the chart a year to scroll back through.
+As step 5.4 seeded it (D-97): the harness's home, and `just dev`'s throwaway one, hold a generated year of MES one-minute bars, 2025-04-01 to 2026-03-31, beside the fixtures, so that the data pages have a catalog product to check the quality of and the chart a year to scroll back through.
 
 ## 10. Seams that keep options open
 

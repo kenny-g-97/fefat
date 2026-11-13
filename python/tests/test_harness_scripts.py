@@ -179,8 +179,8 @@ def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(tmp_path: Pa
 
 @pytest.mark.usefixtures("seeding")
 def test_the_seed_writes_a_year_of_mes_a_product_of_the_catalog_unchecked(tmp_path: Path) -> None:
-    # Step 5.4: the catalog page's Update needs a product of the catalog, and the chart a year of
-    # 5-minute bars to scroll back through, which the fixtures' ES and bitcoin are not.
+    # Step 5.4: a dataset page's Check quality needs a product of the catalog, and the chart a
+    # year of 5-minute bars to scroll back through, which the fixtures' ES and bitcoin are not.
     e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
 
     paths = resolve_paths(os.environ)
