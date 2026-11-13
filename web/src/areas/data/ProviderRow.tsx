@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query"
-import { cn } from "cn"
 import { datasetQualityQuery, type StoredDataset } from "@/api/catalog"
 import { IdentityChip } from "@/ui/identity-chip"
 import { SectionFailure } from "@/ui/section-failure"
@@ -8,36 +7,7 @@ import { CoverageStrip } from "./CoverageStrip"
 import { chartTimeframe } from "./datasets"
 import { DatasetTable } from "./DatasetTable"
 import { Findings } from "./Findings"
-
-type Standing = StoredDataset["quality"] | "checking"
-
-/** A quality's badge (web/DESIGN.md, Patterns, Badges): Checking while a sync runs, on the
- * active item's soft fill; Flagged in the negative on its soft fill, an alert; the others on
- * the hover step in heading text, since green marks a profit alone. */
-const BADGES: Readonly<
-  Record<Standing, Readonly<{ label: string; tone: string }>>
-> = {
-  checking: {
-    label: "Checking",
-    tone: "border-brand-soft-border bg-brand-soft text-brand-soft-foreground",
-  },
-  flagged: {
-    label: "Flagged",
-    tone: "border-transparent bg-negative-soft text-negative",
-  },
-  clean: {
-    label: "Clean",
-    tone: "border-transparent bg-accent text-foreground",
-  },
-  unchecked: {
-    label: "Unchecked",
-    tone: "border-transparent bg-accent text-foreground",
-  },
-  stale: {
-    label: "Stale",
-    tone: "border-transparent bg-accent text-foreground",
-  },
-}
+import { QualityBadge } from "./QualityBadge"
 
 type ProviderRowProps = Readonly<{
   root: string
@@ -57,20 +27,11 @@ export function ProviderRow({
 }: ProviderRowProps) {
   const [first] = datasets
   const quality = useQuery(datasetQualityQuery(first.id))
-  const badge = BADGES[syncing ? "checking" : first.quality]
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <IdentityChip testId="provider-chip">{provider}</IdentityChip>
-        <span
-          data-testid="quality-badge"
-          className={cn(
-            "rounded-xl border px-2 py-0.5 text-xs font-semibold",
-            badge.tone
-          )}
-        >
-          {badge.label}
-        </span>
+        <QualityBadge standing={syncing ? "checking" : first.quality} />
         <span className="text-xs text-muted-foreground">
           {provenance(first)}
         </span>

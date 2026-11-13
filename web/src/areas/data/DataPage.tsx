@@ -1,7 +1,5 @@
-import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { syncsUnderWay, useCatalogAfterSyncs } from "@/api/catalog"
-import { jobsQuery } from "@/api/jobs"
+import { useSyncCover } from "@/api/catalog"
 import { Button } from "@/ui/button"
 import { Page } from "@/ui/page"
 import { CatalogPanels } from "./CatalogPanels"
@@ -12,9 +10,7 @@ import { SourcesPanel } from "./SourcesPanel"
  * quality and its coverage by month, which Update checks again as a job; the instruments; and
  * the source guide. Each section loads, and fails, on its own. */
 export function DataPage() {
-  const jobs = useQuery(jobsQuery)
-  useCatalogAfterSyncs(jobs.data)
-  const syncs = syncsUnderWay(jobs.data === undefined ? [] : jobs.data)
+  const syncs = useSyncCover()
   return (
     <Page
       title="Data"

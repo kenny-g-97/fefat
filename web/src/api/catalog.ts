@@ -1,4 +1,4 @@
-import { queryOptions, useMutation } from "@tanstack/react-query"
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query"
 import { useEffect, useRef } from "react"
 import { z } from "zod"
 import { api, queryClient } from "./client"
@@ -80,10 +80,18 @@ export function isSyncing(cover: SyncCover, root: string): boolean {
   return cover.every || cover.roots.has(root)
 }
 
+/** What the catalog syncs under way cover, for a page that shows quality: it follows the jobs
+ * and reads the catalog and the datasets' quality again once a sync ends. */
+export function useSyncCover(): SyncCover {
+  const jobs = useQuery(jobsQuery)
+  useCatalogAfterSyncs(jobs.data)
+  return syncsUnderWay(jobs.data === undefined ? [] : jobs.data)
+}
+
 /** Read the catalog and the datasets' quality again once a catalog sync among `jobs` ends,
  * since it wrote the reports both read: a sync another read of the jobs lists as ended for the
  * first time, so that one which ended before any read saw it running counts too. */
-export function useCatalogAfterSyncs(jobs: readonly Job[] | undefined): void {
+function useCatalogAfterSyncs(jobs: readonly Job[] | undefined): void {
   const ended = jobs === undefined ? undefined : endedSyncs(jobs)
   const before = useRef(ended)
   useEffect(() => {
