@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test"
-import { chartReady } from "./support/chart.ts"
+import { barsPage, chartReady } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
 import { screenshot } from "./support/screenshots.ts"
@@ -148,6 +148,57 @@ test("the chart keeps its least size, never passes its column, and narrows besid
   expect(await sideways()).toBeLessThanOrEqual(0)
   await page.keyboard.press("Escape")
   await expectSize(card, { width: set, height: LEAST.height })
+})
+
+test("at the chart's least width the readout cuts no figure of an index future's prices", async ({
+  loggedIn: page,
+}) => {
+  // MNQ's figures, five digits with two decimals and a volume in the tens of thousands, which
+  // the seed has none of: MES's bars as the API sends them, 20,000 points higher and a hundred
+  // times the volume.
+  await page.route(
+    (url) => url.pathname === "/v1/market/bars",
+    async (route) => {
+      const response = await route.fetch()
+      const answer = barsPage.loose().parse(await response.json())
+      const higher = (prices: readonly number[]) =>
+        prices.map((price) => price + 20_000)
+      const { open, high, low, close, volume } = answer.bars
+      await route.fulfill({
+        response,
+        json: {
+          ...answer,
+          bars: {
+            ...answer.bars,
+            open: higher(open),
+            high: higher(high),
+            low: higher(low),
+            close: higher(close),
+            volume: volume.map((lots) => lots * 100),
+          },
+        },
+      })
+    }
+  )
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, right } = edges(page)
+  await expect(page.getByTestId("readout-volume")).toHaveText(/^\d\d,\d{3}$/)
+
+  const filling = await boxOf(card)
+  await drag(page, right, -700, 0)
+  await expectSize(card, { width: LEAST.width, height: filling.height })
+
+  // Each figure ends inside the card's padding, 16 px from its edge.
+  const inside = await boxOf(card)
+  for (const figure of ["open", "high", "low", "close", "volume"]) {
+    const box = await boxOf(page.getByTestId(`readout-${figure}`))
+    expect(box.x + box.width, `the readout's ${figure}`).toBeLessThanOrEqual(
+      inside.x + inside.width - 16
+    )
+  }
+  await page.mouse.move(700, 36)
+  await screenshot(page, "data-chart-least")
 })
 
 test("the chart's size outlives a change of timeframe and a reload, kept in this browser", async ({

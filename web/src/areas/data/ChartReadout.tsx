@@ -14,8 +14,9 @@ type ChartReadoutProps = Readonly<{
 /** The bar under the crosshair, or else the last that traded, as the API gave it
  * (web/DESIGN.md, Patterns, Price chart): its contract and its open in the browser's zone or its
  * trade date, then its open, high, low, close, and volume, its prices at its instrument's
- * decimals, the two groups wrapping apart, never within; and, while a window of bars loads, a
- * word that it does. */
+ * decimals, the two groups wrapping apart, and the second between its figures only in a card too
+ * narrow for it, a label never from its figure; and, while a window of bars loads, a word that
+ * it does. */
 export function ChartReadout({
   bars,
   index,
@@ -80,8 +81,10 @@ function Prices({
     },
     { label: "Volume", id: "volume", value: formatCount(bars.volume[at]) },
   ]
+  // A card too narrow for the five on one line, such as MNQ's at the frame's least width, wraps
+  // between figures rather than cut the last.
   return (
-    <dl className="flex items-center gap-6 whitespace-nowrap">
+    <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 whitespace-nowrap">
       {fields.map(({ label, id, value }) => (
         <div key={id} className="flex items-center gap-2">
           <dt className="text-muted-foreground">{label}</dt>
