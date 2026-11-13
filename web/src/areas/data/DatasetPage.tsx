@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { useSearch } from "@tanstack/react-router"
+import { Link, useSearch } from "@tanstack/react-router"
 import {
   catalogQuery,
   isSyncing,
@@ -25,7 +25,8 @@ import { QueryBody } from "./QueryBody"
 /** A dataset's page (step 5.4; web/DESIGN.md, Patterns, Dataset page): an instrument's data
  * from one provider, the two named in the address, as a row of the Data page's list opens it:
  * what the store holds of it, with its chart, and its quality, which Check quality checks again
- * as a job, a catalog sync of the instrument and so of every provider's data of it. An address
+ * as a job, a catalog sync of the instrument and so of every provider's data of it; Import more
+ * data leads to the import page with the provider as its preset, step 5.12's wizard. An address
  * that names no data FEAT holds says so. */
 export function DatasetPage() {
   const shown = useSearch({ from: "/_shell/data/dataset" })
@@ -51,13 +52,20 @@ export function DatasetPage() {
       back={<BackLink to="/data">Back to Data</BackLink>}
       action={
         dataset === undefined ? undefined : (
-          <Button
-            variant="ghost"
-            disabled={syncing || sync.isPending}
-            onClick={() => sync.mutate(dataset.root)}
-          >
-            Check quality
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              disabled={syncing || sync.isPending}
+              onClick={() => sync.mutate(dataset.root)}
+            >
+              Check quality
+            </Button>
+            <Button asChild>
+              <Link to="/data/import" search={{ preset: dataset.provider }}>
+                Import more data
+              </Link>
+            </Button>
+          </>
         )
       }
     >

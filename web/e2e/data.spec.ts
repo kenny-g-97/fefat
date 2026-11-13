@@ -617,6 +617,34 @@ test("a flagged dataset shows its findings, its months held in part, and its las
   await screenshot(page, "data-dataset-flagged-light")
 })
 
+test("Import more data on a dataset's page leads to the import page with its provider as the preset", async ({
+  loggedIn: page,
+}) => {
+  // From the builder's second check of step 5.4: a way to update a data source with new files.
+  // The import page is a placeholder until step 5.12's wizard, which reads the preset.
+  await page.goto(MES_PAGE)
+  const header = page.getByRole("main")
+  const more = header.getByRole("link", { name: "Import more data" })
+
+  await expect(more).toHaveAttribute("href", "/data/import?preset=synthetic")
+  const check = await header
+    .getByRole("button", { name: "Check quality" })
+    .boundingBox()
+  const primary = await more.boundingBox()
+  if (check === null || primary === null) {
+    throw new Error("Expected the page's two actions, got none.")
+  }
+  expect(
+    check.x + check.width,
+    "Check quality before the primary action, on one line"
+  ).toBeLessThanOrEqual(primary.x)
+  expect(check.y + check.height / 2).toBe(primary.y + primary.height / 2)
+  await more.click()
+
+  await expect(page).toHaveURL("/data/import?preset=synthetic")
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
+})
+
 test("an address that names no data FEAT holds says so, with no actions", async ({
   loggedIn: page,
 }) => {
@@ -629,6 +657,9 @@ test("an address that names no data FEAT holds says so, with no actions", async 
   await expect(page.getByRole("button", { name: "Check quality" })).toHaveCount(
     0
   )
+  await expect(
+    page.getByRole("link", { name: "Import more data" })
+  ).toHaveCount(0)
   await page.getByRole("link", { name: "Back to Data" }).click()
   await expect(page).toHaveURL("/data")
 })
