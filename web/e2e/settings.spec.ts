@@ -4,8 +4,8 @@ import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // The settings page of step 4.3: the theme, kept by the server; the API tokens; the password;
-// and the data folder, read-only. The password test changes it back after itself, so that the
-// next spec can log in.
+// the data folder, read-only; and, from step 5.4, About, with the chart library's notice. The
+// password test changes it back after itself, so that the next spec can log in.
 
 const NEW_PASSWORD = "chalk on slate"
 
@@ -368,4 +368,22 @@ test("the data folder is shown and cannot be edited", async ({
   await expect(page.getByRole("textbox", { name: "Data folder" })).toHaveCount(
     0
   )
+})
+
+test("About shows the chart library's notice word for word, with its link", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+
+  // The NOTICE file of Lightweight Charts' tag v5.2.1, written here apart from the app's copy;
+  // the letter between its brackets is the file's own, a Cyrillic one.
+  const about = page.getByRole("region", { name: "About" })
+  await expect(about.getByTestId("chart-notice").locator("p")).toHaveText([
+    "TradingView Lightweight Charts™",
+    "Copyright (с) 2025 TradingView, Inc. https://www.tradingview.com/",
+  ])
+  const link = about.getByRole("link", { name: "https://www.tradingview.com/" })
+  await expect(link).toHaveAttribute("href", "https://www.tradingview.com/")
+  await expect(link).toHaveAttribute("target", "_blank")
+  await expect(link).toHaveAttribute("rel", "noreferrer")
 })
