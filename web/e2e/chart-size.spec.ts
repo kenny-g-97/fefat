@@ -7,7 +7,8 @@ import { screenshot } from "./support/screenshots.ts"
 // The chart's frame of step 5.4, from the builder's third check: its right edge, its bottom
 // edge, and the corner between are dragged to set the chart's size and shape, within its least
 // and its column; the edges are reached by Tab after the chart and moved by the keys. At 1280
-// by 800 the chart that fills is 960 px wide, its column's width.
+// by 800 the chart that fills is 960 px wide, its column's width. A chart taller than the
+// window lengthens its page.
 
 const CHART = "/data/chart?instrument=MES&provider=synthetic"
 const LEAST = { width: 576, height: 240 }
@@ -58,6 +59,23 @@ function edges(page: Page) {
     bottom: page.getByRole("separator", { name: "Chart height" }),
     corner: page.getByTestId("frame-corner"),
   }
+}
+
+/** How far the card's foot stands from the page's 32 px of padding over the window's foot. */
+async function offItsFoot(page: Page, card: Locator): Promise<number> {
+  const box = await boxOf(card)
+  const windowHeight = await page.evaluate(() => window.innerHeight)
+  return Math.abs(windowHeight - 32 - (box.y + box.height))
+}
+
+/** Two frames on: the page has drawn its last change, and what watches its size has heard. */
+function twoFrames(page: Page): Promise<void> {
+  return page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
+  )
 }
 
 test("dragging the right edge, the bottom edge, and the corner sizes the chart, which follows", async ({
@@ -219,4 +237,59 @@ test("the edges follow the chart in the Tab order, say their size, and move by t
   await expectSize(card, { width: filling.width, height: LEAST.height })
   await page.keyboard.press("Enter")
   await expectSize(card, filling)
+})
+
+test("a chart set taller than the window lengthens its page, which the wheel then scrolls", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, bottom } = edges(page)
+  const filling = await boxOf(card)
+  expect(Math.abs(filling.width - 960)).toBeLessThanOrEqual(1)
+
+  // A chart that fills ends at the page's padding, in a window made shorter and taller again,
+  // and its page is never longer than the window.
+  for (const height of [800, 700, 800]) {
+    await page.setViewportSize({ width: 1280, height })
+    await expect
+      .poll(() => offItsFoot(page, card), {
+        message: `the chart that fills, in a window ${height} px high`,
+      })
+      .toBeLessThanOrEqual(1)
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollHeight -
+          document.documentElement.clientHeight
+      )
+    ).toBe(0)
+  }
+
+  await bottom.focus()
+  await page.keyboard.press("End")
+  await expectSize(card, { width: filling.width, height: 1600 })
+  // The page is as long as its chart: at its end, its padding stands under the card.
+  await page.evaluate(() =>
+    window.scrollTo(0, document.documentElement.scrollHeight)
+  )
+  await expect
+    .poll(() => offItsFoot(page, card), {
+      message: "the page's padding under a chart taller than the window",
+    })
+    .toBeLessThanOrEqual(1)
+
+  // The wheel belongs to a page that scrolls, as in a window too short for the chart.
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await twoFrames(page)
+  const before = await card.getAttribute("data-before")
+  await page.mouse.move(filling.x + filling.width / 2, filling.y + 120)
+  await expect
+    .poll(async () => {
+      await page.mouse.wheel(0, 300)
+      return page.evaluate(() => window.scrollY)
+    })
+    .toBeGreaterThan(0)
+  await twoFrames(page)
+  await expect(card).toHaveAttribute("data-before", String(before))
 })

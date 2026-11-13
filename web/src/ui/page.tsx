@@ -14,8 +14,9 @@ type PageProps = Readonly<{
  * title and its one-line description, then the content, padded 32 px and at most 1600 px wide.
  * A page reached from its area's page leads `back` there from above its title, and a page's
  * `action`, its buttons, stands at the right end of the title's line. A page that `fill`s, such
- * as a chart's, takes the window's height under the top bar, down to the least it reads at, so
- * that its content grows into the rest. */
+ * as a chart's, is at least the window's height under the top bar, and never under the least it
+ * reads at, so that its content grows into the rest; content with a height of its own, such as
+ * a chart the trader made taller, lengthens the page, which keeps its padding under it. */
 export function Page({
   title,
   description,
@@ -28,7 +29,7 @@ export function Page({
     <div
       className={cn(
         "mx-auto w-full max-w-400 p-8",
-        fill && "flex h-[calc(100dvh-4.5rem)] min-h-144 flex-col"
+        fill && "flex min-h-[max(calc(100dvh_-_4.5rem),36rem)] flex-col"
       )}
     >
       <title>{`${title} – FEAT`}</title>
