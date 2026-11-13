@@ -186,7 +186,7 @@ test("Update checks a product's quality as a job, and its coverage shows by mont
   await page.getByTestId("jobs-indicator").click()
   await expect(
     page.getByRole("dialog", { name: "Jobs" }).getByTestId("job-row").first()
-  ).toContainText("Catalog update")
+  ).toContainText("Quality check")
   await page.keyboard.press("Escape")
 
   await expect
@@ -381,7 +381,7 @@ test("step 5.4's checks, recorded: Update on MES, its chart scrolled back, and t
     .getByRole("dialog", { name: "Jobs" })
     .getByTestId("job-row")
     .first()
-  await expect(job).toContainText("Catalog update")
+  await expect(job).toContainText("Quality check")
   await expect(job).toContainText("Succeeded", { timeout: 60_000 })
   // A clip shows each moment for a while; nothing here waits on the app.
   await page.waitForTimeout(PAUSE_MS * 2)
