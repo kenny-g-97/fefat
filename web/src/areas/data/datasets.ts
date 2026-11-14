@@ -12,12 +12,14 @@ type Grouped = Readonly<{
 export type CatalogProduct = CatalogStatus["products"][number]
 
 /** An instrument's data from one provider, as the trader imported it and as the Data page lists
- * it: the store's datasets of it, one per kind of data; those kinds in words; the first and the
- * last trade date among them; its quality, stale once a dataset outgrew the report the others
- * still read clean; and its product, where the catalog lists the instrument. */
+ * it: its type, market data for every dataset the catalog lists, which Phase 10's alternative
+ * data joins; the store's datasets of it, one per kind of data; those kinds in words; the first
+ * and the last trade date among them; its quality, stale once a dataset outgrew the report the
+ * others still read clean; and its product, where the catalog lists the instrument. */
 export type ImportedDataset = Readonly<{
   root: string
   provider: string
+  type: "market"
   stored: readonly [StoredDataset, ...StoredDataset[]]
   kinds: string
   from: string
@@ -49,6 +51,11 @@ export function notImported(catalog: CatalogStatus): readonly CatalogProduct[] {
  * FEAT recommends for it. */
 export function catalogLine(product: CatalogProduct): string {
   return `History from ${product.history_from}, ${product.recommended_source} recommended`
+}
+
+/** A row's type in words, as the list's Type column and its dropdown say it. */
+export const TYPE_LABELS: Readonly<Record<ImportedDataset["type"], string>> = {
+  market: "Market",
 }
 
 /** How a month of a quality report is held: every session with records, some, or none. */
@@ -144,6 +151,7 @@ function imported(
   return {
     root: first.root,
     provider: held.name,
+    type: "market",
     stored,
     kinds: stored.map((each) => fidelityLabel(each.fidelity)).join(", "),
     from: stored.reduce(

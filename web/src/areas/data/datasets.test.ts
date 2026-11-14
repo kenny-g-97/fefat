@@ -11,6 +11,7 @@ import {
   monthHeld,
   monthLabel,
   notImported,
+  TYPE_LABELS,
 } from "./datasets"
 
 describe("importedDatasets", () => {
@@ -229,5 +230,24 @@ describe("the months", () => {
     expect(monthLabel(some)).toBe(
       "2026-03: 20 of 22 sessions with records, 1 finding, 2 sessions the vendor flagged"
     )
+  })
+})
+
+describe("a row's type", () => {
+  it("is market data for every dataset the catalog lists, bars or prints, in the column's word", () => {
+    // From the builder's fourth check of step 5.4: a column that tells market data from
+    // alternative data, which arrives with Phase 10.
+    const catalog: CatalogStatus = {
+      version: 1,
+      products: [],
+      unlisted: [
+        aDataset("ibkr", "MNQ", "trades"),
+        aDataset("synthetic", "ES", "1m"),
+      ],
+    }
+
+    expect(
+      importedDatasets(catalog).map((row) => TYPE_LABELS[row.type])
+    ).toEqual(["Market", "Market"])
   })
 })
