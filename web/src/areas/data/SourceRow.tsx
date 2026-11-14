@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react"
 import type { ReactNode } from "react"
 import type { Source } from "@/api/catalog"
-import { TextLink } from "@/ui/text-link"
+import { ExternalLink, TextLink } from "@/ui/text-link"
 
 const KINDS: Readonly<Record<Source["kind"], string>> = {
   vendor: "Vendor",
@@ -49,14 +49,7 @@ export function SourceRow({ source }: Readonly<{ source: Source }>) {
           {source.terms_page !== null && (
             <>
               {" "}
-              <a
-                href={source.terms_page}
-                target="_blank"
-                rel="noreferrer"
-                className="font-semibold text-brand-secondary underline-offset-4 hover:underline"
-              >
-                Terms page
-              </a>
+              <ExternalLink href={source.terms_page}>Terms page</ExternalLink>
             </>
           )}
         </Term>

@@ -378,6 +378,12 @@ test("About shows the chart library's notice word for word, with its link", asyn
   // The NOTICE file of Lightweight Charts' tag v5.2.1, written here apart from the app's copy;
   // the letter between its brackets is the file's own, a Cyrillic one.
   const about = page.getByRole("region", { name: "About" })
+  // The card says why a logo stands on each chart, the builder's question.
+  await expect(
+    about.getByText(
+      "The library that draws FEAT's charts, credited here and by the logo on each chart"
+    )
+  ).toBeVisible()
   await expect(about.getByTestId("chart-notice").locator("p")).toHaveText([
     "TradingView Lightweight Charts™",
     "Copyright (с) 2025 TradingView, Inc. https://www.tradingview.com/",

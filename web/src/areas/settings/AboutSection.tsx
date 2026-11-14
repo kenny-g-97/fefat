@@ -1,5 +1,6 @@
 import { CHART_NOTICE } from "@/charts/attribution"
 import { Panel } from "@/ui/panel"
+import { ExternalLink } from "@/ui/text-link"
 
 /** What FEAT is built with and must credit (web/DESIGN.md, Patterns, Settings): the notice of
  * the library that draws its charts, word for word, its address a link, which that library's
@@ -8,7 +9,7 @@ export function AboutSection() {
   return (
     <Panel
       title="About"
-      description="The library that draws FEAT's charts, and the notice its licence asks for"
+      description="The library that draws FEAT's charts, credited here and by the logo on each chart"
     >
       <div
         data-testid="chart-notice"
@@ -17,14 +18,9 @@ export function AboutSection() {
         <p className="font-medium text-foreground">{CHART_NOTICE.product}</p>
         <p>
           {CHART_NOTICE.copyright}{" "}
-          <a
-            href={CHART_NOTICE.page}
-            target="_blank"
-            rel="noreferrer"
-            className="font-semibold text-brand-secondary underline-offset-4 hover:underline"
-          >
+          <ExternalLink href={CHART_NOTICE.page}>
             {CHART_NOTICE.page}
-          </a>
+          </ExternalLink>
         </p>
       </div>
     </Panel>
