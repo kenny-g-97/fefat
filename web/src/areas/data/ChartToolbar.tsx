@@ -1,21 +1,15 @@
 import { Palette } from "lucide-react"
-import { type FormEvent, type ReactNode, useState } from "react"
+import { type FormEvent, useState } from "react"
 import { timeframe } from "@/api/bar-windows"
 import type { BarPrices } from "@/api/bars"
 import { Button } from "@/ui/button"
 import { Input } from "@/ui/input"
 import { Label } from "@/ui/label"
 import { Segmented } from "@/ui/segmented"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/ui/select"
 import { SheetTrigger } from "@/ui/sheet"
 import { contractChoice } from "./chart-panes"
 import type { ChartSearch } from "./chart-search"
+import { Choice, type Option, Picker } from "./Picker"
 
 type ChartToolbarProps = Readonly<{
   roots: readonly string[]
@@ -34,8 +28,6 @@ const PRICES: readonly Readonly<{ value: BarPrices; label: string }>[] = [
 /** The provider choice that leaves the provider out, for the catalog's recommended source: no
  * provider's folder name holds parentheses (`fefat.market.layout.FolderName`). */
 const RECOMMENDED = "(recommended)"
-
-type Option = Readonly<{ value: string; label: string }>
 
 function named(values: readonly string[]): readonly Option[] {
   return values.map((value) => ({ value, label: value }))
@@ -114,43 +106,6 @@ export function ChartToolbar({
         </Button>
       </SheetTrigger>
     </div>
-  )
-}
-
-function Choice({
-  id,
-  label,
-  children,
-}: Readonly<{ id: string; label: string; children: ReactNode }>) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-    </div>
-  )
-}
-
-type PickerProps = Readonly<{
-  id: string
-  value: string
-  options: readonly Option[]
-  onChange: (value: string) => void
-}>
-
-function Picker({ id, value, options, onChange }: PickerProps) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger id={id} className="w-36">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent position="popper">
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   )
 }
 
