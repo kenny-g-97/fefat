@@ -2,12 +2,8 @@ import type { ReactNode } from "react"
 import type { Source } from "@/api/catalog"
 import { ExternalLink, TextLink } from "@/ui/text-link"
 import { DisclosureRow } from "./DisclosureRow"
+import { SOURCE_KINDS } from "./imported-sources"
 
-const KINDS: Readonly<Record<Source["kind"], string>> = {
-  vendor: "Vendor",
-  "exchange-archive": "Exchange archive",
-  platform: "Platform",
-}
 const DESKTOP_USE: Readonly<Record<Source["desktop_use"], string>> = {
   confirmed: "Confirmed by the source in writing",
   "check-the-terms": "Check the terms yourself",
@@ -26,7 +22,7 @@ export function SourceRow({ source }: Readonly<{ source: Source }>) {
     <DisclosureRow
       testId="source-row"
       name={source.name}
-      note={KINDS[source.kind]}
+      note={SOURCE_KINDS[source.kind]}
       aside={presetCount(available.length)}
     >
       <dl className="grid max-w-4xl grid-cols-[10rem_1fr] gap-x-6 gap-y-3 pt-2 pb-5 pl-7">
