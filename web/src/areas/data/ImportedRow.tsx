@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router"
 import { cn } from "cn"
 import { ArrowRight } from "lucide-react"
 import { IdentityChip } from "@/ui/identity-chip"
-import { type ImportedDataset, TYPE_LABELS } from "./datasets"
+import { type ImportedDataset, type Standing, TYPE_LABELS } from "./datasets"
 import { QualityBadge } from "./QualityBadge"
 
 // shortcut: fixed tracks fit a root of 12 characters, a provider of 13, and a type of 11 on one
@@ -35,11 +35,11 @@ export function ImportedHead() {
 
 /** An instrument's data from one provider as a row (web/DESIGN.md, Patterns, Link rows), which
  * opens its dataset's page: its instrument, its provider, its type, what it holds, its first
- * and last trade date, and its quality, Checking while a sync covers its instrument. */
+ * and last trade date, and how its quality stands. */
 export function ImportedRow({
   dataset,
-  syncing,
-}: Readonly<{ dataset: ImportedDataset; syncing: boolean }>) {
+  standing,
+}: Readonly<{ dataset: ImportedDataset; standing: Standing }>) {
   const words = "text-foreground-secondary"
   const figure = "text-right text-foreground-secondary"
   return (
@@ -76,7 +76,7 @@ export function ImportedRow({
         {dataset.to}
       </span>
       <span>
-        <QualityBadge standing={syncing ? "checking" : dataset.quality} />
+        <QualityBadge standing={standing} />
       </span>
       <ArrowRight
         aria-hidden="true"

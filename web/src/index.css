@@ -222,6 +222,12 @@ a:not([data-slot="button"]):active {
   color: var(--card);
 }
 
+/* A search field is the field in every browser: Chrome's own clear button, white on the dark
+   theme and blue on the light one, is no colour of the palette, and Escape clears the field. */
+[data-slot="input"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
 /* The skip link moves the focus to the page itself, which needs no outline of its own. */
 main[tabindex="-1"]:focus-visible {
   outline: none;

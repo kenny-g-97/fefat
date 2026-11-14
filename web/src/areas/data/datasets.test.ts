@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
+import type {
+  CatalogStatus,
+  MonthCoverage,
+  StoredDataset,
+  SyncCover,
+} from "@/api/catalog"
 import {
   byProvider,
   byRoot,
@@ -11,6 +16,8 @@ import {
   monthHeld,
   monthLabel,
   notImported,
+  standing,
+  STANDING_LABELS,
   TYPE_LABELS,
 } from "./datasets"
 
@@ -249,5 +256,33 @@ describe("a row's type", () => {
     expect(
       importedDatasets(catalog).map((row) => TYPE_LABELS[row.type])
     ).toEqual(["Market", "Market"])
+  })
+})
+
+describe("a row's standing", () => {
+  it("is its quality as its report reads, or Checking while a sync covers its instrument", () => {
+    // What the quality badge shows, which the list's Quality dropdown and its search read too.
+    const [mnq, es] = importedDatasets({
+      version: 1,
+      products: [],
+      unlisted: [
+        { ...aDataset("ibkr", "MNQ", "1m"), quality: "clean" },
+        aDataset("synthetic", "ES", "1m"),
+      ],
+    })
+    const none: SyncCover = { every: false, roots: new Set() }
+    const ofMnq: SyncCover = { every: false, roots: new Set(["MNQ"]) }
+    const ofEvery: SyncCover = { every: true, roots: new Set() }
+
+    expect([standing(mnq, none), standing(es, none)]).toEqual([
+      "clean",
+      "unchecked",
+    ])
+    expect([standing(mnq, ofMnq), standing(es, ofMnq)]).toEqual([
+      "checking",
+      "unchecked",
+    ])
+    expect(standing(es, ofEvery)).toBe("checking")
+    expect(STANDING_LABELS[standing(mnq, ofMnq)]).toBe("Checking")
   })
 })

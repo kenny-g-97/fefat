@@ -1,5 +1,11 @@
 import { barSeconds, type Timeframe, timeframe } from "@/api/bar-windows"
-import type { CatalogStatus, MonthCoverage, StoredDataset } from "@/api/catalog"
+import {
+  type CatalogStatus,
+  isSyncing,
+  type MonthCoverage,
+  type StoredDataset,
+  type SyncCover,
+} from "@/api/catalog"
 import { formatCount } from "@/ui/figures"
 
 /** Datasets grouped under a name, a root or a provider, in the API's order. */
@@ -56,6 +62,25 @@ export function catalogLine(product: CatalogProduct): string {
 /** A row's type in words, as the list's Type column and its dropdown say it. */
 export const TYPE_LABELS: Readonly<Record<ImportedDataset["type"], string>> = {
   market: "Market",
+}
+
+/** How a dataset's quality stands: as its report reads, or being checked while a sync covers
+ * its instrument. */
+export type Standing = StoredDataset["quality"] | "checking"
+
+/** A standing in words, as the quality badge and the list's Quality dropdown say it. */
+export const STANDING_LABELS: Readonly<Record<Standing, string>> = {
+  checking: "Checking",
+  flagged: "Flagged",
+  clean: "Clean",
+  unchecked: "Unchecked",
+  stale: "Stale",
+}
+
+/** How `dataset`'s quality stands while `syncs` are under way: being checked where one covers
+ * its instrument, else as its report reads. */
+export function standing(dataset: ImportedDataset, syncs: SyncCover): Standing {
+  return isSyncing(syncs, dataset.root) ? "checking" : dataset.quality
 }
 
 /** How a month of a quality report is held: every session with records, some, or none. */
