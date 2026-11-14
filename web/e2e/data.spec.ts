@@ -43,7 +43,7 @@ const quality = z.object({
   ),
 })
 const instruments = z.array(
-  z.object({ root: z.string(), tick_size: z.number() })
+  z.looseObject({ root: z.string(), tick_size: z.number() })
 )
 const stored = z.looseObject({
   id: z.string(),
@@ -183,6 +183,21 @@ test("the imported data, the products not imported yet, and the sources they cam
   for (const kind of ["1-minute bars", "1-second bars", "Trades"]) {
     await expect(es.getByTestId("imported-kinds")).toContainText(kind)
   }
+  // Three kinds take two lines at this width, since the list says each row's type: the line
+  // breaks between two kinds, never inside one, where "bars" alone read as a kind of its own
+  // (step 5.4's reviews of the fourth check).
+  expect(
+    await es
+      .getByTestId("imported-kinds")
+      .locator("span")
+      .evaluateAll((kinds) =>
+        kinds.map(
+          (kind) =>
+            new Set([...kind.getClientRects()].map((line) => line.top)).size
+        )
+      ),
+    "the lines each kind of ES's data takes"
+  ).toEqual([1, 1, 1])
   // The catalog's products without data stand under the list, a line each.
   const missing = catalog.products.filter(
     (product) => product.datasets.length === 0
@@ -367,16 +382,47 @@ test("a dataset's page shows its instrument's specification, which fails on its 
     table.getByRole("row", { name: /^ES Futures 0\.25 50 1 USD / })
   ).toBeVisible()
 
+  // Step 5.4's design review of the fourth check: a window 1280 px wide leaves about 1265 px
+  // beside the scrollbar a long page brings, and an instrument an import saved carries a chip.
+  // The table fits its card there too, for the seed's shortest root and for its longest, a
+  // perpetual's of 12 characters on the crypto calendar, whose chip drops under its name.
+  await page.setViewportSize({ width: 1265, height: 800 })
+  await page.route("**/v1/instruments", (route) =>
+    route.fulfill({
+      json: listed.map((version) => ({ ...version, saved: true })),
+    })
+  )
+  for (const root of ["ES", "BTCUSDT-PERP"]) {
+    await page.goto(`/data/dataset?instrument=${root}&provider=synthetic`)
+    await expect(table.getByText("your import")).not.toHaveCount(0)
+    expect(
+      await table.evaluate((element) =>
+        element.parentElement === null
+          ? 0
+          : element.parentElement.scrollWidth -
+            element.parentElement.clientWidth
+      ),
+      `${root}'s saved specification fits its card beside a scrollbar`
+    ).toBeLessThanOrEqual(0)
+  }
+  await page.setViewportSize({ width: 1280, height: 800 })
+
+  // An instrument FEAT knows no specification of says so, in the card's place.
+  const card = page.getByRole("region", { name: "Specification" })
+  await page.route("**/v1/instruments", (route) => route.fulfill({ json: [] }))
+  await page.goto("/data/dataset?instrument=ES&provider=synthetic")
+  await expect(card).toContainText("FEAT holds no specification of ES.")
+  await expect(card.getByRole("table")).toHaveCount(0)
+
   await page.route("**/v1/instruments", (route) =>
     route.fulfill(problemAnswer(500, "The instruments could not be read."))
   )
   await page.reload()
 
-  const failed = page.getByRole("region", { name: "Specification" })
-  await expect(failed.getByRole("alert")).toHaveText(
+  await expect(card.getByRole("alert")).toHaveText(
     "The instruments could not be read."
   )
-  await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible()
+  await expect(card.getByRole("button", { name: "Try again" })).toBeVisible()
   await expect(page.getByRole("main").getByTestId("dataset-row")).toHaveCount(3)
 })
 
@@ -608,6 +654,45 @@ test("a dataset whose catalog cannot be read again loses its actions with its ca
   ).toHaveText("The catalog could not be read.")
 })
 
+test("what the list was asked outlives a catalog that could not be read again", async ({
+  loggedIn: page,
+}) => {
+  // Step 5.4's step review of the fourth check: what was asked lived in the list itself, which
+  // a failed reading takes away, so Try again brought every row back, unasked.
+  let jobs = [syncOfMes("running")]
+  let failing = false
+  await page.route("**/v1/jobs", (route) => route.fulfill({ json: jobs }))
+  await page.route("**/v1/streams/**", (route) => route.abort())
+  await page.route("**/v1/catalog", (route) =>
+    failing
+      ? route.fulfill(problemAnswer(500, "The catalog could not be read."))
+      : route.fallback()
+  )
+  await page.goto("/data")
+  const list = page.getByRole("region", { name: "Imported data" })
+  const instrument = list.getByLabel("Instrument", { exact: true })
+  await instrument.click()
+  await page.getByRole("option", { name: "ES", exact: true }).click()
+  await expect(importedRows(page).getByTestId("imported-root")).toHaveText([
+    "ES",
+  ])
+
+  // The check ends, which reads the catalog again, and that reading fails.
+  jobs = [syncOfMes("succeeded")]
+  failing = true
+  await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")))
+  await expect(list.getByRole("alert")).toHaveText(
+    "The catalog could not be read."
+  )
+  failing = false
+  await list.getByRole("button", { name: "Try again" }).click()
+
+  await expect(importedRows(page).getByTestId("imported-root")).toHaveText([
+    "ES",
+  ])
+  await expect(instrument).toHaveText("ES")
+})
+
 test("a section that cannot load its data says why, and the others keep working", async ({
   loggedIn: page,
 }) => {
@@ -828,14 +913,14 @@ test("a store without data invites the import, and lists the catalog's products"
     "No data imported yet. Import data, above, brings your own files in."
   )
   await expect(importedRows(page)).toHaveCount(0)
-  // Nothing to search or filter, so no fields; and no source to list, though the guide's page
-  // is still a click away.
+  // Nothing to search or filter, so no fields; and no source to list, where a trader's first
+  // question is where data comes from, so the sentence points at the guide's page, under it.
   await expect(
     page.getByRole("region", { name: "Imported data" }).getByRole("searchbox")
   ).toHaveCount(0)
   const sources = page.getByRole("region", { name: "Sources", exact: true })
   await expect(sources).toContainText(
-    "No source yet. The sources of what you import are listed here."
+    "No source yet. All sources, below, lists where data can come from and what each costs."
   )
   await expect(sources.getByTestId("imported-source")).toHaveCount(0)
   await expect(sources.getByRole("link", { name: "All sources" })).toBeVisible()
@@ -850,6 +935,10 @@ test("a store without data invites the import, and lists the catalog's products"
 test("step 5.4's checks, recorded: the list's search and sources, Check quality on MES, its chart scrolled back, its style, and its frame", async ({
   loggedIn: page,
 }) => {
+  // The clip's pauses alone take over twenty seconds of the thirty a test is given, and its
+  // check of MES's quality, four charts, and a reload take the rest (step 5.4's ponytail review
+  // of the fourth check): three times the limit, so that a busy runner does not end the clip.
+  test.slow()
   await page.goto("/")
   await page
     .getByRole("navigation", { name: "Main" })
@@ -857,22 +946,31 @@ test("step 5.4's checks, recorded: the list's search and sources, Check quality 
     .click()
   await page.waitForTimeout(PAUSE_MS)
 
-  // From the builder's fourth check: the list narrowed by a word, then by a dropdown; the
-  // source opened to the rows held from it; and the guide's own page, with the way back.
+  // From the builder's fourth check, as Your checks walk it: a few letters of an instrument,
+  // then a provider and a quality; what nothing matches, and Clear filters; the guide's own
+  // page, and back; then the source, opened to the rows held from it, and a row of it.
   const list = page.getByRole("region", { name: "Imported data" })
   const search = list.getByRole("searchbox", { name: "Search" })
-  await search.pressSequentially("1-second", { delay: 80 })
-  await page.waitForTimeout(PAUSE_MS * 2)
-  await search.fill("")
-  for (const instrument of ["MES", "All"]) {
-    await list.getByLabel("Instrument", { exact: true }).click()
+  const choose = async (column: string, option: string) => {
+    await list.getByLabel(column, { exact: true }).click()
     await page.waitForTimeout(PAUSE_MS)
-    await page.getByRole("option", { name: instrument, exact: true }).click()
+    await page.getByRole("option", { name: option, exact: true }).click()
     await page.waitForTimeout(PAUSE_MS)
   }
-  const sources = page.getByRole("region", { name: "Sources", exact: true })
-  await sources.getByTestId("imported-source").locator("summary").click()
+  await search.pressSequentially("btc", { delay: 120 })
   await page.waitForTimeout(PAUSE_MS * 2)
+  await search.fill("")
+  await choose("Provider", "synthetic")
+  await choose("Quality", "Unchecked")
+  await choose("Instrument", "MES")
+  await search.pressSequentially("btc", { delay: 120 })
+  await expect(list.getByRole("status")).toHaveText(
+    "No imported data matches the filters."
+  )
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await list.getByRole("button", { name: "Clear filters" }).click()
+  await page.waitForTimeout(PAUSE_MS * 2)
+  const sources = page.getByRole("region", { name: "Sources", exact: true })
   await sources.getByRole("link", { name: "All sources" }).click()
   await page
     .getByTestId("source-row")
@@ -883,8 +981,11 @@ test("step 5.4's checks, recorded: the list's search and sources, Check quality 
   await page.waitForTimeout(PAUSE_MS * 2)
   await page.getByRole("link", { name: "Back to Data" }).click()
   await page.waitForTimeout(PAUSE_MS)
+  const source = sources.getByTestId("imported-source")
+  await source.locator("summary").click()
+  await page.waitForTimeout(PAUSE_MS * 2)
 
-  await importedRow(page, "MES", "synthetic").click()
+  await source.getByTestId("imported-row").filter({ hasText: "MES" }).click()
   const mes = page.getByRole("main")
   await page.waitForTimeout(PAUSE_MS)
 
