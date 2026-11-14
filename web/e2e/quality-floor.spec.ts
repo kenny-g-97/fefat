@@ -18,6 +18,7 @@ const PATHS = [
   "/data/dataset?instrument=MES&provider=synthetic",
   "/data/chart?instrument=MES",
   "/data/import",
+  "/data/sources",
   "/settings",
   "/no-such-page",
 ]

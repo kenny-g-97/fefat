@@ -10,14 +10,15 @@ import { screenshot } from "./support/screenshots.ts"
 
 // The Data pages of step 5.4 against the seeded server: the list of imported data, a row an
 // instrument's data from one provider, MES among them with a year of synthetic minutes
-// (`scripts/e2e_server.py`), then the catalog's products not imported yet, the instruments, and
-// the source guide; a row opens its dataset's page, where Check quality checks the instrument's
-// quality as a job (Done means 1, the amended update flow), MES unchecked until then, since no
-// other spec runs a sync; its check before it fails at once if one ever does, whichever order
-// Playwright runs the files in (it groups those that record video apart). A sync writes reports
-// no route removes, so MES stays checked for the specs after it, which read the API's status;
-// the spec ends with the builder's checks recorded as a clip (the UI recipe), after its own
-// check.
+// (`scripts/e2e_server.py`), then the catalog's products not imported yet and the sources the
+// rows came from (the list's search and dropdowns, and the guide's own page, are
+// data-list.spec.ts's); a row opens its dataset's page, with its instrument's specification,
+// where Check quality checks the instrument's quality as a job (Done means 1, the amended
+// update flow), MES unchecked until then, since no other spec runs a sync; its check before it
+// fails at once if one ever does, whichever order Playwright runs the files in (it groups those
+// that record video apart). A sync writes reports no route removes, so MES stays checked for
+// the specs after it, which read the API's status; the spec ends with the builder's checks
+// recorded as a clip (the UI recipe), after its own check.
 
 test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
@@ -137,14 +138,11 @@ function importedRow(page: Page, root: string, provider: string): Locator {
     })
 }
 
-test("the imported data, the products not imported yet, the instruments, and the sources each show", async ({
+test("the imported data, the products not imported yet, and the sources they came from each show", async ({
   loggedIn: page,
 }) => {
   const errors = consoleErrors(page)
   await page.emulateMedia({ reducedMotion: "reduce" })
-  const listed = instruments.parse(
-    await (await page.request.get("/v1/instruments")).json()
-  )
   const catalog = await catalogOf(page.request)
   const imported = importedBy(catalog)
 
@@ -163,6 +161,11 @@ test("the imported data, the products not imported yet, the instruments, and the
   )
   await expect(rows.getByTestId("provider-chip")).toHaveText(
     imported.map((each) => each.provider)
+  )
+  // From the builder's fourth check: a row says its type, market data in every row the catalog
+  // lists.
+  await expect(rows.getByTestId("imported-type")).toHaveText(
+    imported.map(() => "Market")
   )
   await expect(rows.getByTestId("imported-from")).toHaveText(
     imported.map((each) => each.from)
@@ -204,56 +207,31 @@ test("the imported data, the products not imported yet, the instruments, and the
   await screenshot(page, "data-catalog-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
 
-  const table = page
-    .getByRole("region", { name: "Instruments" })
-    .getByRole("table")
-  await expect(table.getByRole("row")).toHaveCount(listed.length + 1)
-  const tableOverflow = await table.evaluate((element) =>
-    element.parentElement === null
-      ? 0
-      : element.parentElement.scrollWidth - element.parentElement.clientWidth
+  // From the builder's fourth check: the instruments' table left this page for each dataset's,
+  // and Sources lists what the rows came from, and nothing else of the guide: here the seed's
+  // one provider, which no source of the guide reads.
+  await expect(page.getByRole("region", { name: "Instruments" })).toHaveCount(0)
+  const sources = page.getByRole("region", { name: "Sources", exact: true })
+  await expect(sources.getByTestId("source-row")).toHaveCount(0)
+  const source = sources.getByTestId("imported-source")
+  await expect(source.locator("summary")).toHaveText([
+    /^synthetic\s*Not in the source guide$/,
+  ])
+  // Closed until it is asked, then the rows held from it, each leading to its dataset's page.
+  const held = source.getByTestId("imported-row")
+  await expect(held.first()).toBeHidden()
+  await source.locator("summary").click()
+  await expect(held.getByTestId("imported-root")).toHaveText(
+    imported.map((each) => each.root)
   )
-  expect(
-    tableOverflow,
-    "the instruments' table fits its card"
-  ).toBeLessThanOrEqual(0)
+  await expect(held.first()).toHaveAttribute("href", MES_PAGE)
   await expect(
-    table.getByRole("row", { name: /^ES Futures 0\.25 50 1 USD / })
-  ).toBeVisible()
-
-  const sources = page.getByRole("region", { name: "Sources" })
-  await expect(sources.getByTestId("source-row")).toHaveCount(27)
-  const databento = sources
-    .getByTestId("source-row")
-    .filter({ hasText: "Databento" })
-    .first()
-  await databento.getByText("Databento", { exact: true }).click()
-  await expect(
-    databento.getByRole("link", { name: "Terms page" })
-  ).toHaveAttribute(
-    "href",
-    "https://databento.com/legal/databento-user-agreement"
-  )
-  await expect(
-    databento.getByRole("link", {
-      name: "Import with Databento DBN batch download",
-    })
-  ).toHaveAttribute("href", "/data/import?preset=databento")
+    sources.getByRole("link", { name: "All sources" })
+  ).toHaveAttribute("href", "/data/sources")
   // The pointer off the page's rows, onto the top bar's empty part, so that none is drawn
   // under it when the picture starts from the top.
   await page.mouse.move(700, 36)
   await screenshot(page, "data-catalog")
-
-  await databento
-    .getByRole("link", { name: "Import with Databento DBN batch download" })
-    .click()
-  await expect(page).toHaveURL("/data/import?preset=databento")
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
-  await expect(page.getByText("Not built yet")).toBeVisible()
-  await screenshot(page, "data-import")
-  // From the builder's check of step 5.4: no way back to Data but the sidebar's row.
-  await page.getByRole("link", { name: "Back to Data" }).click()
-  await expect(page).toHaveURL("/data")
   expect(errors).toEqual([])
 })
 
@@ -273,7 +251,7 @@ test("Import data stands at the top of the Data page, on its title's line, and l
   const title = await page.getByRole("heading", { level: 1 }).boundingBox()
   const button = await action.boundingBox()
   const content = await page
-    .getByRole("region", { name: "Instruments" })
+    .getByRole("region", { name: "Imported data" })
     .boundingBox()
   if (
     untouched === null ||
@@ -358,6 +336,50 @@ test("a row opens its dataset's page, with the figures the API gives and its cha
   expect(errors).toEqual([])
 })
 
+test("a dataset's page shows its instrument's specification, which fails on its own", async ({
+  loggedIn: page,
+}) => {
+  // From the builder's fourth check of step 5.4: the instruments' table left the Data page, and
+  // an instrument's specification, the figures a backtest's P&L uses, stands on its dataset's.
+  const listed = instruments.parse(
+    await (await page.request.get("/v1/instruments")).json()
+  )
+  const versions = listed.filter((version) => version.root === "ES")
+  expect(versions.length).toBeGreaterThan(0)
+  await page.goto("/data/dataset?instrument=ES&provider=synthetic")
+
+  const table = page
+    .getByRole("region", { name: "Specification" })
+    .getByRole("table")
+  await expect(table.getByRole("row")).toHaveCount(versions.length + 1)
+  // The list's and the chart's word for it, where the table said Root.
+  await expect(table.getByRole("columnheader").first()).toHaveText("Instrument")
+  const tableOverflow = await table.evaluate((element) =>
+    element.parentElement === null
+      ? 0
+      : element.parentElement.scrollWidth - element.parentElement.clientWidth
+  )
+  expect(
+    tableOverflow,
+    "the specification's table fits its card"
+  ).toBeLessThanOrEqual(0)
+  await expect(
+    table.getByRole("row", { name: /^ES Futures 0\.25 50 1 USD / })
+  ).toBeVisible()
+
+  await page.route("**/v1/instruments", (route) =>
+    route.fulfill(problemAnswer(500, "The instruments could not be read."))
+  )
+  await page.reload()
+
+  const failed = page.getByRole("region", { name: "Specification" })
+  await expect(failed.getByRole("alert")).toHaveText(
+    "The instruments could not be read."
+  )
+  await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible()
+  await expect(page.getByRole("main").getByTestId("dataset-row")).toHaveCount(3)
+})
+
 test("a row of the list shows its focus ring whole, and steps its surface when pressed, never scaling", async ({
   loggedIn: page,
 }) => {
@@ -367,9 +389,10 @@ test("a row of the list shows its focus ring whole, and steps its surface when p
   await page.goto("/data")
   const row = importedRow(page, "MES", "synthetic")
   await expect(row).toBeVisible()
+  // The list's last field, since the builder's fourth check, is the stop before its first row.
   await page
-    .getByRole("main")
-    .getByRole("link", { name: "Import data", exact: true })
+    .getByRole("region", { name: "Imported data" })
+    .getByLabel("Quality", { exact: true })
     .focus()
   await page.keyboard.press("Tab")
   await expect(row).toBeFocused()
@@ -569,7 +592,8 @@ test("a dataset whose catalog cannot be read again loses its actions with its ca
   await expect(
     shown.getByRole("link", { name: "Import more data" })
   ).toHaveCount(0)
-  // The Data page too: the products not imported yet go with the list that failed.
+  // The Data page too: the products not imported yet go with the list that failed, and the
+  // sources, which are the rows' own, say why they cannot be listed.
   await page.getByRole("link", { name: "Back to Data" }).click()
   await expect(
     page.getByRole("region", { name: "Imported data" }).getByRole("alert")
@@ -577,25 +601,38 @@ test("a dataset whose catalog cannot be read again loses its actions with its ca
   await expect(
     page.getByRole("region", { name: "Not imported yet" })
   ).toHaveCount(0)
+  await expect(
+    page
+      .getByRole("region", { name: "Sources", exact: true })
+      .getByRole("alert")
+  ).toHaveText("The catalog could not be read.")
 })
 
 test("a section that cannot load its data says why, and the others keep working", async ({
   loggedIn: page,
 }) => {
-  await page.route("**/v1/instruments", (route) =>
-    route.fulfill(problemAnswer(500, "The instruments could not be read."))
+  // The guide names each provider's source, so the sources fail without it, on their own; the
+  // instruments' table, which this test failed until the builder's fourth check, stands on a
+  // dataset's page, where its own test fails it.
+  await page.route("**/v1/sources", (route) =>
+    route.fulfill(problemAnswer(500, "The sources could not be read."))
   )
 
   await page.goto("/data")
 
-  const failed = page.getByRole("region", { name: "Instruments" })
+  const failed = page.getByRole("region", { name: "Sources", exact: true })
   await expect(failed.getByRole("alert")).toHaveText(
-    "The instruments could not be read."
+    "The sources could not be read."
   )
   await expect(failed.getByRole("button", { name: "Try again" })).toBeVisible()
+  // The way to the guide's page stays under the failure.
+  await expect(failed.getByRole("link", { name: "All sources" })).toBeVisible()
+  await expect(importedRows(page)).toHaveCount(3)
   await expect(
-    page.getByRole("region", { name: "Sources" }).getByTestId("source-row")
-  ).toHaveCount(27)
+    page
+      .getByRole("region", { name: "Not imported yet" })
+      .getByTestId("not-imported")
+  ).not.toHaveCount(0)
 })
 
 test("a flagged dataset shows its findings, its months held in part, and its last import", async ({
@@ -791,6 +828,17 @@ test("a store without data invites the import, and lists the catalog's products"
     "No data imported yet. Import data, above, brings your own files in."
   )
   await expect(importedRows(page)).toHaveCount(0)
+  // Nothing to search or filter, so no fields; and no source to list, though the guide's page
+  // is still a click away.
+  await expect(
+    page.getByRole("region", { name: "Imported data" }).getByRole("searchbox")
+  ).toHaveCount(0)
+  const sources = page.getByRole("region", { name: "Sources", exact: true })
+  await expect(sources).toContainText(
+    "No source yet. The sources of what you import are listed here."
+  )
+  await expect(sources.getByTestId("imported-source")).toHaveCount(0)
+  await expect(sources.getByRole("link", { name: "All sources" })).toBeVisible()
   await expect(
     page
       .getByRole("region", { name: "Not imported yet" })
@@ -799,7 +847,7 @@ test("a store without data invites the import, and lists the catalog's products"
   await screenshot(page, "data-catalog-empty")
 })
 
-test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back, its style, and its frame", async ({
+test("step 5.4's checks, recorded: the list's search and sources, Check quality on MES, its chart scrolled back, its style, and its frame", async ({
   loggedIn: page,
 }) => {
   await page.goto("/")
@@ -808,6 +856,34 @@ test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back
     .getByRole("link", { name: "Data", exact: true })
     .click()
   await page.waitForTimeout(PAUSE_MS)
+
+  // From the builder's fourth check: the list narrowed by a word, then by a dropdown; the
+  // source opened to the rows held from it; and the guide's own page, with the way back.
+  const list = page.getByRole("region", { name: "Imported data" })
+  const search = list.getByRole("searchbox", { name: "Search" })
+  await search.pressSequentially("1-second", { delay: 80 })
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await search.fill("")
+  for (const instrument of ["MES", "All"]) {
+    await list.getByLabel("Instrument", { exact: true }).click()
+    await page.waitForTimeout(PAUSE_MS)
+    await page.getByRole("option", { name: instrument, exact: true }).click()
+    await page.waitForTimeout(PAUSE_MS)
+  }
+  const sources = page.getByRole("region", { name: "Sources", exact: true })
+  await sources.getByTestId("imported-source").locator("summary").click()
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await sources.getByRole("link", { name: "All sources" }).click()
+  await page
+    .getByTestId("source-row")
+    .filter({ hasText: "Databento" })
+    .first()
+    .getByText("Databento", { exact: true })
+    .click()
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await page.getByRole("link", { name: "Back to Data" }).click()
+  await page.waitForTimeout(PAUSE_MS)
+
   await importedRow(page, "MES", "synthetic").click()
   const mes = page.getByRole("main")
   await page.waitForTimeout(PAUSE_MS)
@@ -824,6 +900,11 @@ test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back
   await page.waitForTimeout(PAUSE_MS * 2)
   await page.keyboard.press("Escape")
   await expect(mes.getByTestId("coverage-month")).toHaveCount(12)
+  await page.waitForTimeout(PAUSE_MS * 2)
+  // The instrument's specification, under its quality since the builder's fourth check.
+  await mes
+    .getByRole("region", { name: "Specification" })
+    .scrollIntoViewIfNeeded()
   await page.waitForTimeout(PAUSE_MS * 2)
 
   await mes.getByRole("link", { name: "Chart" }).click()
