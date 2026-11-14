@@ -8,11 +8,26 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from fefat.config import resolve_paths
+from fefat_app.chart_style import ChartStyle
 from fefat_app.container import Container
 from fefat_app.database.preferences import PreferenceRows
 from fefat_app.ports import Theme
 from local_server import logged_in
 from memory_keyring import MemoryKeyring
+
+THEMES_OWN = {"up": None, "down": None, "background": None, "grid": None, "text": None}
+FEATS_CHART_STYLE = {
+    "up_body": "hollow",
+    "down_body": "hollow",
+    "volume_shown": True,
+    "volume_colouring": "neutral",
+    "grid_shown": True,
+    "sessions_shaded": True,
+    "dark": THEMES_OWN,
+    "light": THEMES_OWN,
+}
+"""Step 5.4, the builder's answers: hollow candles in the theme's sign colours, green up and red
+down, with the volume pane, the grid, and the sessions' shading shown."""
 
 
 def test_the_settings_show_config_toml_and_whether_each_secret_is_stored(
@@ -32,6 +47,7 @@ def test_the_settings_show_config_toml_and_whether_each_secret_is_stored(
         },
         "data_dir": str(resolve_paths(os.environ).data_dir),
         "theme": "dark",
+        "chart_style": FEATS_CHART_STYLE,
         "secrets": [
             {"name": "anthropic", "state": "missing"},
             {"name": "databento", "state": "stored"},
@@ -53,6 +69,50 @@ def test_the_theme_is_dark_until_the_trader_chooses_light_which_the_database_kee
     assert unchanged.json()["theme"] == "light"
     assert sepia.status_code == 422
     assert PreferenceRows(engine).theme() is Theme.LIGHT
+
+
+def test_the_chart_style_is_feats_until_the_trader_changes_it_which_the_database_keeps(
+    client: TestClient, container: Container, engine: Engine
+) -> None:
+    # Step 5.4: the chart style drawer keeps the trader's style for every chart and browser.
+    csrf = logged_in(client, container)
+    chosen = {
+        **FEATS_CHART_STYLE,
+        "up_body": "filled",
+        "volume_colouring": "direction",
+        "sessions_shaded": False,
+        "dark": {**THEMES_OWN, "up": "#26a69a", "background": "#000000"},
+    }
+
+    changed = client.put("/v1/settings", json={"chart_style": chosen}, headers=csrf)
+    unchanged = client.put("/v1/settings", json={"theme": "light"}, headers=csrf)
+
+    assert changed.json()["chart_style"] == chosen
+    assert changed.json()["theme"] == "dark"
+    assert unchanged.json()["chart_style"] == chosen
+    assert client.get("/v1/settings").json()["chart_style"] == chosen
+    assert PreferenceRows(engine).chart_style() == ChartStyle.model_validate(chosen)
+
+
+def test_a_chart_style_with_a_colour_of_another_form_or_an_unknown_field_is_refused(
+    client: TestClient, container: Container, engine: Engine
+) -> None:
+    csrf = logged_in(client, container)
+    refusals = [
+        {**FEATS_CHART_STYLE, "dark": {**THEMES_OWN, "up": "#26a69"}},
+        {**FEATS_CHART_STYLE, "light": {**THEMES_OWN, "grid": "#26A69A"}},
+        {**FEATS_CHART_STYLE, "light": {**THEMES_OWN, "grid": "teal"}},
+        {**FEATS_CHART_STYLE, "wick_colour": "#ffffff"},
+        {**FEATS_CHART_STYLE, "up_body": "outlined"},
+    ]
+
+    answers = [
+        client.put("/v1/settings", json={"chart_style": style}, headers=csrf).status_code
+        for style in refusals
+    ]
+
+    assert answers == [422] * len(refusals)
+    assert PreferenceRows(engine).chart_style() == ChartStyle()
 
 
 def test_a_secret_is_written_to_the_credential_store_and_null_removes_it(

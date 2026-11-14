@@ -3,7 +3,9 @@ window, a page of at most 20,000 at a time, column by column, with no number pas
 instant the next page opens at. Done means 2: a day of 5-minute ES bars in under 300 ms warm, on
 the synthetic fixtures."""
 
+import os
 import time
+from datetime import date
 from typing import Any
 
 import polars as pl
@@ -11,6 +13,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 import fefat as ff
+from fefat.config import resolve_paths
+from fefat.market.layout import Dataset, SeriesKind
+from fefat.market.schema import parse_schema_name
+from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.services import market_bars
 from generated_minutes import SPRING, write_minutes
@@ -19,8 +25,10 @@ from notebook_runs import store_with
 
 PROBLEM = "application/problem+json"
 BARS = "/v1/market/bars"
+SPAN = "/v1/market/bars/span"
 ONE_DAY_OF_ES = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-06", "to": "2026-03-06"}
 PRICE_SCALE = 1_000_000_000
+MARCH_6 = date(2026, 3, 6)
 
 
 def as_sent(bars: pl.DataFrame) -> dict[str, list[Any]]:
@@ -159,6 +167,62 @@ def test_a_page_that_ends_at_a_close_under_its_cap_hands_over_to_the_next_open(
     assert joined(pages) == as_sent(whole)
 
 
+def test_a_page_reads_a_capped_number_of_sessions_of_prints_and_hands_over_at_a_close(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.4 (from `BACKLOG.md`): a page counted the bars it sends, not the data it reads, so a
+    # page of coarse bars built from trades read every print of its window. With one session of
+    # prints a page, ES's three sessions come one a page, the first spliced one empty.
+    monkeypatch.setattr(market_bars, "FINE_SESSIONS_PER_PAGE", 1)
+    store_with("trades", "ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-05", "to": "2026-03-09"}
+
+    pages = pages_of(client, asked)
+
+    whole = ff.market.load("ES", "5m", "2026-03-05", "2026-03-09").collect()
+    assert [len(page["bars"]["time"]) for page in pages] == [0, 276, 275]
+    assert [page["next_from"] for page in pages] == [
+        "2026-03-05T23:00:00Z",
+        "2026-03-08T22:00:00Z",
+        None,
+    ]
+    assert joined(pages) == as_sent(whole)
+
+
+def test_minutes_kept_by_month_count_no_session_of_prints(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.4: a month's minutes are read by the month, so they count against the sessions of
+    # any data alone, and four months of daily bars come in one page.
+    monkeypatch.setattr(market_bars, "FINE_SESSIONS_PER_PAGE", 1)
+    write_minutes(SPRING)
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "1d", "from": "2026-01-02", "to": "2026-04-30"}
+
+    pages = pages_of(client, asked)
+
+    assert len(pages) == 1
+    assert len(pages[0]["bars"]["time"]) > 60
+
+
+def test_a_page_reads_a_capped_number_of_sessions_of_any_data(
+    client: TestClient, container: Container, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Step 5.4: a page of daily bars from minutes read every session of its window, 1,861 of
+    # them and 1.7 GB on the builder's MES; with one session a page, each comes alone.
+    monkeypatch.setattr(market_bars, "SESSIONS_PER_PAGE", 1)
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "1d", "from": "2026-03-05", "to": "2026-03-09"}
+
+    pages = pages_of(client, asked)
+
+    whole = ff.market.load("ES", "1d", "2026-03-05", "2026-03-09").collect()
+    assert len(pages) == 3
+    assert joined(pages) == as_sent(whole)
+
+
 def test_a_contracts_window_starts_at_its_first_trade_date(
     client: TestClient, container: Container
 ) -> None:
@@ -175,6 +239,78 @@ def test_a_contracts_window_starts_at_its_first_trade_date(
     assert pages[0]["bars"]["trade_date"][0] == "2026-02-23"
     assert set(joined(pages)["contract"]) == {"ESM2026"}
     assert joined(pages) == as_sent(whole)
+
+
+def test_a_contracts_window_ends_at_its_last_trade_date_which_its_span_names(
+    client: TestClient, container: Container
+) -> None:
+    # Found at step 5.4's plan: ESH2026 stops on 2026-03-20 in a dataset ESM2026 holds to 04-30,
+    # so its later pages came empty and joined to no load; a contract's window is cut to its own
+    # last trade date as to its first, and the span the chart asks first says where both are.
+    write_minutes(SPRING)
+    logged_in(client, container)
+    asked = {"instrument": "ESH2026", "timeframe": "1m", "from": "2026-01-02", "to": "2026-04-30"}
+
+    pages = pages_of(client, asked)
+    span = client.get(SPAN, params={"instrument": "ESH2026", "timeframe": "1m"})
+
+    whole = ff.market.load("ESH2026", "1m", "2026-01-02", "2026-03-20").collect()
+    assert all(page["bars"]["time"] for page in pages)
+    assert joined(pages) == as_sent(whole)
+    assert (span.status_code, span.json()) == (
+        200,
+        {
+            "instrument": "ESH2026",
+            "timeframe": "1m",
+            "provider": "synthetic",
+            "held": {"first": "2026-01-02", "last": "2026-03-20"},
+        },
+    )
+
+
+def test_a_roots_span_is_its_datasets_and_none_is_held_of_one_it_lacks(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.4: the chart walks back from the span's last trade date to its first; the fixtures'
+    # spliced ES has its 1-minute bars from 2026-03-05 to 03-09, and its first session no front,
+    # so its bars, and its span, start on 03-06.
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+
+    es = client.get(SPAN, params={"instrument": "ES", "timeframe": "5m"}).json()
+    lacked = client.get(SPAN, params={"instrument": "ESZ2030", "timeframe": "5m"})
+    seconds = client.get(SPAN, params={"instrument": "ES", "timeframe": "1s"})
+    unknown = client.get(SPAN, params={"instrument": "ZZ", "timeframe": "5m"})
+
+    assert es["held"] == {"first": "2026-03-06", "last": "2026-03-09"}
+    assert (lacked.status_code, lacked.json()["held"]) == (200, None)
+    assert (seconds.status_code, unknown.status_code) == (400, 404)
+    assert "Expected a timeframe of 1m or coarser" in seconds.json()["detail"]
+
+
+def test_a_spliced_roots_span_is_the_sessions_its_roll_calendar_decides(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.4's engine review: the trades run to 2026-03-09 while the 1-minute bars that decide
+    # the fronts stop with 03-06, so the span named 03-09, the chart's newest window asked for a
+    # session no front was decided for, `load` refused it, and the chart showed no bars; the span
+    # is the sessions the roll calendar decides, from its first front, as `load`'s bars are.
+    store_with("trades", "ohlcv-1m")
+    store = Store(resolve_paths(os.environ).data_dir)
+    for file in store.list_partitions():
+        if str(file.partition.dataset.schema_name) == "ohlcv-1m":
+            rows = store.scan_partition(file.partition).collect()
+            store.write_partition(file.partition, rows.filter(pl.col("trade_date") <= MARCH_6))
+    logged_in(client, container)
+
+    held = client.get(SPAN, params={"instrument": "ES", "timeframe": "5m"}).json()["held"]
+    window = {"instrument": "ES", "timeframe": "5m", "from": held["first"], "to": held["last"]}
+    pages = pages_of(client, window)
+
+    assert held == {"first": "2026-03-06", "last": "2026-03-06"}
+    assert joined(pages) == as_sent(
+        ff.market.load("ES", "5m", "2026-03-06", "2026-03-06").collect()
+    )
 
 
 def test_a_window_wider_than_the_data_is_cut_to_it_and_one_without_data_is_empty(
@@ -233,6 +369,74 @@ def test_each_contract_comes_beside_the_others_at_an_open_without_splicing(
     assert sorted(set(page["bars"]["contract"])) == ["ESH2026", "ESM2026"]
 
 
+def continuous_bitcoin(series: SeriesKind = SeriesKind.CONTINUOUS) -> None:
+    """The fixtures' bitcoin bars in the data folder described as a continuous series, which
+    every load warns of, or as `series`."""
+    store = Store(resolve_paths(os.environ).data_dir)
+    bitcoin = Dataset(
+        provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="BTCUSDT-PERP"
+    )
+    continuous = store.dataset_metadata(bitcoin).model_copy(update={"series": series})
+    store.write_dataset_metadata(bitcoin, continuous)
+
+
+def test_raw_prices_are_the_prices_each_bars_contract_traded_at_across_a_roll(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.4, the builder's answer: Raw is the spliced series at the prices each session's
+    # front contract traded at, so the roll of 2026-03-09 shows its gap, where the adjusted
+    # prices, which every feature reads, add the offset.
+    store_with("ohlcv-1m")
+    logged_in(client, container)
+    asked = {"instrument": "ES", "timeframe": "5m", "from": "2026-03-06", "to": "2026-03-09"}
+
+    raw = client.get(BARS, params={**asked, "prices": "raw"}).json()
+    adjusted = client.get(BARS, params={**asked, "prices": "adjusted"}).json()
+
+    whole = ff.market.load("ES", "5m", "2026-03-06", "2026-03-09").collect()
+    traded = whole.with_columns(pl.col("open", "high", "low", "close") - pl.col("adj_offset"))
+    assert raw["bars"] == as_sent(traded)
+    assert raw["bars"]["close"] == [
+        close / PRICE_SCALE for close in whole.sort("ts_open")["close_raw"].to_list()
+    ]
+    assert adjusted == client.get(BARS, params=asked).json()
+    assert raw["bars"]["close"][-1] != adjusted["bars"]["close"][-1]
+
+
+def test_raw_prices_of_a_back_adjusted_series_are_refused(
+    client: TestClient, container: Container
+) -> None:
+    # A back-adjusted import's prices hold the gaps of later rolls and keep no raw ones (D-49).
+    store_with("ohlcv-1m")
+    continuous_bitcoin(SeriesKind.CONTINUOUS_BACK_ADJUSTED)
+    logged_in(client, container)
+    asked = {"instrument": "BTCUSDT-PERP", "timeframe": "5m", "from": "2026-03-07"}
+
+    refused = client.get(BARS, params={**asked, "to": "2026-03-07", "prices": "raw"})
+
+    assert (refused.status_code, refused.headers["content-type"]) == (400, PROBLEM)
+    assert "Expected adjusted prices of the back-adjusted series" in refused.json()["detail"]
+
+
+def test_a_page_says_what_load_warns_of_its_bars(client: TestClient, container: Container) -> None:
+    # Step 5.4 (from `BACKLOG.md`): the chart says what a notebook's load warns of, which the
+    # server only wrote to its console.
+    store_with("ohlcv-1m")
+    continuous_bitcoin()
+    logged_in(client, container)
+    saturday = {"timeframe": "5m", "from": "2026-03-07", "to": "2026-03-07"}
+
+    warned = client.get(BARS, params={"instrument": "BTCUSDT-PERP", **saturday}).json()
+    plain = client.get(BARS, params=ONE_DAY_OF_ES).json()
+
+    assert warned["warnings"] == [
+        "synthetic/ohlcv-1m/root=BTCUSDT-PERP is a continuous series, one synthetic contract "
+        "with roll handling off"
+    ]
+    assert len(warned["bars"]["time"]) == 288
+    assert plain["warnings"] == []
+
+
 @pytest.mark.parametrize(
     ("asked", "status", "detail"),
     [
@@ -264,6 +468,7 @@ def test_a_window_the_sdk_refuses_is_a_problem_in_its_words(
         {"from": "2026-03-06T03:20:00"},
         {"timeframe": "5x"},
         {"origin": "sync"},
+        {"prices": "settled"},
     ],
 )
 def test_a_window_the_schema_refuses_is_a_validation_problem(

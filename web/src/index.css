@@ -222,6 +222,12 @@ a:not([data-slot="button"]):active {
   color: var(--card);
 }
 
+/* A search field is the field in every browser: Chrome's own clear button, white on the dark
+   theme and blue on the light one, is no colour of the palette, and Escape clears the field. */
+[data-slot="input"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
 /* The skip link moves the focus to the page itself, which needs no outline of its own. */
 main[tabindex="-1"]:focus-visible {
   outline: none;
@@ -305,6 +311,13 @@ main[tabindex="-1"]:focus-visible {
   animation: sheet-in 150ms var(--ease-in-out);
 }
 
+/* A drawer that stays open beside the page, the chart's style, starts under the top bar, so that
+   the bar's jobs indicator and its count stay in view while it is open. */
+[data-slot="sheet-content"][data-beside="page"] {
+  top: 4.5rem;
+  height: auto;
+}
+
 [data-slot="sheet-content"][data-state="closed"] {
   animation: sheet-out 150ms var(--ease-in-out);
 }
@@ -326,12 +339,149 @@ main[tabindex="-1"]:focus-visible {
   padding-bottom: 0.25rem;
 }
 
+/* A table's headers, and those over a list of link rows, are 12 px at 600, uppercase with
+   0.125 rem of tracking, in body text; each table pads its own first and last header to its
+   card's edge. */
+:is([data-slot="table-head"], [data-slot="list-head"]) {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.125rem;
+  text-transform: uppercase;
+  color: var(--foreground-secondary);
+}
+
+/* A select is a field (step 5.4): 40 px on the control surface with the field border, its focus
+   the accent's border with a 1 px ring of the accent; its list is the skill's panel, the control
+   surface with a hairline and the middle shadow, the row under the pointer or the keys on the
+   hover step with its label in the accent. */
+[data-slot="select-trigger"] {
+  height: 2.5rem;
+  padding-inline: 1rem;
+  background-color: var(--muted);
+  border-color: var(--input);
+  color: var(--foreground);
+}
+
+[data-slot="select-trigger"]:hover {
+  background-color: var(--muted);
+}
+
+[data-slot="select-trigger"]:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 1px var(--ring);
+}
+
+[data-slot="select-content"] {
+  background-color: var(--muted);
+  box-shadow: var(--shadow-md);
+}
+
+[data-slot="select-item"] {
+  height: 2rem;
+  color: var(--foreground);
+}
+
+[data-slot="select-item"]:focus-visible {
+  outline: none;
+}
+
+[data-slot="select-item"][data-highlighted] {
+  background-color: var(--accent);
+  color: var(--brand);
+}
+
+/* A colour field is the browser's own swatch, 40 px square in the field border on the control
+   surface, its colour filling it within the one radius. */
+[data-slot="colour-field"] {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--input);
+  border-radius: 0.75rem;
+  background-color: var(--muted);
+  cursor: pointer;
+}
+
+[data-slot="colour-field"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+[data-slot="colour-field"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 0.75rem;
+}
+
+/* A press shows on the swatch's border, as a radio's does, before the browser's picker opens on
+   release. */
+[data-slot="colour-field"]:active {
+  border-color: var(--ring);
+}
+
+/* A disclosure's summary is a row as wide as its card, which a 2 % scale would move by several
+   pixels at its far end: it steps its surface under the pointer and again when pressed, as a
+   table's row does. */
+summary {
+  transition-property: color, background-color, border-color;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-in-out);
+}
+
+summary:hover {
+  background-color: var(--muted);
+}
+
+summary:active {
+  background-color: var(--accent);
+}
+
+/* A link row is as wide as its card too: pressed, it takes the hover step and keeps its size.
+   After the press of every link above, which it matches in weight, so that it wins. */
+a[data-slot="row-link"]:active {
+  transform: none;
+  background-color: var(--accent);
+}
+
+/* The chart fills its card, which clips what lies outside it, so its focus ring lies inside. */
+[data-slot="price-chart"]:focus-visible {
+  outline-offset: -2px;
+}
+
+/* A frame's edge shows its focus on its line, the card's hairline, which the trader sees: the
+   outline around its strip, four times as wide and mostly outside the card, read as a slot
+   beside the card. The outline hugs the line, a bar 6 px wide over the edge. */
+[data-slot="frame-edge"]:focus-visible {
+  outline: none;
+}
+
+[data-slot="frame-edge"]:focus-visible::after {
+  outline: 2px solid var(--ring);
+}
+
+/* Lightweight Charts' logo, which its licence keeps in the chart's corner, picks its colours
+   from the chart's text; it takes the subtle text on the card instead, quiet in both themes. */
+[data-slot="price-chart"] a#tv-attr-logo {
+  --fill: var(--muted-foreground);
+  --stroke: var(--card);
+}
+
 /* A contrast theme of Windows forces colours and drops box-shadows, a field's focus ring among
    them, so every focus takes an outline in the system's highlight there. */
 @media (forced-colors: active) {
   :focus-visible,
-  [data-slot="input"]:focus-visible {
+  [data-slot="input"]:focus-visible,
+  [data-slot="select-trigger"]:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
+  }
+
+  /* A frame's edge keeps its focus on its line there too. */
+  [data-slot="frame-edge"]:focus-visible {
+    outline: none;
+  }
+
+  [data-slot="frame-edge"]:focus-visible::after {
+    outline: 2px solid Highlight;
   }
 }

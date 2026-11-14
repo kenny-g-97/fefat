@@ -4,8 +4,8 @@ import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // The settings page of step 4.3: the theme, kept by the server; the API tokens; the password;
-// and the data folder, read-only. The password test changes it back after itself, so that the
-// next spec can log in.
+// the data folder, read-only; and, from step 5.4, About, with the chart library's notice. The
+// password test changes it back after itself, so that the next spec can log in.
 
 const NEW_PASSWORD = "chalk on slate"
 
@@ -136,12 +136,32 @@ test("a name already taken is refused at its field, which takes the focus", asyn
   await create.click()
 
   const taken = page.getByText(
-    "A token is already called e2e-taken, revoked or not. Choose another name."
+    "A token is already called e2e-taken. Choose another name."
   )
   await expect(taken).toBeVisible()
   await expect(name).toBeFocused()
   await name.fill("e2e-taken-again")
   await expect(taken).toBeHidden()
+})
+
+test("a revoked token's name can be given to a new token", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+  const name = page.getByLabel("Token name")
+  const create = page.getByRole("button", { name: "Create token" })
+  const row = page.getByRole("row", { name: /e2e-reused/ })
+  await name.fill("e2e-reused")
+  await create.click()
+  await row.getByRole("button", { name: "Revoke" }).click()
+  await row.getByRole("button", { name: "Revoke now" }).click()
+  await expect(row).toBeHidden()
+
+  await name.fill("e2e-reused")
+  await create.click()
+
+  await expect(page.getByTestId("new-token")).toContainText("fefat_")
+  await expect(row).toBeVisible()
 })
 
 test("a double click on Revoke keeps the token", async ({ loggedIn: page }) => {
@@ -255,6 +275,31 @@ test.describe("the password", () => {
     await expect(page).toHaveURL("/")
   })
 
+  test("says it revokes the API tokens, and the list empties without a reload", async ({
+    loggedIn: page,
+  }) => {
+    await page.goto("/settings")
+    await page.getByLabel("Token name").fill("e2e-before-password")
+    await page.getByRole("button", { name: "Create token" }).click()
+    const row = page.getByRole("row", { name: /e2e-before-password/ })
+    await expect(row).toBeVisible()
+    await expect(
+      page.getByText(
+        "Changing it ends every other login session and revokes every API token"
+      )
+    ).toBeVisible()
+
+    await page.getByLabel("Current password").fill(E2E_PASSWORD)
+    await page.getByLabel("New password", { exact: true }).fill(NEW_PASSWORD)
+    await page.getByLabel("New password again").fill(NEW_PASSWORD)
+    await page.getByRole("button", { name: "Change password" }).click()
+    changed = true
+
+    await expect(page.getByText("Password changed")).toBeVisible()
+    await expect(row).toBeHidden()
+    await expect(page.getByTestId("new-token")).toBeHidden()
+  })
+
   test("changed in one tab, leaves the other tab working", async ({
     loggedIn: page,
   }) => {
@@ -323,4 +368,28 @@ test("the data folder is shown and cannot be edited", async ({
   await expect(page.getByRole("textbox", { name: "Data folder" })).toHaveCount(
     0
   )
+})
+
+test("About shows the chart library's notice word for word, with its link", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/settings")
+
+  // The NOTICE file of Lightweight Charts' tag v5.2.1, written here apart from the app's copy;
+  // the letter between its brackets is the file's own, a Cyrillic one.
+  const about = page.getByRole("region", { name: "About" })
+  // The card says why a logo stands on each chart, the builder's question.
+  await expect(
+    about.getByText(
+      "The library that draws FEAT's charts, credited here and by the logo on each chart"
+    )
+  ).toBeVisible()
+  await expect(about.getByTestId("chart-notice").locator("p")).toHaveText([
+    "TradingView Lightweight Charts™",
+    "Copyright (с) 2025 TradingView, Inc. https://www.tradingview.com/",
+  ])
+  const link = about.getByRole("link", { name: "https://www.tradingview.com/" })
+  await expect(link).toHaveAttribute("href", "https://www.tradingview.com/")
+  await expect(link).toHaveAttribute("target", "_blank")
+  await expect(link).toHaveAttribute("rel", "noreferrer")
 })

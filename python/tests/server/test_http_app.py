@@ -19,7 +19,9 @@ from fefat_app.http.app import create_app
 from local_server import LOOPBACK, RecordingDispatcher, logged_in
 from memory_keyring import MemoryKeyring
 
-CONTENT_SECURITY_POLICY = "default-src 'self'; img-src 'self' data: blob:"
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+)
 PROBLEM = "application/problem+json"
 POLICY_VIOLATION = 1008
 """The WebSocket close code of a connection refused by a policy (RFC 6455), not the router's 1000."""
@@ -48,6 +50,26 @@ def test_every_response_carries_the_security_headers(client: TestClient, path: s
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["referrer-policy"] == "same-origin"
     assert response.headers["x-frame-options"] == "DENY"
+
+
+def directives(policy: str) -> dict[str, list[str]]:
+    """A content security policy's directives, each with its sources."""
+    parsed = (part.split() for part in policy.split(";") if part.strip())
+    return {name: sources for name, *sources in parsed}
+
+
+def test_the_policy_allows_inline_styles_while_scripts_stay_the_apps_own(
+    client: TestClient,
+) -> None:
+    # Step 5.4 (D-93): Radix's dialog, select, and menu lock the page's scroll with a style
+    # element, and Lightweight Charts writes one for its logo; scripts stay 'self' alone, as
+    # default-src gives them, with no script-src to widen it and no eval.
+    policy = directives(client.get("/v1/healthz").headers["content-security-policy"])
+
+    assert policy["style-src"] == ["'self'", "'unsafe-inline'"]
+    assert policy["default-src"] == ["'self'"]
+    assert not any(name.startswith("script-src") for name in policy)
+    assert all("'unsafe-eval'" not in sources for sources in policy.values())
 
 
 def test_no_answer_of_the_api_is_cached(client: TestClient) -> None:

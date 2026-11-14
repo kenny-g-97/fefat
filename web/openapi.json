@@ -71,8 +71,11 @@
         "type": "object"
       },
       "AppSettings": {
-        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\ntheme, and each secret's state.",
+        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\ntheme, the charts' style (step 5.4), and each secret's state.",
         "properties": {
+          "chart_style": {
+            "$ref": "#/components/schemas/ChartStyle"
+          },
           "data_dir": {
             "format": "path",
             "title": "Data Dir",
@@ -96,6 +99,7 @@
           "server",
           "data_dir",
           "theme",
+          "chart_style",
           "secrets"
         ],
         "title": "AppSettings",
@@ -314,8 +318,17 @@
         "title": "BarColumns",
         "type": "object"
       },
+      "BarPrices": {
+        "description": "The prices a page's bars carry (step 5.4): adjusted, a spliced series' prices plus the\noffset its rolls added, which every feature reads (`fefat.market.continuous`), or raw, the\nprices each bar's contract traded at; the two are one for a series that is not spliced.",
+        "enum": [
+          "adjusted",
+          "raw"
+        ],
+        "title": "BarPrices",
+        "type": "string"
+      },
       "BarsPage": {
-        "description": "A page of a window's bars: the instrument and the timeframe asked for, the provider whose\ndatasets the bars come from, the bars, and the instant the next page opens at, which the\ncaller sends as the window's start, none on the last page.",
+        "description": "A page of a window's bars: the instrument and the timeframe asked for, the provider whose\ndatasets the bars come from, the bars, the instant the next page opens at, which the caller\nsends as the window's start, none on the last page, and what `load` warns of the datasets\nthe page's bars come from, as a notebook shows it (step 5.4).",
         "properties": {
           "bars": {
             "$ref": "#/components/schemas/BarColumns"
@@ -343,6 +356,13 @@
           "timeframe": {
             "title": "Timeframe",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -350,9 +370,45 @@
           "timeframe",
           "provider",
           "bars",
-          "next_from"
+          "next_from",
+          "warnings"
         ],
         "title": "BarsPage",
+        "type": "object"
+      },
+      "BarsSpan": {
+        "description": "What a series' data holds (step 5.4): the instrument and the timeframe asked for, the\nprovider whose datasets the bars come from, and the trade dates its data that builds the\ntimeframe holds, a named contract's own, none while it holds none; the chart asks for its\nwindows within them.",
+        "properties": {
+          "held": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeldDates"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instrument": {
+            "title": "Instrument",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "timeframe": {
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument",
+          "timeframe",
+          "provider",
+          "held"
+        ],
+        "title": "BarsSpan",
         "type": "object"
       },
       "BinaryOperation": {
@@ -548,6 +604,15 @@
         "title": "Breakdowns",
         "type": "object"
       },
+      "CandleBody": {
+        "description": "A candle's body: outlined in its colour, or filled with it.",
+        "enum": [
+          "hollow",
+          "filled"
+        ],
+        "title": "CandleBody",
+        "type": "string"
+      },
       "CatalogProductStatus": {
         "description": "A product of the catalog: its root, the first trade date of its history, the name of its\nfirst recommended source, and the datasets of it the store holds, none while it is missing.",
         "properties": {
@@ -628,6 +693,49 @@
           }
         },
         "title": "CatalogSyncRequest",
+        "type": "object"
+      },
+      "ChartStyle": {
+        "additionalProperties": false,
+        "description": "The charts' style (module docstring); its defaults are FEAT's, hollow green rising bars\nand hollow red falling ones, the builder's answer at step 5.4's plan, with the volume pane,\nthe grid, and the sessions' shading shown.",
+        "properties": {
+          "dark": {
+            "$ref": "#/components/schemas/ThemeColours",
+            "default": {}
+          },
+          "down_body": {
+            "$ref": "#/components/schemas/CandleBody",
+            "default": "hollow"
+          },
+          "grid_shown": {
+            "default": true,
+            "title": "Grid Shown",
+            "type": "boolean"
+          },
+          "light": {
+            "$ref": "#/components/schemas/ThemeColours",
+            "default": {}
+          },
+          "sessions_shaded": {
+            "default": true,
+            "title": "Sessions Shaded",
+            "type": "boolean"
+          },
+          "up_body": {
+            "$ref": "#/components/schemas/CandleBody",
+            "default": "hollow"
+          },
+          "volume_colouring": {
+            "$ref": "#/components/schemas/VolumeColouring",
+            "default": "neutral"
+          },
+          "volume_shown": {
+            "default": true,
+            "title": "Volume Shown",
+            "type": "boolean"
+          }
+        },
+        "title": "ChartStyle",
         "type": "object"
       },
       "Column": {
@@ -978,7 +1086,7 @@
         "type": "string"
       },
       "DatasetQuality": {
-        "description": "A dataset's quality: the verdict of its root's report from its provider, as the dataset\nreads it, and the last trade date the report checked; and the report's findings, those of\nevery schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many\nthere are.",
+        "description": "A dataset's quality: the verdict of its root's report from its provider, as the dataset\nreads it, and the last trade date the report checked; the report's findings, those of every\nschema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many there\nare; and the report's coverage by month, none while unchecked (step 5.4).",
         "properties": {
           "checked_through": {
             "anyOf": [
@@ -1007,6 +1115,13 @@
             "title": "Id",
             "type": "string"
           },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/MonthCoverage"
+            },
+            "title": "Months",
+            "type": "array"
+          },
           "quality": {
             "$ref": "#/components/schemas/QualityStatus"
           }
@@ -1016,7 +1131,8 @@
           "quality",
           "checked_through",
           "findings",
-          "findings_total"
+          "findings_total",
+          "months"
         ],
         "title": "DatasetQuality",
         "type": "object"
@@ -1481,6 +1597,27 @@
           }
         },
         "title": "Health",
+        "type": "object"
+      },
+      "HeldDates": {
+        "description": "The first and the last trade date a series' data holds.",
+        "properties": {
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last"
+        ],
+        "title": "HeldDates",
         "type": "object"
       },
       "IndexedFeature": {
@@ -2151,6 +2288,55 @@
           "robustness"
         ],
         "title": "Metrics",
+        "type": "object"
+      },
+      "MonthCoverage": {
+        "description": "A month of a quality report (`fefat.market.monthly_coverage`): the month, `2026-03`; its\nsessions, those with records of any schema, those with ticks, with 1-second bars, and with\n1-minute bars; its findings; and the sessions touching a UTC day the vendor flagged.",
+        "properties": {
+          "findings": {
+            "title": "Findings",
+            "type": "integer"
+          },
+          "minute_days": {
+            "title": "Minute Days",
+            "type": "integer"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "second_days": {
+            "title": "Second Days",
+            "type": "integer"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "tick_days": {
+            "title": "Tick Days",
+            "type": "integer"
+          },
+          "vendor_flagged": {
+            "title": "Vendor Flagged",
+            "type": "integer"
+          },
+          "with_records": {
+            "title": "With Records",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "sessions",
+          "with_records",
+          "tick_days",
+          "second_days",
+          "minute_days",
+          "findings",
+          "vendor_flagged"
+        ],
+        "title": "MonthCoverage",
         "type": "object"
       },
       "Negation": {
@@ -3647,8 +3833,18 @@
       },
       "SettingsChange": {
         "additionalProperties": false,
-        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is; a theme, when given, replaces the theme.",
+        "description": "A change of the settings: a secret named with a value stores it, one named with null\nremoves it, and one left out stays as it is; a theme, when given, replaces the theme, and a\nchart style the charts' style.",
         "properties": {
+          "chart_style": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartStyle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "secrets": {
             "$ref": "#/components/schemas/SecretChanges"
           },
@@ -3988,6 +4184,74 @@
         ],
         "title": "Theme",
         "type": "string"
+      },
+      "ThemeColours": {
+        "additionalProperties": false,
+        "description": "The trader's own colours in one theme, each null for the theme's own: rising and falling\nbars, which the theme gives its sign colours, the chart's background, its grid, and its\ntext.",
+        "properties": {
+          "background": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background"
+          },
+          "down": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Down"
+          },
+          "grid": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "up": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9a-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Up"
+          }
+        },
+        "title": "ThemeColours",
+        "type": "object"
       },
       "TickFidelity": {
         "description": "Tick data: trades with the quote just before each, or trades alone.",
@@ -4343,6 +4607,15 @@
         "title": "Versions",
         "type": "object"
       },
+      "VolumeColouring": {
+        "description": "The volume pane's bars: in one grey, or in their candle's colour.",
+        "enum": [
+          "neutral",
+          "direction"
+        ],
+        "title": "VolumeColouring",
+        "type": "string"
+      },
       "Weekday": {
         "description": "A day of the week, as the specification spells it.",
         "enum": [
@@ -4528,7 +4801,7 @@
         ]
       },
       "post": {
-        "description": "Make an API token, shown in this response alone; refused with 409 for a name a token\nhas or had.",
+        "description": "Make an API token, shown in this response alone; refused with 409 for a name a live\ntoken has, while a revoked token's name is free.",
         "operationId": "create_api_token_v1_api_tokens_post",
         "requestBody": {
           "content": {
@@ -6127,6 +6400,17 @@
               "description": "Only datasets of this origin; every dataset is an import for now.",
               "title": "Origin"
             }
+          },
+          {
+            "description": "`adjusted`, a spliced series' prices with the offset its rolls added, which features read, or `raw`, the prices each bar's contract traded at.",
+            "in": "query",
+            "name": "prices",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BarPrices",
+              "default": "adjusted",
+              "description": "`adjusted`, a spliced series' prices with the offset its rolls added, which features read, or `raw`, the prices each bar's contract traded at."
+            }
           }
         ],
         "responses": {
@@ -6193,6 +6477,159 @@
           }
         ],
         "summary": "Market Bars",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/market/bars/span": {
+      "get": {
+        "description": "The first and the last trade date the instrument's data that builds the timeframe holds,\na contract's own, none while it holds none, with the provider its bars come from: the\nwindow a chart asks for its bars within. Refused as `GET /v1/market/bars` refuses.",
+        "operationId": "market_bars_span_v1_market_bars_span_get",
+        "parameters": [
+          {
+            "description": "A root such as `ES`, or a contract such as `ESH2026`.",
+            "in": "query",
+            "name": "instrument",
+            "required": true,
+            "schema": {
+              "description": "A root such as `ES`, or a contract such as `ESH2026`.",
+              "title": "Instrument",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The bars' timeframe, such as `5m`.",
+            "in": "query",
+            "name": "timeframe",
+            "required": true,
+            "schema": {
+              "description": "The bars' timeframe, such as `5m`.",
+              "pattern": "^[1-9][0-9]*[smhd]$",
+              "title": "Timeframe",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Whether a futures root's contracts are spliced, by default true.",
+            "in": "query",
+            "name": "continuous",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Whether a futures root's contracts are spliced, by default true.",
+              "title": "Continuous"
+            }
+          },
+          {
+            "description": "The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument.",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument.",
+              "title": "Provider"
+            }
+          },
+          {
+            "description": "Only datasets of this origin; every dataset is an import for now.",
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "import",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only datasets of this origin; every dataset is an import for now.",
+              "title": "Origin"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BarsSpan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Market Bars Span",
         "tags": [
           "data"
         ]

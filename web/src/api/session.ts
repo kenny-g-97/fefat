@@ -1,4 +1,5 @@
 import { useMutation } from "@tanstack/react-query"
+import { apiTokensQuery } from "./api-tokens"
 import { api, queryClient } from "./client"
 import { answer, isRefusal, succeeded } from "./problems"
 import type { components } from "./schema"
@@ -28,10 +29,13 @@ export function useLogout() {
 }
 
 /** Change the password with the current one, which sets the cookie of a new session that keeps
- * this browser logged in. */
+ * this browser logged in and revokes every API token (step 5.2), so the token list is read
+ * again. */
 export function usePasswordChange() {
   return useMutation({
     mutationFn: async (change: PasswordChange) =>
       answer(await api.POST("/v1/auth/password", { body: change })),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: apiTokensQuery.queryKey }),
   })
 }

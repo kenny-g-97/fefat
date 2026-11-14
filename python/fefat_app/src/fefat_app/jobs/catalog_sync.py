@@ -1,7 +1,8 @@
 """The catalog sync (step 5.1, `01-architecture.md` section 6, D-93): the quality report of a
 product, or of every product the store holds, written as `fefat data quality` writes it, one
 provider's report of a root after another, each a report of the job's progress, between which
-the job reads a request to stop. Until the connectors (D-38), it is a product's Update."""
+the job reads a request to stop. Until the connectors (D-38), it is what Check quality on a
+dataset's page starts."""
 
 from collections.abc import Mapping
 from pathlib import Path

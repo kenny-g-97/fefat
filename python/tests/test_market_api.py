@@ -1,5 +1,6 @@
 import os
 import shutil
+import threading
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -513,6 +514,36 @@ def test_a_stretch_no_dataset_holds_has_the_rows_any_window_holding_it_gives(
     sunday = ending.filter(pl.col("trade_date") == date(2026, 3, 8))
     assert sunday.height == 288
     assert sunday.get_column("zero_volume").all()
+
+
+def test_two_threads_asking_for_one_roll_calendar_at_once_build_it_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Step 5.4: the server answers each request in a thread of its own, so two charts of one
+    # product opened at once built its calendar twice, 7 s each for MGC on the builder's store.
+    # The first build starts the second request and gives it a second to build too.
+    data_folder_with(monkeypatch, tmp_path, "ohlcv-1m")
+    built: list[RollCalendar] = []
+    calendars: list[RollCalendar] = []
+    second_built = threading.Event()
+    second = threading.Thread(target=lambda: calendars.append(roll_calendar("ES")))
+
+    def counted_rolls(*arguments: Any) -> RollCalendar:
+        built.append(volume_rolls(*arguments))
+        if len(built) > 1:
+            second_built.set()
+        else:
+            second.start()
+            second_built.wait(timeout=1)
+        return built[-1]
+
+    monkeypatch.setattr("fefat.market.roll_calendars.volume_rolls", counted_rolls)
+    calendars.append(roll_calendar("ES"))
+    second.join(timeout=30)
+
+    assert len(built) == 1
+    assert len(calendars) == 2
+    assert calendars[0].rolls().equals(calendars[1].rolls())
 
 
 def test_a_kept_roll_calendar_is_built_again_for_another_instrument_or_session_table(

@@ -1,9 +1,9 @@
 """The data catalog's routes (step 5.1, `01-architecture.md` sections 6 and 7, D-93), behind the
 login, a session's or an API token's, over `fefat_app.services.catalog`: `GET /v1/datasets`,
 `GET /v1/datasets/{dataset_id}/quality`, `GET /v1/catalog`, `GET /v1/sources`,
-`GET /v1/instruments`, and `GET /v1/market/bars`, each reading the store in the data folder as it
-is asked; and `POST /v1/catalog/sync`, which starts the quality report of a product, or of every
-product, as a job."""
+`GET /v1/instruments`, `GET /v1/market/bars`, and from step 5.4 `GET /v1/market/bars/span`, each
+reading the store in the data folder as it is asked; and `POST /v1/catalog/sync`, which starts
+the quality report of a product, or of every product, as a job."""
 
 from datetime import date
 from typing import Annotated, Literal
@@ -27,16 +27,41 @@ from fefat_app.services.catalog import (
 )
 from fefat_app.services.market_bars import (
     WINDOW_START,
+    BarPrices,
     BarsPage,
     BarsRefusedError,
     BarsRequest,
+    BarsSpan,
     NoSuchInstrumentError,
+    SeriesRequest,
 )
 
 router = APIRouter(prefix=API_PREFIX, tags=["data"], dependencies=[Depends(the_identity)])
 
 TIMEFRAME = r"^[1-9][0-9]*[smhd]$"
 """A bar's timeframe: a count and a unit, such as `1s`, `5m`, `1h`, or `1d`."""
+
+InstrumentQuery = Annotated[
+    str, Query(description="A root such as `ES`, or a contract such as `ESH2026`.")
+]
+TimeframeQuery = Annotated[
+    str, Query(pattern=TIMEFRAME, description="The bars' timeframe, such as `5m`.")
+]
+ContinuousQuery = Annotated[
+    bool | None,
+    Query(description="Whether a futures root's contracts are spliced, by default true."),
+]
+ProviderQuery = Annotated[
+    str | None,
+    Query(
+        description="The provider whose datasets the bars come from, by default the catalog's "
+        "recommended source among those that hold the instrument."
+    ),
+]
+OriginQuery = Annotated[
+    Literal["import"] | None,
+    Query(description="Only datasets of this origin; every dataset is an import for now."),
+]
 
 
 class CatalogSyncRequest(BaseModel):
@@ -100,15 +125,38 @@ def instruments(container: ContainerDependency) -> tuple[InstrumentVersion, ...]
     return container.catalog.instruments()
 
 
+@router.get("/market/bars/span", responses=problem_responses(400, 401, 404, 422))
+def market_bars_span(
+    container: ContainerDependency,
+    instrument: InstrumentQuery,
+    timeframe: TimeframeQuery,
+    continuous: ContinuousQuery = None,
+    provider: ProviderQuery = None,
+    origin: OriginQuery = None,
+) -> BarsSpan:
+    """The first and the last trade date the instrument's data that builds the timeframe holds,
+    a contract's own, none while it holds none, with the provider its bars come from: the
+    window a chart asks for its bars within. Refused as `GET /v1/market/bars` refuses."""
+    request = SeriesRequest(
+        instrument=instrument,
+        timeframe=timeframe,
+        continuous=continuous,
+        provider=provider,
+        origin=None if origin is None else DatasetOrigin(origin),
+    )
+    try:
+        return container.catalog.bars_span(request)
+    except NoSuchInstrumentError as unknown:
+        raise HTTPException(404, str(unknown)) from unknown
+    except BarsRefusedError as refused:
+        raise HTTPException(400, str(refused)) from refused
+
+
 @router.get("/market/bars", responses=problem_responses(400, 401, 404, 422))
 def market_bars(
     container: ContainerDependency,
-    instrument: Annotated[
-        str, Query(description="A root such as `ES`, or a contract such as `ESH2026`.")
-    ],
-    timeframe: Annotated[
-        str, Query(pattern=TIMEFRAME, description="The bars' timeframe, such as `5m`.")
-    ],
+    instrument: InstrumentQuery,
+    timeframe: TimeframeQuery,
     start: Annotated[
         str,
         Query(
@@ -119,21 +167,16 @@ def market_bars(
         ),
     ],
     end: Annotated[date, Query(alias="to", description="The trade date the window ends on.")],
-    continuous: Annotated[
-        bool | None,
-        Query(description="Whether a futures root's contracts are spliced, by default true."),
-    ] = None,
-    provider: Annotated[
-        str | None,
+    continuous: ContinuousQuery = None,
+    provider: ProviderQuery = None,
+    origin: OriginQuery = None,
+    prices: Annotated[
+        BarPrices,
         Query(
-            description="The provider whose datasets the bars come from, by default the "
-            "catalog's recommended source among those that hold the instrument."
+            description="`adjusted`, a spliced series' prices with the offset its rolls added, "
+            "which features read, or `raw`, the prices each bar's contract traded at."
         ),
-    ] = None,
-    origin: Annotated[
-        Literal["import"] | None,
-        Query(description="Only datasets of this origin; every dataset is an import for now."),
-    ] = None,
+    ] = BarPrices.ADJUSTED,
 ) -> BarsPage:
     """A page of at most 20,000 of the instrument's bars on the trade dates from `from` to `to`,
     as `ff.market.load` gives them, column by column; `next_from` is the instant the next page
@@ -148,6 +191,7 @@ def market_bars(
         continuous=continuous,
         provider=provider,
         origin=None if origin is None else DatasetOrigin(origin),
+        prices=prices,
     )
     try:
         return container.catalog.bars(request)

@@ -31,6 +31,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -126,13 +127,22 @@ class LoginSessionRow(Base):
 
 
 class ApiTokenRow(Base):
-    """An API token of a notebook or a script (step 4.2, D-86) by its name, with the SHA-256 of
-    the token, never the token itself, when it was last used, and when it was revoked."""
+    """An API token of a notebook or a script (step 4.2, D-86) by its name, which no other live
+    token has (step 5.4), with the SHA-256 of the token, never the token itself, when it was
+    last used, and when it was revoked."""
 
     __tablename__ = "api_tokens"
+    __table_args__ = (
+        Index(
+            "ix_api_tokens_live_name",
+            "name",
+            unique=True,
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(ID, primary_key=True, default=new_uuid7)
-    name: Mapped[str] = mapped_column(String, unique=True)
+    name: Mapped[str] = mapped_column(String)
     token_hash: Mapped[str] = mapped_column(SHA256, unique=True)
     created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
     last_used_at: Mapped[datetime | None] = mapped_column(UtcInstant)

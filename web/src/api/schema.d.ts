@@ -20,8 +20,8 @@ export interface paths {
         put?: never;
         /**
          * Create Api Token
-         * @description Make an API token, shown in this response alone; refused with 409 for a name a token
-         *     has or had.
+         * @description Make an API token, shown in this response alone; refused with 409 for a name a live
+         *     token has, while a revoked token's name is free.
          */
         post: operations["create_api_token_v1_api_tokens_post"];
         delete?: never;
@@ -443,6 +443,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/market/bars/span": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Market Bars Span
+         * @description The first and the last trade date the instrument's data that builds the timeframe holds,
+         *     a contract's own, none while it holds none, with the provider its bars come from: the
+         *     window a chart asks for its bars within. Refused as `GET /v1/market/bars` refuses.
+         */
+        get: operations["market_bars_span_v1_market_bars_span_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me": {
         parameters: {
             query?: never;
@@ -805,9 +827,10 @@ export interface components {
         /**
          * AppSettings
          * @description The settings the page shows: the server's, from `config.toml`, the data folder, the
-         *     theme, and each secret's state.
+         *     theme, the charts' style (step 5.4), and each secret's state.
          */
         AppSettings: {
+            chart_style: components["schemas"]["ChartStyle"];
             /**
              * Data Dir
              * Format: path
@@ -882,10 +905,19 @@ export interface components {
             volume: number[];
         };
         /**
+         * BarPrices
+         * @description The prices a page's bars carry (step 5.4): adjusted, a spliced series' prices plus the
+         *     offset its rolls added, which every feature reads (`fefat.market.continuous`), or raw, the
+         *     prices each bar's contract traded at; the two are one for a series that is not spliced.
+         * @enum {string}
+         */
+        BarPrices: "adjusted" | "raw";
+        /**
          * BarsPage
          * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
-         *     datasets the bars come from, the bars, and the instant the next page opens at, which the
-         *     caller sends as the window's start, none on the last page.
+         *     datasets the bars come from, the bars, the instant the next page opens at, which the caller
+         *     sends as the window's start, none on the last page, and what `load` warns of the datasets
+         *     the page's bars come from, as a notebook shows it (step 5.4).
          */
         BarsPage: {
             bars: components["schemas"]["BarColumns"];
@@ -893,6 +925,24 @@ export interface components {
             instrument: string;
             /** Next From */
             next_from: string | null;
+            /** Provider */
+            provider: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * BarsSpan
+         * @description What a series' data holds (step 5.4): the instrument and the timeframe asked for, the
+         *     provider whose datasets the bars come from, and the trade dates its data that builds the
+         *     timeframe holds, a named contract's own, none while it holds none; the chart asks for its
+         *     windows within them.
+         */
+        BarsSpan: {
+            held: components["schemas"]["HeldDates"] | null;
+            /** Instrument */
+            instrument: string;
             /** Provider */
             provider: string;
             /** Timeframe */
@@ -942,6 +992,12 @@ export interface components {
             };
         };
         /**
+         * CandleBody
+         * @description A candle's body: outlined in its colour, or filled with it.
+         * @enum {string}
+         */
+        CandleBody: "hollow" | "filled";
+        /**
          * CatalogProductStatus
          * @description A product of the catalog: its root, the first trade date of its history, the name of its
          *     first recommended source, and the datasets of it the store holds, none while it is missing.
@@ -980,6 +1036,39 @@ export interface components {
         CatalogSyncRequest: {
             /** Root */
             root?: string | null;
+        };
+        /**
+         * ChartStyle
+         * @description The charts' style (module docstring); its defaults are FEAT's, hollow green rising bars
+         *     and hollow red falling ones, the builder's answer at step 5.4's plan, with the volume pane,
+         *     the grid, and the sessions' shading shown.
+         */
+        ChartStyle: {
+            /** @default {} */
+            dark: components["schemas"]["ThemeColours"];
+            /** @default hollow */
+            down_body: components["schemas"]["CandleBody"];
+            /**
+             * Grid Shown
+             * @default true
+             */
+            grid_shown: boolean;
+            /** @default {} */
+            light: components["schemas"]["ThemeColours"];
+            /**
+             * Sessions Shaded
+             * @default true
+             */
+            sessions_shaded: boolean;
+            /** @default hollow */
+            up_body: components["schemas"]["CandleBody"];
+            /** @default neutral */
+            volume_colouring: components["schemas"]["VolumeColouring"];
+            /**
+             * Volume Shown
+             * @default true
+             */
+            volume_shown: boolean;
         };
         /**
          * Column
@@ -1114,9 +1203,9 @@ export interface components {
         /**
          * DatasetQuality
          * @description A dataset's quality: the verdict of its root's report from its provider, as the dataset
-         *     reads it, and the last trade date the report checked; and the report's findings, those of
-         *     every schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many
-         *     there are.
+         *     reads it, and the last trade date the report checked; the report's findings, those of every
+         *     schema of the root, which one verdict covers, the first `FINDINGS_SHOWN` with how many there
+         *     are; and the report's coverage by month, none while unchecked (step 5.4).
          */
         DatasetQuality: {
             /** Checked Through */
@@ -1127,6 +1216,8 @@ export interface components {
             findings_total: number;
             /** Id */
             id: string;
+            /** Months */
+            months: components["schemas"]["MonthCoverage"][];
             quality: components["schemas"]["QualityStatus"];
         };
         /**
@@ -1359,6 +1450,22 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /**
+         * HeldDates
+         * @description The first and the last trade date a series' data holds.
+         */
+        HeldDates: {
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
         };
         /**
          * IndexedFeature
@@ -1640,6 +1747,30 @@ export interface components {
             pnl_at_plus_one_tick: string;
             robustness: components["schemas"]["Robustness"];
             trades: components["schemas"]["TradeStatistics"];
+        };
+        /**
+         * MonthCoverage
+         * @description A month of a quality report (`fefat.market.monthly_coverage`): the month, `2026-03`; its
+         *     sessions, those with records of any schema, those with ticks, with 1-second bars, and with
+         *     1-minute bars; its findings; and the sessions touching a UTC day the vendor flagged.
+         */
+        MonthCoverage: {
+            /** Findings */
+            findings: number;
+            /** Minute Days */
+            minute_days: number;
+            /** Month */
+            month: string;
+            /** Second Days */
+            second_days: number;
+            /** Sessions */
+            sessions: number;
+            /** Tick Days */
+            tick_days: number;
+            /** Vendor Flagged */
+            vendor_flagged: number;
+            /** With Records */
+            with_records: number;
         };
         /**
          * Negation
@@ -2321,9 +2452,11 @@ export interface components {
         /**
          * SettingsChange
          * @description A change of the settings: a secret named with a value stores it, one named with null
-         *     removes it, and one left out stays as it is; a theme, when given, replaces the theme.
+         *     removes it, and one left out stays as it is; a theme, when given, replaces the theme, and a
+         *     chart style the charts' style.
          */
         SettingsChange: {
+            chart_style?: components["schemas"]["ChartStyle"] | null;
             secrets?: components["schemas"]["SecretChanges"];
             theme?: components["schemas"]["Theme"] | null;
         };
@@ -2480,6 +2613,24 @@ export interface components {
          * @enum {string}
          */
         Theme: "dark" | "light";
+        /**
+         * ThemeColours
+         * @description The trader's own colours in one theme, each null for the theme's own: rising and falling
+         *     bars, which the theme gives its sign colours, the chart's background, its grid, and its
+         *     text.
+         */
+        ThemeColours: {
+            /** Background */
+            background?: string | null;
+            /** Down */
+            down?: string | null;
+            /** Grid */
+            grid?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Up */
+            up?: string | null;
+        };
         /**
          * TickFidelity
          * @description Tick data: trades with the quote just before each, or trades alone.
@@ -2639,6 +2790,12 @@ export interface components {
             /** Fill Model */
             fill_model: number;
         };
+        /**
+         * VolumeColouring
+         * @description The volume pane's bars: in one grey, or in their candle's colour.
+         * @enum {string}
+         */
+        VolumeColouring: "neutral" | "direction";
         /**
          * Weekday
          * @description A day of the week, as the specification spells it.
@@ -3753,6 +3910,8 @@ export interface operations {
                 provider?: string | null;
                 /** @description Only datasets of this origin; every dataset is an import for now. */
                 origin?: "import" | null;
+                /** @description `adjusted`, a spliced series' prices with the offset its rolls added, which features read, or `raw`, the prices each bar's contract traded at. */
+                prices?: components["schemas"]["BarPrices"];
             };
             header?: never;
             path?: never;
@@ -3767,6 +3926,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BarsPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    market_bars_span_v1_market_bars_span_get: {
+        parameters: {
+            query: {
+                /** @description A root such as `ES`, or a contract such as `ESH2026`. */
+                instrument: string;
+                /** @description The bars' timeframe, such as `5m`. */
+                timeframe: string;
+                /** @description Whether a futures root's contracts are spliced, by default true. */
+                continuous?: boolean | null;
+                /** @description The provider whose datasets the bars come from, by default the catalog's recommended source among those that hold the instrument. */
+                provider?: string | null;
+                /** @description Only datasets of this origin; every dataset is an import for now. */
+                origin?: "import" | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BarsSpan"];
                 };
             };
             /** @description Bad Request */

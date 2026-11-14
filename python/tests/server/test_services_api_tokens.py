@@ -84,6 +84,23 @@ def test_a_revoked_token_leaves_the_live_tokens_and_is_refused(container: Contai
     assert container.api_tokens.identity_of_token(token) is None
 
 
+def test_a_revoked_tokens_name_names_a_new_token_while_the_old_one_stays_refused(
+    container: Container,
+) -> None:
+    # Step 5.4 (from `BACKLOG.md`): a password change revokes every token, which used up every
+    # name a token had; a name is unique among the live tokens alone.
+    revoked = container.api_tokens.create("notebook")
+    container.api_tokens.revoke("notebook")
+
+    renewed = container.api_tokens.create("notebook")
+
+    assert container.api_tokens.identity_of_token(revoked) is None
+    assert container.api_tokens.identity_of_token(renewed) == ApiTokenIdentity(
+        token_name="notebook"
+    )
+    assert [live.name for live in container.api_tokens.live_tokens()] == ["notebook"]
+
+
 def test_only_a_live_token_can_be_revoked(container: Container) -> None:
     container.api_tokens.create("notebook")
     container.api_tokens.revoke("notebook")

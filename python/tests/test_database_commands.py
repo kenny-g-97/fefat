@@ -30,7 +30,7 @@ def test_db_upgrade_makes_the_database_under_fefat_home(
 
     assert code == 0
     assert database_file.is_file()
-    assert capsys.readouterr().out == f"Upgraded {database_file} to revision 0005.\n"
+    assert capsys.readouterr().out == f"Upgraded {database_file} to revision 0006.\n"
     with opened_database(database_file) as engine:
         assert "feature_versions" in inspect(engine).get_table_names()
 

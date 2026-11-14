@@ -18,6 +18,7 @@ What the files hold is `fefat.market.schema`; where they live is `fefat.market.l
 
 import hashlib
 import io
+import os
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path, PurePosixPath
 
@@ -224,14 +225,28 @@ class Store:
                 yield folder
 
     def _partition_files(self, folder: Path) -> Iterator[PartitionFile]:
-        for path in folder.rglob(PARTITION_FILE_NAME):
-            relative = PurePosixPath(path.relative_to(self._folder).as_posix())
-            status = path.stat()
-            yield PartitionFile(
-                partition=Partition.from_relative_path(relative),
-                size_bytes=status.st_size,
-                modified_ns=status.st_mtime_ns,
-            )
+        """Each partition under `folder`, its size and time read from its folder's entry in one
+        walk, where a path object and its status for each file were most of a listing's time
+        on a store of thousands of partitions (step 5.4)."""
+        folders = [(str(folder), folder.relative_to(self._folder).as_posix())]
+        while folders:
+            path, relative = folders.pop()
+            try:
+                entries = os.scandir(path)
+            except FileNotFoundError:
+                continue
+            with entries:
+                for entry in entries:
+                    inside = f"{relative}/{entry.name}"
+                    if entry.is_dir(follow_symlinks=False):
+                        folders.append((entry.path, inside))
+                    elif entry.name == PARTITION_FILE_NAME:
+                        status = entry.stat()
+                        yield PartitionFile(
+                            partition=Partition.from_relative_path(PurePosixPath(inside)),
+                            size_bytes=status.st_size,
+                            modified_ns=status.st_mtime_ns,
+                        )
 
     def _selected(self, request: PartitionRequest) -> tuple[PartitionFile, ...]:
         listed = self.list_partitions(request.dataset)

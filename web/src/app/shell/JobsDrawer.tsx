@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { X } from "lucide-react"
 import { isActive, jobsQuery } from "@/api/jobs"
 import { Button } from "@/ui/button"
+import { SectionFailure } from "@/ui/section-failure"
 import { SheetClose, SheetContent, SheetTitle } from "@/ui/sheet"
 import { JobRow } from "./JobRow"
 
@@ -41,14 +42,11 @@ function JobList() {
   }
   if (jobs.status === "error") {
     return (
-      <div className="flex flex-col items-start gap-3 px-6 py-4">
-        <p role="alert" className="text-negative">
-          {jobs.error.message}
-        </p>
-        <Button variant="ghost" onClick={() => void jobs.refetch()}>
-          Try again
-        </Button>
-      </div>
+      <SectionFailure
+        error={jobs.error}
+        onRetry={() => void jobs.refetch()}
+        className="px-6 py-4"
+      />
     )
   }
   if (jobs.data.length === 0) {

@@ -4,6 +4,35 @@ import { z } from "zod"
 const identity = z.object({ csrf_token: z.string() })
 const listedJobs = z.array(z.object({ id: z.string(), status: z.string() }))
 const ACTIVE = new Set(["queued", "running"])
+const CREATED = "2026-11-09T10:00:00Z"
+
+/** A job as `GET /v1/jobs` lists one, for a spec that answers the list itself: a demo job of a
+ * minute, queued a moment ago, with `changes` over it. */
+export function aJob(
+  id: string,
+  status: string,
+  changes: Readonly<Record<string, unknown>> = {}
+) {
+  return {
+    id,
+    kind: "demo",
+    payload: { seconds: 60 },
+    status,
+    progress: 0,
+    message: null,
+    attempt: 1,
+    max_attempts: 3,
+    worker_pid: null,
+    lease_expires_at: null,
+    cancel_requested_at: null,
+    result: null,
+    error: null,
+    created_at: CREATED,
+    started_at: null,
+    finished_at: null,
+    ...changes,
+  }
+}
 
 /** Start `count` demo jobs of a minute through the API with the context's session. */
 export async function startDemoJobs(

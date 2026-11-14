@@ -2,14 +2,15 @@ import { useSuspenseQuery } from "@tanstack/react-query"
 import { settingsQuery } from "@/api/settings"
 import { Page } from "@/ui/page"
 import { Panel } from "@/ui/panel"
+import { AboutSection } from "./AboutSection"
 import { ApiTokensSection } from "./ApiTokensSection"
 import { DemoJobSection } from "./DemoJobSection"
 import { PasswordSection } from "./PasswordSection"
 import { ThemeSection } from "./ThemeSection"
 
 /** The settings, one level deep (the design brief), a card each: the theme, the demo job, the
- * password, the API tokens, and the data folder, read-only; the model defaults join with step
- * 8.2. */
+ * password, the API tokens, the data folder, read-only, and About, what FEAT must credit; the
+ * model defaults join with step 8.2. */
 export function SettingsPage() {
   return (
     <Page title="Settings">
@@ -19,6 +20,7 @@ export function SettingsPage() {
         <PasswordSection />
         <ApiTokensSection />
         <DataFolderSection />
+        <AboutSection />
       </div>
     </Page>
   )

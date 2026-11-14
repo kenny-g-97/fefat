@@ -1,7 +1,10 @@
 """The roll calendar a spliced load follows (`fefat.market.api`, step 2.9, D-44), kept in memory
 per dataset of a store's folder while what it is built from keeps its stamp (step 3.3, D-71), so
-that the loads of a run and the partitions of the feature cache build it once."""
+that the loads of a run and the partitions of the feature cache build it once, and built under a
+lock of its place, so that the server's requests, each in a thread of its own, build it once too
+(step 5.4)."""
 
+import threading
 from datetime import date
 
 import polars as pl
@@ -17,6 +20,9 @@ from fefat.market.store import Store
 _KEPT_ROLL_CALENDARS: dict[tuple[str, Dataset], tuple[object, RollCalendar]] = {}
 """The roll calendar last built in this process from each dataset of a store's folder, with the
 stamp of what it was built from (`kept_roll_calendar`)."""
+_BUILDING: dict[tuple[str, Dataset], threading.Lock] = {}
+"""The lock each place of `_KEPT_ROLL_CALENDARS` is checked and built under."""
+_BUILDING_GUARD = threading.Lock()
 
 
 def kept_roll_calendar(
@@ -38,12 +44,15 @@ def kept_roll_calendar(
     dataset = roll_dataset(datasets, instrument.root)
     place = (str(store.folder), dataset)
     stamp = (_listing_stamp(store, dataset), instrument.model_dump_json(), sessions.key)
-    kept = _KEPT_ROLL_CALENDARS.get(place)
-    if kept is not None and kept[0] == stamp:
-        return kept[1]
-    calendar = _built_roll_calendar(store, dataset, instrument, sessions)
-    _KEPT_ROLL_CALENDARS[place] = (stamp, calendar)
-    return calendar
+    with _BUILDING_GUARD:
+        building = _BUILDING.setdefault(place, threading.Lock())
+    with building:
+        kept = _KEPT_ROLL_CALENDARS.get(place)
+        if kept is not None and kept[0] == stamp:
+            return kept[1]
+        calendar = _built_roll_calendar(store, dataset, instrument, sessions)
+        _KEPT_ROLL_CALENDARS[place] = (stamp, calendar)
+        return calendar
 
 
 def _listing_stamp(store: Store, dataset: Dataset) -> tuple[tuple[str, int, int], ...]:

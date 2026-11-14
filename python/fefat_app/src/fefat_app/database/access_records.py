@@ -95,7 +95,11 @@ class AccessTables:
 
     def add_api_token(self, name: str, token_hash: str, created_at: datetime) -> None:
         with Session(self.engine) as session, session.begin():
-            used = session.scalars(select(ApiTokenRow.id).where(ApiTokenRow.name == name)).first()
+            used = session.scalars(
+                select(ApiTokenRow.id).where(
+                    ApiTokenRow.name == name, ApiTokenRow.revoked_at.is_(None)
+                )
+            ).first()
             if used is not None:
                 raise TokenNameInUseError(name)
             session.add(ApiTokenRow(name=name, token_hash=token_hash, created_at=created_at))
