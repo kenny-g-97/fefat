@@ -212,7 +212,7 @@ function ChartFrame({
         className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-raised"
       >
         {children === undefined ? (
-          <p className="flex min-h-12 items-center border-b px-4 text-xs text-muted-foreground">
+          <p className="box-content flex min-h-10 items-center border-b px-4 py-2 text-xs text-muted-foreground">
             Loading bars
           </p>
         ) : (

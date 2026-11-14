@@ -239,12 +239,12 @@ test("the chart keeps its least size, never passes its column, and narrows besid
   await expectSize(card, { width: set, height: LEAST.height })
 })
 
-test("at the chart's least width the readout cuts no figure of an index future's prices", async ({
-  loggedIn: page,
-}) => {
-  // MNQ's figures, five digits with two decimals and a volume in the tens of thousands, which
-  // the seed has none of: MES's bars as the API sends them, 20,000 points higher and a hundred
-  // times the volume.
+/** MNQ's prices, five digits with two decimals, which the seed has none of: each page of MES's
+ * bars as the API sends it, 20,000 points higher, each bar's volume what `volumeOf` gives. */
+async function answerHigherBars(
+  page: Page,
+  volumeOf: (lots: number, at: number) => number
+) {
   await page.route(
     (url) => url.pathname === "/v1/market/bars",
     async (route) => {
@@ -263,12 +263,19 @@ test("at the chart's least width the readout cuts no figure of an index future's
             high: higher(high),
             low: higher(low),
             close: higher(close),
-            volume: volume.map((lots) => lots * 100),
+            volume: volume.map(volumeOf),
           },
         },
       })
     }
   )
+}
+
+test("at the chart's least width the readout cuts no figure of an index future's prices", async ({
+  loggedIn: page,
+}) => {
+  // A volume in the tens of thousands beside MNQ's prices: a hundred times MES's.
+  await answerHigherBars(page, (lots) => lots * 100)
   await page.goto(CHART)
   await chartReady(page)
   const { card, right } = edges(page)
@@ -288,6 +295,104 @@ test("at the chart's least width the readout cuts no figure of an index future's
   }
   await page.mouse.move(700, 36)
   await screenshot(page, "data-chart-least")
+})
+
+test("the readout keeps its lines whichever bar the crosshair reads, so the chart keeps its height", async ({
+  loggedIn: page,
+}) => {
+  // Bars of 87 lots and of 143,210 by turns: at the least width the first volume would fit
+  // beside the prices and the second would not, so a readout that wrapped by its text would
+  // change its lines, and the chart's height under the pointer, from one bar to the next.
+  await answerHigherBars(page, (_, at) => (at % 2 === 0 ? 87 : 143_210))
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, right } = edges(page)
+  const filling = await boxOf(card)
+  await drag(page, right, -700, 0)
+  await expectSize(card, { width: LEAST.width, height: filling.height })
+
+  const chart = page.getByTestId("price-chart")
+  const volume = page.getByTestId("readout-volume")
+  const pane = await boxOf(chart)
+  const heights = new Map<string | null, number>()
+  for (let step = 0; step < 16 && heights.size < 2; step += 1) {
+    await page.mouse.move(pane.x + 200 + step * 3, pane.y + 60)
+    await twoFrames(page)
+    heights.set(await volume.textContent(), (await boxOf(chart)).height)
+  }
+
+  expect([...heights.keys()].sort(), "a bar of each volume was read").toEqual([
+    "143,210",
+    "87",
+  ])
+  expect(
+    new Set(heights.values()).size,
+    "one height of chart, whichever bar is read"
+  ).toBe(1)
+})
+
+test("the readout's lines are its card's: one at the column's width, two under it, three at the least", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, right } = edges(page)
+  /** The lines the readout stands on: the tops of its time, its first price, and its volume. */
+  const lines = async () => {
+    const tops = await Promise.all(
+      ["time", "open", "volume"].map(async (figure) =>
+        Math.round((await boxOf(page.getByTestId(`readout-${figure}`))).y)
+      )
+    )
+    return new Set(tops).size
+  }
+  /** How far under its card's top the chart starts: the readout's height. */
+  const readoutHeight = async () =>
+    (await boxOf(page.getByTestId("price-chart"))).y - (await boxOf(card)).y
+
+  // MES's figures would fit one line in a card of 900 px: the card's width decides, not they.
+  expect(await lines()).toBe(1)
+  const oneLine = await readoutHeight()
+  await drag(page, right, -60, 0)
+  await expect.poll(lines).toBe(2)
+  // One line or two, the readout is as tall, and the chart under it starts where it did.
+  expect(await readoutHeight()).toBe(oneLine)
+  await drag(page, right, -700, 0)
+  await expect.poll(lines).toBe(3)
+  expect(await readoutHeight()).toBeGreaterThan(oneLine)
+})
+
+test("the chart keeps its height while an older window loads beside five-digit prices", async ({
+  loggedIn: page,
+}) => {
+  // At 1280 px MNQ's figures leave "Loading bars" no room on their line: the word takes a
+  // second line, which must not move the chart under the pointer at every load.
+  await answerHigherBars(page, (lots) => lots * 100)
+  await page.goto(CHART)
+  await chartReady(page)
+  const chart = page.getByTestId("price-chart")
+  const settled = (await boxOf(chart)).height
+  let release: () => void = () => undefined
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(
+    (url) => url.pathname === "/v1/market/bars",
+    async (route) => {
+      await held
+      await route.fallback()
+    }
+  )
+
+  await chart.focus()
+  await chart.press("Home")
+  await expect(page.getByText("Loading bars")).toBeVisible()
+  await twoFrames(page)
+  expect((await boxOf(chart)).height, "while the window loads").toBe(settled)
+  release()
+  await chartReady(page)
+  await expect(page.getByText("Loading bars")).toBeHidden()
+  expect((await boxOf(chart)).height, "once it has loaded").toBe(settled)
 })
 
 test("the chart's size outlives a change of timeframe and a reload, kept in this browser", async ({
