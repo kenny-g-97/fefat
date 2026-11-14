@@ -18,6 +18,7 @@ import {
   chartTimeframe,
   type ImportedDataset,
   importedDatasets,
+  standing,
 } from "./datasets"
 import { DatasetTable } from "./DatasetTable"
 import { QualityPanel } from "./QualityPanel"
@@ -97,7 +98,10 @@ function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
                 </p>
               )}
               <HeldPanel dataset={dataset} />
-              <QualityPanel dataset={dataset} syncing={syncing} />
+              <QualityPanel
+                dataset={dataset}
+                standing={standing(dataset, syncs)}
+              />
               <SpecificationPanel root={dataset.root} />
             </div>
           )
