@@ -12,6 +12,13 @@ describe("storedFrameSize", () => {
       width: null,
       height: 1600,
     })
+    // A height past the chart's most is a size still: a window taller than 1600 px holds a
+    // taller chart, and the frame draws none taller than its most (chart-size.spec.ts).
+    expect(storedFrameSize('{"width":760,"height":5000}')).toEqual({
+      width: 760,
+      height: 5000,
+    })
+    expect(storedFrameSize('{"width":null,"height":null}')).toEqual(FILLS)
   })
 
   it("reads a chart that fills where nothing is kept, or what is kept is no size of the chart's", () => {
@@ -26,7 +33,6 @@ describe("storedFrameSize", () => {
       '{"width":760.5,"height":400}',
       '{"width":100,"height":400}',
       '{"width":760,"height":100}',
-      '{"width":760,"height":5000}',
     ]) {
       expect(storedFrameSize(kept), String(kept)).toEqual(FILLS)
     }

@@ -442,6 +442,17 @@ a[data-slot="row-link"]:active {
   outline-offset: -2px;
 }
 
+/* A frame's edge shows its focus on its line, the card's hairline, which the trader sees: the
+   outline around its strip, four times as wide and mostly outside the card, read as a slot
+   beside the card. The outline hugs the line, a bar 6 px wide over the edge. */
+[data-slot="frame-edge"]:focus-visible {
+  outline: none;
+}
+
+[data-slot="frame-edge"]:focus-visible::after {
+  outline: 2px solid var(--ring);
+}
+
 /* Lightweight Charts' logo, which its licence keeps in the chart's corner, picks its colours
    from the chart's text; it takes the subtle text on the card instead, quiet in both themes. */
 [data-slot="price-chart"] a#tv-attr-logo {
@@ -457,5 +468,14 @@ a[data-slot="row-link"]:active {
   [data-slot="select-trigger"]:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
+  }
+
+  /* A frame's edge keeps its focus on its line there too. */
+  [data-slot="frame-edge"]:focus-visible {
+    outline: none;
+  }
+
+  [data-slot="frame-edge"]:focus-visible::after {
+    outline: 2px solid Highlight;
   }
 }

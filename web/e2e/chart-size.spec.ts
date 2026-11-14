@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test"
 import { barsPage, chartReady } from "./support/chart.ts"
 import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
+import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
 // The chart's frame of step 5.4, from the builder's third check: its right edge, its bottom
@@ -12,8 +13,10 @@ import { screenshot } from "./support/screenshots.ts"
 
 const CHART = "/data/chart?instrument=MES&provider=synthetic"
 const LEAST = { width: 576, height: 240 }
-const HOW =
-  "Drag or press the arrow keys to resize. Double-click or press Enter to fill the page again."
+const KEPT_AS = "fefat_chart_frame_size"
+const HOW = "Drag to resize. Double-click to fill the page again."
+const HOW_BY_THE_KEYS =
+  "Press the arrow keys to resize. Press Enter to fill the page again."
 
 type Box = Readonly<{ x: number; y: number; width: number; height: number }>
 
@@ -78,6 +81,31 @@ function twoFrames(page: Page): Promise<void> {
   )
 }
 
+/** What the browser keeps of the frame's size, as its text. */
+function kept(page: Page): Promise<string | null> {
+  return page.evaluate((key) => localStorage.getItem(key), KEPT_AS)
+}
+
+/** The outline of `edge` itself, then of its line over the card's hairline. */
+function focusOutlines(edge: Locator): Promise<readonly string[]> {
+  return edge.evaluate((element) => [
+    getComputedStyle(element).outlineStyle,
+    getComputedStyle(element, "::after").outlineStyle,
+    getComputedStyle(element, "::after").outlineWidth,
+  ])
+}
+
+/** How long a change of `edge`, of its line, and of the frame it sizes takes to show. */
+function transitions(edge: Locator): Promise<readonly string[]> {
+  return edge.evaluate((element) => [
+    getComputedStyle(element).transitionDuration,
+    getComputedStyle(element, "::after").transitionDuration,
+    element.parentElement === null
+      ? "no frame"
+      : getComputedStyle(element.parentElement).transitionDuration,
+  ])
+}
+
 test("dragging the right edge, the bottom edge, and the corner sizes the chart, which follows", async ({
   loggedIn: page,
 }) => {
@@ -91,10 +119,20 @@ test("dragging the right edge, the bottom edge, and the corner sizes the chart, 
 
   await drag(page, right, -200, 0)
   await expectSize(card, { width: width - 200, height: filling.height })
+  // A press of the pointer leaves the keys where they were: End and Home, the chart's own
+  // keys, size nothing after it.
+  await page.keyboard.press("End")
+  await page.keyboard.press("Home")
+  await twoFrames(page)
+  await expectSize(card, { width: width - 200, height: filling.height })
   await drag(page, bottom, 0, -80)
   await expectSize(card, { width: width - 200, height: height - 80 })
   await drag(page, corner, -40, 40)
   await expectSize(card, { width: width - 240, height: height - 40 })
+  // The chart stays where its page put it: its top left corner never moves.
+  const sized = await boxOf(card)
+  expect(Math.abs(sized.x - filling.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(sized.y - filling.y)).toBeLessThanOrEqual(1)
 
   // The chart redraws to its frame: the library's own table fills the chart's box.
   const chart = await boxOf(page.getByTestId("price-chart"))
@@ -156,6 +194,17 @@ test("a press on the card's own hairline drags the frame, the edge a pointer aim
     -80
   )
   await expectSize(card, { width: width - 200, height: height - 80 })
+
+  // The corner says how it is used, and reaches as far outside the card as the edges do.
+  await expect(edges(page).corner).toHaveAttribute("title", HOW)
+  const small = await boxOf(card)
+  await pull(
+    Math.ceil(small.x + small.width) + 3,
+    Math.ceil(small.y + small.height) + 3,
+    40,
+    40
+  )
+  await expectSize(card, { width: width - 160, height: height - 40 })
 })
 
 test("the chart keeps its least size, never passes its column, and narrows beside the style drawer", async ({
@@ -252,9 +301,7 @@ test("the chart's size outlives a change of timeframe and a reload, kept in this
     width: Math.floor(filling.width) - 200,
     height: Math.floor(filling.height) - 80,
   }
-  const kept = () =>
-    page.evaluate(() => localStorage.getItem("fefat_chart_frame_size"))
-  expect(await kept(), "nothing kept before an edge is dragged").toBeNull()
+  expect(await kept(page), "nothing kept before an edge is dragged").toBeNull()
 
   await drag(page, right, -200, 0)
   await drag(page, bottom, 0, -80)
@@ -263,20 +310,109 @@ test("the chart's size outlives a change of timeframe and a reload, kept in this
   await page.getByLabel("Timeframe").click()
   await page.getByRole("option", { name: "1h" }).click()
   await expect(page).toHaveURL(/timeframe=1h/)
+  await expect(
+    page.getByRole("application", { name: "MES, 1-hour bars" })
+  ).toBeVisible()
   await chartReady(page)
   await expectSize(card, set)
-  expect(await kept()).toBe(JSON.stringify(set))
+  expect(await kept(page)).toBe(JSON.stringify(set))
   await page.reload()
   await chartReady(page)
   await expectSize(card, set)
 
-  // What the browser keeps is the trader's to edit: a text that is no size fills the page.
-  await page.evaluate(() =>
-    localStorage.setItem("fefat_chart_frame_size", "{broken")
-  )
+  // What the browser keeps is the trader's to edit: a text that is no size fills the page,
+  // and a height past the frame's most is drawn at the most, 1600 px in this window.
+  const keep = (text: string) =>
+    page.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      [KEPT_AS, text]
+    )
+  await keep("{broken")
   await page.reload()
   await chartReady(page)
   await expectSize(card, filling)
+  await keep('{"width":null,"height":5000}')
+  await page.reload()
+  await chartReady(page)
+  await expectSize(card, { width: filling.width, height: 1600 })
+})
+
+test("in a window taller than 1600 px a chart that fills is within its most, and a pull grows it", async ({
+  loggedIn: page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 2000 })
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, bottom } = edges(page)
+  const filling = await boxOf(card)
+  expect(filling.height, "the chart that fills this window").toBeGreaterThan(
+    1600
+  )
+  // The most is the window's height where that is over 1600 px.
+  await expect(bottom).toHaveAttribute("aria-valuemax", "2000")
+
+  await drag(page, bottom, 0, 20)
+
+  const set = Math.floor(filling.height) + 20
+  await expectSize(card, { width: filling.width, height: set })
+  // A height over 1600 px is kept as any other.
+  await page.reload()
+  await chartReady(page)
+  await expectSize(card, { width: filling.width, height: set })
+})
+
+test("a width dragged to its column fills it, in a window made narrower during the drag", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, right } = edges(page)
+  const filling = await boxOf(card)
+  const widthIs = (expected: number) =>
+    expect
+      .poll(async () => Math.abs((await boxOf(card)).width - expected))
+      .toBeLessThanOrEqual(1)
+  await drag(page, right, -260, 0)
+  await widthIs(Math.floor(filling.width) - 260)
+
+  // The press, then a narrower window, as when the page's scrollbar arrives under a chart
+  // made taller: the column is 780 px, and the pointer ends 4 px short of it.
+  const edge = await boxOf(right)
+  const x = edge.x + edge.width / 2
+  const y = edge.y + edge.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 5, y)
+  await page.setViewportSize({ width: 1100, height: 800 })
+  await page.mouse.move(x + 76, y, { steps: 4 })
+  await page.mouse.up()
+  await widthIs(780)
+
+  // In its own window again the chart fills its column, where a width kept at 776 px stays.
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await widthIs(filling.width)
+})
+
+test("a chart that fills keeps its least height over a failure in a short window", async ({
+  loggedIn: page,
+}) => {
+  // The page's least height leaves the chart some 300 px, and a failure under it takes 90.
+  await page.setViewportSize({ width: 1280, height: 460 })
+  await page.route(
+    (url) => url.pathname === "/v1/market/bars",
+    (route) =>
+      route.fulfill(
+        problemAnswer(500, "The server failed on purpose, for this test.")
+      )
+  )
+  await page.goto(CHART)
+  const { card, bottom } = edges(page)
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText(
+    "The server failed on purpose, for this test."
+  )
+
+  expect((await boxOf(card)).height).toBeGreaterThanOrEqual(LEAST.height)
+  await expect(bottom).toHaveAttribute("aria-valuenow", String(LEAST.height))
 })
 
 test("the edges follow the chart in the Tab order, say their size, and move by the keys", async ({
@@ -300,7 +436,14 @@ test("the edges follow the chart in the Tab order, say their size, and move by t
   await expect(right).toHaveAttribute("aria-valuenow", String(width))
   await expect(right).toHaveAttribute("aria-valuemin", String(LEAST.width))
   await expect(right).toHaveAttribute("aria-valuemax", String(width))
+  // Its tooltip is the pointer's, which a press leaves without the keys; who Tabs here hears
+  // the keys' sentence.
   await expect(right).toHaveAttribute("title", HOW)
+  await expect(right).toHaveAccessibleDescription(HOW_BY_THE_KEYS)
+  // The focus shows on the line the trader sees, not around the strip a pointer grabs.
+  expect(await focusOutlines(right)).toEqual(["none", "solid", "2px"])
+  // A frame follows the hand at once: neither its size nor its edge's line is eased.
+  expect(await transitions(right)).toEqual(["0s", "0s", "0s"])
   await screenshot(page, "data-chart-edge-focused")
 
   await page.keyboard.press("ArrowLeft")
@@ -320,6 +463,13 @@ test("the edges follow the chart in the Tab order, say their size, and move by t
   await expect(bottom).toBeFocused()
   await expect(bottom).toHaveAttribute("aria-orientation", "horizontal")
   await expect(bottom).toHaveAttribute("aria-valuenow", String(height))
+  await expect(bottom).toHaveAttribute("aria-valuemin", String(LEAST.height))
+  await expect(bottom).toHaveAttribute("aria-valuemax", "1600")
+  await expect(bottom).toHaveAttribute("title", HOW)
+  await expect(bottom).toHaveAccessibleDescription(HOW_BY_THE_KEYS)
+  expect(await focusOutlines(bottom)).toEqual(["none", "solid", "2px"])
+  expect(await transitions(bottom)).toEqual(["0s", "0s", "0s"])
+  await screenshot(page, "data-chart-edge-focused-bottom")
   await page.keyboard.press("ArrowUp")
   await expectSize(card, { width: filling.width, height: height - 16 })
   await page.keyboard.press("ArrowDown")
@@ -361,6 +511,8 @@ test("a chart set taller than the window lengthens its page, which the wheel the
   await bottom.focus()
   await page.keyboard.press("End")
   await expectSize(card, { width: filling.width, height: 1600 })
+  // The edge the keys hold stays in view as its frame grows past the window's foot.
+  await expect(bottom).toBeInViewport()
   // The page is as long as its chart: at its end, its padding stands under the card.
   await page.evaluate(() =>
     window.scrollTo(0, document.documentElement.scrollHeight)

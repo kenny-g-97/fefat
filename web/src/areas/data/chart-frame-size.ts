@@ -2,9 +2,13 @@ import { useState } from "react"
 import { z } from "zod"
 import { FILLS, type FrameSize } from "@/ui/frame-size"
 
-/** The least the chart's frame may be, where the readout's prices and the candles still read,
- * and the most it may be tall; its most width is its column's. */
-export const CHART_FRAME = {
+/** The least the chart's frame may be, where the readout and the candles still read, and the
+ * most it may be tall in a window no taller than that; its most width is its column's. */
+export const CHART_FRAME: Readonly<{
+  leastWidth: number
+  leastHeight: number
+  mostHeight: number
+}> = {
   leastWidth: 576,
   leastHeight: 240,
   mostHeight: 1600,
@@ -13,17 +17,14 @@ export const CHART_FRAME = {
 const KEPT_AS = "fefat_chart_frame_size"
 const keptSize = z.object({
   width: z.number().int().min(CHART_FRAME.leastWidth).nullable(),
-  height: z
-    .number()
-    .int()
-    .min(CHART_FRAME.leastHeight)
-    .max(CHART_FRAME.mostHeight)
-    .nullable(),
+  height: z.number().int().min(CHART_FRAME.leastHeight).nullable(),
 })
 
 /** The size `text` holds, as the browser's local storage kept it; a frame that fills where
  * nothing is kept, or where what is kept is no size of the chart's: the storage is the trader's
- * to edit, and another version's to have written. */
+ * to edit, and another version's to have written. A size past the frame's most is a size
+ * still, wider than the column or taller than this window allows, and the frame draws it at
+ * its most. */
 export function storedFrameSize(text: string | null): FrameSize {
   const read = keptSize.safeParse(text === null ? null : parsed(text))
   return read.success ? read.data : FILLS
@@ -65,12 +66,9 @@ function keptFrameSize(): FrameSize {
 
 function keep(size: FrameSize): void {
   try {
-    if (size.width === null && size.height === null) {
-      localStorage.removeItem(KEPT_AS)
-      return
-    }
     localStorage.setItem(KEPT_AS, JSON.stringify(size))
   } catch {
-    // Storage refused or full: the size holds for this visit alone.
+    // Storage refused or full: the size holds until another chart is drawn, by a change of
+    // series or a reload, since each chart's frame reads it here.
   }
 }
