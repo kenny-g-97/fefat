@@ -555,3 +555,33 @@ test("a chart set taller than the window lengthens its page, which the wheel the
   await twoFrames(page)
   await expect(card).toHaveAttribute("data-before", String(before))
 })
+
+test("a chart taller than its page by less than the page's padding keeps the wheel", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, bottom } = edges(page)
+  const filling = await boxOf(card)
+
+  // One press of the arrow: 16 px taller, the whole card still in view over the page's
+  // padding, so a wheel that went to the page would scroll it by 16 px and then do nothing.
+  await bottom.focus()
+  await page.keyboard.press("ArrowDown")
+  await expectSize(card, {
+    width: filling.width,
+    height: Math.floor(filling.height) + 16,
+  })
+  // The key's own scroll, which keeps its edge in view, leaves the page off its top: a wheel
+  // given to the page would bring it back there.
+  const scrollY = () => page.evaluate(() => window.scrollY)
+  await expect.poll(scrollY).toBeGreaterThan(0)
+  await twoFrames(page)
+  const scrolled = await scrollY()
+  const before = await card.getAttribute("data-before")
+  await page.mouse.move(filling.x + filling.width / 2, filling.y + 120)
+  await page.mouse.wheel(0, -400)
+
+  await expect(card).not.toHaveAttribute("data-before", String(before))
+  expect(await scrollY()).toBe(scrolled)
+})
