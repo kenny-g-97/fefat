@@ -2,6 +2,7 @@ import type { Ref } from "react"
 import { Input } from "@/ui/input"
 import {
   FILTER_COLUMNS,
+  type FilterChoices,
   type FilterColumn,
   type ImportedFilters,
 } from "./imported-filters"
@@ -21,14 +22,17 @@ const LABELS: Readonly<Record<FilterColumn, string>> = {
 
 type ImportedFilterBarProps = Readonly<{
   filters: ImportedFilters
-  choices: Readonly<Record<FilterColumn, readonly string[]>>
+  choices: FilterChoices
   search: Ref<HTMLInputElement>
   onChange: (filters: ImportedFilters) => void
 }>
 
 /** The list's search and its dropdowns, one for each column that holds few values
- * (web/DESIGN.md, Patterns, Link rows): a word typed and a value chosen narrow the rows at
- * once. The dropdowns are wider than the chart's, for a provider of 13 characters. */
+ * (web/DESIGN.md, Patterns, List filters): a word typed and a value chosen narrow the rows at
+ * once. The dropdowns are wider than the chart's, for a provider of 13 characters, and the
+ * search keeps a least width that leaves the five fields on one line in a window 1280 px wide
+ * with its scrollbar drawn. Escape clears the search here, in every browser, since the field
+ * shows no clear button of a browser's own. */
 export function ImportedFilterBar({
   filters,
   choices,
@@ -41,7 +45,7 @@ export function ImportedFilterBar({
       aria-label="Filter imported data"
       className="flex flex-wrap items-end gap-4"
     >
-      <Choice id="imported-search" label="Search" className="min-w-40 flex-1">
+      <Choice id="imported-search" label="Search" className="min-w-36 flex-1">
         <Input
           id="imported-search"
           ref={search}
@@ -51,6 +55,12 @@ export function ImportedFilterBar({
           onChange={(event) =>
             onChange({ ...filters, search: event.target.value })
           }
+          onKeyDown={(event) => {
+            // While an input method composes a word, the key is the method's own.
+            if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+              onChange({ ...filters, search: "" })
+            }
+          }}
         />
       </Choice>
       {FILTER_COLUMNS.map((column) => {

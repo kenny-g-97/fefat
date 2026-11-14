@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query"
 import { Link, useSearch } from "@tanstack/react-router"
 import {
   catalogQuery,
-  isSyncing,
   type StoredDataset,
   useCatalogSync,
   useSyncCover,
@@ -53,7 +52,6 @@ function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
             each.root === shown.instrument && each.provider === shown.provider
         )
       : undefined
-  const syncing = dataset !== undefined && isSyncing(syncs, dataset.root)
   return (
     <Page
       title={
@@ -64,7 +62,7 @@ function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
       description={
         dataset === undefined
           ? undefined
-          : "What FEAT holds of it, and how clean it is"
+          : "What FEAT holds of it, how clean it is, and its instrument's specification"
       }
       back={<BackLink to="/data">Back to Data</BackLink>}
       action={
@@ -72,7 +70,9 @@ function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
           <>
             <Button
               variant="ghost"
-              disabled={syncing || sync.isPending}
+              disabled={
+                standing(dataset, syncs) === "checking" || sync.isPending
+              }
               onClick={() => sync.mutate(dataset.root)}
             >
               Check quality

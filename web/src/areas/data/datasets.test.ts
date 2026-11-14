@@ -70,7 +70,13 @@ describe("importedDatasets", () => {
     const rows = importedDatasets(catalog)
 
     expect(
-      rows.map((row) => [row.root, row.provider, row.kinds, row.from, row.to])
+      rows.map((row) => [
+        row.root,
+        row.provider,
+        row.kinds.join(", "),
+        row.from,
+        row.to,
+      ])
     ).toEqual([
       [
         "MNQ",

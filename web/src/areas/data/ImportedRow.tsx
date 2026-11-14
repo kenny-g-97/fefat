@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router"
 import { cn } from "cn"
 import { ArrowRight } from "lucide-react"
+import { Fragment } from "react"
 import { IdentityChip } from "@/ui/identity-chip"
-import { type ImportedDataset, type Standing, TYPE_LABELS } from "./datasets"
+import type { DrawnRow } from "./imported-filters"
 import { QualityBadge } from "./QualityBadge"
 
 // shortcut: fixed tracks fit a root of 12 characters, a provider of 13, and a type of 11 on one
@@ -34,18 +35,16 @@ export function ImportedHead() {
 }
 
 /** An instrument's data from one provider as a row (web/DESIGN.md, Patterns, Link rows), which
- * opens its dataset's page: its instrument, its provider, its type, what it holds, its first
- * and last trade date, and how its quality stands. */
-export function ImportedRow({
-  dataset,
-  standing,
-}: Readonly<{ dataset: ImportedDataset; standing: Standing }>) {
+ * opens its dataset's page: the words its filters read, drawn as they are, its instrument, its
+ * provider, its type, the kinds of data it holds, its first and last trade date, and how its
+ * quality stands. */
+export function ImportedRow({ row }: Readonly<{ row: DrawnRow }>) {
   const words = "text-foreground-secondary"
   const figure = "text-right text-foreground-secondary"
   return (
     <Link
       to="/data/dataset"
-      search={{ instrument: dataset.root, provider: dataset.provider }}
+      search={{ instrument: row.instrument, provider: row.provider }}
       data-slot="row-link"
       data-testid="imported-row"
       className={cn(
@@ -57,26 +56,26 @@ export function ImportedRow({
         data-testid="imported-root"
         className="font-medium text-foreground group-hover:text-brand"
       >
-        {dataset.root}
+        {row.instrument}
       </span>
       <span>
-        <IdentityChip testId="provider-chip">{dataset.provider}</IdentityChip>
+        <IdentityChip testId="provider-chip">{row.provider}</IdentityChip>
       </span>
       <span data-testid="imported-type" className={words}>
-        {TYPE_LABELS[dataset.type]}
+        {row.type}
       </span>
       <span data-testid="imported-kinds" className={words}>
-        {dataset.kinds}
+        <Kinds kinds={row.kinds} />
       </span>
       <span data-testid="imported-from" className={figure}>
-        {dataset.from}
+        {row.from}
       </span>
       <span data-testid="imported-to" className={figure}>
         <span className="sr-only">to </span>
-        {dataset.to}
+        {row.to}
       </span>
       <span>
-        <QualityBadge standing={standing} />
+        <QualityBadge standing={row.standing} />
       </span>
       <ArrowRight
         aria-hidden="true"
@@ -84,4 +83,17 @@ export function ImportedRow({
       />
     </Link>
   )
+}
+
+/** The kinds of data a row holds, in a line that breaks between two of them and never inside
+ * one, where its column cannot hold them all. */
+function Kinds({ kinds }: Readonly<{ kinds: readonly string[] }>) {
+  return kinds.map((kind, index) => (
+    <Fragment key={`${index} ${kind}`}>
+      <span className="whitespace-nowrap">
+        {index < kinds.length - 1 ? `${kind},` : kind}
+      </span>
+      {index < kinds.length - 1 && " "}
+    </Fragment>
+  ))
 }

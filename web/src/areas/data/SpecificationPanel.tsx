@@ -114,7 +114,8 @@ function VersionRow({
   return (
     <TableRow className="h-10 hover:bg-muted">
       <TableCell className="py-0 pr-3 pl-6 font-medium text-foreground">
-        <span className="flex items-center gap-2">
+        {/* The chip drops under a long name where the table lacks the room for both. */}
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {version.root}
           {version.saved && <IdentityChip>your import</IdentityChip>}
         </span>

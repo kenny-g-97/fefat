@@ -6,10 +6,10 @@ import { ImportedDataPanels } from "./ImportedDataPanels"
 import { ImportedSourcesPanel } from "./ImportedSourcesPanel"
 
 /** The Data page (step 5.4): Import data in its header; the data the trader imported, a row an
- * instrument's from one provider with its type and its quality, under a search and a dropdown
- * for each column, which opens its dataset's page; the catalog's products without data; and the
- * sources the data came from, with the way to the guide's page. Each section loads, and fails,
- * on its own. */
+ * instrument's from one provider with its type and its quality, which opens its dataset's page,
+ * under a search and a dropdown each for the instrument, the provider, the type, and the
+ * quality; the catalog's products without data; and the sources the data came from, with the
+ * way to the guide's page. Each section loads, and fails, on its own. */
 export function DataPage() {
   const syncs = useSyncCover()
   return (

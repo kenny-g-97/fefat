@@ -19,7 +19,7 @@ export function SourcesPage() {
     >
       <Panel
         title="Source guide"
-        description="Each source FEAT has researched, with the file layouts it imports from it"
+        description="Each source FEAT has researched, with the presets that import its files"
       >
         <QueryBody query={sources}>
           {(guide) => (

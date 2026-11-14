@@ -19,15 +19,15 @@ export type CatalogProduct = CatalogStatus["products"][number]
 
 /** An instrument's data from one provider, as the trader imported it and as the Data page lists
  * it: its type, market data for every dataset the catalog lists, which Phase 10's alternative
- * data joins; the store's datasets of it, one per kind of data; those kinds in words; the first
- * and the last trade date among them; its quality, stale once a dataset outgrew the report the
- * others still read clean; and its product, where the catalog lists the instrument. */
+ * data joins; the store's datasets of it, one per kind of data; those kinds, each in words; the
+ * first and the last trade date among them; its quality, stale once a dataset outgrew the report
+ * the others still read clean; and its product, where the catalog lists the instrument. */
 export type ImportedDataset = Readonly<{
   root: string
   provider: string
   type: "market"
   stored: readonly [StoredDataset, ...StoredDataset[]]
-  kinds: string
+  kinds: readonly string[]
   from: string
   to: string
   quality: StoredDataset["quality"]
@@ -68,13 +68,14 @@ export const TYPE_LABELS: Readonly<Record<ImportedDataset["type"], string>> = {
  * its instrument. */
 export type Standing = StoredDataset["quality"] | "checking"
 
-/** A standing in words, as the quality badge and the list's Quality dropdown say it. */
+/** A standing in words, as the quality badge and the list's Quality dropdown say it, in the
+ * order the dropdown lists them: what asks for the trader first, what is fine last. */
 export const STANDING_LABELS: Readonly<Record<Standing, string>> = {
-  checking: "Checking",
   flagged: "Flagged",
-  clean: "Clean",
-  unchecked: "Unchecked",
   stale: "Stale",
+  unchecked: "Unchecked",
+  checking: "Checking",
+  clean: "Clean",
 }
 
 /** How `dataset`'s quality stands while `syncs` are under way: being checked where one covers
@@ -178,7 +179,7 @@ function imported(
     provider: held.name,
     type: "market",
     stored,
-    kinds: stored.map((each) => fidelityLabel(each.fidelity)).join(", "),
+    kinds: stored.map((each) => fidelityLabel(each.fidelity)),
     from: stored.reduce(
       (earliest, each) =>
         each.first_trade_date < earliest ? each.first_trade_date : earliest,

@@ -9,30 +9,27 @@ import {
   type ImportedDataset,
   importedDatasets,
   notImported,
-  type Standing,
-  standing,
-  STANDING_LABELS,
-  TYPE_LABELS,
 } from "./datasets"
 import { ImportedFilterBar } from "./ImportedFilterBar"
 import {
+  drawnRow,
   filterChoices,
-  type ListedRow,
+  type ImportedFilters,
+  KNOWN_VALUES,
   matching,
   NO_FILTERS,
 } from "./imported-filters"
 import { ImportedHead, ImportedRow } from "./ImportedRow"
 import { QueryBody } from "./QueryBody"
 
-/** A row as the list draws it and as its filters read it: the words of its cells. */
-type Listed = ListedRow &
-  Readonly<{ dataset: ImportedDataset; standing: Standing }>
-
 /** The data the trader imported, an instrument's from one provider in each row, which opens its
  * dataset's page, under its search and its dropdowns, and under it the catalog's products that
- * hold no data yet, both from `GET /v1/catalog` (web/DESIGN.md, Patterns, Link rows). */
+ * hold no data yet, both from `GET /v1/catalog` (web/DESIGN.md, Patterns, Link rows). What the
+ * search and the dropdowns ask is the page's alone, in its memory: it outlives a catalog that
+ * could not be read again, and leaving the page clears it. */
 export function ImportedDataPanels({ syncs }: Readonly<{ syncs: SyncCover }>) {
   const catalog = useQuery(catalogQuery)
+  const [filters, setFilters] = useState(NO_FILTERS)
   const missing = catalog.status === "success" ? notImported(catalog.data) : []
   return (
     <>
@@ -42,7 +39,12 @@ export function ImportedDataPanels({ syncs }: Readonly<{ syncs: SyncCover }>) {
       >
         <QueryBody query={catalog}>
           {(status) => (
-            <ImportedList datasets={importedDatasets(status)} syncs={syncs} />
+            <ImportedList
+              datasets={importedDatasets(status)}
+              syncs={syncs}
+              filters={filters}
+              onFilter={setFilters}
+            />
           )}
         </QueryBody>
       </Panel>
@@ -51,13 +53,20 @@ export function ImportedDataPanels({ syncs }: Readonly<{ syncs: SyncCover }>) {
   )
 }
 
-/** The rows that the search and the dropdowns keep. What they ask is the page's alone, in its
- * memory: leaving the page clears it. */
+type ImportedListProps = Readonly<{
+  datasets: readonly ImportedDataset[]
+  syncs: SyncCover
+  filters: ImportedFilters
+  onFilter: (filters: ImportedFilters) => void
+}>
+
+/** The rows that the search and the dropdowns keep, or what says that they keep none. */
 function ImportedList({
   datasets,
   syncs,
-}: Readonly<{ datasets: readonly ImportedDataset[]; syncs: SyncCover }>) {
-  const [filters, setFilters] = useState(NO_FILTERS)
+  filters,
+  onFilter,
+}: ImportedListProps) {
   const search = useRef<HTMLInputElement>(null)
   if (datasets.length === 0) {
     return (
@@ -66,39 +75,49 @@ function ImportedList({
       </p>
     )
   }
-  const rows = datasets.map((dataset) => listed(dataset, syncs))
+  const rows = datasets.map((dataset) => drawnRow(dataset, syncs))
   const shown = matching(rows, filters)
   return (
     <div className="flex flex-col gap-5">
       <ImportedFilterBar
         filters={filters}
-        choices={filterChoices(rows, filters)}
+        choices={filterChoices(rows, filters, KNOWN_VALUES)}
         search={search}
-        onChange={setFilters}
+        onChange={onFilter}
       />
-      {shown.length === 0 ? (
-        <div className="flex flex-col items-start gap-3">
-          <p role="status" className="text-foreground-secondary">
-            No imported data matches the search and the filters.
-          </p>
+      {/* On one line, as tall as the rows' header, which comes back in its place: the button
+          leaves under the pointer, and a second click must land on nothing that opens, so in a
+          narrow card the message wraps and the button never drops under it. The message's place
+          stays in the page, so that a screen reader hears it arrive. */}
+      <div
+        className={
+          shown.length === 0 ? "flex min-h-10 items-center gap-3" : "sr-only"
+        }
+      >
+        <p role="status" className="text-foreground-secondary">
+          {shown.length === 0 && "No imported data matches the filters."}
+        </p>
+        {shown.length === 0 && (
           <Button
             variant="ghost"
+            className="shrink-0"
             onClick={() => {
-              setFilters(NO_FILTERS)
+              onFilter(NO_FILTERS)
               // The button leaves with its message, and the focus would go nowhere.
               search.current?.focus()
             }}
           >
             Clear filters
           </Button>
-        </div>
-      ) : (
+        )}
+      </div>
+      {shown.length > 0 && (
         <div className="-mx-2 flex flex-col gap-1">
           <ImportedHead />
           <ul className="flex flex-col gap-1">
             {shown.map((row) => (
               <li key={`${row.instrument} ${row.provider}`}>
-                <ImportedRow dataset={row.dataset} standing={row.standing} />
+                <ImportedRow row={row} />
               </li>
             ))}
           </ul>
@@ -106,21 +125,6 @@ function ImportedList({
       )}
     </div>
   )
-}
-
-function listed(dataset: ImportedDataset, syncs: SyncCover): Listed {
-  const stands = standing(dataset, syncs)
-  return {
-    dataset,
-    standing: stands,
-    instrument: dataset.root,
-    provider: dataset.provider,
-    type: TYPE_LABELS[dataset.type],
-    data: dataset.kinds,
-    from: dataset.from,
-    to: dataset.to,
-    quality: STANDING_LABELS[stands],
-  }
 }
 
 function NotImported({
