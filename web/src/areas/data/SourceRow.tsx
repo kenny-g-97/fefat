@@ -1,7 +1,7 @@
-import { ChevronRight } from "lucide-react"
 import type { ReactNode } from "react"
 import type { Source } from "@/api/catalog"
 import { ExternalLink, TextLink } from "@/ui/text-link"
+import { DisclosureRow } from "./DisclosureRow"
 
 const KINDS: Readonly<Record<Source["kind"], string>> = {
   vendor: "Vendor",
@@ -23,24 +23,12 @@ export function SourceRow({ source }: Readonly<{ source: Source }>) {
     (preset) => preset.status === "available"
   )
   return (
-    <details
-      data-testid="source-row"
-      className="group border-b last:border-b-0"
+    <DisclosureRow
+      testId="source-row"
+      name={source.name}
+      note={KINDS[source.kind]}
+      aside={presetCount(available.length)}
     >
-      <summary className="-mx-2 flex h-10 cursor-pointer list-none items-center gap-3 rounded-xl px-2">
-        <ChevronRight className="size-4 shrink-0 text-foreground-secondary transition-transform group-open:rotate-90" />
-        <span className="font-medium text-foreground">{source.name}</span>
-        <span className="text-xs text-muted-foreground">
-          {KINDS[source.kind]}
-        </span>
-        {available.length > 0 && (
-          <span className="ml-auto text-xs text-muted-foreground">
-            {available.length === 1
-              ? "1 preset"
-              : `${available.length} presets`}
-          </span>
-        )}
-      </summary>
       <dl className="grid max-w-4xl grid-cols-[10rem_1fr] gap-x-6 gap-y-3 pt-2 pb-5 pl-7">
         <Term label="Offers">{source.offers}</Term>
         <Term label="Cost">{source.cost}</Term>
@@ -82,8 +70,16 @@ export function SourceRow({ source }: Readonly<{ source: Source }>) {
           </Term>
         )}
       </dl>
-    </details>
+    </DisclosureRow>
   )
+}
+
+/** How many of a source's file layouts FEAT imports, in words, or nothing where it reads none. */
+function presetCount(available: number): string | undefined {
+  if (available === 0) {
+    return undefined
+  }
+  return available === 1 ? "1 preset" : `${available} presets`
 }
 
 function Term({
