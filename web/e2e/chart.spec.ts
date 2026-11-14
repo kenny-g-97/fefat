@@ -187,6 +187,8 @@ test("a product's Chart opens its bars in the sign colours, its readout the API'
     "data-panes",
     "2"
   )
+  // The pointer off Chart style, where the dataset's Chart link left it, for the pictures.
+  await page.mouse.move(700, 36)
   await screenshot(page, "data-chart")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await expect.poll(() => chartDraws(page, "#0a7a4c")).toBe(true)

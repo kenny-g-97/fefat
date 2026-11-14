@@ -799,7 +799,7 @@ test("a store without data invites the import, and lists the catalog's products"
   await screenshot(page, "data-catalog-empty")
 })
 
-test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back, and the chart's style", async ({
+test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back, its style, and its frame", async ({
   loggedIn: page,
 }) => {
   await page.goto("/")
@@ -843,4 +843,41 @@ test("step 5.4's checks, recorded: Check quality on MES, its chart scrolled back
     .getByRole("button", { name: "Close" })
     .click()
   await page.waitForTimeout(PAUSE_MS)
+
+  // From the builder's third check: the chart's frame pulled by its right edge, its bottom
+  // edge, and its corner; the size kept through another timeframe and a reload; and a double
+  // click on the corner, which fills the page again. The settings' About is pictured, not
+  // recorded: the data folder's path stands over it, and a video cannot be masked (D-80).
+  const corner = page.getByTestId("frame-corner")
+  const pulls: readonly (readonly [Locator, number, number])[] = [
+    [page.getByRole("separator", { name: "Chart width" }), -240, 0],
+    [page.getByRole("separator", { name: "Chart height" }), 0, -100],
+    [corner, 80, 60],
+  ]
+  for (const [handle, dx, dy] of pulls) {
+    const box = await handle.boundingBox()
+    if (box === null) {
+      throw new Error("Expected the frame's handle on the page, got none.")
+    }
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.waitForTimeout(PAUSE_MS)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y + dy, { steps: 30 })
+    await page.mouse.up()
+    await page.waitForTimeout(PAUSE_MS)
+  }
+  await page.getByLabel("Timeframe").click()
+  await page.getByRole("option", { name: "1h" }).click()
+  await expect(
+    page.getByRole("application", { name: "MES, 1-hour bars" })
+  ).toBeVisible()
+  await chartReady(page)
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await page.reload()
+  await chartReady(page)
+  await page.waitForTimeout(PAUSE_MS * 2)
+  await corner.dblclick()
+  await page.waitForTimeout(PAUSE_MS * 2)
 })
