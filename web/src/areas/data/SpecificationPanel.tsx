@@ -19,7 +19,7 @@ const KINDS: Readonly<Record<InstrumentVersion["kind"], string>> = {
   spot: "Spot",
 }
 const COLUMNS: readonly Readonly<{ label: string; numeric: boolean }>[] = [
-  { label: "Root", numeric: false },
+  { label: "Instrument", numeric: false },
   { label: "Kind", numeric: false },
   { label: "Tick", numeric: true },
   { label: "Point value", numeric: true },
@@ -29,54 +29,66 @@ const COLUMNS: readonly Readonly<{ label: string; numeric: boolean }>[] = [
   { label: "In force", numeric: true },
 ]
 
-/** Every version of every instrument's specification (web/DESIGN.md, Patterns, Tables), FEAT's
- * and those an import saved, with the figures the API gives written as their decimals. */
-export function InstrumentsPanel() {
+/** An instrument's specification on its dataset's page (web/DESIGN.md, Patterns, Dataset page):
+ * every version of it, FEAT's or the one an import saved, with the figures the API gives
+ * written as their decimals, the tick and the point value a backtest's P&L is counted in. */
+export function SpecificationPanel({ root }: Readonly<{ root: string }>) {
   const instruments = useQuery(instrumentsQuery)
   return (
     <Panel
-      title="Instruments"
-      description="Each instrument's specification, FEAT's and those your imports saved, by the dates it is in force"
+      title="Specification"
+      description="The instrument's specification by the dates it is in force, FEAT's or the one your import saved"
     >
       <QueryBody query={instruments}>
         {(versions) => (
-          <div className="-mx-6">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  {COLUMNS.map(({ label, numeric }, index) => (
-                    <TableHead
-                      key={label}
-                      className={`px-3 ${numeric ? "text-right" : ""} ${index === 0 ? "pl-6" : ""} ${index === COLUMNS.length - 1 ? "pr-6" : ""}`}
-                    >
-                      {label}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <InstrumentRows versions={versions} />
-            </Table>
-          </div>
+          <Versions
+            root={root}
+            versions={versions.filter((version) => version.root === root)}
+          />
         )}
       </QueryBody>
     </Panel>
   )
 }
 
-function InstrumentRows({
+function Versions({
+  root,
   versions,
-}: Readonly<{ versions: readonly InstrumentVersion[] }>) {
+}: Readonly<{ root: string; versions: readonly InstrumentVersion[] }>) {
+  if (versions.length === 0) {
+    return (
+      <p className="text-foreground-secondary">
+        FEAT holds no specification of {root}.
+      </p>
+    )
+  }
   const places = placesOf(versions)
   return (
-    <TableBody>
-      {versions.map((version) => (
-        <InstrumentRow
-          key={`${version.root} ${version.valid_from}`}
-          version={version}
-          places={places}
-        />
-      ))}
-    </TableBody>
+    <div className="-mx-6">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            {COLUMNS.map(({ label, numeric }, index) => (
+              <TableHead
+                key={label}
+                className={`px-3 ${numeric ? "text-right" : ""} ${index === 0 ? "pl-6" : ""} ${index === COLUMNS.length - 1 ? "pr-6" : ""}`}
+              >
+                {label}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {versions.map((version) => (
+            <VersionRow
+              key={version.valid_from}
+              version={version}
+              places={places}
+            />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   )
 }
 
@@ -93,7 +105,7 @@ function placesOf(versions: readonly InstrumentVersion[]): Places {
   }
 }
 
-function InstrumentRow({
+function VersionRow({
   version,
   places,
 }: Readonly<{ version: InstrumentVersion; places: Places }>) {
