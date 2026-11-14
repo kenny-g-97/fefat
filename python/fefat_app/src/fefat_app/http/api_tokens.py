@@ -41,8 +41,8 @@ def live_api_tokens(container: ContainerDependency) -> tuple[ApiToken, ...]:
 
 @router.post("/api-tokens", status_code=201, responses=problem_responses(401, 403, 409, 422))
 def create_api_token(request: ApiTokenRequest, container: ContainerDependency) -> IssuedApiToken:
-    """Make an API token, shown in this response alone; refused with 409 for a name a token
-    has or had."""
+    """Make an API token, shown in this response alone; refused with 409 for a name a live
+    token has, while a revoked token's name is free."""
     try:
         token = container.api_tokens.create(request.name)
     except TokenNameInUseError as refused:

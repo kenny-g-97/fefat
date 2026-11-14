@@ -18,6 +18,7 @@ from typing import Any, Protocol
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
+from fefat_app.chart_style import ChartStyle
 from fefat_app.execution import (
     ExecutionResult,
     ExecutionSpec,
@@ -82,7 +83,8 @@ class ApiToken(BaseModel):
 
 
 class TokenNameInUseError(ValueError):
-    """A new API token under a name a token has, or had before its revocation."""
+    """A new API token under a name a live token has; a revoked token's name is free (step
+    5.4)."""
 
     def __init__(self, name: str) -> None:
         super().__init__(f"Expected a new token name, got {name!r}, which a token has.")
@@ -125,8 +127,8 @@ class AccessRecords(Protocol):
         ...
 
     def add_api_token(self, name: str, token_hash: str, created_at: datetime) -> None:
-        """Keep the API token of SHA-256 `token_hash` under `name`; a name in use is refused
-        with `TokenNameInUseError`."""
+        """Keep the API token of SHA-256 `token_hash` under `name`; a name a live token has is
+        refused with `TokenNameInUseError`."""
         ...
 
     def api_token_by_hash(self, token_hash: str) -> ApiToken | None:
@@ -158,7 +160,8 @@ class Theme(StrEnum):
 
 class Preferences(Protocol):
     """What the trader chooses in the app, which the app keeps for them in its database's
-    `settings` table (D-83), never in `config.toml`: the theme so far."""
+    `settings` table (D-83), never in `config.toml`: the theme, and from step 5.4 the charts'
+    style."""
 
     def theme(self) -> Theme:
         """The theme chosen, dark before any choice."""
@@ -166,6 +169,14 @@ class Preferences(Protocol):
 
     def replace_theme(self, theme: Theme) -> None:
         """Keep `theme` as the theme, in place of any chosen before."""
+        ...
+
+    def chart_style(self) -> ChartStyle:
+        """The charts' style chosen, FEAT's before any choice."""
+        ...
+
+    def replace_chart_style(self, style: ChartStyle) -> None:
+        """Keep `style` as the charts' style, in place of any chosen before."""
         ...
 
 

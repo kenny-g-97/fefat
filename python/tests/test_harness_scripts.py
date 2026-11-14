@@ -9,9 +9,11 @@ import subprocess
 import sys
 import tempfile
 import threading
+from datetime import date
 from pathlib import Path
 
 import keyring
+import polars as pl
 import pytest
 from keyring.backends import null
 
@@ -19,6 +21,8 @@ import dev
 import e2e_server
 from fefat.backtest import saved_runs_in
 from fefat.config import resolve_paths
+from fefat.market.status import product_status
+from fefat.market.store import Store
 from fefat_app import database_commands
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.library_index import LibraryTables
@@ -171,6 +175,40 @@ def test_the_seed_saves_the_demo_strategy_and_its_first_run_indexed(tmp_path: Pa
     assert (run.strategy.name, run.status, run.run_key) == ("demo", "succeeded", saved.hash)
     assert saved.record.summary.trades >= 3
     assert jobs == ()
+
+
+@pytest.mark.usefixtures("seeding")
+def test_the_seed_writes_a_year_of_mes_a_product_of_the_catalog_unchecked(tmp_path: Path) -> None:
+    # Step 5.4: a dataset page's Check quality needs a product of the catalog, and the chart a
+    # year of 5-minute bars to scroll back through, which the fixtures' ES and bitcoin are not.
+    e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
+
+    paths = resolve_paths(os.environ)
+    status = product_status(Store(paths.data_dir), paths.reports_dir)
+    (mes,) = status.filter(pl.col("root") == "MES").iter_rows(named=True)
+    assert {name: mes[name] for name in ("provider", "schema", "coverage", "quality")} == {
+        "provider": "synthetic",
+        "schema": "ohlcv-1m",
+        "coverage": "partial",
+        "quality": "unchecked",
+    }
+    assert (mes["first_trade_date"], mes["last_trade_date"]) == (
+        date(2025, 4, 1),
+        date(2026, 3, 31),
+    )
+    assert mes["contracts"] == 5
+
+
+@pytest.mark.usefixtures("seeding")
+def test_a_seed_on_a_named_data_folder_writes_no_market_data_into_it(tmp_path: Path) -> None:
+    # A guard: `just dev` with FEFAT_DATA_DIR serves the trader's own data, where nothing
+    # synthetic may land.
+    named = tmp_path / "their-data"
+    named.mkdir()
+
+    e2e_server.seed(tmp_path / "fefat-dev", 8765, "horse battery", data_dir=named)
+
+    assert list(named.iterdir()) == []
 
 
 @pytest.mark.usefixtures("seeding")

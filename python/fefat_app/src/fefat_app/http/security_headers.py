@@ -1,7 +1,8 @@
 """The headers every response carries (`01-architecture.md` section 8, D-86): the content
-security policy, which lets a page load nothing from elsewhere and images only from the app or
-from data and blob URLs, unless a route sets its own, as the API's docs do; `nosniff`, a
-same-origin referrer, no framing; and under `/v1/`, no caching.
+security policy, which lets a page load nothing from elsewhere, images only from the app or from
+data and blob URLs, and styles from the app or written into the page, while its scripts stay the
+app's own files, unless a route sets its own, as the API's docs do; `nosniff`, a same-origin
+referrer, no framing; and under `/v1/`, no caching.
 
 It wraps the whole app, outside Starlette's handler of failures, so that a 500 carries them too;
 a plain ASGI class, which never buffers a body."""
@@ -11,8 +12,12 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from fefat_app.http.api_prefix import is_api_path
 
-CONTENT_SECURITY_POLICY = "default-src 'self'; img-src 'self' data: blob:"
-"""Section 8's policy: nothing from elsewhere, no remote image in the agent's chat."""
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'"
+)
+"""Section 8's policy: nothing from elsewhere, no remote image in the agent's chat, and from
+step 5.4 the style elements that Radix's overlays and Lightweight Charts write, scripts staying
+`'self'` alone (D-93); a nonce for each page waits in `BACKLOG.md`."""
 SECURITY_HEADERS = (
     ("Content-Security-Policy", CONTENT_SECURITY_POLICY),
     ("X-Content-Type-Options", "nosniff"),

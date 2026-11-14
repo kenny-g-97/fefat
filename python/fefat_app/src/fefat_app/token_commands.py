@@ -5,8 +5,9 @@
     fefat token revoke <name>
 
 `create` prints the token once, under its name, for a request to send as `Authorization: Bearer
-<token>`. The app's database keeps only the token's SHA-256, so a lost token is replaced by a
-new one under another name; `revoke` makes every request refuse it from then on."""
+<token>`. The app's database keeps only the token's SHA-256, so a lost token is revoked and
+replaced by a new one, which may take its name (step 5.4); `revoke` makes every request refuse it
+from then on."""
 
 import argparse
 import os

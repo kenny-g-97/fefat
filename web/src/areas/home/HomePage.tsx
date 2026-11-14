@@ -1,6 +1,5 @@
 import { Link, type LinkProps } from "@tanstack/react-router"
 import {
-  ArrowRight,
   ChartLine,
   Database,
   FlaskConical,
@@ -9,6 +8,7 @@ import {
 } from "lucide-react"
 import { Page } from "@/ui/page"
 import { Panel } from "@/ui/panel"
+import { TextLink } from "@/ui/text-link"
 import { RunningJobsWidget } from "./RunningJobsWidget"
 
 type Start = Readonly<{ label: string; to: LinkProps["to"]; icon: LucideIcon }>
@@ -64,22 +64,6 @@ export function HomePage() {
         </Panel>
       </div>
     </Page>
-  )
-}
-
-/** The skill's text link to another page, in the second accent with its arrow (D-89). */
-function TextLink({
-  to,
-  children,
-}: Readonly<{ to: LinkProps["to"]; children: string }>) {
-  return (
-    <Link
-      to={to}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl font-semibold text-brand-secondary underline-offset-4 hover:underline"
-    >
-      {children}
-      <ArrowRight className="size-4" />
-    </Link>
   )
 }
 

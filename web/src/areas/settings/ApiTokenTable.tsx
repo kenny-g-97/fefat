@@ -15,9 +15,6 @@ import {
 
 type ApiToken = components["schemas"]["ApiToken"]
 
-const HEAD =
-  "h-10 px-3 text-xs font-semibold tracking-[0.125rem] text-foreground-secondary uppercase"
-
 /** The live API tokens, one 40 px row each: the name, when it was made and last used, and
  * its revocation, which asks once inline, since it cannot be undone. */
 export function ApiTokenTable({
@@ -38,9 +35,9 @@ export function ApiTokenTable({
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className={`${HEAD} pl-6`}>Name</TableHead>
-            <TableHead className={`${HEAD} text-right`}>Created</TableHead>
-            <TableHead className={`${HEAD} text-right`}>Last used</TableHead>
+            <TableHead className="px-3 pl-6">Name</TableHead>
+            <TableHead className="px-3 text-right">Created</TableHead>
+            <TableHead className="px-3 text-right">Last used</TableHead>
             <TableHead className="h-10 w-52 pr-6">
               <span className="sr-only">Revocation</span>
             </TableHead>

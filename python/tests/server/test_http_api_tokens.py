@@ -53,6 +53,19 @@ def test_a_revoked_token_is_refused_and_leaves_the_list(
     assert again.json()["detail"] == "Expected the name of a live API token, got 'notebook'."
 
 
+def test_a_revoked_tokens_name_names_a_new_token(client: TestClient, container: Container) -> None:
+    # Step 5.4 (from `BACKLOG.md`): the name of a token revoked, by hand or by a password
+    # change, is free again.
+    csrf = logged_in(client, container)
+    client.post("/v1/api-tokens", json={"name": "notebook"}, headers=csrf)
+    client.delete("/v1/api-tokens/notebook", headers=csrf)
+
+    renewed = client.post("/v1/api-tokens", json={"name": "notebook"}, headers=csrf)
+
+    assert renewed.status_code == 201
+    assert [each["name"] for each in client.get("/v1/api-tokens").json()] == ["notebook"]
+
+
 def test_a_name_in_use_or_outside_the_pattern_is_refused(
     client: TestClient, container: Container
 ) -> None:

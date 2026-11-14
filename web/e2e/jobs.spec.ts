@@ -1,7 +1,12 @@
 import type { Request } from "@playwright/test"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
-import { cancelActiveJobs, progressOf, startDemoJobs } from "./support/jobs.ts"
+import {
+  aJob,
+  cancelActiveJobs,
+  progressOf,
+  startDemoJobs,
+} from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 
@@ -13,34 +18,7 @@ import { screenshot } from "./support/screenshots.ts"
 // why, the card failing on its own. A worker of the pool starts a second or more after the
 // first job, so the first wait is long. Each test cancels what it started.
 
-const STARTED = "2026-11-09T10:00:00Z"
 const ENDED = "2026-11-09T10:01:00Z"
-
-function aJob(
-  id: string,
-  status: string,
-  changes: Readonly<Record<string, unknown>> = {}
-) {
-  return {
-    id,
-    kind: "demo",
-    payload: { seconds: 60 },
-    status,
-    progress: 0,
-    message: null,
-    attempt: 1,
-    max_attempts: 3,
-    worker_pid: null,
-    lease_expires_at: null,
-    cancel_requested_at: null,
-    result: null,
-    error: null,
-    created_at: STARTED,
-    started_at: null,
-    finished_at: null,
-    ...changes,
-  }
-}
 
 /** One job of each status, newest first as the server lists them, the ended among the active. */
 const EVERY_STATUS = [

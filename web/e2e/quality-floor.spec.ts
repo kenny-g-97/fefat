@@ -15,6 +15,10 @@ const PATHS = [
   "/prop",
   "/agent",
   "/data",
+  "/data/dataset?instrument=MES&provider=synthetic",
+  "/data/chart?instrument=MES",
+  "/data/import",
+  "/data/sources",
   "/settings",
   "/no-such-page",
 ]
@@ -33,6 +37,8 @@ test("no page scrolls sideways at 1280 px or logs an error", async ({
   for (const path of PATHS) {
     await page.goto(path)
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    // Once its requests are answered, so that a page is measured with what it loads drawn.
+    await page.waitForLoadState("networkidle")
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
     )
@@ -130,18 +136,24 @@ test("in a short window the sidebar scrolls, so Log out is reached without scrol
   expect(await page.evaluate(() => window.scrollY)).toBe(0)
 })
 
-test("reduced motion stops every transition", async ({ loggedIn: page }) => {
+test("reduced motion stops every transition, on every page", async ({
+  loggedIn: page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
-  await page.goto("/")
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
-
-  const moving = await page.evaluate(() =>
-    [...document.querySelectorAll("a, button, input")]
-      .map((element) => getComputedStyle(element).transitionDuration)
-      .filter((duration) =>
-        duration.split(",").some((part) => parseFloat(part) > 0)
-      )
-  )
+  const moving: string[] = []
+  for (const path of PATHS) {
+    await page.goto(path)
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible()
+    await page.waitForLoadState("networkidle")
+    const found = await page.evaluate(() =>
+      [...document.querySelectorAll("a, button, input, summary")]
+        .map((element) => getComputedStyle(element).transitionDuration)
+        .filter((duration) =>
+          duration.split(",").some((part) => parseFloat(part) > 0)
+        )
+    )
+    moving.push(...found.map((duration) => `${path}: ${duration}`))
+  }
   expect(moving).toEqual([])
 })
 

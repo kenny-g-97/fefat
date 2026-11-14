@@ -6,9 +6,9 @@ import {
   jobsQuery,
   KIND_LABELS,
 } from "@/api/jobs"
-import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
 import { PercentBar } from "@/ui/percent-bar"
+import { SectionFailure } from "@/ui/section-failure"
 
 const EMPTY =
   "No jobs running. Imports, backtests, and studies show their progress here while they run."
@@ -31,14 +31,11 @@ function RunningJobs() {
   }
   if (jobs.status === "error") {
     return (
-      <div className="flex min-h-24 flex-col items-start justify-center gap-3">
-        <p role="alert" className="text-negative">
-          {jobs.error.message}
-        </p>
-        <Button variant="ghost" onClick={() => void jobs.refetch()}>
-          Try again
-        </Button>
-      </div>
+      <SectionFailure
+        error={jobs.error}
+        onRetry={() => void jobs.refetch()}
+        className="min-h-24 justify-center"
+      />
     )
   }
   const running = jobs.data.filter(isActive)

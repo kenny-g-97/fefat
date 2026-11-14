@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react"
 import type { Theme } from "@/api/settings"
 
 const CROSS_FADE_MS = 200
@@ -7,6 +8,25 @@ function isShown(theme: Theme) {
   return (
     document.documentElement.classList.contains("dark") === (theme === "dark")
   )
+}
+
+/** The theme the page shows now, the class on the root element, which a canvas that paints
+ * its own colours, such as a chart's, follows; the specs switch it there too. */
+export function useShownTheme(): Theme {
+  return useSyncExternalStore(onThemeShown, shownTheme)
+}
+
+function onThemeShown(changed: () => void): () => void {
+  const observer = new MutationObserver(changed)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  })
+  return () => observer.disconnect()
+}
+
+function shownTheme(): Theme {
+  return document.documentElement.classList.contains("dark") ? "dark" : "light"
 }
 
 /** Paint `theme` at once, as the class `dark` on the root element that web/DESIGN.md's tokens

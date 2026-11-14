@@ -62,7 +62,7 @@ INDEX_TABLES = [
     "strategy_versions",
     "strategy_version_features",
 ]
-LATEST_REVISION = "0005"
+LATEST_REVISION = "0006"
 SAVED_AT = datetime(2026, 11, 6, 12, 30, tzinfo=UTC)
 
 
@@ -152,7 +152,8 @@ def index_one_of_each(engine: Engine) -> None:
 
 
 def log_in_once(engine: Engine) -> None:
-    """A login session and an API token, the app's own state of step 4.2."""
+    """A login session and an API token, the app's own state of step 4.2, with a revoked token
+    of the same name, which step 5.4 allows."""
     with Session(engine) as session, session.begin():
         session.add(
             LoginSessionRow(
@@ -160,6 +161,11 @@ def log_in_once(engine: Engine) -> None:
                 created_at=SAVED_AT,
                 expires_at=SAVED_AT,
                 last_seen_at=SAVED_AT,
+            )
+        )
+        session.add(
+            ApiTokenRow(
+                name="notebook", token_hash="9" * 64, created_at=SAVED_AT, revoked_at=SAVED_AT
             )
         )
         session.add(ApiTokenRow(name="notebook", token_hash="e" * 64, created_at=SAVED_AT))
@@ -205,6 +211,31 @@ def test_the_migrations_make_the_tables_the_models_describe(engine: Engine) -> N
         differences = compare_metadata(context, Base.metadata)
 
     assert differences == []
+
+
+def test_two_live_tokens_never_share_a_name_while_revoked_ones_may(engine: Engine) -> None:
+    # Step 5.4 (from `BACKLOG.md`): the name is unique among the live tokens alone, which the
+    # index's condition holds and a comparison with the models cannot see.
+    upgrade_schema(engine)
+    with Session(engine) as session, session.begin():
+        for hashed in ("1", "2"):
+            session.add(
+                ApiTokenRow(
+                    name="notebook",
+                    token_hash=hashed * 64,
+                    created_at=SAVED_AT,
+                    revoked_at=SAVED_AT,
+                )
+            )
+        session.add(ApiTokenRow(name="notebook", token_hash="3" * 64, created_at=SAVED_AT))
+
+    second_live = ApiTokenRow(name="notebook", token_hash="4" * 64, created_at=SAVED_AT)
+    with (
+        pytest.raises(IntegrityError, match=r"UNIQUE constraint failed: api_tokens\.name"),
+        Session(engine) as session,
+        session.begin(),
+    ):
+        session.add(second_live)
 
 
 def test_schema_changes_run_in_one_transaction_with_the_rest(engine: Engine) -> None:
