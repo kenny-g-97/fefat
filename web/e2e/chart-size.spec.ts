@@ -481,6 +481,24 @@ test("the edges follow the chart in the Tab order, say their size, and move by t
   await expectSize(card, filling)
 })
 
+test("a corner pulled sideways sets the width alone, a height that fills left to fill", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(CHART)
+  await chartReady(page)
+  const { card, corner } = edges(page)
+  const filling = await boxOf(card)
+  const width = Math.floor(filling.width)
+
+  // A hand that pulls the corner left wanders a few pixels down.
+  await drag(page, corner, -200, 5)
+
+  await expectSize(card, { width: width - 200, height: filling.height })
+  expect(await kept(page)).toBe(
+    JSON.stringify({ width: width - 200, height: null })
+  )
+})
+
 test("a chart set taller than the window lengthens its page, which the wheel then scrolls", async ({
   loggedIn: page,
 }) => {

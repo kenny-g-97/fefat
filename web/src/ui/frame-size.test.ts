@@ -58,6 +58,79 @@ describe("draggedSize", () => {
       draggedSize(set, "corner", narrow, { dx: 320, dy: 0 }, LIMITS)
     ).toEqual({ width: null, height: 455 })
   })
+
+  it("keeps a height that fills until its edge has moved more than 8 px", () => {
+    // A corner pulled sideways wobbles a little up or down: it pins no height, where a chart a
+    // pixel taller than its page would lengthen the page and stop following the window.
+    expect(
+      draggedSize(FILLS, "corner", FILLING, { dx: -200, dy: 3 }, LIMITS)
+    ).toEqual({ width: 760, height: null })
+    expect(
+      draggedSize(FILLS, "corner", FILLING, { dx: -200, dy: -8 }, LIMITS)
+    ).toEqual({ width: 760, height: null })
+    expect(
+      draggedSize(FILLS, "bottom", FILLING, { dx: 0, dy: 9 }, LIMITS)
+    ).toEqual({ width: null, height: 464 })
+    // A height the trader set moves with the smallest pull.
+    const set = { width: null, height: 400 }
+    expect(
+      draggedSize(
+        set,
+        "bottom",
+        { width: 960, height: 400 },
+        { dx: 0, dy: 3 },
+        LIMITS
+      )
+    ).toEqual({ width: null, height: 403 })
+  })
+})
+
+describe("a move that leaves an edge where it is drawn", () => {
+  // Beside the open style drawer the chart's column is its least width, 576 px.
+  const narrow = { ...LIMITS, mostWidth: 576 }
+  const atLeast = { width: 576, height: 455 }
+  const pinned = { width: 576, height: null }
+
+  it("changes nothing, so that a frame that fills keeps filling and a set size stays set", () => {
+    expect(
+      draggedSize(FILLS, "right", atLeast, { dx: -100, dy: 0 }, narrow)
+    ).toEqual(FILLS)
+    expect(keyedSize(FILLS, "right", "ArrowLeft", atLeast, narrow)).toEqual(
+      FILLS
+    )
+    expect(keyedSize(FILLS, "right", "Home", atLeast, narrow)).toEqual(FILLS)
+    expect(
+      draggedSize(pinned, "right", atLeast, { dx: -100, dy: 0 }, narrow)
+    ).toEqual(pinned)
+    expect(keyedSize(pinned, "right", "ArrowLeft", atLeast, narrow)).toEqual(
+      pinned
+    )
+    // A width set wider than this column, drawn at the column's, stays set when its edge is
+    // pushed at the column: a corner pulled down by a hand that wanders a pixel right.
+    const wide = { width: 760, height: null }
+    expect(
+      draggedSize(wide, "corner", atLeast, { dx: 1, dy: 40 }, narrow)
+    ).toEqual({ width: 760, height: 495 })
+    expect(keyedSize(wide, "right", "ArrowRight", atLeast, narrow)).toEqual(
+      wide
+    )
+    // A chart that fills at its least height keeps filling when pulled shorter.
+    const short = { width: 960, height: 240 }
+    expect(
+      draggedSize(FILLS, "bottom", short, { dx: 0, dy: -50 }, LIMITS)
+    ).toEqual(FILLS)
+    expect(keyedSize(FILLS, "bottom", "Home", short, LIMITS)).toEqual(FILLS)
+  })
+
+  it("keeps a width within 8 px of its column the column's, at the least width too", () => {
+    const column = { ...LIMITS, mostWidth: 580 }
+    const drawn = { width: 580, height: 455 }
+
+    expect(keyedSize(FILLS, "right", "ArrowLeft", drawn, column)).toEqual(FILLS)
+    expect(
+      draggedSize(FILLS, "right", drawn, { dx: -100, dy: 0 }, column)
+    ).toEqual(FILLS)
+  })
 })
 
 describe("keyedSize", () => {
