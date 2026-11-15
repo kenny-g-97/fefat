@@ -265,6 +265,12 @@ def test_a_range_as_one_file_or_as_two_that_overlap_in_either_order_leaves_the_s
         assert sum(len(rows) for rows in kept) == len(stream)
         assert stored_rows(stores["a then b"]) == whole
         assert stored_rows(stores["b then a"]) == whole
+        # Done means 2, a merge run a second time: the stream as one file, every record of
+        # which the merged store holds, writes no partition, digest, or dataset.json.
+        merged = stores["a then b"]
+        before = files_but_the_originals(merged)
+        layout.imported(files["whole"], merged, cache)
+        assert files_but_the_originals(merged) == before
 
     either_order_gives_the_whole()
 
@@ -279,6 +285,12 @@ def tree(folder: Path) -> dict[str, tuple[str, int]]:
         for path in sorted(folder.rglob("*"))
         if path.is_file()
     }
+
+
+def files_but_the_originals(store: Store) -> dict[str, tuple[str, int]]:
+    """The store's files, each with its hash and time, without the originals kept under `raw`,
+    where every import keeps its own."""
+    return {path: file for path, file in tree(store.folder).items() if not path.startswith("raw/")}
 
 
 def es_bars(
