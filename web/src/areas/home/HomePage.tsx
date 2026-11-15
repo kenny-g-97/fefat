@@ -18,7 +18,7 @@ const STARTS: readonly Start[] = [
   { label: "Build a strategy", to: "/strategies", icon: Workflow },
   { label: "Open the feature lab", to: "/lab", icon: FlaskConical },
   { label: "Run a backtest", to: "/runs", icon: ChartLine },
-  { label: "Import data", to: "/data", icon: Database },
+  { label: "Import data", to: "/data/import", icon: Database },
 ]
 
 /** The page the app opens on (the design brief's home): a card for each kind of work, each

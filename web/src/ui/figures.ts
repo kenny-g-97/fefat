@@ -47,3 +47,13 @@ export function formatCount(count: number): string {
 function isWhole(scaled: number): boolean {
   return Math.abs(scaled - Math.round(scaled)) < 1e-6
 }
+
+/** A count of `noun`, with its thousands apart and the noun's `plural` where it is not one:
+ * `1 session`, `2,760 records`, `3 mismatches`. */
+export function counted(
+  count: number,
+  noun: string,
+  plural = `${noun}s`
+): string {
+  return `${formatCount(count)} ${count === 1 ? noun : plural}`
+}

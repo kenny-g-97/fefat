@@ -215,6 +215,15 @@ test("the imported data, the products not imported yet, and the sources they cam
     ).toContainText(
       `History from ${product.history_from}, ${product.recommended_source} recommended`
     )
+    // Step 5.12: each line leads to the wizard with its recommended source as the preset.
+    await expect(
+      lines
+        .filter({ has: page.getByText(product.root, { exact: true }) })
+        .getByRole("link", { name: "Import" })
+    ).toHaveAttribute(
+      "href",
+      `/data/import?preset=${product.recommended_source}`
+    )
   }
   expect(missing.map((product) => product.root)).toContain("MCL")
   // The list in the light theme too, for the pull request's readers.
@@ -837,12 +846,14 @@ test("Import more data on a dataset's page leads to the import page with its pro
   loggedIn: page,
 }) => {
   // From the builder's second check of step 5.4: a way to update a data source with new files.
-  // The import page is a placeholder until step 5.12's wizard, which reads the preset.
+  // Step 5.12's wizard reads the preset and leads back to the dataset it was opened from.
   await page.goto(MES_PAGE)
   const header = page.getByRole("main")
   const more = header.getByRole("link", { name: "Import more data" })
+  const wizard =
+    "/data/import?preset=synthetic&from=dataset&instrument=MES&provider=synthetic"
 
-  await expect(more).toHaveAttribute("href", "/data/import?preset=synthetic")
+  await expect(more).toHaveAttribute("href", wizard)
   const check = await header
     .getByRole("button", { name: "Check quality" })
     .boundingBox()
@@ -859,8 +870,10 @@ test("Import more data on a dataset's page leads to the import page with its pro
   ).toBeLessThanOrEqual(1)
   await more.click()
 
-  await expect(page).toHaveURL("/data/import?preset=synthetic")
+  await expect(page).toHaveURL(wizard)
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
+  await page.getByRole("link", { name: "Back to MES from synthetic" }).click()
+  await expect(page).toHaveURL(MES_PAGE)
 })
 
 test("an address that names no data FEAT holds says so, with no actions", async ({

@@ -1,4 +1,5 @@
 import { Activity } from "lucide-react"
+import { useStoreReadAfterWrites } from "@/api/catalog"
 import { type Job, useLiveJobs } from "@/api/jobs"
 import { Button } from "@/ui/button"
 import { Sheet, SheetTrigger } from "@/ui/sheet"
@@ -6,9 +7,11 @@ import { JobsDrawer } from "./JobsDrawer"
 
 /** The shell's top bar (web/DESIGN.md, Patterns): 72 px over a hairline that meets the brand
  * row's, solid, holding the jobs indicator, whose count shows while jobs are queued or running
- * and which opens the jobs drawer. It follows the active jobs' progress for the whole app. */
+ * and which opens the jobs drawer. It follows the active jobs' progress for the whole app, and
+ * reads again what a catalog sync or an import wrote once it ends, on every page. */
 export function TopBar() {
   const jobs = useLiveJobs()
+  useStoreReadAfterWrites(jobs.data)
   const running = countOf(jobs.data, "running")
   const queued = countOf(jobs.data, "queued")
   const active = running + queued

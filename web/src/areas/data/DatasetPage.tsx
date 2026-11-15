@@ -78,7 +78,15 @@ function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
               Check quality
             </Button>
             <Button asChild>
-              <Link to="/data/import" search={{ preset: dataset.provider }}>
+              <Link
+                to="/data/import"
+                search={{
+                  preset: dataset.provider,
+                  from: "dataset",
+                  instrument: dataset.root,
+                  provider: dataset.provider,
+                }}
+              >
                 Import more data
               </Link>
             </Button>

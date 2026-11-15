@@ -367,6 +367,27 @@ main[tabindex="-1"]:focus-visible {
   background-color: var(--muted);
 }
 
+/* A select over a table's column, such as a column's role in the import wizard (step 5.12): 32 px,
+   as a row's own controls are, in a field's type rather than the header's. */
+[data-slot="select-trigger"][data-size="sm"] {
+  height: 2rem;
+  padding-inline: 0.75rem;
+}
+
+[data-slot="table-head"] [data-slot="select-trigger"] {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* A file dragged over the import wizard's drop target (step 5.12) gives its dashed line the
+   brand's colour, the target the file lands on. */
+[data-slot="file-drop"][data-over="true"] {
+  border-color: var(--brand);
+}
+
 [data-slot="select-trigger"]:focus-visible {
   outline: none;
   border-color: var(--ring);

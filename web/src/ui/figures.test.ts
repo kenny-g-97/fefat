@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  counted,
   decimalsOf,
   formatAligned,
   formatCount,
@@ -57,5 +58,14 @@ describe("the formats", () => {
     expect(formatPrice(5012.5, 2)).toBe("5012.50")
     expect(formatPrice(98004.20000000001, 1)).toBe("98004.2")
     expect(formatCount(1234567)).toBe("1,234,567")
+  })
+
+  it("count a noun in its singular for one alone", () => {
+    expect([0, 1, 2760].map((count) => counted(count, "record"))).toEqual([
+      "0 records",
+      "1 record",
+      "2,760 records",
+    ])
+    expect(counted(3, "mismatch", "mismatches")).toBe("3 mismatches")
   })
 })

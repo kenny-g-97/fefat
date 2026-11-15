@@ -6,7 +6,7 @@ import {
   type StoredDataset,
   type SyncCover,
 } from "@/api/catalog"
-import { formatCount } from "@/ui/figures"
+import { counted, formatCount } from "@/ui/figures"
 
 /** Datasets grouped under a name, a root or a provider, in the API's order. */
 type Grouped = Readonly<{
@@ -161,10 +161,6 @@ export function monthLabel(month: MonthCoverage): string {
   return `${month.month}: ${formatCount(month.with_records)} of ${formatCount(month.sessions)} sessions with records, ${findings}${flagged}`
 }
 
-function counted(count: number, noun: string): string {
-  return `${formatCount(count)} ${noun}${count === 1 ? "" : "s"}`
-}
-
 function imported(
   held: Grouped,
   product: CatalogProduct | null
@@ -206,4 +202,11 @@ function grouped(
     name,
     datasets: datasets.filter((dataset) => nameOf(dataset) === name),
   }))
+}
+
+/** A dataset as its folder in the store reads: `ninjatrader/ohlcv-1m/root=ES`. */
+export function datasetFolder(
+  dataset: Readonly<{ provider: string; schema_name: string; root: string }>
+): string {
+  return `${dataset.provider}/${dataset.schema_name}/root=${dataset.root}`
 }
