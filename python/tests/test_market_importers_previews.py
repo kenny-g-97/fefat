@@ -44,6 +44,9 @@ from test_market_importers_merge_properties import (
 BATCH = SYNTHETIC / "databento-batch" / "GLBX-20260310-SYNTHETIC0"
 MARCH_10 = utc(2026, 3, 10, 14, 30)
 TAKEN = "the file's taken in place of 1 stored record"
+TAKE_FILE_AS_TEXT = "take-file"
+"""The option as a command or a notebook gives it, which a preview read as refuse where it
+counted the partitions that change (the ponytail review of step 5.14)."""
 
 
 def test_a_databento_preview_names_what_the_import_then_adds_and_writes_nothing(
@@ -91,9 +94,11 @@ def test_a_databento_preview_of_bars_that_differ_would_be_refused_unless_the_fil
 
     refused = preview_databento(source, store, cache)
     taken = preview_databento(source, store, cache, differing=DifferingRecords.TAKE_THE_FILE)
+    as_text = preview_databento(source, store, cache, differing=TAKE_FILE_AS_TEXT)
 
     assert tree(store.folder) == before
     assert (refused.refuses(), taken.refuses()) == (True, False)
+    assert as_text == taken
     shown = refused.summary().splitlines()
     assert "    Records: 0 new, 0 already held, 1 that differ" in shown
     assert "    Records that differ: 1 record on 1 trade date: 2026-03-09 (1)" in shown
@@ -187,9 +192,11 @@ def test_a_file_preview_of_bars_that_differ_would_be_refused_unless_the_files_st
     taken = preview_file(
         request, store, STATIC_TABLE, cache, differing=DifferingRecords.TAKE_THE_FILE
     )
+    as_text = preview_file(request, store, STATIC_TABLE, cache, differing=TAKE_FILE_AS_TEXT)
 
     assert tree(store.folder) == before
     assert (len(refused.refusals()), taken.refusals()) == (1, [])
+    assert as_text == taken
     assert "1 with other values" in refused.refusals()[0]
     shown = refused.summary().splitlines()
     assert "    Records that differ: 1 record on 1 trade date: 2026-03-09 (1)" in shown
@@ -250,6 +257,29 @@ def test_a_preview_of_an_imported_file_refuses_nothing_though_its_profile_now_mi
     assert preview.against_the_store == again
     assert preview.reading.problems != ()
     assert preview.refusals() == []
+
+
+def test_a_text_that_names_no_way_with_differing_records_is_refused(tmp_path: Path) -> None:
+    store, cache = Store(tmp_path / "data"), tmp_path / "cache"
+    keep = "keep-the-store"
+    request = sample_request("ninjatrader")
+
+    for refused in (
+        lambda: preview_databento(BATCH, store, cache, differing=keep),
+        lambda: import_databento(BATCH, store, cache, imported_on=IMPORTED_ON, differing=keep),
+        lambda: preview_file(request, store, STATIC_TABLE, cache, differing=keep),
+        lambda: import_file(
+            request,
+            store,
+            cache,
+            imported_on=IMPORTED_ON,
+            instruments=STATIC_TABLE,
+            differing=keep,
+        ),
+    ):
+        with pytest.raises(ValueError, match="one of refuse, take-file, got 'keep-the-store'"):
+            refused()
+    assert tree(tmp_path) == {}
 
 
 def quarter_bar(instant: int, close: int) -> OHLCVMsg:
@@ -323,7 +353,7 @@ def test_no_price_reaches_what_a_file_import_says_of_its_merge(tmp_path: Path) -
     texts = [
         str(refused.value),
         *preview.against_the_store.lines(),
-        *report.merge.lines(),
+        report.summary(),
         report.merge.model_dump_json(),
     ]
     assert len(prices) == 3

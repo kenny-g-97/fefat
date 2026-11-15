@@ -15,8 +15,9 @@ refuse the file any more: the original file under `raw/user/<sha256>/<name>`, it
 against its hash; the new instrument the profile specifies, unless the store has it; the
 partitions its records change, a new dataset tagged `origin: import` with the licence scope of
 the provider's source in the guide; and, last, the file's entry in the raw manifest. The file is
-read once, for its hash and its rows, and its partitions are gone over twice, to check and to
-write. A file the raw manifest records is imported already: importing it again changes nothing.
+read once, for its hash and its rows, and its partitions are gone over to check and, where one
+changes, again to write. A file the raw manifest records is imported already: importing it
+again changes nothing.
 Where imported and synced data overlap, each provider keeps its own dataset. Nothing is uploaded
 anywhere.
 """
@@ -46,12 +47,14 @@ from fefat.market.importers.partition_buffers import (
     MergeTally,
     PartitionBuffers,
     require_none_differing,
+    require_one_price_basis,
     write_merges,
 )
 from fefat.market.importers.partition_merge import (
     DifferingRecords,
     PartitionMerge,
     RecordIdentity,
+    whole_at_the_files_edges,
 )
 from fefat.market.importers.profile_contracts import ImportFacts
 from fefat.market.importers.profile_records import (
@@ -63,7 +66,7 @@ from fefat.market.importers.profiles import ImportProfile
 from fefat.market.importers.report import DatasetMerge
 from fefat.market.importers.tabular import read_table
 from fefat.market.instruments import InstrumentTable
-from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition
+from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition, SeriesKind
 from fefat.market.raw_manifest import checked_raw_path
 from fefat.market.saved_instruments import instrument_is_saved, save_instrument
 from fefat.market.schema import SchemaKind, Timeframe, TimeUnit, polars_schema
@@ -108,13 +111,14 @@ def preview_file(
     instruments: InstrumentTable,
     cache_folder: Path,
     guide: SourceGuide = SOURCE_GUIDE,
-    differing: DifferingRecords = DifferingRecords.REFUSE,
+    differing: DifferingRecords | str = DifferingRecords.REFUSE,
 ) -> FilePreview:
-    """The file read and checked against `store` as `import_file` would under `differing`, and
-    nothing written: what it holds, and what it would add to its dataset, or that it is
-    imported already. What refuses its import before the store's records are compared refuses
-    the preview too: a file imported before under other arguments, a dataset of another unit
-    or series, and the records no merge takes (ADR-0021)."""
+    """The file read and checked against `store` as `import_file` would under `differing`, the
+    option or its text, and nothing written: what it holds, and what it would add to its
+    dataset, or that it is imported already. What refuses its import before the store's records
+    are compared refuses the preview too: a file imported before under other arguments, a
+    dataset of another unit or series, and the records no merge takes (ADR-0021)."""
+    differing = DifferingRecords(differing)
     content = _file_bytes(request.path)
     raw_path = _raw_path(request, hashlib.sha256(content).hexdigest())
     imported = _imported_before(store, request, raw_path, _import_arguments(request))
@@ -141,12 +145,14 @@ def import_file(
     imported_on: date,
     instruments: InstrumentTable,
     guide: SourceGuide = SOURCE_GUIDE,
-    differing: DifferingRecords = DifferingRecords.REFUSE,
+    differing: DifferingRecords | str = DifferingRecords.REFUSE,
 ) -> FileImportReport | AlreadyImported:
     """Import the file into `store`, merging its records into the partitions it overlaps
     (module docstring); a file with problems, whose records run late or early against their
-    calendar, or whose records differ from the store's while `differing` does not let the
-    file's stand, is refused with them, and nothing is written."""
+    calendar, or whose records differ from the store's while `differing`, the option or its
+    text (`"take-file"`), does not let the file's stand, is refused with them, and nothing is
+    written."""
+    differing = DifferingRecords(differing)
     content = _file_bytes(request.path)
     sha256 = hashlib.sha256(content).hexdigest()
     raw_path = _raw_path(request, sha256)
@@ -167,11 +173,13 @@ def import_file(
     unsaved = mapped.new_instrument and not instrument_is_saved(store.folder, mapped.instrument)
     store.raw.write(raw_path, request.path, sha256)
     saved = unsaved and save_instrument(store.folder, mapped.instrument)
-    merging.write(differing)
+    if merge.partitions_changed:
+        merging.write(differing)
+    taken = DIFFERING_TAKEN_RECORDED if differing is DifferingRecords.TAKE_THE_FILE else ""
     store.raw.record(
         raw_path,
         provider=request.profile.provider,
-        vendor_version=f"{arguments}{DIFFERING_TAKEN_RECORDED if merge.replaces() else ''}",
+        vendor_version=f"{arguments}{taken}",
         downloaded_on=datetime.fromtimestamp(request.path.stat().st_mtime, UTC).date(),
         batch_job=None,
         imported_on=imported_on,
@@ -198,11 +206,16 @@ class _FileMerge:
 
     def checked(self, on_differing: DifferingRecords) -> DatasetMerge:
         """What the file adds to its dataset under `on_differing`, nothing written; a file the
-        store cannot take is refused here."""
+        store cannot take is refused here, as is, whatever `on_differing` says, a file that
+        shares no bar with the back-adjusted series the store holds of its dataset
+        (`require_one_price_basis`)."""
         tally = MergeTally(on_differing)
         for merge in self._merges():
             tally.add(merge)
         (added,) = tally.datasets()
+        adjusted = self.metadata.series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
+        if adjusted and self.store.list_partitions(added.dataset):
+            require_one_price_basis(added)
         return added
 
     def write(self, differing: DifferingRecords) -> None:
@@ -210,9 +223,13 @@ class _FileMerge:
         write_merges(self.store, self._merges(), self.metadata, differing)
 
     def _merges(self) -> Iterator[PartitionMerge]:
+        """Each partition's merge, in both passes; prints numbered by their place are refused
+        where they dispute an instant their file may hold part of (`partition_merge`)."""
         buffers = PartitionBuffers(self.store, self.identity, self.metadata)
         buffers.add(self.partitions)
-        return buffers.rest()
+        if not self.identity.numbered_by_place:
+            return buffers.rest()
+        return whole_at_the_files_edges(buffers.rest(), self.partitions, self.identity.clock)
 
 
 def _raw_path(request: FileImportRequest, sha256: str) -> PurePosixPath:

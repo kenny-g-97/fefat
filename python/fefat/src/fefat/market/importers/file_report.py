@@ -1,7 +1,8 @@
 """What an import of a trader's own file tells the trader (`fefat.market.importers.file_import`):
 what the file holds once read with its profile, the preview of an import, the report of one that
-wrote, and a file found imported before. Counts, dates, and problems; only a preview's first
-records hold prices, which stay on the trader's screen (D-21).
+wrote, and a file found imported before. Counts, dates, and problems: the account of what a file
+adds to the store holds no price, while a preview's first records, and the first row a problem
+quotes, show the file's own values, which stay on the trader's screen (D-21).
 """
 
 from datetime import date

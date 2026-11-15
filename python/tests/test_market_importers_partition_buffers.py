@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 import pytest
@@ -246,6 +247,40 @@ def test_a_file_whose_later_partition_differs_is_refused_before_any_is_written(
     assert store.scan_partition(MARCH).collect().equals(MONDAY_BARS)
 
 
+def test_a_write_stops_at_records_that_differ_which_its_check_would_have_refused(
+    tmp_path: Path,
+) -> None:
+    # The engine accuracy review of step 5.14: a write under refuse left the differing records
+    # out and wrote the rest, so a store or a file changed between an import's check and its
+    # write ended as a file recorded whole. Here no check comes before the write.
+    store = Store(tmp_path)
+    imported(store, in_march(MONDAY_BARS))
+    changed = march_bars(utc(2026, 3, 30, 14, 31), utc(2026, 3, 30, 14, 32), close=7)
+
+    with pytest.raises(
+        ValueError,
+        match="got 1 of the file's records with other values than the stored ones, after 0 of "
+        "the file's partitions were written: the store or the file changed while the import ran",
+    ):
+        imported(store, in_march(changed))
+
+    assert store.scan_partition(MARCH).collect().equals(MONDAY_BARS)
+
+
+def test_a_write_given_the_options_text_stops_at_records_that_differ(tmp_path: Path) -> None:
+    # The importers read the option's text at their entries. A text that reaches the write is
+    # not the option, so the write stops at records that differ, where it would have left them
+    # out and written the rest of the file (the code review of the fixes).
+    store = Store(tmp_path)
+    imported(store, in_march(MONDAY_BARS))
+    changed = march_bars(utc(2026, 3, 30, 14, 31), utc(2026, 3, 30, 14, 32), close=7)
+
+    with pytest.raises(ValueError, match="changed while the import ran"):
+        imported(store, in_march(changed), differing=cast(DifferingRecords, "take-file"))
+
+    assert store.scan_partition(MARCH).collect().equals(MONDAY_BARS)
+
+
 def test_the_files_records_stand_where_the_import_takes_them(tmp_path: Path) -> None:
     store = Store(tmp_path)
     imported(store, in_march(MONDAY_BARS))
@@ -273,7 +308,7 @@ def test_the_tally_tells_new_sessions_from_those_the_store_holds(tmp_path: Path)
 
     (merge,) = tallied(store, rows, REFUSE)
 
-    assert merge.dataset == "databento/ohlcv-1m/root=ES"
+    assert merge.dataset == MARCH.dataset
     assert (merge.records_added, merge.records_held, merge.records_differing) == (4, 2, 0)
     assert merge.new_sessions == (
         DayRecords(trade_date=date(2026, 3, 31), records=2),
@@ -289,3 +324,19 @@ def test_the_tally_tells_new_sessions_from_those_the_store_holds(tmp_path: Path)
         "    Records: 4 new, 2 already held, 0 that differ",
         "    Partitions: 2 that change, 0 unchanged",
     ]
+
+
+def test_a_session_is_new_to_the_contract_that_lacked_it(tmp_path: Path) -> None:
+    # The code review of step 5.14: the store holds Monday of ESH2026 alone. A file with one
+    # more bar of it, and with ESM2026's bars of that Monday, brings ESM2026 a new session, which
+    # read as a stored session gaining records while a session was held or new for its dataset.
+    store = Store(tmp_path)
+    imported(store, in_march(MONDAY_BARS))
+    next_contract = Partition(dataset=MARCH.dataset, contract="ESM2026", key=MARCH.key)
+
+    (merge,) = tallied(store, dict([(MARCH, THREE_BARS), (next_contract, MONDAY_BARS)]), REFUSE)
+
+    monday = date(2026, 3, 30)
+    assert merge.new_sessions == (DayRecords(trade_date=monday, records=2),)
+    assert merge.extended_sessions == (DayRecords(trade_date=monday, records=1),)
+    assert (merge.records_added, merge.records_held) == (3, 2)

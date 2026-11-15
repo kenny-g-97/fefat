@@ -44,9 +44,10 @@ complete. A record lies within a few days of its trade date: a session opens the
 before it, and a weekend or holiday folded into it, or a record dated by the session before
 it, adds at most four days."""
 
-DIFFERING_TAKEN_RECORDED = ", differing records taken from the file"
-"""How the raw manifest records, after an import's other details, that the import took the
-file's records in place of stored ones (`DifferingRecords.TAKE_THE_FILE`)."""
+DIFFERING_TAKEN_RECORDED = ", the file's records taken where they differ"
+"""How the raw manifest records, after an import's other details, that the import was told that
+the file's records stand (`DifferingRecords.TAKE_THE_FILE`): the rule it ran under, whatever it
+then found to differ, so that an import cut short and run again records the same."""
 
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 
@@ -133,9 +134,9 @@ class _PartitionCounts:
     held: int
     differing: int
     stored_disputed: int
-    added_days: pl.DataFrame
+    new_days: pl.DataFrame
+    extended_days: pl.DataFrame
     differing_days: pl.DataFrame
-    held_days: frozenset[date]
 
 
 class MergeTally:
@@ -147,16 +148,20 @@ class MergeTally:
         self._counted: dict[Dataset, list[_PartitionCounts]] = {}
 
     def add(self, merge: PartitionMerge) -> None:
-        """Count a partition's merge, keeping none of its rows."""
+        """Count a partition's merge, keeping none of its rows: a trade date that gains records
+        is new where the stored partition held none of it, so a session is new, or gains
+        records, for its contract."""
+        gaining = merge.added_days()
+        on_a_held_day = pl.col("trade_date").is_in(merge.held_days().implode())
         counts = _PartitionCounts(
             changes=merge.changes(self._on_differing),
             added=merge.added.height,
             held=merge.held,
             differing=merge.differing.height,
             stored_disputed=merge.stored_records_disputed(),
-            added_days=merge.added_days(),
+            new_days=gaining.filter(~on_a_held_day),
+            extended_days=gaining.filter(on_a_held_day),
             differing_days=merge.differing_days(),
-            held_days=frozenset(merge.held_days()),
         )
         self._counted.setdefault(merge.partition.dataset, []).append(counts)
 
@@ -167,17 +172,15 @@ class MergeTally:
 
     def _dataset_merge(self, dataset: Dataset) -> DatasetMerge:
         counted = self._counted[dataset]
-        held_days = frozenset(day for each in counted for day in each.held_days)
-        gaining = day_records(each.added_days for each in counted)
         return DatasetMerge(
-            dataset=dataset.relative_folder().as_posix(),
+            dataset=dataset,
             on_differing=self._on_differing,
             records_added=sum(each.added for each in counted),
             records_held=sum(each.held for each in counted),
             records_differing=sum(each.differing for each in counted),
             stored_records_disputed=sum(each.stored_disputed for each in counted),
-            new_sessions=tuple(day for day in gaining if day.trade_date not in held_days),
-            extended_sessions=tuple(day for day in gaining if day.trade_date in held_days),
+            new_sessions=day_records(each.new_days for each in counted),
+            extended_sessions=day_records(each.extended_days for each in counted),
             differing_sessions=day_records(each.differing_days for each in counted),
             partitions_changed=sum(each.changes for each in counted),
             partitions_unchanged=sum(not each.changes for each in counted),
@@ -207,6 +210,29 @@ def require_none_differing(merges: Iterable[DatasetMerge], source: Path) -> None
     )
 
 
+def require_one_price_basis(merge: DatasetMerge) -> None:
+    """Refuse, whatever the import is told, a file of a back-adjusted series the store holds
+    that holds none of the store's bars: a platform adjusts such a series again at each roll,
+    so a later export moves every price before that roll, and a file that shares no bar with
+    the store cannot be told from one adjusted since, whether its bars differ from the stored
+    ones or only carry the series on. A file that holds a stored bar was exported on the
+    store's price basis, and is left to the import's rule for differing records, as one that
+    completes the store's last bar is."""
+    if merge.records_held:
+        return
+    raise ValueError(
+        "Expected the file to hold at least one bar that the store holds of the back-adjusted "
+        f"series {merge.dataset.relative_folder()}, got none, with {merge.records_differing:,} "
+        f"of its records at other values than the stored ones and {merge.records_added:,} that "
+        "the store lacks: a platform adjusts such a series again at each roll, so a later "
+        "export moves every price before that roll, and without a bar the two share the file "
+        "cannot be told from one adjusted since. The file is refused whatever the import is "
+        "told, and nothing was written. Export it again from a bar the store holds. Where its "
+        "bars then differ from the stored ones, the series was adjusted since: import the "
+        "later export whole under a provider of its own, through a copy of its profile."
+    )
+
+
 def write_merges(
     store: Store,
     merges: Iterable[PartitionMerge],
@@ -216,11 +242,21 @@ def write_merges(
     """Write each merge that changes its partition under `differing`, a dataset's `dataset.json`
     first where the store has none. An operating system's error part way, as Windows gives for a
     file another program holds open, is told with what was written before it: the import run
-    again finishes it, since the records it wrote read as held."""
+    again finishes it, since the records it wrote read as held. A merge with records that
+    differ, where the import was not told that the file's stand, so that its check refuses them
+    and found none, stops the write: the store or the file changed between the two passes."""
     # shortcut: no lock, so two imports at once into one dataset can lose one's records; take
     # the store's lock over an import's check and its writes when imports run as jobs (5.12).
     written = 0
     for merge in merges:
+        if differing is not DifferingRecords.TAKE_THE_FILE and not merge.differing.is_empty():
+            raise ValueError(
+                f"Expected {merge.partition.relative_path()} as the import's check read it, got "
+                f"{merge.differing.height:,} of the file's records with other values than the "
+                f"stored ones, after {written} of the file's partitions were written: the store "
+                "or the file changed while the import ran. Preview the file before importing it "
+                "again."
+            )
         if not merge.changes(differing):
             continue
         try:
@@ -229,7 +265,7 @@ def write_merges(
             raise ValueError(
                 f"Expected to write {merge.partition.relative_path()}, got {error}, after "
                 f"{written} of the file's partitions were written. Nothing is lost: run the "
-                "import again, and it finishes what this one left."
+                "import again with the same options, and it finishes what this one left."
             ) from error
         written += 1
 

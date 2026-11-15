@@ -103,20 +103,22 @@ def refused_until_the_files_stand(
     and as an import, first as it is and then with `--differing take-file`; return what each
     recorded file's entry in the raw manifest says of its import."""
     take = ["--differing", "take-file"]
-    variants = ([*command, "--preview"], command, [*command, "--preview", *take], [*command, *take])
+    store = Store(resolve_paths(os.environ).data_dir)
 
-    codes = [main(variant) for variant in variants]
+    codes = [main([*command, "--preview"]), main(command), main([*command, "--preview", *take])]
+    recorded_before_the_import = len(store.raw.manifest().files)
+    codes.append(main([*command, *take]))
 
     captured = capsys.readouterr()
     assert codes == [1, 1, 0, 0]
+    assert recorded_before_the_import == 1
     assert "\nIt would be refused: its records differ from the ones the store holds." in (
         captured.out
     )
     assert "fefat: Expected the records" in captured.err
     assert "got 1 with other values" in captured.err
     assert "import it with --differing take-file" in captured.err
-    manifest = Store(resolve_paths(os.environ).data_dir).raw.manifest()
-    return sorted(file.vendor_version for file in manifest.files)
+    return sorted(file.vendor_version for file in store.raw.manifest().files)
 
 
 def test_a_databento_bar_that_differs_exits_with_1_until_the_import_takes_the_files(
@@ -129,7 +131,7 @@ def test_a_databento_bar_that_differs_exits_with_1_until_the_import_takes_the_fi
 
     recorded = refused_until_the_files_stand(["data", "import", "databento", str(revised)], capsys)
 
-    assert recorded == ["DBN 3", "DBN 3, differing records taken from the file"]
+    assert recorded == ["DBN 3", "DBN 3, the file's records taken where they differ"]
 
 
 def test_differing_takes_refuse_or_take_file_alone(capsys: pytest.CaptureFixture[str]) -> None:
@@ -577,7 +579,7 @@ def test_an_exports_bar_that_differs_exits_with_1_until_the_import_takes_the_fil
 
     assert recorded == [
         "import profile ninjatrader",
-        "import profile ninjatrader, differing records taken from the file",
+        "import profile ninjatrader, the file's records taken where they differ",
     ]
 
 

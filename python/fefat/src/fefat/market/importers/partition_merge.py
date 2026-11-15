@@ -14,17 +14,23 @@ file order: a bar has its instant to itself, and prints stamped to one second sh
 
 Two files it refuses whatever the import is told, since a merge cannot be taken back: one whose
 records carry an `instrument_id` the stored partition does not hold, which would make one
-contract load as two series, and one that overlaps the stored records in time without sharing a
-record with them, as the same prints read under another time zone or stamping rule do, which
-would store them twice.
+contract load as two series, and one that overlaps the stored records in time without holding a
+record at one of their instants, as prints stamped finer than a second do when they are read
+under another time zone or stamping rule, which would store them twice. Bars, and prints stamped
+to the second, read a bar or whole hours off land on the stored instants instead and read as
+differing, which the import's default refuses.
 
 Where a file gives its prints no sequence (`RecordIdentity.numbered_by_place`), the comparison
 leaves `sequence` out, a print's sequence is its place in its instant, and a print added to an
 instant the store holds is numbered on from the stored prints' last, which keep theirs: the
 order within an instant is all the number says (F-CLK-03). Such a file starts on a whole instant
-and may stop inside one. Nothing here reads or writes a file.
+and may stop inside one, so it may hold part of its first and last instants alone:
+`whole_at_the_files_edges` refuses, whatever the import is told, one that disputes its first
+instant of a contract, or its last where the store holds more prints. Nothing here reads or
+writes a file.
 """
 
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -41,10 +47,18 @@ PLACE = "_place"
 
 class DifferingRecords(StrEnum):
     """What an import does with the instants a file and the store dispute (ADR-0021): refuse
-    the file, or take each such instant whole from the file."""
+    the file, or take each such instant whole from the file. `DifferingRecords(text)` reads
+    the text a command or a notebook gives, and refuses any other."""
 
     REFUSE = "refuse"
     TAKE_THE_FILE = "take-file"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DifferingRecords":
+        options = ", ".join(cls)
+        raise ValueError(
+            f"Expected what an import does with differing records, one of {options}, got {value!r}."
+        )
 
 
 @dataclass(frozen=True)
@@ -83,10 +97,11 @@ class PartitionMerge:
         return takes or not self.added.is_empty()
 
     def rows(self, differing: DifferingRecords) -> pl.DataFrame:
-        """The partition as an import under `differing` leaves it, in clock order and one chunk,
-        so that its bytes follow from its rows however the files arrived: the stored rows and
-        the added ones, the stored rows of the disputed instants giving way to the file's where
-        the file's stand."""
+        """The partition as an import under `differing` leaves it: the stored rows and the added
+        ones, the stored rows of the disputed instants giving way to the file's where the file's
+        stand, in clock order and in one chunk, so that its bytes follow from its rows alone. A
+        sort leaves as many chunks as the pool has threads, which Polars writes as other bytes
+        past one row group."""
         kept, taken = self.kept, self.added
         if differing is DifferingRecords.TAKE_THE_FILE:
             kept = kept.filter(~self._in_dispute())
@@ -106,9 +121,9 @@ class PartitionMerge:
         """The file's records at disputed instants per trade date, as `added_days`."""
         return _per_trade_date(self.differing, self.partition)
 
-    def held_days(self) -> list[date]:
+    def held_days(self) -> pl.Series:
         """The trade dates the stored partition holds records of."""
-        return _per_trade_date(self.kept, self.partition).get_column("trade_date").to_list()
+        return _per_trade_date(self.kept, self.partition).get_column("trade_date")
 
     def _in_dispute(self) -> pl.Expr:
         instants = self.differing.get_column(self.clock).unique()
@@ -132,17 +147,17 @@ def merged_partition(
     kept = _placed(stored, clock)
     _require_the_instruments_held(partition, kept, new)
     places = [clock, PLACE]
-    shared = new.join(kept.select(places), on=places, how="semi", maintain_order="left")
-    if shared.is_empty():
+    stored_too = new.join(kept.select(places), on=places, how="semi", maintain_order="left")
+    if stored_too.is_empty():
         _require_no_overlap(partition, kept, new, clock)
     same = [PLACE, *identity.compared_columns(incoming.columns)]
-    unequal = shared.join(kept, on=same, how="anti", nulls_equal=True, maintain_order="left")
+    unequal = stored_too.join(kept, on=same, how="anti", nulls_equal=True, maintain_order="left")
     in_dispute = pl.col(clock).is_in(unequal.get_column(clock).unique().implode())
     added = new.join(kept.select(places), on=places, how="anti", maintain_order="left")
     added = added.filter(~in_dispute)
     if identity.numbered_by_place:
         added = _numbered_on(added, kept, clock)
-    held = shared.filter(~in_dispute).height
+    held = stored_too.filter(~in_dispute).height
     return PartitionMerge(partition, clock, kept, added, held, new.filter(in_dispute))
 
 
@@ -178,8 +193,8 @@ def _require_the_instruments_held(
 def _require_no_overlap(
     partition: Partition, kept: pl.DataFrame, new: pl.DataFrame, clock: str
 ) -> None:
-    """Refuse a file that shares no record with the stored partition though both hold records
-    in the stretch of time the two have in common."""
+    """Refuse a file that holds no record at an instant of the stored partition though both
+    hold records in the stretch of time the two have in common."""
     instant = pl.col(clock)
     stored_first, stored_last = kept.select(first=instant.min(), last=instant.max()).row(0)
     file_first, file_last = new.select(first=instant.min(), last=instant.max()).row(0)
@@ -188,12 +203,66 @@ def _require_no_overlap(
     if first > last or kept.filter(both_reach).is_empty() or new.filter(both_reach).is_empty():
         return
     raise ValueError(
-        f"Expected the file to share records with {partition.relative_path()} where the two "
-        f"overlap in time, from {utc_text(first)} to {utc_text(last)}, got none in common: the "
-        "file reads its times under another time zone or stamping rule than the files before "
-        "it, or holds another source's records, and merging it would store them twice. Nothing "
-        "was written."
+        f"Expected the file to hold records at instants of {partition.relative_path()} where "
+        f"the two overlap in time, from {utc_text(first)} to {utc_text(last)}, got none in "
+        "common: the file reads its times under another time zone or stamping rule than the "
+        "files before it, or holds another source's records, and merging it would store them "
+        "twice. A file that fills several gaps of the stored records reads so too: import each "
+        "gap's records as a file of their own. Nothing was written."
     )
+
+
+def whole_at_the_files_edges(
+    merges: Iterable[PartitionMerge], partitions: Mapping[Partition, pl.DataFrame], clock: str
+) -> Iterator[PartitionMerge]:
+    """`merges`, those of a file of prints numbered by their place whose rows are `partitions`,
+    each refused, whatever the import is told, where it disputes an instant the file may hold
+    part of: the file's first instant of the merge's contract, since a file that starts inside
+    an instant reads like one that revises it, and its last where the store holds more prints
+    than the file, which taking the file's would drop though the file never held them."""
+    edges = _edge_instants(partitions, clock)
+    for merge in merges:
+        _require_whole_edge_instants(merge, *edges[merge.partition.contract])
+        yield merge
+
+
+def _edge_instants(
+    partitions: Mapping[Partition, pl.DataFrame], clock: str
+) -> dict[str, tuple[int, int]]:
+    """The first and the last instant of each contract's records among a file's partitions."""
+    instant = pl.col(clock)
+    edges: dict[str, tuple[int, int]] = {}
+    for partition, rows in partitions.items():
+        first, last = rows.select(first=instant.min(), last=instant.max()).row(0)
+        earliest, latest = edges.get(partition.contract, (first, last))
+        edges[partition.contract] = (min(earliest, first), max(latest, last))
+    return edges
+
+
+def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -> None:
+    instant, held = pl.col(merge.clock), merge.partition.relative_path()
+    at_first = merge.differing.filter(instant == first).height
+    if at_first:
+        raise ValueError(
+            f"Expected the file to start on a whole instant, since its prints carry no sequence "
+            f"of their own and are told apart by their place in their instant, got {at_first:,} "
+            f"at its first instant, {utc_text(first)}, that differ from the prints {held} holds "
+            "there: a file that starts inside an instant reads like one that revises it, and "
+            "the two cannot be told apart. The file is refused whatever the import is told, and "
+            "nothing was written. Start the file at an earlier instant, so that it holds this "
+            "one whole, or leave its records of this instant out."
+        )
+    at_last = merge.differing.filter(instant == last).height
+    stored = merge.kept.filter(instant == last).height if at_last else 0
+    if stored > at_last:
+        raise ValueError(
+            f"Expected the file to hold its last instant, {utc_text(last)}, whole where its "
+            f"prints differ from the ones {held} holds there, got {at_last:,} prints where the "
+            f"store holds {stored:,}: taking a file that stops inside an instant would drop "
+            "stored prints it never held. The file is refused whatever the import is told, and "
+            "nothing was written. End the file at a later instant, so that it holds this one "
+            "whole, or leave its records of this instant out."
+        )
 
 
 def _per_trade_date(rows: pl.DataFrame, partition: Partition) -> pl.DataFrame:

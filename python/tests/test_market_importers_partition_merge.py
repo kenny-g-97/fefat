@@ -104,7 +104,7 @@ def test_a_partition_the_store_lacks_takes_the_files_rows() -> None:
 
     assert counts(merge) == (2, 0, 0)
     assert merge.rows(REFUSE).equals(incoming)
-    assert merge.held_days() == []
+    assert merge.held_days().to_list() == []
 
 
 def test_a_file_that_carries_on_an_instant_adds_the_rest() -> None:
@@ -227,8 +227,9 @@ def test_merging_the_same_rows_again_changes_nothing() -> None:
 
 
 def test_the_merged_rows_are_one_chunk() -> None:
-    # Polars writes a frame of several chunks past one row group as other bytes than the same
-    # rows in one chunk, so a partition's hash would follow from how its files arrived.
+    # A sort leaves as many chunks as the pool has threads, and past one row group Polars
+    # writes such a frame as other bytes than the same rows in one chunk (measured on 2.1.0),
+    # so a partition's hash would follow from the machine that merged it.
     stored = bars(*((minute, 10) for minute in range(0, 4000, 2)))
     incoming = bars((0, 10), *((minute, 10) for minute in range(1, 4000, 2)))
 
@@ -267,8 +268,9 @@ def test_a_file_that_overlaps_the_stored_records_without_sharing_one_is_refused(
         (prints((4_000, 104, 4), (5_000, 105, 5)), 2),
         (prints((10, 104, 4), (20, 105, 5)), 2),
         (prints((2_100, 104, 4), (2_200, 105, 5)), 2),
+        (prints((10, 104, 4), (5_000, 105, 5)), 2),
     ],
-    ids=["after the last", "before the first", "in a gap"],
+    ids=["after the last", "before the first", "in a gap", "on both sides"],
 )
 def test_a_file_that_shares_no_record_but_does_not_overlap_is_added(
     incoming: pl.DataFrame, added: int
@@ -302,9 +304,9 @@ def test_prints_take_their_trade_date_from_their_partition_and_definitions_have_
     undated = merged_partition(DEFINITIONS, stored, incoming, BY_RECEIVE_TIME)
 
     assert by_date.added_days().rows() == [(date(2026, 3, 30), 1)]
-    assert by_date.held_days() == [date(2026, 3, 30)]
+    assert by_date.held_days().to_list() == [date(2026, 3, 30)]
     assert undated.added.height == 1
-    assert undated.added_days().is_empty() and undated.held_days() == []
+    assert undated.added_days().is_empty() and undated.held_days().is_empty()
 
 
 @st.composite
@@ -361,3 +363,48 @@ def test_a_stream_cut_into_two_files_merges_to_itself_in_either_order(
     for file in (a, b):
         again = merged_partition(MARCH_30, a_then_b.rows(REFUSE), file, identity)
         assert not again.changes(REFUSE)
+
+
+def test_bars_read_a_minute_late_land_on_stored_minutes_and_differ() -> None:
+    # The engine accuracy review of step 5.14: the same bars stamped a minute late share the
+    # stored minutes, so the refusal of a file that shares no instant does not see them. They
+    # read as differing, which an import refuses unless it is told that the file's stand.
+    stored, late = bars((1, 10), (2, 11), (3, 12)), bars((2, 10), (3, 11), (4, 12))
+
+    merge = merged_partition(MARCH, stored, late, BY_OPEN)
+
+    assert counts(merge) == (1, 0, 2)
+    assert not merge.rows(REFUSE).equals(merge.rows(TAKE_THE_FILE))
+
+
+def test_a_file_that_fills_two_gaps_is_refused_and_told_to_come_a_gap_at_a_time() -> None:
+    # Both of its prints lie between stored ones, in two gaps, so the stretch the two share
+    # holds prints of both and none in common, as a file read under another time zone does.
+    stored = prints((1_000, 101, 1), (3_000, 103, 3), (5_000, 105, 5))
+    incoming = prints((2_000, 102, 2), (4_000, 104, 4))
+
+    with pytest.raises(ValueError, match="import each gap's records as a file of their own"):
+        merged_partition(MARCH_30, stored, incoming, BY_RECEIVE_TIME)
+    for gap in (incoming.head(1), incoming.tail(1)):
+        assert counts(merged_partition(MARCH_30, stored, gap, BY_RECEIVE_TIME)) == (1, 0, 0)
+
+
+@settings(max_examples=300, deadline=None)
+@given(cut=streams_cut_in_two())
+def test_a_partition_numbered_by_its_files_rows_keeps_the_order_of_its_sequence(
+    cut: tuple[list[int], int, int],
+) -> None:
+    # The sessions imported before step 5.14 number their prints by their file's rows. A later
+    # file merged into one numbers the prints it adds on from the stored last, so the partition
+    # still reads in its order by receive time and sequence, each pair once: the order the
+    # engines take the prints in (F-CLK-03).
+    per_instant, start, stop = cut
+    stream = stream_of(per_instant)
+    by_row = ((instant, price, 1000 + row) for row, (instant, price, _) in enumerate(stream[:stop]))
+    later = prints(*((instant, price) for instant, price, _ in stream[start:]))
+
+    merged = merged_partition(MARCH_30, prints(*by_row), later, BY_PLACE).rows(REFUSE)
+
+    assert merged.select("ts_recv", "price").equals(prints(*stream).select("ts_recv", "price"))
+    assert merged.equals(merged.sort("ts_recv", "sequence", maintain_order=True))
+    assert not merged.select(pl.struct("ts_recv", "sequence").is_duplicated().any()).item()

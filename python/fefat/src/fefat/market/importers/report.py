@@ -16,6 +16,7 @@ from pydantic import Field
 
 from fefat.market.calendar import counted, utc_text
 from fefat.market.importers.partition_merge import DifferingRecords
+from fefat.market.layout import Dataset
 from fefat.market.schema import FrozenModel, SchemaKind, SchemaName
 
 _LISTED_AT_MOST = 10
@@ -115,11 +116,11 @@ class DatasetMerge(FrozenModel):
     """What a file adds to one dataset, read against what the store holds of it (ADR-0021),
     under `on_differing`: the records it adds, those the store already holds, and those at the
     instants the two dispute, with the stored records at those instants; the trade dates that
-    gain records, the new ones, which no partition the file touches held, apart from those the
-    store holds; the differing records per trade date; and the partitions the import changes
-    and leaves as they are."""
+    gain records, those new to their contract, whose partition held none of them, apart from
+    those it held part of; the differing records per trade date; and the partitions the import
+    changes and leaves as they are."""
 
-    dataset: str
+    dataset: Dataset
     on_differing: DifferingRecords
     records_added: int = Field(ge=0)
     records_held: int = Field(ge=0)
@@ -145,7 +146,8 @@ class DatasetMerge(FrozenModel):
         dated = ""
         if self.differing_sessions:
             dated = f", the first on trade date {self.differing_sessions[0].trade_date}"
-        return f"{self.records_differing:,} with other values in {self.dataset}{dated}"
+        folder = self.dataset.relative_folder().as_posix()
+        return f"{self.records_differing:,} with other values in {folder}{dated}"
 
     def lines(self) -> list[str]:
         differing = f"{self.records_differing:,} that differ"
@@ -154,7 +156,7 @@ class DatasetMerge(FrozenModel):
             differing = f"{differing}, the file's taken in place of {stored}"
         disputed = [f"    Records that differ: {_days(self.differing_sessions)}"]
         return [
-            f"  {self.dataset}:",
+            f"  {self.dataset.relative_folder().as_posix()}:",
             f"    New sessions: {_days(self.new_sessions)}",
             f"    Sessions the store holds that gain records: {_days(self.extended_sessions)}",
             f"    Records: {self.records_added:,} new, {self.records_held:,} already held, "
