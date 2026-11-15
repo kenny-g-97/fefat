@@ -3,8 +3,8 @@ made and migrated; a clock the test moves; keyring in memory; Argon2 at its lowe
 many logins take no time, while the server keeps argon2-cffi's defaults; a client of the app;
 the server's log; the executors, cold and warm (step 4.5); the data catalog over the store of
 its `FEFAT_DATA_DIR` (step 5.1); the library's strategies and features over their index
-(step 5.2); and the runs (step 5.3), with a workspace holding a saved version and its run, made
-once a module."""
+(step 5.2); the runs (step 5.3), with a workspace holding a saved version and its run, made
+once a module; and the import wizard over the uploads of its workspace (step 5.12)."""
 
 import os
 from collections.abc import Iterator
@@ -34,10 +34,12 @@ from fefat_app.jobs.worker import JobTimings
 from fefat_app.services.api_tokens import ApiTokenIssuer
 from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.features import SavedFeatures
+from fefat_app.services.imports import Imports
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
 from fefat_app.services.strategies import SavedStrategies
+from fefat_app.uploads import UploadFolders
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
 from memory_keyring import MemoryKeyring
 from notebook_runs import store_with
@@ -92,9 +94,11 @@ def container(
     jobs = Jobs(job_records, dispatcher, clock)
     store = Store(paths.data_dir)
     library = LibraryTables(engine, paths)
+    settings = Settings()
+    uploads = UploadFolders(paths.uploads_dir, clock)
     try:
         yield Container(
-            settings=Settings(),
+            settings=settings,
             paths=paths,
             credentials=KeyringCredentialStore(keyring_backend),
             logins=Logins(records, cheap_hasher, LoginAttempts(), clock),
@@ -109,6 +113,7 @@ def container(
             runs=Runs(
                 RunTables(engine, paths), library, warm_executor, jobs, paths.strategies_dir, clock
             ),
+            imports=Imports(warm_executor, jobs, uploads, paths, settings),
         )
     finally:
         dispatcher.close()

@@ -37,6 +37,7 @@ def serve(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     with opened_container(paths) as container:
         leftovers_removed(paths.executions_dir)
+        leftovers_removed(paths.uploads_dir)
         if not container.logins.password_is_set():
             print("FEAT has no password yet: set the one its login will ask for.")
             container.logins.set_password(typed_new_password())

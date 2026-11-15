@@ -71,10 +71,15 @@
         "type": "object"
       },
       "AppSettings": {
-        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\ntheme, the charts' style (step 5.4), and each secret's state.",
+        "description": "The settings the page shows: the server's, from `config.toml`, the data folder, the\nfile of those settings, which the import wizard names for its import roots (step 5.12), the\ntheme, the charts' style (step 5.4), and each secret's state.",
         "properties": {
           "chart_style": {
             "$ref": "#/components/schemas/ChartStyle"
+          },
+          "config_file": {
+            "format": "path",
+            "title": "Config File",
+            "type": "string"
           },
           "data_dir": {
             "format": "path",
@@ -98,6 +103,7 @@
         "required": [
           "server",
           "data_dir",
+          "config_file",
           "theme",
           "chart_style",
           "secrets"
@@ -244,6 +250,104 @@
         "title": "AtTimeframe",
         "type": "object"
       },
+      "BarColumnNames": {
+        "additionalProperties": false,
+        "description": "The columns of a bar's prices and volume, and, where the file has them, of its trade\ncount and its volume-weighted average price (null in the store without them); named apart\nfrom the chart's bars in columns, `fefat_app.services.market_bars.BarColumns`, since the API\ndescribes both (step 5.12).",
+        "properties": {
+          "close": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Close"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Low"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Open"
+          },
+          "trade_count": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Volume"
+          },
+          "vwap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vwap"
+          }
+        },
+        "required": [
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "BarColumnNames",
+        "type": "object"
+      },
       "BarColumns": {
         "description": "A page's bars, column by column, by their open, the bars of one open by their contract:\neach bar's open in whole seconds since the Unix epoch, UTC; its trade date; its prices in the\ninstrument's units, adjusted on a spliced series; its volume, in lots of the dataset's size\nunit, a contract, or 0.001 BTC for bitcoin's perpetual; and its contract.",
         "properties": {
@@ -325,6 +429,71 @@
           "raw"
         ],
         "title": "BarPrices",
+        "type": "string"
+      },
+      "BarSeen": {
+        "additionalProperties": false,
+        "description": "A bar as the store would hold it, its instants in ISO 8601 UTC and its prices in the\ninstrument's units.",
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "contract": {
+            "title": "Contract",
+            "type": "string"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "open": {
+            "title": "Open",
+            "type": "number"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "ts_close": {
+            "title": "Ts Close",
+            "type": "string"
+          },
+          "ts_open": {
+            "title": "Ts Open",
+            "type": "string"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ts_open",
+          "ts_close",
+          "trade_date",
+          "contract",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "BarSeen",
+        "type": "object"
+      },
+      "BarStamp": {
+        "description": "Which end of a bar its timestamp marks.",
+        "enum": [
+          "open",
+          "close"
+        ],
+        "title": "BarStamp",
         "type": "string"
       },
       "BarsPage": {
@@ -409,6 +578,67 @@
           "held"
         ],
         "title": "BarsSpan",
+        "type": "object"
+      },
+      "BatchImportAsked": {
+        "additionalProperties": false,
+        "description": "A Databento batch download folder or DBN file, by its path, and what to do with records\nthat differ from the store's.",
+        "properties": {
+          "differing": {
+            "$ref": "#/components/schemas/DifferingRecords",
+            "default": "refuse"
+          },
+          "kind": {
+            "const": "databento",
+            "default": "databento",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PathSource"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "BatchImportAsked",
+        "type": "object"
+      },
+      "BatchSeen": {
+        "additionalProperties": false,
+        "description": "What a Databento batch's import would do (`fefat.market.importers.report.\nDatabentoPreview`): the verdict, the account's lines, counts and dates alone, and what each\nof its files adds to each dataset.",
+        "properties": {
+          "kind": {
+            "const": "databento",
+            "default": "databento",
+            "title": "Kind",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/Capped"
+            },
+            "maxItems": 200,
+            "title": "Lines",
+            "type": "array"
+          },
+          "merges": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetMerge"
+            },
+            "title": "Merges",
+            "type": "array"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/ImportVerdict"
+          }
+        },
+        "required": [
+          "verdict",
+          "lines",
+          "merges"
+        ],
+        "title": "BatchSeen",
         "type": "object"
       },
       "BinaryOperation": {
@@ -581,7 +811,7 @@
               "$ref": "#/components/schemas/Outcome"
             },
             "propertyNames": {
-              "$ref": "#/components/schemas/Weekday"
+              "$ref": "#/components/schemas/fefat__strategy__exits__Weekday"
             },
             "title": "Weekday",
             "type": "object"
@@ -604,6 +834,40 @@
         "title": "Breakdowns",
         "type": "object"
       },
+      "BusinessDaysBeforeThe25th": {
+        "additionalProperties": false,
+        "description": "`business_days` trade dates before the last trade date on or before the 25th of the month\nbefore the contract month.",
+        "properties": {
+          "business_days": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Business Days",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "business-days-before-the-25th",
+            "default": "business-days-before-the-25th",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "business_days"
+        ],
+        "title": "BusinessDaysBeforeThe25th",
+        "type": "object"
+      },
+      "CalendarId": {
+        "description": "A built-in session calendar: CME Globex's equity index, energy, and metals groups, and\ncrypto's 24x7 UTC days (`fefat.market.builtin_calendars`).",
+        "enum": [
+          "cme-equity-index",
+          "cme-energy",
+          "cme-metals",
+          "crypto-24x7"
+        ],
+        "title": "CalendarId",
+        "type": "string"
+      },
       "CandleBody": {
         "description": "A candle's body: outlined in its colour, or filled with it.",
         "enum": [
@@ -611,6 +875,10 @@
           "filled"
         ],
         "title": "CandleBody",
+        "type": "string"
+      },
+      "Capped": {
+        "maxLength": 300,
         "type": "string"
       },
       "CatalogProductStatus": {
@@ -779,6 +1047,118 @@
           "column"
         ],
         "title": "Column",
+        "type": "object"
+      },
+      "ColumnMapping": {
+        "additionalProperties": false,
+        "description": "Which columns hold what: the timestamp in one column, or a date and a time joined with a\nspace; the bars' or the ticks' values; where the file has them, each record's instrument\nid and contract symbol; and Databento's record type (`rtype`), which must be the one of\nthe profile's timeframe.",
+        "properties": {
+          "bars": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BarColumnNames"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Id"
+          },
+          "record_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Type"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "ticks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TickColumnNames"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "title": "ColumnMapping",
         "type": "object"
       },
       "Constant": {
@@ -1054,6 +1434,33 @@
         "title": "DailyStatistics",
         "type": "object"
       },
+      "Dataset": {
+        "additionalProperties": false,
+        "description": "One provider's records of one schema for one root, in `<provider>/<schema>/root=<root>`.",
+        "properties": {
+          "provider": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Provider",
+            "type": "string"
+          },
+          "root": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Root",
+            "type": "string"
+          },
+          "schema_name": {
+            "title": "Schema Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "schema_name",
+          "root"
+        ],
+        "title": "Dataset",
+        "type": "object"
+      },
       "DatasetInput": {
         "additionalProperties": false,
         "description": "A dataset of alternative data by its name, reserved for Phase 10.",
@@ -1074,6 +1481,84 @@
           "name"
         ],
         "title": "DatasetInput",
+        "type": "object"
+      },
+      "DatasetMerge": {
+        "additionalProperties": false,
+        "description": "What a file adds to one dataset, read against what the store holds of it (ADR-0021),\nunder `on_differing`: the records it adds, those the store already holds, and those at the\ninstants the two dispute, with the stored records at those instants; the trade dates that\ngain records, those new to their contract, whose partition held none of them, apart from\nthose it held part of; the differing records per trade date; and the partitions the import\nchanges and leaves as they are.",
+        "properties": {
+          "dataset": {
+            "$ref": "#/components/schemas/Dataset"
+          },
+          "differing_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/DayRecords"
+            },
+            "title": "Differing Sessions",
+            "type": "array"
+          },
+          "extended_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/DayRecords"
+            },
+            "title": "Extended Sessions",
+            "type": "array"
+          },
+          "new_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/DayRecords"
+            },
+            "title": "New Sessions",
+            "type": "array"
+          },
+          "on_differing": {
+            "$ref": "#/components/schemas/DifferingRecords"
+          },
+          "partitions_changed": {
+            "minimum": 0.0,
+            "title": "Partitions Changed",
+            "type": "integer"
+          },
+          "partitions_unchanged": {
+            "minimum": 0.0,
+            "title": "Partitions Unchanged",
+            "type": "integer"
+          },
+          "records_added": {
+            "minimum": 0.0,
+            "title": "Records Added",
+            "type": "integer"
+          },
+          "records_differing": {
+            "minimum": 0.0,
+            "title": "Records Differing",
+            "type": "integer"
+          },
+          "records_held": {
+            "minimum": 0.0,
+            "title": "Records Held",
+            "type": "integer"
+          },
+          "stored_records_disputed": {
+            "minimum": 0.0,
+            "title": "Stored Records Disputed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset",
+          "on_differing",
+          "records_added",
+          "records_held",
+          "records_differing",
+          "stored_records_disputed",
+          "new_sessions",
+          "extended_sessions",
+          "differing_sessions",
+          "partitions_changed",
+          "partitions_unchanged"
+        ],
+        "title": "DatasetMerge",
         "type": "object"
       },
       "DatasetOrigin": {
@@ -1158,6 +1643,28 @@
         "title": "DayPnl",
         "type": "object"
       },
+      "DayRecords": {
+        "additionalProperties": false,
+        "description": "How many records of a trade date a count found.",
+        "properties": {
+          "records": {
+            "minimum": 1.0,
+            "title": "Records",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "records"
+        ],
+        "title": "DayRecords",
+        "type": "object"
+      },
       "DemoJobRequest": {
         "additionalProperties": false,
         "description": "How many seconds a demo job counts, one a second, from 1 to an hour.",
@@ -1183,6 +1690,15 @@
           "forbidden"
         ],
         "title": "DesktopUse",
+        "type": "string"
+      },
+      "DifferingRecords": {
+        "description": "What an import does with the instants a file and the store dispute (ADR-0021): refuse\nthe file, or take each such instant whole from the file. `DifferingRecords(text)` reads\nthe text a command or a notebook gives, and refuses any other.",
+        "enum": [
+          "refuse",
+          "take-file"
+        ],
+        "title": "DifferingRecords",
         "type": "string"
       },
       "Dimension": {
@@ -1549,6 +2065,288 @@
         "title": "FieldError",
         "type": "object"
       },
+      "FileImportAsked": {
+        "additionalProperties": false,
+        "description": "A trader's file through a profile, with the contract, the root, and the time zone the\nprofile leaves to the import, as `fefat data import file` takes them, and what to do with\nrecords that differ from the store's.",
+        "properties": {
+          "contract": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract"
+          },
+          "differing": {
+            "$ref": "#/components/schemas/DifferingRecords",
+            "default": "refuse"
+          },
+          "kind": {
+            "const": "file",
+            "default": "file",
+            "title": "Kind",
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfileChoice"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ImportSource"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          }
+        },
+        "required": [
+          "source",
+          "profile"
+        ],
+        "title": "FileImportAsked",
+        "type": "object"
+      },
+      "FileLayout": {
+        "additionalProperties": false,
+        "description": "The file's delimiter, one character (a tab for TSV), and whether a header row names its\ncolumns.",
+        "properties": {
+          "delimiter": {
+            "maxLength": 1,
+            "minLength": 1,
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "header": {
+            "title": "Header",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "delimiter",
+          "header"
+        ],
+        "title": "FileLayout",
+        "type": "object"
+      },
+      "FileSeen": {
+        "additionalProperties": false,
+        "description": "What a file's import would do (`fefat.market.importers.file_report.FilePreview`): the\nverdict; the file's name and profile; the dataset its records go to; what was read, left\nout, and found; the calendar's check, with each offset; the first records as stored; and\nwhat the file adds to its dataset, or the raw copy of a file imported before.",
+        "properties": {
+          "bars_without_volume": {
+            "minimum": 0.0,
+            "title": "Bars Without Volume",
+            "type": "integer"
+          },
+          "contracts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Contracts",
+            "type": "array"
+          },
+          "contracts_total": {
+            "minimum": 0.0,
+            "title": "Contracts Total",
+            "type": "integer"
+          },
+          "dataset": {
+            "$ref": "#/components/schemas/Dataset"
+          },
+          "days_checked": {
+            "minimum": 0.0,
+            "title": "Days Checked",
+            "type": "integer"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "first_records": {
+            "discriminator": {
+              "mapping": {
+                "bars": "#/components/schemas/FirstBars",
+                "prints": "#/components/schemas/FirstPrints"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FirstBars"
+              },
+              {
+                "$ref": "#/components/schemas/FirstPrints"
+              }
+            ],
+            "title": "First Records"
+          },
+          "first_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Trade Date"
+          },
+          "kind": {
+            "const": "file",
+            "default": "file",
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_trade_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade Date"
+          },
+          "merge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetMerge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mismatches": {
+            "items": {
+              "$ref": "#/components/schemas/Capped"
+            },
+            "maxItems": 50,
+            "title": "Mismatches",
+            "type": "array"
+          },
+          "mismatches_total": {
+            "minimum": 0.0,
+            "title": "Mismatches Total",
+            "type": "integer"
+          },
+          "offsets": {
+            "items": {
+              "$ref": "#/components/schemas/OffsetSeen"
+            },
+            "maxItems": 50,
+            "title": "Offsets",
+            "type": "array"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/Capped"
+            },
+            "maxItems": 50,
+            "title": "Problems",
+            "type": "array"
+          },
+          "problems_total": {
+            "minimum": 0.0,
+            "title": "Problems Total",
+            "type": "integer"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "raw_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Path"
+          },
+          "records": {
+            "minimum": 0.0,
+            "title": "Records",
+            "type": "integer"
+          },
+          "rows_read": {
+            "minimum": 0.0,
+            "title": "Rows Read",
+            "type": "integer"
+          },
+          "spread_rows": {
+            "minimum": 0.0,
+            "title": "Spread Rows",
+            "type": "integer"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/ImportVerdict"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/Capped"
+            },
+            "maxItems": 50,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict",
+          "file_name",
+          "profile",
+          "dataset",
+          "rows_read",
+          "records",
+          "contracts",
+          "contracts_total",
+          "first_trade_date",
+          "last_trade_date",
+          "bars_without_volume",
+          "spread_rows",
+          "problems",
+          "problems_total",
+          "days_checked",
+          "offsets",
+          "mismatches",
+          "mismatches_total",
+          "warnings",
+          "first_records",
+          "merge",
+          "raw_path"
+        ],
+        "title": "FileSeen",
+        "type": "object"
+      },
       "FillPriceDifference": {
         "additionalProperties": false,
         "description": "A trade entered at one decision on one side in the baseline and in a rerun: how far the\nrerun's entry price and its exits' average price lie from the baseline's, in ticks, the\nrerun's less the baseline's.",
@@ -1586,6 +2384,76 @@
         "title": "FillPriceDifference",
         "type": "object"
       },
+      "FirstBars": {
+        "additionalProperties": false,
+        "description": "A file's first bars as the store would hold them.",
+        "properties": {
+          "kind": {
+            "const": "bars",
+            "default": "bars",
+            "title": "Kind",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BarSeen"
+            },
+            "maxItems": 10,
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "FirstBars",
+        "type": "object"
+      },
+      "FirstPrints": {
+        "additionalProperties": false,
+        "description": "A file's first prints as the store would hold them.",
+        "properties": {
+          "kind": {
+            "const": "prints",
+            "default": "prints",
+            "title": "Kind",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/PrintSeen"
+            },
+            "maxItems": 10,
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "FirstPrints",
+        "type": "object"
+      },
+      "GivenProfile": {
+        "additionalProperties": false,
+        "description": "A profile given whole, as the wizard builds a new one; it is kept under `profiles/`\nonce an import with it has written.",
+        "properties": {
+          "kind": {
+            "const": "given",
+            "default": "given",
+            "title": "Kind",
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ImportProfile-Input"
+          }
+        },
+        "required": [
+          "profile"
+        ],
+        "title": "GivenProfile",
+        "type": "object"
+      },
       "Health": {
         "description": "The server answers.",
         "properties": {
@@ -1619,6 +2487,272 @@
         ],
         "title": "HeldDates",
         "type": "object"
+      },
+      "ImportPreviewAnswer": {
+        "discriminator": {
+          "mapping": {
+            "databento": "#/components/schemas/BatchSeen",
+            "file": "#/components/schemas/FileSeen",
+            "refused": "#/components/schemas/RefusedImport",
+            "table": "#/components/schemas/TablePreview"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TablePreview"
+          },
+          {
+            "$ref": "#/components/schemas/FileSeen"
+          },
+          {
+            "$ref": "#/components/schemas/BatchSeen"
+          },
+          {
+            "$ref": "#/components/schemas/RefusedImport"
+          }
+        ]
+      },
+      "ImportProfile-Input": {
+        "additionalProperties": false,
+        "description": "A file layout of market data and how its records become the store's (module docstring).",
+        "properties": {
+          "columns": {
+            "$ref": "#/components/schemas/ColumnMapping"
+          },
+          "contract_in_file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract In File Name"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/NewInstrument-Input"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProfileKind",
+            "default": "market_data"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/FileLayout"
+          },
+          "licence_scope": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Licence Scope"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/PriceRule-Input",
+            "default": {
+              "scale": "1",
+              "unit": "decimal"
+            }
+          },
+          "provider": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Provider",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/components/schemas/SeriesKind",
+            "default": "contract"
+          },
+          "timeframe": {
+            "pattern": "^(ticks|[1-9][0-9]*[smhd])$",
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/TimestampRule"
+          },
+          "volume_unit": {
+            "$ref": "#/components/schemas/SizeUnit-Input",
+            "default": {
+              "asset": "contract",
+              "lot": "1"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "description",
+          "layout",
+          "columns",
+          "timestamp",
+          "timeframe"
+        ],
+        "title": "ImportProfile",
+        "type": "object"
+      },
+      "ImportProfile-Output": {
+        "additionalProperties": false,
+        "description": "A file layout of market data and how its records become the store's (module docstring).",
+        "properties": {
+          "columns": {
+            "$ref": "#/components/schemas/ColumnMapping"
+          },
+          "contract_in_file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract In File Name"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/NewInstrument-Output"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProfileKind",
+            "default": "market_data"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/FileLayout"
+          },
+          "licence_scope": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Licence Scope"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/PriceRule-Output",
+            "default": {
+              "scale": "1",
+              "unit": "decimal"
+            }
+          },
+          "provider": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Provider",
+            "type": "string"
+          },
+          "series": {
+            "$ref": "#/components/schemas/SeriesKind",
+            "default": "contract"
+          },
+          "timeframe": {
+            "pattern": "^(ticks|[1-9][0-9]*[smhd])$",
+            "title": "Timeframe",
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/components/schemas/TimestampRule"
+          },
+          "volume_unit": {
+            "$ref": "#/components/schemas/SizeUnit-Output",
+            "default": {
+              "asset": "contract",
+              "lot": "1"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "description",
+          "layout",
+          "columns",
+          "timestamp",
+          "timeframe"
+        ],
+        "title": "ImportProfile",
+        "type": "object"
+      },
+      "ImportSource": {
+        "discriminator": {
+          "mapping": {
+            "path": "#/components/schemas/PathSource",
+            "upload": "#/components/schemas/UploadSource"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UploadSource"
+          },
+          {
+            "$ref": "#/components/schemas/PathSource"
+          }
+        ]
+      },
+      "ImportVerdict": {
+        "description": "What a preview finds the import would do: import as it is, be refused for the problems\nor offsets found, be refused for records that differ from the store's, change nothing, as a\nfile imported before, or import nothing, as a batch whose files hold nothing new.",
+        "enum": [
+          "imports",
+          "refused",
+          "differing",
+          "imported_before",
+          "nothing"
+        ],
+        "title": "ImportVerdict",
+        "type": "string"
       },
       "IndexedFeature": {
         "description": "A saved feature as the index holds it: its row's id, its name, and its versions in order.",
@@ -2206,6 +3340,24 @@
         "title": "LintRule",
         "type": "string"
       },
+      "ListedProfile": {
+        "additionalProperties": false,
+        "description": "A profile the wizard offers, with where it comes from.",
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/ProfileOrigin"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ImportProfile-Output"
+          }
+        },
+        "required": [
+          "origin",
+          "profile"
+        ],
+        "title": "ListedProfile",
+        "type": "object"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "description": "The password, set at `fefat up`'s first run or by `fefat password set`.",
@@ -2339,6 +3491,28 @@
         "title": "MonthCoverage",
         "type": "object"
       },
+      "NamedProfile": {
+        "additionalProperties": false,
+        "description": "A profile by its name: a preset, or a profile saved under `profiles/`.",
+        "properties": {
+          "kind": {
+            "const": "named",
+            "default": "named",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "NamedProfile",
+        "type": "object"
+      },
       "Negation": {
         "additionalProperties": false,
         "description": "`not` of a flag.",
@@ -2431,6 +3605,202 @@
         "title": "NewFeature",
         "type": "object"
       },
+      "NewInstrument-Input": {
+        "additionalProperties": false,
+        "description": "The specification of a product FEFAT does not know, entered once: `calendar` is a\nbuilt-in calendar's id or the hours of a calendar of its own without holidays, and\n`first_trade_date` the day it began trading, before which no record is imported.",
+        "properties": {
+          "calendar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalendarId"
+              },
+              {
+                "$ref": "#/components/schemas/SessionHours-Input"
+              }
+            ],
+            "title": "Calendar"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "first_trade_date": {
+            "format": "date",
+            "title": "First Trade Date",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InstrumentKind"
+          },
+          "last_trade_rule": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "business-days-before-the-25th": "#/components/schemas/BusinessDaysBeforeThe25th",
+                    "third-friday": "#/components/schemas/ThirdFriday",
+                    "third-last-business-day": "#/components/schemas/ThirdLastBusinessDay"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ThirdFriday"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BusinessDaysBeforeThe25th"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ThirdLastBusinessDay"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade Rule"
+          },
+          "lot_step": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": "1",
+            "title": "Lot Step"
+          },
+          "point_value": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Point Value"
+          },
+          "root": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Root",
+            "type": "string"
+          },
+          "tick_size": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Tick Size"
+          }
+        },
+        "required": [
+          "root",
+          "kind",
+          "tick_size",
+          "point_value",
+          "currency",
+          "calendar",
+          "first_trade_date"
+        ],
+        "title": "NewInstrument",
+        "type": "object"
+      },
+      "NewInstrument-Output": {
+        "additionalProperties": false,
+        "description": "The specification of a product FEFAT does not know, entered once: `calendar` is a\nbuilt-in calendar's id or the hours of a calendar of its own without holidays, and\n`first_trade_date` the day it began trading, before which no record is imported.",
+        "properties": {
+          "calendar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalendarId"
+              },
+              {
+                "$ref": "#/components/schemas/SessionHours-Output"
+              }
+            ],
+            "title": "Calendar"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "first_trade_date": {
+            "format": "date",
+            "title": "First Trade Date",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InstrumentKind"
+          },
+          "last_trade_rule": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "business-days-before-the-25th": "#/components/schemas/BusinessDaysBeforeThe25th",
+                    "third-friday": "#/components/schemas/ThirdFriday",
+                    "third-last-business-day": "#/components/schemas/ThirdLastBusinessDay"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ThirdFriday"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BusinessDaysBeforeThe25th"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ThirdLastBusinessDay"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Trade Rule"
+          },
+          "lot_step": {
+            "default": "1",
+            "title": "Lot Step",
+            "type": "string"
+          },
+          "point_value": {
+            "title": "Point Value",
+            "type": "string"
+          },
+          "root": {
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+            "title": "Root",
+            "type": "string"
+          },
+          "tick_size": {
+            "title": "Tick Size",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "kind",
+          "tick_size",
+          "point_value",
+          "currency",
+          "calendar",
+          "first_trade_date"
+        ],
+        "title": "NewInstrument",
+        "type": "object"
+      },
       "NewStrategy": {
         "additionalProperties": false,
         "description": "A new strategy: its name, a lower-case identifier of at most 64 characters, and its first\nversion.",
@@ -2485,6 +3855,64 @@
           "hypothesis"
         ],
         "title": "NewStrategyVersionRequest",
+        "type": "object"
+      },
+      "OffsetCause": {
+        "description": "What a dataset's offset points at: hours at the time zone the file's times are in, one\nbar at the side of the bar its timestamps mark, and a half hour or an hour of bars as long\nas one at either.",
+        "enum": [
+          "time-zone",
+          "bar-stamping",
+          "time-zone-or-bar-stamping"
+        ],
+        "title": "OffsetCause",
+        "type": "string"
+      },
+      "OffsetDirection": {
+        "description": "Whether a file's records run late or early against their calendar.",
+        "enum": [
+          "late",
+          "early"
+        ],
+        "title": "OffsetDirection",
+        "type": "string"
+      },
+      "OffsetSeen": {
+        "additionalProperties": false,
+        "description": "A file's offset from its calendar (`fefat.market.calendar_offset.CalendarOffset`): what\nit points at, which way and how far its records run, in words, on which trade dates, and\nthe SDK's line for it.",
+        "properties": {
+          "cause": {
+            "$ref": "#/components/schemas/OffsetCause"
+          },
+          "description": {
+            "$ref": "#/components/schemas/Capped"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/OffsetDirection"
+          },
+          "duration": {
+            "title": "Duration",
+            "type": "string"
+          },
+          "first_trade_date": {
+            "format": "date",
+            "title": "First Trade Date",
+            "type": "string"
+          },
+          "last_trade_date": {
+            "format": "date",
+            "title": "Last Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cause",
+          "direction",
+          "duration",
+          "first_trade_date",
+          "last_trade_date",
+          "description"
+        ],
+        "title": "OffsetSeen",
         "type": "object"
       },
       "OrderRole": {
@@ -2577,6 +4005,29 @@
           "new_password"
         ],
         "title": "PasswordChange",
+        "type": "object"
+      },
+      "PathSource": {
+        "additionalProperties": false,
+        "description": "A file or batch folder named by its path, which must lie under an import root.",
+        "properties": {
+          "kind": {
+            "const": "path",
+            "default": "path",
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathSource",
         "type": "object"
       },
       "PeriodOutcome": {
@@ -2694,6 +4145,99 @@
         "title": "PresetStatus",
         "type": "string"
       },
+      "PriceRule-Input": {
+        "additionalProperties": false,
+        "description": "How a price is written, and what multiplies it into the instrument's price, such as\n0.0001 for prices stored times 10,000.",
+        "properties": {
+          "scale": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": "1",
+            "title": "Scale"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/PriceUnit",
+            "default": "decimal"
+          }
+        },
+        "title": "PriceRule",
+        "type": "object"
+      },
+      "PriceRule-Output": {
+        "additionalProperties": false,
+        "description": "How a price is written, and what multiplies it into the instrument's price, such as\n0.0001 for prices stored times 10,000.",
+        "properties": {
+          "scale": {
+            "default": "1",
+            "title": "Scale",
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/PriceUnit",
+            "default": "decimal"
+          }
+        },
+        "title": "PriceRule",
+        "type": "object"
+      },
+      "PriceUnit": {
+        "description": "How a file writes a price: as a decimal, as an integer count of 1e-9 units, or as\nDatabento writes one, either, the same throughout a file.",
+        "enum": [
+          "decimal",
+          "nano_integer",
+          "databento"
+        ],
+        "title": "PriceUnit",
+        "type": "string"
+      },
+      "PrintSeen": {
+        "additionalProperties": false,
+        "description": "A print as the store would hold it, its instant in ISO 8601 UTC and its price in the\ninstrument's units.",
+        "properties": {
+          "contract": {
+            "title": "Contract",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "ts_recv": {
+            "title": "Ts Recv",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts_recv",
+          "trade_date",
+          "contract",
+          "price",
+          "size",
+          "side"
+        ],
+        "title": "PrintSeen",
+        "type": "object"
+      },
       "Problem": {
         "description": "An error the API answered (RFC 9457), with the id of the request it ended.",
         "properties": {
@@ -2732,6 +4276,40 @@
         ],
         "title": "Problem",
         "type": "object"
+      },
+      "ProfileChoice": {
+        "discriminator": {
+          "mapping": {
+            "given": "#/components/schemas/GivenProfile",
+            "named": "#/components/schemas/NamedProfile"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NamedProfile"
+          },
+          {
+            "$ref": "#/components/schemas/GivenProfile"
+          }
+        ]
+      },
+      "ProfileKind": {
+        "description": "What a profile imports: market data here; trade logs arrive in Phase 7.",
+        "enum": [
+          "market_data"
+        ],
+        "title": "ProfileKind",
+        "type": "string"
+      },
+      "ProfileOrigin": {
+        "description": "Where a profile comes from: FEFAT's presets, or the trader's `profiles/` folder.",
+        "enum": [
+          "preset",
+          "saved"
+        ],
+        "title": "ProfileOrigin",
+        "type": "string"
       },
       "QualityFinding": {
         "description": "What a report finds wrong with a dataset on a trade date: a session without records,\nrepeated records, records outside their session and its break, decreases of the clock\nbetween stored rows, prices of zero or below where none are allowed, and bars that differ\nfrom those rebuilt from finer data.",
@@ -2914,6 +4492,27 @@
           "line"
         ],
         "title": "RefusedCodeProblem",
+        "type": "object"
+      },
+      "RefusedImport": {
+        "additionalProperties": false,
+        "description": "What the SDK refused, in its words, as a file it cannot read or a profile that does not\nfit it.",
+        "properties": {
+          "kind": {
+            "const": "refused",
+            "default": "refused",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "RefusedImport",
         "type": "object"
       },
       "Replay": {
@@ -3770,6 +5369,100 @@
         "title": "SecretStatus",
         "type": "object"
       },
+      "SeriesKind": {
+        "description": "What a dataset's contracts are (step 1.10): dated contracts, or one continuous series\nimported as a synthetic contract, its prices as the file gives them or back-adjusted.",
+        "enum": [
+          "contract",
+          "continuous",
+          "continuous-back-adjusted"
+        ],
+        "title": "SeriesKind",
+        "type": "string"
+      },
+      "SessionHours-Input": {
+        "additionalProperties": false,
+        "description": "Regular sessions in local time of `time_zone`: each opens at `opens_at`, on the day before\nits trade date when `opens_on_previous_day`, and closes at `closes_at` on its trade date, or\non the day after when it opens on its trade date and `closes_at` is not after `opens_at` (a\ncrypto UTC day runs 00:00 to 00:00). `weekdays` are the days of the week that are trade\ndates.",
+        "properties": {
+          "closes_at": {
+            "format": "time",
+            "title": "Closes At",
+            "type": "string"
+          },
+          "opens_at": {
+            "format": "time",
+            "title": "Opens At",
+            "type": "string"
+          },
+          "opens_on_previous_day": {
+            "title": "Opens On Previous Day",
+            "type": "boolean"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "$ref": "#/components/schemas/Weekday-Input"
+            },
+            "minItems": 1,
+            "title": "Weekdays",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "time_zone",
+          "opens_at",
+          "closes_at",
+          "opens_on_previous_day",
+          "weekdays"
+        ],
+        "title": "SessionHours",
+        "type": "object"
+      },
+      "SessionHours-Output": {
+        "additionalProperties": false,
+        "description": "Regular sessions in local time of `time_zone`: each opens at `opens_at`, on the day before\nits trade date when `opens_on_previous_day`, and closes at `closes_at` on its trade date, or\non the day after when it opens on its trade date and `closes_at` is not after `opens_at` (a\ncrypto UTC day runs 00:00 to 00:00). `weekdays` are the days of the week that are trade\ndates.",
+        "properties": {
+          "closes_at": {
+            "format": "time",
+            "title": "Closes At",
+            "type": "string"
+          },
+          "opens_at": {
+            "format": "time",
+            "title": "Opens At",
+            "type": "string"
+          },
+          "opens_on_previous_day": {
+            "title": "Opens On Previous Day",
+            "type": "boolean"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "$ref": "#/components/schemas/fefat__market__calendar_definition__Weekday"
+            },
+            "minItems": 1,
+            "title": "Weekdays",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "time_zone",
+          "opens_at",
+          "closes_at",
+          "opens_on_previous_day",
+          "weekdays"
+        ],
+        "title": "SessionHours",
+        "type": "object"
+      },
       "SessionIdentity": {
         "description": "A request of a login session, with the CSRF token that every state-changing request the\nsession's cookie authenticates must carry in `X-CSRF-Token`, and when the session ends.",
         "properties": {
@@ -3798,7 +5491,7 @@
       },
       "Settings": {
         "additionalProperties": false,
-        "description": "What the server needs before its database opens, from `<FEFAT_HOME>/config.toml`\n(`01-architecture.md` sections 4, 6, and 8, D-83): the port it listens on, the address it\nbinds, which can only be the loopback (D-54), the size of its process pool, and the folders\nan import may read large files from. What the app edits, such as the password and the\ntheme, lives in its database's `settings` table instead; secrets live in the credential\nstore, never here.",
+        "description": "What the server needs before its database opens, from `<FEFAT_HOME>/config.toml`\n(`01-architecture.md` sections 4, 6, and 8, D-83): the port it listens on, the address it\nbinds, which can only be the loopback (D-54), the size of its process pool, the folders\nan import may read large files from, and the largest file and the endings of the files\nthe import wizard takes (step 5.12). What the app edits, such as the password and the\ntheme, lives in its database's `settings` table instead; secrets live in the credential\nstore, never here.",
         "properties": {
           "bind_address": {
             "const": "127.0.0.1",
@@ -3826,6 +5519,30 @@
             "minimum": 1.0,
             "title": "Process Pool Size",
             "type": "integer"
+          },
+          "upload_megabytes": {
+            "default": 256,
+            "maximum": 1024.0,
+            "minimum": 1.0,
+            "title": "Upload Megabytes",
+            "type": "integer"
+          },
+          "upload_suffixes": {
+            "default": [
+              ".csv",
+              ".tsv",
+              ".txt",
+              ".parquet",
+              ".zip",
+              ".gz"
+            ],
+            "items": {
+              "pattern": "^(\\.[a-z0-9]+)+$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Upload Suffixes",
+            "type": "array"
           }
         },
         "title": "Settings",
@@ -3870,6 +5587,56 @@
         ],
         "title": "Severity",
         "type": "string"
+      },
+      "SizeUnit-Input": {
+        "additionalProperties": false,
+        "description": "What one unit of a `size` or `volume` column is: `lot` of `asset`, such as 1 contract\nor 0.001 BTC.",
+        "properties": {
+          "asset": {
+            "minLength": 1,
+            "title": "Asset",
+            "type": "string"
+          },
+          "lot": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Lot"
+          }
+        },
+        "required": [
+          "lot",
+          "asset"
+        ],
+        "title": "SizeUnit",
+        "type": "object"
+      },
+      "SizeUnit-Output": {
+        "additionalProperties": false,
+        "description": "What one unit of a `size` or `volume` column is: `lot` of `asset`, such as 1 contract\nor 0.001 BTC.",
+        "properties": {
+          "asset": {
+            "minLength": 1,
+            "title": "Asset",
+            "type": "string"
+          },
+          "lot": {
+            "title": "Lot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lot",
+          "asset"
+        ],
+        "title": "SizeUnit",
+        "type": "object"
       },
       "SlippageTicks": {
         "additionalProperties": false,
@@ -4176,6 +5943,101 @@
         "title": "StrategyTemplate",
         "type": "object"
       },
+      "TableAsked": {
+        "additionalProperties": false,
+        "description": "A file's table as `layout` reads it, or as its first lines suggest where it is None.",
+        "properties": {
+          "kind": {
+            "const": "table",
+            "default": "table",
+            "title": "Kind",
+            "type": "string"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FileLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/ImportSource"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "TableAsked",
+        "type": "object"
+      },
+      "TablePreview": {
+        "additionalProperties": false,
+        "description": "A file's table: the name of the file its rows are in, its own or the one its `.gz` or\n`.zip` holds, the layout read, and its first columns and rows as text, cut to a cell's\nwidth, beside how many there are.",
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Columns",
+            "type": "array"
+          },
+          "columns_total": {
+            "minimum": 0.0,
+            "title": "Columns Total",
+            "type": "integer"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "kind": {
+            "const": "table",
+            "default": "table",
+            "title": "Kind",
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/FileLayout"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "maxItems": 20,
+            "title": "Rows",
+            "type": "array"
+          },
+          "rows_total": {
+            "minimum": 0.0,
+            "title": "Rows Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_name",
+          "layout",
+          "columns",
+          "columns_total",
+          "rows",
+          "rows_total"
+        ],
+        "title": "TablePreview",
+        "type": "object"
+      },
       "Theme": {
         "description": "The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or\nlight.",
         "enum": [
@@ -4253,6 +6115,110 @@
         "title": "ThemeColours",
         "type": "object"
       },
+      "ThirdFriday": {
+        "additionalProperties": false,
+        "description": "The third Friday of the contract month, or the last trade date before it when it is\nnone.",
+        "properties": {
+          "kind": {
+            "const": "third-friday",
+            "default": "third-friday",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "ThirdFriday",
+        "type": "object"
+      },
+      "ThirdLastBusinessDay": {
+        "additionalProperties": false,
+        "description": "The third-last trade date of the contract month.",
+        "properties": {
+          "kind": {
+            "const": "third-last-business-day",
+            "default": "third-last-business-day",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "ThirdLastBusinessDay",
+        "type": "object"
+      },
+      "TickColumnNames": {
+        "additionalProperties": false,
+        "description": "The columns of a tick's price and size, its aggressor side (`A`, `B`, or `N`; `N`\nwithout a column), the event time where it differs from the timestamp, which is the receive\ntime, and its sequence (without a column, the store numbers it by its place among the ticks\nof its instant).",
+        "properties": {
+          "event_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Time"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Price"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          },
+          "side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Side"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "required": [
+          "price",
+          "size"
+        ],
+        "title": "TickColumnNames",
+        "type": "object"
+      },
       "TickFidelity": {
         "description": "Tick data: trades with the quote just before each, or trades alone.",
         "enum": [
@@ -4312,6 +6278,58 @@
           "timeframe"
         ],
         "title": "TimeframeInput",
+        "type": "object"
+      },
+      "TimestampForm": {
+        "description": "A timestamp written as a number since the Unix epoch, as ISO 8601 text with an offset\nor none, or as Databento writes one, ISO 8601 or integer nanoseconds.",
+        "enum": [
+          "unix_s",
+          "unix_ms",
+          "unix_us",
+          "unix_ns",
+          "iso",
+          "databento"
+        ],
+        "title": "TimestampForm",
+        "type": "string"
+      },
+      "TimestampRule": {
+        "additionalProperties": false,
+        "description": "How a timestamp is written: its format, its time zone (null where each import names it,\nsince the file's zone is the trader's, such as the TWS login's), and the bar end it marks.",
+        "properties": {
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimestampForm"
+              },
+              {
+                "pattern": "%",
+                "type": "string"
+              }
+            ],
+            "title": "Format"
+          },
+          "stamp": {
+            "$ref": "#/components/schemas/BarStamp",
+            "default": "open"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          }
+        },
+        "required": [
+          "format",
+          "time_zone"
+        ],
+        "title": "TimestampRule",
         "type": "object"
       },
       "TradeStatistics": {
@@ -4450,6 +6468,68 @@
           }
         },
         "title": "TradesInput",
+        "type": "object"
+      },
+      "UploadSource": {
+        "additionalProperties": false,
+        "description": "A file kept as an upload, named by its id.",
+        "properties": {
+          "kind": {
+            "const": "upload",
+            "default": "upload",
+            "title": "Kind",
+            "type": "string"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id"
+        ],
+        "title": "UploadSource",
+        "type": "object"
+      },
+      "UploadedFile": {
+        "additionalProperties": false,
+        "description": "A file the browser sent, kept in its own folder of the workspace's uploads until its\nimport has written: its id, its name, its size in bytes, its SHA-256, and when it came.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size": {
+            "minimum": 1.0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "size",
+          "sha256",
+          "uploaded_at"
+        ],
+        "title": "UploadedFile",
         "type": "object"
       },
       "ValidStrategy": {
@@ -4616,19 +6696,19 @@
         "title": "VolumeColouring",
         "type": "string"
       },
-      "Weekday": {
-        "description": "A day of the week, as the specification spells it.",
+      "Weekday-Input": {
+        "description": "A day of the week, numbered as ISO 8601, `date.isoweekday`, and Polars number them.",
         "enum": [
-          "monday",
-          "tuesday",
-          "wednesday",
-          "thursday",
-          "friday",
-          "saturday",
-          "sunday"
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
         ],
         "title": "Weekday",
-        "type": "string"
+        "type": "integer"
       },
       "Window": {
         "additionalProperties": false,
@@ -4715,6 +6795,34 @@
         ],
         "title": "Window",
         "type": "object"
+      },
+      "fefat__market__calendar_definition__Weekday": {
+        "description": "A day of the week, numbered as ISO 8601, `date.isoweekday`, and Polars number them.",
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "title": "Weekday",
+        "type": "integer"
+      },
+      "fefat__strategy__exits__Weekday": {
+        "description": "A day of the week, as the specification spells it.",
+        "enum": [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+          "sunday"
+        ],
+        "title": "Weekday",
+        "type": "string"
       }
     },
     "securitySchemes": {
@@ -5969,6 +8077,283 @@
         ]
       }
     },
+    "/v1/import-profiles": {
+      "get": {
+        "description": "The presets, then the profiles saved under `profiles/`; refused with 409 where a saved\nprofile's file is not a profile, which the refusal names.",
+        "operationId": "import_profiles_v1_import_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ListedProfile"
+                  },
+                  "title": "Response Import Profiles V1 Import Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Import Profiles",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/v1/imports": {
+      "post": {
+        "description": "Queue the import as an `import` job, its file and its profile checked first; its stages\nand its end come with the job's stream.",
+        "operationId": "start_import_v1_imports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "databento": "#/components/schemas/BatchImportAsked",
+                    "file": "#/components/schemas/FileImportAsked"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FileImportAsked"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BatchImportAsked"
+                  }
+                ],
+                "title": "Asked"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Start Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/v1/imports/preview": {
+      "post": {
+        "description": "The file's table, or what its import would do, read by the executor and nothing\nwritten; a file the SDK refuses is answered as refused, with why.",
+        "operationId": "preview_import_v1_imports_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "databento": "#/components/schemas/BatchImportAsked",
+                    "file": "#/components/schemas/FileImportAsked",
+                    "table": "#/components/schemas/TableAsked"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TableAsked"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FileImportAsked"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BatchImportAsked"
+                  }
+                ],
+                "title": "Asked"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreviewAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Preview Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/v1/instruments": {
       "get": {
         "description": "Every version of every instrument's specification, FEAT's and those your imports saved,\nwith its tick size, point value, lot step, currency, and session calendar.",
@@ -6212,7 +8597,7 @@
     },
     "/v1/jobs/{job_id}/cancel": {
       "post": {
-        "description": "Cancel the job `job_id`: at once while it is queued; while it runs, it is asked to stop,\nwhich its worker does at its next report, or which the server makes it do ten seconds\nlater; an ended job is given as it is. Refused with 404 where no job has the id.",
+        "description": "Cancel the job `job_id`: at once while it is queued; while it runs, it is asked to stop,\nwhich its worker does at its next report, or which the server makes it do ten seconds\nlater; an ended job is given as it is. Refused with 404 where no job has the id, and with\n409 for an import that writes, which runs to its end (step 5.12).",
         "operationId": "cancel_job_v1_jobs__job_id__cancel_post",
         "parameters": [
           {
@@ -6265,6 +8650,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -7947,6 +10342,123 @@
         "summary": "Stream Events",
         "tags": [
           "streams"
+        ]
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "description": "Keep the file the body holds under `name`, for the import wizard to preview and import.\nRefused with 415 for a body of another media type, 400 for a name the server does not keep\nor an empty file, and 413 for a file past `config.toml`'s `upload_megabytes`.",
+        "operationId": "upload_file_v1_uploads_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Upload File",
+        "tags": [
+          "imports"
         ]
       }
     },

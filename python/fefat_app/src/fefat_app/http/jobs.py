@@ -11,7 +11,7 @@ from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
 from fefat_app.http.problems import problem_responses
 from fefat_app.job_models import Job
-from fefat_app.services.jobs import NoSuchJobError
+from fefat_app.services.jobs import JobPastStoppingError, NoSuchJobError
 
 router = APIRouter(prefix=API_PREFIX, tags=["jobs"], dependencies=[Depends(the_identity)])
 
@@ -39,15 +39,18 @@ def job_by_id(job_id: str, container: ContainerDependency) -> Job:
         raise HTTPException(404, str(refused)) from refused
 
 
-@router.post("/jobs/{job_id}/cancel", responses=problem_responses(401, 403, 404, 422))
+@router.post("/jobs/{job_id}/cancel", responses=problem_responses(401, 403, 404, 409, 422))
 def cancel_job(job_id: str, container: ContainerDependency) -> Job:
     """Cancel the job `job_id`: at once while it is queued; while it runs, it is asked to stop,
     which its worker does at its next report, or which the server makes it do ten seconds
-    later; an ended job is given as it is. Refused with 404 where no job has the id."""
+    later; an ended job is given as it is. Refused with 404 where no job has the id, and with
+    409 for an import that writes, which runs to its end (step 5.12)."""
     try:
         return container.jobs.cancel(job_id)
     except NoSuchJobError as refused:
         raise HTTPException(404, str(refused)) from refused
+    except JobPastStoppingError as refused:
+        raise HTTPException(409, str(refused)) from refused
 
 
 @router.post("/jobs/demo", status_code=202, responses=problem_responses(401, 403, 422))

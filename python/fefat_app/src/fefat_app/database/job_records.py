@@ -127,12 +127,16 @@ class JobTables:
                 session, job_id, JobStatus.QUEUED, JobStatus.CANCELLED, None, finished_at=now
             )
 
-    def request_cancel(self, job_id: str, now: datetime) -> Job | None:
+    def request_cancel(
+        self, job_id: str, now: datetime, *, stoppable_below: float | None = None
+    ) -> Job | None:
+        stoppable = [] if stoppable_below is None else [JobRow.progress < stoppable_below]
         with Session(self.engine) as session, session.begin():
             asked = update(JobRow).where(
                 JobRow.id == job_id,
                 JobRow.status == JobStatus.RUNNING,
                 JobRow.cancel_requested_at.is_(None),
+                *stoppable,
             )
             if not _changed_one(session, asked.values(cancel_requested_at=now)):
                 return None

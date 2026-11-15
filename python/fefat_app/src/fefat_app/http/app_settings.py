@@ -22,7 +22,7 @@ def read_settings(container: ContainerDependency) -> AppSettings:
     """The settings of `config.toml` and the data folder, which the page shows read-only, the
     theme, and whether each secret is stored, never its value."""
     return current_settings(
-        container.settings, container.paths.data_dir, container.credentials, container.preferences
+        container.settings, container.paths, container.credentials, container.preferences
     )
 
 
@@ -34,7 +34,7 @@ def change_settings(change: SettingsChange, container: ContainerDependency) -> A
     return apply_settings_change(
         change,
         container.settings,
-        container.paths.data_dir,
+        container.paths,
         container.credentials,
         container.preferences,
     )

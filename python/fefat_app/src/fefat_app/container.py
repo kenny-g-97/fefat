@@ -28,10 +28,12 @@ from fefat_app.ports import CredentialStore, Dispatcher, Executor, Preferences
 from fefat_app.services.api_tokens import ApiTokenIssuer
 from fefat_app.services.catalog import MarketCatalog
 from fefat_app.services.features import SavedFeatures
+from fefat_app.services.imports import Imports
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
 from fefat_app.services.strategies import SavedStrategies
+from fefat_app.uploads import UploadFolders
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,8 @@ class Container:
     preferences, the jobs, and their dispatcher, which the server starts and closes, the
     executor of the trader's code, whose warm runner `opened_container` ends, the data
     catalog over the store in the data folder (step 5.1), the library's strategies and
-    features over their index (step 5.2), and the runs (step 5.3)."""
+    features over their index (step 5.2), the runs (step 5.3), and the import wizard over the
+    workspace's uploads (step 5.12)."""
 
     settings: Settings
     paths: FefatPaths
@@ -56,6 +59,7 @@ class Container:
     strategies: SavedStrategies
     features: SavedFeatures
     runs: Runs
+    imports: Imports
 
 
 def credential_store() -> CredentialStore:
@@ -95,6 +99,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         strategies=SavedStrategies(library, executor, paths.strategies_dir),
         features=SavedFeatures(library, executor, paths.features_dir),
         runs=Runs(RunTables(engine, paths), library, executor, jobs, paths.strategies_dir, clock),
+        imports=Imports(executor, jobs, UploadFolders(paths.uploads_dir, clock), paths, settings),
     )
 
 

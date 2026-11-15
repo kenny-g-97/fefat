@@ -78,11 +78,13 @@ class RequeuedBeforeTheAsk(JobTables):
     """The records of a race the cancel meets: the reaper queues the running job again between
     the cancel's two tries, after the first found it running."""
 
-    def request_cancel(self, job_id: str, now: datetime) -> Job | None:
+    def request_cancel(
+        self, job_id: str, now: datetime, *, stoppable_below: float | None = None
+    ) -> Job | None:
         running = self.by_id(job_id)
         if running is not None and running.worker_pid is not None:
             self.requeue(job_id, running.worker_pid)
-        return super().request_cancel(job_id, now)
+        return super().request_cancel(job_id, now, stoppable_below=stoppable_below)
 
 
 def test_a_cancel_that_meets_a_requeue_still_cancels(
@@ -122,7 +124,9 @@ class RefusesEveryChange(JobTables):
     def cancel_queued(self, job_id: str, now: datetime) -> Job | None:
         return None
 
-    def request_cancel(self, job_id: str, now: datetime) -> Job | None:
+    def request_cancel(
+        self, job_id: str, now: datetime, *, stoppable_below: float | None = None
+    ) -> Job | None:
         return None
 
 

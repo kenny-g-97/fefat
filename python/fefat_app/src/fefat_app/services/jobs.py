@@ -2,12 +2,15 @@
 job and, through each area's service, the others, such as the catalog sync (step 5.1); the list of
 jobs and each job read from here, a job is cancelled here, and a stream's events are read from
 here for the server's streams. A queued job is cancelled at once; a running one is asked to stop,
-which its worker reads at its next report, or after which the reaper ends it."""
+which its worker reads at its next report, or after which the reaper ends it, unless it has come
+past the point where it can stop, as an import that writes (step 5.12)."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
+from fefat_app.imports import WRITING_PERCENT
 from fefat_app.job_models import ACTIVE, Job, JobKind, JobStatus, StreamEvent
 from fefat_app.ports import Clock, Dispatcher, JobRecords
 
@@ -18,6 +21,11 @@ RECENT_JOBS = 100
 CANCEL_TRIES = 3
 """How many times a cancel reads its job again after the job changed under it, as when the
 reaper queues it again; a race that repeats faster than a read takes is no race."""
+STOPPABLE_BELOW: Mapping[JobKind, float] = {JobKind.IMPORT: WRITING_PERCENT}
+"""The progress from which a running job of a kind no longer stops: an import's once it writes,
+since an import stopped then is finished only by running it again (ADR-0021). The request to
+stop is refused in the same write that would make it, so that a job that reached the point in
+between is never asked, and its worker never ended by the reaper."""
 
 
 class NoSuchJobError(ValueError):
@@ -25,6 +33,17 @@ class NoSuchJobError(ValueError):
 
     def __init__(self, job_id: str) -> None:
         super().__init__(f"Expected the id of a job, got {job_id!r}.")
+
+
+class JobPastStoppingError(ValueError):
+    """A running job asked to stop past the point where it can (`STOPPABLE_BELOW`)."""
+
+    def __init__(self, job: Job) -> None:
+        super().__init__(
+            f"Expected a job that can still stop, got the import {job.id}, which writes its "
+            "partitions now: an import runs to its end once it writes, since one stopped then "
+            "is finished only by importing its file again."
+        )
 
 
 @dataclass(frozen=True)
@@ -73,22 +92,28 @@ class Jobs:
 
     def cancel(self, job_id: str) -> Job:
         """Cancel the job `job_id` at once if it is queued, or ask it to stop if it runs; a job
-        that has ended, or that was asked before, is given as it is. A job the reaper queued
-        again, or a worker started, since it was read is read again, `CANCEL_TRIES` times at
+        that has ended, or that was asked before, is given as it is, and one past the point
+        where it can stop is refused (`JobPastStoppingError`). A job the reaper queued again, or
+        a worker started or moved on, since it was read is read again, `CANCEL_TRIES` times at
         most, after which it is given as it is."""
         now = self.clock()
         job = self.by_id(job_id)
         for _ in range(CANCEL_TRIES):
             if job.status not in ACTIVE or job.cancel_requested_at is not None:
                 return job
-            if job.status == JobStatus.QUEUED:
-                changed = self.records.cancel_queued(job_id, now)
-            else:
-                changed = self.records.request_cancel(job_id, now)
+            changed = self._cancelled(job, now)
             if changed is not None:
                 return changed
             job = self.by_id(job_id)
         return job
+
+    def _cancelled(self, job: Job, now: datetime) -> Job | None:
+        if job.status == JobStatus.QUEUED:
+            return self.records.cancel_queued(job.id, now)
+        stoppable_below = STOPPABLE_BELOW.get(job.kind)
+        if stoppable_below is not None and job.progress >= stoppable_below:
+            raise JobPastStoppingError(job)
+        return self.records.request_cancel(job.id, now, stoppable_below=stoppable_below)
 
     def events_after(self, stream_id: str, after_id: int, limit: int) -> tuple[StreamEvent, ...]:
         """At most `limit` events of the stream `stream_id` after the event `after_id`."""

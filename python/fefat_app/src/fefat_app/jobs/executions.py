@@ -4,7 +4,8 @@ each report of the runner's progress a `progress` event of the job's stream, and
 request to stop read each second between them, so that the worker stops the runner itself rather
 than the reaper ending the worker; an execution that ran out of time ends its job `timed_out`,
 and one that failed ends it `failed` with the runner's error. From step 5.3 a backtest's job runs
-its execution through `executed` too (`fefat_app.jobs.backtests`)."""
+its execution through `executed` too (`fefat_app.jobs.backtests`), and from step 5.12 an
+import's (`fefat_app.jobs.imports`)."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -19,10 +20,11 @@ from fefat_app.execution import (
     PythonSnippetSpec,
     StopCheck,
 )
+from fefat_app.imports import ImportSpec
 from fefat_app.jobs.progress import JobProgress
 from fefat_app.ports import Executor
 
-type JobSpec = FeaturePreviewSpec | PythonSnippetSpec | BacktestSpec
+type JobSpec = FeaturePreviewSpec | PythonSnippetSpec | BacktestSpec | ImportSpec
 """The spec of an execution a job runs."""
 
 
