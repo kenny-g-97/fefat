@@ -72,9 +72,10 @@ describe("importedSources", () => {
     ])
   })
 
-  it("lists a provider no source's preset names under its own name, apart from every source", () => {
-    // A trader's own import profile stores its data under the provider it names, which may be
-    // a source's id though never a preset's: `interactive-brokers` beside `ibkr`'s source.
+  it("lists a provider named for a source under that source, and one the guide names nowhere under its own name", () => {
+    // A trader's own import profile stores its data under the provider it names: a source's id,
+    // such as `kibot`, which has no preset, says which source its files come from, as the
+    // dataset's licence scope does (step 5.12, from `BACKLOG.md`); any other name stands apart.
     const rows = [
       aRow("ES", "my-broker"),
       aRow("ES", "kibot"),
@@ -97,13 +98,12 @@ describe("importedSources", () => {
         "Not in the source guide",
         ["ES", "CL"],
       ],
-      ["provider kibot", "kibot", "Not in the source guide", ["ES"]],
-      ["source interactive-brokers", "Interactive Brokers", "Vendor", ["NQ"]],
+      ["source kibot", "Kibot", "Vendor", ["ES"]],
       [
-        "provider interactive-brokers",
-        "interactive-brokers",
-        "Not in the source guide",
-        ["NQ"],
+        "source interactive-brokers",
+        "Interactive Brokers",
+        "Vendor",
+        ["NQ", "NQ"],
       ],
     ])
   })
