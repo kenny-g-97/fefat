@@ -8,6 +8,7 @@ its last trade date and brings ESM2026, which leads from 03-11, so the merge cha
 adds March, and gives the series its roll."""
 
 import os
+import shutil
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ from fefat.market.schema import parse_schema_name
 from fefat.market.status import dataset_standing
 from fefat.market.store import Store
 from generated_minutes import listing, minutes_of
-from test_features_cache import rewritten, written
+from test_features_cache import cache_folder, rewritten, written
 from test_market_importers_merge_properties import es_bars, march_file
 
 ONE_MINUTE = int(RType.from_str("ohlcv-1m"))
@@ -147,6 +148,59 @@ def test_the_features_cache_computes_what_a_merge_changed_and_nothing_before_it(
     assert up_to_the_join.select(bars).equals(before.select(bars))
     assert_frame_equal(up_to_the_join.select("rsi"), before.select("rsi"), rel_tol=1e-9, abs_tol=0)
     assert after.filter(pl.col("trade_date") > FIRST_ENDS).height > 0
+
+
+def test_the_features_cache_computes_again_what_a_backfill_reaches(files: OverlappingFiles) -> None:
+    # The leakage audit of step 5.14: the second file alone starts on 02-10, so its first bars'
+    # values wait for their warm-up; the first file then brings the sessions before them, and
+    # what was cached is computed again, to the values a clean cache gives.
+    slots, window = {"rsi": rsi(n=14)}, ("2026-02-11", "2026-03-20")
+    imported(files.second)
+    before = ff.features.compute(slots, "ES", "5m", *window).collect()
+    cached = written()
+
+    imported(files.first)
+    after = ff.features.compute(slots, "ES", "5m", *window).collect()
+    computed_again = rewritten(cached)
+    shutil.rmtree(cache_folder())
+    clean = ff.features.compute(slots, "ES", "5m", *window).collect()
+
+    assert before.item(0, "rsi") is None and clean.item(0, "rsi") is not None
+    assert_frame_equal(after, clean)
+    assert computed_again == {
+        f"{folder}/{month}" for folder in ("bars", "rsi") for month in ("2026-02", "2026-03")
+    }
+
+
+def test_a_session_carried_on_gives_its_held_back_bucket_and_changes_nothing_before_it(
+    files: OverlappingFiles, tmp_path: Path
+) -> None:
+    # The leakage audit of step 5.14: the first file stops inside a session, at 15:03 of 02-20,
+    # so the 5-minute bucket from 15:00 is held back as unfinished. The file that carries the
+    # session on completes it, and no bar or value before the stop changes.
+    sessions = sessions_of(instruments.get("ES").session_calendar(), tmp_path / "cache")
+    minutes = pl.concat(
+        [minutes_of(each, sessions.between(*each.trades)) for each in LISTINGS]
+    ).sort("ts_open", "instrument_id")
+    stops = utc(2026, 2, 20, 15, 3)
+    cut_short = dbn_file(
+        tmp_path / "cut-short" / "es.ohlcv-1m.dbn", minutes.filter(pl.col("ts_close") <= stops)
+    )
+    slots = {"rsi": rsi(n=14)}
+    imported(cut_short)
+    before = ff.features.compute(slots, "ES", "5m", "2026-01-05", FIRST_ENDS).collect()
+    cached = written()
+
+    imported(files.second)
+    after = ff.features.compute(slots, "ES", "5m", "2026-01-05", FIRST_ENDS).collect()
+
+    assert before.get_column("ts_close").max() == utc(2026, 2, 20, 15, 0)
+    assert after.filter(pl.col("ts_close") == utc(2026, 2, 20, 15, 5)).height == 1
+    up_to_the_stop = after.filter(pl.col("ts_close") <= stops)
+    bars = list(SIGNAL_BAR_COLUMNS)
+    assert up_to_the_stop.select(bars).equals(before.select(bars))
+    assert_frame_equal(up_to_the_stop.select("rsi"), before.select("rsi"), rel_tol=1e-9, abs_tol=0)
+    assert rewritten(cached) == {"bars/2026-02", "rsi/2026-02"}
 
 
 def test_the_roll_calendar_is_built_again_once_a_merge_brings_the_next_contract(
