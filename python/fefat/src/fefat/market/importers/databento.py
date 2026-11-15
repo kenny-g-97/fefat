@@ -24,8 +24,9 @@ store as it was, an import cut short while it writes is finished by running it a
 finished one imports nothing twice and reads none of its files again.
 A file the raw manifest records with other bytes is refused: raw files never change, so a
 corrected download arrives as a new file. The vendor's daily bars (`ohlcv-1d`) are cut on UTC
-days rather than sessions and are skipped (ADR-0019). `vendor_conditions` reads a batch's
-per-day conditions back for the quality report (1.8).
+days rather than sessions and are skipped (ADR-0019). `preview_databento` finds and checks the
+same files, reads the data file twice, and writes nothing: it says what the import would add.
+`vendor_conditions` reads a batch's per-day conditions back for the quality report (1.8).
 
     paths = resolve_paths(os.environ)
     today = datetime.now(UTC).date()
@@ -35,6 +36,7 @@ per-day conditions back for the quality report (1.8).
     print(report.summary())
 """
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path, PurePosixPath
 
@@ -60,7 +62,12 @@ from fefat.market.importers.partition_buffers import (
     require_none_differing,
 )
 from fefat.market.importers.partition_merge import DifferingRecords
-from fefat.market.importers.report import DatabentoImport, FileImport
+from fefat.market.importers.report import (
+    DatabentoFiles,
+    DatabentoImport,
+    DatabentoPreview,
+    FileImport,
+)
 from fefat.market.instruments import STATIC_TABLE, InstrumentTable
 from fefat.market.layout import DatasetMetadata, DatasetOrigin
 from fefat.market.raw_manifest import checked_raw_path
@@ -68,9 +75,42 @@ from fefat.market.schema import parse_schema_name
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
-__all__ = ["PROVIDER", "import_databento", "vendor_conditions"]
+__all__ = ["PROVIDER", "import_databento", "preview_databento", "vendor_conditions"]
 
 _DAILY_BARS = parse_schema_name("ohlcv-1d")
+
+
+@dataclass(frozen=True)
+class _Download:
+    """A folder or file found and checked before its data file is read: against the raw
+    manifest, which refuses a recorded file whose bytes changed, and against the hashes its
+    batch publishes. `recorded` says that the raw manifest holds the data file, which is then
+    imported already."""
+
+    source: Path
+    batch: Batch | None
+    data_file: Original
+    recorded: bool
+    downloaded_on: date
+
+    def revision(self) -> str:
+        """What the raw manifest adds to the data file's DBN version: its batch's revision."""
+        return "" if self.batch is None else f", {self.batch.revision()}"
+
+    def reported[Report: DatabentoFiles](
+        self, kind: type[Report], file: FileImport | None
+    ) -> Report:
+        """The report of `kind` on the download, `file` being what its data file adds to the
+        store, none where the file is recorded, or holds the vendor's daily bars, which are
+        skipped."""
+        raw_path = self.data_file.raw_path.as_posix()
+        return kind(
+            source=str(self.source),
+            batch=None if self.batch is None else self.batch.report(),
+            files=() if file is None else (file,),
+            already_imported=(raw_path,) if self.recorded else (),
+            daily_bars_skipped=() if self.recorded or file is not None else (raw_path,),
+        )
 
 
 class _DataFileImporter:
@@ -83,14 +123,12 @@ class _DataFileImporter:
         store: Store,
         cache_folder: Path,
         instruments: InstrumentTable,
-        imported_on: date,
         guide: SourceGuide,
         differing: DifferingRecords,
     ) -> None:
         self._store = store
         self._cache_folder = cache_folder
         self._instruments = instruments
-        self.imported_on = imported_on
         self._differing = differing
         self._metadata = DatasetMetadata(
             size_unit=CONTRACT_SIZE,
@@ -117,11 +155,12 @@ class _DataFileImporter:
         )
         return placement, report
 
-    def imported(self, original: Original, revision: str, downloaded_on: date) -> FileImport | None:
-        """The file checked whole, refused where its records differ from the store's and no
-        import lets them stand, then kept under `raw`, its partitions written in a third
-        reading, and its entry in the raw manifest recorded last; `None` for the vendor's daily
-        bars, which are skipped."""
+    def imported(self, download: _Download, imported_on: date) -> FileImport | None:
+        """The download's data file checked whole, refused where its records differ from the
+        store's and no import lets them stand, then kept under `raw`, its partitions written in
+        a third reading, and its entry in the raw manifest recorded last, with `imported_on`;
+        `None` for the vendor's daily bars, which are skipped."""
+        original = download.data_file
         checked = self.checked(original)
         if checked is None:
             return None
@@ -131,14 +170,14 @@ class _DataFileImporter:
         _, frames = read_dbn(original.source)
         write_records(frames, placement, self._store, self._metadata, self._differing)
         taken = any(merge.replaces() for merge in report.merges)
-        version = f"DBN {placement.metadata.version}{revision}"
+        version = f"DBN {placement.metadata.version}{download.revision()}"
         self._store.raw.record(
             original.raw_path,
             provider=PROVIDER,
             vendor_version=f"{version}{DIFFERING_TAKEN_RECORDED if taken else ''}",
-            downloaded_on=downloaded_on,
+            downloaded_on=download.downloaded_on,
             batch_job=original.batch_job,
-            imported_on=self.imported_on,
+            imported_on=imported_on,
             roots=tuple(sorted({contract.root for contract in report.contracts})),
         )
         return report
@@ -160,14 +199,31 @@ def import_databento(
     scope of Databento's entry in `guide`, and report what was imported. Records the store
     holds with other values refuse the file, nothing written, unless `differing` lets the
     file's stand."""
-    importer = _DataFileImporter(store, cache_folder, instruments, imported_on, guide, differing)
-    if source.is_dir():
-        return _import_batch(batch_in(source), store, importer)
-    if source.is_file():
-        return _import_file(source, store, importer)
-    raise FileNotFoundError(
-        f"Expected a Databento batch folder or DBN file, got no such path: {source}."
-    )
+    importer = _DataFileImporter(store, cache_folder, instruments, guide, differing)
+    download = _download(source, store)
+    file = None if download.recorded else importer.imported(download, imported_on)
+    if download.batch is not None:
+        _keep_the_sidecars(download.batch, store, imported_on)
+    return download.reported(DatabentoImport, file)
+
+
+def preview_databento(
+    source: Path,
+    store: Store,
+    cache_folder: Path,
+    *,
+    instruments: InstrumentTable = STATIC_TABLE,
+    guide: SourceGuide = SOURCE_GUIDE,
+    differing: DifferingRecords = DifferingRecords.REFUSE,
+) -> DatabentoPreview:
+    """What `import_databento` would do with the folder or file under `differing`, and nothing
+    written, a batch's sidecars included: the same files found and checked, and the data file
+    read against `store`. What refuses the import before the store's records are compared
+    refuses the preview too."""
+    importer = _DataFileImporter(store, cache_folder, instruments, guide, differing)
+    download = _download(source, store)
+    checked = None if download.recorded else importer.checked(download.data_file)
+    return download.reported(DatabentoPreview, None if checked is None else checked[1])
 
 
 def vendor_conditions(store: Store, job_id: str) -> pl.DataFrame:
@@ -186,41 +242,32 @@ def vendor_conditions(store: Store, job_id: str) -> pl.DataFrame:
     ).sort("date")
 
 
-def _import_batch(batch: Batch, store: Store, importer: _DataFileImporter) -> DatabentoImport:
-    _refuse_changed_originals(store, (*batch.sidecars, batch.data_file))
-    unrecorded = [
-        original
-        for original in (*batch.sidecars, batch.data_file)
-        if not _recorded(store, original)
-    ]
-    for original in unrecorded:
-        require_published(original, batch.folder)
-    raw_path = batch.data_file.raw_path.as_posix()
-    report = None
-    if batch.data_file in unrecorded:
-        report = importer.imported(batch.data_file, f", {batch.revision()}", batch.downloaded_on)
-    for sidecar in batch.sidecars:
-        if sidecar in unrecorded:
-            store.raw.write(sidecar.raw_path, sidecar.source, sidecar.sha256)
-            store.raw.record(
-                sidecar.raw_path,
-                provider=PROVIDER,
-                vendor_version=batch.revision(),
-                downloaded_on=batch.downloaded_on,
-                batch_job=sidecar.batch_job,
-                imported_on=importer.imported_on,
-                roots=(),
-            )
-    return DatabentoImport(
-        source=str(batch.folder),
-        batch=batch.report(),
-        files=() if report is None else (report,),
-        already_imported=() if batch.data_file in unrecorded else (raw_path,),
-        daily_bars_skipped=(raw_path,) if batch.data_file in unrecorded and report is None else (),
+def _download(source: Path, store: Store) -> _Download:
+    if source.is_dir():
+        return _batch_download(batch_in(source), store)
+    if source.is_file():
+        return _file_download(source, store)
+    raise FileNotFoundError(
+        f"Expected a Databento batch folder or DBN file, got no such path: {source}."
     )
 
 
-def _import_file(path: Path, store: Store, importer: _DataFileImporter) -> DatabentoImport:
+def _batch_download(batch: Batch, store: Store) -> _Download:
+    originals = (*batch.sidecars, batch.data_file)
+    _refuse_changed_originals(store, originals)
+    unrecorded = [original for original in originals if not _recorded(store, original)]
+    for original in unrecorded:
+        require_published(original, batch.folder)
+    return _Download(
+        source=batch.folder,
+        batch=batch,
+        data_file=batch.data_file,
+        recorded=batch.data_file not in unrecorded,
+        downloaded_on=batch.downloaded_on,
+    )
+
+
+def _file_download(path: Path, store: Store) -> _Download:
     if not path.name.endswith(DBN_SUFFIXES):
         raise ValueError(
             f"Expected a DBN file ({', '.join(DBN_SUFFIXES)}) or a batch folder, got {path}: "
@@ -228,24 +275,32 @@ def _import_file(path: Path, store: Store, importer: _DataFileImporter) -> Datab
         )
     sha256 = sha256_of(path)
     original = Original(path, PurePosixPath(PROVIDER, sha256, path.name), sha256, None)
-    raw_path = checked_raw_path(original.raw_path.as_posix())
-    if _recorded(store, original):
-        return DatabentoImport(
-            source=str(path),
-            batch=None,
-            files=(),
-            already_imported=(raw_path,),
-            daily_bars_skipped=(),
-        )
-    downloaded_on = datetime.fromtimestamp(path.stat().st_mtime, UTC).date()
-    report = importer.imported(original, "", downloaded_on)
-    return DatabentoImport(
-        source=str(path),
+    checked_raw_path(original.raw_path.as_posix())
+    return _Download(
+        source=path,
         batch=None,
-        files=() if report is None else (report,),
-        already_imported=(),
-        daily_bars_skipped=(raw_path,) if report is None else (),
+        data_file=original,
+        recorded=_recorded(store, original),
+        downloaded_on=datetime.fromtimestamp(path.stat().st_mtime, UTC).date(),
     )
+
+
+def _keep_the_sidecars(batch: Batch, store: Store, imported_on: date) -> None:
+    """Keep under `raw`, and record, each sidecar of the batch that the raw manifest lacks,
+    after the batch's data file."""
+    for sidecar in batch.sidecars:
+        if _recorded(store, sidecar):
+            continue
+        store.raw.write(sidecar.raw_path, sidecar.source, sidecar.sha256)
+        store.raw.record(
+            sidecar.raw_path,
+            provider=PROVIDER,
+            vendor_version=batch.revision(),
+            downloaded_on=batch.downloaded_on,
+            batch_job=sidecar.batch_job,
+            imported_on=imported_on,
+            roots=(),
+        )
 
 
 def _refuse_changed_originals(store: Store, originals: tuple[Original, ...]) -> None:

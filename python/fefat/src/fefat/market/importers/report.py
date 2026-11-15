@@ -3,7 +3,8 @@ dataset, what the file adds to what the store holds of it (`DatasetMerge`, step 
 batch download, the vendor's own word on its days. Counts and ranges only, never prices, so a
 summary can go into a pull request (D-21).
 
-`DatabentoImport.summary` is what `fefat data import databento` prints.
+`DatabentoImport.summary` is what `fefat data import databento` prints, and
+`DatabentoPreview.summary` what it prints with `--preview`.
 """
 
 from collections.abc import Iterable, Sequence
@@ -19,6 +20,16 @@ from fefat.market.schema import FrozenModel, SchemaKind, SchemaName
 
 _LISTED_AT_MOST = 10
 """How many symbols or days a summary line names before it says how many more there are."""
+DIFFERING_ADVICE = (
+    "Where the file is an export, check its profile's time zone and bar stamping; where it holds "
+    "a vendor's correction, or a bar the store took before it was complete, import it with "
+    "--differing take-file, and its records stand."
+)
+"""What to do about records that differ from the store's, as their refusal and a preview say."""
+DIFFERING_VERDICT = (
+    f"It would be refused: its records differ from the ones the store holds. {DIFFERING_ADVICE}"
+)
+"""A preview's last line for a file whose import the differing records would refuse."""
 
 
 class VendorCondition(StrEnum):
@@ -129,6 +140,13 @@ class DatasetMerge(FrozenModel):
         taken = self.on_differing is DifferingRecords.TAKE_THE_FILE
         return self.records_differing > 0 and taken
 
+    def disagreement(self) -> str:
+        """The records that differ, counted, with the first trade date that holds one."""
+        dated = ""
+        if self.differing_sessions:
+            dated = f", the first on trade date {self.differing_sessions[0].trade_date}"
+        return f"{self.records_differing:,} with other values in {self.dataset}{dated}"
+
     def lines(self) -> list[str]:
         differing = f"{self.records_differing:,} that differ"
         if self.replaces():
@@ -195,9 +213,10 @@ class FileImport(FrozenModel):
         )
 
 
-class DatabentoImport(FrozenModel):
-    """What `import_databento` did with a folder or file: the data files imported, those the
-    raw manifest already held, the vendor's daily bars it skipped, and the batch they came in."""
+class DatabentoFiles(FrozenModel):
+    """What a Databento folder or file holds for the store: the data files read against it,
+    those the raw manifest already held, the vendor's daily bars, which are skipped, and the
+    batch they came in."""
 
     source: str
     batch: BatchReport | None
@@ -205,9 +224,9 @@ class DatabentoImport(FrozenModel):
     already_imported: tuple[str, ...]
     daily_bars_skipped: tuple[str, ...]
 
-    def summary(self) -> str:
+    def lines(self) -> list[str]:
         """A few lines per file, with every day the vendor marks degraded."""
-        lines = [self._heading()]
+        lines: list[str] = []
         if self.batch is not None:
             lines.extend(self.batch.lines())
         for file in self.files:
@@ -219,7 +238,14 @@ class DatabentoImport(FrozenModel):
                 "Skipped, the vendor's daily bars are cut on UTC days rather than sessions: "
                 + ", ".join(self.daily_bars_skipped)
             )
-        return "\n".join(lines)
+        return lines
+
+
+class DatabentoImport(DatabentoFiles):
+    """What `import_databento` did with a folder or file."""
+
+    def summary(self) -> str:
+        return "\n".join([self._heading(), *self.lines()])
 
     def _heading(self) -> str:
         if self.files:
@@ -227,6 +253,24 @@ class DatabentoImport(FrozenModel):
         if self.already_imported:
             return f"Nothing to import from {self.source}: every file is already imported."
         return f"Nothing to import from {self.source}."
+
+
+class DatabentoPreview(DatabentoFiles):
+    """What `preview_databento` found that `import_databento` would do with a folder or file,
+    nothing written."""
+
+    def refuses(self) -> bool:
+        """Whether the import would be refused for records that differ from the store's."""
+        return any(merge.refuses() for file in self.files for merge in file.merges)
+
+    def summary(self) -> str:
+        heading = f"Preview of {self.source}; nothing was written."
+        return "\n".join([heading, *self.lines(), self._verdict()])
+
+    def _verdict(self) -> str:
+        if self.refuses():
+            return DIFFERING_VERDICT
+        return "It would import as it is." if self.files else "It would import nothing."
 
 
 def _range(first: int | None, last: int | None) -> str:

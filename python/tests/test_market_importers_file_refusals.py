@@ -17,6 +17,7 @@ from export_samples import (
     a_new_product_profile,
     five_minute_file,
     imported,
+    previewed,
     rolled_databento_lines,
     sample_lines,
     sample_request,
@@ -26,13 +27,8 @@ from export_samples import (
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.calendar_definition import CalendarId
-from fefat.market.importers.file_import import (
-    DAILY_SESSION_ASSUMED,
-    FileImportRequest,
-    preview_file,
-)
+from fefat.market.importers.file_import import DAILY_SESSION_ASSUMED, FileImportRequest
 from fefat.market.importers.profiles import BarStamp
-from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, SeriesKind, SizeUnit
 from fefat.market.schema import Timeframe, TimeUnit, parse_schema_name
 from fefat.market.store import Store
@@ -68,7 +64,7 @@ def test_a_file_that_leaves_no_record_is_refused_with_the_problems_of_its_rows(
     request = sample_request(preset, path=written_export(tmp_path, name, lines))
 
     with pytest.raises(ValueError, match=re.escape(refusal)):
-        preview_file(request, STATIC_TABLE, tmp_path / "cache")
+        previewed(tmp_path, request)
 
 
 def test_a_timestamp_outside_the_calendars_sessions_is_a_problem(tmp_path: Path) -> None:
@@ -76,12 +72,11 @@ def test_a_timestamp_outside_the_calendars_sessions_is_a_problem(tmp_path: Path)
     first, *rows = sample_lines("ninjatrader")
     path = written_export(tmp_path, "ES 03-26.Last.txt", [f"1990{first[4:]}", *rows])
 
-    preview = preview_file(
-        sample_request("ninjatrader", path=path), STATIC_TABLE, tmp_path / "cache"
-    )
+    preview = previewed(tmp_path, sample_request("ninjatrader", path=path))
 
     assert preview.reading.problems[0].startswith("outside-the-calendar, 1 row: ")
-    assert "It would be refused" in preview.summary()
+    assert preview.against_the_store is None
+    assert "It would be refused: fix the profile" in preview.summary()
 
 
 def test_a_futures_file_that_names_no_contract_is_refused(tmp_path: Path) -> None:
@@ -91,7 +86,7 @@ def test_a_futures_file_that_names_no_contract_is_refused(tmp_path: Path) -> Non
     request = sample_request("tradingview", path=path, root="ES")
 
     with pytest.raises(ValueError, match="or import it with a profile of series continuous"):
-        preview_file(request, STATIC_TABLE, tmp_path / "cache")
+        previewed(tmp_path, request)
 
 
 def test_an_impossible_month_in_a_file_name_is_refused(tmp_path: Path) -> None:
@@ -99,7 +94,7 @@ def test_an_impossible_month_in_a_file_name_is_refused(tmp_path: Path) -> None:
     refusal = "Expected a month from 1 to 12 in ES 13-26.Last.txt, got '13'."
 
     with pytest.raises(ValueError, match=re.escape(refusal)):
-        preview_file(sample_request("ninjatrader", path=path), STATIC_TABLE, tmp_path / "cache")
+        previewed(tmp_path, sample_request("ninjatrader", path=path))
 
 
 def test_a_contract_with_several_instrument_ids_is_refused(tmp_path: Path) -> None:
@@ -108,7 +103,7 @@ def test_a_contract_with_several_instrument_ids_is_refused(tmp_path: Path) -> No
     )
 
     with pytest.raises(ValueError, match="the contract ESH2026 with more than one instrument_id"):
-        preview_file(sample_request("databento-csv", path=path), STATIC_TABLE, tmp_path / "cache")
+        previewed(tmp_path, sample_request("databento-csv", path=path))
 
 
 def test_a_refused_import_of_a_new_product_saves_no_instrument(tmp_path: Path) -> None:
@@ -156,7 +151,7 @@ def test_ibkr_times_in_another_zone_than_the_imports_are_refused(tmp_path: Path)
     request = sample_request("ibkr", time_zone="America/Chicago")
 
     with pytest.raises(ValueError, match="name --time-zone US/Eastern"):
-        preview_file(request, STATIC_TABLE, tmp_path / "cache")
+        previewed(tmp_path, request)
 
 
 def test_databento_daily_bars_are_refused_as_another_record_type(tmp_path: Path) -> None:
@@ -190,9 +185,7 @@ def test_databento_daily_bars_are_refused_as_another_record_type(tmp_path: Path)
     )
 
     with pytest.raises(ValueError, match="other-record-type, 4 rows"):
-        preview_file(
-            FileImportRequest(path=path, profile=profile), STATIC_TABLE, tmp_path / "cache"
-        )
+        previewed(tmp_path, FileImportRequest(path=path, profile=profile))
 
 
 @pytest.mark.parametrize(
@@ -244,9 +237,7 @@ def test_a_daily_bar_is_dated_by_its_session_and_refused_at_a_time_of_day(
         }
     )
 
-    preview = preview_file(
-        FileImportRequest(path=path, profile=profile), STATIC_TABLE, tmp_path / "cache"
-    )
+    preview = previewed(tmp_path, FileImportRequest(path=path, profile=profile))
 
     assert [problem.split(":")[0] for problem in preview.reading.problems] == problems
 
@@ -261,7 +252,7 @@ def test_regular_hours_bars_whose_timing_the_calendar_cannot_check_are_warned_of
     path = written_export(tmp_path, "ESH26.txt", [header, *regular])
     request = sample_request("tradestation", path=path, time_zone="America/New_York")
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
 
     assert preview.reading.calendar.offsets == ()
     assert any("could not check" in warning for warning in preview.reading.warnings)
@@ -285,10 +276,8 @@ def test_a_daily_import_warns_that_each_bar_is_stored_as_its_whole_session(
         update={"name": "tradingview-daily", "timeframe": Timeframe(count=1, unit=TimeUnit.DAY)}
     )
 
-    daily = preview_file(
-        FileImportRequest(path=path, profile=profile), STATIC_TABLE, tmp_path / "cache"
-    )
-    minutes = preview_file(sample_request("tradingview"), STATIC_TABLE, tmp_path / "cache")
+    daily = previewed(tmp_path, FileImportRequest(path=path, profile=profile))
+    minutes = previewed(tmp_path, sample_request("tradingview"))
 
     assert daily.reading.problems == ()
     assert DAILY_SESSION_ASSUMED in daily.reading.warnings

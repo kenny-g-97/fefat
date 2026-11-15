@@ -4,8 +4,9 @@
 `preview_file` reads and maps the whole file (`fefat.market.importers.profile_records`), runs
 the calendar check on its records (`fefat.market.calendar_check.check_records`), and reports
 the first rows as the store would hold them, the problems, the check, and the warnings, among
-them a calendar that could not test the file's timing (`fefat.market.calendar_offset`), writing
-nothing. `import_file` does the same, refuses a file with problems or whose records run late or
+them a calendar that could not test the file's timing (`fefat.market.calendar_offset`), and,
+for a file that reads without problems, what it would add to its dataset, writing nothing.
+`import_file` does the same, refuses a file with problems or whose records run late or
 early against their calendar, and otherwise reads each partition of its records, in the dataset
 `<provider>/<schema>/root=<root>`, against what the store holds of it (ADR-0021): records the
 store lacks are added, those it holds are counted, and those it holds with other values refuse
@@ -103,15 +104,33 @@ class FileImportRequest:
 
 def preview_file(
     request: FileImportRequest,
+    store: Store,
     instruments: InstrumentTable,
     cache_folder: Path,
     guide: SourceGuide = SOURCE_GUIDE,
+    differing: DifferingRecords = DifferingRecords.REFUSE,
 ) -> FilePreview:
-    """The file read and checked as an import would, and nothing written."""
-    mapped = _mapped(request, _file_bytes(request.path), instruments, cache_folder)
+    """The file read and checked against `store` as `import_file` would under `differing`, and
+    nothing written: what it holds, and what it would add to its dataset, or that it is
+    imported already. What refuses its import before the store's records are compared refuses
+    the preview too: a file imported before under other arguments, a dataset of another unit
+    or series, and the records no merge takes (ADR-0021)."""
+    content = _file_bytes(request.path)
+    raw_path = _raw_path(request, hashlib.sha256(content).hexdigest())
+    imported = _imported_before(store, request, raw_path, _import_arguments(request))
+    mapped = _mapped(request, content, instruments, cache_folder)
     reading = _reading(request, mapped)
-    _metadata(request.profile, guide)
-    return FilePreview(reading=reading, first_rows=tuple(_shown(mapped)))
+    metadata = _metadata(request.profile, guide)
+    against_the_store = None
+    if imported:
+        against_the_store = AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
+    elif not reading.refusals():
+        partitions = _partitions(reading.dataset, mapped)
+        merging = _FileMerge(store, partitions, _identity(request.profile), metadata)
+        against_the_store = merging.checked(differing)
+    return FilePreview(
+        reading=reading, first_rows=tuple(_shown(mapped)), against_the_store=against_the_store
+    )
 
 
 def import_file(
@@ -130,7 +149,7 @@ def import_file(
     file's stand, is refused with them, and nothing is written."""
     content = _file_bytes(request.path)
     sha256 = hashlib.sha256(content).hexdigest()
-    raw_path = PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
+    raw_path = _raw_path(request, sha256)
     arguments = _import_arguments(request)
     if _imported_before(store, request, raw_path, arguments):
         return AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
@@ -194,6 +213,11 @@ class _FileMerge:
         buffers = PartitionBuffers(self.store, self.identity, self.metadata)
         buffers.add(self.partitions)
         return buffers.rest()
+
+
+def _raw_path(request: FileImportRequest, sha256: str) -> PurePosixPath:
+    """Where the file is kept under `raw`: by its hash, since two exports can share a name."""
+    return PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
 
 
 def _imported_before(

@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 import fefat as ff
+from export_samples import sample_lines, with_a_lot_more_in_the_last_bar, written_export
 from fefat.config import resolve_paths
 from fefat.features.examples import rsi
 from fefat.market.importers.profiles import preset_profiles
@@ -27,6 +28,7 @@ from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 from fefat_app.cli import main
+from test_market_importers_merge_properties import MARCH_9, es_bars, march_file
 
 ROOT = Path(__file__).resolve().parents[2]
 BATCH = ROOT / "fixtures" / "synthetic" / "databento-batch" / "GLBX-20260310-SYNTHETIC0"
@@ -79,6 +81,64 @@ def test_a_refused_import_prints_the_reason_and_exits_with_1(
 
     assert code == 1
     assert "fefat: Expected a Databento batch folder or DBN file" in capsys.readouterr().err
+
+
+def test_a_databento_preview_prints_what_the_import_would_add_and_writes_nothing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = main(["data", "import", "databento", str(BATCH), "--preview"])
+
+    printed = capsys.readouterr().out
+    assert code == 0
+    assert printed.startswith(f"Preview of {BATCH}; nothing was written.\n")
+    assert "    New sessions: 4,141 records on 3 trade dates: 2026-03-05 (1,380), " in printed
+    assert printed.endswith("It would import as it is.\n")
+    assert not resolve_paths(os.environ).data_dir.exists()
+
+
+def refused_until_the_files_stand(
+    command: list[str], capsys: pytest.CaptureFixture[str]
+) -> list[str]:
+    """Run `command`, an import of a file whose bar differs from the stored one, as a preview
+    and as an import, first as it is and then with `--differing take-file`; return what each
+    recorded file's entry in the raw manifest says of its import."""
+    take = ["--differing", "take-file"]
+    variants = ([*command, "--preview"], command, [*command, "--preview", *take], [*command, *take])
+
+    codes = [main(variant) for variant in variants]
+
+    captured = capsys.readouterr()
+    assert codes == [1, 1, 0, 0]
+    assert "\nIt would be refused: its records differ from the ones the store holds." in (
+        captured.out
+    )
+    assert "fefat: Expected the records" in captured.err
+    assert "got 1 with other values" in captured.err
+    assert "import it with --differing take-file" in captured.err
+    manifest = Store(resolve_paths(os.environ).data_dir).raw.manifest()
+    return sorted(file.vendor_version for file in manifest.files)
+
+
+def test_a_databento_bar_that_differs_exits_with_1_until_the_import_takes_the_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first = march_file(tmp_path, "first", es_bars(*MARCH_9))
+    revised = march_file(tmp_path, "revised", es_bars(MARCH_9[1], close=6_751_250_000_000))
+    assert main(["data", "import", "databento", str(first)]) == 0
+    capsys.readouterr()
+
+    recorded = refused_until_the_files_stand(["data", "import", "databento", str(revised)], capsys)
+
+    assert recorded == ["DBN 3", "DBN 3, differing records taken from the file"]
+
+
+def test_differing_takes_refuse_or_take_file_alone(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(["data", "import", "databento", str(BATCH), "--differing", "keep-the-store"])
+
+    assert exited.value.code == 2
+    assert "invalid choice: 'keep-the-store' (choose from" in capsys.readouterr().err
+    assert not resolve_paths(os.environ).data_dir.exists()
 
 
 def test_verifying_imported_minute_bars_leaves_rebuilding_pending_and_exits_with_0(
@@ -491,6 +551,34 @@ def test_a_second_file_import_says_there_is_nothing_to_import(
 
     assert main(arguments) == 0
     assert capsys.readouterr().out.startswith(f"Nothing to import from {NINJATRADER_SAMPLE}")
+
+
+def test_a_preview_of_an_imported_file_says_so_and_exits_with_0(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = ["data", "import", "file", str(NINJATRADER_SAMPLE), "--profile", "ninjatrader"]
+    main(arguments)
+    capsys.readouterr()
+
+    assert main([*arguments, "--preview"]) == 0
+    assert "\nIt is imported already, as raw/user/" in capsys.readouterr().out
+
+
+def test_an_exports_bar_that_differs_exits_with_1_until_the_import_takes_the_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    file_import = ["data", "import", "file", "--profile", "ninjatrader"]
+    lines = with_a_lot_more_in_the_last_bar(sample_lines("ninjatrader"))
+    changed = written_export(tmp_path, NINJATRADER_SAMPLE.name, lines)
+    assert main([*file_import, str(NINJATRADER_SAMPLE)]) == 0
+    capsys.readouterr()
+
+    recorded = refused_until_the_files_stand([*file_import, str(changed)], capsys)
+
+    assert recorded == [
+        "import profile ninjatrader",
+        "import profile ninjatrader, differing records taken from the file",
+    ]
 
 
 def test_a_file_import_without_the_time_zone_its_profile_leaves_to_it_exits_with_1(

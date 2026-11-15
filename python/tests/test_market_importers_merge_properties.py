@@ -25,6 +25,7 @@ from export_samples import (
     a_new_product_profile,
     five_minute_file,
     sample_lines,
+    with_a_lot_more_in_the_last_bar,
     written_export,
 )
 from fefat.market.importers.databento import import_databento
@@ -411,9 +412,7 @@ def test_an_export_whose_bars_differ_from_the_stored_ones_is_refused_whole(
     request = FileImportRequest(path=SAMPLES["ninjatrader"][0], profile=PRESETS["ninjatrader"])
     through_a_profile(PRESETS["ninjatrader"])(request.path, store, tmp_path / "cache")
     before = tree(store.folder)
-    lines = sample_lines("ninjatrader")
-    stamp, *prices, volume = lines[-1].split(";")
-    lines[-1] = ";".join([stamp, *prices, str(int(volume) + 1)])
+    lines = with_a_lot_more_in_the_last_bar(sample_lines("ninjatrader"))
     changed = written_export(tmp_path / "exports", "ES 03-26.Last.txt", lines)
 
     with pytest.raises(ValueError, match=r"got 1 with other values .* trade date 2026-03-09"):
@@ -542,9 +541,8 @@ def test_the_files_bars_stand_where_a_databento_import_takes_them(tmp_path: Path
 def test_the_files_bars_stand_where_a_file_import_takes_them(tmp_path: Path) -> None:
     store, cache = Store(tmp_path / "data"), tmp_path / "cache"
     through_a_profile(PRESETS["ninjatrader"])(SAMPLES["ninjatrader"][0], store, cache)
-    lines = sample_lines("ninjatrader")
-    stamp, *prices, volume = lines[-1].split(";")
-    lines[-1] = ";".join([stamp, *prices, str(int(volume) + 1)])
+    sample = sample_lines("ninjatrader")
+    lines = with_a_lot_more_in_the_last_bar(sample)
     changed = written_export(tmp_path / "exports", "ES 03-26.Last.txt", lines)
     request = FileImportRequest(path=changed, profile=PRESETS["ninjatrader"])
 
@@ -567,7 +565,8 @@ def test_the_files_bars_stand_where_a_file_import_takes_them(tmp_path: Path) -> 
     )
     assert (merge.partitions_changed, merge.partitions_unchanged) == (1, 0)
     (march,) = (file.partition for file in store.list_partitions())
-    assert store.scan_partition(march).collect().item(-1, "volume") == int(volume) + 1
+    volume = int(sample[-1].rsplit(";", 1)[1])
+    assert store.scan_partition(march).collect().item(-1, "volume") == volume + 1
     assert sorted(file.vendor_version for file in store.raw.manifest().files) == [
         "import profile ninjatrader",
         "import profile ninjatrader, differing records taken from the file",

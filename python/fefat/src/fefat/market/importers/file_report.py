@@ -7,7 +7,7 @@ records hold prices, which stay on the trader's screen (D-21).
 from datetime import date
 
 from fefat.market.calendar_check import CalendarReport
-from fefat.market.importers.report import DatasetMerge
+from fefat.market.importers.report import DIFFERING_VERDICT, DatasetMerge
 from fefat.market.layout import Dataset
 from fefat.market.schema import FrozenModel
 
@@ -59,25 +59,68 @@ class FileReading(FrozenModel):
         ]
 
 
+class AlreadyImported(FrozenModel):
+    """A file `import_file` found imported before, kept under `raw` as `raw_path`."""
+
+    source: str
+    raw_path: str
+
+    def summary(self) -> str:
+        return (
+            f"Nothing to import from {self.source}: it is imported already, as raw/{self.raw_path}."
+        )
+
+
 class FilePreview(FrozenModel):
-    """A file read with its profile, nothing written, and its first records as stored."""
+    """A file read with its profile and against the store, nothing written: what it holds, its
+    first records as stored, and what its import would find in the store, what the file adds
+    to its dataset (`DatasetMerge`) or the file imported before; none where its reading refuses
+    the file, before the store is read."""
 
     reading: FileReading
     first_rows: tuple[str, ...]
+    against_the_store: DatasetMerge | AlreadyImported | None
+
+    def refusals(self) -> list[str]:
+        """What would stop the import: the reading's problems and offsets, and records that
+        differ from the store's while the import does not let the file's stand; nothing for a
+        file imported before, whose import changes nothing."""
+        found = self.against_the_store
+        if isinstance(found, AlreadyImported):
+            return []
+        if found is None or not found.refuses():
+            return self.reading.refusals()
+        differing = f"records that differ from the ones the store holds: {found.disagreement()}"
+        return [*self.reading.refusals(), differing]
 
     def summary(self) -> str:
-        reading = self.reading
+        reading, found = self.reading, self.against_the_store
         heading = (
             f"Preview of {reading.source} with the profile {reading.profile}; nothing was written."
         )
-        verdict = (
-            "It would import as it is."
-            if not reading.refusals()
-            else "It would be refused: fix the profile, or the file, and preview it again."
-        )
         return "\n".join(
-            [heading, *reading.lines(), "  First records as stored:", *self.first_rows, verdict]
+            [
+                heading,
+                *reading.lines(),
+                "  First records as stored:",
+                *self.first_rows,
+                *(found.lines() if isinstance(found, DatasetMerge) else []),
+                self._verdict(),
+            ]
         )
+
+    def _verdict(self) -> str:
+        found = self.against_the_store
+        if isinstance(found, AlreadyImported):
+            return (
+                f"It is imported already, as raw/{found.raw_path}: importing it again changes "
+                "nothing."
+            )
+        if self.reading.refusals():
+            return "It would be refused: fix the profile, or the file, and preview it again."
+        if found is not None and found.refuses():
+            return DIFFERING_VERDICT
+        return "It would import as it is."
 
 
 class FileImportReport(FrozenModel):
@@ -103,16 +146,4 @@ class FileImportReport(FrozenModel):
                 *self.merge.lines(),
                 f"  Original kept as raw/{self.raw_path}",
             ]
-        )
-
-
-class AlreadyImported(FrozenModel):
-    """A file `import_file` found imported before, kept under `raw` as `raw_path`."""
-
-    source: str
-    raw_path: str
-
-    def summary(self) -> str:
-        return (
-            f"Nothing to import from {self.source}: it is imported already, as raw/{self.raw_path}."
         )

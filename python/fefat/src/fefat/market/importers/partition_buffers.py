@@ -31,7 +31,7 @@ from fefat.market.importers.partition_merge import (
     RecordIdentity,
     merged_partition,
 )
-from fefat.market.importers.report import DatasetMerge, DayRecords
+from fefat.market.importers.report import DIFFERING_ADVICE, DatasetMerge, DayRecords
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
 from fefat.market.store import Store
 
@@ -202,10 +202,8 @@ def require_none_differing(merges: Iterable[DatasetMerge], source: Path) -> None
         return
     raise ValueError(
         f"Expected the records {source} shares with the store to be the ones the store holds, "
-        f"got {'; '.join(_differing(merge) for merge in refusing)}: nothing was written. Where "
-        "the file is an export, check its profile's time zone and bar stamping; where it holds "
-        "a vendor's correction, or a bar the store took before it was complete, import it with "
-        "--differing take-file, and its records stand."
+        f"got {'; '.join(merge.disagreement() for merge in refusing)}: nothing was written. "
+        f"{DIFFERING_ADVICE}"
     )
 
 
@@ -243,13 +241,6 @@ def _write(
     if not store.has_dataset_metadata(dataset):
         store.write_dataset_metadata(dataset, metadata)
     store.write_partition(merge.partition, merge.rows(differing))
-
-
-def _differing(merge: DatasetMerge) -> str:
-    dated = ""
-    if merge.differing_sessions:
-        dated = f", the first on trade date {merge.differing_sessions[0].trade_date}"
-    return f"{merge.records_differing:,} with other values in {merge.dataset}{dated}"
 
 
 def _last_trade_date(partition: Partition) -> date | None:
