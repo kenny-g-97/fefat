@@ -78,8 +78,10 @@ _VENDOR_DAY_COLUMNS = pl.Schema({"date": pl.Date, "condition": pl.String})
 
 def assess_quality(store: Store, provider: str, root: str, cache_folder: Path) -> QualityReport:
     """The quality report of `root`'s trades, TBBO, and bars from `provider` in `store`, in
-    the sessions of the root's calendar, whose table is kept in `cache_folder`. A root without
-    such data from the provider, or missing from the instrument table, is refused."""
+    the sessions of the root's calendar, whose table is kept in `cache_folder`, stamped with
+    the time of the newest of their partitions as it begins (step 5.12). A root without such
+    data from the provider, or missing from the instrument table, is refused."""
+    read_through_ns = _newest_written_ns(store, provider, root)
     covered = _covered_datasets(store, provider, root)
     sessions = instrument_table(store.folder).sessions_of(root, cache_folder)
     first = min(coverage.first_trade_date for coverage in covered.values())
@@ -98,6 +100,7 @@ def assess_quality(store: Store, provider: str, root: str, cache_folder: Path) -
         vendor_days=_flagged(vendor_days, bounds),
         days=_days(bounds, records, differences, _conditions(bounds, vendor_days), received_until),
         findings=_findings(records, gaps(records, covered, bounds), differences),
+        read_through_ns=read_through_ns,
     )
 
 
@@ -122,6 +125,20 @@ def reported_products(store: Store, root: str | None = None) -> tuple[tuple[str,
         named = "any product" if root is None else root
         raise NothingToReportError(f"Expected trades or bars of {named} in the store, got none.")
     return tuple(held)
+
+
+def _newest_written_ns(store: Store, provider: str, root: str) -> int:
+    """When the newest partition of the provider's trades, TBBO, and bars of the root was last
+    written, in the files' own clock, as an assessment begins: a partition written later, while
+    the assessment runs, is newer than the report, which may not have read it; 0 where there is
+    none, which the assessment then refuses."""
+    written = (
+        file.modified_ns
+        for dataset in session_datasets(store)
+        if dataset.provider == provider and dataset.root == root
+        for file in store.list_partitions(dataset)
+    )
+    return max(written, default=0)
 
 
 def _covered_datasets(store: Store, provider: str, root: str) -> dict[Dataset, DatasetCoverage]:
