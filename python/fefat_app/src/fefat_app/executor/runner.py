@@ -26,6 +26,7 @@ from fefat_app.execution import (
     RunLookupSpec,
 )
 from fefat_app.executor.backtests import backtest_output, run_lookup_output
+from fefat_app.executor.imports import import_output, import_preview_output
 from fefat_app.executor.preview import preview
 from fefat_app.executor.protocol import (
     END_OF_EXECUTION,
@@ -37,6 +38,7 @@ from fefat_app.executor.protocol import (
 )
 from fefat_app.executor.snippet import snippet
 from fefat_app.executor.versions import library_output
+from fefat_app.imports import ImportPreviewSpec, ImportSpec
 
 
 def serve(folder: Path | None) -> int:
@@ -79,6 +81,10 @@ def _ran(spec: ExecutionSpec, folder: Path, report: ProgressReport) -> RunnerRes
         return RunnerSucceeded(output=run_lookup_output(spec))
     if isinstance(spec, BacktestSpec):
         return RunnerSucceeded(output=backtest_output(spec, report))
+    if isinstance(spec, ImportPreviewSpec):
+        return RunnerSucceeded(output=import_preview_output(spec))
+    if isinstance(spec, ImportSpec):
+        return RunnerSucceeded(output=import_output(spec, report))
     return RunnerSucceeded(output=library_output(spec))
 
 

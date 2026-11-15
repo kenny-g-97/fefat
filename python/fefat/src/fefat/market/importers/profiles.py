@@ -113,9 +113,11 @@ class FileLayout(FrozenModel):
     header: bool
 
 
-class BarColumns(FrozenModel):
-    """A bar's prices and volume, and, where the file has them, its trade count and its
-    volume-weighted average price (null in the store without them)."""
+class BarColumnNames(FrozenModel):
+    """The columns of a bar's prices and volume, and, where the file has them, of its trade
+    count and its volume-weighted average price (null in the store without them); named apart
+    from the chart's bars in columns, `fefat_app.services.market_bars.BarColumns`, since the API
+    describes both (step 5.12)."""
 
     open: ColumnName
     high: ColumnName
@@ -126,11 +128,11 @@ class BarColumns(FrozenModel):
     vwap: ColumnName | None = None
 
 
-class TickColumns(FrozenModel):
-    """A tick's price and size, its aggressor side (`A`, `B`, or `N`; `N` without a column),
-    the event time where it differs from the timestamp, which is the receive time, and its
-    sequence (without a column, the store numbers it by its place among the ticks of its
-    instant)."""
+class TickColumnNames(FrozenModel):
+    """The columns of a tick's price and size, its aggressor side (`A`, `B`, or `N`; `N`
+    without a column), the event time where it differs from the timestamp, which is the receive
+    time, and its sequence (without a column, the store numbers it by its place among the ticks
+    of its instant)."""
 
     price: ColumnName
     size: ColumnName
@@ -148,8 +150,8 @@ class ColumnMapping(FrozenModel):
     timestamp: ColumnName | None = None
     date: ColumnName | None = None
     time: ColumnName | None = None
-    bars: BarColumns | None = None
-    ticks: TickColumns | None = None
+    bars: BarColumnNames | None = None
+    ticks: TickColumnNames | None = None
     instrument_id: ColumnName | None = None
     symbol: ColumnName | None = None
     record_type: ColumnName | None = None
