@@ -16,9 +16,14 @@ const desktop = {
   viewport: { width: 1280, height: 800 },
 }
 
+/** The specs that write the seeded store, which run after every other, since the others hold
+ * the seed exact (step 5.12, plan call 12). */
+const STORE_WRITERS = ["import.spec.ts"]
+
 /** The UI harness of step 4.3 (`just e2e`): every spec against the built app that `fefat up`
  * serves on a seeded temporary home, and the login and the jobs' streams (step 4.4) once more
- * through the Vite dev server's proxy, at desktop size alone (D-54). */
+ * through the Vite dev server's proxy, at desktop size alone (D-54); then the specs that write
+ * the store, the import wizard's (step 5.12), once both have run. */
 export default defineConfig({
   testDir: "./e2e",
   workers: 1,
@@ -28,12 +33,19 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
+      testIgnore: STORE_WRITERS,
       use: { ...desktop, baseURL: `http://127.0.0.1:${SERVER_PORT}` },
     },
     {
       name: "dev-proxy",
       testMatch: ["login.spec.ts", "jobs.spec.ts"],
       use: { ...desktop, baseURL: `http://localhost:${DEV_SERVER_PORT}` },
+    },
+    {
+      name: "desktop-import",
+      testMatch: STORE_WRITERS,
+      dependencies: ["desktop", "dev-proxy"],
+      use: { ...desktop, baseURL: `http://127.0.0.1:${SERVER_PORT}` },
     },
   ],
   webServer: [
