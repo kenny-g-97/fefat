@@ -2,8 +2,8 @@
 ADR-0019), or refused: `Run.explain`, the fidelity check, and the tick check replay a run on
 its own records, so they first compare a snapshot of each dataset its record names with the
 hash the record pins. The data changes when a file is rewritten, removed, or merged into
-(ADR-0021); the refusal then names the partitions written since the run was saved, and the
-run's record and results stand."""
+(ADR-0021); the refusal then names the files written since the run was saved, as their times
+tell it, and the run's record and results stand."""
 
 from typing import TYPE_CHECKING
 
@@ -18,8 +18,8 @@ from fefat.market.store import Store
 if TYPE_CHECKING:
     from fefat.backtest.runs import Run
 
-_PARTITIONS_NAMED_AT_MOST = 3
-"""How many partitions written since a run its refusal names before it counts the rest."""
+_FILES_NAMED_AT_MOST = 3
+"""How many files written since a run its refusal names before it counts the rest."""
 
 
 def pinned_snapshots(store: Store, run: "Run") -> dict[str, Snapshot]:
@@ -27,9 +27,8 @@ def pinned_snapshots(store: Store, run: "Run") -> dict[str, Snapshot]:
     unless it is the one the run's record pins, as is one of another instrument its features read
     (step 3.7), and refused when the store holds trades or bars of the run's provider in its
     dates that the run did not read: the data changed since the run otherwise, as when an import
-    merged a file into a partition it read (ADR-0021), and the refusal names the partitions
-    written since the run was saved. `fidelity_check` reruns a saved run on the data this
-    guards too."""
+    merged a file into a partition it read (ADR-0021), and the refusal names the files written
+    since the run was saved. `fidelity_check` reruns a saved run on the data this guards too."""
     record = run.record
     snapshots = {}
     for dataset in record.datasets:
@@ -49,25 +48,30 @@ def pinned_snapshots(store: Store, run: "Run") -> dict[str, Snapshot]:
 
 
 def _written_since(store: Store, request: PartitionRequest, run: "Run") -> str:
-    """Which partitions of `request` were written since the run was saved, the first few by
-    their paths: a run's record keeps its snapshots' hashes, not each file's, so the files'
-    times tell, as they tell a stale quality report (D-94). Where none is newer than the run's
-    record, a partition it read was removed, or put back with an older time."""
+    """Which files of `request`'s snapshot were written since the run was saved, its dataset's
+    `dataset.json` first and then its partitions, the first few by their paths: a run's record
+    keeps its snapshots' hashes, not each file's, so the files' times tell, as they tell a stale
+    quality report (D-94), and the refusal says that it reads them. Where none is newer than the
+    run's record, a partition it read was removed, or the store or the run was put back from a
+    copy, which keeps or renews the times."""
     saved = (run.folder / RECORD_FILE).stat().st_mtime_ns
-    written = sorted(
-        file.partition.relative_path().as_posix()
+    described = request.dataset.metadata_path()
+    files = [(described, (store.folder / described).stat().st_mtime_ns)]
+    files += sorted(
+        (file.partition.relative_path(), file.modified_ns)
         for file in store.list_partitions(request.dataset)
-        if request.selects(file.partition) and file.modified_ns >= saved
+        if request.selects(file.partition)
     )
+    written = [path.as_posix() for path, modified in files if modified >= saved]
     if not written:
         return (
-            "None of its partitions was written since the run was saved, so one was removed or "
-            "put back from a copy."
+            "By the files' times, none was written since the run was saved, so one was removed, "
+            "or the store or the run was put back from a copy."
         )
-    more = len(written) - _PARTITIONS_NAMED_AT_MOST
+    more = len(written) - _FILES_NAMED_AT_MOST
     others = f", and {more:,} more" if more > 0 else ""
-    named = ", ".join(written[:_PARTITIONS_NAMED_AT_MOST])
-    return f"Written since the run was saved: {named}{others}."
+    named = ", ".join(written[:_FILES_NAMED_AT_MOST])
+    return f"By the files' times, written since the run was saved: {named}{others}."
 
 
 def _require_no_dataset_since(store: Store, record: RunRecord) -> None:

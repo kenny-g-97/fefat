@@ -43,8 +43,8 @@ def test_a_run_is_refused_with_the_partition_a_merge_wrote_and_stands_as_it_was(
 
     # February's new partition is written since the run too, and is none of the run's.
     refusal = (
-        r"the data changed since the run\. Written since the run was saved: "
-        rf"{re.escape(MARCH)}\. The run's record and results stand"
+        r"the data changed since the run\. By the files' times, written since the run was "
+        rf"saved: {re.escape(MARCH)}\. The run's record and results stand"
     )
     with pytest.raises(ValueError, match=refusal):
         run.explain(trade)

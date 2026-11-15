@@ -116,10 +116,28 @@ def test_data_changed_since_the_run_is_refused_with_the_partition_written_since(
     part.write_bytes(part.read_bytes() + b"changed")
 
     written = (
-        r"the data changed since the run\. Written since the run was saved: "
-        r"synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part\.parquet\. "
+        r"the data changed since the run\. By the files' times, written since the run was "
+        r"saved: synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part\.parquet\. "
     )
     with pytest.raises(ValueError, match=written):
+        run.explain(1)
+
+
+def test_a_dataset_json_written_since_the_run_is_named_before_the_partitions() -> None:
+    # The code review of step 5.14: a snapshot pins its dataset's `dataset.json` too, so one
+    # written since the run is among the files written since, where the refusal read as a
+    # partition removed; it is named first, so that the count of the rest never hides it.
+    run = backtest()
+    trades = resolve_paths(os.environ).data_dir / "synthetic" / "trades" / "root=ES"
+    described = trades / "dataset.json"
+    described.write_bytes(described.read_bytes() + b"\n")
+    for part in trades.rglob("part.parquet"):
+        part.write_bytes(part.read_bytes() + b"changed")
+
+    folder = "synthetic/trades/root=ES"
+    march = f"{folder}/contract=ESH2026/date=2026-03-0"
+    named = rf"saved: {folder}/dataset\.json, {march}5/part\.parquet, {march}6/part\.parquet"
+    with pytest.raises(ValueError, match=rf"{named}, and 4 more\. The run's record"):
         run.explain(1)
 
 
@@ -137,14 +155,15 @@ def test_a_refusal_names_three_of_the_partitions_written_since_and_counts_the_re
 
 def test_a_partition_removed_since_the_run_is_refused_as_removed_or_put_back() -> None:
     # Step 5.14: a run's record keeps its snapshots' hashes alone, so the refusal names the
-    # partitions by their files' times, and says so where none is newer than the run.
+    # files by their times, and says what it reads and what else it can mean where none is
+    # newer than the run.
     run = backtest()
     trades = resolve_paths(os.environ).data_dir / "synthetic" / "trades" / "root=ES"
     shutil.rmtree(trades / "contract=ESH2026" / "date=2026-03-06")
 
     removed = (
-        r"the data changed since the run\. None of its partitions was written since the run "
-        r"was saved, so one was removed or put back from a copy\. "
+        r"the data changed since the run\. By the files' times, none was written since the run "
+        r"was saved, so one was removed, or the store or the run was put back from a copy\. "
     )
     with pytest.raises(ValueError, match=removed):
         run.explain(1)
