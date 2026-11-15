@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import shutil
+import threading
 from collections.abc import Callable, Iterator
 from datetime import date
 from decimal import Decimal
@@ -11,6 +12,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
+from fefat.market import store_files
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -451,6 +453,43 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
     assert targets_at_each_flush == [(False, False), (True, False)]
     assert target.exists()
     assert digest.exists()
+
+
+def test_a_partition_another_program_holds_open_is_replaced_once_it_lets_go(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12 (from `BACKLOG.md`): Windows refuses to replace a file another program holds
+    # open, as a notebook's scan or a chart's read does, so the write tries again for a moment.
+    store = store_with_the_es_trades(tmp_path)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    trades = store.scan_partition(TRADES_OF_MARCH_5).collect().head(10)
+    reader = path.open("rb")
+    threading.Timer(0.2, reader.close).start()
+
+    store.write_partition(TRADES_OF_MARCH_5, trades)
+
+    assert reader.closed
+    assert_frame_equal(store.scan_partition(TRADES_OF_MARCH_5).collect(), trades)
+
+
+def test_a_partition_held_open_past_the_wait_is_refused_and_keeps_its_old_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    before = path.read_bytes()
+    trades = store.scan_partition(TRADES_OF_MARCH_5).collect().head(10)
+
+    def held(source: Path, target: Path) -> Path:
+        raise PermissionError(f"[WinError 5] Access is denied: {source} -> {target}")
+
+    monkeypatch.setattr(store_files, "REPLACE_SECONDS", 0.05)
+    monkeypatch.setattr(Path, "replace", held)
+    with pytest.raises(PermissionError, match="Access is denied"):
+        store.write_partition(TRADES_OF_MARCH_5, trades)
+
+    assert path.read_bytes() == before
+    assert sorted(path.parent.iterdir()) == [path.with_suffix(DIGEST_SUFFIX), path]
 
 
 def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
