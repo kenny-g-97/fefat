@@ -271,13 +271,17 @@ def tick_arrival_offset(profile: ImportProfile) -> int:
 def _dated_ticks(rows: pl.DataFrame, sessions: SessionTable, arrival_offset: int) -> pl.DataFrame:
     """Ticks received `arrival_offset` after their timestamp, which stays their event time
     unless the file has its own, each with the trade date of its session (or of the session
-    before it, in a break), in the file's order where instants are equal. The offset stays
-    inside the stamp's second, so a tick keeps its minute and, sessions opening and closing on
-    whole seconds, its trade date."""
+    before it, in a break), in the file's order where instants are equal. A tick whose file
+    gives it no sequence carries none here: its partition numbers it by its place among the
+    ticks of its instant as it is merged, which does not depend on where the file starts
+    (`fefat.market.importers.partition_merge`, step 5.14). The offset stays inside the stamp's
+    second, so a tick keeps its minute and, sessions opening and closing on whole seconds, its
+    trade date."""
+    unnumbered = pl.lit(None, dtype=pl.UInt32)
     received = rows.with_columns(
         ts_recv=pl.col("instant") + arrival_offset,
         ts_event=pl.col("event_instant") if "event_instant" in rows.columns else pl.col("instant"),
-        sequence=pl.col("sequence") if "sequence" in rows.columns else pl.col("row") - 1,
+        sequence=pl.col("sequence") if "sequence" in rows.columns else unnumbered,
         size=pl.col("volume"),
     )
     return sessions.assign_trade_dates_or_previous(received, "ts_recv").drop("in_session")

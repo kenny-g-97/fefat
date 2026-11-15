@@ -7,8 +7,9 @@ from databento_dbn import F_LAST, Action, Schema, Side, TradeMsg
 from dbn_files import dbn_content, mapping, utc, write_dbn
 from fefat.market.importers.canonical import RecordPlacement, active_days
 from fefat.market.importers.dbn import read_dbn
-from fefat.market.importers.file_writer import write_records
+from fefat.market.importers.file_writer import checked_records, write_records
 from fefat.market.importers.partition_buffers import CONTRACT_SIZE
+from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import DatasetMetadata, DatasetOrigin
 from fefat.market.store import Store
@@ -19,6 +20,7 @@ IMPORTED = DatasetMetadata(
     origin=DatasetOrigin.IMPORT,
     licence_scope="Synthetic test data; no licence applies",
 )
+REFUSE = DifferingRecords.REFUSE
 TRADE_BYTES = 48
 """A trade record's size: a chunk this long completes at most one record, so each frame holds
 one trade, as the chunks of a large file split its records."""
@@ -42,8 +44,8 @@ def test_a_record_earlier_than_the_last_of_the_previous_frame_is_counted(tmp_pat
     path = trades_file(tmp_path, utc(2026, 3, 9, 14, 31), utc(2026, 3, 9, 14, 30))
     _, frames = read_dbn(path, TRADE_BYTES)
 
-    report = write_records(
-        frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x", IMPORTED
+    report = checked_records(
+        frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x", IMPORTED, REFUSE
     )
 
     assert report.clock_decreases == 1
@@ -51,18 +53,45 @@ def test_a_record_earlier_than_the_last_of_the_previous_frame_is_counted(tmp_pat
     assert report.first_clock_decrease.record == 1
 
 
+def test_the_check_writes_nothing_and_a_second_pass_writes_the_partitions(
+    tmp_path: Path,
+) -> None:
+    # Step 5.14: the whole file is read against the store before a byte is written, each
+    # partition as it completes while the file streams, a frame a trade here.
+    path = trades_file(tmp_path, utc(2026, 3, 2, 14, 30), utc(2026, 3, 12, 14, 30))
+    store, placement = Store(tmp_path / "data"), placement_of(path, tmp_path)
+
+    report = checked_records(
+        read_dbn(path, TRADE_BYTES)[1], placement, store, "x", IMPORTED, REFUSE
+    )
+    checked_alone = not (tmp_path / "data").exists()
+    write_records(read_dbn(path, TRADE_BYTES)[1], placement, store, IMPORTED, REFUSE)
+
+    (merge,) = report.merges
+    assert checked_alone
+    assert (merge.records_added, merge.partitions_changed) == (2, 2)
+    assert [file.partition.key for file in store.list_partitions()] == [
+        date(2026, 3, 2),
+        date(2026, 3, 12),
+    ]
+
+
 def test_a_partition_completes_while_the_file_streams_and_refuses_later_rows(
     tmp_path: Path,
 ) -> None:
     # Monday 2026-03-02's trades are complete once the file reaches Thursday 03-12, ten days on,
-    # so a trade of 03-02 after that cannot be stored without rewriting the partition.
+    # so a trade of 03-02 after that is out of order across partitions. The check refuses the
+    # file, where the writer had already written 03-02's partition (D-98).
     path = trades_file(
         tmp_path, utc(2026, 3, 2, 14, 30), utc(2026, 3, 12, 14, 30), utc(2026, 3, 2, 14, 31)
     )
     _, frames = read_dbn(path, TRADE_BYTES)
+    store = Store(tmp_path / "data")
 
-    with pytest.raises(ValueError, match="got more after it was complete and written"):
-        write_records(frames, placement_of(path, tmp_path), Store(tmp_path / "data"), "x", IMPORTED)
+    with pytest.raises(ValueError, match="got more after it was complete"):
+        checked_records(frames, placement_of(path, tmp_path), store, "x", IMPORTED, REFUSE)
+
+    assert not (tmp_path / "data").exists()
 
 
 def test_a_day_the_symbology_does_not_cover_is_refused_before_anything_is_written(

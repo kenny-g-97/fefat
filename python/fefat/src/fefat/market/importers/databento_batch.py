@@ -192,9 +192,9 @@ def _data_file_name(folder: Path, listed: dict[str, BatchFile]) -> str:
     if len(data_names) > 1:
         raise ValueError(
             f"Expected one DBN file in the batch {folder}, got {len(data_names)}: "
-            f"{', '.join(data_names)}. A batch split by day, month, or symbol can give two files "
-            "rows of one partition, which the importer does not merge yet: order the batch "
-            "with the split duration none."
+            f"{', '.join(data_names)}. A batch split by day, month, or symbol is not imported as "
+            "one yet: order the batch with the split duration none, or import its DBN files one "
+            "after another, each merging into the partitions it shares with the others."
         )
     return data_names[0]
 

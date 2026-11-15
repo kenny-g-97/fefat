@@ -360,7 +360,8 @@ def test_prints_stamped_coarser_than_a_nanosecond_are_received_at_the_end_of_the
     # IBKR stamps its prints to the second (D-70): a print stamped at a decision's instant may
     # have arrived after the decision, so it is stored at its stamp's last nanosecond, with its
     # stamp as its event time and the file's order within the stamp, and the raw manifest
-    # records the rule with the import's arguments.
+    # records the rule with the import's arguments. The file gives its prints no sequence, so
+    # each is numbered by its place in its instant, whatever row the file starts at (step 5.14).
     stamp = int(datetime(2026, 3, 6, 14, 30, tzinfo=UTC).timestamp()) * 1_000_000_000 // unit
     path = written_export(
         tmp_path / "exports",
@@ -393,11 +394,11 @@ def test_prints_stamped_coarser_than_a_nanosecond_are_received_at_the_end_of_the
     partition = Partition(dataset=dataset, contract="ESH2026", key=date(2026, 3, 6))
     stamped, last = stamp * unit, unit - 1
     assert store.scan_partition(partition).collect().select(
-        "ts_recv", "ts_event", "size"
+        "ts_recv", "ts_event", "size", "sequence"
     ).rows() == [
-        (stamped + last, stamped, 3),
-        (stamped + last, stamped, 1),
-        (stamped + unit + last, stamped + unit, 2),
+        (stamped + last, stamped, 3, 0),
+        (stamped + last, stamped, 1, 1),
+        (stamped + unit + last, stamped + unit, 2, 0),
     ]
     assert any("end of its stamp" in warning for warning in preview.reading.warnings)
     (recorded,) = store.raw.manifest().files

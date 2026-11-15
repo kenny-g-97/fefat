@@ -1,4 +1,5 @@
-"""What an import tells the trader: per file, what was written and what was set aside, and per
+"""What an import tells the trader: per file, what was written and what was set aside, per
+dataset, what the file adds to what the store holds of it (`DatasetMerge`, step 5.14), and per
 batch download, the vendor's own word on its days. Counts and ranges only, never prices, so a
 summary can go into a pull request (D-21).
 
@@ -13,6 +14,7 @@ from itertools import groupby
 from pydantic import Field
 
 from fefat.market.calendar import counted, utc_text
+from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.schema import FrozenModel, SchemaKind, SchemaName
 
 _LISTED_AT_MOST = 10
@@ -98,9 +100,56 @@ class ClockDecrease(FrozenModel):
     before: int
 
 
+class DatasetMerge(FrozenModel):
+    """What a file adds to one dataset, read against what the store holds of it (ADR-0021),
+    under `on_differing`: the records it adds, those the store already holds, and those at the
+    instants the two dispute, with the stored records at those instants; the trade dates that
+    gain records, the new ones, which no partition the file touches held, apart from those the
+    store holds; the differing records per trade date; and the partitions the import changes
+    and leaves as they are."""
+
+    dataset: str
+    on_differing: DifferingRecords
+    records_added: int = Field(ge=0)
+    records_held: int = Field(ge=0)
+    records_differing: int = Field(ge=0)
+    stored_records_disputed: int = Field(ge=0)
+    new_sessions: tuple[DayRecords, ...]
+    extended_sessions: tuple[DayRecords, ...]
+    differing_sessions: tuple[DayRecords, ...]
+    partitions_changed: int = Field(ge=0)
+    partitions_unchanged: int = Field(ge=0)
+
+    def refuses(self) -> bool:
+        """Whether the file's records differ from the store's and no import lets them stand."""
+        return self.records_differing > 0 and self.on_differing is DifferingRecords.REFUSE
+
+    def replaces(self) -> bool:
+        """Whether the import takes the file's records in place of stored ones."""
+        taken = self.on_differing is DifferingRecords.TAKE_THE_FILE
+        return self.records_differing > 0 and taken
+
+    def lines(self) -> list[str]:
+        differing = f"{self.records_differing:,} that differ"
+        if self.replaces():
+            stored = counted(self.stored_records_disputed, "stored record")
+            differing = f"{differing}, the file's taken in place of {stored}"
+        disputed = [f"    Records that differ: {_days(self.differing_sessions)}"]
+        return [
+            f"  {self.dataset}:",
+            f"    New sessions: {_days(self.new_sessions)}",
+            f"    Sessions the store holds that gain records: {_days(self.extended_sessions)}",
+            f"    Records: {self.records_added:,} new, {self.records_held:,} already held, "
+            f"{differing}",
+            *(disputed if self.differing_sessions else []),
+            f"    Partitions: {self.partitions_changed} that change, "
+            f"{self.partitions_unchanged} unchanged",
+        ]
+
+
 class FileImport(FrozenModel):
     """One data file imported: its raw path, schema, DBN version, records and their range,
-    contracts, partitions, and what was set aside or counted on the way."""
+    contracts, what it adds to each dataset, and what was set aside or counted on the way."""
 
     path: str
     schema_name: SchemaName
@@ -109,8 +158,7 @@ class FileImport(FrozenModel):
     first_instant: int | None
     last_instant: int | None
     contracts: tuple[ContractRecords, ...]
-    partitions_written: int = Field(ge=0)
-    partitions_kept: int = Field(ge=0)
+    merges: tuple[DatasetMerge, ...]
     spreads: tuple[SymbolRecords, ...]
     before_first_trade_date: tuple[EarlySymbol, ...]
     outside_sessions: tuple[DayRecords, ...]
@@ -129,8 +177,7 @@ class FileImport(FrozenModel):
             f"  Outside every session: {_days(self.outside_sessions)}",
             *self._unreliable_line(),
             f"  Clock: {self._clock()}",
-            f"  Partitions: {self.partitions_written} written, {self.partitions_kept} already "
-            "stored",
+            *(line for merge in self.merges for line in merge.lines()),
         ]
 
     def _unreliable_line(self) -> list[str]:

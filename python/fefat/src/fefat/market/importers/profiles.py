@@ -128,7 +128,8 @@ class BarColumns(FrozenModel):
 class TickColumns(FrozenModel):
     """A tick's price and size, its aggressor side (`A`, `B`, or `N`; `N` without a column),
     the event time where it differs from the timestamp, which is the receive time, and its
-    sequence (the row's order without a column)."""
+    sequence (without a column, the store numbers it by its place among the ticks of its
+    instant)."""
 
     price: ColumnName
     size: ColumnName

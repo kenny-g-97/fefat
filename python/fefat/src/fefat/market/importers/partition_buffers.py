@@ -1,22 +1,37 @@
-"""Rows that wait until their partition is complete, then go to the store in one write
-(ADR-0019): a file streams in chunks, while `Store.write_partition` writes a partition whole.
+"""Rows that wait until their partition is complete, then are read against what the store holds
+of it (ADR-0019, ADR-0021): a file streams in chunks, while a partition is merged and written
+whole.
 
 A partition is complete once the file's clock has passed its last trade date by more than
 `COMPLETE_AFTER`, so in a file in clock order no later record can belong to it; a row for a
-partition already written means the file is out of order across partitions, and is refused. A
-partition the store already holds is left alone when it holds exactly these rows, which is
-how an interrupted import runs again, and refused otherwise: a file that overlaps an imported
-one is not merged into it. A dataset's `dataset.json` is written by its first import and kept
-by the later ones, since snapshots pin it (D-11); an import that counts sizes in another unit
-than the dataset's, or holds another series kind (step 1.10), is refused.
+partition already complete means the file is out of order across partitions, and is refused.
+`PartitionBuffers` gives each complete partition as a `PartitionMerge`
+(`fefat.market.importers.partition_merge`), the file's rows read against the stored ones, and
+writes nothing. An import goes over its file twice: first to check and count every partition
+(`MergeTally`, `require_none_differing`), then, once nothing refuses the file, to write the
+partitions that change (`write_merges`), so that a refused file leaves the store as it was
+(step 5.14). A dataset's `dataset.json` is written by its first import and kept by the later
+ones, since snapshots pin it (D-11); an import that counts sizes in another unit than the
+dataset's, or holds another series kind (step 1.10), is refused, whether or not it adds a
+record.
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import polars as pl
 
+from fefat.market.importers.canonical import DAY_COUNTS
+from fefat.market.importers.partition_merge import (
+    DifferingRecords,
+    PartitionMerge,
+    RecordIdentity,
+    merged_partition,
+)
+from fefat.market.importers.report import DatasetMerge, DayRecords
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
 from fefat.market.store import Store
 
@@ -29,37 +44,41 @@ complete. A record lies within a few days of its trade date: a session opens the
 before it, and a weekend or holiday folded into it, or a record dated by the session before
 it, adds at most four days."""
 
+DIFFERING_TAKEN_RECORDED = ", differing records taken from the file"
+"""How the raw manifest records, after an import's other details, that the import took the
+file's records in place of stored ones (`DifferingRecords.TAKE_THE_FILE`)."""
+
 _NANOSECONDS_PER_SECOND = 1_000_000_000
 
 
 class PartitionBuffers:
-    """One file's rows by partition until each is complete, written sorted by `order_column`,
-    keeping the order of equal instants (D-36), each dataset described by `metadata`."""
+    """One file's rows by partition until each is complete, then read, sorted by the clock and
+    keeping the order of equal instants (D-36), against the rows the store holds of the
+    partition; each dataset they reach must count its sizes and hold its series as `metadata`
+    does."""
 
-    def __init__(self, store: Store, order_column: str, metadata: DatasetMetadata) -> None:
+    def __init__(self, store: Store, identity: RecordIdentity, metadata: DatasetMetadata) -> None:
         self._store = store
-        self._order_column = order_column
+        self._identity = identity
         self._metadata = metadata
         self._waiting: dict[Partition, list[pl.DataFrame]] = {}
         self._done: set[Partition] = set()
-        self._described: set[Dataset] = set()
-        self.written = 0
-        self.kept = 0
+        self._agreeing: set[Dataset] = set()
 
     def add(self, rows: Mapping[Partition, pl.DataFrame]) -> None:
-        """Hold the rows of each partition; rows of a partition already written are refused."""
+        """Hold the rows of each partition; rows of a partition already complete are refused."""
         for partition, frame in rows.items():
             if partition in self._done:
                 raise ValueError(
                     f"Expected the records of {partition.relative_path()} together in clock "
-                    "order, got more after it was complete and written: the file is out of "
-                    "order across partitions."
+                    "order, got more after it was complete: the file is out of order across "
+                    "partitions."
                 )
             self._waiting.setdefault(partition, []).append(frame)
 
-    def write_complete(self, latest: int) -> None:
-        """Write every partition whose last trade date lies more than `COMPLETE_AFTER` before
-        `latest`, the latest instant of the file so far."""
+    def complete(self, latest: int) -> Iterator[PartitionMerge]:
+        """The merge of every partition whose last trade date lies more than `COMPLETE_AFTER`
+        before `latest`, the latest instant of the file so far, one in memory at a time."""
         today = datetime.fromtimestamp(latest // _NANOSECONDS_PER_SECOND, UTC).date()
         complete = [
             partition
@@ -67,34 +86,27 @@ class PartitionBuffers:
             if (last := _last_trade_date(partition)) is not None and today - last > COMPLETE_AFTER
         ]
         for partition in complete:
-            self._write(partition)
+            yield self._merged(partition)
 
-    def write_all(self) -> None:
-        """Write every partition still waiting, at the end of the file: those the store holds
-        are compared first, so one that differs refuses the file before any is written."""
-        waiting = list(self._waiting)
-        for partition in waiting:
-            if self._store.has_partition(partition):
-                self._write(partition)
-        for partition in waiting:
-            if partition in self._waiting:
-                self._write(partition)
+    def rest(self) -> Iterator[PartitionMerge]:
+        """The merge of every partition still waiting, at the end of the file."""
+        for partition in list(self._waiting):
+            yield self._merged(partition)
 
-    def _write(self, partition: Partition) -> None:
-        rows = pl.concat(self._waiting.pop(partition)).sort(self._order_column, maintain_order=True)
+    def _merged(self, partition: Partition) -> PartitionMerge:
+        clock = self._identity.clock
+        rows = pl.concat(self._waiting.pop(partition)).sort(clock, maintain_order=True)
         self._done.add(partition)
+        self._require_the_datasets_terms(partition.dataset)
+        stored = None
         if self._store.has_partition(partition):
-            self._keep_stored(partition, rows)
-            return
-        if partition.dataset not in self._described:
-            self._describe(partition.dataset)
-            self._described.add(partition.dataset)
-        self._store.write_partition(partition, rows)
-        self.written += 1
+            stored = self._store.scan_partition(partition).collect()
+        return merged_partition(partition, stored, rows, self._identity)
 
-    def _describe(self, dataset: Dataset) -> None:
-        if not self._store.has_dataset_metadata(dataset):
-            self._store.write_dataset_metadata(dataset, self._metadata)
+    def _require_the_datasets_terms(self, dataset: Dataset) -> None:
+        """Refuse, once for each dataset the store describes, an import whose sizes count
+        another unit than its `dataset.json`, or whose series is of another kind."""
+        if dataset in self._agreeing or not self._store.has_dataset_metadata(dataset):
             return
         stored = self._store.dataset_metadata(dataset)
         if stored.size_unit != self._metadata.size_unit:
@@ -109,16 +121,135 @@ class PartitionBuffers:
                 f"{self._metadata.series} series from this import: dated contracts and a "
                 "continuous series are kept in datasets of their own, under providers of their own."
             )
+        self._agreeing.add(dataset)
 
-    def _keep_stored(self, partition: Partition, rows: pl.DataFrame) -> None:
-        stored = self._store.scan_partition(partition).collect()
-        if not stored.equals(rows):
+
+@dataclass(frozen=True)
+class _PartitionCounts:
+    """What a tally keeps of a partition's merge: its counts and trade dates, not its rows."""
+
+    changes: bool
+    added: int
+    held: int
+    differing: int
+    stored_disputed: int
+    added_days: pl.DataFrame
+    differing_days: pl.DataFrame
+    held_days: frozenset[date]
+
+
+class MergeTally:
+    """A file's merges added up for each dataset, as an import that settles differing records
+    by `on_differing` reports them (`DatasetMerge`)."""
+
+    def __init__(self, on_differing: DifferingRecords) -> None:
+        self._on_differing = on_differing
+        self._counted: dict[Dataset, list[_PartitionCounts]] = {}
+
+    def add(self, merge: PartitionMerge) -> None:
+        """Count a partition's merge, keeping none of its rows."""
+        counts = _PartitionCounts(
+            changes=merge.changes(self._on_differing),
+            added=merge.added.height,
+            held=merge.held,
+            differing=merge.differing.height,
+            stored_disputed=merge.stored_records_disputed(),
+            added_days=merge.added_days(),
+            differing_days=merge.differing_days(),
+            held_days=frozenset(merge.held_days()),
+        )
+        self._counted.setdefault(merge.partition.dataset, []).append(counts)
+
+    def datasets(self) -> tuple[DatasetMerge, ...]:
+        """What the file adds to each dataset it reaches, sorted by the dataset's folder."""
+        by_folder = sorted(self._counted, key=lambda dataset: dataset.relative_folder().as_posix())
+        return tuple(self._dataset_merge(dataset) for dataset in by_folder)
+
+    def _dataset_merge(self, dataset: Dataset) -> DatasetMerge:
+        counted = self._counted[dataset]
+        held_days = frozenset(day for each in counted for day in each.held_days)
+        gaining = day_records(each.added_days for each in counted)
+        return DatasetMerge(
+            dataset=dataset.relative_folder().as_posix(),
+            on_differing=self._on_differing,
+            records_added=sum(each.added for each in counted),
+            records_held=sum(each.held for each in counted),
+            records_differing=sum(each.differing for each in counted),
+            stored_records_disputed=sum(each.stored_disputed for each in counted),
+            new_sessions=tuple(day for day in gaining if day.trade_date not in held_days),
+            extended_sessions=tuple(day for day in gaining if day.trade_date in held_days),
+            differing_sessions=day_records(each.differing_days for each in counted),
+            partitions_changed=sum(each.changes for each in counted),
+            partitions_unchanged=sum(not each.changes for each in counted),
+        )
+
+
+def day_records(counts: Iterable[pl.DataFrame]) -> tuple[DayRecords, ...]:
+    """The records per trade date of `counts`, frames with the columns of `DAY_COUNTS`, added up
+    and sorted by trade date."""
+    frames = [pl.DataFrame(schema=DAY_COUNTS), *(frame.cast(DAY_COUNTS) for frame in counts)]
+    totals = pl.concat(frames).group_by("trade_date").agg(pl.col("records").sum())
+    return tuple(
+        DayRecords.model_validate(row) for row in totals.sort("trade_date").iter_rows(named=True)
+    )
+
+
+def require_none_differing(merges: Iterable[DatasetMerge], source: Path) -> None:
+    """Refuse, before anything is written, a file some of whose records differ from the store's
+    while its import does not let the file's stand (`DatasetMerge.refuses`)."""
+    refusing = [merge for merge in merges if merge.refuses()]
+    if not refusing:
+        return
+    raise ValueError(
+        f"Expected the records {source} shares with the store to be the ones the store holds, "
+        f"got {'; '.join(_differing(merge) for merge in refusing)}: nothing was written. Where "
+        "the file is an export, check its profile's time zone and bar stamping; where it holds "
+        "a vendor's correction, or a bar the store took before it was complete, import it with "
+        "--differing take-file, and its records stand."
+    )
+
+
+def write_merges(
+    store: Store,
+    merges: Iterable[PartitionMerge],
+    metadata: DatasetMetadata,
+    differing: DifferingRecords,
+) -> None:
+    """Write each merge that changes its partition under `differing`, a dataset's `dataset.json`
+    first where the store has none. An operating system's error part way, as Windows gives for a
+    file another program holds open, is told with what was written before it: the import run
+    again finishes it, since the records it wrote read as held."""
+    # shortcut: no lock, so two imports at once into one dataset can lose one's records; take
+    # the store's lock over an import's check and its writes when imports run as jobs (5.12).
+    written = 0
+    for merge in merges:
+        if not merge.changes(differing):
+            continue
+        try:
+            _write(store, merge, metadata, differing)
+        except OSError as error:
             raise ValueError(
-                f"Expected {partition.relative_path()} to hold the {rows.height} rows this file "
-                f"gives it, or not to exist, got {stored.height} other rows: a file that "
-                "overlaps an imported one is not merged into it."
-            )
-        self.kept += 1
+                f"Expected to write {merge.partition.relative_path()}, got {error}, after "
+                f"{written} of the file's partitions were written. Nothing is lost: run the "
+                "import again, and it finishes what this one left."
+            ) from error
+        written += 1
+
+
+def _write(
+    store: Store, merge: PartitionMerge, metadata: DatasetMetadata, differing: DifferingRecords
+) -> None:
+    dataset = merge.partition.dataset
+    if not store.has_dataset_metadata(dataset):
+        store.write_dataset_metadata(dataset, metadata)
+    store.write_partition(merge.partition, merge.rows(differing))
+
+
+def _differing(merge: DatasetMerge) -> str:
+    dated = ""
+    if merge.differing_sessions:
+        dated = f", the first on trade date {merge.differing_sessions[0].trade_date}"
+    return f"{merge.records_differing:,} with other values in {merge.dataset}{dated}"
 
 
 def _last_trade_date(partition: Partition) -> date | None:
