@@ -109,13 +109,44 @@ def test_a_trade_of_prints_across_the_roll_waits_for_its_replay() -> None:
         run.explain(across)
 
 
-def test_data_changed_since_the_run_is_refused() -> None:
+def test_data_changed_since_the_run_is_refused_with_the_partition_written_since() -> None:
     run = backtest()
     trades = resolve_paths(os.environ).data_dir / "synthetic" / "trades" / "root=ES"
     part = trades / "contract=ESH2026" / "date=2026-03-05" / "part.parquet"
     part.write_bytes(part.read_bytes() + b"changed")
 
-    with pytest.raises(ValueError, match="the data changed since the run"):
+    written = (
+        r"the data changed since the run\. Written since the run was saved: "
+        r"synthetic/trades/root=ES/contract=ESH2026/date=2026-03-05/part\.parquet\. "
+    )
+    with pytest.raises(ValueError, match=written):
+        run.explain(1)
+
+
+def test_a_refusal_names_three_of_the_partitions_written_since_and_counts_the_rest() -> None:
+    run = backtest()
+    trades = resolve_paths(os.environ).data_dir / "synthetic" / "trades" / "root=ES"
+    for part in trades.rglob("part.parquet"):
+        part.write_bytes(part.read_bytes() + b"changed")
+
+    march = "synthetic/trades/root=ES/contract=ESH2026/date=2026-03-0"
+    named = rf"saved: {march}5/part\.parquet, {march}6/part\.parquet, {march}9/part\.parquet"
+    with pytest.raises(ValueError, match=rf"{named}, and 3 more\. The run's record"):
+        run.explain(1)
+
+
+def test_a_partition_removed_since_the_run_is_refused_as_removed_or_put_back() -> None:
+    # Step 5.14: a run's record keeps its snapshots' hashes alone, so the refusal names the
+    # partitions by their files' times, and says so where none is newer than the run.
+    run = backtest()
+    trades = resolve_paths(os.environ).data_dir / "synthetic" / "trades" / "root=ES"
+    shutil.rmtree(trades / "contract=ESH2026" / "date=2026-03-06")
+
+    removed = (
+        r"the data changed since the run\. None of its partitions was written since the run "
+        r"was saved, so one was removed or put back from a copy\. "
+    )
+    with pytest.raises(ValueError, match=removed):
         run.explain(1)
 
 

@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 import fefat_engine
 import polars as pl
 
-from fefat.backtest.explain import pinned_snapshots
 from fefat.backtest.metrics import (
     FidelityCheck,
     FidelityRerun,
@@ -36,6 +35,7 @@ from fefat.backtest.metrics import (
     RefusedCheck,
     running_drawdown,
 )
+from fefat.backtest.pinned_data import pinned_snapshots
 from fefat.backtest.record import Window
 from fefat.backtest.run_inputs import engine_cache_folder
 from fefat.config import resolve_paths
@@ -126,7 +126,7 @@ def fidelity_check(run: "Run") -> FidelityCheck | RefusedCheck | None:
     record = run.record
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
-    pinned_snapshots(store, record)
+    pinned_snapshots(store, run)
     root_and_provider = (record.instrument.root, record.config.provider)
     timeframe = str(record.strategy.spec["timeframe"])
     itself = PeriodRun(
