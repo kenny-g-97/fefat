@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from fefat.market.importers.file_import import FileImportRequest, preview_file
+from export_samples import previewed
+from fefat.market.importers.file_import import FileImportRequest
 from fefat.market.importers.profiles import (
     ImportProfile,
     load_profile,
@@ -11,7 +12,6 @@ from fefat.market.importers.profiles import (
     preset_profiles,
     save_profile,
 )
-from fefat.market.instruments import STATIC_TABLE
 from fefat.market.sources import SOURCE_GUIDE, PresetStatus
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,7 +113,7 @@ def test_a_preset_that_leaves_the_time_zone_to_the_import_refuses_an_import_with
     request = FileImportRequest(path=IBKR_SAMPLE, profile=preset_profiles()["ibkr"])
 
     with pytest.raises(ValueError, match="--time-zone America/New_York"):
-        preview_file(request, STATIC_TABLE, tmp_path / "cache")
+        previewed(tmp_path, request)
 
 
 def test_every_preset_round_trips_through_its_yaml() -> None:

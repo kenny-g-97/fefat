@@ -1,28 +1,38 @@
-"""Writing one DBN file's records to the store: each frame placed
+"""One DBN file's records read against the store, then written (step 5.14): each frame placed
 (`fefat.market.importers.canonical`), the file's clock checked to never decrease
-(`02-engine-and-data.md` §1.1), the rows held until their partitions are complete
-(`fefat.market.importers.partition_buffers`), and what happened added up into the file's
-report.
+(`02-engine-and-data.md` §1.1), and the rows held until their partitions are complete and read
+against what the store holds of them (`fefat.market.importers.partition_buffers`).
+`checked_records` goes over the file without writing and adds up what happened, and what the
+file adds to each dataset, into the file's report; `write_records` goes over it again and writes
+the partitions that change, so that a file refused part way has written nothing.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import replace
 
 import polars as pl
 
 from fefat.market.importers.canonical import (
     CONTRACT_COUNTS,
-    DAY_COUNTS,
     EARLY_COUNTS,
     SPREAD_COUNTS,
     PlacedRecords,
     RecordPlacement,
 )
-from fefat.market.importers.partition_buffers import PartitionBuffers
+from fefat.market.importers.partition_buffers import (
+    MergeTally,
+    PartitionBuffers,
+    day_records,
+    write_merges,
+)
+from fefat.market.importers.partition_merge import (
+    DifferingRecords,
+    PartitionMerge,
+    RecordIdentity,
+)
 from fefat.market.importers.report import (
     ClockDecrease,
     ContractRecords,
-    DayRecords,
     EarlySymbol,
     FileImport,
     SymbolRecords,
@@ -66,27 +76,46 @@ class FileClock:
         self.latest = latest if self.latest is None else max(self.latest, latest)
 
 
-def write_records(
+class _FilePass:
+    """One pass over a file's record frames, in file order: its clock, what each frame set
+    aside, and the merge of each partition with what the store holds of it, as it completes."""
+
+    def __init__(self, placement: RecordPlacement, store: Store, metadata: DatasetMetadata) -> None:
+        self.clock = FileClock(placement.clock_column())
+        self.placed: list[PlacedRecords] = []
+        self._placement = placement
+        identity = RecordIdentity(clock=placement.order_column())
+        self._buffers = PartitionBuffers(store, identity, metadata)
+
+    def merges(self, records: Iterable[pl.DataFrame]) -> Iterator[PartitionMerge]:
+        for frame in records:
+            self.clock.observe(frame)
+            chunk = self._placement.placed(frame)
+            self._buffers.add(chunk.partitions)
+            self.placed.append(replace(chunk, partitions={}))
+            if self.clock.latest is not None:
+                yield from self._buffers.complete(self.clock.latest)
+        yield from self._buffers.rest()
+
+
+def checked_records(
     records: Iterable[pl.DataFrame],
     placement: RecordPlacement,
     store: Store,
     raw_path: str,
     metadata: DatasetMetadata,
+    on_differing: DifferingRecords,
 ) -> FileImport:
-    """Place and write a file's record frames, in file order, each dataset they reach described
-    by `metadata`, and report what was written and what was set aside; `raw_path` names the
-    file in the report."""
-    clock = FileClock(placement.clock_column())
-    buffers = PartitionBuffers(store, placement.order_column(), metadata)
-    placed: list[PlacedRecords] = []
-    for frame in records:
-        clock.observe(frame)
-        chunk = placement.placed(frame)
-        buffers.add(chunk.partitions)
-        if clock.latest is not None:
-            buffers.write_complete(clock.latest)
-        placed.append(replace(chunk, partitions={}))
-    buffers.write_all()
+    """Place a file's record frames and read each of its partitions against the store, writing
+    nothing, each dataset they reach described as `metadata` describes it, and report what the
+    file adds to each dataset under `on_differing` and what was set aside; `raw_path` names the
+    file in the report. A file the store cannot take is refused here, before `write_records`
+    writes a partition."""
+    passed = _FilePass(placement, store, metadata)
+    tally = MergeTally(on_differing)
+    for merge in passed.merges(records):
+        tally.add(merge)
+    clock, placed = passed.clock, passed.placed
     return FileImport(
         path=raw_path,
         schema_name=placement.schema_name,
@@ -95,15 +124,27 @@ def write_records(
         first_instant=clock.earliest,
         last_instant=clock.latest,
         contracts=_contracts(placed),
-        partitions_written=buffers.written,
-        partitions_kept=buffers.kept,
+        merges=tally.datasets(),
         spreads=_spreads(placed),
         before_first_trade_date=_early(placed),
-        outside_sessions=_days([chunk.outside_sessions for chunk in placed]),
-        unreliable_ts_recv=_days([chunk.unreliable_ts_recv for chunk in placed]),
+        outside_sessions=day_records(chunk.outside_sessions for chunk in placed),
+        unreliable_ts_recv=day_records(chunk.unreliable_ts_recv for chunk in placed),
         clock_decreases=clock.decreases,
         first_clock_decrease=clock.first_decrease,
     )
+
+
+def write_records(
+    records: Iterable[pl.DataFrame],
+    placement: RecordPlacement,
+    store: Store,
+    metadata: DatasetMetadata,
+    differing: DifferingRecords,
+) -> None:
+    """Go over a file `checked_records` passed again and write each partition its records
+    change, the file's standing at the instants the two dispute where `differing` says so, and
+    each new dataset's `dataset.json` from `metadata`."""
+    write_merges(store, _FilePass(placement, store, metadata).merges(records), metadata, differing)
 
 
 def _contracts(placed: list[PlacedRecords]) -> tuple[ContractRecords, ...]:
@@ -138,16 +179,6 @@ def _early(placed: list[PlacedRecords]) -> tuple[EarlySymbol, ...]:
         .sort("raw_symbol")
     )
     return tuple(EarlySymbol.model_validate(row) for row in totals.iter_rows(named=True))
-
-
-def _days(counts: list[pl.DataFrame]) -> tuple[DayRecords, ...]:
-    totals = (
-        _concatenated(counts, DAY_COUNTS)
-        .group_by("trade_date")
-        .agg(pl.col("records").sum())
-        .sort("trade_date")
-    )
-    return tuple(DayRecords.model_validate(row) for row in totals.iter_rows(named=True))
 
 
 def _concatenated(frames: list[pl.DataFrame], schema: pl.Schema) -> pl.DataFrame:

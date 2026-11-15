@@ -13,9 +13,10 @@ from fefat.market.bars import resample_bars
 from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.calendar_definition import CalendarId, SessionHours, Weekday
-from fefat.market.importers.file_import import FileImportRequest, import_file
+from fefat.market.importers.file_import import FileImportRequest, import_file, preview_file
+from fefat.market.importers.file_report import FilePreview
 from fefat.market.importers.profiles import ImportProfile, NewInstrument, preset_profiles
-from fefat.market.instruments import Currency, InstrumentKind
+from fefat.market.instruments import STATIC_TABLE, Currency, InstrumentKind, InstrumentTable
 from fefat.market.last_trade_rules import ThirdFriday
 from fefat.market.layout import Dataset, Partition, YearMonth
 from fefat.market.saved_instruments import instrument_table
@@ -61,6 +62,13 @@ def sample_lines(preset: str) -> list[str]:
     return SAMPLES[preset][0].read_bytes().decode().splitlines()
 
 
+def with_a_lot_more_in_the_last_bar(lines: list[str]) -> list[str]:
+    """The lines of a NinjaTrader export, the last bar with one lot more, as an export made
+    before that bar was complete differs from a later one."""
+    stamp, *prices, volume = lines[-1].split(";")
+    return [*lines[:-1], ";".join([stamp, *prices, str(int(volume) + 1)])]
+
+
 def written_export(folder: Path, name: str, lines: list[str]) -> Path:
     """`lines` written as the export `name` in `folder`, each ended by a line feed."""
     path = folder / name
@@ -79,6 +87,13 @@ def imported(folder: Path, request: FileImportRequest) -> Store:
         instruments=instrument_table(store.folder),
     )
     return store
+
+
+def previewed(
+    folder: Path, request: FileImportRequest, instruments: InstrumentTable = STATIC_TABLE
+) -> FilePreview:
+    """The preview of `request` against the store that `imported` writes in `folder`."""
+    return preview_file(request, Store(folder / "data"), instruments, folder / "cache")
 
 
 def minutes_of(provider: str) -> Partition:

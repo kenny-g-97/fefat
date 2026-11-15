@@ -163,7 +163,12 @@ def test_a_batch_download_is_imported_with_its_raw_files_in_the_manifest(tmp_pat
         "  Before their product's first trade date: none",
         "  Outside every session: 1 record on 1 trade date: 2026-03-06 (1)",
         "  Clock: never decreases",
-        "  Partitions: 1 written, 0 already stored",
+        "  databento/ohlcv-1m/root=ES:",
+        "    New sessions: 4,141 records on 3 trade dates: 2026-03-05 (1,380), 2026-03-06 "
+        "(1,381), 2026-03-09 (1,380)",
+        "    Sessions the store holds that gain records: none",
+        "    Records: 4,141 new, 0 already held, 0 that differ",
+        "    Partitions: 1 that change, 0 unchanged",
     ]
 
 
@@ -417,8 +422,8 @@ def test_a_file_of_spreads_only_writes_nothing_and_counts_them(tmp_path: Path) -
 def test_a_batch_split_into_several_data_files_is_refused_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    # A batch split by day or month gives two files rows of one partition, which the importer
-    # does not merge, so it refuses the batch rather than stop after its first file.
+    # A batch split by day or month is not imported as one yet (`BACKLOG.md`): the batch is
+    # refused before its first file is read, rather than left half imported.
     batch = batch_copy(tmp_path)
     shutil.copyfile(batch / DATA_FILE, batch / "glbx-mdp3-20260310-20260310.ohlcv-1m.dbn")
     publish(batch, "glbx-mdp3-20260310-20260310.ohlcv-1m.dbn")

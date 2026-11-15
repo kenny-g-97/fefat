@@ -42,7 +42,6 @@ import polars as pl
 
 import fefat as ff
 from fefat.backtest import FidelityCheck, Run, RunConfig
-from fefat.backtest.explain import pinned_snapshots
 from fefat.backtest.fidelity_classes import (
     MATCH,
     RESTAMP,
@@ -50,6 +49,7 @@ from fefat.backtest.fidelity_classes import (
     classify,
 )
 from fefat.backtest.fidelity_summary import FidelitySummary, summarise
+from fefat.backtest.pinned_data import pinned_snapshots
 from fefat.backtest.run_inputs import RunInputs, run_inputs
 from fefat.backtest.runs import run_key
 from fefat.config import FefatPaths, resolve_paths
@@ -210,8 +210,8 @@ def tick_sessions(run: Run, sessions: Sequence[date]) -> tuple[date, ...]:
 
 def pinned_prints(store: Store, run: Run, contract: str, days: Sequence[date]) -> pl.DataFrame:
     """The contract's prints of `days` from the trades snapshot the run's record pins, refused
-    unless the store still holds them as the run read them (`fefat.backtest.explain`)."""
-    snapshot = pinned_snapshots(store, run.record)[str(TickFidelity.TRADES)]
+    unless the store still holds them as the run read them (`fefat.backtest.pinned_data`)."""
+    snapshot = pinned_snapshots(store, run)[str(TickFidelity.TRADES)]
     held = []
     for digest in snapshot.partitions:
         partition = Partition.from_relative_path(PurePosixPath(digest.path))

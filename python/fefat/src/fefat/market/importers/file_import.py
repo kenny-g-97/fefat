@@ -4,19 +4,26 @@
 `preview_file` reads and maps the whole file (`fefat.market.importers.profile_records`), runs
 the calendar check on its records (`fefat.market.calendar_check.check_records`), and reports
 the first rows as the store would hold them, the problems, the check, and the warnings, among
-them a calendar that could not test the file's timing (`fefat.market.calendar_offset`), writing
-nothing. `import_file` does the same, refuses a file with problems or whose records run late or
-early against their calendar, and otherwise writes: the records, in the dataset
-`<provider>/<schema>/root=<root>`, tagged `origin: import` with the licence scope of the
-provider's source in the guide, through the partition buffers, so that an equal partition is
-kept and a different one refused; then the new instrument the profile specifies, unless the
-store has it; then the original file under `raw/user/<sha256>/<name>`, recorded in the raw
-manifest last. The file is read once, for its hash and its rows. A file the raw manifest
-records is imported already: importing it again changes nothing. Where imported and synced
-data overlap, each provider keeps its own dataset. Nothing is uploaded anywhere.
+them a calendar that could not test the file's timing (`fefat.market.calendar_offset`), and,
+for a file that reads without problems, what it would add to its dataset, writing nothing.
+`import_file` does the same, refuses a file with problems or whose records run late or
+early against their calendar, and otherwise reads each partition of its records, in the dataset
+`<provider>/<schema>/root=<root>`, against what the store holds of it (ADR-0021): records the
+store lacks are added, those it holds are counted, and those it holds with other values refuse
+the file, unless the import lets the file's stand. Only then does it write, once nothing can
+refuse the file any more: the original file under `raw/user/<sha256>/<name>`, its copy checked
+against its hash; the new instrument the profile specifies, unless the store has it; the
+partitions its records change, a new dataset tagged `origin: import` with the licence scope of
+the provider's source in the guide; and, last, the file's entry in the raw manifest. The file is
+read once, for its hash and its rows, and its partitions are gone over to check and, where one
+changes, again to write. A file the raw manifest records is imported already: importing it
+again changes nothing.
+Where imported and synced data overlap, each provider keeps its own dataset. Nothing is uploaded
+anywhere.
 """
 
 import hashlib
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path, PurePosixPath
@@ -24,12 +31,31 @@ from pathlib import Path, PurePosixPath
 import polars as pl
 
 from fefat.market.calendar import utc_text
-from fefat.market.calendar_check import CalendarReport, check_records
+from fefat.market.calendar_check import check_records
 from fefat.market.calendar_offset import TIMING_UNCHECKED, timing_checked
 from fefat.market.dataset_choice import dataset_warnings
 from fefat.market.engine_units import price_text
 from fefat.market.importers.canonical import partition_key, partition_of
-from fefat.market.importers.partition_buffers import PartitionBuffers
+from fefat.market.importers.file_report import (
+    AlreadyImported,
+    FileImportReport,
+    FilePreview,
+    FileReading,
+)
+from fefat.market.importers.partition_buffers import (
+    DIFFERING_TAKEN_RECORDED,
+    MergeTally,
+    PartitionBuffers,
+    require_none_differing,
+    require_one_price_basis,
+    write_merges,
+)
+from fefat.market.importers.partition_merge import (
+    DifferingRecords,
+    PartitionMerge,
+    RecordIdentity,
+    whole_at_the_files_edges,
+)
 from fefat.market.importers.profile_contracts import ImportFacts
 from fefat.market.importers.profile_records import (
     MappedRecords,
@@ -37,12 +63,13 @@ from fefat.market.importers.profile_records import (
     tick_arrival_offset,
 )
 from fefat.market.importers.profiles import ImportProfile
+from fefat.market.importers.report import DatasetMerge
 from fefat.market.importers.tabular import read_table
 from fefat.market.instruments import InstrumentTable
-from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition
+from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition, SeriesKind
 from fefat.market.raw_manifest import checked_raw_path
-from fefat.market.saved_instruments import save_instrument
-from fefat.market.schema import FrozenModel, SchemaKind, Timeframe, TimeUnit, polars_schema
+from fefat.market.saved_instruments import instrument_is_saved, save_instrument
+from fefat.market.schema import SchemaKind, Timeframe, TimeUnit, polars_schema
 from fefat.market.sources import SOURCE_GUIDE, SourceGuide
 from fefat.market.store import Store
 
@@ -78,124 +105,36 @@ class FileImportRequest:
     time_zone: str | None = None
 
 
-class FileReading(FrozenModel):
-    """What a file holds once read with its profile: the dataset its records go to, how many
-    rows and records there are, their contracts and trade dates, what was left out, the
-    problems, the calendar check, and the warnings: what every load of them repeats, and a
-    calendar check that could not test their timing."""
-
-    source: str
-    profile: str
-    dataset: Dataset
-    rows_read: int
-    records: int
-    contracts: tuple[str, ...]
-    first_trade_date: date | None
-    last_trade_date: date | None
-    bars_without_volume: int
-    spread_rows: int
-    problems: tuple[str, ...]
-    calendar: CalendarReport
-    warnings: tuple[str, ...]
-
-    def refusals(self) -> list[str]:
-        """The problems and offsets that stop an import."""
-        return [*self.problems, *(offset.describe() for offset in self.calendar.offsets)]
-
-    def lines(self) -> list[str]:
-        dates = (
-            "no trade date"
-            if self.first_trade_date is None
-            else (f"trade dates {self.first_trade_date} to {self.last_trade_date}")
-        )
-        contracts = ", ".join(self.contracts) if self.contracts else "none"
-        left_out = [
-            f"{self.bars_without_volume:,} bars without volume" if self.bars_without_volume else "",
-            f"{self.spread_rows:,} rows of spread symbols" if self.spread_rows else "",
-        ]
-        shown = [part for part in left_out if part]
-        return [
-            f"  {self.rows_read:,} rows read; {self.records:,} records for {self.dataset.relative_folder()}, "
-            f"contracts {contracts}, {dates}",
-            *([f"  Left out: {' and '.join(shown)}"] if shown else []),
-            *(f"  Warning: {warning}" for warning in self.warnings),
-            *(["  Problems: none"] if not self.problems else ["  Problems:"]),
-            *(f"    {problem}" for problem in self.problems),
-            *(f"  Calendar check: {line}" for line in self.calendar.summary().splitlines()),
-        ]
-
-
-class FilePreview(FrozenModel):
-    """A file read with its profile, nothing written, and its first records as stored."""
-
-    reading: FileReading
-    first_rows: tuple[str, ...]
-
-    def summary(self) -> str:
-        reading = self.reading
-        heading = (
-            f"Preview of {reading.source} with the profile {reading.profile}; nothing was written."
-        )
-        verdict = (
-            "It would import as it is."
-            if not reading.refusals()
-            else "It would be refused: fix the profile, or the file, and preview it again."
-        )
-        return "\n".join(
-            [heading, *reading.lines(), "  First records as stored:", *self.first_rows, verdict]
-        )
-
-
-class FileImportReport(FrozenModel):
-    """What `import_file` wrote: the file kept under `raw`, what was read, the partitions
-    written and those stored already, and whether the new instrument was saved."""
-
-    source: str
-    raw_path: str
-    reading: FileReading
-    partitions_written: int
-    partitions_kept: int
-    instrument_saved: bool
-
-    def summary(self) -> str:
-        saved = (
-            ["  New instrument saved for later imports and loads."] if self.instrument_saved else []
-        )
-        return "\n".join(
-            [
-                f"Imported {self.source} with the profile {self.reading.profile}.",
-                *self.reading.lines(),
-                *saved,
-                f"  Partitions: {self.partitions_written} written, {self.partitions_kept} already "
-                "stored",
-                f"  Original kept as raw/{self.raw_path}",
-            ]
-        )
-
-
-class AlreadyImported(FrozenModel):
-    """A file `import_file` found imported before, kept under `raw` as `raw_path`."""
-
-    source: str
-    raw_path: str
-
-    def summary(self) -> str:
-        return (
-            f"Nothing to import from {self.source}: it is imported already, as raw/{self.raw_path}."
-        )
-
-
 def preview_file(
     request: FileImportRequest,
+    store: Store,
     instruments: InstrumentTable,
     cache_folder: Path,
     guide: SourceGuide = SOURCE_GUIDE,
+    differing: DifferingRecords | str = DifferingRecords.REFUSE,
 ) -> FilePreview:
-    """The file read and checked as an import would, and nothing written."""
-    mapped = _mapped(request, _file_bytes(request.path), instruments, cache_folder)
+    """The file read and checked against `store` as `import_file` would under `differing`, the
+    option or its text, and nothing written: what it holds, and what it would add to its
+    dataset, or that it is imported already. What refuses its import before the store's records
+    are compared refuses the preview too: a file imported before under other arguments, a
+    dataset of another unit or series, and the records no merge takes (ADR-0021)."""
+    differing = DifferingRecords(differing)
+    content = _file_bytes(request.path)
+    raw_path = _raw_path(request, hashlib.sha256(content).hexdigest())
+    imported = _imported_before(store, request, raw_path, _import_arguments(request))
+    mapped = _mapped(request, content, instruments, cache_folder)
     reading = _reading(request, mapped)
-    _metadata(request.profile, guide)
-    return FilePreview(reading=reading, first_rows=tuple(_shown(mapped)))
+    metadata = _metadata(request.profile, guide)
+    against_the_store = None
+    if imported:
+        against_the_store = AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
+    elif not reading.refusals():
+        partitions = _partitions(reading.dataset, mapped)
+        merging = _FileMerge(store, partitions, _identity(request.profile), metadata)
+        against_the_store = merging.checked(differing)
+    return FilePreview(
+        reading=reading, first_rows=tuple(_shown(mapped)), against_the_store=against_the_store
+    )
 
 
 def import_file(
@@ -206,35 +145,41 @@ def import_file(
     imported_on: date,
     instruments: InstrumentTable,
     guide: SourceGuide = SOURCE_GUIDE,
+    differing: DifferingRecords | str = DifferingRecords.REFUSE,
 ) -> FileImportReport | AlreadyImported:
-    """Import the file into `store` (module docstring); a file with problems, or whose records
-    run late or early against their calendar, is refused with them, and nothing is written."""
+    """Import the file into `store`, merging its records into the partitions it overlaps
+    (module docstring); a file with problems, whose records run late or early against their
+    calendar, or whose records differ from the store's while `differing`, the option or its
+    text (`"take-file"`), does not let the file's stand, is refused with them, and nothing is
+    written."""
+    differing = DifferingRecords(differing)
     content = _file_bytes(request.path)
     sha256 = hashlib.sha256(content).hexdigest()
-    raw_path = PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
-    checked_raw_path(raw_path.as_posix())
+    raw_path = _raw_path(request, sha256)
     arguments = _import_arguments(request)
-    recorded = store.raw.manifest().file_at(raw_path.as_posix())
-    if recorded is not None:
-        if recorded.vendor_version != arguments:
-            raise ValueError(
-                f"Expected {request.path} to be imported as it was on {recorded.imported_on}, "
-                f"{recorded.vendor_version}, got {arguments}: a stored dataset never changes, "
-                "so the first import stands."
-            )
+    if _imported_before(store, request, raw_path, arguments):
         return AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
     mapped = _mapped(request, content, instruments, cache_folder)
     reading = _reading(request, mapped)
     _require_no_refusals(request, reading)
-    buffers = PartitionBuffers(store, _clock(mapped), _metadata(request.profile, guide))
-    buffers.add(_partitions(reading.dataset, mapped))
-    buffers.write_all()
-    saved = mapped.new_instrument and save_instrument(store.folder, mapped.instrument)
+    merging = _FileMerge(
+        store=store,
+        partitions=_partitions(reading.dataset, mapped),
+        identity=_identity(request.profile),
+        metadata=_metadata(request.profile, guide),
+    )
+    merge = merging.checked(differing)
+    require_none_differing([merge], request.path)
+    unsaved = mapped.new_instrument and not instrument_is_saved(store.folder, mapped.instrument)
     store.raw.write(raw_path, request.path, sha256)
+    saved = unsaved and save_instrument(store.folder, mapped.instrument)
+    if merge.partitions_changed:
+        merging.write(differing)
+    taken = DIFFERING_TAKEN_RECORDED if differing is DifferingRecords.TAKE_THE_FILE else ""
     store.raw.record(
         raw_path,
         provider=request.profile.provider,
-        vendor_version=arguments,
+        vendor_version=f"{arguments}{taken}",
         downloaded_on=datetime.fromtimestamp(request.path.stat().st_mtime, UTC).date(),
         batch_job=None,
         imported_on=imported_on,
@@ -244,10 +189,69 @@ def import_file(
         source=str(request.path),
         raw_path=raw_path.as_posix(),
         reading=reading,
-        partitions_written=buffers.written,
-        partitions_kept=buffers.kept,
+        merge=merge,
         instrument_saved=saved,
     )
+
+
+@dataclass(frozen=True)
+class _FileMerge:
+    """A file's rows by partition read against one store, gone over once to check and count,
+    and again to write, with one merged partition in memory at a time."""
+
+    store: Store
+    partitions: Mapping[Partition, pl.DataFrame]
+    identity: RecordIdentity
+    metadata: DatasetMetadata
+
+    def checked(self, on_differing: DifferingRecords) -> DatasetMerge:
+        """What the file adds to its dataset under `on_differing`, nothing written; a file the
+        store cannot take is refused here, as is, whatever `on_differing` says, a file that
+        shares no bar with the back-adjusted series the store holds of its dataset
+        (`require_one_price_basis`)."""
+        tally = MergeTally(on_differing)
+        for merge in self._merges():
+            tally.add(merge)
+        (added,) = tally.datasets()
+        adjusted = self.metadata.series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
+        if adjusted and self.store.list_partitions(added.dataset):
+            require_one_price_basis(added)
+        return added
+
+    def write(self, differing: DifferingRecords) -> None:
+        """Write the partitions the file changes."""
+        write_merges(self.store, self._merges(), self.metadata, differing)
+
+    def _merges(self) -> Iterator[PartitionMerge]:
+        """Each partition's merge, in both passes; prints numbered by their place are refused
+        where they dispute an instant their file may hold part of (`partition_merge`)."""
+        buffers = PartitionBuffers(self.store, self.identity, self.metadata)
+        buffers.add(self.partitions)
+        if not self.identity.numbered_by_place:
+            return buffers.rest()
+        return whole_at_the_files_edges(buffers.rest(), self.partitions, self.identity.clock)
+
+
+def _raw_path(request: FileImportRequest, sha256: str) -> PurePosixPath:
+    """Where the file is kept under `raw`: by its hash, since two exports can share a name."""
+    return PurePosixPath(USER_RAW_FOLDER, sha256, request.path.name)
+
+
+def _imported_before(
+    store: Store, request: FileImportRequest, raw_path: PurePosixPath, arguments: str
+) -> bool:
+    """Whether the raw manifest records the file, which is refused where it was imported under
+    other arguments (D-50): its records are in the store as that import read them."""
+    recorded = store.raw.manifest().file_at(checked_raw_path(raw_path.as_posix()))
+    if recorded is None:
+        return False
+    if recorded.vendor_version.removesuffix(DIFFERING_TAKEN_RECORDED) != arguments:
+        raise ValueError(
+            f"Expected {request.path} to be imported as it was on {recorded.imported_on}, "
+            f"{recorded.vendor_version}, got {arguments}: a file is imported once, as its first "
+            "import read it."
+        )
+    return True
 
 
 def _file_bytes(path: Path) -> bytes:
@@ -355,8 +359,15 @@ def _metadata(profile: ImportProfile, guide: SourceGuide) -> DatasetMetadata:
     )
 
 
-def _clock(mapped: MappedRecords) -> str:
-    return "ts_open" if mapped.schema_name.kind is SchemaKind.OHLCV else "ts_recv"
+def _identity(profile: ImportProfile) -> RecordIdentity:
+    """What tells the profile's records apart: a bar's open, or a print's receive time and
+    place, the print numbered by its place where the profile maps no sequence of its own."""
+    if profile.bar_timeframe() is not None:
+        return RecordIdentity(clock="ts_open")
+    ticks = profile.columns.ticks
+    return RecordIdentity(
+        clock="ts_recv", numbered_by_place=ticks is None or ticks.sequence is None
+    )
 
 
 def _partitions(dataset: Dataset, mapped: MappedRecords) -> dict[Partition, pl.DataFrame]:

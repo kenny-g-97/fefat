@@ -20,6 +20,7 @@ from export_samples import (
     five_minute_file,
     imported,
     minutes_of,
+    previewed,
     rolled_databento_lines,
     sample_lines,
     sample_request,
@@ -31,13 +32,8 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.calendar_definition import CalendarId
 from fefat.market.calendar_offset import CalendarOffset, OffsetCause
-from fefat.market.importers.file_import import (
-    AlreadyImported,
-    FileImportReport,
-    FileImportRequest,
-    import_file,
-    preview_file,
-)
+from fefat.market.importers.file_import import FileImportRequest, import_file
+from fefat.market.importers.file_report import AlreadyImported, FileImportReport
 from fefat.market.importers.profile_contracts import ImportFacts
 from fefat.market.importers.profile_records import mapped_records
 from fefat.market.importers.profile_values import ProblemKind
@@ -99,7 +95,7 @@ def test_a_sample_read_in_the_wrong_time_zone_is_flagged_with_the_offset_the_che
     # late on 03-05 and 03-06 and 5 on 03-09; the calendar check names the offset of most.
     request = sample_request("ninjatrader", time_zone="America/Chicago")
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
 
     assert preview.reading.calendar.offsets == (
         CalendarOffset(
@@ -124,7 +120,7 @@ def test_a_sample_read_with_the_wrong_bar_stamping_is_flagged_with_one_bar(
     profile = PRESETS["ninjatrader"].model_copy(update={"timestamp": timestamp})
     request = sample_request("ninjatrader", profile=profile)
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
 
     assert preview.reading.calendar.offsets == (
         CalendarOffset(
@@ -206,7 +202,7 @@ def test_a_preview_writes_nothing_to_the_data_folder(tmp_path: Path) -> None:
     data_folder.mkdir()
     request = FileImportRequest(path=five_minute_file(tmp_path), profile=a_new_product_profile())
 
-    preview = preview_file(request, instrument_table(data_folder), tmp_path / "cache")
+    preview = previewed(tmp_path, request, instrument_table(data_folder))
 
     assert store_files(data_folder) == {}
     assert "nothing was written" in preview.summary()
@@ -289,7 +285,7 @@ def test_rows_that_cannot_be_read_are_problems_that_refuse_the_import(tmp_path: 
     broken.write_bytes("\n".join(lines).encode())
     request = sample_request("ninjatrader", path=broken)
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
 
     kinds = [problem.split(",")[0] for problem in preview.reading.problems]
     assert kinds == [
@@ -308,7 +304,7 @@ def test_coarser_bars_read_with_a_finer_profile_are_refused(tmp_path: Path) -> N
     )
     request = FileImportRequest(path=five_minute_file(tmp_path), profile=profile)
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
 
     assert any(problem.startswith("other-timeframe") for problem in preview.reading.problems)
 
@@ -360,7 +356,8 @@ def test_prints_stamped_coarser_than_a_nanosecond_are_received_at_the_end_of_the
     # IBKR stamps its prints to the second (D-70): a print stamped at a decision's instant may
     # have arrived after the decision, so it is stored at its stamp's last nanosecond, with its
     # stamp as its event time and the file's order within the stamp, and the raw manifest
-    # records the rule with the import's arguments.
+    # records the rule with the import's arguments. The file gives its prints no sequence, so
+    # each is numbered by its place in its instant, whatever row the file starts at (step 5.14).
     stamp = int(datetime(2026, 3, 6, 14, 30, tzinfo=UTC).timestamp()) * 1_000_000_000 // unit
     path = written_export(
         tmp_path / "exports",
@@ -386,18 +383,18 @@ def test_prints_stamped_coarser_than_a_nanosecond_are_received_at_the_end_of_the
     )
     request = FileImportRequest(path=path, profile=profile)
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
     store = imported(tmp_path, request)
 
     dataset = Dataset(provider="ibkr", schema_name=parse_schema_name("trades"), root="ES")
     partition = Partition(dataset=dataset, contract="ESH2026", key=date(2026, 3, 6))
     stamped, last = stamp * unit, unit - 1
     assert store.scan_partition(partition).collect().select(
-        "ts_recv", "ts_event", "size"
+        "ts_recv", "ts_event", "size", "sequence"
     ).rows() == [
-        (stamped + last, stamped, 3),
-        (stamped + last, stamped, 1),
-        (stamped + unit + last, stamped + unit, 2),
+        (stamped + last, stamped, 3, 0),
+        (stamped + last, stamped, 1, 1),
+        (stamped + unit + last, stamped + unit, 2, 0),
     ]
     assert any("end of its stamp" in warning for warning in preview.reading.warnings)
     (recorded,) = store.raw.manifest().files
@@ -527,7 +524,7 @@ def test_an_empty_value_in_a_parquet_export_is_a_problem(tmp_path: Path) -> None
         "databento-csv", path=databento_parquet(tmp_path, empty_close_in_row=0)
     )
 
-    preview = preview_file(request, STATIC_TABLE, tmp_path / "cache")
+    preview = previewed(tmp_path, request)
 
     assert preview.reading.problems[0].startswith("unreadable-value, 1 row: ")
 
@@ -544,9 +541,7 @@ def test_a_symbol_seen_ten_years_apart_names_a_contract_in_each_decade(tmp_path:
         [sample_lines("databento-csv")[0], *rows],
     )
 
-    preview = preview_file(
-        sample_request("databento-csv", path=path), STATIC_TABLE, tmp_path / "cache"
-    )
+    preview = previewed(tmp_path, sample_request("databento-csv", path=path))
 
     assert preview.reading.contracts == ("ESH2016", "ESH2026")
 
@@ -632,9 +627,7 @@ def test_a_twelve_hour_clock_with_am_and_pm_keeps_its_time_of_day(tmp_path: Path
     timestamp = PRESETS["ibkr"].timestamp.model_copy(update={"format": "%Y%m%d %I:%M:%S %p"})
     profile = PRESETS["ibkr"].model_copy(update={"name": "ibkr-12h", "timestamp": timestamp})
 
-    preview = preview_file(
-        sample_request("ibkr", path=path, profile=profile), STATIC_TABLE, tmp_path / "cache"
-    )
+    preview = previewed(tmp_path, sample_request("ibkr", path=path, profile=profile))
 
     assert preview.reading.problems == ()
     assert preview.reading.records == len(rows)

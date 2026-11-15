@@ -1,8 +1,10 @@
-"""What an import tells the trader: per file, what was written and what was set aside, and per
+"""What an import tells the trader: per file, what was written and what was set aside, per
+dataset, what the file adds to what the store holds of it (`DatasetMerge`, step 5.14), and per
 batch download, the vendor's own word on its days. Counts and ranges only, never prices, so a
 summary can go into a pull request (D-21).
 
-`DatabentoImport.summary` is what `fefat data import databento` prints.
+`DatabentoImport.summary` is what `fefat data import databento` prints, and
+`DatabentoPreview.summary` what it prints with `--preview`.
 """
 
 from collections.abc import Iterable, Sequence
@@ -13,10 +15,22 @@ from itertools import groupby
 from pydantic import Field
 
 from fefat.market.calendar import counted, utc_text
+from fefat.market.importers.partition_merge import DifferingRecords
+from fefat.market.layout import Dataset
 from fefat.market.schema import FrozenModel, SchemaKind, SchemaName
 
 _LISTED_AT_MOST = 10
 """How many symbols or days a summary line names before it says how many more there are."""
+DIFFERING_ADVICE = (
+    "Where the file is an export, check its profile's time zone and bar stamping; where it holds "
+    "a vendor's correction, or a bar the store took before it was complete, import it with "
+    "--differing take-file, and its records stand."
+)
+"""What to do about records that differ from the store's, as their refusal and a preview say."""
+DIFFERING_VERDICT = (
+    f"It would be refused: its records differ from the ones the store holds. {DIFFERING_ADVICE}"
+)
+"""A preview's last line for a file whose import the differing records would refuse."""
 
 
 class VendorCondition(StrEnum):
@@ -98,9 +112,64 @@ class ClockDecrease(FrozenModel):
     before: int
 
 
+class DatasetMerge(FrozenModel):
+    """What a file adds to one dataset, read against what the store holds of it (ADR-0021),
+    under `on_differing`: the records it adds, those the store already holds, and those at the
+    instants the two dispute, with the stored records at those instants; the trade dates that
+    gain records, those new to their contract, whose partition held none of them, apart from
+    those it held part of; the differing records per trade date; and the partitions the import
+    changes and leaves as they are."""
+
+    dataset: Dataset
+    on_differing: DifferingRecords
+    records_added: int = Field(ge=0)
+    records_held: int = Field(ge=0)
+    records_differing: int = Field(ge=0)
+    stored_records_disputed: int = Field(ge=0)
+    new_sessions: tuple[DayRecords, ...]
+    extended_sessions: tuple[DayRecords, ...]
+    differing_sessions: tuple[DayRecords, ...]
+    partitions_changed: int = Field(ge=0)
+    partitions_unchanged: int = Field(ge=0)
+
+    def refuses(self) -> bool:
+        """Whether the file's records differ from the store's and no import lets them stand."""
+        return self.records_differing > 0 and self.on_differing is DifferingRecords.REFUSE
+
+    def replaces(self) -> bool:
+        """Whether the import takes the file's records in place of stored ones."""
+        taken = self.on_differing is DifferingRecords.TAKE_THE_FILE
+        return self.records_differing > 0 and taken
+
+    def disagreement(self) -> str:
+        """The records that differ, counted, with the first trade date that holds one."""
+        dated = ""
+        if self.differing_sessions:
+            dated = f", the first on trade date {self.differing_sessions[0].trade_date}"
+        folder = self.dataset.relative_folder().as_posix()
+        return f"{self.records_differing:,} with other values in {folder}{dated}"
+
+    def lines(self) -> list[str]:
+        differing = f"{self.records_differing:,} that differ"
+        if self.replaces():
+            stored = counted(self.stored_records_disputed, "stored record")
+            differing = f"{differing}, the file's taken in place of {stored}"
+        disputed = [f"    Records that differ: {_days(self.differing_sessions)}"]
+        return [
+            f"  {self.dataset.relative_folder().as_posix()}:",
+            f"    New sessions: {_days(self.new_sessions)}",
+            f"    Sessions the store holds that gain records: {_days(self.extended_sessions)}",
+            f"    Records: {self.records_added:,} new, {self.records_held:,} already held, "
+            f"{differing}",
+            *(disputed if self.differing_sessions else []),
+            f"    Partitions: {self.partitions_changed} that change, "
+            f"{self.partitions_unchanged} unchanged",
+        ]
+
+
 class FileImport(FrozenModel):
     """One data file imported: its raw path, schema, DBN version, records and their range,
-    contracts, partitions, and what was set aside or counted on the way."""
+    contracts, what it adds to each dataset, and what was set aside or counted on the way."""
 
     path: str
     schema_name: SchemaName
@@ -109,8 +178,7 @@ class FileImport(FrozenModel):
     first_instant: int | None
     last_instant: int | None
     contracts: tuple[ContractRecords, ...]
-    partitions_written: int = Field(ge=0)
-    partitions_kept: int = Field(ge=0)
+    merges: tuple[DatasetMerge, ...]
     spreads: tuple[SymbolRecords, ...]
     before_first_trade_date: tuple[EarlySymbol, ...]
     outside_sessions: tuple[DayRecords, ...]
@@ -129,8 +197,7 @@ class FileImport(FrozenModel):
             f"  Outside every session: {_days(self.outside_sessions)}",
             *self._unreliable_line(),
             f"  Clock: {self._clock()}",
-            f"  Partitions: {self.partitions_written} written, {self.partitions_kept} already "
-            "stored",
+            *(line for merge in self.merges for line in merge.lines()),
         ]
 
     def _unreliable_line(self) -> list[str]:
@@ -148,9 +215,10 @@ class FileImport(FrozenModel):
         )
 
 
-class DatabentoImport(FrozenModel):
-    """What `import_databento` did with a folder or file: the data files imported, those the
-    raw manifest already held, the vendor's daily bars it skipped, and the batch they came in."""
+class DatabentoFiles(FrozenModel):
+    """What a Databento folder or file holds for the store: the data files read against it,
+    those the raw manifest already held, the vendor's daily bars, which are skipped, and the
+    batch they came in."""
 
     source: str
     batch: BatchReport | None
@@ -158,9 +226,9 @@ class DatabentoImport(FrozenModel):
     already_imported: tuple[str, ...]
     daily_bars_skipped: tuple[str, ...]
 
-    def summary(self) -> str:
+    def lines(self) -> list[str]:
         """A few lines per file, with every day the vendor marks degraded."""
-        lines = [self._heading()]
+        lines: list[str] = []
         if self.batch is not None:
             lines.extend(self.batch.lines())
         for file in self.files:
@@ -172,7 +240,14 @@ class DatabentoImport(FrozenModel):
                 "Skipped, the vendor's daily bars are cut on UTC days rather than sessions: "
                 + ", ".join(self.daily_bars_skipped)
             )
-        return "\n".join(lines)
+        return lines
+
+
+class DatabentoImport(DatabentoFiles):
+    """What `import_databento` did with a folder or file."""
+
+    def summary(self) -> str:
+        return "\n".join([self._heading(), *self.lines()])
 
     def _heading(self) -> str:
         if self.files:
@@ -180,6 +255,24 @@ class DatabentoImport(FrozenModel):
         if self.already_imported:
             return f"Nothing to import from {self.source}: every file is already imported."
         return f"Nothing to import from {self.source}."
+
+
+class DatabentoPreview(DatabentoFiles):
+    """What `preview_databento` found that `import_databento` would do with a folder or file,
+    nothing written."""
+
+    def refuses(self) -> bool:
+        """Whether the import would be refused for records that differ from the store's."""
+        return any(merge.refuses() for file in self.files for merge in file.merges)
+
+    def summary(self) -> str:
+        heading = f"Preview of {self.source}; nothing was written."
+        return "\n".join([heading, *self.lines(), self._verdict()])
+
+    def _verdict(self) -> str:
+        if self.refuses():
+            return DIFFERING_VERDICT
+        return "It would import as it is." if self.files else "It would import nothing."
 
 
 def _range(first: int | None, last: int | None) -> str:

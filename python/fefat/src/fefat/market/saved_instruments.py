@@ -28,25 +28,37 @@ def instrument_table(data_dir: Path) -> InstrumentTable:
 
 def save_instrument(data_dir: Path, instrument: Instrument) -> bool:
     """Save a new product's specification in `data_dir`: True when it was written, False when
-    it is saved already as it is. A root of the static table is refused, since its
-    specification is FEFAT's, and so is a second, different specification of a saved root."""
+    it is saved already as it is (`instrument_is_saved`, whose refusals are this function's)."""
+    if instrument_is_saved(data_dir, instrument):
+        return False
+    content = instrument.model_dump_json(indent=2).encode() + b"\n"
+    write_atomically(_path(data_dir, instrument), lambda temporary: temporary.write_bytes(content))
+    return True
+
+
+def instrument_is_saved(data_dir: Path, instrument: Instrument) -> bool:
+    """Whether `data_dir` holds the new product's specification as it is, writing nothing, so
+    that an import knows it can save the product before it writes anything (step 5.14). A root
+    of the static table is refused, since its specification is FEFAT's, and so is a second,
+    different specification of a saved root."""
     if instrument.root in STATIC_TABLE.roots():
         raise ValueError(
             f"Expected a new product, got {instrument.root}, an instrument FEAT knows: name it "
             "in the profile as `instrument: <root>` instead of giving its specification."
         )
-    path = data_dir / INSTRUMENTS_FOLDER_NAME / f"{instrument.root}.json"
-    if path.is_file():
-        saved = _saved(path)
-        if saved != instrument:
-            raise ValueError(
-                f"Expected the specification of {instrument.root} saved in {path}, got another: "
-                "a product keeps the specification its first import saved."
-            )
+    path = _path(data_dir, instrument)
+    if not path.is_file():
         return False
-    content = instrument.model_dump_json(indent=2).encode() + b"\n"
-    write_atomically(path, lambda temporary: temporary.write_bytes(content))
+    if _saved(path) != instrument:
+        raise ValueError(
+            f"Expected the specification of {instrument.root} saved in {path}, got another: "
+            "a product keeps the specification its first import saved."
+        )
     return True
+
+
+def _path(data_dir: Path, instrument: Instrument) -> Path:
+    return data_dir / INSTRUMENTS_FOLDER_NAME / f"{instrument.root}.json"
 
 
 def _saved(path: Path) -> Instrument:

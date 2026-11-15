@@ -12,7 +12,7 @@ decision that placed the entry, flat, with the cash the run held then, on the re
 last one before that decision, which set the price the decision reads, to the fill that left the
 trade flat. The template reads the signal frame from that decision to the end of the exit's trade
 date, so that its time rules see whole sessions. The store's data is first checked against the
-snapshots the run's record pins, and its fee table and calendar against those the run's config
+snapshots the run's record pins (`fefat.backtest.pinned_data`), and its fee table and calendar against those the run's config
 gave the engine. Bars and trade prints replay; an episode on TBBO or on two
 fidelities, a trade of trade prints across a roll, and a trade entered by reversing a position
 are refused (`BACKLOG.md`)."""
@@ -28,16 +28,16 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-from fefat.backtest.record import DatasetRecord, RollRecord, RunRecord
+from fefat.backtest.pinned_data import pinned_snapshots
+from fefat.backtest.record import RollRecord, RunRecord
 from fefat.config import resolve_paths
 from fefat.market.api import load, roll_calendar
 from fefat.market.calendar import SessionTable
-from fefat.market.coverage import session_datasets
 from fefat.market.fees import TABLES
 from fefat.market.fidelity import TickFidelity, fidelity_in_words, parse_fidelity
-from fefat.market.layout import Dataset, Partition, PartitionRequest
+from fefat.market.layout import Partition
 from fefat.market.saved_instruments import instrument_table
-from fefat.market.schema import Timeframe, parse_schema_name
+from fefat.market.schema import Timeframe
 from fefat.market.snapshot import FileDigest, Snapshot
 from fefat.market.store import Store
 from fefat.reference.costs import RunFees
@@ -126,7 +126,7 @@ def explain(run: "Run", trade_id: int) -> Explanation:
     fidelity = _fidelity(rust, trade_id)
     paths = resolve_paths(os.environ)
     store = Store(paths.data_dir)
-    snapshots = pinned_snapshots(store, record)
+    snapshots = pinned_snapshots(store, run)
     root = record.instrument.root
     sessions = instrument_table(paths.data_dir).sessions_of(root, paths.cache_dir)
     fees = _the_runs_fees_and_calendar(run, sessions)
@@ -208,50 +208,6 @@ def _fidelity(fills: Sequence[FillView], trade_id: int) -> TickFidelity | Timefr
     return fidelity
 
 
-def pinned_snapshots(store: Store, record: RunRecord) -> dict[str, Snapshot]:
-    """A snapshot of each dataset of the run's instrument that the run read, by schema, refused
-    unless it is the one the run's record pins, as is one of another instrument its features read
-    (step 3.7), and refused when the store holds trades or bars of the run's provider in its
-    dates that the run did not read: the data changed since the run otherwise.
-    `fidelity_check` reruns a saved run on the data this guards too."""
-    snapshots = {}
-    for dataset in record.datasets:
-        snapshot = store.snapshot(_request(dataset))
-        if snapshot.sha256 != dataset.snapshot:
-            raise ValueError(
-                f"Expected the store's {dataset.schema_name} of {dataset.root} as the run read "
-                f"it, snapshot {dataset.snapshot[:12]}, got {snapshot.sha256[:12]}: the data "
-                "changed since the run, so run it again first."
-            )
-        if dataset.root == record.instrument.root:
-            snapshots[dataset.schema_name] = snapshot
-    _require_no_dataset_since(store, record)
-    return snapshots
-
-
-def _require_no_dataset_since(store: Store, record: RunRecord) -> None:
-    """Refuse a dataset of trades, TBBO, or bars of a provider and root the run read, its own or
-    another instrument's its features read (step 3.7), with partitions in the dates it read them
-    for that its record does not name: an import since the run, which the engine cache a rerun
-    builds, or its features, would read."""
-    read: dict[tuple[str, str], list[DatasetRecord]] = {}
-    for named in record.datasets:
-        read.setdefault((named.provider, named.root), []).append(named)
-    for dataset in session_datasets(store):
-        held = read.get((dataset.provider, dataset.root), [])
-        if not held or str(dataset.schema_name) in {each.schema_name for each in held}:
-            continue
-        first, last = min(each.first for each in held), max(each.last for each in held)
-        request = PartitionRequest(dataset=dataset, start=first, end=last)
-        if any(request.selects(file.partition) for file in store.list_partitions(dataset)):
-            root, provider = dataset.root, dataset.provider
-            raise ValueError(
-                f"Expected the store's data of {root} as the run read it, got "
-                f"{dataset.schema_name} of {root} from {provider} in the run's dates, which it "
-                "did not read: it was imported since the run, so run it again first."
-            )
-
-
 def _the_runs_fees_and_calendar(run: "Run", sessions: SessionTable) -> RunFees:
     """The fee table the run paid, refused by name, as the calendar is, unless today's is the
     one the run's config gave the engine: a fill's fee and a session's hours would differ."""
@@ -274,15 +230,6 @@ def _the_runs_fees_and_calendar(run: "Run", sessions: SessionTable) -> RunFees:
             "trades."
         )
     return fees
-
-
-def _request(dataset: DatasetRecord) -> PartitionRequest:
-    named = Dataset(
-        provider=dataset.provider,
-        schema_name=parse_schema_name(dataset.schema_name),
-        root=dataset.root,
-    )
-    return PartitionRequest(dataset=named, start=dataset.first, end=dataset.last)
 
 
 def _episode(

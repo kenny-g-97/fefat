@@ -119,7 +119,7 @@ Where each preset's files come from:
 
 | Preset | Where the file comes from | Mind |
 | --- | --- | --- |
-| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: Databento's API splits a job into a file per day by default, and the import refuses a job of several DBN files, whose rows could share a partition it does not merge yet. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
+| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: Databento's API splits a job into a file per day by default, and the import refuses a folder of several DBN files. Order the job without a split where you can: a split job's `.dbn` files also import one after another, each merging into the months it shares with the others, but a `.dbn` file given by itself is not checked against `manifest.json` and brings no vendor conditions. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
 | `databento-csv` | the same download with encoding CSV, of 1-minute bars, also without a split | Times are UTC. Copy the preset into a profile of your own for Databento's CSV of trades or of other bars. |
 | `ninjatrader` | NinjaTrader 8's Historical Data window, Export: interval type Minute, data type Last, one instrument at a time | Files are named like `MNQ 09-26.Last.txt`. Times are always UTC, each bar stamped at its close. Only history NinjaTrader has downloaded can be exported. |
 | `tradingview` | the chart's menu, Download chart data, time format UNIX timestamp | Put the Volume indicator on the chart first, and scroll back until the bars you want are loaded; exporting needs a paid plan, which sets how much history loads. The file's name, such as `CME_MINI_ESH2026, 1.csv`, names the contract. |
@@ -136,12 +136,13 @@ fefat data quality MES
 
 Give the import the batch job's folder, or a single `.dbn` or `.dbn.zst` file. It
 
-1. checks each file's SHA-256 against the vendor's `manifest.json`, and refuses a file that differs, printing both hashes;
-2. copies the originals to `raw\databento\<batch job>\`, unchanged, and lists them in `raw\MANIFEST.json`;
-3. names each record's contract, such as `MESZ2026`, from the file's symbology, sets calendar spreads and strategy symbols aside, and dates each bar by its session;
-4. writes each contract's bars into the store, and prints what it wrote and what it set aside.
+1. checks each file of a job's folder against the SHA-256 the vendor's `manifest.json` gives it, and refuses a file that differs, printing both hashes; a `.dbn` file given by itself has no manifest to be checked against;
+2. names each record's contract, such as `MESZ2026`, from the file's symbology, sets calendar spreads and strategy symbols aside, and dates each bar by its session;
+3. reads the whole file against the store before it writes anything: records the store lacks are new, records it holds are counted and left alone, and records it holds with other values refuse the file;
+4. copies the originals to `raw\databento\<batch job>\`, unchanged, writes each month that gains records, and lists the originals in `raw\MANIFEST.json`;
+5. prints what it read, what it set aside, and what the file added to each dataset.
 
-A second run of the same folder imports nothing and says so. A later download with rows of a contract's month that the store already holds is refused rather than merged, so until FEFAT merges overlapping files (`docs/masterplan/BACKLOG.md`), a purchase can only add months the store lacks. After an import, write the product's quality report with `fefat data quality <root>`: a file import writes it by itself, a Databento import does not. Record each purchase in `docs/data-inventory.md`, as the files on this PC are.
+A second run of the same folder imports nothing and says so. A later download that overlaps what the store holds, one that carries a month on, reaches further back, or holds sessions the first lacked, is merged into it, as the section on updating a dataset explains; `--preview` shows what it would add before anything is written. After an import, write the product's quality report with `fefat data quality <root>`: a file import writes it by itself, a Databento import does not. Record each purchase in `docs/data-inventory.md`, as the files on this PC are.
 
 To check your bars against ticks, buy trades that span at least one whole session the 1-minute bars also cover. A file's first and last sessions are partial, since a download from midnight UTC starts and ends inside one, so the notebook compares only the sessions between. The quality report still rebuilds those two sessions, and lists their bars as differences until it learns to leave them out (`docs/masterplan/BACKLOG.md`).
 
@@ -150,8 +151,8 @@ To check your bars against ticks, buy trades that span at least one whole sessio
 An export from your platform comes in through an import profile, a YAML description of a file layout: its delimiter and header, the columns that hold the time and the prices, how times are written and in which time zone, whether a bar's time marks its open or its close, the prices' scale, the timeframe (ticks, or bars of any timeframe), and whether the file holds dated contracts or one continuous series. FEFAT ships the presets above, one per export.
 
 1. **Pick the profile.** `fefat data profiles` lists the presets and your saved profiles, and `fefat data profiles ninjatrader` prints one as YAML.
-2. **Preview.** `fefat data import file "D:\Exports\MNQ 09-26.Last.txt" --profile ninjatrader --preview` prints the first records as they would be stored and every problem found, and writes nothing.
-3. **Import.** Run the same command without `--preview`. It keeps the original as `raw\user\<SHA-256>\<file name>`, writes the records as the dataset `<provider>\<schema>\root=<root>`, such as `ninjatrader\ohlcv-1m\root=MNQ`, and writes the product's quality report. A second import of the same file changes nothing; one with another profile, contract, root, or time zone is refused, since a stored dataset never changes: the first import stands.
+2. **Preview.** `fefat data import file "D:\Exports\MNQ 09-26.Last.txt" --profile ninjatrader --preview` prints the first records as they would be stored, every problem found, and what the file would add to the store, and writes nothing.
+3. **Import.** Run the same command without `--preview`. It keeps the original as `raw\user\<SHA-256>\<file name>`, writes the records into the dataset `<provider>\<schema>\root=<root>`, such as `ninjatrader\ohlcv-1m\root=MNQ`, merging them into the months or trade dates the store already holds, and writes the product's quality report. A second import of the same file changes nothing; one with another profile, contract, root, or time zone is refused, since a file is imported once, as its first import read it.
 
 What the file does not say, the import names:
 
@@ -171,10 +172,52 @@ What the file does not say, the import names:
 - _the prints are stamped to the second, millisecond, or microsecond, so each is stored at the end of its stamp_, a warning on every import of ticks stamped as Unix seconds, milliseconds, or microseconds, such as IBKR's Time and Sales: a print stamped 14:30:00 may have arrived up to a second later, after a decision at 14:30:00, so it is stored at 14:30:00.999999999, where the 1-minute bars already put it, and keeps its stamp as its event time; its minute, and so every bar, stays as the file has it (D-70). An order active 100 ms after a decision can therefore fill on any print of that second, as on a bar it sees whole. Ticks stamped as text keep their stamp.
 - _each daily bar is stored as its calendar session, open to close_, a warning on every daily import: the calendar cannot tell a session's daily bar from a UTC day's or a regular-hours one, whose prices come from outside the session, so compare one bar's open and close with your platform's session settings.
 - prices off the tick, volumes that are not whole lots, records before the product's first trade date, two bars in one bucket, or bars spaced as another timeframe: the profile reads the wrong columns or timeframe, or the file holds bad records.
+- _Expected the records ... shares with the store to be the ones the store holds, got 3 with other values_: the file and the store disagree on records they share, which the next section explains.
 
 An offset can also come from bad bars rather than a wrong profile: three contracts of your NinjaTrader MNQ export were refused, as early by a minute or by hours, for spurious bars in NinjaTrader's own history, while the rest of the export imported with the same preset (`docs/masterplan/BACKLOG.md`). Compare a refused contract with another source before you change the profile.
 
 Two warnings come with every load of some imports: bars coarser than a minute warn that backtests on them fill at that coarser fidelity, and a continuous series that its roll handling is off. Where several providers hold a product, `load` reads the first of them among the presets of the catalog's recommended sources, so `databento` before `ibkr` for MES; name another with `provider=`, such as `provider="ninjatrader"`. When none of them is such a preset, as with two platform exports, or for a product outside the catalog, `load` refuses to choose until you name one.
+
+## Updating a dataset with another file
+
+A dataset grows by importing more files: a newer export that carries a contract on, an older download that reaches further back, or a file with sessions the first lacked. Both import commands merge such a file into what the store holds (`docs/adr/0021-imports-merge-into-the-partitions-they-overlap.md`), and both take `--preview`, which reads the file against your store and writes nothing:
+
+```text
+fefat data import databento "D:\Downloads\GLBX-20261115-ABCDEFGHIJ" --preview
+fefat data import file "D:\Exports\MNQ 12-26.Last.txt" --profile ninjatrader --preview
+```
+
+The preview, and the import after it, end with an account for each dataset the file reaches:
+
+```text
+  ninjatrader/ohlcv-1m/root=MNQ:
+    New sessions: 19,320 records on 14 trade dates: 2026-09-24 (1,380), 2026-09-25 (1,380), ..., and 4 more
+    Sessions the store holds that gain records: 460 records on 1 trade date: 2026-09-23 (460)
+    Records: 19,780 new, 41,400 already held, 0 that differ
+    Partitions: 2 that change, 1 unchanged
+```
+
+- **New sessions** are trade dates the store did not hold for their contract, and **sessions that gain records** are trade dates it held part of, such as the day an earlier export stopped on.
+- **Already held** records are in the store with the same values and are left alone. A file that only repeats what the store holds writes nothing but its own copy under `raw\`.
+- **Partitions** are the store's files: a month of 1-minute bars, or a trade date of ticks or 1-second bars. Those that gain records are written again whole, each in one step, and every other file stays as it is, byte for byte.
+- **Records that differ** are in the store with other values: the last bar of an export made before that bar was complete, a vendor's correction, or a file read with the wrong time zone. They refuse the file, and nothing is written. The message names the first trade date that holds one, so compare that date's bars with your platform's chart. Where the file is right, import it with `--differing take-file`: at each instant the two disagree on, the file's records replace the stored ones, the import says how many stored records gave way, and `raw\MANIFEST.json` records that the import was told so. A preview takes `--differing take-file` too, and shows what that import would do. Take a file only when you know why its records differ: bars, and ticks stamped to the second, read with the wrong time zone or bar stamping land on the store's own minutes and seconds and show here too, as many records that differ and few or none already held, and taking them would put a misread file's records in place of good ones.
+
+Some files are refused whatever you choose, since a merge cannot be taken back:
+
+- one that overlaps a stored month or trade date in time and holds no record at any of its instants, as ticks stamped finer than a second and read under another time zone, or another source's data, do, which would otherwise be stored twice: check the profile's `time_zone`. A file that fills several gaps of a stored month or trade date at once reads so too: import each gap's records as a file of their own;
+- one that gives a contract another instrument id than a month or trade date the store holds of it;
+- ticks without sequence numbers whose first second differs from the stored one, or whose last second does where the store holds more ticks of it: the file may hold part of that second alone, as the end of this section explains;
+- a file of a back-adjusted continuous series the store holds that shares no bar with it unchanged. Your platform adjusts such a series again at each roll, so a later export holds every earlier bar at other prices, and without a shared bar FEFAT cannot tell such an export from one on the store's prices. Export from a bar the store holds: where the shared bars are the store's, the file merges, and `--differing take-file` completes a last bar that the store took unfinished; where they differ, a roll has moved the series, so import the later export whole under a provider of its own, through a copy of the profile with a `name`, a `provider`, and a `licence_scope` of its own.
+
+After a merge:
+
+- `fefat data status` reads a clean quality report as `stale` until `fefat data quality <root>` has run again; a file import runs it by itself.
+- The engine's cache and the features' cache build again what changed, and nothing else, at the next backtest or load.
+- A saved backtest that read a file the merge changed can no longer be explained or checked again: `run.explain` and the fidelity check stop and name the file. Its record and results stay as they are, and running the strategy again gives a new run on the data as it is now.
+- A file with sessions older than the dataset's first moves the start of the continuous series, so the adjusted prices after it (`close`, never `close_raw`) shift by the gaps of the added rolls, as if the older file had been imported first.
+- Nothing is removed, unless `--differing take-file` takes a second of ticks from a file that holds fewer of them: where a vendor's later file drops a record, the store keeps it.
+
+A file of ticks without sequence numbers, such as IBKR's Time and Sales, must start on a whole second. Such ticks are told apart by their order within their second, so the ticks of a file that starts in the middle of one are compared with the wrong stored ones: where they differ from them the file is refused whatever you choose, and where they happen to equal them they count as already held, and the ticks of that second the store lacks are not added. A pull of whole sessions starts on a whole second. A file may stop inside a second: where its last second differs from the stored one it is refused like any records that differ, and `--differing take-file` takes it, unless the store holds more ticks of that second, when it is refused whatever you choose. A file that starts a second earlier, or ends a second later, holds the disputed second whole, and is then read like any other.
 
 ## Checking coverage and quality
 
@@ -195,7 +238,7 @@ MES databento ohlcv-1m: 2019-05-06 to 2026-09-23, complete at 1-minute fidelity,
 - its coverage: `complete` when it starts by the first trade date of the product's history in the catalog, `partial` when it starts later (the line gives the history's start), `missing` when the store holds none of the product (the line names its first recommended source), and `not in the catalog` for a product the catalog does not list;
 - its fidelity: `trades`, `tbbo`, or the timeframe of its bars;
 - the last day a file that fed it was imported;
-- its quality: `clean` when the report found nothing, `flagged` when it found something (read the report), `unchecked` before a first report (run `fefat data quality`), and `stale` when a clean report checked fewer trade dates than the data now holds, or when a file of the dataset was written after the report, as an import of older months writes one (run it again).
+- its quality: `clean` when the report found nothing, `flagged` when it found something (read the report), `unchecked` before a first report (run `fefat data quality`), and `stale` when a clean report checked fewer trade dates than the data now holds, or when a file of the dataset was written after the report, as an import that adds to a month, or brings older ones, writes one (run it again).
 
 **The quality report.** `fefat data quality` writes `<FEFAT_DATA_DIR>\reports\<provider>\<root>\quality.md` for you to read, beside `days.parquet`, a row per session, and `findings.parquet`, a row per finding. It prints each product's summary and the report's path, and exits with 1 when any product is flagged. The report has six sections:
 
