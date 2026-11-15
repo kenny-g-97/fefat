@@ -79,7 +79,7 @@ test("a new product's export imports once its time zone is corrected, and its ne
   await page.getByTestId("new-profile").click()
   await typed(page, "profile-name", "xes-minutes")
   await typed(page, "profile-time-zone", "America/Chicago")
-  await page.getByRole("button", { name: "A new instrument" }).click()
+  await page.getByRole("radio", { name: "A new instrument" }).click()
   await typed(page, "instrument-root", "XES")
   await typed(page, "instrument-tick", "0.25")
   await typed(page, "instrument-point", "50")
@@ -110,6 +110,10 @@ test("a new product's export imports once its time zone is corrected, and its ne
     "ninjatrader/ohlcv-1m/root=XES"
   )
   await screenshot(page, "import-review")
+  // The review in the light theme too, for the pull request's readers.
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "import-review-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await page.getByTestId("import-run").click()
   await expect(page.getByTestId("import-done")).toContainText("Imported", {
     timeout: IMPORT_MS,

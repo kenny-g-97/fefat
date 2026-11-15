@@ -1,6 +1,5 @@
 import type { Dispatch } from "react"
 import { KeptField } from "@/ui/kept-field"
-import { Segmented } from "@/ui/segmented"
 import { Choice, Picker } from "../Picker"
 import {
   delimiterOf,
@@ -8,6 +7,7 @@ import {
   type ProfileFields,
 } from "./import-draft"
 import { DELIMITER_LABELS, described } from "./import-profile"
+import { type Choice as Option, RadioChoice } from "./RadioChoice"
 
 const DELIMITERS = Object.entries(DELIMITER_LABELS).map(([value, label]) => ({
   value,
@@ -31,15 +31,15 @@ const TIMEFRAMES = [
   label: value === "ticks" ? "Ticks" : value,
 }))
 
-const HEADERS = [
+const HEADERS: readonly Option<"header" | "none">[] = [
   { value: "header", label: "Names the columns" },
   { value: "none", label: "Holds a record" },
-] satisfies readonly { value: string; label: string }[]
+]
 
-const STAMPS = [
+const STAMPS: readonly Option<ProfileFields["stamp"]>[] = [
   { value: "open", label: "At its open" },
   { value: "close", label: "At its close" },
-] satisfies readonly { value: ProfileFields["stamp"]; label: string }[]
+]
 
 type ProfileFormProps = Readonly<{
   fields: ProfileFields
@@ -97,17 +97,15 @@ export function ProfileForm({ fields, change }: ProfileFormProps) {
             }
           />
         </Choice>
-        <div className="flex flex-col gap-2">
-          <span className="font-medium text-foreground">First row</span>
-          <Segmented
-            label="First row"
-            options={HEADERS}
-            value={fields.header ? "header" : "none"}
-            onChange={(header) =>
-              set({ header: header === "header", roles: { kind: "kept" } })
-            }
-          />
-        </div>
+        <RadioChoice
+          id="profile-header"
+          label="First row"
+          options={HEADERS}
+          value={fields.header ? "header" : "none"}
+          onChange={(header) =>
+            set({ header: header === "header", roles: { kind: "kept" } })
+          }
+        />
       </div>
       <div className="flex flex-wrap items-end gap-4">
         <Choice id="profile-format" label="Timestamp format">
@@ -128,15 +126,13 @@ export function ProfileForm({ fields, change }: ProfileFormProps) {
             onKeep={(timeZone) => set({ timeZone })}
           />
         </Choice>
-        <div className="flex flex-col gap-2">
-          <span className="font-medium text-foreground">A bar's timestamp</span>
-          <Segmented
-            label="A bar's timestamp"
-            options={STAMPS}
-            value={fields.stamp}
-            onChange={(stamp) => set({ stamp })}
-          />
-        </div>
+        <RadioChoice
+          id="profile-stamp"
+          label="A bar's timestamp"
+          options={STAMPS}
+          value={fields.stamp}
+          onChange={(stamp) => set({ stamp })}
+        />
       </div>
       <p
         className="text-xs text-muted-foreground"

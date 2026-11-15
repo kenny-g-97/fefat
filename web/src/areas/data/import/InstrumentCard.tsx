@@ -1,15 +1,15 @@
 import type { Dispatch } from "react"
 import { KeptField } from "@/ui/kept-field"
 import { Panel } from "@/ui/panel"
-import { Segmented } from "@/ui/segmented"
 import { Choice } from "../Picker"
 import { type Draft, type DraftChange, NEW_INSTRUMENT } from "./import-draft"
 import { InstrumentForm } from "./InstrumentForm"
+import { type Choice as Option, RadioChoice } from "./RadioChoice"
 
-const INSTRUMENTS = [
+const INSTRUMENTS: readonly Option<Draft["instrument"]["kind"]>[] = [
   { value: "profile's", label: "As the profile and the file name" },
   { value: "new", label: "A new instrument" },
-] satisfies readonly { value: Draft["instrument"]["kind"]; label: string }[]
+]
 
 type InstrumentCardProps = Readonly<{
   draft: Draft
@@ -52,7 +52,8 @@ export function InstrumentCard({ draft, change }: InstrumentCardProps) {
           </Choice>
         </div>
         {made ? (
-          <Segmented
+          <RadioChoice
+            id="import-instrument"
             label="Instrument"
             options={INSTRUMENTS}
             value={draft.instrument.kind}

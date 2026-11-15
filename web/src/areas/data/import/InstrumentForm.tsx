@@ -2,6 +2,7 @@ import type { Dispatch } from "react"
 import type { components } from "@/api/schema"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "../Picker"
+import { picked } from "./choices"
 import type {
   DraftChange,
   InstrumentFields,
@@ -72,7 +73,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
             id="instrument-kind"
             value={fields.kind}
             options={KINDS}
-            onChange={(kind) => set({ kind: pick(KINDS, kind) })}
+            onChange={(kind) => set({ kind: picked(KINDS, kind) })}
           />
         </Choice>
         <Choice id="instrument-currency" label="Currency">
@@ -81,7 +82,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
             value={fields.currency}
             options={CURRENCIES}
             onChange={(currency) =>
-              set({ currency: pick(CURRENCIES, currency) })
+              set({ currency: picked(CURRENCIES, currency) })
             }
           />
         </Choice>
@@ -92,7 +93,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
             options={CALENDARS}
             className="w-56"
             onChange={(calendar) =>
-              set({ calendar: pick(CALENDARS, calendar) })
+              set({ calendar: picked(CALENDARS, calendar) })
             }
           />
         </Choice>
@@ -127,7 +128,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
             options={LAST_TRADE_RULES}
             className="w-64"
             onChange={(rule) =>
-              set({ lastTradeRule: pick(LAST_TRADE_RULES, rule) })
+              set({ lastTradeRule: picked(LAST_TRADE_RULES, rule) })
             }
           />
         </Choice>
@@ -171,18 +172,4 @@ function Text({ id, label, value, placeholder, onKeep }: TextProps) {
       />
     </Choice>
   )
-}
-
-/** The value of `options` that `chosen` is, the select's own text read back as its type. */
-function pick<Value extends string>(
-  options: readonly { value: Value }[],
-  chosen: string
-): Value {
-  const found = options.find((option) => option.value === chosen)
-  if (found === undefined) {
-    throw new Error(
-      `Expected one of ${options.map((option) => option.value).join(", ")}, got ${chosen}.`
-    )
-  }
-  return found.value
 }
