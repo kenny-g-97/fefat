@@ -53,6 +53,15 @@ def test_strategy_versions_are_kept_in_the_default_workspace(tmp_path: Path) -> 
     assert paths.strategies_dir == tmp_path / "workspaces" / "default" / "strategies"
 
 
+def test_the_files_the_import_wizard_receives_are_kept_in_the_default_workspace(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12 (D-93): an upload's folder is its own record, beside the workspace's versions.
+    paths = resolve_paths({"FEFAT_HOME": str(tmp_path)})
+
+    assert paths.uploads_dir == tmp_path / "workspaces" / "default" / "uploads"
+
+
 def test_fefat_data_dir_points_the_market_data_at_another_folder(tmp_path: Path) -> None:
     market_data = tmp_path / "market-data"
 

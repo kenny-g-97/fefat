@@ -44,6 +44,8 @@ def test_the_settings_show_config_toml_and_whether_each_secret_is_stored(
             "bind_address": "127.0.0.1",
             "process_pool_size": container.settings.process_pool_size,
             "import_roots": [],
+            "upload_megabytes": 256,
+            "upload_suffixes": [".csv", ".tsv", ".txt", ".parquet", ".zip", ".gz"],
         },
         "data_dir": str(resolve_paths(os.environ).data_dir),
         "theme": "dark",

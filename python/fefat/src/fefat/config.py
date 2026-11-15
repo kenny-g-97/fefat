@@ -18,11 +18,18 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import platformdirs
 import psutil
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    field_validator,
+)
 
 __all__ = ["FefatPaths", "Settings", "load_settings", "resolve_paths"]
 
@@ -38,6 +45,7 @@ WORKSPACE_FOLDER = Path("workspaces") / "default"
 RUNS_FOLDER = Path("artifacts") / "runs"
 FEATURES_FOLDER_NAME = "features"
 STRATEGIES_FOLDER_NAME = "strategies"
+UPLOADS_FOLDER_NAME = "uploads"
 CONFIG_FILE_NAME = "config.toml"
 DATABASE_FILE_NAME = "fefat.sqlite"
 LOGS_FOLDER_NAME = "logs"
@@ -89,6 +97,12 @@ class FefatPaths:
         by the strategy, as `v<n>.json` (`fefat.strategy`, step 5.2), the record the app's
         database indexes (D-84)."""
         return self.workspace_dir / STRATEGIES_FOLDER_NAME
+
+    @property
+    def uploads_dir(self) -> Path:
+        """`<workspace>/uploads`: each file the import wizard received in a folder of its own,
+        named by its id, with its `upload.json`, the record (step 5.12, D-93)."""
+        return self.workspace_dir / UPLOADS_FOLDER_NAME
 
     @property
     def config_file(self) -> Path:
@@ -216,11 +230,20 @@ def _default_pool_size() -> int:
     return max(1, cores - 2)
 
 
+UPLOAD_SUFFIXES = (".csv", ".tsv", ".txt", ".parquet", ".zip", ".gz")
+"""The endings of the files the import wizard takes by default: those the file importer reads
+(`fefat.market.importers.tabular`)."""
+
+UploadSuffix = Annotated[str, StringConstraints(pattern=r"^(\.[a-z0-9]+)+$")]
+"""A file name's ending in lower case, such as `.csv` or `.csv.gz`."""
+
+
 class Settings(BaseModel):
     """What the server needs before its database opens, from `<FEFAT_HOME>/config.toml`
     (`01-architecture.md` sections 4, 6, and 8, D-83): the port it listens on, the address it
-    binds, which can only be the loopback (D-54), the size of its process pool, and the folders
-    an import may read large files from. What the app edits, such as the password and the
+    binds, which can only be the loopback (D-54), the size of its process pool, the folders
+    an import may read large files from, and the largest file and the endings of the files
+    the import wizard takes (step 5.12). What the app edits, such as the password and the
     theme, lives in its database's `settings` table instead; secrets live in the credential
     store, never here."""
 
@@ -230,6 +253,8 @@ class Settings(BaseModel):
     bind_address: Literal["127.0.0.1"] = "127.0.0.1"
     process_pool_size: int = Field(default_factory=_default_pool_size, ge=1, strict=True)
     import_roots: tuple[Path, ...] = ()
+    upload_megabytes: int = Field(default=256, ge=1, le=1024, strict=True)
+    upload_suffixes: tuple[UploadSuffix, ...] = Field(default=UPLOAD_SUFFIXES, min_length=1)
 
     @field_validator("import_roots")
     @classmethod
