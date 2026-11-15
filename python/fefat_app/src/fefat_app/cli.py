@@ -81,12 +81,8 @@ from fefat.market.bars_check import verify_bars
 from fefat.market.catalog import CATALOG
 from fefat.market.fidelity import fidelity_in_words
 from fefat.market.importers.databento import import_databento
-from fefat.market.importers.file_import import (
-    FileImportReport,
-    FileImportRequest,
-    import_file,
-    preview_file,
-)
+from fefat.market.importers.file_import import FileImportRequest, import_file, preview_file
+from fefat.market.importers.file_report import FileImportReport
 from fefat.market.importers.profiles import (
     load_profile,
     preset_profiles,

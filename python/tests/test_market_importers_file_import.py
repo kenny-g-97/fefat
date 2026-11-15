@@ -31,13 +31,8 @@ from fefat.market.builtin_calendars import BUILT_IN
 from fefat.market.calendar import sessions_of
 from fefat.market.calendar_definition import CalendarId
 from fefat.market.calendar_offset import CalendarOffset, OffsetCause
-from fefat.market.importers.file_import import (
-    AlreadyImported,
-    FileImportReport,
-    FileImportRequest,
-    import_file,
-    preview_file,
-)
+from fefat.market.importers.file_import import FileImportRequest, import_file, preview_file
+from fefat.market.importers.file_report import AlreadyImported, FileImportReport
 from fefat.market.importers.profile_contracts import ImportFacts
 from fefat.market.importers.profile_records import mapped_records
 from fefat.market.importers.profile_values import ProblemKind

@@ -28,12 +28,8 @@ from export_samples import (
     written_export,
 )
 from fefat.market.importers.databento import import_databento
-from fefat.market.importers.file_import import (
-    AlreadyImported,
-    FileImportReport,
-    FileImportRequest,
-    import_file,
-)
+from fefat.market.importers.file_import import FileImportRequest, import_file
+from fefat.market.importers.file_report import AlreadyImported, FileImportReport
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import ImportProfile
 from fefat.market.instruments import STATIC_TABLE
