@@ -1,13 +1,14 @@
 """What an import tells the trader: per file, what was written and what was set aside, per
 dataset, what the file adds to what the store holds of it (`DatasetMerge`, step 5.14), and per
 batch download, the vendor's own word on its days. Counts and ranges only, never prices, so a
-summary can go into a pull request (D-21).
+summary can go into a pull request (D-21). And, as it goes, the stages it reaches
+(`ImportStage`), which an import job reports as its progress (step 5.12).
 
 `DatabentoImport.summary` is what `fefat data import databento` prints, and
 `DatabentoPreview.summary` what it prints with `--preview`.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import date
 from enum import StrEnum
 from itertools import groupby
@@ -31,6 +32,23 @@ DIFFERING_VERDICT = (
     f"It would be refused: its records differ from the ones the store holds. {DIFFERING_ADVICE}"
 )
 """A preview's last line for a file whose import the differing records would refuse."""
+
+
+class ImportStage(StrEnum):
+    """A stage an import tells its `progress` callable as it reaches it (step 5.12): its file
+    read and checked against the store, after which it writes, and its partitions written with
+    the file's entry in the raw manifest. A file imported before tells neither."""
+
+    FILE_READ = "file_read"
+    PARTITIONS_WRITTEN = "partitions_written"
+
+
+type ImportProgress = Callable[[ImportStage], None]
+"""What an import tells each stage it reaches."""
+
+
+def tell_no_one(stage: ImportStage) -> None:
+    """The progress of an import nothing follows, as the command line's."""
 
 
 class VendorCondition(StrEnum):

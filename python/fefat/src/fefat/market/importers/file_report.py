@@ -7,10 +7,56 @@ quotes, show the file's own values, which stay on the trader's screen (D-21).
 
 from datetime import date
 
+from fefat.market.calendar import utc_text
 from fefat.market.calendar_check import CalendarReport
+from fefat.market.engine_units import price_text
 from fefat.market.importers.report import DIFFERING_VERDICT, DatasetMerge
 from fefat.market.layout import Dataset
 from fefat.market.schema import FrozenModel
+
+
+class StoredBar(FrozenModel):
+    """A bar of a file as the store would hold it (step 5.12): when it opens and closes, in
+    nanoseconds since the Unix epoch, UTC, its trade date and contract, its prices in 1e-9 units,
+    and its volume in lots."""
+
+    ts_open: int
+    ts_close: int
+    trade_date: date
+    contract: str
+    open: int
+    high: int
+    low: int
+    close: int
+    volume: int
+
+    def line(self) -> str:
+        """The bar as a preview prints it, instants in UTC and prices as decimals."""
+        return (
+            f"    {utc_text(self.ts_open)} to {utc_text(self.ts_close)}, {self.trade_date}, "
+            f"{self.contract}: open {price_text(self.open)}, high {price_text(self.high)}, "
+            f"low {price_text(self.low)}, close {price_text(self.close)}, volume {self.volume}"
+        )
+
+
+class StoredPrint(FrozenModel):
+    """A print of a file as the store would hold it (step 5.12): when it was received, in
+    nanoseconds since the Unix epoch, UTC, its trade date and contract, its price in 1e-9 units,
+    its size in lots, and its aggressor's side."""
+
+    ts_recv: int
+    trade_date: date
+    contract: str
+    price: int
+    size: int
+    side: str
+
+    def line(self) -> str:
+        """The print as a preview prints it, its instant in UTC and its price as a decimal."""
+        return (
+            f"    {utc_text(self.ts_recv)}, {self.trade_date}, {self.contract}: price "
+            f"{price_text(self.price)}, size {self.size}, side {self.side}"
+        )
 
 
 class FileReading(FrozenModel):
@@ -79,8 +125,13 @@ class FilePreview(FrozenModel):
     the file, before the store is read."""
 
     reading: FileReading
-    first_rows: tuple[str, ...]
+    first_records: tuple[StoredBar, ...] | tuple[StoredPrint, ...]
     against_the_store: DatasetMerge | AlreadyImported | None
+
+    @property
+    def first_rows(self) -> tuple[str, ...]:
+        """The first records as the store holds them, a line each, as the preview prints them."""
+        return tuple(record.line() for record in self.first_records)
 
     def refusals(self) -> list[str]:
         """What would stop the import: the reading's problems and offsets, and records that

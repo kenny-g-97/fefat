@@ -35,6 +35,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     StringConstraints,
+    WithJsonSchema,
     field_validator,
     model_validator,
 )
@@ -44,7 +45,7 @@ from fefat.market.instruments import Currency, InstrumentKind
 from fefat.market.last_trade_rules import LastTradeRule
 from fefat.market.layout import FolderName, ProviderName, SeriesKind, SizeUnit
 from fefat.market.schema import FrozenModel, Timeframe
-from fefat.market.store_files import write_atomically
+from fefat.market.store_files import create_atomically, write_atomically
 
 PRESETS_FOLDER = Path(__file__).with_name("presets")
 TICKS = "ticks"
@@ -208,8 +209,10 @@ ProfileTimeframe = Annotated[
     Literal["ticks"] | Timeframe,
     BeforeValidator(_parsed_timeframe),
     PlainSerializer(str, return_type=str),
+    WithJsonSchema({"type": "string", "pattern": r"^(ticks|[1-9][0-9]*[smhd])$"}),
 ]
-"""`ticks`, or a bar timeframe written as schema names write it, such as `1m` or `5m`."""
+"""`ticks`, or a bar timeframe written as schema names write it, such as `1m` or `5m`: text both
+ways, so that a profile the API gives can be sent back as it is (step 5.12)."""
 
 
 def names_a_contract(groups: set[str]) -> bool:
@@ -345,6 +348,49 @@ def save_profile(reference: str, profiles_dir: Path) -> bool:
     return True
 
 
+def profile_is_saved(profile: ImportProfile, profiles_dir: Path, source: str = "") -> bool:
+    """Whether `profiles_dir` holds `profile` as it is, writing nothing. Refused under a
+    preset's name, or under a saved profile's name with another profile, capitals ignored, since
+    Windows keeps one file for both names, and under a name ending in `.yaml` or `.yml`, which
+    `load_profile` would read as a profile's file; `source` names where the profile was read."""
+    name, where = profile.name, f" in {source}" if source else ""
+    if _is_profile_file(Path(name)):
+        raise ValueError(
+            f"Expected a profile name of its own, got {name!r}{where}: a name ending in .yaml or "
+            ".yml reads as the path of a profile's file."
+        )
+    if name.lower() in (preset.lower() for preset in preset_profiles()):
+        raise ValueError(f"Expected a profile name other than the presets', got {name!r}{where}.")
+    for saved_name, saved in saved_profiles(profiles_dir).items():
+        if saved_name.lower() != name.lower():
+            continue
+        if saved != profile:
+            raise ValueError(
+                f"Expected the profile {name}{where} as saved in "
+                f"{_saved_path(profiles_dir, saved_name)}, got another: rename one of them."
+            )
+        return True
+    return False
+
+
+def keep_profile(profile: ImportProfile, profiles_dir: Path) -> bool:
+    """Keep `profile` in `profiles_dir` by its name, for later imports to name, once an import
+    with it has written, as the wizard keeps the profile it built (step 5.12): True when it was
+    written, False where it is saved already as it is, and refused as `profile_is_saved` refuses.
+    The file is created whole and never replaced; one made meanwhile is read as saved."""
+    if profile_is_saved(profile, profiles_dir):
+        return False
+    content = profile_yaml(profile).encode("utf-8")
+    try:
+        create_atomically(
+            _saved_path(profiles_dir, profile.name),
+            lambda temporary: temporary.write_bytes(content),
+        )
+    except FileExistsError:
+        return not profile_is_saved(profile, profiles_dir)
+    return True
+
+
 def _is_profile_file(path: Path) -> bool:
     return path.suffix.lower() in (".yaml", ".yml")
 
@@ -357,18 +403,7 @@ def _profile_file(path: Path, profiles_dir: Path) -> ImportProfile:
     if not path.is_file():
         raise FileNotFoundError(f"Expected an import profile at {path}, got no such file.")
     profile = parse_profile(path.read_text(encoding="utf-8"), str(path))
-    if profile.name in preset_profiles():
-        raise ValueError(
-            f"Expected a profile name other than the presets', got {profile.name!r} in {path}."
-        )
-    saved_path = _saved_path(profiles_dir, profile.name)
-    if saved_path.is_file():
-        saved = parse_profile(saved_path.read_text(encoding="utf-8"), str(saved_path))
-        if saved != profile:
-            raise ValueError(
-                f"Expected {path} to hold the profile {profile.name} as saved in {saved_path}, "
-                "got another: rename one of them."
-            )
+    profile_is_saved(profile, profiles_dir, str(path))
     return profile
 
 

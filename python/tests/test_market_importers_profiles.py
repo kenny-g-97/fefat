@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from export_samples import previewed
 from fefat.market.importers.file_import import FileImportRequest
 from fefat.market.importers.profiles import (
     ImportProfile,
+    keep_profile,
     load_profile,
     parse_profile,
     preset_profiles,
@@ -74,6 +76,75 @@ def test_a_different_profile_under_a_saved_name_is_refused(tmp_path: Path) -> No
 
     with pytest.raises(ValueError, match="as saved in"):
         load_profile(str(other), profiles)
+
+
+def a_profile(name: str = "es-tradingview-5m", **changes: object) -> ImportProfile:
+    """TradingView's preset for 5-minute charts as a profile the wizard built (step 5.12)."""
+    preset = preset_profiles()["tradingview"]
+    fields = {**preset.model_dump(mode="json"), "name": name, "timeframe": "5m", **changes}
+    return ImportProfile.model_validate(fields)
+
+
+def test_a_profile_the_wizard_built_is_kept_once_and_found_by_its_name_afterwards(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12: the command line saves a profile's YAML file; the wizard keeps a profile itself.
+    profiles = tmp_path / "home" / "profiles"
+    profile = a_profile()
+
+    kept = keep_profile(profile, profiles)
+
+    assert kept
+    assert not keep_profile(profile, profiles)
+    assert load_profile("es-tradingview-5m", profiles) == profile
+    assert sorted(path.name for path in profiles.iterdir()) == ["es-tradingview-5m.yaml"]
+
+
+@pytest.mark.parametrize(
+    ("name", "changes", "refusal"),
+    [
+        ("es-tradingview-5m", {"timeframe": "15m"}, "as saved in"),
+        ("ES-TradingView-5m", {}, "as saved in"),
+        ("NinjaTrader", {}, "other than the presets'"),
+        ("mine.yaml", {}, "reads as the path of a profile's file"),
+        ("mine.YML", {}, "reads as the path of a profile's file"),
+    ],
+    ids=[
+        "another under a saved name",
+        "a saved name in other capitals",
+        "a preset's name",
+        "a file's name",
+        "a file's name in capitals",
+    ],
+)
+def test_a_profile_is_kept_under_a_name_no_other_profile_and_no_file_has(
+    tmp_path: Path, name: str, changes: dict[str, object], refusal: str
+) -> None:
+    # Windows keeps one file for two names in other capitals, and `load_profile` reads a name
+    # ending in .yaml or .yml as a path, so neither may name a kept profile.
+    profiles = tmp_path / "home" / "profiles"
+    keep_profile(a_profile(), profiles)
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        keep_profile(a_profile(name, **changes), profiles)
+
+    assert sorted(path.name for path in profiles.iterdir()) == ["es-tradingview-5m.yaml"]
+
+
+def test_a_profiles_timeframe_is_text_both_ways_through_the_api() -> None:
+    # Step 5.12: the wizard sends back the profile `GET /v1/import-profiles` gave it.
+    reading = ImportProfile.model_json_schema(mode="validation")["properties"]["timeframe"]
+    giving = ImportProfile.model_json_schema(mode="serialization")["properties"]["timeframe"]
+
+    assert reading == giving
+    assert reading["type"] == "string"
+    assert (
+        a_profile(
+            timeframe="ticks",
+            columns={"timestamp": "time", "ticks": {"price": "price", "size": "size"}},
+        ).timeframe
+        == "ticks"
+    )
 
 
 def test_a_profile_may_not_take_a_presets_name(tmp_path: Path) -> None:

@@ -38,7 +38,7 @@ from fefat.market.importers.profile_contracts import ImportFacts
 from fefat.market.importers.profile_records import mapped_records
 from fefat.market.importers.profile_values import ProblemKind
 from fefat.market.importers.profiles import BarStamp, ImportProfile
-from fefat.market.importers.tabular import read_table
+from fefat.market.importers.tabular import read_table, sniffed_layout
 from fefat.market.instruments import STATIC_TABLE
 from fefat.market.layout import (
     Dataset,
@@ -67,6 +67,22 @@ def test_each_preset_imports_its_sample_to_the_expected_canonical_frame(
         size_unit=SizeUnit(lot=Decimal(1), asset="contract"),
         origin=DatasetOrigin.IMPORT,
         licence_scope=SOURCE_GUIDE.source_of_preset(preset).licence_scope,
+    )
+
+
+def test_a_profile_under_a_sources_own_id_takes_that_sources_licence_scope(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12 (from `BACKLOG.md`): a trader's profile for Kibot's files, a source of the guide
+    # without a preset, needs no licence_scope line of its own.
+    profile = PRESETS["ninjatrader"].model_copy(update={"name": "kibot-es", "provider": "kibot"})
+    path, _ = SAMPLES["ninjatrader"]
+
+    store = imported(tmp_path, FileImportRequest(path=path, profile=profile))
+
+    dataset = Dataset(provider="kibot", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
+    assert store.dataset_metadata(dataset).licence_scope == (
+        SOURCE_GUIDE.source("kibot").licence_scope
     )
 
 
@@ -208,6 +224,22 @@ def test_a_preview_writes_nothing_to_the_data_folder(tmp_path: Path) -> None:
     assert "nothing was written" in preview.summary()
     assert preview.first_rows[0].startswith("    2026-03-04T23:00:00Z to 2026-03-04T23:05:00Z")
     assert not any("could not check" in warning for warning in preview.reading.warnings)
+
+
+def test_a_preview_gives_its_first_records_as_the_store_then_holds_them(tmp_path: Path) -> None:
+    # Step 5.12: the wizard shows them as a table, from the typed records the text is made of.
+    request = sample_request("ninjatrader")
+
+    preview = previewed(tmp_path, request)
+    store = imported(tmp_path, request)
+
+    stored = store.scan_partition(minutes_of("ninjatrader")).head(10).collect()
+    columns = ["ts_open", "ts_close", "trade_date", "open", "high", "low", "close", "volume"]
+    assert [
+        [getattr(record, column) for column in columns] for record in preview.first_records
+    ] == [list(row) for row in stored.select(columns).rows()]
+    assert {record.contract for record in preview.first_records} == {"ESH2026"}
+    assert preview.first_rows[0].startswith("    2026-03-04T23:00:00Z to 2026-03-04T23:01:00Z")
 
 
 def test_a_re_import_changes_nothing(tmp_path: Path) -> None:
@@ -544,6 +576,24 @@ def test_a_symbol_seen_ten_years_apart_names_a_contract_in_each_decade(tmp_path:
     preview = previewed(tmp_path, sample_request("databento-csv", path=path))
 
     assert preview.reading.contracts == ("ESH2016", "ESH2026")
+
+
+@pytest.mark.parametrize("preset", SAMPLES)
+def test_each_samples_layout_is_the_one_its_preset_names_as_sniffed_from_its_first_lines(
+    preset: str,
+) -> None:
+    # Step 5.12: the wizard shows a file's rows before a profile reads it.
+    path, _ = SAMPLES[preset]
+
+    assert sniffed_layout(path, path.read_bytes()) == PRESETS[preset].layout
+
+
+def test_a_gzipped_samples_layout_is_sniffed_from_the_file_inside(tmp_path: Path) -> None:
+    path, _ = SAMPLES["ninjatrader"]
+    packed = tmp_path / f"{path.name}.gz"
+    packed.write_bytes(gzip.compress(path.read_bytes()))
+
+    assert sniffed_layout(packed, packed.read_bytes()) == PRESETS["ninjatrader"].layout
 
 
 @pytest.mark.parametrize("preset", SAMPLES)

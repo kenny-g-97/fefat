@@ -20,6 +20,8 @@ import hashlib
 import io
 import os
 from collections.abc import Callable, Iterable, Iterator
+from contextlib import AbstractContextManager
+from datetime import timedelta
 from pathlib import Path, PurePosixPath
 
 import polars as pl
@@ -49,12 +51,18 @@ from fefat.market.store_files import (
     FileDigestRecord,
     current_digest,
     hashed,
+    held_alone,
     json_writer,
     parsed_json,
     record_digest,
     recorded_or_new_digest,
     write_atomically,
 )
+
+IMPORT_LOCK_FILE_NAME = "import.lock"
+"""The empty file in the store's folder that one import holds while it writes (step 5.12)."""
+IMPORT_LOCK_WAIT = timedelta(hours=1)
+"""How long an import waits for another import's writes before it is refused."""
 
 
 class PartitionFile(FrozenModel):
@@ -86,6 +94,15 @@ class Store:
     def raw(self) -> RawFiles:
         """The vendors' original files under `raw`, and their manifest."""
         return RawFiles(self._folder)
+
+    def held_for_an_import(self) -> AbstractContextManager[None]:
+        """The store held by one import while it writes, from its original's copy under `raw`
+        to its entry in the raw manifest (step 5.12): another import waits until it is done,
+        `IMPORT_LOCK_WAIT` at most, and is refused after, so that the raw manifest has one
+        writer and two imports never write a partition at once. An import reads its file
+        against the store before it takes the lock and again as it writes, so that a refused
+        file takes no lock, and readers take none."""
+        return held_alone(self._folder / IMPORT_LOCK_FILE_NAME, IMPORT_LOCK_WAIT)
 
     def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:
         """Every partition in the store, or only `dataset`'s, with the size of its file, sorted
