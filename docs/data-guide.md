@@ -119,7 +119,7 @@ Where each preset's files come from:
 
 | Preset | Where the file comes from | Mind |
 | --- | --- | --- |
-| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: Databento's API splits a job into a file per day by default, and the import refuses a folder of several DBN files. Order the job without a split, or import its `.dbn` files one after another, each merging into the months it shares with the others. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
+| `databento` | a batch download from Databento's portal: dataset `GLBX.MDP3`, schema `ohlcv-1m` or `trades`, symbols by parent such as `MES.FUT` (every contract of the product), symbology out as instrument ID, encoding DBN, and no split, so that the job is one file | Set the split to none: Databento's API splits a job into a file per day by default, and the import refuses a folder of several DBN files. Order the job without a split where you can: a split job's `.dbn` files also import one after another, each merging into the months it shares with the others, but a `.dbn` file given by itself is not checked against `manifest.json` and brings no vendor conditions. Download the whole job folder: the `.dbn` or `.dbn.zst` file with `metadata.json`, `manifest.json`, and `condition.json`. A job downloads again for 30 days at no charge. |
 | `databento-csv` | the same download with encoding CSV, of 1-minute bars, also without a split | Times are UTC. Copy the preset into a profile of your own for Databento's CSV of trades or of other bars. |
 | `ninjatrader` | NinjaTrader 8's Historical Data window, Export: interval type Minute, data type Last, one instrument at a time | Files are named like `MNQ 09-26.Last.txt`. Times are always UTC, each bar stamped at its close. Only history NinjaTrader has downloaded can be exported. |
 | `tradingview` | the chart's menu, Download chart data, time format UNIX timestamp | Put the Volume indicator on the chart first, and scroll back until the bars you want are loaded; exporting needs a paid plan, which sets how much history loads. The file's name, such as `CME_MINI_ESH2026, 1.csv`, names the contract. |
@@ -136,7 +136,7 @@ fefat data quality MES
 
 Give the import the batch job's folder, or a single `.dbn` or `.dbn.zst` file. It
 
-1. checks each file's SHA-256 against the vendor's `manifest.json`, and refuses a file that differs, printing both hashes;
+1. checks each file of a job's folder against the SHA-256 the vendor's `manifest.json` gives it, and refuses a file that differs, printing both hashes; a `.dbn` file given by itself has no manifest to be checked against;
 2. names each record's contract, such as `MESZ2026`, from the file's symbology, sets calendar spreads and strategy symbols aside, and dates each bar by its session;
 3. reads the whole file against the store before it writes anything: records the store lacks are new, records it holds are counted and left alone, and records it holds with other values refuse the file;
 4. copies the originals to `raw\databento\<batch job>\`, unchanged, writes each month that gains records, and lists the originals in `raw\MANIFEST.json`;
@@ -197,15 +197,17 @@ The preview, and the import after it, end with an account for each dataset the f
     Partitions: 2 that change, 1 unchanged
 ```
 
-- **New sessions** are trade dates the store did not hold, and **sessions that gain records** are trade dates it held part of, such as the day an earlier export stopped on.
+- **New sessions** are trade dates the store did not hold for their contract, and **sessions that gain records** are trade dates it held part of, such as the day an earlier export stopped on.
 - **Already held** records are in the store with the same values and are left alone. A file that only repeats what the store holds writes nothing but its own copy under `raw\`.
 - **Partitions** are the store's files: a month of 1-minute bars, or a trade date of ticks or 1-second bars. Those that gain records are written again whole, each in one step, and every other file stays as it is, byte for byte.
-- **Records that differ** are in the store with other values: the last bar of an export made before that bar was complete, a vendor's correction, or a file read with the wrong time zone. They refuse the file, and nothing is written. The message names the first trade date that holds one, so compare that date's bars with your platform's chart. Where the file is right, import it with `--differing take-file`: at each instant the two disagree on, the file's records replace the stored ones, the import says how many stored records gave way, and `raw\MANIFEST.json` records that it did. A preview takes `--differing take-file` too, and shows what that import would do.
+- **Records that differ** are in the store with other values: the last bar of an export made before that bar was complete, a vendor's correction, or a file read with the wrong time zone. They refuse the file, and nothing is written. The message names the first trade date that holds one, so compare that date's bars with your platform's chart. Where the file is right, import it with `--differing take-file`: at each instant the two disagree on, the file's records replace the stored ones, the import says how many stored records gave way, and `raw\MANIFEST.json` records that the import was told so. A preview takes `--differing take-file` too, and shows what that import would do. Take a file only when you know why its records differ: bars, and ticks stamped to the second, read with the wrong time zone or bar stamping land on the store's own minutes and seconds and show here too, as many records that differ and few or none already held, and taking them would put a misread file's records in place of good ones.
 
-Two files are refused whatever you choose, since a merge cannot be taken back:
+Some files are refused whatever you choose, since a merge cannot be taken back:
 
-- one that overlaps a stored month or trade date in time and shares no record with it, as the same data read under another time zone or bar stamping does, which would otherwise be stored twice: check the profile's `time_zone` and `stamp`;
-- one that gives a contract another instrument id than the store holds for it.
+- one that overlaps a stored month or trade date in time and holds no record at any of its instants, as ticks stamped finer than a second and read under another time zone, or another source's data, do, which would otherwise be stored twice: check the profile's `time_zone`. A file that fills several gaps of a stored month or trade date at once reads so too: import each gap's records as a file of their own;
+- one that gives a contract another instrument id than a month or trade date the store holds of it;
+- ticks without sequence numbers whose first second differs from the stored one, or whose last second does where the store holds more ticks of it: the file may hold part of that second alone, as the end of this section explains;
+- a file of a back-adjusted continuous series the store holds that shares no bar with it unchanged. Your platform adjusts such a series again at each roll, so a later export holds every earlier bar at other prices, and without a shared bar FEFAT cannot tell such an export from one on the store's prices. Export from a bar the store holds: where the shared bars are the store's, the file merges, and `--differing take-file` completes a last bar that the store took unfinished; where they differ, a roll has moved the series, so import the later export whole under a provider of its own, through a copy of the profile with a `name`, a `provider`, and a `licence_scope` of its own.
 
 After a merge:
 
@@ -213,9 +215,9 @@ After a merge:
 - The engine's cache and the features' cache build again what changed, and nothing else, at the next backtest or load.
 - A saved backtest that read a file the merge changed can no longer be explained or checked again: `run.explain` and the fidelity check stop and name the file. Its record and results stay as they are, and running the strategy again gives a new run on the data as it is now.
 - A file with sessions older than the dataset's first moves the start of the continuous series, so the adjusted prices after it (`close`, never `close_raw`) shift by the gaps of the added rolls, as if the older file had been imported first.
-- Nothing is removed: where a vendor's later file drops a record, the store keeps it.
+- Nothing is removed, unless `--differing take-file` takes a second of ticks from a file that holds fewer of them: where a vendor's later file drops a record, the store keeps it.
 
-A file of ticks without sequence numbers, such as IBKR's Time and Sales, must start on a whole second: such prints are told apart by their order within their second, so a file that starts in the middle of one is refused as differing there. A pull of whole sessions starts on one. A Databento job split into several files imports one `.dbn` file at a time.
+A file of ticks without sequence numbers, such as IBKR's Time and Sales, must start on a whole second. Such ticks are told apart by their order within their second, so the ticks of a file that starts in the middle of one are compared with the wrong stored ones: where they differ from them the file is refused whatever you choose, and where they happen to equal them they count as already held, and the ticks of that second the store lacks are not added. A pull of whole sessions starts on a whole second. A file may stop inside a second: where its last second differs from the stored one it is refused like any records that differ, and `--differing take-file` takes it, unless the store holds more ticks of that second, when it is refused whatever you choose. A file that starts a second earlier, or ends a second later, holds the disputed second whole, and is then read like any other.
 
 ## Checking coverage and quality
 
