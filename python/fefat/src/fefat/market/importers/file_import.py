@@ -154,8 +154,10 @@ def import_file(
     calendar, or whose records differ from the store's while `differing`, the option or its
     text (`"take-file"`), does not let the file's stand, is refused with them, and nothing is
     written. Once the file is checked and its copy under `raw` verified, the last of what can
-    refuse it, the import writes under the store's import lock (`Store.held_for_an_import`),
-    telling `progress` each stage it reaches (step 5.12)."""
+    refuse it before then, so that a file refused takes no lock, the import writes under the
+    store's import lock (`Store.held_for_an_import`): there the file is looked up again as
+    imported, and checked again where another import wrote its dataset meanwhile, before its
+    partitions; `progress` is told each stage it reaches (step 5.12)."""
     differing = DifferingRecords(differing)
     content = _file_bytes(request.path)
     sha256 = hashlib.sha256(content).hexdigest()
@@ -173,15 +175,19 @@ def import_file(
         identity=_identity(request.profile),
         metadata=_metadata(request.profile, guide),
     )
+    listed = store.list_partitions(reading.dataset)
     merge = merging.checked(differing)
     require_none_differing([merge], request.path)
     unsaved = mapped.new_instrument and not instrument_is_saved(store.folder, mapped.instrument)
-    progress(ImportStage.FILE_READ)
     store.raw.write(raw_path, request.path, sha256)
     with store.held_for_an_import():
         if _imported_before(store, request, raw_path, arguments):
             return imported
+        if store.list_partitions(reading.dataset) != listed:
+            merge = merging.checked(differing)
+            require_none_differing([merge], request.path)
         saved = unsaved and save_instrument(store.folder, mapped.instrument)
+        progress(ImportStage.FILE_READ)
         if merge.partitions_changed:
             merging.write(differing)
         version = f"{arguments}{_taken(differing)}"

@@ -131,6 +131,23 @@ def test_a_profile_is_kept_under_a_name_no_other_profile_and_no_file_has(
     assert sorted(path.name for path in profiles.iterdir()) == ["es-tradingview-5m.yaml"]
 
 
+def test_a_profile_is_not_kept_over_a_file_of_its_name_that_holds_another(
+    tmp_path: Path,
+) -> None:
+    # A profile's file edited by hand to hold another profile's name: the profile is refused,
+    # where it read as kept, and a later import by its name found none (from the reviews).
+    profiles = tmp_path / "home" / "profiles"
+    profiles.mkdir(parents=True)
+    path = profiles / "es-tradingview-5m.yaml"
+    path.write_text(yaml.safe_dump(a_profile("es-other").model_dump(mode="json")))
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError, match="holds another profile"):
+        keep_profile(a_profile(), profiles)
+
+    assert path.read_bytes() == before
+
+
 def test_a_profiles_timeframe_is_text_both_ways_through_the_api() -> None:
     # Step 5.12: the wizard sends back the profile `GET /v1/import-profiles` gave it.
     reading = ImportProfile.model_json_schema(mode="validation")["properties"]["timeframe"]

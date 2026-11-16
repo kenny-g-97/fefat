@@ -379,17 +379,21 @@ def keep_profile(profile: ImportProfile, profiles_dir: Path) -> bool:
     """Keep `profile` in `profiles_dir` by its name, for later imports to name, once an import
     with it has written, as the wizard keeps the profile it built (step 5.12): True when it was
     written, False where it is saved already as it is, and refused as `profile_is_saved` refuses.
-    The file is created whole and never replaced; one made meanwhile is read as saved."""
+    The file is created whole and never replaced; one made meanwhile is read as saved, and one
+    that holds another profile, as a file edited by hand can, is refused."""
     if profile_is_saved(profile, profiles_dir):
         return False
     content = profile_yaml(profile).encode("utf-8")
+    path = _saved_path(profiles_dir, profile.name)
     try:
-        create_atomically(
-            _saved_path(profiles_dir, profile.name),
-            lambda temporary: temporary.write_bytes(content),
-        )
+        create_atomically(path, lambda temporary: temporary.write_bytes(content))
     except FileExistsError:
-        return not profile_is_saved(profile, profiles_dir)
+        if profile_is_saved(profile, profiles_dir):
+            return False
+        raise ValueError(
+            f"Expected to keep the profile {profile.name} in {path}, got a file there that "
+            "holds another profile: rename one of them."
+        ) from None
     return True
 
 

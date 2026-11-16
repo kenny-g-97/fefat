@@ -16,7 +16,7 @@ store never reads `reports` as a provider (`fefat.market.layout`).
 
 import os
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self
@@ -28,11 +28,15 @@ from fefat.market.calendar import counted, utc_text
 from fefat.market.importers.report import ConditionDay
 from fefat.market.monthly_coverage import MONTH_COLUMNS, coverage_by_month, flagged_by_the_vendor
 from fefat.market.schema import FrozenModel, require_columns
-from fefat.market.store_files import write_atomically
+from fefat.market.store_files import held_alone, write_atomically
 
 DAYS_FILE_NAME = "days.parquet"
 FINDINGS_FILE_NAME = "findings.parquet"
 MARKDOWN_FILE_NAME = "quality.md"
+REPORT_LOCK_SUFFIX = ".lock"
+"""What names the file beside a report's folder that one writer of the report holds."""
+REPORT_LOCK_WAIT = timedelta(minutes=1)
+"""How long a report's writer waits for another's, whose writes take a moment."""
 DAY_COLUMNS = pl.Schema(
     {
         "trade_date": pl.Date,
@@ -199,13 +203,22 @@ def write_quality_report(report: QualityReport, reports_folder: Path) -> Path:
     write cut short leaves the new status beside an older last trade date, never an older
     status beside the new date. The days' table takes the time of the newest partition the
     assessment read (`read_through_ns`), so that a partition written while the report was
-    assessed is newer than the report and reads stale (step 5.12)."""
+    assessed is newer than the report and reads stale (step 5.12). Two reports of one root,
+    as an import's own and a catalog sync's, are written one at a time, under `<root>.lock`
+    beside the folder, and one whose assessment read older data than the written report's
+    leaves that report as it is."""
     folder = reports_folder / report.provider / report.root
     markdown = report.markdown().encode("utf-8")
-    write_atomically(folder / FINDINGS_FILE_NAME, report.findings.write_parquet)
-    write_atomically(folder / DAYS_FILE_NAME, report.days.write_parquet)
-    os.utime(folder / DAYS_FILE_NAME, ns=(report.read_through_ns, report.read_through_ns))
-    write_atomically(folder / MARKDOWN_FILE_NAME, lambda temporary: temporary.write_bytes(markdown))
+    with held_alone(folder.with_name(f"{report.root}{REPORT_LOCK_SUFFIX}"), REPORT_LOCK_WAIT):
+        written = report_written_ns(reports_folder, report.provider, report.root)
+        if written is not None and written > report.read_through_ns:
+            return folder
+        write_atomically(folder / FINDINGS_FILE_NAME, report.findings.write_parquet)
+        write_atomically(folder / DAYS_FILE_NAME, report.days.write_parquet)
+        os.utime(folder / DAYS_FILE_NAME, ns=(report.read_through_ns, report.read_through_ns))
+        write_atomically(
+            folder / MARKDOWN_FILE_NAME, lambda temporary: temporary.write_bytes(markdown)
+        )
     return folder
 
 

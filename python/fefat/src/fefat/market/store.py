@@ -96,12 +96,14 @@ class Store:
         return RawFiles(self._folder)
 
     def held_for_an_import(self) -> AbstractContextManager[None]:
-        """The store held by one import while it writes, from its original's copy under `raw`
-        to its entry in the raw manifest (step 5.12): another import waits until it is done,
+        """The store held by one import while it writes, from its first partition to its entry
+        in the raw manifest (step 5.12): another import waits until it is done,
         `IMPORT_LOCK_WAIT` at most, and is refused after, so that the raw manifest has one
-        writer and two imports never write a partition at once. An import reads its file
-        against the store before it takes the lock and again as it writes, so that a refused
-        file takes no lock, and readers take none."""
+        writer and two imports never write a partition at once. An import checks its file
+        against the store, and copies its original under `raw`, before it takes the lock, so
+        that a refused file takes no lock, and once it holds it checks again where another
+        import wrote meanwhile, so that no partition of a file refused there is written; readers
+        take no lock."""
         return held_alone(self._folder / IMPORT_LOCK_FILE_NAME, IMPORT_LOCK_WAIT)
 
     def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:

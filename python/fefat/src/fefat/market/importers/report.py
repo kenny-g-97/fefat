@@ -36,8 +36,10 @@ DIFFERING_VERDICT = (
 
 class ImportStage(StrEnum):
     """A stage an import tells its `progress` callable as it reaches it (step 5.12): its file
-    read and checked against the store, after which it writes, and its partitions written with
-    the file's entry in the raw manifest. A file imported before tells neither."""
+    read and checked against the store, under the store's import lock, after which it writes its
+    partitions and runs to its end, and its partitions written with the file's entry in the raw
+    manifest. A file imported before tells neither, and so does an import refused while it waits
+    for the lock or once it holds it."""
 
     FILE_READ = "file_read"
     PARTITIONS_WRITTEN = "partitions_written"

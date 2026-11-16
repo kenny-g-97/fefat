@@ -41,16 +41,25 @@ class RawFiles:
 
     def write(self, path: PurePosixPath, source: Path, sha256: str) -> None:
         """Copy a vendor's file to `raw/<path>` in one step, once the copy's SHA-256 is the
-        one stated, replacing a copy an interrupted import left behind. A path the raw manifest
-        records is refused, since raw files never change; record the copy with `record` once it
-        is imported."""
+        one stated, replacing a copy an interrupted import left behind; record the copy with
+        `record` once it is imported. A path the raw manifest records with that SHA-256 is left
+        as it is, as another import of the same file recorded it meanwhile (step 5.12), and one
+        it records with another is refused, since raw files never change."""
         relative = checked_raw_path(path.as_posix())
-        if self.manifest().file_at(relative) is not None:
+        recorded = self.manifest().file_at(relative)
+        if recorded is not None and recorded.sha256 == sha256:
+            return
+        if recorded is not None:
             raise ValueError(
                 f"Expected a raw file the manifest {self._manifest_path()} does not record, "
                 f"got {relative}, which it records: raw files never change."
             )
         write_atomically(self._folder / relative, _verified_copy(source, sha256))
+
+    def copy_of(self, path: PurePosixPath) -> Path:
+        """The file `write` copied to `raw/<path>`, to read as it was verified, before the raw
+        manifest records it, while its original may have changed since."""
+        return self._vendor_file(checked_raw_path(path.as_posix()))
 
     def read(self, path: PurePosixPath) -> bytes:
         """The bytes of a raw file the manifest records, refused when they no longer match its
