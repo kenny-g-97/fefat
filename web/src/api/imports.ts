@@ -12,7 +12,6 @@ export type ImportProfile = components["schemas"]["ImportProfile-Output"]
 /** A profile as the server takes it, which a profile it gave is too. */
 export type GivenProfile = components["schemas"]["ImportProfile-Input"]
 export type NewInstrument = components["schemas"]["NewInstrument-Input"]
-export type FileLayout = components["schemas"]["FileLayout"]
 export type ColumnMapping = components["schemas"]["ColumnMapping"]
 export type UploadedFile = components["schemas"]["UploadedFile"]
 /** What the wizard asks a preview: a file's table, or what its import would do. */
@@ -25,7 +24,7 @@ export type ImportPreviewAnswer = components["schemas"]["ImportPreviewAnswer"]
 export type TablePreview = components["schemas"]["TablePreview"]
 export type FileSeen = components["schemas"]["FileSeen"]
 export type BatchSeen = components["schemas"]["BatchSeen"]
-export type DatasetMerge = components["schemas"]["DatasetMerge"]
+export type MergeSeen = components["schemas"]["MergeSeen"]
 
 /** The presets, then the profiles saved under `profiles/`, read again once an import ends,
  * since it may keep one. */
@@ -77,18 +76,18 @@ const writtenDataset = z.object({
   records_added: z.number(),
   records_held: z.number(),
   records_taken: z.number(),
-  new_sessions: z.number(),
 })
 
 /** An import job's result, which the OpenAPI document does not type
- * (`fefat_app.jobs.imports`): what it wrote into each dataset, or that the file was imported
- * before. */
+ * (`fefat_app.jobs.imports`): what it wrote into each dataset, none where a batch held nothing
+ * FEAT stores, and what it kept for the next file; or that the file was imported before. */
 export const importResult = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("wrote"),
-    datasets: z.array(writtenDataset).min(1),
+    datasets: z.array(writtenDataset),
     instrument_saved: z.boolean(),
     profile_kept: z.boolean(),
+    profile_refusal: z.string().nullable(),
   }),
   z.object({ kind: z.literal("imported_before") }),
 ])

@@ -3,6 +3,7 @@ import type { ImportPreviewAnswer } from "@/api/imports"
 import {
   EMPTY_QUEUE,
   type PreviewQueue,
+  previewState,
   type QueueChange,
   queued,
   toSend,
@@ -61,6 +62,44 @@ describe("the preview's queue", () => {
     expect(queued(flying, { kind: "asked", ask: "a" })).toBe(flying)
     expect(queued(settled, { kind: "asked", ask: "a" })).toBe(settled)
     expect(toSend(settled)).toBeNull()
+  })
+
+  it("sends a failed ask again once another ask was answered between", () => {
+    const back = after(
+      { kind: "asked", ask: "a" },
+      { kind: "sent", ask: "a" },
+      { kind: "failed", ask: "a", error: new Error("no") },
+      { kind: "asked", ask: "b" },
+      { kind: "sent", ask: "b" },
+      { kind: "answered", ask: "b", answer: ANSWER },
+      { kind: "asked", ask: "a" }
+    )
+
+    expect(back.failed).toBeNull()
+    expect(toSend(back)).toBe("a")
+  })
+
+  it("shows an older answer as not the latest's, and the latest's failure", () => {
+    const answered = after(
+      { kind: "asked", ask: "a" },
+      { kind: "sent", ask: "a" },
+      { kind: "answered", ask: "a", answer: ANSWER },
+      { kind: "asked", ask: "b" },
+      { kind: "sent", ask: "b" },
+      { kind: "failed", ask: "b", error: new Error("no") }
+    )
+
+    expect(previewState(answered, "a")).toEqual({
+      answer: ANSWER,
+      current: true,
+      reading: false,
+      error: null,
+    })
+    expect(previewState(answered, "b")).toMatchObject({
+      answer: ANSWER,
+      current: false,
+      error: new Error("no"),
+    })
   })
 
   it("sends an earlier ask again once a later one was asked between", () => {

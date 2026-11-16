@@ -9,23 +9,28 @@ import {
   TableRow,
 } from "@/ui/table"
 import { Picker } from "../Picker"
+import { picked } from "./choices"
 import { BAR_ROLES, ROLE_LABELS, type Role, TICK_ROLES } from "./import-roles"
 
-type RowsProps = Readonly<{
-  table: TablePreview
-  roles: readonly Role[] | null
-  ticks: boolean
-  onRole: (index: number, role: Role, shown: readonly Role[]) => void
-}>
+/** What stands over each of a file's columns: its own name, before a profile reads it; the
+ * role a listed profile gives it; or a select of its role, for a new profile. */
+export type ColumnHeads =
+  | Readonly<{ kind: "names" }>
+  | Readonly<{ kind: "roles"; roles: readonly Role[] }>
+  | Readonly<{
+      kind: "selects"
+      roles: readonly Role[]
+      ticks: boolean
+      onRole: (index: number, role: Role) => void
+    }>
 
-/** The file's first rows as it reads them (web/DESIGN.md, Patterns, Column roles): for a new
- * profile, each column under a select of its role, one role a column, a bar's or a tick's by
- * the profile's timeframe; for a listed one, under the file's own column names. */
-export function Rows({ table, roles, ticks, onRole }: RowsProps) {
-  const options = (ticks ? TICK_ROLES : BAR_ROLES).map((role) => ({
-    value: role,
-    label: ROLE_LABELS[role],
-  }))
+type RowsProps = Readonly<{ table: TablePreview; heads: ColumnHeads }>
+
+/** The file's first rows as it reads them (web/DESIGN.md, Patterns, Column roles), as written,
+ * the file's text and not yet figures: each column under its role, a listed profile's, or a
+ * select of it for a new profile, one role a column, a bar's or a tick's by the profile's
+ * timeframe; before a profile, under the file's own column names. */
+export function Rows({ table, heads }: RowsProps) {
   return (
     <div className="flex flex-col gap-2" data-testid="import-rows">
       <p className="text-xs text-muted-foreground">
@@ -40,19 +45,7 @@ export function Rows({ table, roles, ticks, onRole }: RowsProps) {
                   key={column}
                   className="h-12 px-3 first:pl-6 last:pr-6"
                 >
-                  {roles === null ? (
-                    column
-                  ) : (
-                    <Picker
-                      id={`import-role-${index}`}
-                      label={`Role of column ${index + 1}, ${column}`}
-                      value={roles[index] ?? "unused"}
-                      options={options}
-                      size="sm"
-                      className="w-32"
-                      onChange={(role) => onRole(index, roleOf(role), roles)}
-                    />
-                  )}
+                  <Head heads={heads} column={column} index={index} />
                 </TableHead>
               ))}
             </TableRow>
@@ -77,10 +70,30 @@ export function Rows({ table, roles, ticks, onRole }: RowsProps) {
   )
 }
 
-function roleOf(value: string): Role {
-  const role = [...BAR_ROLES, ...TICK_ROLES].find((each) => each === value)
-  if (role === undefined) {
-    throw new Error(`Expected a column's role, got ${JSON.stringify(value)}.`)
+type HeadProps = Readonly<{ heads: ColumnHeads; column: string; index: number }>
+
+function Head({ heads, column, index }: HeadProps) {
+  switch (heads.kind) {
+    case "names":
+      return column
+    case "roles":
+      return ROLE_LABELS[heads.roles[index] ?? "unused"]
+    case "selects": {
+      const options = (heads.ticks ? TICK_ROLES : BAR_ROLES).map((role) => ({
+        value: role,
+        label: ROLE_LABELS[role],
+      }))
+      return (
+        <Picker
+          id={`import-role-${index}`}
+          label={`Role of column ${index + 1}, ${column}`}
+          value={heads.roles[index] ?? "unused"}
+          options={options}
+          size="sm"
+          className="w-32"
+          onChange={(role) => heads.onRole(index, picked(options, role))}
+        />
+      )
+    }
   }
-  return role
 }

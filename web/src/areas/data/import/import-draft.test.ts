@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { drafted, NEW_INSTRUMENT, startingDraft } from "./import-draft"
-import { NINJATRADER } from "./import-fixtures.test-support"
+import { IBKR, NINJATRADER } from "./import-fixtures.test-support"
 
 describe("drafted", () => {
   it("refuses differing records again at every change but the choice itself", () => {
@@ -45,6 +45,32 @@ describe("drafted", () => {
     })
     expect(zoned.profile.kind === "new" && zoned.profile.fields.timeZone).toBe(
       "America/Chicago"
+    )
+  })
+
+  it("gives a new profile made from a preset without a time zone the one typed for it", () => {
+    const typed = drafted(startingDraft({ kind: "profile", name: "ibkr" }), {
+      kind: "time zone",
+      timeZone: "America/New_York",
+    })
+
+    const draft = drafted(typed, { kind: "new profile", base: IBKR })
+
+    expect(draft.profile.kind === "new" && draft.profile.fields.timeZone).toBe(
+      "America/New_York"
+    )
+  })
+
+  it("copies a profile whose delimiter is any other single character", () => {
+    const colons = { ...NINJATRADER, layout: { delimiter: ":", header: false } }
+
+    const draft = drafted(startingDraft({ kind: "none" }), {
+      kind: "new profile",
+      base: colons,
+    })
+
+    expect(draft.profile.kind === "new" && draft.profile.fields.delimiter).toBe(
+      ":"
     )
   })
 

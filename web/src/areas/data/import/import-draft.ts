@@ -14,7 +14,8 @@ export type Source =
   | Readonly<{ kind: "upload"; upload: UploadedFile }>
   | Readonly<{ kind: "path"; path: string }>
 
-export type Delimiter = "," | ";" | "\t" | "|"
+/** A file's field delimiter, one character, as a profile's layout holds it. */
+export type Delimiter = string
 
 /** A profile's columns: those of the profile it was copied from, until a select over the
  * file's table chooses them, a role a column. */
@@ -150,7 +151,7 @@ export function drafted(draft: Draft, change: DraftChange): Draft {
         profile: {
           kind: "new",
           base: change.base.name,
-          fields: fieldsOf(change.base),
+          fields: fieldsOf(change.base, draft.timeZone),
         },
       }
     case "profile fields":
@@ -177,33 +178,24 @@ export function drafted(draft: Draft, change: DraftChange): Draft {
 }
 
 /** A new profile's fields, from the profile it is copied from, under a name of the trader's
- * own. */
-export function fieldsOf(base: ImportProfile): ProfileFields {
+ * own; where that profile leaves the time zone to the import, the one typed for it, since a new
+ * profile names its own. */
+export function fieldsOf(
+  base: ImportProfile,
+  typedZone: string
+): ProfileFields {
   return {
     name: `my-${base.name}`,
     provider: base.provider,
-    delimiter: delimiterOf(base.layout.delimiter),
+    delimiter: base.layout.delimiter,
     header: base.layout.header,
     format: base.timestamp.format,
-    timeZone: base.timestamp.time_zone ?? "",
+    timeZone:
+      base.timestamp.time_zone === null ? typedZone : base.timestamp.time_zone,
     stamp: base.timestamp.stamp,
     timeframe: base.timeframe,
     roles: { kind: "kept" },
   }
-}
-
-export function delimiterOf(delimiter: string): Delimiter {
-  if (
-    delimiter === "," ||
-    delimiter === ";" ||
-    delimiter === "\t" ||
-    delimiter === "|"
-  ) {
-    return delimiter
-  }
-  throw new Error(
-    `Expected a comma, semicolon, tab, or bar, got ${JSON.stringify(delimiter)}.`
-  )
 }
 
 function editedProfile(

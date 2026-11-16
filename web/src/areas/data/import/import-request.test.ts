@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest"
 import type { UploadedFile } from "@/api/imports"
+import type { components } from "@/api/schema"
 import { drafted, NEW_INSTRUMENT, startingDraft } from "./import-draft"
 import {
+  IBKR,
   LISTED,
   NINJATRADER,
   NINJATRADER_TABLE,
 } from "./import-fixtures.test-support"
-import { asksOf } from "./import-request"
+import { asksOf, offsetRefusal } from "./import-request"
 
 const UPLOAD: UploadedFile = {
   id: "0193a000-0000-7000-8000-000000000001",
@@ -20,6 +22,8 @@ const CHOSEN = drafted(startingDraft({ kind: "none" }), {
   source: { kind: "upload", upload: UPLOAD },
 })
 const SOURCE = { kind: "upload", upload_id: UPLOAD.id }
+
+type OffsetSeen = components["schemas"]["OffsetSeen"]
 
 describe("asksOf", () => {
   it("asks nothing before a file, and the table alone before a profile", () => {
@@ -112,6 +116,88 @@ describe("asksOf", () => {
     ])
   })
 
+  it("asks a new profile's time zone, which no field of the import gives", () => {
+    const zoneless = drafted(
+      drafted(CHOSEN, { kind: "new profile", base: IBKR }),
+      { kind: "profile fields", fields: { name: "my-ibkr" } }
+    )
+
+    expect(asksOf(zoneless, LISTED, NINJATRADER_TABLE).missing).toEqual([
+      { card: "layout", text: "Type the time zone of the file's times" },
+    ])
+  })
+
+  it("asks a column for each role once the base's columns no longer fit", () => {
+    const made = drafted(CHOSEN, { kind: "new profile", base: NINJATRADER })
+    const ticks = drafted(made, {
+      kind: "profile fields",
+      fields: { timeframe: "ticks", roles: { kind: "kept" } },
+    })
+    const named = drafted(made, {
+      kind: "profile fields",
+      fields: { header: true, roles: { kind: "kept" } },
+    })
+
+    expect(asksOf(ticks, LISTED, NINJATRADER_TABLE).missing).toEqual([
+      { card: "layout", text: "Choose the column of the price" },
+      { card: "layout", text: "Choose the column of the size" },
+    ])
+    expect(
+      asksOf(named, LISTED, NINJATRADER_TABLE).missing.map((each) => each.text)
+    ).toEqual([
+      "Choose the column of the timestamp",
+      "Choose the column of the open",
+      "Choose the column of the high",
+      "Choose the column of the low",
+      "Choose the column of the close",
+      "Choose the column of the volume",
+    ])
+  })
+
+  it("asks a whole number of business days before the 25th", () => {
+    const made = drafted(
+      drafted(CHOSEN, { kind: "new profile", base: NINJATRADER }),
+      {
+        kind: "instrument",
+        instrument: {
+          kind: "new",
+          fields: {
+            ...NEW_INSTRUMENT,
+            root: "XCL",
+            tickSize: "0.01",
+            pointValue: "1000",
+            firstTradeDate: "2010-01-04",
+            lastTradeRule: "business-days-before-the-25th",
+            businessDays: "",
+          },
+        },
+      }
+    )
+    const three = drafted(made, {
+      kind: "instrument fields",
+      fields: { businessDays: "3" },
+    })
+
+    expect(asksOf(made, LISTED, NINJATRADER_TABLE).missing).toEqual([
+      {
+        card: "instrument",
+        text: "Give its business days before the 25th, a whole number from 1",
+      },
+    ])
+    expect(asksOf(three, LISTED, NINJATRADER_TABLE).review).toMatchObject({
+      profile: {
+        profile: {
+          instrument: {
+            last_trade_rule: {
+              kind: "business-days-before-the-25th",
+              business_days: 3,
+            },
+          },
+        },
+      },
+    })
+  })
+
   it("asks a batch by its path", () => {
     const batch = drafted(startingDraft({ kind: "batch" }), {
       kind: "source",
@@ -127,5 +213,31 @@ describe("asksOf", () => {
       },
       missing: [],
     })
+  })
+})
+
+describe("offsetRefusal", () => {
+  const late: Omit<OffsetSeen, "cause"> = {
+    direction: "late",
+    duration: "6 hours",
+    first_trade_date: "2026-02-02",
+    last_trade_date: "2026-02-06",
+    description: "Records 6 hours late.",
+  }
+
+  it("stands under the field the offset's cause points at", () => {
+    const zone: OffsetSeen[] = [{ ...late, cause: "time-zone" }]
+    const either: OffsetSeen[] = [
+      { ...late, cause: "time-zone-or-bar-stamping" },
+    ]
+
+    expect(offsetRefusal(zone, "time zone")).toBe(
+      "The records run 6 hours late against their calendar"
+    )
+    expect(offsetRefusal(zone, "bar stamp")).toBeNull()
+    expect(offsetRefusal(either, "bar stamp")).toBe(
+      "The records run 6 hours late against their calendar"
+    )
+    expect(offsetRefusal([], "time zone")).toBeNull()
   })
 })

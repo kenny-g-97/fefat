@@ -8,6 +8,7 @@ import { FileDrop } from "@/ui/file-drop"
 import { KeptField } from "@/ui/kept-field"
 import { Label } from "@/ui/label"
 import { Panel } from "@/ui/panel"
+import { SectionFailure } from "@/ui/section-failure"
 import { Segmented } from "@/ui/segmented"
 import type { Draft, DraftChange, Reading } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
@@ -37,12 +38,14 @@ export function FileCard({ draft, change, table }: FileCardProps) {
       description="What to import, copied into FEAT's folder on this PC and sent nowhere else"
     >
       <div className="flex flex-col gap-5" data-testid="import-file">
-        <Segmented
-          label="What to import"
-          options={READINGS}
-          value={draft.reading}
-          onChange={(reading) => change({ kind: "reading", reading })}
-        />
+        <div>
+          <Segmented
+            label="What to import"
+            options={READINGS}
+            value={draft.reading}
+            onChange={(reading) => change({ kind: "reading", reading })}
+          />
+        </div>
         {typed ? (
           <TypedPath draft={draft} change={change} />
         ) : (
@@ -157,11 +160,7 @@ function rootsNote(settings: AppSettings | undefined): string {
 
 function TableState({ table }: Readonly<{ table: LatestPreview }>) {
   if (table.error !== null) {
-    return (
-      <p role="alert" className="text-negative">
-        {table.error.message}
-      </p>
-    )
+    return <SectionFailure error={table.error} onRetry={table.readAgain} />
   }
   if (table.answer?.kind === "refused" && table.current) {
     return (

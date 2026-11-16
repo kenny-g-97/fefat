@@ -1,9 +1,11 @@
 import type { Dispatch } from "react"
 import { ApiProblem } from "@/api/problems"
+import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
 import type { Card, Draft, DraftChange } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
 import type { Asks } from "./import-request"
+import { useImportRun } from "./import-run"
 import { BatchReview, FileReview } from "./FileReview"
 import { Run } from "./Run"
 
@@ -23,7 +25,8 @@ type ReviewCardProps = Readonly<{
 
 /** The wizard's last card (web/DESIGN.md, Patterns, Review): what is still missing, by card;
  * else what the import would do, read against the store as each change is made, the last
- * answer kept and marked while a newer one is read; then Import, and its job. */
+ * answer kept and marked while a newer one is read, until the import of what it shows wrote;
+ * then Import, and its job. */
 export function ReviewCard({
   draft,
   change,
@@ -31,6 +34,7 @@ export function ReviewCard({
   review,
   zone,
 }: ReviewCardProps) {
+  const run = useImportRun(asks, review)
   return (
     <Panel
       title="Review"
@@ -41,7 +45,7 @@ export function ReviewCard({
         data-testid="import-review"
         aria-busy={review.reading}
       >
-        {asks.missing.length > 0 ? (
+        {asks.missing.length > 0 && (
           <ul
             className="flex flex-col gap-1 text-foreground-secondary"
             data-testid="import-missing"
@@ -55,10 +59,11 @@ export function ReviewCard({
               </li>
             ))}
           </ul>
-        ) : (
+        )}
+        {asks.missing.length === 0 && !run.imported && (
           <Answer draft={draft} change={change} review={review} zone={zone} />
         )}
-        <Run asks={asks} review={review} />
+        <Run run={run} review={review} />
       </div>
     </Panel>
   )
@@ -73,7 +78,7 @@ type AnswerProps = Readonly<{
 
 function Answer({ draft, change, review, zone }: AnswerProps) {
   if (review.error !== null) {
-    return <Refusal error={review.error} />
+    return <Refusal error={review.error} onRetry={review.readAgain} />
   }
   const answer = review.answer
   return (
@@ -103,18 +108,27 @@ function Answer({ draft, change, review, zone }: AnswerProps) {
   )
 }
 
-/** A request the server refused: its words, and for a request its schema refused, such as a
- * profile with a field it does not take, each refused field. */
-function Refusal({ error }: Readonly<{ error: Error }>) {
+/** A request the server refused or could not answer (web/DESIGN.md, Patterns, Section
+ * failure): its words, and for a request its schema refused, such as a profile with a field it
+ * does not take, each refused field; then Try again, which reads the same draft anew. */
+function Refusal({
+  error,
+  onRetry,
+}: Readonly<{ error: Error; onRetry: () => void }>) {
   const fields = error instanceof ApiProblem ? error.refusedFields : []
   return (
-    <div role="alert" className="flex flex-col gap-1 text-negative">
-      <p>{error.message}</p>
-      {fields.map((field) => (
-        <p key={field.location.join(".")}>
-          {`${field.location.slice(-2).join(" ")}: ${field.message}`}
-        </p>
-      ))}
+    <div className="flex flex-col items-start gap-3">
+      <div role="alert" className="flex flex-col gap-1 text-negative">
+        <p>{error.message}</p>
+        {fields.map((field) => (
+          <p key={field.location.join(".")}>
+            {`${field.location.slice(-2).join(" ")}: ${field.message}`}
+          </p>
+        ))}
+      </div>
+      <Button variant="ghost" onClick={onRetry}>
+        Try again
+      </Button>
     </div>
   )
 }

@@ -1,72 +1,46 @@
-import { useQuery } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { barsSpanQuery, type Series } from "@/api/bars"
 import { queryClient } from "@/api/client"
-import {
-  type DatasetWritten,
-  type ImportAsked,
-  importResult,
-  useImportStart,
-} from "@/api/imports"
-import { isActive, type Job, jobsQuery } from "@/api/jobs"
+import { type DatasetWritten, importResult } from "@/api/imports"
+import { isActive, type Job } from "@/api/jobs"
 import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
 import { PercentBar } from "@/ui/percent-bar"
 import { TextLink } from "@/ui/text-link"
-import { datasetFolder } from "../datasets"
+import { datasetName } from "../datasets"
 import type { LatestPreview } from "./import-preview"
-import type { Asks } from "./import-request"
+import { type ImportRun, keptLine } from "./import-run"
 
-type RunProps = Readonly<{ asks: Asks; review: LatestPreview }>
+type RunProps = Readonly<{ run: ImportRun; review: LatestPreview }>
 
 /** Import and its job, in the review's card (web/DESIGN.md, Patterns, Job in its card): Import
- * reads the latest draft's answer alone and sends that answer's request, once it imports as it
- * is; the job's bar and message follow from the jobs drawer's own reads, then what it wrote,
- * with the way to the dataset and its chart, or why it failed. */
-export function Run({ asks, review }: RunProps) {
-  const start = useImportStart()
-  const [started, setStarted] = useState<Readonly<{
-    ask: string
-    id: string
-  }> | null>(null)
-  const jobs = useQuery(jobsQuery)
-  const job =
-    started === null
-      ? undefined
-      : jobs.data?.find((each) => each.id === started.id)
-  const ask = asks.review === null ? null : JSON.stringify(asks.review)
-  const imports =
-    review.current &&
-    review.answer !== null &&
-    verdictOf(review.answer) === "imports"
-  const ran =
-    started !== null &&
-    started.ask === ask &&
-    (job === undefined || job.status !== "failed")
-  const request: ImportAsked | null = imports ? asks.review : null
+ * sends the latest draft's request once its own answer says it imports as it is, the reading
+ * line beside it while a change is read; the job's bar and message follow from the jobs
+ * drawer's own reads, then what it wrote and kept, with the way to the dataset and its chart,
+ * or why it failed. */
+export function Run({ run, review }: RunProps) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <Button
           data-testid="import-run"
-          disabled={request === null || ran || start.isPending}
-          onClick={() => {
-            if (request !== null && ask !== null) {
-              start.mutate(request, {
-                onSuccess: (queued) => setStarted({ ask, id: queued.id }),
-              })
-            }
-          }}
+          disabled={!run.importable}
+          onClick={run.importNow}
         >
           Import
         </Button>
-        {start.error !== null && (
+        {review.reading && (
+          <p className="text-xs text-muted-foreground">
+            Reading your latest change
+          </p>
+        )}
+        {run.refusal !== null && (
           <p role="alert" className="text-negative">
-            {start.error.message}
+            {run.refusal.message}
           </p>
         )}
       </div>
-      {job !== undefined && <ImportJob job={job} />}
+      {run.job !== undefined && <ImportJob job={run.job} />}
     </div>
   )
 }
@@ -103,11 +77,26 @@ function Imported({ job }: Readonly<{ job: Job }>) {
       </p>
     )
   }
+  const kept = keptLine(result)
   return (
     <div className="flex flex-col gap-3" data-testid="import-done">
+      {result.datasets.length === 0 && (
+        <p className="text-foreground-secondary">
+          Nothing was written: the batch held no record FEAT stores.
+        </p>
+      )}
       {result.datasets.map((written) => (
-        <Written key={datasetFolder(written.dataset)} written={written} />
+        <Written key={datasetName(written.dataset)} written={written} />
       ))}
+      {kept !== null && (
+        <p
+          className={
+            kept.refused ? "text-negative" : "text-foreground-secondary"
+          }
+        >
+          {kept.text}
+        </p>
+      )}
     </div>
   )
 }
@@ -126,10 +115,14 @@ function Written({ written }: Readonly<{ written: DatasetWritten }>) {
     }
     void queryClient.prefetchQuery(barsSpanQuery(series))
   }, [root, provider])
+  const taken =
+    written.records_taken > 0
+      ? ` and ${formatCount(written.records_taken)} taken from the file in place of stored ones`
+      : ""
   return (
     <div className="flex flex-col gap-2">
       <p className="text-foreground-secondary">
-        {`Imported ${counted(written.records_added, "record")} into ${datasetFolder(written.dataset)}, ${formatCount(written.records_held)} held already.`}
+        {`Imported ${counted(written.records_added, "record")} into ${datasetName(written.dataset)}, ${formatCount(written.records_held)} held already${taken}.`}
       </p>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <TextLink
@@ -149,12 +142,4 @@ function Written({ written }: Readonly<{ written: DatasetWritten }>) {
       </div>
     </div>
   )
-}
-
-function verdictOf(
-  answer: NonNullable<LatestPreview["answer"]>
-): string | null {
-  return answer.kind === "file" || answer.kind === "databento"
-    ? answer.verdict
-    : null
 }

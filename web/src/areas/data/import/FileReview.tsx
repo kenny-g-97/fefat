@@ -2,11 +2,11 @@ import type { Dispatch } from "react"
 import type { BatchSeen, FileSeen } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { counted, formatCount } from "@/ui/figures"
-import { datasetFolder } from "../datasets"
+import { datasetName } from "../datasets"
 import { DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
 import { FirstRecords } from "./FirstRecords"
-import { Merge } from "./Merge"
+import { Merge, TakeRecords } from "./Merge"
 
 type Schemas = components["schemas"]
 
@@ -63,19 +63,33 @@ export function FileReview({ seen, draft, change, zone }: FileReviewProps) {
       <CalendarCheck seen={seen} />
       <FirstRecords records={seen.first_records} />
       {seen.merge !== null && (
-        <Merge merge={seen.merge} draft={draft} change={change} />
+        <Merge merge={seen.merge}>
+          {seen.merge.records_differing > 0 && (
+            <TakeRecords
+              disputed={seen.merge.stored_records_disputed}
+              draft={draft}
+              change={change}
+            />
+          )}
+        </Merge>
       )}
     </div>
   )
 }
 
 /** What a Databento batch's import would do: the verdict, the batch's account in counts and
- * dates, and what each of its files adds. */
+ * dates, what its files add to each dataset, and, where records differ in any, what to do with
+ * them, for every dataset at once, the stored records that give way counted over all of them. */
 export function BatchReview({
   seen,
   draft,
   change,
 }: Readonly<{ seen: BatchSeen; draft: Draft; change: Dispatch<DraftChange> }>) {
+  const differing = seen.merges.some((merge) => merge.records_differing > 0)
+  const disputed = seen.merges.reduce(
+    (total, merge) => total + merge.stored_records_disputed,
+    0
+  )
   return (
     <div className="flex flex-col gap-4">
       <p
@@ -88,13 +102,11 @@ export function BatchReview({
         {seen.lines.join("\n")}
       </pre>
       {seen.merges.map((merge) => (
-        <Merge
-          key={datasetFolder(merge.dataset)}
-          merge={merge}
-          draft={draft}
-          change={change}
-        />
+        <Merge key={datasetName(merge.dataset)} merge={merge} />
       ))}
+      {differing && (
+        <TakeRecords disputed={disputed} draft={draft} change={change} />
+      )}
     </div>
   )
 }
@@ -175,7 +187,7 @@ function readingLine(seen: FileSeen): string {
       ? `${counted(seen.spread_rows, "row")} of spreads`
       : "",
   ].filter((part) => part !== "")
-  const read = `${counted(seen.rows_read, "row")} of ${seen.file_name} read with ${seen.profile} into ${counted(seen.records, "record")} of ${datasetFolder(seen.dataset)}, ${contracts === "" ? "no contract" : contracts}, ${dates}.`
+  const read = `${counted(seen.rows_read, "row")} of ${seen.file_name} read with ${seen.profile} into ${counted(seen.records, "record")} of ${datasetName(seen.dataset)}: ${contracts === "" ? "no contract" : contracts}, ${dates}.`
   return leftOut.length === 0
     ? read
     : `${read} Left out: ${leftOut.join(" and ")}.`

@@ -15,17 +15,36 @@ export type Option = Readonly<{ value: string; label: string }>
 type ChoiceProps = Readonly<{
   id: string
   label: string
+  refusal?: string | null
   className?: string
   children: ReactNode
 }>
 
 /** A field of a toolbar under its label (web/DESIGN.md, Patterns, Forms), which names the field
- * with `id`. */
-export function Choice({ id, label, className, children }: ChoiceProps) {
+ * with `id`; a refusal of what the field holds turns the label to the negative and stands
+ * under the field at `<id>-refusal`, for the field to name, as wide as `className` makes the
+ * choice, the field's own width. */
+export function Choice({
+  id,
+  label,
+  refusal = null,
+  className,
+  children,
+}: ChoiceProps) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <Label htmlFor={id}>{label}</Label>
+      <Label
+        htmlFor={id}
+        className={refusal === null ? undefined : "text-negative"}
+      >
+        {label}
+      </Label>
       {children}
+      {refusal !== null && (
+        <p id={`${id}-refusal`} className="text-negative">
+          {refusal}
+        </p>
+      )}
     </div>
   )
 }

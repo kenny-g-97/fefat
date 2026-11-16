@@ -61,7 +61,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
     change({ kind: "instrument fields", fields: changed })
   return (
     <div className="flex flex-col gap-5" data-testid="instrument-form">
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-5">
         <Text
           id="instrument-root"
           label="Root"
@@ -98,7 +98,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
           />
         </Choice>
       </div>
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-5">
         <Text
           id="instrument-tick"
           label="Tick size"
@@ -120,7 +120,7 @@ export function InstrumentForm({ fields, change }: InstrumentFormProps) {
           onKeep={(lotStep) => set({ lotStep })}
         />
       </div>
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-wrap gap-5">
         <Choice id="instrument-last-trade" label="Last trade">
           <Picker
             id="instrument-last-trade"

@@ -13,19 +13,32 @@ import type {
   ProfileFields,
 } from "./import-draft"
 import {
+  BAR_ROLES,
   type ColumnKey,
   mappingOf,
   ROLE_LABELS,
   type Role,
   rolesOf,
+  TICK_ROLES,
 } from "./import-roles"
 
-/** What a delimiter is called in a profile's description and the layout's select. */
-export const DELIMITER_LABELS: Readonly<Record<Delimiter, string>> = {
-  ",": "Commas",
-  ";": "Semicolons",
-  "\t": "Tabs",
-  "|": "Bars",
+/** The delimiters the layout's select offers, each as its description and the select call it;
+ * a profile's other delimiter, any single character, is offered beside them by its own name
+ * (`delimiterName`). */
+export const DELIMITERS: readonly Readonly<{
+  value: Delimiter
+  label: string
+}>[] = [
+  { value: ",", label: "Commas" },
+  { value: ";", label: "Semicolons" },
+  { value: "\t", label: "Tabs" },
+  { value: "|", label: "Bars" },
+]
+
+/** What `delimiter` is called in a profile's description and the layout's select. */
+export function delimiterName(delimiter: Delimiter): string {
+  const known = DELIMITERS.find((each) => each.value === delimiter)
+  return known === undefined ? `Each ${JSON.stringify(delimiter)}` : known.label
 }
 
 /** A new profile, or what it still lacks. */
@@ -49,6 +62,11 @@ export function profileOf(
     ...blank(fields.name, "layout", "Give the profile a name"),
     ...blank(fields.provider, "layout", "Name the provider"),
     ...blank(fields.format, "layout", "Give the timestamp's format"),
+    ...blank(
+      fields.timeZone,
+      "layout",
+      "Type the time zone of the file's times"
+    ),
     ...(columns.kind === "missing" ? columns.missing : []),
     ...(made.kind === "missing" ? made.missing : []),
   ]
@@ -70,8 +88,7 @@ export function profileOf(
       columns: columns.mapping,
       timestamp: {
         format: fields.format.trim(),
-        time_zone:
-          fields.timeZone.trim() === "" ? null : fields.timeZone.trim(),
+        time_zone: fields.timeZone.trim(),
         stamp: fields.stamp,
       },
       timeframe: fields.timeframe,
@@ -89,7 +106,7 @@ export function described(fields: ProfileFields): string {
       : fields.timeZone.trim()
   const timeframe =
     fields.timeframe === "ticks" ? "ticks" : `${fields.timeframe} bars`
-  const delimiter = DELIMITER_LABELS[fields.delimiter].toLowerCase()
+  const delimiter = delimiterName(fields.delimiter).toLowerCase()
   return `${fields.provider.trim()} ${timeframe}: ${delimiter}, ${header}, ${zone}, stamped at the ${fields.stamp}`
 }
 
@@ -103,7 +120,7 @@ export function columnKeys(
 }
 
 /** The roles the table's selects show: those chosen, else what the base's columns give the
- * table's. */
+ * table's, each a role of the profile's timeframe, bars' or ticks', or else not read. */
 export function shownRoles(
   base: ImportProfile,
   fields: ProfileFields,
@@ -112,19 +129,28 @@ export function shownRoles(
   if (fields.roles.kind === "chosen") {
     return fields.roles.roles
   }
-  return rolesOf(base.columns, columnKeys(table, fields.header))
+  const allowed = fields.timeframe === "ticks" ? TICK_ROLES : BAR_ROLES
+  return rolesOf(base.columns, columnKeys(table, fields.header)).map((role) =>
+    allowed.includes(role) ? role : "unused"
+  )
 }
 
 type Columns =
   | Readonly<{ kind: "mapped"; mapping: ColumnMapping }>
   | Readonly<{ kind: "missing"; missing: readonly Missing[] }>
 
+/** A new profile's columns: the base's, while the selects keep them and they still fit, the
+ * profile's records still bars or still ticks and its first row still the base's; else those
+ * the table's selects show, which ask for each role still to choose. */
 function columnsOf(
   base: ImportProfile,
   fields: ProfileFields,
   table: TablePreview | null
 ): Columns {
-  if (fields.roles.kind === "kept") {
+  const fits =
+    (fields.timeframe === "ticks") === (base.timeframe === "ticks") &&
+    fields.header === base.layout.header
+  if (fields.roles.kind === "kept" && fits) {
     return { kind: "mapped", mapping: base.columns }
   }
   if (table === null) {
@@ -140,7 +166,8 @@ function columnsOf(
   }
   const keys = columnKeys(table, fields.header)
   const ticks = fields.timeframe === "ticks"
-  const mapped = mappingOf(fields.roles.roles, keys, ticks, base.columns)
+  const roles = shownRoles(base, fields, table)
+  const mapped = mappingOf(roles, keys, ticks, base.columns)
   if (mapped.kind === "missing") {
     return {
       kind: "missing",
@@ -168,6 +195,7 @@ function newInstrumentOf(instrument: InstrumentDraft): Made {
     ...blank(fields.tickSize, "instrument", "Give its tick size"),
     ...blank(fields.pointValue, "instrument", "Give its point value"),
     ...blank(fields.firstTradeDate, "instrument", "Give its first trade date"),
+    ...businessDaysMissing(fields),
   ]
   if (missing.length > 0) {
     return { kind: "missing", missing }
@@ -201,9 +229,25 @@ function lastTradeRuleOf(
     case "business-days-before-the-25th":
       return {
         kind: "business-days-before-the-25th",
-        business_days: Number(fields.businessDays),
+        business_days: Number(fields.businessDays.trim()),
       }
   }
+}
+
+/** What a last trade some business days before the 25th lacks: how many, a whole number from
+ * 1, as the server takes it. */
+function businessDaysMissing(fields: InstrumentFields): readonly Missing[] {
+  if (fields.lastTradeRule !== "business-days-before-the-25th") {
+    return []
+  }
+  return /^[1-9][0-9]*$/.test(fields.businessDays.trim())
+    ? []
+    : [
+        {
+          card: "instrument",
+          text: "Give its business days before the 25th, a whole number from 1",
+        },
+      ]
 }
 
 function blank(

@@ -204,9 +204,18 @@ function grouped(
   }))
 }
 
-/** A dataset as its folder in the store reads: `ninjatrader/ohlcv-1m/root=ES`. */
-export function datasetFolder(
+/** A dataset as the trader's pages name it, its instrument from its provider, as the dataset's
+ * page is titled, then what it holds: `XES from ninjatrader, 1-minute bars`, or a schema of
+ * records by its name, such as `ES from databento, trades`. */
+export function datasetName(
   dataset: Readonly<{ provider: string; schema_name: string; root: string }>
 ): string {
-  return `${dataset.provider}/${dataset.schema_name}/root=${dataset.root}`
+  const schema = dataset.schema_name
+  const bars = "ohlcv-"
+  const holds = schema.startsWith(bars)
+    ? fidelityLabel(schema.slice(bars.length)).toLowerCase()
+    : schema === "tbbo"
+      ? "TBBO"
+      : schema
+  return `${dataset.root} from ${dataset.provider}, ${holds}`
 }

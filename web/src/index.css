@@ -382,8 +382,13 @@ main[tabindex="-1"]:focus-visible {
   text-transform: none;
 }
 
-/* A file dragged over the import wizard's drop target (step 5.12) gives its dashed line the
-   brand's colour, the target the file lands on. */
+/* The import wizard's drop target (step 5.12) draws its dashed line in a field's border, the
+   boundary a target needs (WCAG 1.4.11), where a hairline would vanish into the control surface;
+   a file dragged over it gives the line the brand's colour, the target the file lands on. */
+[data-slot="file-drop"] {
+  border-color: var(--input);
+}
+
 [data-slot="file-drop"][data-over="true"] {
   border-color: var(--brand);
 }

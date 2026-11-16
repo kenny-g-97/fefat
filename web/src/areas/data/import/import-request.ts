@@ -163,6 +163,27 @@ export function zoneOf(
   }
 }
 
+type OffsetSeen = components["schemas"]["OffsetSeen"]
+
+const POINTS_AT: Readonly<
+  Record<"time zone" | "bar stamp", readonly OffsetSeen["cause"][]>
+> = {
+  "time zone": ["time-zone", "time-zone-or-bar-stamping"],
+  "bar stamp": ["bar-stamping", "time-zone-or-bar-stamping"],
+}
+
+/** What the latest review's offset says under the field it points at (web/DESIGN.md, Forms):
+ * the time zone's, or the bar's timestamp's; none where no offset points there. */
+export function offsetRefusal(
+  offsets: readonly OffsetSeen[],
+  field: "time zone" | "bar stamp"
+): string | null {
+  const offset = offsets.find((each) => POINTS_AT[field].includes(each.cause))
+  return offset === undefined
+    ? null
+    : `The records run ${offset.duration} ${offset.direction} against their calendar`
+}
+
 /** The profile named `name` among `profiles`; a draft names only a listed one. */
 export function listedProfile(
   profiles: readonly ListedProfile[],

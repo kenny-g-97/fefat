@@ -51,8 +51,8 @@ function Bars({ rows }: Readonly<{ rows: BarRows }>) {
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           {[
-            "Opens",
-            "Closes",
+            "Open at",
+            "Close at",
             "Trade date",
             "Contract",
             "Open",
@@ -71,8 +71,8 @@ function Bars({ rows }: Readonly<{ rows: BarRows }>) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((bar) => (
-          <TableRow key={bar.ts_open} className="h-10 hover:bg-muted">
+        {rows.map((bar, at) => (
+          <TableRow key={at} className="h-10 hover:bg-muted">
             <TableCell className={CELL}>{formatInstant(bar.ts_open)}</TableCell>
             <TableCell className={CELL}>
               {formatInstant(bar.ts_close)}
@@ -111,11 +111,8 @@ function Prints({ rows }: Readonly<{ rows: PrintRows }>) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((print) => (
-          <TableRow
-            key={`${print.ts_recv} ${print.price} ${print.size}`}
-            className="h-10 hover:bg-muted"
-          >
+        {rows.map((print, at) => (
+          <TableRow key={at} className="h-10 hover:bg-muted">
             <TableCell className={CELL}>{print.ts_recv}</TableCell>
             <TableCell className={CELL}>{print.trade_date}</TableCell>
             <TableCell className={CELL}>{print.contract}</TableCell>

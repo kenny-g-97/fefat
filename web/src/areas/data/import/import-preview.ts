@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from "react"
+import { useEffect, useReducer, useRef, useState } from "react"
 import {
   type ImportPreviewAnswer,
   type PreviewAsked,
@@ -7,8 +7,9 @@ import {
 
 /** A preview's queue (web/DESIGN.md, Patterns, Live draft): one request in flight, since each
  * starts a runner of the server's that reads the whole file, and the latest draft's next; the
- * last answer stays while a newer one is read, and a failure is kept for the ask it failed.
- * Each ask is its request's JSON, which tells two asks apart. */
+ * last answer stays while a newer one is read, and a failure is kept for the ask it failed until
+ * an answer comes. Each ask is its request's JSON after the number of times the page asked to
+ * read again, which tells two asks apart. */
 export type PreviewQueue = Readonly<{
   inFlight: string | null
   next: string | null
@@ -45,6 +46,7 @@ export function queued(queue: PreviewQueue, change: QueueChange): PreviewQueue {
         ...queue,
         inFlight: null,
         answered: { ask: change.ask, answer: change.answer },
+        failed: null,
       }
     case "failed":
       return {
@@ -79,18 +81,36 @@ export function toSend(queue: PreviewQueue): string | null {
   return settled ? null : next
 }
 
-/** A preview of the latest ask: its answer once read, else the last answer, marked as not the
- * latest's, and whether one is being read; the latest's failure, if it failed. */
-export type LatestPreview = Readonly<{
+/** What the queue shows of the latest ask: its answer once read, else the last answer, marked
+ * as not the latest's, and whether one is being read; the latest's failure, if it failed. */
+export type PreviewState = Readonly<{
   answer: ImportPreviewAnswer | null
   current: boolean
   reading: boolean
   error: Error | null
 }>
 
+export function previewState(
+  queue: PreviewQueue,
+  ask: string | null
+): PreviewState {
+  return {
+    answer: queue.answered?.answer ?? null,
+    current: ask !== null && queue.answered?.ask === ask,
+    reading: queue.inFlight !== null || toSend(queue) !== null,
+    error:
+      ask !== null && queue.failed?.ask === ask ? queue.failed.error : null,
+  }
+}
+
+/** The preview of a draft's latest ask, and the way to read it again, as Try again does after
+ * a failure. */
+export type LatestPreview = PreviewState & Readonly<{ readAgain: () => void }>
+
 /** The preview of `asked`, the latest of a draft, through the queue (`PreviewQueue`). */
 export function useLatestPreview(asked: PreviewAsked | null): LatestPreview {
-  const ask = asked === null ? null : JSON.stringify(asked)
+  const [readings, setReadings] = useState(0)
+  const ask = asked === null ? null : `${readings} ${JSON.stringify(asked)}`
   const [queue, change] = useReducer(queued, EMPTY_QUEUE)
   const asks = useRef(new Map<string, PreviewAsked>())
   useEffect(() => {
@@ -117,10 +137,7 @@ export function useLatestPreview(asked: PreviewAsked | null): LatestPreview {
     )
   }, [sending])
   return {
-    answer: queue.answered?.answer ?? null,
-    current: ask !== null && queue.answered?.ask === ask,
-    reading: queue.inFlight !== null || toSend(queue) !== null,
-    error:
-      ask !== null && queue.failed?.ask === ask ? queue.failed.error : null,
+    ...previewState(queue, ask),
+    readAgain: () => setReadings((count) => count + 1),
   }
 }
