@@ -37,6 +37,9 @@ XES_FIRST = ("2026-02-02", "2026-02-06")
 XES_SECOND = ("2026-02-05", "2026-02-11")
 """The trade dates of the import spec's two exports, which share two sessions (step 5.12)."""
 XES_EXPORT_NAME = "XES 03-26.Last.txt"
+XES_MORE_NAMES = ("XES 06-26.Last.txt", "XES 09-26.Last.txt")
+"""The names of the two more contracts of `XES_FIRST`'s dates, for a round of several files
+(D-102)."""
 """The name NinjaTrader gives an export of XES March 2026, from which its preset reads the
 contract."""
 
@@ -94,8 +97,10 @@ def xes_exports(home: Path) -> None:
     dates `XES_FIRST`, of `XES_SECOND`, which overlaps the first by two sessions, and the first
     again, revised, its last bar one lot more, as an export made before that bar closed differs
     from a later one; each in a folder of its own under the name NinjaTrader gives, stamped at
-    their close in UTC from the tests' generator (`python/tests/generated_minutes.py`); the
-    import spec's files (step 5.12)."""
+    their close in UTC from the tests' generator (`python/tests/generated_minutes.py`); and in
+    the folder `more`, the first's bars as XESM2026 and XESU2026, ten lots each, so that XESH2026
+    keeps the lead of the roll, for a round of several files (D-102); the import spec's files
+    (step 5.12)."""
     import polars as pl
 
     from fefat.config import resolve_paths
@@ -138,6 +143,10 @@ def xes_exports(home: Path) -> None:
         (exports / folder / XES_EXPORT_NAME).write_text(
             "".join(lines), encoding="utf-8", newline="\n"
         )
+    ten_lots = [line.rsplit(";", 1)[0] + ";10\n" for line in written["first"]]
+    (exports / "more").mkdir()
+    for name in XES_MORE_NAMES:
+        (exports / "more" / name).write_text("".join(ten_lots), encoding="utf-8", newline="\n")
     with (home / "config.toml").open("a", encoding="utf-8") as config:
         config.write(f'import_roots = ["{exports.as_posix()}"]\n')
 

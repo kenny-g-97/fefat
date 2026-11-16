@@ -8,6 +8,7 @@ import {
   IMPORT_MS,
   importRoot,
   inBothThemes,
+  MORE,
   READ_MS,
   typed,
   verdict,
@@ -19,8 +20,10 @@ import { screenshot } from "./support/screenshots.ts"
 // page: the seed's second export, which shares two sessions with the first, typed as a path,
 // imports by the saved profile's name alone; the third, the first revised, its last bar one lot
 // more, dropped on the drop target, differs from what FEAT holds, and Take the file's records
-// asks before anything is taken. It types a path of this machine, so it records no clip, and its
-// screenshots mask the path and the roots (D-80).
+// asks before anything is taken. Then a round of several files (D-102): the seed's two more
+// contracts and the revised export, chosen at once, are each reviewed, the two that import as
+// they are go in one job, and the file left is reviewed again. It types a path of this machine,
+// so it records no clip, and its screenshots mask the path and the roots (D-80).
 
 test("the next export imports by the profile alone, and a revised one asks before its records are taken", async ({
   loggedIn: page,
@@ -61,7 +64,7 @@ test("the next export imports by the profile alone, and a revised one asks befor
 
   // The first export revised, dropped on the drop target: its last bar differs from the one
   // FEAT holds, and taking it asks first, counting the stored record that would give way.
-  await page.getByRole("button", { name: "Choose a file instead" }).click()
+  await page.getByRole("button", { name: "Choose files instead" }).click()
   const revised: Readonly<{ bytes: number[]; name: string }> = {
     bytes: [...readFileSync(path.join(root, "revised", EXPORT))],
     name: EXPORT,
@@ -102,5 +105,69 @@ test("the next export imports by the profile alone, and a revised one asks befor
   // The quality card asks for its own report, which the picture waits for.
   await page.waitForLoadState("networkidle")
   await screenshot(page, "import-dataset")
+  expect(errors).toEqual([])
+})
+
+test("several exports import in one round, and the file left is reviewed again", async ({
+  loggedIn: page,
+}) => {
+  test.setTimeout(10 * 60_000)
+  const errors = consoleErrors(page)
+  const root = await importRoot(page)
+  await page.goto("/data/import")
+
+  // Three files at once through the picker, each its own contract, read through the saved
+  // profile; the contract is the files' names', so its field gives way to a note.
+  const picker = page.waitForEvent("filechooser")
+  await page.getByRole("button", { name: "Choose files", exact: true }).click()
+  await (
+    await picker
+  ).setFiles([
+    ...MORE.map((name) => path.join(root, "more", name)),
+    path.join(root, "revised", EXPORT),
+  ])
+  await expect(page.getByTestId("import-chosen")).toContainText(
+    `${MORE[0]} and 2 more files`
+  )
+  await chosen(page, "import-profile", "xes-minutes, yours")
+  await expect(page.getByTestId("several-contracts")).toHaveText(
+    "Each file's name gives its contract."
+  )
+  await expect(page.locator("#import-contract")).toHaveCount(0)
+
+  // Each file's own review, the revised one's records differing from those FEAT holds.
+  await expect(page.getByTestId("review-files-verdict")).toHaveText(
+    "2 of 3 files import as they are",
+    { timeout: READ_MS }
+  )
+  await expect(
+    page.getByText("1 file holds records that differ from the ones FEAT holds")
+  ).toBeVisible()
+  const rows = page.getByTestId("review-file")
+  await expect(rows).toHaveCount(3)
+  const revised = rows.filter({ hasText: EXPORT })
+  await expect(revised).toContainText("Differs")
+  await revised.locator("summary").click()
+  await expect(revised.getByTestId("merge-account")).toContainText(
+    "1 differing"
+  )
+  await expect(page.getByTestId("take-records")).toBeVisible()
+  await inBothThemes(page, "import-several-review")
+
+  // One job imports the two, then the done card counts them and offers the file left.
+  await page.getByTestId("import-run").click()
+  const round = page.getByTestId("round-account")
+  await expect(round).toContainText("2 files imported.", { timeout: IMPORT_MS })
+  await expect(page.getByTestId("import-done")).toContainText(
+    /Imported [\d,]+ records into XES/
+  )
+  await screenshot(page, "import-several-done")
+  await page.getByTestId("review-left").click()
+  await expect(page.getByTestId("import-chosen")).toContainText(EXPORT)
+  await expect(page.getByTestId("several-contracts")).toHaveCount(0)
+  await expect(verdict(page)).toHaveText(
+    "Its records differ from the ones FEAT holds",
+    { timeout: READ_MS }
+  )
   expect(errors).toEqual([])
 })

@@ -4,6 +4,11 @@ import { screenshot } from "./screenshots.ts"
 
 /** The name NinjaTrader gives the seed's exports of XES (`scripts/e2e_server.py`). */
 export const EXPORT = "XES 03-26.Last.txt"
+/** The seed's two more contracts of XES, under `more`, for a round of several files (D-102). */
+export const MORE: readonly [string, string] = [
+  "XES 06-26.Last.txt",
+  "XES 09-26.Last.txt",
+]
 /** How long a preview may take to read a file. */
 export const READ_MS = 60_000
 /** How long an import's job may take. */

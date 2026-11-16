@@ -253,8 +253,9 @@ def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_impo
     tmp_path: Path,
 ) -> None:
     # Step 5.12: the import spec's files, beside the home, under the root config.toml names; the
-    # first, read in Chicago's time zone, runs six hours late, the review the spec corrects; and
-    # the first revised, its last bar one lot more, whose records differ from the first's.
+    # first, read in Chicago's time zone, runs six hours late, the review the spec corrects; the
+    # first revised, its last bar one lot more, whose records differ from the first's; and two
+    # more contracts of the first's dates, ten lots a bar, for a round of several files (D-102).
     e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
 
     paths = resolve_paths(os.environ)
@@ -270,7 +271,13 @@ def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_impo
             instrument_table(store.folder),
             paths.cache_dir,
         )
-        for path, zone in ((first, None), (second, None), (first, "America/Chicago"))
+        for path, zone in (
+            (first, None),
+            (second, None),
+            (first, "America/Chicago"),
+            (exports / "more" / "XES 06-26.Last.txt", None),
+            (exports / "more" / "XES 09-26.Last.txt", None),
+        )
     ]
     dates = [(each.reading.first_trade_date, each.reading.last_trade_date) for each in previews]
     assert dates[:2] == [
@@ -285,3 +292,14 @@ def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_impo
     assert same == bars
     assert revised.rsplit(";", 1)[0] == last.rsplit(";", 1)[0]
     assert int(revised.rsplit(";", 1)[1]) == int(last.rsplit(";", 1)[1]) + 1
+    more = previews[3:]
+    assert [each.reading.contracts for each in more] == [("XESM2026",), ("XESU2026",)]
+    assert [(each.reading.first_trade_date, each.reading.last_trade_date) for each in more] == [
+        dates[0],
+        dates[0],
+    ]
+    assert [each.reading.refusals() for each in more] == [[], []]
+    tens = (exports / "more" / "XES 06-26.Last.txt").read_text().splitlines()
+    assert [line.rsplit(";", 1) for line in tens] == [
+        [line.rsplit(";", 1)[0], "10"] for line in [*bars, last]
+    ]

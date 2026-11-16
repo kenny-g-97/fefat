@@ -35,13 +35,13 @@ test("a new product's export imports once its time zone is corrected", async ({
   await page.goto("/data/import")
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
   await expect(page.getByTestId("import-missing")).toContainText(
-    "Choose a file, or type its path"
+    "Choose files, or type a path"
   )
   await inBothThemes(page, "import-empty")
 
   // The first export, chosen as a trader picks it, through the browser's own picker.
   const picker = page.waitForEvent("filechooser")
-  await page.getByRole("button", { name: "Choose a file", exact: true }).click()
+  await page.getByRole("button", { name: "Choose files", exact: true }).click()
   await (await picker).setFiles(path.join(root, "first", EXPORT))
   await expect(page.getByTestId("import-chosen")).toContainText(EXPORT)
   await expect(page.getByTestId("import-rows")).toContainText("column_1", {
