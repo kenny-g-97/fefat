@@ -37,11 +37,11 @@ XES_FIRST = ("2026-02-02", "2026-02-06")
 XES_SECOND = ("2026-02-05", "2026-02-11")
 """The trade dates of the import spec's two exports, which share two sessions (step 5.12)."""
 XES_EXPORT_NAME = "XES 03-26.Last.txt"
+"""The name NinjaTrader gives an export of XES March 2026, from which its preset reads the
+contract."""
 XES_MORE_NAMES = ("XES 06-26.Last.txt", "XES 09-26.Last.txt")
 """The names of the two more contracts of `XES_FIRST`'s dates, for a round of several files
 (D-102)."""
-"""The name NinjaTrader gives an export of XES March 2026, from which its preset reads the
-contract."""
 
 
 def required(name: str) -> str:

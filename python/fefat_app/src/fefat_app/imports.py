@@ -6,7 +6,9 @@ of several in one round (D-102); what the executor runs, the path the server res
 of the client's text; and what it answers. A
 preview's lists are cut to a few dozen entries beside their totals, and its texts to a few
 hundred characters, since an execution's result holds 1 MiB (`fefat_app.executor.protocol`); an
-import's result holds counts alone, since every job's is listed with the jobs. What a preview
+import's result holds counts alone, since every job's is listed with the jobs, and a
+round's the name of each file it left out with why, the text a file's failed job gives as
+its error. What a preview
 quotes of a file goes to the client that asked, and nowhere else (D-21)."""
 
 from datetime import date
@@ -273,19 +275,22 @@ class RoundFile(FrozenModel):
 
 class ImportJobPayload(FrozenModel):
     """An `import` job's payload: its import, and the upload it reads, which is removed once
-    the import has written; for a round of several files, the files beyond the first, each
-    imported as the first is, its path in place of the first's (D-102)."""
+    the import has written; `in_round` for the files of a round (D-102), the first in `spec`,
+    and the others, each imported as the first is, its path in place of the first's."""
 
     spec: ImportSpec
     upload_id: UUID | None
     others: tuple[RoundFile, ...] = Field(default=(), max_length=FILES_AT_MOST - 1)
+    in_round: bool = False
 
     @model_validator(mode="after")
-    def _files_through_a_profile(self) -> Self:
-        if self.others and not isinstance(self.spec.request, FileRequest):
+    def _a_round_of_files_through_a_profile(self) -> Self:
+        if self.others and not self.in_round:
+            raise ValueError("Expected the files of a round, got other files beside one import.")
+        if self.in_round and not isinstance(self.spec.request, FileRequest):
             raise ValueError(
-                "Expected several files of one profile, got other files beside a "
-                f"{self.spec.request.kind} import."
+                f"Expected a round of files through a profile, got a {self.spec.request.kind} "
+                "import."
             )
         return self
 
@@ -490,12 +495,11 @@ class NotImported(FrozenModel):
 
 class RoundFiles(FrozenModel):
     """What a round did with its files (D-102): those imported, those imported before, and
-    those left out, the first `LISTED_AT_MOST` of them beside their total."""
+    each it left out, which the wizard offers to review again."""
 
     files_imported: int = Field(ge=0)
     files_imported_before: int = Field(ge=0)
-    not_imported: tuple[NotImported, ...] = Field(max_length=LISTED_AT_MOST)
-    not_imported_total: int = Field(ge=0)
+    not_imported: tuple[NotImported, ...] = Field(max_length=FILES_AT_MOST)
 
 
 class ImportedBefore(FrozenModel):

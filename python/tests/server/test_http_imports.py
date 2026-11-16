@@ -207,6 +207,23 @@ def test_several_files_import_in_one_job_with_one_quality_report(
     assert [(uploads_dir / each).exists() for each in ids] == [False, False, True]
 
 
+def test_a_round_of_more_files_than_one_import_takes_is_refused_with_422(
+    client: TestClient, container: Container
+) -> None:
+    # D-102: at most 200 files in one round, each with the upload limit of config.toml.
+    csrf = logged_in(client, container)
+    asked = {
+        "kind": "files",
+        "sources": [{"kind": "path", "path": f"bars {index}.txt"} for index in range(201)],
+        "profile": {"kind": "named", "name": "ninjatrader"},
+    }
+
+    response = client.post("/v1/imports", json=asked, headers=csrf)
+
+    assert response.status_code == 422
+    assert "at most 200 items" in response.text
+
+
 def test_a_file_read_in_the_wrong_time_zone_is_answered_with_its_offset(
     client: TestClient, container: Container
 ) -> None:

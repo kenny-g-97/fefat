@@ -139,7 +139,9 @@ class Imports:
             differing=asked.differing,
         )
         spec = ImportSpec(request=request, limits=IMPORT_LIMITS)
-        return ImportJobPayload(spec=spec, upload_id=first.upload_id, others=tuple(others))
+        return ImportJobPayload(
+            spec=spec, upload_id=first.upload_id, others=tuple(others), in_round=True
+        )
 
     def _request(self, asked: PreviewAsked) -> TableRequest | FileRequest | BatchRequest:
         if isinstance(asked, TableAsked):

@@ -13,16 +13,18 @@ advance_past_stopping`), so that neither the worker nor the reaper ends an impor
 but for a request read in the moment between the runner's report and the worker's. A refusal of
 the SDK ends the job failed in its words, and a failure once the import wrote says what was
 written and how to finish it, with the end of the runner's error, where its exception is named.
-The result holds counts alone, since every job's is listed with the jobs.
+The result holds counts alone, since every job's is listed with the jobs, and a round's the
+name of each file it left out with why.
 
-A round of several files (D-102) imports them one after another, each in a runner of its own: a
-file the SDK refuses, or whose runner fails or runs out of time, is left out with why, and the
-round goes on. Until a file writes, the files read take the job to `WRITING_PERCENT`, and a
+A round of several files (D-102) imports them one after another, each in a runner of its own: a file
+the SDK refuses, or whose runner fails, runs out of time, or cannot start, is left out with why, and
+the round goes on. Until a file writes, the files read take the job to `WRITING_PERCENT`, and a
 request to stop stops the round between two files; from the first file that writes, the round is
-past stopping, and the files done take it on to `CHECKING_PERCENT`. The quality reports are
-written once, at the round's end, of every product a file wrote, and only the uploads of the
-files imported, now or before, are removed. A round of which some file was left out and none
-wrote fails with the first file's reason, its uploads kept for another round."""
+past stopping, and the files done take it on to `CHECKING_PERCENT`. The quality reports are written
+once, at the round's end, of every product a file wrote, and only the uploads of the files imported,
+now or before, are removed. A round of which some file was left out and none wrote fails with the
+reason of a file that stopped while it wrote, else of the first left out, its uploads kept for
+another round; one whose reports fail says how many files it imported."""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -38,7 +40,6 @@ from fefat_app.imports import (
     CHECKING_MESSAGE,
     CHECKING_PERCENT,
     LINE_CHARS,
-    LISTED_AT_MOST,
     WRITING_PERCENT,
     DatasetWritten,
     ImportAnswer,
@@ -89,7 +90,7 @@ class ImportJobs:
         the job ends with. The upload stays where the import was refused or did not end, for the
         import to be run again, and goes once it wrote, after its reports."""
         job = ImportJobPayload.model_validate(payload)
-        if job.others:
+        if job.in_round:
             return self._round(job, progress)
         progress.advance(0, READING_MESSAGE)
         following = _Stages(progress)
@@ -118,17 +119,12 @@ class ImportJobs:
         left = [answer for answer in answers if isinstance(answer, NotImported)]
         wrote = [answer for answer in answers if isinstance(answer, ImportWrote)]
         if left and not wrote:
-            first = left[0]
-            raise ExecutionFailedError(
-                f"Expected a file imported, got {len(left)} of the {len(files)} files not "
-                f"imported. {first.file_name}: {first.message}"
-            )
+            raise ExecutionFailedError(_none_imported(left, len(files)))
         counts = {
             "round": RoundFiles(
                 files_imported=len(wrote),
                 files_imported_before=len(answers) - len(wrote) - len(left),
-                not_imported=tuple(left[:LISTED_AT_MOST]),
-                not_imported_total=len(left),
+                not_imported=tuple(left),
             ).model_dump(mode="json")
         }
         try:
@@ -136,7 +132,7 @@ class ImportJobs:
                 return {**ImportedBefore().model_dump(mode="json"), **counts}
             progress.advance(CHECKING_PERCENT, CHECKING_MESSAGE)
             summed = _summed(wrote)
-            reports = self._reports(summed, "The files were imported")
+            reports = self._reports(summed, _imported(len(wrote), len(files), left))
             return {**summed.model_dump(mode="json"), "reports": reports, **counts}
         finally:
             for upload_id, answer in answered:
@@ -207,13 +203,14 @@ class _Round:
     wrote: bool = False
 
     def imported(self, executor: Executor, spec: ImportSpec, upload_id: UUID | None) -> FileAnswer:
-        """What the round's next file, `spec`'s, gave: a refusal, or a failure or a timeout of
-        its runner, leaves it out with why, which says whether it stopped while it wrote."""
+        """What the round's next file, `spec`'s, gave: a refusal, or a failure, a timeout, or a
+        refused start of its runner, leaves it out with why, which keeps its start and says whether
+        the file stopped while it wrote."""
         self.writing = False
         self.progress.advance(self._percent(), f"Reading {self._file()}")
         try:
             answer = _answer(executor, spec, self.report, self.progress.check)
-        except (ExecutionFailedError, ExecutionTimedOutError) as failed:
+        except (ExecutionFailedError, ExecutionTimedOutError, OSError) as failed:
             answer = RefusedImport(message=_last_line(str(failed)))
         self.done += 1
         if not isinstance(answer, RefusedImport):
@@ -221,7 +218,7 @@ class _Round:
         return NotImported(
             upload_id=upload_id,
             file_name=spec.request.path.name,
-            message=_said(answer.message, self.writing)[:LINE_CHARS],
+            message=_said(answer.message[:LINE_CHARS], self.writing)[:LINE_CHARS],
         )
 
     def report(self, reported: ExecutionProgress) -> None:
@@ -245,7 +242,7 @@ class _Round:
         return WRITING_PERCENT + (CHECKING_PERCENT - WRITING_PERCENT) * self.done / self.files
 
     def _file(self) -> str:
-        return f"file {self.done + 1} of {self.files}"
+        return "the file" if self.files == 1 else f"file {self.done + 1} of {self.files}"
 
 
 def _answer(
@@ -256,6 +253,28 @@ def _answer(
     if not isinstance(output, ImportOutput):
         raise ValueError(f"Expected the output of an import, got that of a {output.kind}.")
     return output.answer
+
+
+def _imported(wrote: int, files: int, left: list[NotImported]) -> str:
+    """How many of a round's `files` were imported, and which were left out, for the error of
+    reports that failed, since a failed job gives no result."""
+    if files == 1:
+        return "The file was imported"
+    imported = f"{wrote} of the {files} files were imported"
+    if not left:
+        return imported
+    return f"{imported} and {len(left)} left out, the first {left[0].file_name}"
+
+
+def _none_imported(left: list[NotImported], files: int) -> str:
+    """Why a round that wrote nothing failed: the file that stopped while it wrote, which
+    importing it again finishes, else the first file left out."""
+    stopped = [each for each in left if each.message.startswith(STOPPED_WHILE_WRITING)]
+    named = (stopped or left)[0]
+    return (
+        f"Expected a file imported, got {len(left)} of the {files} files not imported. "
+        f"{named.file_name}: {named.message}"
+    )
 
 
 def _said(message: str, writing: bool) -> str:
