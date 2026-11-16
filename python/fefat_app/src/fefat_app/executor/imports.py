@@ -44,12 +44,14 @@ from fefat_app.executor.protocol import ERROR_CHARS
 from fefat_app.imports import (
     BATCH_LINES,
     CELL_CHARS,
+    CHECKING_MESSAGE,
     CHECKING_PERCENT,
     FIRST_RECORDS,
     LINE_CHARS,
     LISTED_AT_MOST,
     TABLE_COLUMNS,
     TABLE_ROWS,
+    WRITING_MESSAGE,
     WRITING_PERCENT,
     BarSeen,
     BatchSeen,
@@ -77,8 +79,8 @@ from fefat_app.imports import (
 )
 
 STAGES = {
-    ImportStage.FILE_READ: (WRITING_PERCENT, "Writing the partitions"),
-    ImportStage.PARTITIONS_WRITTEN: (CHECKING_PERCENT, "Checking the quality of what was imported"),
+    ImportStage.FILE_READ: (WRITING_PERCENT, WRITING_MESSAGE),
+    ImportStage.PARTITIONS_WRITTEN: (CHECKING_PERCENT, CHECKING_MESSAGE),
 }
 """The percent and the message of each stage an import reaches, the message saying what it does
 next."""

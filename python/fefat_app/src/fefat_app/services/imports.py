@@ -1,7 +1,8 @@
 """The import wizard (step 5.12, `01-architecture.md` section 7, D-93): the profiles it offers, the
 presets and those saved; the files the browser sends, kept as uploads, their names checked first
 (`fefat_app.services.uploads`); a preview, of a file's table or of what its import would do, run
-by the executor and answered as it comes; and the import, queued as an `import` job. A path is
+by the executor and answered as it comes; and the import, of one file or batch, or of several
+files in one round through one profile (D-102), queued as an `import` job. A path is
 resolved under the import roots (`fefat_app.import_sources`), and an upload's file found by its
 id, before the executor reads either; a profile a request names is looked up among the presets
 and the saved profiles alone, never read as a path, as `load_profile` reads a name ending in
@@ -11,6 +12,7 @@ and is kept once its import has written."""
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 from fefat.config import FefatPaths, Settings
 from fefat.market.importers.profiles import (
@@ -33,6 +35,7 @@ from fefat_app.imports import (
     BatchRequest,
     FileImportAsked,
     FileRequest,
+    FilesImportAsked,
     ImportAsked,
     ImportJobPayload,
     ImportPreviewAnswer,
@@ -48,6 +51,7 @@ from fefat_app.imports import (
     ProfileRefusedError,
     ReadKind,
     RefusedImport,
+    RoundFile,
     TableAsked,
     TableRequest,
     UploadedFile,
@@ -108,12 +112,34 @@ class Imports:
         return _preview_answer(self.executor.run(spec, _unreported, keep_running))
 
     def start(self, asked: ImportAsked) -> Job:
-        """Queue the import `asked` as an `import` job, its path and its profile checked
+        """Queue the import `asked` as an `import` job, its paths and its profile checked
         first."""
-        spec = ImportSpec(request=self._import_request(asked), limits=IMPORT_LIMITS)
-        upload_id = asked.source.upload_id if isinstance(asked.source, UploadSource) else None
-        payload = ImportJobPayload(spec=spec, upload_id=upload_id)
+        if isinstance(asked, FilesImportAsked):
+            payload = self._round(asked)
+        else:
+            spec = ImportSpec(request=self._import_request(asked), limits=IMPORT_LIMITS)
+            payload = ImportJobPayload(spec=spec, upload_id=_upload_id(asked.source))
         return self.jobs.start(JobKind.IMPORT, payload.model_dump(mode="json"))
+
+    def _round(self, asked: FilesImportAsked) -> ImportJobPayload:
+        """A round's payload (D-102): the profile resolved once, the first file's import its
+        spec, each other file's path and upload beside it."""
+        profile, keep = self._profile(asked.profile)
+        first, *others = (
+            RoundFile(path=self._path(source, ReadKind.FILE), upload_id=_upload_id(source))
+            for source in asked.sources
+        )
+        request = FileRequest(
+            path=first.path,
+            profile=profile,
+            keep_profile=keep,
+            contract=None,
+            root=asked.root,
+            time_zone=asked.time_zone,
+            differing=asked.differing,
+        )
+        spec = ImportSpec(request=request, limits=IMPORT_LIMITS)
+        return ImportJobPayload(spec=spec, upload_id=first.upload_id, others=tuple(others))
 
     def _request(self, asked: PreviewAsked) -> TableRequest | FileRequest | BatchRequest:
         if isinstance(asked, TableAsked):
@@ -151,7 +177,12 @@ class Imports:
         payloads = (
             ImportJobPayload.model_validate(job.payload) for job in self.jobs.active(JobKind.IMPORT)
         )
-        return frozenset(str(each.upload_id) for each in payloads if each.upload_id is not None)
+        return frozenset(
+            str(upload_id)
+            for each in payloads
+            for _, upload_id in each.files()
+            if upload_id is not None
+        )
 
     def _profile(self, choice: ProfileChoice) -> tuple[ImportProfile, bool]:
         """The profile `choice` names or gives, and whether its import keeps it: a profile
@@ -177,6 +208,11 @@ class Imports:
         if name in saved:
             return saved[name]
         raise NoSuchProfileError(name, [*presets, *saved])
+
+
+def _upload_id(source: ImportSource) -> UUID | None:
+    """The upload `source` names, if it names one."""
+    return source.upload_id if isinstance(source, UploadSource) else None
 
 
 def _preview_answer(result: ExecutionResult) -> ImportPreviewAnswer:

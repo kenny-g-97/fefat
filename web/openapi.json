@@ -2247,6 +2247,65 @@
         "title": "FileSeen",
         "type": "object"
       },
+      "FilesImportAsked": {
+        "additionalProperties": false,
+        "description": "Several of a trader's files in one import (D-102), through one profile, as several\ncommands of `fefat data import file` with the same options would take them: no contract,\nsince each file's name gives its own; at most `FILES_AT_MOST`.",
+        "properties": {
+          "differing": {
+            "$ref": "#/components/schemas/DifferingRecords",
+            "default": "refuse"
+          },
+          "kind": {
+            "const": "files",
+            "default": "files",
+            "title": "Kind",
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfileChoice"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ImportSource"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          }
+        },
+        "required": [
+          "sources",
+          "profile"
+        ],
+        "title": "FilesImportAsked",
+        "type": "object"
+      },
       "FillPriceDifference": {
         "additionalProperties": false,
         "description": "A trade entered at one decision on one side in the baseline and in a rerun: how far the\nrerun's entry price and its exits' average price lie from the baseline's, in ticks, the\nrerun's less the baseline's.",
@@ -8114,7 +8173,7 @@
     },
     "/v1/imports": {
       "post": {
-        "description": "Queue the import as an `import` job, its file and its profile checked first; its stages\nand its end come with the job's stream.",
+        "description": "Queue the import as an `import` job, of one file or batch, or of several files in one\nround (D-102), its files and its profile checked first; its stages and its end come with\nthe job's stream.",
         "operationId": "start_import_v1_imports_post",
         "requestBody": {
           "content": {
@@ -8123,13 +8182,17 @@
                 "discriminator": {
                   "mapping": {
                     "databento": "#/components/schemas/BatchImportAsked",
-                    "file": "#/components/schemas/FileImportAsked"
+                    "file": "#/components/schemas/FileImportAsked",
+                    "files": "#/components/schemas/FilesImportAsked"
                   },
                   "propertyName": "kind"
                 },
                 "oneOf": [
                   {
                     "$ref": "#/components/schemas/FileImportAsked"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FilesImportAsked"
                   },
                   {
                     "$ref": "#/components/schemas/BatchImportAsked"

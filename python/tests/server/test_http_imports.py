@@ -172,6 +172,41 @@ def test_a_saved_profile_imports_a_second_file_of_its_layout_without_any_mapping
     assert stored_bars() == len(lines)
 
 
+def test_several_files_import_in_one_job_with_one_quality_report(
+    client: TestClient, container: Container, tmp_path: Path
+) -> None:
+    # D-102: NinjaTrader writes a file per contract, so the files go in one job, whose result is
+    # the server's sum; a file left out keeps its upload, and says why.
+    lines = sample_lines("ninjatrader")
+    bars = len(lines)
+    june = written_export(tmp_path / "chosen", "ES 06-26.Last.txt", lines)
+    unnamed = written_export(tmp_path / "chosen", "bars.txt", lines)
+    csrf = logged_in(client, container)
+    ids = [uploaded(client, csrf, path) for path in (NINJATRADER_SAMPLE, june, unnamed)]
+    asked = {
+        "kind": "files",
+        "sources": [{"kind": "upload", "upload_id": each} for each in ids],
+        "profile": {"kind": "named", "name": "ninjatrader"},
+    }
+
+    started = client.post("/v1/imports", json=asked, headers=csrf)
+    job = ended(client, started.json()["id"])
+
+    assert started.status_code == 202, started.text
+    assert job["status"] == "succeeded", job["error"]
+    result = job["result"]
+    (written,) = result["datasets"]
+    assert written["dataset"] == ES_MINUTES
+    assert written["records_added"] == stored_bars() == 2 * bars
+    assert [report["root"] for report in result["reports"]] == ["ES"]
+    assert (result["round"]["files_imported"], result["round"]["files_imported_before"]) == (2, 0)
+    (left,) = result["round"]["not_imported"]
+    assert (left["upload_id"], left["file_name"]) == (ids[2], "bars.txt")
+    assert "Expected the contract of the records of bars.txt" in left["message"]
+    uploads_dir = resolve_paths(os.environ).uploads_dir
+    assert [(uploads_dir / each).exists() for each in ids] == [False, False, True]
+
+
 def test_a_file_read_in_the_wrong_time_zone_is_answered_with_its_offset(
     client: TestClient, container: Container
 ) -> None:

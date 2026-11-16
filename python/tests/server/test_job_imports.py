@@ -18,6 +18,7 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 import fefat_app.jobs.imports as import_jobs
 from export_samples import (
@@ -30,6 +31,7 @@ from export_samples import (
 from fefat.config import resolve_paths
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import keep_profile
+from fefat.market.layout import Dataset
 from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
@@ -48,8 +50,12 @@ from fefat_app.executor.protocol import ERROR_CHARS
 from fefat_app.executor.runner_process import leftovers_removed
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.imports import (
+    CHECKING_MESSAGE,
     CHECKING_PERCENT,
+    WRITING_MESSAGE,
     WRITING_PERCENT,
+    BatchRequest,
+    DatasetWritten,
     FileRequest,
     ImportedBefore,
     ImportJobPayload,
@@ -57,6 +63,7 @@ from fefat_app.imports import (
     ImportSpec,
     ImportWrote,
     RefusedImport,
+    RoundFile,
 )
 from fefat_app.job_models import Job, JobKind, JobStatus, job_stream
 from fefat_app.jobs.catalog_sync import written_report
@@ -73,6 +80,23 @@ from test_http_imports import refused_in_this_process
 
 WORKER = 4242
 NINJATRADER_SAMPLE = SAMPLES["ninjatrader"][0]
+TEN_BARS_WRITTEN = ImportWrote(
+    datasets=(
+        DatasetWritten(
+            dataset=Dataset.model_validate(
+                {"provider": "ninjatrader", "schema_name": "ohlcv-1m", "root": "ES"}
+            ),
+            records_added=10,
+            records_held=0,
+            records_taken=0,
+            new_sessions=1,
+        ),
+    ),
+    instrument_saved=False,
+    profile_kept=False,
+    profile_refusal=None,
+)
+"""What a fake runner writes of each file it imports."""
 
 
 def an_import(
@@ -80,9 +104,10 @@ def an_import(
     path: Path,
     upload_id: UUID | None = None,
     time_zone: str | None = None,
+    others: tuple[RoundFile, ...] = (),
 ) -> Job:
     """A queued `import` job of the file `path` with the NinjaTrader preset, read in
-    `time_zone` where one is given."""
+    `time_zone` where one is given, and of the `others` in the same round."""
     request = FileRequest(
         path=path,
         profile=PRESETS["ninjatrader"],
@@ -93,9 +118,21 @@ def an_import(
         differing=DifferingRecords.REFUSE,
     )
     payload = ImportJobPayload(
-        spec=ImportSpec(request=request, limits=IMPORT_LIMITS), upload_id=upload_id
+        spec=ImportSpec(request=request, limits=IMPORT_LIMITS), upload_id=upload_id, others=others
     )
     return job_records.add(JobKind.IMPORT, payload.model_dump(mode="json"), 3, STARTED_AT)
+
+
+def a_round(job_records: JobTables, *exports: Path) -> tuple[Job, list[UUID]]:
+    """A queued `import` job of `exports`, each kept as an upload, in one round (D-102), and
+    the uploads' ids."""
+    uploads_dir = resolve_paths(os.environ).uploads_dir
+    kept = [kept_upload(export) for export in exports]
+    first, *others = (
+        RoundFile(path=uploads_dir / str(upload) / export.name, upload_id=upload)
+        for export, upload in zip(exports, kept, strict=True)
+    )
+    return an_import(job_records, first.path, first.upload_id, others=tuple(others)), kept
 
 
 def started(job_records: JobTables, job: Job) -> Job:
@@ -412,3 +449,207 @@ def test_a_report_that_fails_once_the_import_wrote_says_the_file_was_imported(
         the_import_jobs(executor).run(job.payload, JobProgress(job_records, job.id, WORKER))
 
     assert Store(resolve_paths(os.environ).data_dir).list_datasets() != ()
+
+
+@dataclass(frozen=True)
+class AnswersEachFile:
+    """A runner that answers each file of a round by its name: it writes those of `writes`,
+    reporting its stages as the importer does; it fails once it writes for those of `fails`;
+    and it refuses the others before it reads them."""
+
+    writes: tuple[str, ...] = ()
+    fails: tuple[str, ...] = ()
+
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
+        assert isinstance(spec, ImportSpec)
+        name = spec.request.path.name
+        if name not in (*self.writes, *self.fails):
+            refused = RefusedImport(message=f"Expected the contract of the records of {name}.")
+            return ExecutionSucceeded(output=ImportOutput(answer=refused))
+        report(ExecutionProgress(percent=WRITING_PERCENT, message=WRITING_MESSAGE, details={}))
+        if name in self.fails:
+            error = "Traceback (most recent call last):\nOSError: the disk is full"
+            return ExecutionFailed(error=error, stdout_tail="")
+        report(ExecutionProgress(percent=CHECKING_PERCENT, message=CHECKING_MESSAGE, details={}))
+        return ExecutionSucceeded(output=ImportOutput(answer=TEN_BARS_WRITTEN))
+
+    def close(self) -> None:
+        """Keeps no process."""
+
+
+@dataclass(frozen=True)
+class AskedToStopAsTheFirstIsRefused:
+    """A runner that refuses each file it is given, recorded in `given`, the round asked to stop
+    as it refuses the first."""
+
+    job_records: JobTables
+    job_id: str
+    given: list[str]
+
+    def run(
+        self, spec: ExecutionSpec, report: ProgressReport, check: StopCheck = keep_running
+    ) -> ExecutionResult:
+        assert isinstance(spec, ImportSpec)
+        self.given.append(spec.request.path.name)
+        self.job_records.request_cancel(self.job_id, STARTED_AT, stoppable_below=WRITING_PERCENT)
+        refused = RefusedImport(message="Expected the contract of the records.")
+        return ExecutionSucceeded(output=ImportOutput(answer=refused))
+
+    def close(self) -> None:
+        """Keeps no process."""
+
+
+def reports_recorded(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """The products whose quality report an import job writes, each recorded in place of its
+    report."""
+    recorded: list[tuple[str, str]] = []
+
+    def recording(
+        store: Store, reports_dir: Path, cache_dir: Path, provider: str, root: str
+    ) -> dict[str, Any]:
+        recorded.append((provider, root))
+        return {"provider": provider, "root": root}
+
+    monkeypatch.setattr(import_jobs, "written_report", recording)
+    return recorded
+
+
+def exports(folder: Path, *names: str) -> list[Path]:
+    """The sample's lines written as an export under each of `names`."""
+    return [written_export(folder, name, sample_lines("ninjatrader")) for name in names]
+
+
+def test_a_round_reads_and_writes_its_files_in_turn_then_checks_their_quality_once(
+    job_records: JobTables, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # D-102: until a file writes, the files read take the round to 40 %, then the files done to
+    # 80 %, each runner's later stages left out; the reports are written once, at its end.
+    checked = reports_recorded(monkeypatch)
+    march, june = exports(tmp_path, "ES 03-26.Last.txt", "ES 06-26.Last.txt")
+    queued, _ = a_round(job_records, march, june)
+    job = started(job_records, queued)
+
+    result = the_import_jobs(AnswersEachFile(writes=(march.name, june.name))).run(
+        job.payload, JobProgress(job_records, job.id, WORKER)
+    )
+
+    events = job_records.events_after(job_stream(job.id), 0, 100)
+    assert [(each.said["percent"], each.said["message"]) for each in events[2:]] == [
+        (0.0, "Reading file 1 of 2"),
+        (WRITING_PERCENT, "Writing file 1 of 2"),
+        (60.0, "Reading file 2 of 2"),
+        (60.0, "Writing file 2 of 2"),
+        (CHECKING_PERCENT, CHECKING_MESSAGE),
+    ]
+    (written,) = result["datasets"]
+    assert written["records_added"] == 20
+    assert result["round"] == {
+        "files_imported": 2,
+        "files_imported_before": 0,
+        "not_imported": [],
+        "not_imported_total": 0,
+    }
+    assert checked == [("ninjatrader", "ES")]
+
+
+def test_a_round_asked_to_stop_between_two_files_before_one_writes_stops_there(
+    job_records: JobTables, tmp_path: Path
+) -> None:
+    # D-102: until a file of the round writes, a request to stop stops it between two files.
+    march, june = exports(tmp_path, "ES 03-26.Last.txt", "ES 06-26.Last.txt")
+    queued, uploads = a_round(job_records, march, june)
+    job = started(job_records, queued)
+    given: list[str] = []
+
+    with pytest.raises(JobCancelledError, match="asked to stop"):
+        the_import_jobs(AskedToStopAsTheFirstIsRefused(job_records, job.id, given)).run(
+            job.payload, JobProgress(job_records, job.id, WORKER)
+        )
+
+    assert given == [march.name]
+    uploads_dir = resolve_paths(os.environ).uploads_dir
+    assert all((uploads_dir / str(upload)).exists() for upload in uploads)
+
+
+def test_a_file_the_round_could_not_import_is_left_out_with_why_and_keeps_its_upload(
+    job_records: JobTables, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # D-102: a file refused, or whose runner fails, takes no other with it; only a file that
+    # wrote is said to have stopped while it wrote, and only the files imported lose their
+    # uploads.
+    reports_recorded(monkeypatch)
+    march, june, unnamed, september = exports(
+        tmp_path, "ES 03-26.Last.txt", "ES 06-26.Last.txt", "bars.txt", "ES 09-26.Last.txt"
+    )
+    queued, uploads = a_round(job_records, march, june, unnamed, september)
+    job = started(job_records, queued)
+    runner = AnswersEachFile(writes=(march.name, september.name), fails=(june.name,))
+
+    result = the_import_jobs(runner).run(job.payload, JobProgress(job_records, job.id, WORKER))
+
+    assert (result["round"]["files_imported"], result["round"]["not_imported_total"]) == (2, 2)
+    assert result["datasets"][0]["records_added"] == 20
+    failed, refused = result["round"]["not_imported"]
+    assert (failed["upload_id"], failed["file_name"]) == (str(uploads[1]), june.name)
+    assert failed["message"].startswith(STOPPED_WHILE_WRITING)
+    assert failed["message"].endswith("OSError: the disk is full")
+    assert (refused["upload_id"], refused["file_name"]) == (str(uploads[2]), unnamed.name)
+    assert refused["message"] == "Expected the contract of the records of bars.txt."
+    uploads_dir = resolve_paths(os.environ).uploads_dir
+    assert [(uploads_dir / str(upload)).exists() for upload in uploads] == [
+        False,
+        True,
+        True,
+        False,
+    ]
+
+
+def test_a_round_of_which_no_file_was_imported_fails_with_the_first_reason_and_keeps_uploads(
+    job_records: JobTables, tmp_path: Path
+) -> None:
+    # D-102: a round that imported nothing fails as one file's import does, its files kept for
+    # another round.
+    unnamed, other = exports(tmp_path, "bars.txt", "more bars.txt")
+    queued, uploads = a_round(job_records, unnamed, other)
+    job = started(job_records, queued)
+
+    with pytest.raises(ExecutionFailedError) as failed:
+        the_import_jobs(AnswersEachFile()).run(
+            job.payload, JobProgress(job_records, job.id, WORKER)
+        )
+
+    said = str(failed.value)
+    assert "2 of the 2 files not imported" in said
+    assert said.endswith("bars.txt: Expected the contract of the records of bars.txt.")
+    uploads_dir = resolve_paths(os.environ).uploads_dir
+    assert all((uploads_dir / str(upload)).exists() for upload in uploads)
+
+
+def test_fefat_up_keeps_the_uploads_of_every_file_of_a_queued_round(
+    job_records: JobTables, container: Container, tmp_path: Path
+) -> None:
+    # D-102: the uploads of a round's other files are its too.
+    paths = resolve_paths(os.environ)
+    _, kept = a_round(job_records, *exports(tmp_path, "ES 03-26.Last.txt", "ES 06-26.Last.txt"))
+    left = kept_upload(NINJATRADER_SAMPLE)
+    two_days_ago = time.time() - 2 * 24 * 3600
+    for upload in (*kept, left):
+        os.utime(paths.uploads_dir / str(upload), (two_days_ago, two_days_ago))
+
+    leftovers_removed(paths.uploads_dir, container.imports.uploads_of_active_imports())
+
+    assert sorted(path.name for path in paths.uploads_dir.iterdir()) == sorted(map(str, kept))
+
+
+def test_other_files_are_refused_beside_a_databento_batch() -> None:
+    # D-102: a round's files share one profile, which a batch has none of.
+    batch = BatchRequest(path=Path("batch"), differing=DifferingRecords.REFUSE)
+
+    with pytest.raises(ValidationError, match="Expected several files of one profile"):
+        ImportJobPayload(
+            spec=ImportSpec(request=batch, limits=IMPORT_LIMITS),
+            upload_id=None,
+            others=(RoundFile(path=Path("more.dbn"), upload_id=None),),
+        )

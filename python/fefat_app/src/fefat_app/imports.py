@@ -1,8 +1,9 @@
 """The import wizard's asks and answers (step 5.12, `01-architecture.md` section 7, D-93, D-101):
 a file chosen in the browser and kept as an upload, or a path under the import roots of
 `config.toml`; a profile named, a preset or one saved, or given whole, as the wizard builds one;
-what is asked, a file's table, what its import would do, or the import itself; what the executor
-runs, the path the server resolved in place of the client's text; and what it answers. A
+what is asked, a file's table, what its import would do, or the import itself, of one file or
+of several in one round (D-102); what the executor runs, the path the server resolved in place
+of the client's text; and what it answers. A
 preview's lists are cut to a few dozen entries beside their totals, and its texts to a few
 hundred characters, since an execution's result holds 1 MiB (`fefat_app.executor.protocol`); an
 import's result holds counts alone, since every job's is listed with the jobs. What a preview
@@ -11,10 +12,10 @@ quotes of a file goes to the client that asked, and nowhere else (D-21)."""
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from fefat.market.calendar_offset import OffsetCause
 from fefat.market.importers.partition_merge import DifferingRecords
@@ -43,12 +44,19 @@ PATH_CHARS = 4096
 """The longest path a client may type."""
 UPLOAD_RECORD_NAME = "upload.json"
 """The record of a kept upload, beside its file, a name no upload may take."""
+FILES_AT_MOST = 200
+"""How many files one import takes in a round (D-102), each with the upload limit of
+`config.toml`."""
 WRITING_PERCENT = 40.0
 """An import job's progress once its file is read and it writes: a request to stop is refused
 from here on, since a stopped import is finished only by running it again (ADR-0021)."""
 CHECKING_PERCENT = 80.0
 """An import job's progress once its partitions are written, while it writes the quality
 reports of what it imported."""
+WRITING_MESSAGE = "Writing the partitions"
+"""An import job's message from its file read, as it writes."""
+CHECKING_MESSAGE = "Checking the quality of what was imported"
+"""An import job's message once its partitions are written."""
 
 type Capped = Annotated[str, Field(max_length=LINE_CHARS)]
 
@@ -69,10 +77,12 @@ class ProfileChoiceKind(StrEnum):
 
 class ReadKind(StrEnum):
     """What a preview or an import reads: a file's table, before a profile maps it, a trader's
-    own file through a profile, or a Databento batch download or DBN file."""
+    own file through a profile, several of them in one round through one profile, which an
+    import alone takes (D-102), or a Databento batch download or DBN file."""
 
     TABLE = "table"
     FILE = "file"
+    FILES = "files"
     DATABENTO = "databento"
 
 
@@ -168,6 +178,19 @@ class FileImportAsked(FrozenModel):
     differing: DifferingRecords = DifferingRecords.REFUSE
 
 
+class FilesImportAsked(FrozenModel):
+    """Several of a trader's files in one import (D-102), through one profile, as several
+    commands of `fefat data import file` with the same options would take them: no contract,
+    since each file's name gives its own; at most `FILES_AT_MOST`."""
+
+    kind: Literal[ReadKind.FILES] = ReadKind.FILES
+    sources: tuple[ImportSource, ...] = Field(min_length=1, max_length=FILES_AT_MOST)
+    profile: ProfileChoice
+    root: FolderName | None = None
+    time_zone: str | None = Field(default=None, min_length=1, max_length=64)
+    differing: DifferingRecords = DifferingRecords.REFUSE
+
+
 class BatchImportAsked(FrozenModel):
     """A Databento batch download folder or DBN file, by its path, and what to do with records
     that differ from the store's."""
@@ -180,7 +203,9 @@ class BatchImportAsked(FrozenModel):
 type PreviewAsked = Annotated[
     TableAsked | FileImportAsked | BatchImportAsked, Field(discriminator="kind")
 ]
-type ImportAsked = Annotated[FileImportAsked | BatchImportAsked, Field(discriminator="kind")]
+type ImportAsked = Annotated[
+    FileImportAsked | FilesImportAsked | BatchImportAsked, Field(discriminator="kind")
+]
 
 
 class TableRequest(FrozenModel):
@@ -238,12 +263,41 @@ class ImportSpec(FrozenModel):
     limits: ExecutionLimits
 
 
+class RoundFile(FrozenModel):
+    """A file of a round (D-102): the path the server resolved, and the upload it reads, if it
+    is one."""
+
+    path: Path
+    upload_id: UUID | None
+
+
 class ImportJobPayload(FrozenModel):
     """An `import` job's payload: its import, and the upload it reads, which is removed once
-    the import has written."""
+    the import has written; for a round of several files, the files beyond the first, each
+    imported as the first is, its path in place of the first's (D-102)."""
 
     spec: ImportSpec
     upload_id: UUID | None
+    others: tuple[RoundFile, ...] = Field(default=(), max_length=FILES_AT_MOST - 1)
+
+    @model_validator(mode="after")
+    def _files_through_a_profile(self) -> Self:
+        if self.others and not isinstance(self.spec.request, FileRequest):
+            raise ValueError(
+                "Expected several files of one profile, got other files beside a "
+                f"{self.spec.request.kind} import."
+            )
+        return self
+
+    def files(self) -> tuple[tuple[ImportSpec, UUID | None], ...]:
+        """Each file's import and the upload it reads: the first's, then each other's."""
+        others = ((self._spec_of(other.path), other.upload_id) for other in self.others)
+        return ((self.spec, self.upload_id), *others)
+
+    def _spec_of(self, path: Path) -> ImportSpec:
+        """The first file's import, of the file at `path`."""
+        request = self.spec.request.model_copy(update={"path": path})
+        return self.spec.model_copy(update={"request": request})
 
 
 class TablePreview(FrozenModel):
@@ -424,6 +478,24 @@ class ImportWrote(FrozenModel):
     instrument_saved: bool
     profile_kept: bool
     profile_refusal: Capped | None
+
+
+class NotImported(FrozenModel):
+    """A file a round of several left out (D-102), with its upload, if it is one, and why."""
+
+    upload_id: UUID | None
+    file_name: str
+    message: Capped
+
+
+class RoundFiles(FrozenModel):
+    """What a round did with its files (D-102): those imported, those imported before, and
+    those left out, the first `LISTED_AT_MOST` of them beside their total."""
+
+    files_imported: int = Field(ge=0)
+    files_imported_before: int = Field(ge=0)
+    not_imported: tuple[NotImported, ...] = Field(max_length=LISTED_AT_MOST)
+    not_imported_total: int = Field(ge=0)
 
 
 class ImportedBefore(FrozenModel):

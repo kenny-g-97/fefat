@@ -16,6 +16,7 @@ from fefat_app.http.problems import problem_responses
 from fefat_app.imports import (
     BatchImportAsked,
     FileImportAsked,
+    FilesImportAsked,
     ImportPreviewAnswer,
     ListedProfile,
     NoSuchUploadError,
@@ -57,11 +58,14 @@ def preview_import(
 
 @router.post("/imports", status_code=202, responses=REFUSALS)
 def start_import(
-    asked: Annotated[FileImportAsked | BatchImportAsked, Body(discriminator="kind")],
+    asked: Annotated[
+        FileImportAsked | FilesImportAsked | BatchImportAsked, Body(discriminator="kind")
+    ],
     container: ContainerDependency,
 ) -> Job:
-    """Queue the import as an `import` job, its file and its profile checked first; its stages
-    and its end come with the job's stream."""
+    """Queue the import as an `import` job, of one file or batch, or of several files in one
+    round (D-102), its files and its profile checked first; its stages and its end come with
+    the job's stream."""
     try:
         return container.imports.start(asked)
     except REFUSED as refused:

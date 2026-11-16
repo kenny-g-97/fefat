@@ -347,8 +347,9 @@ export interface paths {
         put?: never;
         /**
          * Start Import
-         * @description Queue the import as an `import` job, its file and its profile checked first; its stages
-         *     and its end come with the job's stream.
+         * @description Queue the import as an `import` job, of one file or batch, or of several files in one
+         *     round (D-102), its files and its profile checked first; its stages and its end come with
+         *     the job's stream.
          */
         post: operations["start_import_v1_imports_post"];
         delete?: never;
@@ -1756,6 +1757,28 @@ export interface components {
             verdict: components["schemas"]["ImportVerdict"];
             /** Warnings */
             warnings: components["schemas"]["Capped"][];
+        };
+        /**
+         * FilesImportAsked
+         * @description Several of a trader's files in one import (D-102), through one profile, as several
+         *     commands of `fefat data import file` with the same options would take them: no contract,
+         *     since each file's name gives its own; at most `FILES_AT_MOST`.
+         */
+        FilesImportAsked: {
+            /** @default refuse */
+            differing: components["schemas"]["DifferingRecords"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "files";
+            profile: components["schemas"]["ProfileChoice"];
+            /** Root */
+            root?: string | null;
+            /** Sources */
+            sources: components["schemas"]["ImportSource"][];
+            /** Time Zone */
+            time_zone?: string | null;
         };
         /**
          * FillPriceDifference
@@ -4686,7 +4709,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FileImportAsked"] | components["schemas"]["BatchImportAsked"];
+                "application/json": components["schemas"]["FileImportAsked"] | components["schemas"]["FilesImportAsked"] | components["schemas"]["BatchImportAsked"];
             };
         };
         responses: {
