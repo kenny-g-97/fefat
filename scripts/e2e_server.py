@@ -88,13 +88,14 @@ def seed(home: Path, port: int, password: str, data_dir: Path | None = None) -> 
         xes_exports(home)
 
 
-def xes_exports(home: Path) -> Path:
-    """Two NinjaTrader exports of XES, a product FEFAT does not know, in a folder beside `home`
+def xes_exports(home: Path) -> None:
+    """Three NinjaTrader exports of XES, a product FEFAT does not know, in a folder beside `home`
     that its `config.toml` then names as its import root: XESH2026's 1-minute bars of the trade
-    dates `XES_FIRST`, and of `XES_SECOND`, which overlaps the first by two sessions, each in a
-    folder of its own under the name NinjaTrader gives, stamped at their close in UTC from the
-    tests' generator (`python/tests/generated_minutes.py`); the import spec's files (step
-    5.12)."""
+    dates `XES_FIRST`, of `XES_SECOND`, which overlaps the first by two sessions, and the first
+    again, revised, its last bar one lot more, as an export made before that bar closed differs
+    from a later one; each in a folder of its own under the name NinjaTrader gives, stamped at
+    their close in UTC from the tests' generator (`python/tests/generated_minutes.py`); the
+    import spec's files (step 5.12)."""
     import polars as pl
 
     from fefat.config import resolve_paths
@@ -118,23 +119,27 @@ def xes_exports(home: Path) -> Path:
     bars = minutes_of(
         listing("XESH2026", 4001, days, days), sessions.between(*map(date.fromisoformat, days))
     )
+    written: dict[str, list[str]] = {}
     for folder, (first, last) in (("first", XES_FIRST), ("second", XES_SECOND)):
         held = bars.filter(
             pl.col("trade_date").is_between(date.fromisoformat(first), date.fromisoformat(last))
         )
-        lines = [
+        written[folder] = [
             f"{datetime.fromtimestamp(bar['ts_close'] // 10**9, UTC):%Y%m%d %H%M%S};"
             + ";".join(price_text(bar[price]) for price in ("open", "high", "low", "close"))
             + f";{bar['volume']}\n"
             for bar in held.iter_rows(named=True)
         ]
+    *kept, last_bar = written["first"]
+    stamp, *prices, volume = last_bar.rstrip("\n").split(";")
+    written["revised"] = [*kept, ";".join([stamp, *prices, str(int(volume) + 1)]) + "\n"]
+    for folder, lines in written.items():
         (exports / folder).mkdir(parents=True)
         (exports / folder / XES_EXPORT_NAME).write_text(
             "".join(lines), encoding="utf-8", newline="\n"
         )
     with (home / "config.toml").open("a", encoding="utf-8") as config:
         config.write(f'import_roots = ["{exports.as_posix()}"]\n')
-    return exports
 
 
 def year_of_mes() -> None:

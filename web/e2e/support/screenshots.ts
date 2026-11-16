@@ -6,6 +6,7 @@ import { test, type Locator, type Page } from "@playwright/test"
 const SAVED_PROJECTS: ReadonlySet<string> = new Set([
   "desktop",
   "desktop-import",
+  "desktop-import-next",
 ])
 
 /** Save the page as `test-results/screenshots/<name>.png`, which the ui-verifier reads and the

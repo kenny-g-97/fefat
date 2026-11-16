@@ -253,7 +253,8 @@ def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_impo
     tmp_path: Path,
 ) -> None:
     # Step 5.12: the import spec's files, beside the home, under the root config.toml names; the
-    # first, read in Chicago's time zone, runs six hours late, the review the spec corrects.
+    # first, read in Chicago's time zone, runs six hours late, the review the spec corrects; and
+    # the first revised, its last bar one lot more, whose records differ from the first's.
     e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
 
     paths = resolve_paths(os.environ)
@@ -279,3 +280,8 @@ def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_impo
     assert [each.reading.refusals() for each in previews[:2]] == [[], []]
     (offset,) = previews[2].reading.calendar.offsets
     assert (offset.nanoseconds, offset.cause) == (6 * HOUR, OffsetCause.TIME_ZONE)
+    *same, revised = (exports / "revised" / "XES 03-26.Last.txt").read_text().splitlines()
+    *bars, last = first.read_text().splitlines()
+    assert same == bars
+    assert revised.rsplit(";", 1)[0] == last.rsplit(";", 1)[0]
+    assert int(revised.rsplit(";", 1)[1]) == int(last.rsplit(";", 1)[1]) + 1
