@@ -83,8 +83,9 @@ export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
   return (
     <div className="flex flex-col items-start gap-3" data-testid="take-records">
       <p className="text-foreground-secondary">
-        Where the file is an export, check its profile's time zone and bar
-        stamping first; where it holds a vendor's correction, take its records.
+        {disputed === null
+          ? "Where the files are exports, check the profile's time zone and bar stamping first; where they hold a vendor's correction, take their records."
+          : "Where the file is an export, check its profile's time zone and bar stamping first; where it holds a vendor's correction, take its records."}
       </p>
       <InlineConfirmation
         trigger={`Take ${records.toLowerCase()}`}

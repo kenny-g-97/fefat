@@ -38,6 +38,14 @@ export function InstrumentCard({
       description="Which contract the records are of, where the file's name does not say, and a new instrument's specification"
     >
       <div className="flex flex-col gap-5" data-testid="import-instrument">
+        {several && (
+          <p
+            className="text-foreground-secondary"
+            data-testid="several-contracts"
+          >
+            Each file's name gives its contract.
+          </p>
+        )}
         <div className="flex flex-wrap gap-5">
           {!several && (
             <Choice id="import-contract" label="Contract">
@@ -64,14 +72,6 @@ export function InstrumentCard({
             />
           </Choice>
         </div>
-        {several && (
-          <p
-            className="text-foreground-secondary"
-            data-testid="several-contracts"
-          >
-            Each file's name gives its contract.
-          </p>
-        )}
         {profile.kind === "new" && (
           <RadioChoice
             id="import-instrument"

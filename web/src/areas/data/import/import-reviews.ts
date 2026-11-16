@@ -16,45 +16,58 @@ export type Settled =
   | Readonly<{ kind: "answered"; answer: ImportPreviewAnswer }>
   | Readonly<{ kind: "failed"; error: Error }>
 
-/** A file's review in the round's list: being read, or settled. */
-export type FileState = Readonly<{ kind: "reading" }> | Settled
+/** A file's review in the round's list: being read, with the file's last answer while it is
+ * read again after a change, or settled. */
+export type FileState =
+  | Readonly<{ kind: "reading"; last: ImportPreviewAnswer | null }>
+  | Settled
+
+/** An ask of the list: its request's JSON after the number of times the page asked to read
+ * again, and the file it reads, an upload's id or a path. */
+export type ListedAsk = Readonly<{ key: string; file: string }>
 
 /** Several files' reviews (web/DESIGN.md, Patterns, Live draft): the latest draft's asks, one
- * per file in the files' order, each its request's JSON after the number of times the page
- * asked to read again; the requests in flight, an older draft's among them, since each holds a
- * runner of the server's until it settles; and the latest asks' answers and failures. */
+ * per file in the files' order; the requests in flight, an older draft's among them, since each
+ * holds a runner of the server's until it settles; the latest asks' answers and failures; and
+ * each listed file's last answer, which stays in view while the file is read again. */
 export type ReviewsQueue = Readonly<{
-  asks: readonly string[]
+  asks: readonly ListedAsk[]
   inFlight: readonly string[]
   settled: ReadonlyMap<string, Settled>
+  last: ReadonlyMap<string, ImportPreviewAnswer>
 }>
 
 export const EMPTY_REVIEWS: ReviewsQueue = {
   asks: [],
   inFlight: [],
   settled: new Map(),
+  last: new Map(),
 }
 
 export type ReviewsChange =
-  | Readonly<{ kind: "listed"; asks: readonly string[] }>
+  | Readonly<{ kind: "listed"; asks: readonly ListedAsk[] }>
   | Readonly<{ kind: "sent"; ask: string }>
   | Readonly<{ kind: "answered"; ask: string; answer: ImportPreviewAnswer }>
   | Readonly<{ kind: "failed"; ask: string; error: Error }>
   | Readonly<{ kind: "retried" }>
 
-/** The queue after `change`: a new list keeps the answers of the asks it still holds, an
- * answer to an ask no longer listed only frees its place, and Try again forgets the failures,
- * so that only their asks go again. */
+/** The queue after `change`: a new list keeps the answers of the asks it still holds and the
+ * last answers of the files it still lists, an answer to an ask no longer listed only frees
+ * its place, and Try again forgets the failures, so that only their asks go again. */
 export function reviewsQueued(
   queue: ReviewsQueue,
   change: ReviewsChange
 ): ReviewsQueue {
   switch (change.kind) {
     case "listed": {
-      const kept = [...queue.settled].filter(([ask]) =>
-        change.asks.includes(ask)
-      )
-      return { ...queue, asks: change.asks, settled: new Map(kept) }
+      const keys = new Set(change.asks.map((each) => each.key))
+      const files = new Set(change.asks.map((each) => each.file))
+      return {
+        ...queue,
+        asks: change.asks,
+        settled: new Map([...queue.settled].filter(([ask]) => keys.has(ask))),
+        last: new Map([...queue.last].filter(([file]) => files.has(file))),
+      }
     }
     case "sent":
       return queue.inFlight.includes(change.ask)
@@ -85,13 +98,19 @@ function settledBy(
   settled: Settled
 ): ReviewsQueue {
   const inFlight = queue.inFlight.filter((each) => each !== ask)
-  if (!queue.asks.includes(ask)) {
+  const listed = queue.asks.find((each) => each.key === ask)
+  if (listed === undefined) {
     return { ...queue, inFlight }
   }
+  const last =
+    settled.kind === "answered"
+      ? new Map(queue.last).set(listed.file, settled.answer)
+      : queue.last
   return {
     ...queue,
     inFlight,
     settled: new Map(queue.settled).set(ask, settled),
+    last,
   }
 }
 
@@ -105,18 +124,30 @@ export function nextReview(
     return undefined
   }
   return queue.asks.find(
-    (ask) => !queue.inFlight.includes(ask) && !queue.settled.has(ask)
+    ({ key }) => !queue.inFlight.includes(key) && !queue.settled.has(key)
+  )?.key
+}
+
+/** The review of each of `asks`, in their order: being read, with its file's last answer,
+ * until it settles. */
+export function fileStates(
+  queue: ReviewsQueue,
+  asks: readonly ListedAsk[]
+): readonly FileState[] {
+  return asks.map(
+    ({ key, file }) =>
+      queue.settled.get(key) ?? {
+        kind: "reading",
+        last: queue.last.get(file) ?? null,
+      }
   )
 }
 
-const READING: FileState = { kind: "reading" }
-
-/** The review of each of `asks`, in their order: being read until it settles. */
-export function fileStates(
-  queue: ReviewsQueue,
-  asks: readonly string[]
-): readonly FileState[] {
-  return asks.map((ask) => queue.settled.get(ask) ?? READING)
+/** What a file's row shows: its review, or while it is read again, its last answer. */
+export function shownState(state: FileState): FileState {
+  return state.kind === "reading" && state.last !== null
+    ? { kind: "answered", answer: state.last }
+    : state
 }
 
 /** A file of several and its review. */
@@ -177,6 +208,15 @@ export function tallyOf(states: readonly FileState[]): Tally {
   }
   const read = states.filter((state) => state.kind !== "reading").length
   return { read, outcomes }
+}
+
+/** How many files Import sends, by each file's review or, while it is read again, its last
+ * one, so that Import's name holds still through a change; none where none imports. */
+export function filesImporting(states: readonly FileState[]): number | null {
+  const count = states.filter(
+    (state) => outcomeOf(shownState(state)) === "imports"
+  ).length
+  return count === 0 ? null : count
 }
 
 /** The round Import sends (web/DESIGN.md, Patterns, Job in its card): the files whose own
@@ -240,6 +280,11 @@ function uploadIdOf(source: ImportSource): string | null {
   return source.kind === "upload" ? source.upload_id : null
 }
 
+/** The file `source` names, by its upload's id or its path. */
+function fileOf(source: ImportSource): string {
+  return source.kind === "upload" ? source.upload_id : source.path
+}
+
 /** Several files' reviews, the way to read the failed ones again, as Try again does, and to
  * read them all again, as the files left after a round are. */
 export type FileReviews = Readonly<{
@@ -257,7 +302,11 @@ export function useFileReviews(
   const [readings, setReadings] = useState(0)
   const listed = useMemo(
     () =>
-      asked.map((ask) => ({ key: `${readings} ${JSON.stringify(ask)}`, ask })),
+      asked.map((ask) => ({
+        key: `${readings} ${JSON.stringify(ask)}`,
+        file: fileOf(ask.source),
+        ask,
+      })),
     [asked, readings]
   )
   const [queue, change] = useReducer(reviewsQueued, EMPTY_REVIEWS)
@@ -266,7 +315,10 @@ export function useFileReviews(
     requests.current = new Map<string, FileImportAsked>(
       listed.map((each) => [each.key, each.ask])
     )
-    change({ kind: "listed", asks: listed.map((each) => each.key) })
+    change({
+      kind: "listed",
+      asks: listed.map(({ key, file }) => ({ key, file })),
+    })
   }, [listed])
   const sending = nextReview(queue, most)
   useEffect(() => {
@@ -279,10 +331,7 @@ export function useFileReviews(
     previewSent(sending, request, change)
   }, [sending])
   return {
-    states: fileStates(
-      queue,
-      listed.map((each) => each.key)
-    ),
+    states: fileStates(queue, listed),
     tryAgain: () => change({ kind: "retried" }),
     readAgain: () => setReadings((count) => count + 1),
   }

@@ -120,8 +120,8 @@ function ChosenFile({
           <span className="font-medium text-foreground">{kept[0].name}</span>
           {kept.length > 1 &&
             ` and ${counted(kept.length - 1, "more file")}`},{" "}
-          {sizeText(kept.reduce((total, each) => total + each.size, 0))}, copied
-          into FEAT's folder on this PC
+          {sizeText(kept.reduce((total, each) => total + each.size, 0))}
+          {kept.length > 1 && " in all"}, copied into FEAT's folder on this PC
         </p>
       )}
     </div>

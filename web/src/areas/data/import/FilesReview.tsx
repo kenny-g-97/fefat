@@ -1,13 +1,15 @@
 import type { Dispatch } from "react"
+import type { ImportPreviewAnswer } from "@/api/imports"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
-import { DisclosureRow } from "../DisclosureRow"
+import { type AsideTone, DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
 import {
   type FileState,
   type Outcome,
   outcomeOf,
   type ReviewedFile,
+  shownState,
   tallyOf,
 } from "./import-reviews"
 import { FileReview } from "./FileReview"
@@ -39,14 +41,17 @@ const OTHER_OUTCOMES: readonly Readonly<{
   { outcome: "unread", one: "could not be read", several: "could not be read" },
 ]
 
-/** Each outcome in a file's row. */
-const ROW_OUTCOMES: Readonly<Record<Outcome, string>> = {
-  imports: "Imports",
-  refused: "Refused",
-  differing: "Differs",
-  imported_before: "Imported before",
-  nothing: "Nothing to import",
-  unread: "Not read",
+/** Each outcome in a file's row, in the tone its sign takes (web/DESIGN.md, Principles):
+ * a file that cannot import in the negative, one that differs in body text, the others quiet. */
+const ROW_OUTCOMES: Readonly<
+  Record<Outcome, Readonly<{ text: string; tone: AsideTone }>>
+> = {
+  imports: { text: "Imports", tone: "quiet" },
+  refused: { text: "Refused", tone: "negative" },
+  differing: { text: "Differs", tone: "body" },
+  imported_before: { text: "Imported before", tone: "quiet" },
+  nothing: { text: "Nothing to import", tone: "quiet" },
+  unread: { text: "Not read", tone: "negative" },
 }
 
 type FilesReviewProps = Readonly<{
@@ -72,8 +77,9 @@ export function FilesReview({
   zone,
 }: FilesReviewProps) {
   const states = files.map((file) => file.state)
-  const tally = tallyOf(states)
-  const merges = states.flatMap((state) =>
+  const shown = states.map(shownState)
+  const tally = tallyOf(shown)
+  const merges = shown.flatMap((state) =>
     state.kind === "answered" &&
     state.answer.kind === "file" &&
     state.answer.merge !== null
@@ -92,12 +98,18 @@ export function FilesReview({
       ) : (
         <Headline outcomes={tally.outcomes} files={files.length} />
       )}
+      {tally.read === files.length &&
+        states.some((state) => state.kind === "reading") && (
+          <p className="text-xs text-muted-foreground">
+            Reading your latest change
+          </p>
+        )}
       {states.some((state) => state.kind === "failed") && (
         <Button variant="ghost" className="self-start" onClick={tryAgain}>
           Try again
         </Button>
       )}
-      <div data-testid="review-files">
+      <div data-testid="review-files" className="border-b">
         {files.map(({ upload, state }) => (
           <FileRow
             key={upload.id}
@@ -151,19 +163,22 @@ type FileRowProps = Readonly<{
   zone: string | null
 }>
 
-/** A file's row: its name, its records or why it was not read, and its outcome, opening to its
- * own review. */
+/** A file's row: its name, its records or why it was not read, and its outcome in its tone,
+ * opening to its own review; while it is read again after a change, its last review, marked
+ * as one to read again. */
 function FileRow({ name, state, draft, change, zone }: FileRowProps) {
-  const outcome = outcomeOf(state)
-  const aside = outcome === null ? "Reading" : ROW_OUTCOMES[outcome]
-  if (state.kind === "answered" && state.answer.kind === "file") {
-    const seen = state.answer
+  const shown = shownState(state)
+  const outcome = outcomeOf(shown)
+  const aside = asideOf(state, outcome)
+  if (shown.kind === "answered" && shown.answer.kind === "file") {
+    const seen = shown.answer
     return (
       <DisclosureRow
         testId="review-file"
         name={name}
         note={`${counted(seen.records, "record")}, ${seen.contracts.join(", ") || "no contract"}`}
-        aside={aside}
+        aside={aside.text}
+        asideTone={aside.tone}
       >
         <div className="pb-4">
           <FileReview
@@ -177,33 +192,43 @@ function FileRow({ name, state, draft, change, zone }: FileRowProps) {
       </DisclosureRow>
     )
   }
+  if (shown.kind === "reading") {
+    return (
+      <DisclosureRow testId="review-file" name={name} note="Not read yet">
+        <p className="pb-3 text-xs text-muted-foreground">
+          Its review shows here once it is read.
+        </p>
+      </DisclosureRow>
+    )
+  }
   return (
     <DisclosureRow
       testId="review-file"
       name={name}
-      note={noteOf(state)}
-      aside={aside}
+      note="Not read: open for why"
+      aside={aside.text}
+      asideTone={aside.tone}
     >
       <p role="alert" className="pb-3 text-negative">
-        {reasonOf(state)}
+        {shown.kind === "failed" ? shown.error.message : reasonOf(shown.answer)}
       </p>
     </DisclosureRow>
   )
 }
 
-function noteOf(state: FileState): string {
-  return state.kind === "reading" ? "Being read" : "Not read: open for why"
+/** A row's outcome, or that its last review is to be read again. */
+function asideOf(
+  state: FileState,
+  outcome: Outcome | null
+): Readonly<{ text: string; tone: AsideTone }> {
+  if (state.kind === "reading" || outcome === null) {
+    return { text: "To read again", tone: "quiet" }
+  }
+  return ROW_OUTCOMES[outcome]
 }
 
-function reasonOf(state: FileState): string {
-  switch (state.kind) {
-    case "reading":
-      return "Its review is being read."
-    case "failed":
-      return state.error.message
-    case "answered":
-      return state.answer.kind === "refused"
-        ? state.answer.message
-        : `Expected a file's review, got a ${state.answer.kind} one.`
-  }
+function reasonOf(answer: ImportPreviewAnswer): string {
+  return answer.kind === "refused"
+    ? answer.message
+    : `Expected a file's review, got a ${answer.kind} one.`
 }

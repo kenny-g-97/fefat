@@ -1,11 +1,16 @@
-import type { Dispatch } from "react"
+import { type Dispatch, useRef } from "react"
 import { ApiProblem } from "@/api/problems"
 import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
 import type { Card, ChosenUploads, Draft, DraftChange } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
 import type { Asks } from "./import-request"
-import { type FileReviews, filesRequest, reviewedFiles } from "./import-reviews"
+import {
+  type FileReviews,
+  filesImporting,
+  filesRequest,
+  reviewedFiles,
+} from "./import-reviews"
 import { importKey, importRequest, useImportRun } from "./import-run"
 import { BatchReview, FileReview } from "./FileReview"
 import { FilesReview } from "./FilesReview"
@@ -41,12 +46,12 @@ export function ReviewCard({
   onReviewLeft,
 }: ReviewCardProps) {
   const several = asks.several.length > 0
+  const round = several ? filesRequest(asks.several, reviews.states) : null
   const run = useImportRun(
     importKey(asks),
-    several
-      ? filesRequest(asks.several, reviews.states)
-      : importRequest(asks, review)
+    several ? round : importRequest(asks, review)
   )
+  const focused = useRef<HTMLDivElement>(null)
   const uploads = draft.source.kind === "uploads" ? draft.source.uploads : []
   const reviewed = several ? reviewedFiles(uploads, reviews.states) : []
   const reading = several
@@ -61,6 +66,8 @@ export function ReviewCard({
         className="flex flex-col gap-5"
         data-testid="import-review"
         aria-busy={reading}
+        ref={focused}
+        tabIndex={-1}
       >
         {asks.missing.length > 0 && (
           <ul
@@ -89,7 +96,18 @@ export function ReviewCard({
         {asks.missing.length === 0 && !run.imported && !several && (
           <Answer draft={draft} change={change} review={review} zone={zone} />
         )}
-        <Run run={run} reading={reading} files={{ reviewed, onReviewLeft }} />
+        <Run
+          run={run}
+          reading={reading}
+          importing={several ? filesImporting(reviews.states) : null}
+          files={{
+            reviewed,
+            onReviewLeft: (files) => {
+              onReviewLeft(files)
+              focused.current?.focus()
+            },
+          }}
+        />
       </div>
     </Panel>
   )

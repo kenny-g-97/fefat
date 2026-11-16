@@ -1,16 +1,27 @@
 import { ChevronRight } from "lucide-react"
 import type { ReactNode } from "react"
 
+/** The tone of a row's aside: quiet, or body text for a warning, or the negative for a
+ * failure (web/DESIGN.md, Principles). */
+export type AsideTone = "quiet" | "body" | "negative"
+
+const ASIDE_TONES: Readonly<Record<AsideTone, string>> = {
+  quiet: "text-xs text-muted-foreground",
+  body: "text-foreground-secondary",
+  negative: "text-negative",
+}
+
 type DisclosureRowProps = Readonly<{
   testId: string
   name: string
   note: string
   aside?: string
+  asideTone?: AsideTone
   children: ReactNode
 }>
 
 /** A row that opens in place (web/DESIGN.md, Patterns, Disclosure row): a 40 px summary of its
- * name, a note on it, and an aside at its right end, over what it discloses. Its group is
+ * name, a note on it, and an aside at its right end in its tone, over what it discloses. Its group is
  * named, so that the rows it discloses, each a group of its own, answer the pointer one at a
  * time, where a group without a name would light them all while the pointer is on any. */
 export function DisclosureRow({
@@ -18,6 +29,7 @@ export function DisclosureRow({
   name,
   note,
   aside,
+  asideTone = "quiet",
   children,
 }: DisclosureRowProps) {
   return (
@@ -30,7 +42,7 @@ export function DisclosureRow({
         <span className="font-medium text-foreground">{name}</span>
         <span className="text-xs text-muted-foreground">{note}</span>
         {aside !== undefined && (
-          <span className="ml-auto text-xs text-muted-foreground">{aside}</span>
+          <span className={`ml-auto ${ASIDE_TONES[asideTone]}`}>{aside}</span>
         )}
       </summary>
       {children}

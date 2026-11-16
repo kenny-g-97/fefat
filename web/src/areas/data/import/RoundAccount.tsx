@@ -1,19 +1,28 @@
 import type { RoundFiles, UploadedFile } from "@/api/imports"
 import { Button } from "@/ui/button"
-import { counted } from "@/ui/figures"
+import { counted, formatCount } from "@/ui/figures"
 import type { ChosenUploads } from "./import-draft"
 
 type RoundAccountProps = Readonly<{
   round: RoundFiles | undefined
+  chosen: number
+  sent: number
   left: readonly UploadedFile[]
   onReviewLeft: (files: ChosenUploads) => void
 }>
 
 /** What a round of several files did with them (web/DESIGN.md, Patterns, Job in its card;
- * D-102): how many it imported, found imported before, and left out, each file left out with
- * why; then Review the files left, those it left out and those not sent, which the wizard reads
- * anew as its files. */
-export function RoundAccount({ round, left, onReviewLeft }: RoundAccountProps) {
+ * D-102): of the files `chosen`, how many it imported, found imported before, and left out,
+ * and how many were not `sent`, each file left out with why; then Review the files left, those
+ * it left out and those not sent that hold records to import, which the wizard reads anew as
+ * its files. */
+export function RoundAccount({
+  round,
+  chosen,
+  sent,
+  left,
+  onReviewLeft,
+}: RoundAccountProps) {
   const [first, ...others] = left
   return (
     <div
@@ -21,7 +30,9 @@ export function RoundAccount({ round, left, onReviewLeft }: RoundAccountProps) {
       data-testid="round-account"
     >
       {round !== undefined && (
-        <p className="text-foreground-secondary">{roundLine(round)}</p>
+        <p className="text-foreground-secondary">
+          {roundLine(round, chosen, chosen - sent)}
+        </p>
       )}
       {round !== undefined && round.not_imported.length > 0 && (
         <ul
@@ -48,7 +59,7 @@ export function RoundAccount({ round, left, onReviewLeft }: RoundAccountProps) {
   )
 }
 
-function roundLine(round: RoundFiles): string {
+function roundLine(round: RoundFiles, chosen: number, notSent: number): string {
   const before =
     round.files_imported_before > 0
       ? `, ${counted(round.files_imported_before, "file")} imported before`
@@ -57,5 +68,9 @@ function roundLine(round: RoundFiles): string {
     round.not_imported.length > 0
       ? `, ${counted(round.not_imported.length, "file")} not imported`
       : ""
-  return `${counted(round.files_imported, "file")} imported${before}${leftOut}.`
+  const held =
+    notSent > 0
+      ? `, ${formatCount(notSent)} not sent, as ${notSent === 1 ? "its review" : "their reviews"} said`
+      : ""
+  return `${formatCount(round.files_imported)} of ${counted(chosen, "file")} imported${before}${leftOut}${held}.`
 }

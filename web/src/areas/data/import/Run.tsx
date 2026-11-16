@@ -27,16 +27,18 @@ type RoundFilesLeft = Readonly<{
 type RunProps = Readonly<{
   run: ImportRun
   reading: boolean
+  importing: number | null
   files: RoundFilesLeft
 }>
 
 /** Import and its job, in the review's card (web/DESIGN.md, Patterns, Job in its card): Import
  * sends the latest draft's request once its own answer says it imports as it is, or for
- * several files once each is read, the reading line beside it while a change is read; the
+ * several files once each is read, naming how many it sends (`importing`), the reading line
+ * beside it while a change is read; the
  * job's bar and message follow from the jobs drawer's own reads, then what it wrote and kept,
  * with the way to the dataset and its chart, and for a round what it did with each file
  * (`RoundAccount`); or why it failed. */
-export function Run({ run, reading, files }: RunProps) {
+export function Run({ run, reading, importing, files }: RunProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-4">
@@ -45,7 +47,9 @@ export function Run({ run, reading, files }: RunProps) {
           disabled={!run.importable}
           onClick={run.importNow}
         >
-          Import
+          {importing === null
+            ? "Import"
+            : `Import ${counted(importing, "file")}`}
         </Button>
         {reading && (
           <p className="text-xs text-muted-foreground">
@@ -100,6 +104,8 @@ function Imported({ job, sent, files }: ImportJobProps) {
     sent?.kind === "files" ? (
       <RoundAccount
         round={result.round}
+        chosen={files.reviewed.length}
+        sent={sent.sources.length}
         left={filesLeft(
           files.reviewed,
           sent.sources,

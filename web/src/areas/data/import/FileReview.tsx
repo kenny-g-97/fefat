@@ -43,7 +43,11 @@ export function FileReview({
     <div className="flex flex-col gap-4">
       <p
         data-testid="review-verdict"
-        className="text-base font-semibold text-foreground"
+        className={
+          alone
+            ? "text-base font-semibold text-foreground"
+            : "font-medium text-foreground"
+        }
       >
         {VERDICTS[seen.verdict]}
       </p>

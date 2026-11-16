@@ -161,14 +161,19 @@ test("several exports import in one round, and the file left is reviewed again",
   await inBothThemes(page, "import-several-review")
 
   // One job imports the two, then the done card counts them and offers the file left.
+  await expect(page.getByTestId("import-run")).toHaveText("Import 2 files")
   await page.getByTestId("import-run").click()
   const round = page.getByTestId("round-account")
-  await expect(round).toContainText("2 files imported.", { timeout: IMPORT_MS })
+  await expect(round).toContainText(
+    "2 of 3 files imported, 1 not sent, as its review said.",
+    { timeout: IMPORT_MS }
+  )
   await expect(page.getByTestId("import-done")).toContainText(
     /Imported [\d,]+ records into XES/
   )
   await screenshot(page, "import-several-done")
   await page.getByTestId("review-left").click()
+  await expect(page.getByTestId("import-review")).toBeFocused()
   await expect(page.getByTestId("import-chosen")).toContainText(EXPORT)
   await expect(page.getByTestId("several-contracts")).toHaveCount(0)
   await expect(verdict(page)).toHaveText(
