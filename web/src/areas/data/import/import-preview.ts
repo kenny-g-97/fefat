@@ -30,6 +30,30 @@ export type QueueChange =
   | Readonly<{ kind: "failed"; ask: string; error: Error }>
   | Readonly<{ kind: "sent"; ask: string }>
 
+/** A preview's request settled: its answer, or why it failed. */
+export type PreviewSettled = Extract<
+  QueueChange,
+  { kind: "answered" | "failed" }
+>
+
+/** Send the preview `request` of the ask `ask`, telling `settle` its answer or why it failed;
+ * a request the page no longer needs runs to its end on the server, so it is never cancelled. */
+export function previewSent(
+  ask: string,
+  request: PreviewAsked,
+  settle: (settled: PreviewSettled) => void
+): void {
+  previewOf(request).then(
+    (answer) => settle({ kind: "answered", ask, answer }),
+    (error: unknown) =>
+      settle({
+        kind: "failed",
+        ask,
+        error: error instanceof Error ? error : new Error(String(error)),
+      })
+  )
+}
+
 /** The queue after `change`; `toSend` says which ask goes to the server next, if any. */
 export function queued(queue: PreviewQueue, change: QueueChange): PreviewQueue {
   switch (change.kind) {
@@ -126,15 +150,7 @@ export function useLatestPreview(asked: PreviewAsked | null): LatestPreview {
       return
     }
     change({ kind: "sent", ask: sending })
-    previewOf(request).then(
-      (answer) => change({ kind: "answered", ask: sending, answer }),
-      (error: unknown) =>
-        change({
-          kind: "failed",
-          ask: sending,
-          error: error instanceof Error ? error : new Error(String(error)),
-        })
-    )
+    previewSent(sending, request, change)
   }, [sending])
   return {
     ...previewState(queue, ask),

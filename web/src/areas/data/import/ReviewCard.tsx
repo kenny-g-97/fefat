@@ -48,6 +48,7 @@ export function ReviewCard({
       : importRequest(asks, review)
   )
   const uploads = draft.source.kind === "uploads" ? draft.source.uploads : []
+  const reviewed = several ? reviewedFiles(uploads, reviews.states) : []
   const reading = several
     ? reviews.states.some((state) => state.kind === "reading")
     : review.reading
@@ -78,8 +79,8 @@ export function ReviewCard({
         )}
         {asks.missing.length === 0 && !run.imported && several && (
           <FilesReview
-            files={reviewedFiles(uploads, reviews.states)}
-            readAgain={reviews.readAgain}
+            files={reviewed}
+            tryAgain={reviews.tryAgain}
             draft={draft}
             change={change}
             zone={zone}
@@ -88,7 +89,7 @@ export function ReviewCard({
         {asks.missing.length === 0 && !run.imported && !several && (
           <Answer draft={draft} change={change} review={review} zone={zone} />
         )}
-        <Run run={run} reading={reading} files={{ uploads, onReviewLeft }} />
+        <Run run={run} reading={reading} files={{ reviewed, onReviewLeft }} />
       </div>
     </Panel>
   )

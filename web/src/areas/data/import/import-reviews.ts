@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
-import {
-  type ImportPreviewAnswer,
-  previewOf,
-  type UploadedFile,
-} from "@/api/imports"
+import type { ImportPreviewAnswer, UploadedFile } from "@/api/imports"
 import type { components } from "@/api/schema"
+import { previewSent } from "./import-preview"
 
 type Schemas = components["schemas"]
 type FileImportAsked = Schemas["FileImportAsked"]
@@ -43,9 +40,11 @@ export type ReviewsChange =
   | Readonly<{ kind: "sent"; ask: string }>
   | Readonly<{ kind: "answered"; ask: string; answer: ImportPreviewAnswer }>
   | Readonly<{ kind: "failed"; ask: string; error: Error }>
+  | Readonly<{ kind: "retried" }>
 
-/** The queue after `change`: a new list keeps the answers of the asks it still holds, and an
- * answer to an ask no longer listed only frees its place. */
+/** The queue after `change`: a new list keeps the answers of the asks it still holds, an
+ * answer to an ask no longer listed only frees its place, and Try again forgets the failures,
+ * so that only their asks go again. */
 export function reviewsQueued(
   queue: ReviewsQueue,
   change: ReviewsChange
@@ -71,6 +70,12 @@ export function reviewsQueued(
         kind: "failed",
         error: change.error,
       })
+    case "retried": {
+      const answered = [...queue.settled].filter(
+        ([, settled]) => settled.kind === "answered"
+      )
+      return { ...queue, settled: new Map(answered) }
+    }
   }
 }
 
@@ -91,7 +96,7 @@ function settledBy(
 }
 
 /** The next ask to send, the first not read yet in the files' order, while fewer than `most`
- * requests are in flight; a failed one is settled and goes again only with a new reading. */
+ * requests are in flight; a failed one is settled and goes again only when tried again. */
 export function nextReview(
   queue: ReviewsQueue,
   most: number
@@ -202,27 +207,44 @@ export function filesRequest(
   }
 }
 
-/** The files a round left: those not sent, and those its import left out. */
+/** The files a round left: those its import left out, and those not sent that hold records
+ * to import, refused, differing, or not read, rather than imported before or empty. */
 export function filesLeft(
-  uploads: readonly UploadedFile[],
+  files: readonly ReviewedFile[],
   sent: readonly ImportSource[],
   notImported: readonly Readonly<{ upload_id: string | null }>[]
 ): UploadedFile[] {
   const sentIds = new Set(sent.map(uploadIdOf))
   const leftIds = new Set(notImported.map((each) => each.upload_id))
-  return uploads.filter(
-    (upload) => !sentIds.has(upload.id) || leftIds.has(upload.id)
-  )
+  return files
+    .filter(({ upload, state }) =>
+      sentIds.has(upload.id) ? leftIds.has(upload.id) : !doneWith(state)
+    )
+    .map(({ upload }) => upload)
+}
+
+function doneWith(state: FileState): boolean {
+  const outcome = outcomeOf(state)
+  return outcome === "imported_before" || outcome === "nothing"
+}
+
+/** Why `count` files are too many for one import, before any is copied; none where they are
+ * not. */
+export function tooManyFiles(count: number): string | null {
+  return count > FILES_AT_MOST
+    ? `Expected ${FILES_AT_MOST} files at most in one import, got ${count}: choose fewer, and import the others next.`
+    : null
 }
 
 function uploadIdOf(source: ImportSource): string | null {
   return source.kind === "upload" ? source.upload_id : null
 }
 
-/** Several files' reviews and the way to read them again, as Try again and the files left
- * after a round do. */
+/** Several files' reviews, the way to read the failed ones again, as Try again does, and to
+ * read them all again, as the files left after a round are. */
 export type FileReviews = Readonly<{
   states: readonly FileState[]
+  tryAgain: () => void
   readAgain: () => void
 }>
 
@@ -254,21 +276,14 @@ export function useFileReviews(
       return
     }
     change({ kind: "sent", ask: sending })
-    previewOf(request).then(
-      (answer) => change({ kind: "answered", ask: sending, answer }),
-      (error: unknown) =>
-        change({
-          kind: "failed",
-          ask: sending,
-          error: error instanceof Error ? error : new Error(String(error)),
-        })
-    )
+    previewSent(sending, request, change)
   }, [sending])
   return {
     states: fileStates(
       queue,
       listed.map((each) => each.key)
     ),
+    tryAgain: () => change({ kind: "retried" }),
     readAgain: () => setReadings((count) => count + 1),
   }
 }

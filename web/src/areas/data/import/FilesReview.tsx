@@ -51,7 +51,7 @@ const ROW_OUTCOMES: Readonly<Record<Outcome, string>> = {
 
 type FilesReviewProps = Readonly<{
   files: readonly ReviewedFile[]
-  readAgain: () => void
+  tryAgain: () => void
   draft: Draft
   change: Dispatch<DraftChange>
   zone: string | null
@@ -59,12 +59,14 @@ type FilesReviewProps = Readonly<{
 
 /** What the import of several files would do (web/DESIGN.md, Patterns, Review, several
  * files; D-102): how many are read, then how many import as they are, with a line for each
- * other outcome; a row per file, which opens to its own review; and, where records differ in
- * any, what to do with them, for every file at once, the stored records that give way counted
- * over all of them. Each file's records are its own: their sum is the import's to give. */
+ * other outcome, and Try again, which reads the failed files again; a row per file, which
+ * opens to its own review; and, where records differ in any, what to do with them, for every
+ * file at once, with no count of the stored records that give way, since two files of one
+ * contract dispute the same ones: each file's own box counts its own, and the sum is the
+ * import's to give. */
 export function FilesReview({
   files,
-  readAgain,
+  tryAgain,
   draft,
   change,
   zone,
@@ -77,10 +79,6 @@ export function FilesReview({
     state.answer.merge !== null
       ? [state.answer.merge]
       : []
-  )
-  const disputed = merges.reduce(
-    (total, merge) => total + merge.stored_records_disputed,
-    0
   )
   return (
     <div className="flex flex-col gap-4">
@@ -95,7 +93,7 @@ export function FilesReview({
         <Headline outcomes={tally.outcomes} files={files.length} />
       )}
       {states.some((state) => state.kind === "failed") && (
-        <Button variant="ghost" className="self-start" onClick={readAgain}>
+        <Button variant="ghost" className="self-start" onClick={tryAgain}>
           Try again
         </Button>
       )}
@@ -112,7 +110,7 @@ export function FilesReview({
         ))}
       </div>
       {merges.some((merge) => merge.records_differing > 0) && (
-        <TakeRecords disputed={disputed} draft={draft} change={change} />
+        <TakeRecords disputed={null} draft={draft} change={change} />
       )}
     </div>
   )

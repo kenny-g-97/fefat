@@ -1,6 +1,6 @@
 import type { RoundFiles, UploadedFile } from "@/api/imports"
 import { Button } from "@/ui/button"
-import { counted, formatCount } from "@/ui/figures"
+import { counted } from "@/ui/figures"
 import type { ChosenUploads } from "./import-draft"
 
 type RoundAccountProps = Readonly<{
@@ -33,9 +33,6 @@ export function RoundAccount({ round, left, onReviewLeft }: RoundAccountProps) {
               {`${file.file_name}: ${file.message}`}
             </li>
           ))}
-          {round.not_imported_total > round.not_imported.length && (
-            <li>{`And ${formatCount(round.not_imported_total - round.not_imported.length)} more`}</li>
-          )}
         </ul>
       )}
       {first !== undefined && (
@@ -57,8 +54,8 @@ function roundLine(round: RoundFiles): string {
       ? `, ${counted(round.files_imported_before, "file")} imported before`
       : ""
   const leftOut =
-    round.not_imported_total > 0
-      ? `, ${counted(round.not_imported_total, "file")} not imported`
+    round.not_imported.length > 0
+      ? `, ${counted(round.not_imported.length, "file")} not imported`
       : ""
   return `${counted(round.files_imported, "file")} imported${before}${leftOut}.`
 }

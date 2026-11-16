@@ -13,7 +13,7 @@ import { SectionFailure } from "@/ui/section-failure"
 import { Segmented } from "@/ui/segmented"
 import type { Draft, DraftChange, Reading } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
-import { FILES_AT_MOST } from "./import-reviews"
+import { tooManyFiles } from "./import-reviews"
 
 type AppSettings = components["schemas"]["AppSettings"]
 
@@ -73,7 +73,7 @@ export function FileCard({ draft, change, table }: FileCardProps) {
 
 /** The files chosen, copied into FEAT's folder one after another (D-102): how far the copy
  * has come, the files kept, and each file the server refused, with why; more than
- * `FILES_AT_MOST` are refused before any is copied. */
+ * one import takes are refused before any is copied (`tooManyFiles`). */
 function ChosenFile({
   draft,
   change,
@@ -81,7 +81,7 @@ function ChosenFile({
   const uploads = useUploads()
   const [chosen, setChosen] = useState(0)
   const kept = draft.source.kind === "uploads" ? draft.source.uploads : null
-  const tooMany = chosen > FILES_AT_MOST
+  const tooMany = tooManyFiles(chosen)
   return (
     <div className="flex flex-col gap-2">
       <FileDrop
@@ -89,7 +89,7 @@ function ChosenFile({
         disabled={uploads.isPending}
         onFiles={(files) => {
           setChosen(files.length)
-          if (files.length <= FILES_AT_MOST) {
+          if (tooManyFiles(files.length) === null) {
             uploads.mutate(files, {
               onSuccess: (copied) => keep(copied, change),
             })
@@ -103,17 +103,12 @@ function ChosenFile({
             : `Copying file ${Math.min(uploads.copied + 1, chosen)} of ${chosen} into FEAT's folder`}
         </p>
       )}
-      {tooMany && (
+      {tooMany !== null && (
         <p role="alert" className="text-negative">
-          {`Expected ${FILES_AT_MOST} files at most in one import, got ${chosen}: choose fewer, and import the others next.`}
+          {tooMany}
         </p>
       )}
-      {uploads.error !== null && !tooMany && (
-        <p role="alert" className="text-negative">
-          {uploads.error.message}
-        </p>
-      )}
-      {uploads.data !== undefined && !uploads.isPending && !tooMany && (
+      {uploads.data !== undefined && !uploads.isPending && tooMany === null && (
         <ul className="flex flex-col gap-1 text-negative" role="alert">
           {uploads.data.refused.map((refused) => (
             <li key={refused.name}>{`${refused.name}: ${refused.message}`}</li>

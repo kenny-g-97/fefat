@@ -9,10 +9,12 @@ import {
   filesRequest,
   fileStates,
   nextReview,
+  type ReviewedFile,
   type ReviewsChange,
   type ReviewsQueue,
   reviewsQueued,
   tallyOf,
+  tooManyFiles,
 } from "./import-reviews"
 
 type FileImportAsked = components["schemas"]["FileImportAsked"]
@@ -109,6 +111,24 @@ describe("the reviews' queue", () => {
       nextReview(reviewsQueued(failed, { kind: "listed", asks: ["1 a"] }), 2)
     ).toBe("1 a")
   })
+
+  it("sends again only the failed reviews when tried again", () => {
+    const answer = seenFile("ES 03-26.Last.txt", "imports")
+    const tried = after(
+      { kind: "listed", asks: ["a", "b"] },
+      { kind: "sent", ask: "a" },
+      { kind: "sent", ask: "b" },
+      { kind: "answered", ask: "a", answer },
+      { kind: "failed", ask: "b", error: new Error("Gone.") },
+      { kind: "retried" }
+    )
+
+    expect(fileStates(tried, tried.asks)).toEqual([
+      { kind: "answered", answer },
+      READING,
+    ])
+    expect(nextReview(tried, 2)).toBe("b")
+  })
 })
 
 describe("tallyOf", () => {
@@ -172,17 +192,33 @@ describe("filesRequest", () => {
 })
 
 describe("filesLeft", () => {
-  it("leaves the files not sent and those the round left out", () => {
-    const uploads = [upload("a"), upload("b"), upload("c"), upload("d")]
+  it("leaves the files the round left out and those not sent that have records to import", () => {
+    const files: readonly ReviewedFile[] = [
+      { upload: upload("a"), state: answered("imports") },
+      { upload: upload("b"), state: answered("imports") },
+      { upload: upload("c"), state: answered("differing") },
+      { upload: upload("d"), state: answered("imports") },
+      { upload: upload("e"), state: answered("imported_before") },
+      { upload: upload("f"), state: answered("nothing") },
+    ]
     const sent: readonly ImportSource[] = [
       { kind: "upload", upload_id: "a" },
       { kind: "upload", upload_id: "b" },
       { kind: "upload", upload_id: "d" },
     ]
 
-    expect(filesLeft(uploads, sent, [{ upload_id: "b" }])).toEqual([
+    expect(filesLeft(files, sent, [{ upload_id: "b" }])).toEqual([
       upload("b"),
       upload("c"),
     ])
+  })
+})
+
+describe("tooManyFiles", () => {
+  it("refuses more files than one import takes, before any is copied", () => {
+    expect(tooManyFiles(200)).toBeNull()
+    expect(tooManyFiles(201)).toBe(
+      "Expected 200 files at most in one import, got 201: choose fewer, and import the others next."
+    )
   })
 })

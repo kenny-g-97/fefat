@@ -44,17 +44,23 @@ export function Merge({ merge, children }: MergeProps) {
 }
 
 type TakeRecordsProps = Readonly<{
-  disputed: number
+  disputed: number | null
   draft: Draft
   change: Dispatch<DraftChange>
 }>
 
 /** Where the file's records differ from the stored ones (plan call 8): what to check first, and
  * Take the file's records behind an inline confirmation that counts the stored records that
- * give way, `disputed`, over every dataset the import writes; once taken, the way back. The
+ * give way, `disputed`, over every dataset the import writes, or for several files (D-102),
+ * none, since two files of one contract dispute the same ones; once taken, the way back. The
  * trigger starts its own line, so that Keep takes its place. */
 export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
-  const stored = counted(disputed, "stored record")
+  const stored =
+    disputed === null
+      ? "the stored records they differ from"
+      : counted(disputed, "stored record")
+  const records =
+    disputed === null ? "The files' records" : "The file's records"
   if (draft.differing === "take-file") {
     return (
       <div
@@ -62,7 +68,7 @@ export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
         data-testid="take-records"
       >
         <p className="text-foreground-secondary">
-          {`The file's records stand in place of ${stored}.`}
+          {`${records} stand in place of ${stored}.`}
         </p>
         <Button
           variant="ghost"
@@ -81,8 +87,10 @@ export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
         stamping first; where it holds a vendor's correction, take its records.
       </p>
       <InlineConfirmation
-        trigger="Take the file's records"
-        confirm={`Replace ${stored}`}
+        trigger={`Take ${records.toLowerCase()}`}
+        confirm={
+          disputed === null ? "Replace the stored records" : `Replace ${stored}`
+        }
         align="start"
         onConfirm={() => change({ kind: "differing", differing: "take-file" })}
       />

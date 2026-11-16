@@ -3,7 +3,7 @@ import { useState } from "react"
 import { z } from "zod"
 import { api, queryClient } from "./client"
 import { jobsQuery } from "./jobs"
-import { ApiProblem, answer } from "./problems"
+import { answer } from "./problems"
 import type { components, paths } from "./schema"
 
 /** A profile the wizard offers, a preset or one the trader saved. */
@@ -44,31 +44,40 @@ export type FilesCopied = Readonly<{
 }>
 
 /** Copy the files the trader chose into FEAT's folder on this PC, for the wizard to read, one
- * after another, counting those `copied`: each sent as its request's body, which the typed
- * body's placeholder hands over unchanged; a file the server refuses is set aside with why,
- * and the others are copied still (D-102). */
+ * after another (`filesCopied`), counting those `copied`. */
 export function useUploads() {
   const [copied, setCopied] = useState(0)
   const mutation = useMutation({
-    mutationFn: async (files: readonly File[]): Promise<FilesCopied> => {
+    mutationFn: async (files: readonly File[]) => {
       setCopied(0)
-      const uploads: UploadedFile[] = []
-      const refused: FileRefused[] = []
-      for (const file of files) {
-        try {
-          uploads.push(await uploaded(file))
-        } catch (error) {
-          if (!(error instanceof ApiProblem)) {
-            throw error
-          }
-          refused.push({ name: file.name, message: error.message })
-        }
-        setCopied((count) => count + 1)
-      }
-      return { uploads, refused }
+      return filesCopied(files, uploaded, () => setCopied((count) => count + 1))
     },
   })
   return { ...mutation, copied }
+}
+
+/** `files` copied by `copy` one after another, `onCopied` told after each: a file the server
+ * refuses, or one lost on the way, as when a connection closes on a file past the upload
+ * limit, is set aside with why, and the others are copied still (D-102). */
+export async function filesCopied(
+  files: readonly File[],
+  copy: (file: File) => Promise<UploadedFile>,
+  onCopied: () => void
+): Promise<FilesCopied> {
+  const uploads: UploadedFile[] = []
+  const refused: FileRefused[] = []
+  for (const file of files) {
+    try {
+      uploads.push(await copy(file))
+    } catch (error) {
+      refused.push({
+        name: file.name,
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+    onCopied()
+  }
+  return { uploads, refused }
 }
 
 async function uploaded(file: File): Promise<UploadedFile> {
@@ -118,12 +127,11 @@ const notImported = z.object({
 })
 
 /** What a round of several files did with them (D-102): how many it imported, how many were
- * imported before, and the files it left out, with why, the first 50 beside their total. */
+ * imported before, and each file it left out, with why. */
 const roundFiles = z.object({
   files_imported: z.number(),
   files_imported_before: z.number(),
   not_imported: z.array(notImported),
-  not_imported_total: z.number(),
 })
 
 /** An import job's result, which the OpenAPI document does not type

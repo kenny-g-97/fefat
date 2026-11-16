@@ -151,7 +151,13 @@ test("several exports import in one round, and the file left is reviewed again",
   await expect(revised.getByTestId("merge-account")).toContainText(
     "1 differing"
   )
-  await expect(page.getByTestId("take-records")).toBeVisible()
+  // The round's records that differ are taken for every file at once, behind a confirmation
+  // that counts nothing, since two files of one contract dispute the same stored records.
+  await page.getByRole("button", { name: "Take the files' records" }).click()
+  await expect(
+    page.getByRole("button", { name: "Replace the stored records" })
+  ).toBeVisible()
+  await page.getByRole("button", { name: "Keep", exact: true }).click()
   await inBothThemes(page, "import-several-review")
 
   // One job imports the two, then the done card counts them and offers the file left.

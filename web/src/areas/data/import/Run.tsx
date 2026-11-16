@@ -5,7 +5,6 @@ import {
   type DatasetWritten,
   type ImportAsked,
   importResult,
-  type UploadedFile,
 } from "@/api/imports"
 import { isActive, type Job } from "@/api/jobs"
 import { Button } from "@/ui/button"
@@ -14,13 +13,14 @@ import { PercentBar } from "@/ui/percent-bar"
 import { TextLink } from "@/ui/text-link"
 import { datasetName } from "../datasets"
 import type { ChosenUploads } from "./import-draft"
-import { filesLeft } from "./import-reviews"
+import { filesLeft, type ReviewedFile } from "./import-reviews"
 import { type ImportRun, keptLine } from "./import-run"
 import { RoundAccount } from "./RoundAccount"
 
-/** The draft's files, of which a round leaves some, and the way to review those left. */
+/** The draft's files with their reviews, of which a round leaves some, and the way to
+ * review those left. */
 type RoundFilesLeft = Readonly<{
-  uploads: readonly UploadedFile[]
+  reviewed: readonly ReviewedFile[]
   onReviewLeft: (files: ChosenUploads) => void
 }>
 
@@ -101,7 +101,7 @@ function Imported({ job, sent, files }: ImportJobProps) {
       <RoundAccount
         round={result.round}
         left={filesLeft(
-          files.uploads,
+          files.reviewed,
           sent.sources,
           result.round === undefined ? [] : result.round.not_imported
         )}
@@ -112,7 +112,7 @@ function Imported({ job, sent, files }: ImportJobProps) {
     return (
       <div className="flex flex-col gap-3" data-testid="import-done">
         <p className="text-foreground-secondary">
-          {sent?.kind === "files"
+          {sent?.kind === "files" && sent.sources.length > 1
             ? "The files were imported before: nothing changed."
             : "The file was imported before: nothing changed."}
         </p>
