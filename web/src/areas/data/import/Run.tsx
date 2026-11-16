@@ -1,24 +1,42 @@
 import { useEffect } from "react"
 import { barsSpanQuery, type Series } from "@/api/bars"
 import { queryClient } from "@/api/client"
-import { type DatasetWritten, importResult } from "@/api/imports"
+import {
+  type DatasetWritten,
+  type ImportAsked,
+  importResult,
+  type UploadedFile,
+} from "@/api/imports"
 import { isActive, type Job } from "@/api/jobs"
 import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
 import { PercentBar } from "@/ui/percent-bar"
 import { TextLink } from "@/ui/text-link"
 import { datasetName } from "../datasets"
-import type { LatestPreview } from "./import-preview"
+import type { ChosenUploads } from "./import-draft"
+import { filesLeft } from "./import-reviews"
 import { type ImportRun, keptLine } from "./import-run"
+import { RoundAccount } from "./RoundAccount"
 
-type RunProps = Readonly<{ run: ImportRun; review: LatestPreview }>
+/** The draft's files, of which a round leaves some, and the way to review those left. */
+type RoundFilesLeft = Readonly<{
+  uploads: readonly UploadedFile[]
+  onReviewLeft: (files: ChosenUploads) => void
+}>
+
+type RunProps = Readonly<{
+  run: ImportRun
+  reading: boolean
+  files: RoundFilesLeft
+}>
 
 /** Import and its job, in the review's card (web/DESIGN.md, Patterns, Job in its card): Import
- * sends the latest draft's request once its own answer says it imports as it is, the reading
- * line beside it while a change is read; the job's bar and message follow from the jobs
- * drawer's own reads, then what it wrote and kept, with the way to the dataset and its chart,
- * or why it failed. */
-export function Run({ run, review }: RunProps) {
+ * sends the latest draft's request once its own answer says it imports as it is, or for
+ * several files once each is read, the reading line beside it while a change is read; the
+ * job's bar and message follow from the jobs drawer's own reads, then what it wrote and kept,
+ * with the way to the dataset and its chart, and for a round what it did with each file
+ * (`RoundAccount`); or why it failed. */
+export function Run({ run, reading, files }: RunProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-4">
@@ -29,7 +47,7 @@ export function Run({ run, review }: RunProps) {
         >
           Import
         </Button>
-        {review.reading && (
+        {reading && (
           <p className="text-xs text-muted-foreground">
             Reading your latest change
           </p>
@@ -40,12 +58,20 @@ export function Run({ run, review }: RunProps) {
           </p>
         )}
       </div>
-      {run.job !== undefined && <ImportJob job={run.job} />}
+      {run.job !== undefined && (
+        <ImportJob job={run.job} sent={run.sent} files={files} />
+      )}
     </div>
   )
 }
 
-function ImportJob({ job }: Readonly<{ job: Job }>) {
+type ImportJobProps = Readonly<{
+  job: Job
+  sent: ImportAsked | undefined
+  files: RoundFilesLeft
+}>
+
+function ImportJob({ job, sent, files }: ImportJobProps) {
   if (isActive(job)) {
     return (
       <div className="flex flex-col gap-2" data-testid="import-job">
@@ -65,16 +91,33 @@ function ImportJob({ job }: Readonly<{ job: Job }>) {
       </p>
     )
   }
-  return <Imported job={job} />
+  return <Imported job={job} sent={sent} files={files} />
 }
 
-function Imported({ job }: Readonly<{ job: Job }>) {
+function Imported({ job, sent, files }: ImportJobProps) {
   const result = importResult.parse(job.result)
+  const round =
+    sent?.kind === "files" ? (
+      <RoundAccount
+        round={result.round}
+        left={filesLeft(
+          files.uploads,
+          sent.sources,
+          result.round === undefined ? [] : result.round.not_imported
+        )}
+        onReviewLeft={files.onReviewLeft}
+      />
+    ) : null
   if (result.kind === "imported_before") {
     return (
-      <p data-testid="import-done" className="text-foreground-secondary">
-        The file was imported before: nothing changed.
-      </p>
+      <div className="flex flex-col gap-3" data-testid="import-done">
+        <p className="text-foreground-secondary">
+          {sent?.kind === "files"
+            ? "The files were imported before: nothing changed."
+            : "The file was imported before: nothing changed."}
+        </p>
+        {round}
+      </div>
     )
   }
   const kept = keptLine(result)
@@ -97,6 +140,7 @@ function Imported({ job }: Readonly<{ job: Job }>) {
           {kept.text}
         </p>
       )}
+      {round}
     </div>
   )
 }

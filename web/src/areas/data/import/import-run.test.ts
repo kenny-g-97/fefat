@@ -9,7 +9,7 @@ const ASKED: ImportAsked = {
   source: { kind: "path", path: "D:/batches/GLBX-1" },
   differing: "refuse",
 }
-const ASKS: Asks = { table: null, review: ASKED, missing: [] }
+const ASKS: Asks = { table: null, review: ASKED, several: [], missing: [] }
 const ASK = JSON.stringify(ASKED)
 
 function seen(verdict: BatchSeen["verdict"]): BatchSeen {

@@ -2,11 +2,13 @@ import type { Dispatch } from "react"
 import { ApiProblem } from "@/api/problems"
 import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
-import type { Card, Draft, DraftChange } from "./import-draft"
+import type { Card, ChosenUploads, Draft, DraftChange } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
 import type { Asks } from "./import-request"
-import { useImportRun } from "./import-run"
+import { type FileReviews, filesRequest, reviewedFiles } from "./import-reviews"
+import { importKey, importRequest, useImportRun } from "./import-run"
 import { BatchReview, FileReview } from "./FileReview"
+import { FilesReview } from "./FilesReview"
 import { Run } from "./Run"
 
 const CARD_NAMES: Readonly<Record<Card, string>> = {
@@ -20,21 +22,35 @@ type ReviewCardProps = Readonly<{
   change: Dispatch<DraftChange>
   asks: Asks
   review: LatestPreview
+  reviews: FileReviews
   zone: string | null
+  onReviewLeft: (files: ChosenUploads) => void
 }>
 
 /** The wizard's last card (web/DESIGN.md, Patterns, Review): what is still missing, by card;
  * else what the import would do, read against the store as each change is made, the last
- * answer kept and marked while a newer one is read, until the import of what it shows wrote;
- * then Import, and its job. */
+ * answer kept and marked while a newer one is read, or for several files each file's review
+ * (`FilesReview`), until the import of what it shows wrote; then Import, and its job. */
 export function ReviewCard({
   draft,
   change,
   asks,
   review,
+  reviews,
   zone,
+  onReviewLeft,
 }: ReviewCardProps) {
-  const run = useImportRun(asks, review)
+  const several = asks.several.length > 0
+  const run = useImportRun(
+    importKey(asks),
+    several
+      ? filesRequest(asks.several, reviews.states)
+      : importRequest(asks, review)
+  )
+  const uploads = draft.source.kind === "uploads" ? draft.source.uploads : []
+  const reading = several
+    ? reviews.states.some((state) => state.kind === "reading")
+    : review.reading
   return (
     <Panel
       title="Review"
@@ -43,7 +59,7 @@ export function ReviewCard({
       <div
         className="flex flex-col gap-5"
         data-testid="import-review"
-        aria-busy={review.reading}
+        aria-busy={reading}
       >
         {asks.missing.length > 0 && (
           <ul
@@ -60,10 +76,19 @@ export function ReviewCard({
             ))}
           </ul>
         )}
-        {asks.missing.length === 0 && !run.imported && (
+        {asks.missing.length === 0 && !run.imported && several && (
+          <FilesReview
+            files={reviewedFiles(uploads, reviews.states)}
+            readAgain={reviews.readAgain}
+            draft={draft}
+            change={change}
+            zone={zone}
+          />
+        )}
+        {asks.missing.length === 0 && !run.imported && !several && (
           <Answer draft={draft} change={change} review={review} zone={zone} />
         )}
-        <Run run={run} review={review} />
+        <Run run={run} reading={reading} files={{ uploads, onReviewLeft }} />
       </div>
     </Panel>
   )

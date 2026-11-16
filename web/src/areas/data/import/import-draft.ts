@@ -7,11 +7,14 @@ import type { PresetChoice } from "./import-search"
  * download, which the Databento importer reads by its folder's path. */
 export type Reading = "file" | "batch"
 
-/** The file the wizard reads: none yet, one chosen and copied into FEAT's folder, or one
- * named by its path under the import roots. */
+/** One or several files chosen and copied into FEAT's folder. */
+export type ChosenUploads = readonly [UploadedFile, ...UploadedFile[]]
+
+/** The files the wizard reads: none yet, one or several chosen and copied into FEAT's folder,
+ * several imported in one round (D-102), or one named by its path under the import roots. */
 export type Source =
   | Readonly<{ kind: "none" }>
-  | Readonly<{ kind: "upload"; upload: UploadedFile }>
+  | Readonly<{ kind: "uploads"; uploads: ChosenUploads }>
   | Readonly<{ kind: "path"; path: string }>
 
 /** A file's field delimiter, one character, as a profile's layout holds it. */

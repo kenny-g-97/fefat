@@ -19,7 +19,7 @@ const UPLOAD: UploadedFile = {
 }
 const CHOSEN = drafted(startingDraft({ kind: "none" }), {
   kind: "source",
-  source: { kind: "upload", upload: UPLOAD },
+  source: { kind: "uploads", uploads: [UPLOAD] },
 })
 const SOURCE = { kind: "upload", upload_id: UPLOAD.id }
 
@@ -30,11 +30,13 @@ describe("asksOf", () => {
     expect(asksOf(startingDraft({ kind: "none" }), LISTED, null)).toEqual({
       table: null,
       review: null,
-      missing: [{ card: "file", text: "Choose a file, or type its path" }],
+      several: [],
+      missing: [{ card: "file", text: "Choose files, or type a path" }],
     })
     expect(asksOf(CHOSEN, LISTED, null)).toEqual({
       table: { kind: "table", source: SOURCE },
       review: null,
+      several: [],
       missing: [{ card: "layout", text: "Choose a profile, or make one" }],
     })
   })
@@ -211,8 +213,47 @@ describe("asksOf", () => {
         source: { kind: "path", path: "D:/batches/GLBX-1" },
         differing: "refuse",
       },
+      several: [],
       missing: [],
     })
+  })
+
+  it("asks a review of each of several files, each file's name giving its contract", () => {
+    const june = {
+      ...UPLOAD,
+      id: "0193a000-0000-7000-8000-000000000002",
+      name: "XES 06-26.Last.txt",
+    }
+    const several = drafted(
+      drafted(
+        drafted(CHOSEN, {
+          kind: "source",
+          source: { kind: "uploads", uploads: [UPLOAD, june] },
+        }),
+        { kind: "listed profile", name: "ninjatrader" }
+      ),
+      { kind: "contract", contract: "XESH2026" }
+    )
+
+    const asks = asksOf(several, LISTED, null)
+
+    expect(asks.table).toEqual({
+      kind: "table",
+      source: SOURCE,
+      layout: NINJATRADER.layout,
+    })
+    expect(asks.review).toBeNull()
+    expect(asks.several).toEqual(
+      [UPLOAD, june].map((each) => ({
+        kind: "file",
+        source: { kind: "upload", upload_id: each.id },
+        contract: null,
+        root: null,
+        differing: "refuse",
+        profile: { kind: "named", name: "ninjatrader" },
+        time_zone: null,
+      }))
+    )
   })
 })
 

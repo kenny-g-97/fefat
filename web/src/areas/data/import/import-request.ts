@@ -11,13 +11,17 @@ import { profileOf } from "./import-profile"
 
 type FileImportAsked = components["schemas"]["FileImportAsked"]
 type AskedSource = FileImportAsked["source"]
+/** A review's ask, which is also its import's request: a file's or a batch's. */
+export type ReviewAsked = Exclude<ImportAsked, Readonly<{ kind: "files" }>>
 
-/** What can be asked of the server now: the file's table, once a file is chosen, and the
- * review, the preview of what its import would do, which is also the import's request, once
- * nothing is missing. */
+/** What can be asked of the server now: the file's table, the first file's where several are
+ * chosen, once a file is chosen; and once nothing is missing, the review, the preview of what
+ * its import would do, which is also the import's request, or where several files are chosen,
+ * each file's review instead, its contract the one its name gives (D-102). */
 export type Asks = Readonly<{
   table: PreviewAsked | null
-  review: ImportAsked | null
+  review: ReviewAsked | null
+  several: readonly FileImportAsked[]
   missing: readonly Missing[]
 }>
 
@@ -27,26 +31,41 @@ export function asksOf(
   profiles: readonly ListedProfile[],
   table: TablePreview | null
 ): Asks {
-  const source = sourceOf(draft.source)
-  if (source === null) {
+  const [source, ...others] = sourcesOf(draft.source)
+  if (source === undefined) {
     const text =
       draft.reading === "batch"
         ? "Type the path of the batch's folder"
-        : "Choose a file, or type its path"
-    return { table: null, review: null, missing: [{ card: "file", text }] }
+        : "Choose files, or type a path"
+    return {
+      table: null,
+      review: null,
+      several: [],
+      missing: [{ card: "file", text }],
+    }
   }
   if (draft.reading === "batch") {
     if (source.kind !== "path") {
       throw new Error("Expected a batch named by its path, got an upload.")
     }
-    const review: ImportAsked = {
+    const review: ReviewAsked = {
       kind: "databento",
       source,
       differing: draft.differing,
     }
-    return { table: null, review, missing: [] }
+    return { table: null, review, several: [], missing: [] }
   }
-  return fileAsks(draft, source, profiles, table)
+  const asks = fileAsks(draft, source, profiles, table)
+  if (others.length === 0 || asks.review?.kind !== "file") {
+    return { ...asks, several: [] }
+  }
+  const first = asks.review
+  const several = [source, ...others].map((each): FileImportAsked => ({
+    ...first,
+    source: each,
+    contract: null,
+  }))
+  return { ...asks, review: null, several }
 }
 
 function fileAsks(
@@ -54,7 +73,7 @@ function fileAsks(
   source: AskedSource,
   profiles: readonly ListedProfile[],
   table: TablePreview | null
-): Asks {
+): Omit<Asks, "several"> {
   const profile = draft.profile
   if (profile.kind === "none") {
     return {
@@ -90,7 +109,7 @@ function listedAsks(
   draft: Draft,
   source: AskedSource,
   listed: ImportProfile
-): Asks {
+): Omit<Asks, "several"> {
   const tableAsked: PreviewAsked = {
     kind: "table",
     source,
@@ -131,15 +150,18 @@ function fileFields(
   }
 }
 
-function sourceOf(source: Source): AskedSource | null {
+function sourcesOf(source: Source): readonly AskedSource[] {
   switch (source.kind) {
     case "none":
-      return null
-    case "upload":
-      return { kind: "upload", upload_id: source.upload.id }
+      return []
+    case "uploads":
+      return source.uploads.map((upload) => ({
+        kind: "upload",
+        upload_id: upload.id,
+      }))
     case "path": {
       const path = source.path.trim()
-      return path === "" ? null : { kind: "path", path }
+      return path === "" ? [] : [{ kind: "path", path }]
     }
   }
 }

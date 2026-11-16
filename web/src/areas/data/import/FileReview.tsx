@@ -24,13 +24,21 @@ type FileReviewProps = Readonly<{
   draft: Draft
   change: Dispatch<DraftChange>
   zone: string | null
+  alone?: boolean
 }>
 
 /** What a file's import would do: the verdict, what was read and left out, each offset from
  * the calendar with what it points at and the time zone the file is read in, the problems, the
  * warnings, the calendar's check, the first records as stored, and what the file adds to the
- * data FEAT holds. */
-export function FileReview({ seen, draft, change, zone }: FileReviewProps) {
+ * data FEAT holds, with what to do with records that differ where the file is reviewed `alone`,
+ * a round of several files asking it once for them all (D-102). */
+export function FileReview({
+  seen,
+  draft,
+  change,
+  zone,
+  alone = true,
+}: FileReviewProps) {
   return (
     <div className="flex flex-col gap-4">
       <p
@@ -64,7 +72,7 @@ export function FileReview({ seen, draft, change, zone }: FileReviewProps) {
       <FirstRecords records={seen.first_records} />
       {seen.merge !== null && (
         <Merge merge={seen.merge}>
-          {seen.merge.records_differing > 0 && (
+          {alone && seen.merge.records_differing > 0 && (
             <TakeRecords
               disputed={seen.merge.stored_records_disputed}
               draft={draft}

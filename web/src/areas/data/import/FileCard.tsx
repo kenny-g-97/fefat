@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { type Dispatch, useState } from "react"
-import { useUpload } from "@/api/imports"
+import { type FilesCopied, useUploads } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { settingsQuery } from "@/api/settings"
 import { Button } from "@/ui/button"
 import { FileDrop } from "@/ui/file-drop"
+import { counted } from "@/ui/figures"
 import { KeptField } from "@/ui/kept-field"
 import { Label } from "@/ui/label"
 import { Panel } from "@/ui/panel"
@@ -12,6 +13,7 @@ import { SectionFailure } from "@/ui/section-failure"
 import { Segmented } from "@/ui/segmented"
 import type { Draft, DraftChange, Reading } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
+import { FILES_AT_MOST } from "./import-reviews"
 
 type AppSettings = components["schemas"]["AppSettings"]
 
@@ -60,7 +62,7 @@ export function FileCard({ draft, change, table }: FileCardProps) {
               change({ kind: "source", source: { kind: "none" } })
             }}
           >
-            {typing ? "Choose a file instead" : "Type a path instead"}
+            {typing ? "Choose files instead" : "Type a path instead"}
           </Button>
         )}
         <TableState table={table} />
@@ -69,45 +71,77 @@ export function FileCard({ draft, change, table }: FileCardProps) {
   )
 }
 
+/** The files chosen, copied into FEAT's folder one after another (D-102): how far the copy
+ * has come, the files kept, and each file the server refused, with why; more than
+ * `FILES_AT_MOST` are refused before any is copied. */
 function ChosenFile({
   draft,
   change,
 }: Readonly<{ draft: Draft; change: Dispatch<DraftChange> }>) {
-  const upload = useUpload()
-  const kept = draft.source.kind === "upload" ? draft.source.upload : null
+  const uploads = useUploads()
+  const [chosen, setChosen] = useState(0)
+  const kept = draft.source.kind === "uploads" ? draft.source.uploads : null
+  const tooMany = chosen > FILES_AT_MOST
   return (
     <div className="flex flex-col gap-2">
       <FileDrop
         id="import-file-input"
-        disabled={upload.isPending}
-        onFile={(file) =>
-          upload.mutate(file, {
-            onSuccess: (uploaded) =>
-              change({
-                kind: "source",
-                source: { kind: "upload", upload: uploaded },
-              }),
-          })
-        }
+        disabled={uploads.isPending}
+        onFiles={(files) => {
+          setChosen(files.length)
+          if (files.length <= FILES_AT_MOST) {
+            uploads.mutate(files, {
+              onSuccess: (copied) => keep(copied, change),
+            })
+          }
+        }}
       />
-      {upload.isPending && (
+      {uploads.isPending && (
         <p className="text-xs text-muted-foreground">
-          Copying the file into FEAT's folder
+          {chosen === 1
+            ? "Copying the file into FEAT's folder"
+            : `Copying file ${Math.min(uploads.copied + 1, chosen)} of ${chosen} into FEAT's folder`}
         </p>
       )}
-      {upload.error !== null && (
+      {tooMany && (
         <p role="alert" className="text-negative">
-          {upload.error.message}
+          {`Expected ${FILES_AT_MOST} files at most in one import, got ${chosen}: choose fewer, and import the others next.`}
         </p>
       )}
-      {kept !== null && !upload.isPending && (
+      {uploads.error !== null && !tooMany && (
+        <p role="alert" className="text-negative">
+          {uploads.error.message}
+        </p>
+      )}
+      {uploads.data !== undefined && !uploads.isPending && !tooMany && (
+        <ul className="flex flex-col gap-1 text-negative" role="alert">
+          {uploads.data.refused.map((refused) => (
+            <li key={refused.name}>{`${refused.name}: ${refused.message}`}</li>
+          ))}
+        </ul>
+      )}
+      {kept !== null && !uploads.isPending && (
         <p data-testid="import-chosen" className="text-foreground-secondary">
-          <span className="font-medium text-foreground">{kept.name}</span>,{" "}
-          {sizeText(kept.size)}, copied into FEAT's folder on this PC
+          <span className="font-medium text-foreground">{kept[0].name}</span>
+          {kept.length > 1 &&
+            ` and ${counted(kept.length - 1, "more file")}`},{" "}
+          {sizeText(kept.reduce((total, each) => total + each.size, 0))}, copied
+          into FEAT's folder on this PC
         </p>
       )}
     </div>
   )
+}
+
+/** The files `copied` as the draft's source, where any was. */
+function keep(copied: FilesCopied, change: Dispatch<DraftChange>) {
+  const [first, ...others] = copied.uploads
+  if (first !== undefined) {
+    change({
+      kind: "source",
+      source: { kind: "uploads", uploads: [first, ...others] },
+    })
+  }
 }
 
 function TypedPath({
