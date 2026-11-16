@@ -65,7 +65,6 @@ def test_a_path_the_rule_refuses_is_refused_with_the_roots_named(
     assert str(root) in str(refused.value)
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows' network, device, and drive paths")
 @pytest.mark.parametrize(
     "written",
     [
@@ -81,6 +80,8 @@ def test_a_network_device_or_drive_relative_path_is_refused_before_the_disk_is_r
     written: str, root: Path, paths: FefatPaths, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A network path read would send the trader's Windows credentials to the server it names.
+    # Elsewhere a backslash is no separator, so each is a relative path, and `//server/share`
+    # lies under no root: refused the same, before the disk is read.
     def no_disk(self: Path, strict: bool = False) -> Path:
         raise AssertionError(f"Expected no read of the disk, got one for {self}.")
 

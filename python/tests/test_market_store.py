@@ -456,15 +456,12 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
     assert digest.exists()
 
 
-@pytest.mark.skipif(
-    sys.platform != "win32", reason="Only Windows refuses to replace a file held open"
-)
 def test_a_partition_another_program_holds_open_is_replaced_once_it_lets_go(
     tmp_path: Path,
 ) -> None:
     # Step 5.12 (from `BACKLOG.md`): Windows refuses to replace a file another program holds
-    # open, as a notebook's scan or a chart's read does, so the write tries again for a moment;
-    # elsewhere the replace never waits, and the reader is still open as it lands.
+    # open, as a notebook's scan or a chart's read does, so the write tries again for a moment,
+    # where it raised; elsewhere the replace lands at once, the reader still open or not.
     store = store_with_the_es_trades(tmp_path)
     path = tmp_path / TRADES_OF_MARCH_5.relative_path()
     trades = store.scan_partition(TRADES_OF_MARCH_5).collect().head(10)
@@ -473,7 +470,8 @@ def test_a_partition_another_program_holds_open_is_replaced_once_it_lets_go(
 
     store.write_partition(TRADES_OF_MARCH_5, trades)
 
-    assert reader.closed
+    if sys.platform == "win32":
+        assert reader.closed
     assert_frame_equal(store.scan_partition(TRADES_OF_MARCH_5).collect(), trades)
 
 
