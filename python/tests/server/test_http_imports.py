@@ -25,7 +25,9 @@ from fefat.market.importers import databento, file_import, tabular
 from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.execution import ExecutionLimits
+from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from local_server import logged_in
+from test_executor import MIB, PEAK_MEMORY, printed, ran
 
 DEADLINE_SECONDS = 240
 NINJATRADER_SAMPLE = SAMPLES["ninjatrader"][0]
@@ -296,11 +298,18 @@ def test_what_a_preview_quotes_of_a_file_stays_out_of_the_servers_log(
 
 
 def test_an_archive_that_unpacks_past_the_previews_memory_is_refused_while_the_server_answers(
-    client: TestClient, container: Container, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    client: TestClient,
+    container: Container,
+    executor: SubprocessExecutor,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A megabyte that unpacks to a gibibyte of zeros, read under a memory limit of 512 MiB: the
-    # runner fails, the server does not.
-    limited = ExecutionLimits(timeout_seconds=300, memory_bytes=512 * 1024**2)
+    # A megabyte that unpacks to a gibibyte of zeros, read under a memory limit a quarter of a
+    # GiB above what a runner took to start, measured first, as the executor's own test does, so
+    # that the test holds where the limit counts the address space: on Linux a runner holds
+    # most of 512 MiB before it reads a byte. The runner fails, the server does not.
+    started_with = int(printed(ran(executor, PEAK_MEMORY)[0]))
+    limited = ExecutionLimits(timeout_seconds=300, memory_bytes=started_with + 256 * MIB)
     monkeypatch.setattr(imports_service, "PREVIEW_LIMITS", limited)
     bomb = tmp_path / "bars.csv.gz"
     with gzip.open(bomb, "wb", compresslevel=9) as packed:
@@ -315,5 +324,6 @@ def test_an_archive_that_unpacks_past_the_previews_memory_is_refused_while_the_s
 
     assert preview.status_code == 200, preview.text
     assert preview.json()["kind"] == "refused"
-    assert "within 0.5 GiB of memory" in preview.json()["message"]
+    gibibytes = limited.memory_bytes / 1024**3
+    assert f"within {gibibytes:g} GiB of memory" in preview.json()["message"]
     assert client.get("/v1/healthz").status_code == 200
