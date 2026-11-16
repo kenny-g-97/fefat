@@ -3,7 +3,8 @@
 table or of what its import would do, which the executor reads while the request waits, and the
 import, an `import` job, over `fefat_app.services.imports`. A file is an upload's id or a path
 under the import roots; refused with 404 for an upload or a profile that is not kept, 403 for a
-path outside the roots, and 409 for a profile given under another profile's name."""
+path outside the roots, and 409 for a profile given under another profile's name or a saved
+profile's file that no longer reads as one."""
 
 from typing import Annotated
 
@@ -19,7 +20,7 @@ from fefat_app.imports import (
     ListedProfile,
     NoSuchUploadError,
     PathRefusedError,
-    ProfileNameTakenError,
+    ProfileRefusedError,
     TableAsked,
 )
 from fefat_app.job_models import Job
@@ -27,6 +28,8 @@ from fefat_app.services.imports import NoSuchProfileError
 
 router = APIRouter(prefix=API_PREFIX, tags=["imports"], dependencies=[Depends(the_identity)])
 REFUSALS = problem_responses(401, 403, 404, 409, 422)
+REFUSED = (NoSuchUploadError, NoSuchProfileError, PathRefusedError, ProfileRefusedError)
+"""What a preview and an import refuse before anything runs, each with its status (`_refusal`)."""
 
 
 @router.get("/import-profiles", responses=problem_responses(401, 409))
@@ -48,12 +51,7 @@ def preview_import(
     written; a file the SDK refuses is answered as refused, with why."""
     try:
         return container.imports.preview(asked)
-    except (
-        NoSuchUploadError,
-        NoSuchProfileError,
-        PathRefusedError,
-        ProfileNameTakenError,
-    ) as refused:
+    except REFUSED as refused:
         raise _refusal(refused) from refused
 
 
@@ -66,18 +64,13 @@ def start_import(
     and its end come with the job's stream."""
     try:
         return container.imports.start(asked)
-    except (
-        NoSuchUploadError,
-        NoSuchProfileError,
-        PathRefusedError,
-        ProfileNameTakenError,
-    ) as refused:
+    except REFUSED as refused:
         raise _refusal(refused) from refused
 
 
 def _refusal(refused: ValueError) -> HTTPException:
     if isinstance(refused, PathRefusedError):
         return HTTPException(403, str(refused))
-    if isinstance(refused, ProfileNameTakenError):
+    if isinstance(refused, ProfileRefusedError):
         return HTTPException(409, str(refused))
     return HTTPException(404, str(refused))

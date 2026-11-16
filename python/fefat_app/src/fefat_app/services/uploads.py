@@ -2,8 +2,8 @@
 names its copy under `raw/user/<sha256>/` once imported, so one rule for both, checked before a
 byte of the file is read. No control or format character, none of the characters Windows keeps
 out of names, no dot or space at its end, which Windows drops, no stem Windows opens as a device,
-at most `UPLOAD_NAME_BYTES` bytes, a suffix of `config.toml`'s `upload_suffixes`, and a name the
-raw manifest takes."""
+at most `UPLOAD_NAME_BYTES` bytes, a suffix of `config.toml`'s `upload_suffixes`, a name the
+raw manifest takes, and not the name of the upload's own record, `upload.json`."""
 
 import unicodedata
 from collections.abc import Sequence
@@ -12,7 +12,8 @@ from pathlib import PurePosixPath
 from fefat.market.importers.file_import import USER_RAW_FOLDER
 from fefat.market.layout import is_a_device_name
 from fefat.market.raw_manifest import checked_raw_path
-from fefat_app.imports import UploadRefusedError
+from fefat_app.import_sources import ends_in
+from fefat_app.imports import UPLOAD_RECORD_NAME, UploadRefusedError
 
 UPLOAD_NAME_BYTES = 120
 """The longest name of a file kept for an import, in UTF-8: its folder's path stays well within
@@ -43,8 +44,7 @@ def _keepable(name: str, suffixes: Sequence[str]) -> bool:
         return False
     if name.endswith((".", " ")) or is_a_device_name(name):
         return False
-    lowered = name.lower()
-    if not any(lowered.endswith(suffix) and len(lowered) > len(suffix) for suffix in suffixes):
+    if name.lower() == UPLOAD_RECORD_NAME or not ends_in(name, suffixes):
         return False
     try:
         checked_raw_path(PurePosixPath(USER_RAW_FOLDER, _SOME_HASH, name).as_posix())

@@ -4,13 +4,16 @@ the server, each stage the runner reports a `progress` event of the job's stream
 stop read each second until the file is read; then, in the worker, the quality report of each
 provider's data of each root it wrote, as the catalog sync writes them
 (`fefat_app.jobs.catalog_sync.written_report`), the profiles indexed where the import kept one,
-and the upload's folder removed, since the copy under `raw/user/` is the import's record.
+and last the upload's folder removed, since the copy under `raw/user/` is the import's record.
 
 Once its file is read the import writes, and the jobs refuse a request to stop
-(`fefat_app.services.jobs.STOPPABLE_BELOW`): a request made before that stops the runner at its
-next report, the file read or not. A refusal of the SDK ends the job failed in its words, and a
-failure once the import wrote says what was written and how to finish it. The result holds
-counts alone, since every job's is listed with the jobs."""
+(`fefat_app.services.jobs.STOPPABLE_BELOW`): the report that it writes clears a request made
+before it in the same write, tried again while the database is busy (`JobProgress.
+advance_past_stopping`), so that neither the worker nor the reaper ends an import that writes,
+but for a request read in the moment between the runner's report and the worker's. A refusal of
+the SDK ends the job failed in its words, and a failure once the import wrote says what was
+written and how to finish it, with the end of the runner's error, where its exception is named.
+The result holds counts alone, since every job's is listed with the jobs."""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -20,6 +23,7 @@ from uuid import UUID
 from fefat.config import FefatPaths
 from fefat.market.store import Store
 from fefat_app.execution import ExecutionProgress
+from fefat_app.executor.protocol import ERROR_CHARS
 from fefat_app.imports import (
     WRITING_PERCENT,
     ImportedBefore,
@@ -40,6 +44,10 @@ from fefat_app.ports import Executor, UploadRecords
 
 READING_MESSAGE = "Reading the file"
 """An import job's message until its file is read."""
+STOPPED_WHILE_WRITING = (
+    "The import stopped while it wrote, and importing the file again finishes it: "
+)
+"""What a job's error says first where its import stopped once it wrote (ADR-0021)."""
 
 
 @dataclass(frozen=True)
@@ -56,17 +64,20 @@ class ImportJobs:
 
     def run(self, payload: Mapping[str, Any], progress: JobProgress) -> dict[str, Any]:
         """Run the import of `payload`, reporting through `progress`; its result, or the error
-        the job ends with."""
+        the job ends with. The upload stays where the import was refused or did not end, for the
+        import to be run again, and goes once it wrote, after its reports."""
         job = ImportJobPayload.model_validate(payload)
         progress.advance(0, READING_MESSAGE)
         following = _Stages(progress)
         answer = following.imported(self.executor, job)
         if isinstance(answer, RefusedImport):
             raise ExecutionFailedError(following.said(answer.message))
-        self._upload_removed(job.upload_id)
-        if isinstance(answer, ImportedBefore):
-            return answer.model_dump(mode="json")
-        return {**answer.model_dump(mode="json"), "reports": self._reports(answer)}
+        try:
+            if isinstance(answer, ImportedBefore):
+                return answer.model_dump(mode="json")
+            return {**answer.model_dump(mode="json"), "reports": self._reports(answer)}
+        finally:
+            self._upload_removed(job.upload_id)
 
     def _reports(self, wrote: ImportWrote) -> list[dict[str, Any]]:
         """The quality report of each provider's data of each root `wrote` wrote, and the
@@ -115,14 +126,17 @@ class _Stages:
         return output.answer
 
     def report(self, reported: ExecutionProgress) -> None:
-        advancing(self.progress)(reported)
-        self.writing = self.writing or reported.percent >= WRITING_PERCENT
+        """The runner's report as the job's progress; the first that says the import writes
+        takes the job past stopping (module docstring)."""
+        if self.writing or reported.percent < WRITING_PERCENT:
+            advancing(self.progress)(reported)
+            return
+        self.progress.advance_past_stopping(reported.percent, reported.message)
+        self.writing = True
 
     def said(self, message: str) -> str:
-        """`message`, after what an import that stopped while it wrote leaves."""
+        """`message`, after what an import that stopped while it wrote leaves, its end kept
+        where the two would run past a job's error."""
         if not self.writing:
             return message
-        return (
-            "The import stopped while it wrote, and importing the file again finishes it: "
-            f"{message}"
-        )
+        return f"{STOPPED_WHILE_WRITING}{message[len(STOPPED_WHILE_WRITING) - ERROR_CHARS :]}"

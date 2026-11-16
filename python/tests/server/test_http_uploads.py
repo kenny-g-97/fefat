@@ -21,12 +21,15 @@ from local_server import logged_in
 OCTETS = {"Content-Type": "application/octet-stream"}
 EXPORT = b"20260304 230100;6810.25;6811;6809.75;6810.5;12\n"
 MEBIBYTE = 1024 * 1024
+LIMIT = 2 * MEBIBYTE
+"""The upload limit of these tests, past every other route's mebibyte, so that the route's own
+limit is what takes a file between the two."""
 
 
 @pytest.fixture
 def container(container: Container) -> Container:
-    """The server's container with an upload limit of one mebibyte."""
-    settings = Settings(upload_megabytes=1)
+    """The server's container with an upload limit of two mebibytes."""
+    settings = Settings(upload_megabytes=LIMIT // MEBIBYTE)
     return replace(
         container, settings=settings, imports=replace(container.imports, settings=settings)
     )
@@ -141,11 +144,11 @@ def test_a_file_past_the_limit_is_refused_and_nothing_is_kept(
     chunked: bool, client: TestClient, container: Container
 ) -> None:
     csrf = logged_in(client, container)
-    past = bytes(MEBIBYTE + 1)
+    past = bytes(LIMIT + 1)
 
     def chunks() -> Iterator[bytes]:
-        yield past[:MEBIBYTE]
-        yield past[MEBIBYTE:]
+        yield past[:LIMIT]
+        yield past[LIMIT:]
 
     response = client.post(
         "/v1/uploads",
@@ -159,10 +162,11 @@ def test_a_file_past_the_limit_is_refused_and_nothing_is_kept(
 
 
 def test_a_file_within_the_limit_is_kept(client: TestClient, container: Container) -> None:
+    # Past every other route's mebibyte: the route's own limit takes it (from the reviews).
     csrf = logged_in(client, container)
 
     response = client.post(
-        "/v1/uploads", params={"name": "x.csv"}, content=bytes(MEBIBYTE), headers={**csrf, **OCTETS}
+        "/v1/uploads", params={"name": "x.csv"}, content=bytes(LIMIT), headers={**csrf, **OCTETS}
     )
 
     assert response.status_code == 201

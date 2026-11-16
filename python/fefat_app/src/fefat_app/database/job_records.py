@@ -90,10 +90,14 @@ class JobTables:
         percent: float,
         message: str,
         details: Mapping[str, Any],
+        *,
+        past_stopping: bool = False,
     ) -> Job | None:
+        stopping = {"cancel_requested_at": None} if past_stopping else {}
         with Session(self.engine) as session, session.begin():
             advanced = update(JobRow).where(*_held(job_id, worker_pid))
-            if not _changed_one(session, advanced.values(progress=percent, message=message)):
+            changes = advanced.values(progress=percent, message=message, **stopping)
+            if not _changed_one(session, changes):
                 return None
             said = {"percent": percent, "message": message, "details": dict(details)}
             _add_event(session, job_id, JobEventType.PROGRESS, said)

@@ -14,10 +14,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from fefat.config import FefatPaths
+from fefat.market.importers.databento_batch import DBN_SUFFIXES
 from fefat_app.imports import PathRefusedError, ReadKind
 
-BATCH_FILE_SUFFIXES = (".dbn", ".dbn.zst")
-"""The suffixes of the DBN files the Databento importer reads beside its batch folders."""
 _NETWORK_OR_DEVICE = "\\\\"
 """How the drive of a network share, `\\\\server\\share`, or of a device path, `\\\\?\\C:`,
 starts on Windows."""
@@ -60,11 +59,12 @@ def _readable(
     if inside_the_app or not any(path.is_relative_to(root.resolve()) for root in roots):
         return False
     if kind is ReadKind.DATABENTO:
-        return path.is_dir() or (path.is_file() and _ends_in(path.name, BATCH_FILE_SUFFIXES))
-    return path.is_file() and _ends_in(path.name, suffixes)
+        return path.is_dir() or (path.is_file() and ends_in(path.name, DBN_SUFFIXES))
+    return path.is_file() and ends_in(path.name, suffixes)
 
 
-def _ends_in(name: str, suffixes: Sequence[str]) -> bool:
+def ends_in(name: str, suffixes: Sequence[str]) -> bool:
+    """Whether the file's `name` ends in one of `suffixes`, capitals ignored, after a stem."""
     lowered = name.lower()
     return any(lowered.endswith(suffix) and len(lowered) > len(suffix) for suffix in suffixes)
 

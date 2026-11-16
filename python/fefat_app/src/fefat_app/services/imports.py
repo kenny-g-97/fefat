@@ -44,8 +44,8 @@ from fefat_app.imports import (
     NamedProfile,
     PreviewAsked,
     ProfileChoice,
-    ProfileNameTakenError,
     ProfileOrigin,
+    ProfileRefusedError,
     ReadKind,
     RefusedImport,
     TableAsked,
@@ -145,6 +145,14 @@ class Imports:
             source.path, kind, settings.import_roots, self.paths, settings.upload_suffixes
         )
 
+    def uploads_of_active_imports(self) -> frozenset[str]:
+        """The folders of the uploads that queued and running imports read, which `fefat up`
+        keeps, as the reaper queues an import the last server left running again."""
+        payloads = (
+            ImportJobPayload.model_validate(job.payload) for job in self.jobs.active(JobKind.IMPORT)
+        )
+        return frozenset(str(each.upload_id) for each in payloads if each.upload_id is not None)
+
     def _profile(self, choice: ProfileChoice) -> tuple[ImportProfile, bool]:
         """The profile `choice` names or gives, and whether its import keeps it: a profile
         given whole that is not saved as it is."""
@@ -153,14 +161,21 @@ class Imports:
         try:
             saved = profile_is_saved(choice.profile, self.paths.profiles_dir)
         except ValueError as refused:
-            raise ProfileNameTakenError(str(refused)) from refused
+            raise ProfileRefusedError(str(refused)) from refused
         return choice.profile, not saved
 
     def _named(self, name: str) -> ImportProfile:
-        presets, saved = preset_profiles(), saved_profiles(self.paths.profiles_dir)
-        for profiles in (presets, saved):
-            if name in profiles:
-                return profiles[name]
+        """The preset named `name`, else the saved profile, the saved profiles read only for a
+        name no preset has, so that a saved file edited by hand refuses only what reads it."""
+        presets = preset_profiles()
+        if name in presets:
+            return presets[name]
+        try:
+            saved = saved_profiles(self.paths.profiles_dir)
+        except ValueError as refused:
+            raise ProfileRefusedError(str(refused)) from refused
+        if name in saved:
+            return saved[name]
         raise NoSuchProfileError(name, [*presets, *saved])
 
 

@@ -606,7 +606,7 @@
       },
       "BatchSeen": {
         "additionalProperties": false,
-        "description": "What a Databento batch's import would do (`fefat.market.importers.report.\nDatabentoPreview`): the verdict, the account's lines, counts and dates alone, and what each\nof its files adds to each dataset.",
+        "description": "What a Databento batch's import would do (`fefat.market.importers.report.\nDatabentoPreview`): the verdict, the account's lines, counts and dates alone, and what each\nof its files adds to each dataset, in counts, a dataset a product and schema of the batch.",
         "properties": {
           "kind": {
             "const": "databento",
@@ -624,7 +624,7 @@
           },
           "merges": {
             "items": {
-              "$ref": "#/components/schemas/DatasetMerge"
+              "$ref": "#/components/schemas/MergeSeen"
             },
             "title": "Merges",
             "type": "array"
@@ -1483,84 +1483,6 @@
         "title": "DatasetInput",
         "type": "object"
       },
-      "DatasetMerge": {
-        "additionalProperties": false,
-        "description": "What a file adds to one dataset, read against what the store holds of it (ADR-0021),\nunder `on_differing`: the records it adds, those the store already holds, and those at the\ninstants the two dispute, with the stored records at those instants; the trade dates that\ngain records, those new to their contract, whose partition held none of them, apart from\nthose it held part of; the differing records per trade date; and the partitions the import\nchanges and leaves as they are.",
-        "properties": {
-          "dataset": {
-            "$ref": "#/components/schemas/Dataset"
-          },
-          "differing_sessions": {
-            "items": {
-              "$ref": "#/components/schemas/DayRecords"
-            },
-            "title": "Differing Sessions",
-            "type": "array"
-          },
-          "extended_sessions": {
-            "items": {
-              "$ref": "#/components/schemas/DayRecords"
-            },
-            "title": "Extended Sessions",
-            "type": "array"
-          },
-          "new_sessions": {
-            "items": {
-              "$ref": "#/components/schemas/DayRecords"
-            },
-            "title": "New Sessions",
-            "type": "array"
-          },
-          "on_differing": {
-            "$ref": "#/components/schemas/DifferingRecords"
-          },
-          "partitions_changed": {
-            "minimum": 0.0,
-            "title": "Partitions Changed",
-            "type": "integer"
-          },
-          "partitions_unchanged": {
-            "minimum": 0.0,
-            "title": "Partitions Unchanged",
-            "type": "integer"
-          },
-          "records_added": {
-            "minimum": 0.0,
-            "title": "Records Added",
-            "type": "integer"
-          },
-          "records_differing": {
-            "minimum": 0.0,
-            "title": "Records Differing",
-            "type": "integer"
-          },
-          "records_held": {
-            "minimum": 0.0,
-            "title": "Records Held",
-            "type": "integer"
-          },
-          "stored_records_disputed": {
-            "minimum": 0.0,
-            "title": "Stored Records Disputed",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "dataset",
-          "on_differing",
-          "records_added",
-          "records_held",
-          "records_differing",
-          "stored_records_disputed",
-          "new_sessions",
-          "extended_sessions",
-          "differing_sessions",
-          "partitions_changed",
-          "partitions_unchanged"
-        ],
-        "title": "DatasetMerge",
-        "type": "object"
-      },
       "DatasetOrigin": {
         "description": "How a dataset came into the store (D-37): imported from the trader's files, or synced\nthrough a connector to a source the trader connects, which waits for a later phase (D-38).",
         "enum": [
@@ -1641,28 +1563,6 @@
           "pnl"
         ],
         "title": "DayPnl",
-        "type": "object"
-      },
-      "DayRecords": {
-        "additionalProperties": false,
-        "description": "How many records of a trade date a count found.",
-        "properties": {
-          "records": {
-            "minimum": 1.0,
-            "title": "Records",
-            "type": "integer"
-          },
-          "trade_date": {
-            "format": "date",
-            "title": "Trade Date",
-            "type": "string"
-          }
-        },
-        "required": [
-          "trade_date",
-          "records"
-        ],
-        "title": "DayRecords",
         "type": "object"
       },
       "DemoJobRequest": {
@@ -2237,7 +2137,7 @@
           "merge": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DatasetMerge"
+                "$ref": "#/components/schemas/MergeSeen"
               },
               {
                 "type": "null"
@@ -3375,6 +3275,84 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "MergeSeen": {
+        "additionalProperties": false,
+        "description": "What a file adds to one dataset FEAT holds (`fefat.market.importers.report.\nDatasetMerge`), in counts: its records new, held, and differing, with the stored records at\nthe instants the two dispute; its sessions new to the store and those the store held part\nof; the first trade dates with differing records, beside their total; and the partitions\nthe import changes and leaves as they are.",
+        "properties": {
+          "dataset": {
+            "$ref": "#/components/schemas/Dataset"
+          },
+          "differing_sessions": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Differing Sessions",
+            "type": "array"
+          },
+          "differing_sessions_total": {
+            "minimum": 0.0,
+            "title": "Differing Sessions Total",
+            "type": "integer"
+          },
+          "extended_sessions": {
+            "minimum": 0.0,
+            "title": "Extended Sessions",
+            "type": "integer"
+          },
+          "new_sessions": {
+            "minimum": 0.0,
+            "title": "New Sessions",
+            "type": "integer"
+          },
+          "partitions_changed": {
+            "minimum": 0.0,
+            "title": "Partitions Changed",
+            "type": "integer"
+          },
+          "partitions_unchanged": {
+            "minimum": 0.0,
+            "title": "Partitions Unchanged",
+            "type": "integer"
+          },
+          "records_added": {
+            "minimum": 0.0,
+            "title": "Records Added",
+            "type": "integer"
+          },
+          "records_differing": {
+            "minimum": 0.0,
+            "title": "Records Differing",
+            "type": "integer"
+          },
+          "records_held": {
+            "minimum": 0.0,
+            "title": "Records Held",
+            "type": "integer"
+          },
+          "stored_records_disputed": {
+            "minimum": 0.0,
+            "title": "Stored Records Disputed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset",
+          "records_added",
+          "records_held",
+          "records_differing",
+          "stored_records_disputed",
+          "new_sessions",
+          "extended_sessions",
+          "differing_sessions",
+          "differing_sessions_total",
+          "partitions_changed",
+          "partitions_unchanged"
+        ],
+        "title": "MergeSeen",
         "type": "object"
       },
       "Metrics": {
@@ -6017,7 +5995,7 @@
               },
               "type": "array"
             },
-            "maxItems": 20,
+            "maxItems": 10,
             "title": "Rows",
             "type": "array"
           },

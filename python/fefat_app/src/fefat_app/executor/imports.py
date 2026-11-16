@@ -3,11 +3,15 @@ its profile would read it (`fefat.market.importers.tabular.read_table`), what a 
 batch's import would do (`preview_file`, `preview_databento`), and the import itself
 (`import_file`, `import_databento`), each as `fefat data import` runs it, here, never in the
 server, so that a file too large, or an archive that unpacks past the memory limit, ends the
-runner alone. What the SDK refuses comes back as the runner's answer, in its words, kept to its
-first `ERROR_CHARS` characters; an import reports each stage it reaches as the execution's
-progress, and keeps a profile given whole once it has written (`keep_profile`)."""
+runner alone. What the SDK refuses, and what a file it cannot read raises, a broken archive's
+error among them (`REFUSALS`), comes back as the runner's answer, in its words, kept to its first
+`ERROR_CHARS` characters; an import reports each stage it reaches as the execution's progress,
+and keeps a profile given whole once it has written (`keep_profile`), or says why it could not,
+though the records are imported."""
 
 import os
+import zipfile
+import zlib
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from functools import partial
@@ -62,6 +66,7 @@ from fefat_app.imports import (
     ImportSpec,
     ImportVerdict,
     ImportWrote,
+    MergeSeen,
     OffsetDirection,
     OffsetSeen,
     PreviewRequest,
@@ -77,13 +82,23 @@ STAGES = {
 }
 """The percent and the message of each stage an import reaches, the message saying what it does
 next."""
+REFUSALS = (
+    ValueError,
+    OSError,
+    EOFError,
+    zipfile.BadZipFile,
+    zlib.error,
+    pl.exceptions.PolarsError,
+)
+"""What a preview and an import answer as refused, in the error's words: the SDK's refusals, a
+file that cannot be read, a `.gz` cut short, an archive that is none, and Polars' errors."""
 
 
 def import_preview_output(spec: ImportPreviewSpec) -> ImportPreviewOutput:
     """What `spec`'s file or batch holds, or the SDK's refusal of it."""
     try:
         return ImportPreviewOutput(answer=_previewed(spec.request))
-    except (ValueError, OSError, pl.exceptions.PolarsError) as refused:
+    except REFUSALS as refused:
         return ImportPreviewOutput(answer=RefusedImport(message=str(refused)[:ERROR_CHARS]))
 
 
@@ -91,7 +106,7 @@ def import_output(spec: ImportSpec, report: ProgressReport) -> ImportOutput:
     """What `spec`'s import wrote, each stage reported as it comes, or the SDK's refusal."""
     try:
         return ImportOutput(answer=_imported(spec.request, report))
-    except (ValueError, OSError) as refused:
+    except REFUSALS as refused:
         return ImportOutput(answer=RefusedImport(message=str(refused)[:ERROR_CHARS]))
 
 
@@ -141,7 +156,9 @@ def _imported(request: ImportRequest, report: ProgressReport) -> ImportWrote | I
     if not batch.files:
         return ImportedBefore()
     written = tuple(_written(merge) for file in batch.files for merge in file.merges)
-    return ImportWrote(datasets=written, instrument_saved=False, profile_kept=False)
+    return ImportWrote(
+        datasets=written, instrument_saved=False, profile_kept=False, profile_refusal=None
+    )
 
 
 def _told(report: ProgressReport, stage: ImportStage) -> None:
@@ -152,14 +169,22 @@ def _told(report: ProgressReport, stage: ImportStage) -> None:
 def _file_wrote(
     imported: FileImportReport | AlreadyImported, request: FileRequest, profiles_dir: Path
 ) -> ImportWrote | ImportedBefore:
-    """What the file's import wrote, its profile kept where it was given whole."""
+    """What the file's import wrote, its profile kept where it was given whole, or why it was
+    not, as when another import kept another profile under its name meanwhile: the records are
+    imported all the same."""
     if isinstance(imported, AlreadyImported):
         return ImportedBefore()
-    kept = request.keep_profile and keep_profile(request.profile, profiles_dir)
+    kept, refusal = False, None
+    if request.keep_profile:
+        try:
+            kept = keep_profile(request.profile, profiles_dir)
+        except (ValueError, OSError) as refused:
+            refusal = str(refused)[:LINE_CHARS]
     return ImportWrote(
         datasets=(_written(imported.merge),),
         instrument_saved=imported.instrument_saved,
         profile_kept=kept,
+        profile_refusal=refusal,
     )
 
 
@@ -205,7 +230,7 @@ def _file_seen(preview: FilePreview, file_name: str) -> FileSeen:
         mismatches_total=len(calendar.mismatches),
         warnings=_listed(reading.warnings),
         first_records=_first_records(preview),
-        merge=found if isinstance(found, DatasetMerge) else None,
+        merge=_merge_seen(found) if isinstance(found, DatasetMerge) else None,
         raw_path=found.raw_path if isinstance(found, AlreadyImported) else None,
     )
 
@@ -225,7 +250,27 @@ def _batch_seen(preview: DatabentoPreview) -> BatchSeen:
     return BatchSeen(
         verdict=_batch_verdict(preview),
         lines=_listed(preview.lines(), BATCH_LINES),
-        merges=tuple(merge for file in preview.files for merge in file.merges),
+        merges=tuple(_merge_seen(merge) for file in preview.files for merge in file.merges),
+    )
+
+
+def _merge_seen(merge: DatasetMerge) -> MergeSeen:
+    """What a file adds to a dataset, in counts, its differing trade dates cut, since a batch of
+    many products holds a session per product and trade date."""
+    return MergeSeen(
+        dataset=merge.dataset,
+        records_added=merge.records_added,
+        records_held=merge.records_held,
+        records_differing=merge.records_differing,
+        stored_records_disputed=merge.stored_records_disputed,
+        new_sessions=len(merge.new_sessions),
+        extended_sessions=len(merge.extended_sessions),
+        differing_sessions=tuple(
+            day.trade_date for day in merge.differing_sessions[:LISTED_AT_MOST]
+        ),
+        differing_sessions_total=len(merge.differing_sessions),
+        partitions_changed=merge.partitions_changed,
+        partitions_unchanged=merge.partitions_unchanged,
     )
 
 

@@ -228,9 +228,13 @@ class JobRecords(Protocol):
         percent: float,
         message: str,
         details: Mapping[str, Any],
+        *,
+        past_stopping: bool = False,
     ) -> Job | None:
         """Record how far the running job `job_id` that `worker_pid` holds has come, with a
-        `progress` event; the job, whose `cancel_requested_at` says whether to stop."""
+        `progress` event; the job, whose `cancel_requested_at` says whether to stop. With
+        `past_stopping`, the same write clears a request to stop made before it, as the report
+        that an import writes does, after which no request is taken (step 5.12)."""
         ...
 
     def finish(

@@ -19,14 +19,14 @@ from pydantic import AwareDatetime, Field
 from fefat.market.calendar_offset import OffsetCause
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import FileLayout, ImportProfile
-from fefat.market.importers.report import DatasetMerge
 from fefat.market.layout import Dataset, FolderName
 from fefat.market.schema import FrozenModel
 from fefat.market.snapshot import Sha256
 from fefat_app.execution_kinds import ExecutionKind, ExecutionLimits
 
-TABLE_ROWS = 20
-"""How many of a file's rows its table shows, under the selects that map its columns."""
+TABLE_ROWS = 10
+"""How many of a file's rows its table shows, under the selects that map its columns: enough to
+read the columns by, and few enough that the review stays near the fields."""
 TABLE_COLUMNS = 64
 """How many of a file's columns its table shows."""
 CELL_CHARS = 64
@@ -41,6 +41,8 @@ FIRST_RECORDS = 10
 """How many of a file's first records a preview shows as the store would hold them."""
 PATH_CHARS = 4096
 """The longest path a client may type."""
+UPLOAD_RECORD_NAME = "upload.json"
+"""The record of a kept upload, beside its file, a name no upload may take."""
 WRITING_PERCENT = 40.0
 """An import job's progress once its file is read and it writes: a request to stop is refused
 from here on, since a stopped import is finished only by running it again (ADR-0021)."""
@@ -326,6 +328,26 @@ class FirstPrints(FrozenModel):
     rows: tuple[PrintSeen, ...] = Field(max_length=FIRST_RECORDS)
 
 
+class MergeSeen(FrozenModel):
+    """What a file adds to one dataset FEAT holds (`fefat.market.importers.report.
+    DatasetMerge`), in counts: its records new, held, and differing, with the stored records at
+    the instants the two dispute; its sessions new to the store and those the store held part
+    of; the first trade dates with differing records, beside their total; and the partitions
+    the import changes and leaves as they are."""
+
+    dataset: Dataset
+    records_added: int = Field(ge=0)
+    records_held: int = Field(ge=0)
+    records_differing: int = Field(ge=0)
+    stored_records_disputed: int = Field(ge=0)
+    new_sessions: int = Field(ge=0)
+    extended_sessions: int = Field(ge=0)
+    differing_sessions: tuple[date, ...] = Field(max_length=LISTED_AT_MOST)
+    differing_sessions_total: int = Field(ge=0)
+    partitions_changed: int = Field(ge=0)
+    partitions_unchanged: int = Field(ge=0)
+
+
 class FileSeen(FrozenModel):
     """What a file's import would do (`fefat.market.importers.file_report.FilePreview`): the
     verdict; the file's name and profile; the dataset its records go to; what was read, left
@@ -353,19 +375,19 @@ class FileSeen(FrozenModel):
     mismatches_total: int = Field(ge=0)
     warnings: tuple[Capped, ...] = Field(max_length=LISTED_AT_MOST)
     first_records: Annotated[FirstBars | FirstPrints, Field(discriminator="kind")]
-    merge: DatasetMerge | None
+    merge: MergeSeen | None
     raw_path: str | None
 
 
 class BatchSeen(FrozenModel):
     """What a Databento batch's import would do (`fefat.market.importers.report.
     DatabentoPreview`): the verdict, the account's lines, counts and dates alone, and what each
-    of its files adds to each dataset."""
+    of its files adds to each dataset, in counts, a dataset a product and schema of the batch."""
 
     kind: Literal[AnswerKind.DATABENTO] = AnswerKind.DATABENTO
     verdict: ImportVerdict
     lines: tuple[Capped, ...] = Field(max_length=BATCH_LINES)
-    merges: tuple[DatasetMerge, ...]
+    merges: tuple[MergeSeen, ...]
 
 
 class RefusedImport(FrozenModel):
@@ -393,13 +415,15 @@ class DatasetWritten(FrozenModel):
 
 
 class ImportWrote(FrozenModel):
-    """What an import wrote: each dataset's account, whether the profile's new instrument was
-    saved, and whether the profile given whole was kept under `profiles/`."""
+    """What an import wrote: each dataset's account, none where a batch held no record FEAT
+    stores; whether the profile's new instrument was saved; and whether the profile given whole
+    was kept under `profiles/`, or why it was not, though its records were imported."""
 
     kind: Literal[AnswerKind.WROTE] = AnswerKind.WROTE
     datasets: tuple[DatasetWritten, ...]
     instrument_saved: bool
     profile_kept: bool
+    profile_refusal: Capped | None
 
 
 class ImportedBefore(FrozenModel):
@@ -459,5 +483,6 @@ class PathRefusedError(ValueError):
     """A path outside the import roots, or of a kind the importers do not read."""
 
 
-class ProfileNameTakenError(ValueError):
-    """A profile given whole under a name a preset or another saved profile has."""
+class ProfileRefusedError(ValueError):
+    """A profile given whole under a name a preset or another saved profile has, or a saved
+    profile's file, edited by hand, that no longer reads as a profile."""

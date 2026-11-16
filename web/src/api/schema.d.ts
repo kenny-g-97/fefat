@@ -1116,7 +1116,7 @@ export interface components {
          * BatchSeen
          * @description What a Databento batch's import would do (`fefat.market.importers.report.
          *     DatabentoPreview`): the verdict, the account's lines, counts and dates alone, and what each
-         *     of its files adds to each dataset.
+         *     of its files adds to each dataset, in counts, a dataset a product and schema of the batch.
          */
         BatchSeen: {
             /**
@@ -1127,7 +1127,7 @@ export interface components {
             /** Lines */
             lines: components["schemas"]["Capped"][];
             /** Merges */
-            merges: components["schemas"]["DatasetMerge"][];
+            merges: components["schemas"]["MergeSeen"][];
             verdict: components["schemas"]["ImportVerdict"];
         };
         /**
@@ -1433,37 +1433,6 @@ export interface components {
             name: string;
         };
         /**
-         * DatasetMerge
-         * @description What a file adds to one dataset, read against what the store holds of it (ADR-0021),
-         *     under `on_differing`: the records it adds, those the store already holds, and those at the
-         *     instants the two dispute, with the stored records at those instants; the trade dates that
-         *     gain records, those new to their contract, whose partition held none of them, apart from
-         *     those it held part of; the differing records per trade date; and the partitions the import
-         *     changes and leaves as they are.
-         */
-        DatasetMerge: {
-            dataset: components["schemas"]["Dataset"];
-            /** Differing Sessions */
-            differing_sessions: components["schemas"]["DayRecords"][];
-            /** Extended Sessions */
-            extended_sessions: components["schemas"]["DayRecords"][];
-            /** New Sessions */
-            new_sessions: components["schemas"]["DayRecords"][];
-            on_differing: components["schemas"]["DifferingRecords"];
-            /** Partitions Changed */
-            partitions_changed: number;
-            /** Partitions Unchanged */
-            partitions_unchanged: number;
-            /** Records Added */
-            records_added: number;
-            /** Records Differing */
-            records_differing: number;
-            /** Records Held */
-            records_held: number;
-            /** Stored Records Disputed */
-            stored_records_disputed: number;
-        };
-        /**
          * DatasetOrigin
          * @description How a dataset came into the store (D-37): imported from the trader's files, or synced
          *     through a connector to a source the trader connects, which waits for a later phase (D-38).
@@ -1497,19 +1466,6 @@ export interface components {
         DayPnl: {
             /** Pnl */
             pnl: string;
-            /**
-             * Trade Date
-             * Format: date
-             */
-            trade_date: string;
-        };
-        /**
-         * DayRecords
-         * @description How many records of a trade date a count found.
-         */
-        DayRecords: {
-            /** Records */
-            records: number;
             /**
              * Trade Date
              * Format: date
@@ -1776,7 +1732,7 @@ export interface components {
             kind: "file";
             /** Last Trade Date */
             last_trade_date: string | null;
-            merge: components["schemas"]["DatasetMerge"] | null;
+            merge: components["schemas"]["MergeSeen"] | null;
             /** Mismatches */
             mismatches: components["schemas"]["Capped"][];
             /** Mismatches Total */
@@ -2248,6 +2204,37 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /**
+         * MergeSeen
+         * @description What a file adds to one dataset FEAT holds (`fefat.market.importers.report.
+         *     DatasetMerge`), in counts: its records new, held, and differing, with the stored records at
+         *     the instants the two dispute; its sessions new to the store and those the store held part
+         *     of; the first trade dates with differing records, beside their total; and the partitions
+         *     the import changes and leaves as they are.
+         */
+        MergeSeen: {
+            dataset: components["schemas"]["Dataset"];
+            /** Differing Sessions */
+            differing_sessions: string[];
+            /** Differing Sessions Total */
+            differing_sessions_total: number;
+            /** Extended Sessions */
+            extended_sessions: number;
+            /** New Sessions */
+            new_sessions: number;
+            /** Partitions Changed */
+            partitions_changed: number;
+            /** Partitions Unchanged */
+            partitions_unchanged: number;
+            /** Records Added */
+            records_added: number;
+            /** Records Differing */
+            records_differing: number;
+            /** Records Held */
+            records_held: number;
+            /** Stored Records Disputed */
+            stored_records_disputed: number;
         };
         /**
          * Metrics

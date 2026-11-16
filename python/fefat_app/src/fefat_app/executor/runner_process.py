@@ -20,7 +20,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
@@ -222,11 +222,12 @@ def removed(path: Path) -> None:
             time.sleep(0.01)
 
 
-def leftovers_removed(folder: Path) -> None:
+def leftovers_removed(folder: Path, kept: Collection[str] = frozenset()) -> None:
     """Remove each runner's log and execution's folder in `folder` that last changed more than
     `LEFT_SECONDS` ago, which Windows held past the removal or a server stopped during an
-    execution left behind; the server's start calls it, before any runner of its own. An entry
-    that its own executor removes meanwhile is passed over.
+    execution left behind, but those `kept` names, as the uploads of imports still queued; the
+    server's start calls it, before any runner of its own. An entry that its own executor
+    removes meanwhile is passed over.
 
     shortcut: a notebook's runner kept for more than a day without writing to its log loses the
     log on Linux and macOS, where a held file can be removed; a mark of each runner that lives,
@@ -235,6 +236,8 @@ def leftovers_removed(folder: Path) -> None:
         return
     oldest = time.time() - LEFT_SECONDS
     for path in folder.iterdir():
+        if path.name in kept:
+            continue
         try:
             changed = path.stat().st_mtime
         except FileNotFoundError:

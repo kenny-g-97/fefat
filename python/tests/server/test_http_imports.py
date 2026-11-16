@@ -231,6 +231,28 @@ def test_a_profile_is_named_among_the_presets_and_the_saved_ones_never_as_a_path
     assert "Expected the name of a preset or a saved profile" in response.json()["detail"]
 
 
+def test_a_saved_profile_broken_by_hand_refuses_only_what_names_it_with_409(
+    client: TestClient, container: Container
+) -> None:
+    # A preset still reads, and a name only a saved profile could hold is refused in the file's
+    # words, where both answered a bare 500 (from the reviews).
+    profiles = resolve_paths(os.environ).profiles_dir
+    profiles.mkdir(parents=True, exist_ok=True)
+    (profiles / "mine.yaml").write_text("name: [unclosed", encoding="utf-8")
+    csrf = logged_in(client, container)
+    source = {"kind": "upload", "upload_id": uploaded(client, csrf, NINJATRADER_SAMPLE)}
+
+    def named(name: str) -> dict[str, Any]:
+        return {"kind": "file", "source": source, "profile": {"kind": "named", "name": name}}
+
+    preset = client.post("/v1/imports/preview", json=named("ninjatrader"), headers=csrf)
+    saved = client.post("/v1/imports/preview", json=named("mine"), headers=csrf)
+
+    assert preset.status_code == 200, preset.text
+    assert saved.status_code == 409
+    assert "mine.yaml" in saved.json()["detail"]
+
+
 def test_an_upload_not_kept_is_refused_with_404_and_a_path_outside_the_roots_with_403(
     client: TestClient, container: Container, tmp_path: Path
 ) -> None:

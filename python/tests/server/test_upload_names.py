@@ -48,3 +48,11 @@ def test_a_suffix_config_toml_adds_is_kept_and_one_it_leaves_out_is_refused() ->
     assert checked_upload_name("bars.dat", (".dat",)) == "bars.dat"
     with pytest.raises(UploadRefusedError):
         checked_upload_name("bars.csv", (".dat",))
+
+
+@pytest.mark.parametrize("name", ["upload.json", "Upload.JSON"])
+def test_the_name_of_an_uploads_own_record_is_refused_whatever_the_suffixes(name: str) -> None:
+    # A file named as the record beside it would be written over by it (from the reviews).
+    assert checked_upload_name("bars.json", (".json",)) == "bars.json"
+    with pytest.raises(UploadRefusedError, match="rename the file"):
+        checked_upload_name(name, (".json",))
