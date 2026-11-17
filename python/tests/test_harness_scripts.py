@@ -23,9 +23,11 @@ import e2e_server
 from export_samples import HOUR, PRESETS
 from fefat.backtest import saved_runs_in
 from fefat.config import load_settings, resolve_paths
+from fefat.market.calendar_breaks import BarsInBreaks
 from fefat.market.calendar_definition import CalendarId
 from fefat.market.calendar_offset import OffsetCause
 from fefat.market.importers.file_import import FileImportRequest, preview_file
+from fefat.market.importers.file_report import FilePreview
 from fefat.market.importers.profiles import NewInstrument
 from fefat.market.instruments import Currency, InstrumentKind
 from fefat.market.last_trade_rules import ThirdFriday
@@ -303,3 +305,33 @@ def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_impo
     assert [line.rsplit(";", 1) for line in tens] == [
         [line.rsplit(";", 1)[0], "10"] for line in [*bars, last]
     ]
+
+
+@pytest.mark.usefixtures("seeding")
+def test_the_seed_writes_exports_with_bars_in_a_break_for_the_correction(tmp_path: Path) -> None:
+    # Step 5.15: the folder `breaks` holds three contracts of the first export's dates whose
+    # break after 02-03 holds nine bars, the last closing at the next open, which the review
+    # refuses for their bars in a break alone and the correction takes without 02-03 and 02-04;
+    # and a fourth without them, which imports as it is.
+    e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
+
+    paths = resolve_paths(os.environ)
+    breaks = tmp_path / "fefat-e2e-exports" / "breaks"
+    store = Store(paths.data_dir)
+    profile = PRESETS["ninjatrader"].model_copy(update={"instrument": XES})
+
+    def previewed(name: str, choice: BarsInBreaks) -> FilePreview:
+        request = FileImportRequest(path=breaks / name, profile=profile, bars_in_breaks=choice)
+        return preview_file(request, store, instrument_table(store.folder), paths.cache_dir)
+
+    for name in e2e_server.XES_WITH_A_BREAK:
+        refused = previewed(name, BarsInBreaks.REFUSE).reading
+        left_out = previewed(name, BarsInBreaks.LEAVE_OUT).reading
+        (found,) = refused.calendar.breaks_with_bars
+        assert refused.only_bars_in_breaks_refuse()
+        assert [(each.after, each.bars) for each in found.breaks] == [(date(2026, 2, 3), 9)]
+        assert found.trade_dates_beside() == [date(2026, 2, 3), date(2026, 2, 4)]
+        assert found.records_beside() == 2 * 1_380 + 9
+        assert (left_out.refusals(), left_out.records) == ([], 3 * 1_380)
+    clean = previewed(e2e_server.XES_WITHOUT_A_BREAK, BarsInBreaks.REFUSE).reading
+    assert (clean.refusals(), clean.records) == ([], 5 * 1_380)

@@ -25,8 +25,14 @@ import sys
 import tempfile
 import warnings
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import polars as pl
+
+    from fefat.market.calendar import SessionTable
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "synthetic"
@@ -42,6 +48,14 @@ contract."""
 XES_MORE_NAMES = ("XES 06-26.Last.txt", "XES 09-26.Last.txt")
 """The names of the two more contracts of `XES_FIRST`'s dates, for a round of several files
 (D-102)."""
+XES_WITH_A_BREAK = ("XES 12-26.Last.txt", "XES 03-27.Last.txt", "XES 06-27.Last.txt")
+XES_WITHOUT_A_BREAK = "XES 09-27.Last.txt"
+"""The names of the exports of the folder `breaks`, `XES_FIRST`'s dates of four more
+contracts, the first three with bars in the break after `XES_BREAK_AFTER`, for the
+correction the import spec approves for one file and in a round (step 5.15)."""
+XES_BREAK_AFTER = "2026-02-03"
+"""The trade date after whose session the break holds bars in its last nine minutes, the
+last closing at the next session's open, as a platform's stretch stamped early does."""
 
 
 def required(name: str) -> str:
@@ -106,7 +120,6 @@ def xes_exports(home: Path) -> None:
     from fefat.config import resolve_paths
     from fefat.market import instruments
     from fefat.market.calendar import sessions_of
-    from fefat.market.engine_units import price_text
 
     exports = home.parent / f"{home.name}-exports"
     if exports.exists():
@@ -114,7 +127,7 @@ def xes_exports(home: Path) -> None:
     tests = str(ROOT / "python" / "tests")
     sys.path.insert(0, tests)
     try:
-        from generated_minutes import listing, minutes_of
+        from generated_minutes import listing, minutes_of, ninjatrader_lines
     finally:
         sys.path.remove(tests)
     days = (XES_FIRST[0], XES_SECOND[1])
@@ -129,12 +142,7 @@ def xes_exports(home: Path) -> None:
         held = bars.filter(
             pl.col("trade_date").is_between(date.fromisoformat(first), date.fromisoformat(last))
         )
-        written[folder] = [
-            f"{datetime.fromtimestamp(bar['ts_close'] // 10**9, UTC):%Y%m%d %H%M%S};"
-            + ";".join(price_text(bar[price]) for price in ("open", "high", "low", "close"))
-            + f";{bar['volume']}\n"
-            for bar in held.iter_rows(named=True)
-        ]
+        written[folder] = [f"{line}\n" for line in ninjatrader_lines(held)]
     *kept, last_bar = written["first"]
     stamp, *prices, volume = last_bar.rstrip("\n").split(";")
     written["revised"] = [*kept, ";".join([stamp, *prices, str(int(volume) + 1)]) + "\n"]
@@ -147,8 +155,40 @@ def xes_exports(home: Path) -> None:
     (exports / "more").mkdir()
     for name in XES_MORE_NAMES:
         (exports / "more" / name).write_text("".join(ten_lots), encoding="utf-8", newline="\n")
+    breaks = with_bars_in_a_break(bars, sessions)
+    (exports / "breaks").mkdir()
+    for name in (*XES_WITH_A_BREAK, XES_WITHOUT_A_BREAK):
+        held = breaks if name in XES_WITH_A_BREAK else breaks.filter("in_session")
+        lines = ninjatrader_lines(held.with_columns(volume=pl.lit(10, dtype=pl.UInt64)))
+        (exports / "breaks" / name).write_text(
+            "".join(f"{line}\n" for line in lines), encoding="utf-8", newline="\n"
+        )
     with (home / "config.toml").open("a", encoding="utf-8") as config:
         config.write(f'import_roots = ["{exports.as_posix()}"]\n')
+
+
+def with_bars_in_a_break(bars: "pl.DataFrame", sessions: "SessionTable") -> "pl.DataFrame":
+    """`XES_FIRST`'s `bars` and nine more in the last minutes of the break after
+    `XES_BREAK_AFTER`, priced as that session's last bar, the last closing at the next
+    session's open; `in_session` tells the bars of the sessions apart (step 5.15)."""
+    import polars as pl
+
+    first, last = map(date.fromisoformat, XES_FIRST)
+    held = bars.filter(pl.col("trade_date").is_between(first, last))
+    day = date.fromisoformat(XES_BREAK_AFTER)
+    minute = 60_000_000_000
+    next_open = sessions.following(day).open
+    last_bar = held.filter(pl.col("trade_date") == day).tail(1)
+    added = [
+        last_bar.with_columns(ts_open=pl.lit(opened), ts_close=pl.lit(opened + minute))
+        for opened in range(next_open - 9 * minute, next_open, minute)
+    ]
+    return pl.concat(
+        [
+            held.with_columns(in_session=True),
+            *(each.with_columns(in_session=False) for each in added),
+        ]
+    ).sort("ts_open")
 
 
 def year_of_mes() -> None:
