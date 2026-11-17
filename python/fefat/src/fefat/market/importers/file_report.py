@@ -80,8 +80,14 @@ class FileReading(FrozenModel):
     warnings: tuple[str, ...]
 
     def refusals(self) -> list[str]:
-        """The problems and offsets that stop an import."""
-        return [*self.problems, *(offset.describe() for offset in self.calendar.offsets)]
+        """The problems, offsets, and breaks with a bar closing at the next open that stop an
+        import (ADR-0022)."""
+        calendar = self.calendar
+        return [
+            *self.problems,
+            *(offset.describe() for offset in calendar.offsets),
+            *(found.describe() for found in calendar.breaks_with_bars),
+        ]
 
     def lines(self) -> list[str]:
         dates = (

@@ -1,6 +1,6 @@
 """Bars in a break against an offset (step 5.15, ADR-0022): a file that holds bars through a
 break, a bar in the minute before an open, or bars before the open of a session it ends inside
-shows no offset, while a file stamped a bar early, wholly or in a part of whole sessions, or a
+shows no offset but bars in a break, with the sessions beside them, while a file stamped a bar early, wholly or in a part of whole sessions, or a
 part of it read hours off, still does. The fixtures' ESH2026 1-minute bars hold three whole
 sessions, 2026-03-05, 03-06, and 03-09, across the clock change of 2026-03-08; the bars of
 longer spans are generated on the calendar."""
@@ -32,6 +32,7 @@ HOUR = 60 * MINUTE
 MARCH_5, MARCH_6, MARCH_9 = date(2026, 3, 5), date(2026, 3, 6), date(2026, 3, 9)
 
 type Offsets = list[tuple[int, OffsetCause, date, date]]
+type Breaks = list[tuple[list[tuple[date, int]], list[date]]]
 
 
 @pytest.fixture
@@ -79,38 +80,56 @@ def offsets(dataset: Dataset, bars: pl.LazyFrame, sessions: SessionTable) -> Off
     ]
 
 
-def test_bars_through_a_daily_break_show_no_offset(sessions: SessionTable) -> None:
+def breaks_found(bars: pl.LazyFrame, sessions: SessionTable) -> Breaks:
+    """What the calendar check finds of the bars' breaks: each break that holds a bar closing at
+    the next open, as the trade date it follows and its bars, and the trade dates beside them;
+    none where it finds an offset or no such break."""
+    report = check_records(ES_MINUTES, bars, sessions)
+    assert report.offsets == ()
+    return [
+        (
+            [(each.after, each.bars) for each in found.breaks],
+            found.trade_dates_beside(),
+        )
+        for found in report.breaks_with_bars
+    ]
+
+
+def test_bars_through_a_daily_break_are_bars_in_a_break(sessions: SessionTable) -> None:
     # Done means 1: a bar in every minute of the break after 03-05, the last closing at the
-    # open of 03-06, read today as a file stamped a bar early.
+    # open of 03-06, read today as a file stamped a bar early. The sessions on both sides go
+    # with them, and 03-09 too, since the fixtures' straggler after the close of 03-06 joins
+    # it by a break that holds a bar.
     after = sessions.session(MARCH_5)
     bars = with_bars_at(
         fixture_bars(), range(after.close, sessions.following(MARCH_5).open, MINUTE), sessions
     )
 
-    assert offsets(ES_MINUTES, bars, sessions) == []
+    assert breaks_found(bars, sessions) == [([(MARCH_5, 60)], [MARCH_5, MARCH_6, MARCH_9])]
 
 
-def test_a_bar_in_the_minute_before_an_open_shows_no_offset(sessions: SessionTable) -> None:
+def test_a_bar_in_the_minute_before_an_open_is_a_bar_in_a_break(sessions: SessionTable) -> None:
     # Done means 1: one bar closing at the open of 03-06, read today as a bar early.
     bars = with_bars_at(fixture_bars(), [sessions.session(MARCH_6).open - MINUTE], sessions)
 
-    assert offsets(ES_MINUTES, bars, sessions) == []
+    assert breaks_found(bars, sessions) == [([(MARCH_5, 1)], [MARCH_5, MARCH_6, MARCH_9])]
 
 
-def test_bars_before_the_open_of_a_session_the_file_ends_inside_show_no_offset(
+def test_bars_before_the_open_of_a_session_the_file_ends_inside_are_bars_in_a_break(
     sessions: SessionTable,
 ) -> None:
     # Done means 1, the shape of your MNQ 03-24: an hour of bars before the open of 03-09,
     # after the clock change of 03-08, and the first 300 minutes of that session, where the
-    # file ends; the part after the change read today as an hour early.
+    # file ends; the part after the change read today as an hour early. The weekend break
+    # holds the straggler after the close of 03-06 as well.
     opened = sessions.session(MARCH_9).open
     ending = fixture_bars().filter(pl.col("ts_open") < opened + 300 * MINUTE)
     bars = with_bars_at(ending, range(opened - HOUR, opened, MINUTE), sessions)
 
-    assert offsets(ES_MINUTES, bars, sessions) == []
+    assert breaks_found(bars, sessions) == [([(MARCH_6, 61)], [MARCH_6, MARCH_9])]
 
 
-def test_bars_before_an_open_beside_sessions_missing_their_last_minutes_show_no_offset(
+def test_bars_before_an_open_beside_sessions_missing_their_last_minutes_are_bars_in_a_break(
     sessions: SessionTable,
 ) -> None:
     # Done means 7, the shape of your ES 12-20's 2020-09-10 and 09-11: nine bars before the
@@ -125,7 +144,58 @@ def test_bars_before_an_open_beside_sessions_missing_their_last_minutes_show_no_
         fixture_bars().filter(~missing), range(opened - 9 * MINUTE, opened, MINUTE), sessions
     )
 
-    assert offsets(ES_MINUTES, bars, sessions) == []
+    assert breaks_found(bars, sessions) == [([(MARCH_6, 10)], [MARCH_6, MARCH_9])]
+
+
+def test_bars_in_a_break_that_reach_no_open_are_kept_and_not_found(
+    sessions: SessionTable,
+) -> None:
+    # The fixtures' straggler after the close of 03-06, and bars in the middle of the break
+    # after 03-05, reach no open: they stay, as before (D-43), and refuse nothing.
+    after = sessions.session(MARCH_5)
+    bars = with_bars_at(
+        fixture_bars(), [after.close + 10 * MINUTE, after.close + 20 * MINUTE], sessions
+    )
+
+    assert breaks_found(bars, sessions) == []
+
+
+def test_the_sessions_beside_grow_across_breaks_that_hold_a_bar(sessions: SessionTable) -> None:
+    # Generated whole sessions from 2026-02-02 to 02-13: a bar closing at the open of 02-10,
+    # after the break of 02-09, and a stray in the break after 02-05, the Thursday before, and
+    # in the weekend after 02-06: the sessions joined to 02-09 by breaks with bars go too,
+    # back to 02-05, while 02-04, whose break after it holds none, stays.
+    days = sessions.between(date(2026, 2, 2), date(2026, 2, 13))
+    opens = [
+        opened
+        for start, end in days.select("open", "close").rows()
+        for opened in range(start, end, MINUTE)
+    ]
+    strays = [sessions.session(date(2026, 2, day)).close + 5 * MINUTE for day in (5, 6)]
+    reaching = [sessions.session(date(2026, 2, 10)).open - MINUTE]
+
+    assert breaks_found(generated([*opens, *strays, *reaching], MINUTE, sessions), sessions) == [
+        (
+            [(date(2026, 2, 9), 1)],
+            [date(2026, 2, day) for day in (5, 6, 9, 10)],
+        )
+    ]
+
+
+def test_bars_in_a_break_are_described_in_counts_and_trade_dates(sessions: SessionTable) -> None:
+    # What a refusal says, in counts and dates alone, never a price (D-21).
+    opened = sessions.session(MARCH_9).open
+    ending = fixture_bars().filter(pl.col("ts_open") < opened + 300 * MINUTE)
+    bars = with_bars_at(ending, range(opened - HOUR, opened, MINUTE), sessions)
+    (found,) = check_records(ES_MINUTES, bars, sessions).breaks_with_bars
+
+    assert found.describe() == (
+        "synthetic/ohlcv-1m/root=ES bars in a break: the break after the trade date 2026-03-06 "
+        "holds 61 bars, one closing at the next session's open, as a stretch a platform stamped "
+        "early holds; compare the sessions beside with the platform's chart, or import the file "
+        f"with --bars-in-breaks leave-out, which leaves out the {found.records_beside():,} records "
+        "of the trade dates 2026-03-06, 2026-03-09, those bars among them"
+    )
 
 
 def test_two_exports_joined_the_second_a_bar_early_show_that_offset(
