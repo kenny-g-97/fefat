@@ -64,6 +64,7 @@ export function asksOf(
     ...first,
     source: each,
     contract: null,
+    bars_in_breaks: barsInBreaksOf(draft, each),
   }))
   return { ...asks, review: null, several }
 }
@@ -133,13 +134,13 @@ function listedAsks(
 }
 
 /** What every file's ask holds beside its profile: the file, the contract and the root typed,
- * and what to do with records that differ from the store's. */
+ * what to do with records that differ from the store's, and with the file's bars in a break. */
 function fileFields(
   draft: Draft,
   source: AskedSource
 ): Pick<
   FileImportAsked,
-  "kind" | "source" | "contract" | "root" | "differing"
+  "kind" | "source" | "contract" | "root" | "differing" | "bars_in_breaks"
 > {
   return {
     kind: "file",
@@ -147,7 +148,22 @@ function fileFields(
     contract: blankAsNull(draft.contract),
     root: blankAsNull(draft.root),
     differing: draft.differing,
+    bars_in_breaks: barsInBreaksOf(draft, source),
   }
+}
+
+/** Whether the import leaves out the bars in a break of the file `source` and the sessions
+ * beside them, as the trader approved for that file (ADR-0022). */
+function barsInBreaksOf(
+  draft: Draft,
+  source: AskedSource
+): FileImportAsked["bars_in_breaks"] {
+  return draft.breaksLeftOut.includes(fileOf(source)) ? "leave-out" : "refuse"
+}
+
+/** The file `source` names, by its upload's id or its path. */
+export function fileOf(source: AskedSource): string {
+  return source.kind === "upload" ? source.upload_id : source.path
 }
 
 function sourcesOf(source: Source): readonly AskedSource[] {

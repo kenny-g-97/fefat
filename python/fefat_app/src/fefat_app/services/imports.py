@@ -126,7 +126,11 @@ class Imports:
         spec, each other file's path and upload beside it."""
         profile, keep = self._profile(asked.profile)
         first, *others = (
-            RoundFile(path=self._path(source, ReadKind.FILE), upload_id=_upload_id(source))
+            RoundFile(
+                path=self._path(source, ReadKind.FILE),
+                upload_id=_upload_id(source),
+                bars_in_breaks=asked.bars_in_breaks_of(source),
+            )
             for source in asked.sources
         )
         request = FileRequest(
@@ -137,6 +141,7 @@ class Imports:
             root=asked.root,
             time_zone=asked.time_zone,
             differing=asked.differing,
+            bars_in_breaks=first.bars_in_breaks,
         )
         spec = ImportSpec(request=request, limits=IMPORT_LIMITS)
         return ImportJobPayload(
@@ -163,6 +168,7 @@ class Imports:
             root=asked.root,
             time_zone=asked.time_zone,
             differing=asked.differing,
+            bars_in_breaks=asked.bars_in_breaks,
         )
 
     def _path(self, source: ImportSource, kind: ReadKind) -> Path:

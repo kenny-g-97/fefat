@@ -1063,6 +1063,13 @@ export interface components {
          */
         BarStamp: "open" | "close";
         /**
+         * BarsInBreaks
+         * @description What an import does with a file whose breaks hold a bar closing at the next open: refuse
+         *     the file, or leave out those bars with the sessions beside them (ADR-0022).
+         * @enum {string}
+         */
+        BarsInBreaks: "refuse" | "leave-out";
+        /**
          * BarsPage
          * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
          *     datasets the bars come from, the bars, the instant the next page opens at, which the caller
@@ -1173,6 +1180,30 @@ export interface components {
             year: {
                 [key: string]: components["schemas"]["Outcome"];
             };
+        };
+        /**
+         * BreaksSeen
+         * @description A file's breaks that hold a bar closing at the next open, the edge of a stretch a
+         *     platform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts
+         *     and trade dates: whether its import leaves them out, the bars in them, the trade dates they
+         *     follow and the sessions beside them that the correction leaves out, the first of each
+         *     beside their totals, and those sessions' records, the bars among them.
+         */
+        BreaksSeen: {
+            /** Bars */
+            bars: number;
+            /** Breaks */
+            breaks: string[];
+            /** Breaks Total */
+            breaks_total: number;
+            /** Left Out */
+            left_out: boolean;
+            /** Records */
+            records: number;
+            /** Sessions */
+            sessions: string[];
+            /** Sessions Total */
+            sessions_total: number;
         };
         /**
          * BusinessDaysBeforeThe25th
@@ -1676,6 +1707,8 @@ export interface components {
          *     records that differ from the store's.
          */
         FileImportAsked: {
+            /** @default refuse */
+            bars_in_breaks: components["schemas"]["BarsInBreaks"];
             /** Contract */
             contract?: string | null;
             /** @default refuse */
@@ -1713,6 +1746,7 @@ export interface components {
         FileSeen: {
             /** Bars Without Volume */
             bars_without_volume: number;
+            breaks_with_bars: components["schemas"]["BreaksSeen"] | null;
             /** Contracts */
             contracts: string[];
             /** Contracts Total */
@@ -1772,6 +1806,11 @@ export interface components {
              * @enum {string}
              */
             kind: "files";
+            /**
+             * Leaving Out Bars In Breaks
+             * @default []
+             */
+            leaving_out_bars_in_breaks: components["schemas"]["ImportSource"][];
             profile: components["schemas"]["ProfileChoice"];
             /** Root */
             root?: string | null;
@@ -1952,11 +1991,13 @@ export interface components {
         /**
          * ImportVerdict
          * @description What a preview finds the import would do: import as it is, be refused for the problems
-         *     or offsets found, be refused for records that differ from the store's, change nothing, as a
-         *     file imported before, or import nothing, as a batch whose files hold nothing new.
+         *     or offsets found, be refused for its bars in a break alone, which the trader may leave out
+         *     with the sessions beside them (ADR-0022), be refused for records that differ from the
+         *     store's, change nothing, as a file imported before, or import nothing, as a batch whose files
+         *     hold nothing new.
          * @enum {string}
          */
-        ImportVerdict: "imports" | "refused" | "differing" | "imported_before" | "nothing";
+        ImportVerdict: "imports" | "refused" | "bars_in_breaks" | "differing" | "imported_before" | "nothing";
         /**
          * IndexedFeature
          * @description A saved feature as the index holds it: its row's id, its name, and its versions in order.

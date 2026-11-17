@@ -15,6 +15,26 @@ describe("drafted", () => {
     ).toBe("refuse")
   })
 
+  it("leaves out the bars in a break of the files approved until another change", () => {
+    const taking = drafted(startingDraft({ kind: "none" }), {
+      kind: "differing",
+      differing: "take-file",
+    })
+
+    const leaving = drafted(taking, { kind: "bars in breaks", files: ["a"] })
+
+    expect(leaving.breaksLeftOut).toEqual(["a"])
+    expect(leaving.differing).toBe("refuse")
+    const taken = drafted(leaving, {
+      kind: "differing",
+      differing: "take-file",
+    })
+    expect(taken.breaksLeftOut).toEqual(["a"])
+    expect(
+      drafted(taken, { kind: "time zone", timeZone: "UTC" }).breaksLeftOut
+    ).toEqual([])
+  })
+
   it("copies a new profile from its base under a name of the trader's own", () => {
     const draft = drafted(
       startingDraft({ kind: "profile", name: "ninjatrader" }),

@@ -21,13 +21,17 @@ import fefat_app.executor.imports as runner_imports
 import fefat_app.services.imports as imports_service
 from export_samples import PRESETS, SAMPLES, sample_lines, written_export
 from fefat.config import Settings, resolve_paths
+from fefat.market import instruments
+from fefat.market.calendar import sessions_of
 from fefat.market.importers import databento, file_import, tabular
 from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.execution import ExecutionLimits
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
+from generated_minutes import minutes_of, ninjatrader_lines
 from local_server import logged_in
 from test_executor import MIB, PEAK_MEMORY, printed, ran
+from test_market_importers_break_bars import ESH2026, FIRST, LAST, WEDNESDAY, with_the_break_after
 
 DEADLINE_SECONDS = 240
 NINJATRADER_SAMPLE = SAMPLES["ninjatrader"][0]
@@ -247,6 +251,110 @@ def test_a_file_read_in_the_wrong_time_zone_is_answered_with_its_offset(
         "6 hours",
     )
     assert preview["merge"] is None
+
+
+def bars_in_a_break_export(folder: Path, name: str, with_the_break: bool = True) -> Path:
+    """ESH2026's generated bars of ten sessions from 2026-02-02, with a bar in every minute of
+    the break after 02-04 where `with_the_break`, written as NinjaTrader exports them under
+    `name` (step 5.15)."""
+    sessions = sessions_of(
+        instruments.get("ES").session_calendar(), resolve_paths(os.environ).cache_dir
+    )
+    bars = minutes_of(ESH2026, sessions.between(FIRST, LAST))
+    if with_the_break:
+        bars = with_the_break_after(bars, WEDNESDAY, sessions)
+    return written_export(folder, name, ninjatrader_lines(bars))
+
+
+LEFT_OUT = 2 * 1_380 + 60
+"""The records the correction leaves out of `bars_in_a_break_export`: the sessions of 02-04
+and 02-05, a bar in each of their minutes, and the break's 60 bars."""
+
+
+def test_a_file_with_bars_in_a_break_is_answered_with_them_and_reads_without_them_if_told(
+    client: TestClient, container: Container, tmp_path: Path
+) -> None:
+    # Step 5.15 (ADR-0022): the preview answers a verdict of its own with the breaks in counts
+    # and trade dates, which the wizard words, and no command line's words among the problems;
+    # the same ask told to leave them out imports, and says what it leaves out.
+    csrf = logged_in(client, container)
+    path = bars_in_a_break_export(tmp_path / "chosen", "ES 03-26.Last.txt")
+    source = {"kind": "upload", "upload_id": uploaded(client, csrf, path)}
+    asked = {"kind": "file", "source": source, "profile": {"kind": "named", "name": "ninjatrader"}}
+
+    refused = client.post("/v1/imports/preview", json=asked, headers=csrf).json()
+    told = {**asked, "bars_in_breaks": "leave-out"}
+    left_out = client.post("/v1/imports/preview", json=told, headers=csrf).json()
+
+    assert (refused["verdict"], refused["problems"], refused["offsets"]) == (
+        "bars_in_breaks",
+        [],
+        [],
+    )
+    assert refused["merge"] is None
+    assert refused["breaks_with_bars"] == {
+        "left_out": False,
+        "bars": 60,
+        "breaks": ["2026-02-04"],
+        "breaks_total": 1,
+        "sessions": ["2026-02-04", "2026-02-05"],
+        "sessions_total": 2,
+        "records": LEFT_OUT,
+    }
+    assert left_out["verdict"] == "imports"
+    assert left_out["breaks_with_bars"] == {**refused["breaks_with_bars"], "left_out": True}
+    assert left_out["records"] == refused["records"] - LEFT_OUT
+
+
+def test_a_round_leaves_out_the_bars_in_a_break_of_the_files_it_names_alone(
+    client: TestClient, container: Container, tmp_path: Path
+) -> None:
+    # Step 5.15: the round's ask names each file the correction is approved for; the job leaves
+    # out that file's sessions beside its break, imports the other as it is, and sums what it
+    # left out.
+    files = [
+        bars_in_a_break_export(tmp_path / "chosen", "ES 03-26.Last.txt"),
+        bars_in_a_break_export(tmp_path / "chosen", "ES 06-26.Last.txt", with_the_break=False),
+    ]
+    csrf = logged_in(client, container)
+    sources = [{"kind": "upload", "upload_id": uploaded(client, csrf, each)} for each in files]
+    asked = {
+        "kind": "files",
+        "sources": sources,
+        "profile": {"kind": "named", "name": "ninjatrader"},
+        "leaving_out_bars_in_breaks": [sources[0]],
+    }
+
+    started = client.post("/v1/imports", json=asked, headers=csrf)
+    job = ended(client, started.json()["id"])
+
+    assert started.status_code == 202, started.text
+    assert job["status"] == "succeeded", job["error"]
+    (written,) = job["result"]["datasets"]
+    assert (written["records_left_out"], written["sessions_left_out"]) == (LEFT_OUT, 2)
+    assert written["records_added"] == stored_bars() == 2 * 13_800 - 2 * 1_380
+    assert job["result"]["round"]["files_imported"] == 2
+
+
+def test_bars_in_breaks_takes_its_two_choices_for_files_the_round_imports_alone(
+    client: TestClient, container: Container
+) -> None:
+    csrf = logged_in(client, container)
+    named = {"kind": "named", "name": "ninjatrader"}
+    chosen, other = ({"kind": "path", "path": f"ES {month}-26.Last.txt"} for month in ("03", "06"))
+    stray = {
+        "kind": "files",
+        "sources": [chosen],
+        "profile": named,
+        "leaving_out_bars_in_breaks": [other],
+    }
+    unknown = {"kind": "file", "source": chosen, "profile": named, "bars_in_breaks": "keep"}
+
+    responses = [client.post("/v1/imports", json=each, headers=csrf) for each in (stray, unknown)]
+
+    assert [response.status_code for response in responses] == [422, 422]
+    assert "among the files the round imports" in responses[0].text
+    assert "'refuse' or 'leave-out'" in responses[1].text
 
 
 def test_a_profile_given_under_a_presets_name_is_refused_before_anything_runs(

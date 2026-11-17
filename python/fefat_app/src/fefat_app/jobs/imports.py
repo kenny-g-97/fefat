@@ -315,4 +315,6 @@ def _added_up(dataset: Dataset, written: list[DatasetWritten]) -> DatasetWritten
         records_held=sum(each.records_held for each in written),
         records_taken=sum(each.records_taken for each in written),
         new_sessions=sum(each.new_sessions for each in written),
+        records_left_out=sum(each.records_left_out for each in written),
+        sessions_left_out=sum(each.sessions_left_out for each in written),
     )

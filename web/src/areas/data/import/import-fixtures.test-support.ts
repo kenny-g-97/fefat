@@ -82,7 +82,8 @@ export const NINJATRADER_TABLE: TablePreview = {
 export function seenFile(
   file_name: string,
   verdict: FileSeen["verdict"],
-  merge: FileSeen["merge"] = null
+  merge: FileSeen["merge"] = null,
+  breaks: FileSeen["breaks_with_bars"] = null
 ): FileSeen {
   return {
     kind: "file",
@@ -92,6 +93,7 @@ export function seenFile(
     dataset: { provider: "ninjatrader", schema_name: "ohlcv-1m", root: "ES" },
     rows_read: 10,
     records: 10,
+    breaks_with_bars: breaks,
     contracts: ["ESH2026"],
     contracts_total: 1,
     first_trade_date: "2026-03-05",

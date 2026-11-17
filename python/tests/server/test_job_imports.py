@@ -29,6 +29,7 @@ from export_samples import (
     written_export,
 )
 from fefat.config import resolve_paths
+from fefat.market.calendar_breaks import BarsInBreaks
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import keep_profile
 from fefat.market.layout import Dataset
@@ -772,6 +773,60 @@ def test_other_files_are_refused_beside_one_import_and_a_round_beside_a_batch() 
         ImportJobPayload(
             spec=ImportSpec(request=batch, limits=IMPORT_LIMITS), upload_id=None, in_round=True
         )
+
+
+def test_each_file_of_a_round_keeps_its_own_choice_for_its_bars_in_a_break() -> None:
+    # Step 5.15: a round names the files the correction is approved for, and each file's import
+    # carries its own choice, the first's in the spec and the others' beside their paths.
+    file = FileRequest(
+        path=Path("ES 03-26.Last.txt"),
+        profile=PRESETS["ninjatrader"],
+        keep_profile=False,
+        contract=None,
+        root=None,
+        time_zone=None,
+        differing=DifferingRecords.REFUSE,
+        bars_in_breaks=BarsInBreaks.LEAVE_OUT,
+    )
+    others = (
+        RoundFile(path=Path("ES 06-26.Last.txt"), upload_id=None),
+        RoundFile(
+            path=Path("ES 09-26.Last.txt"), upload_id=None, bars_in_breaks=BarsInBreaks.LEAVE_OUT
+        ),
+    )
+    payload = ImportJobPayload(
+        spec=ImportSpec(request=file, limits=IMPORT_LIMITS),
+        upload_id=None,
+        others=others,
+        in_round=True,
+    )
+
+    chosen = [
+        (spec.request.path.name, getattr(spec.request, "bars_in_breaks", None))
+        for spec, _ in payload.files()
+    ]
+
+    assert chosen == [
+        ("ES 03-26.Last.txt", BarsInBreaks.LEAVE_OUT),
+        ("ES 06-26.Last.txt", BarsInBreaks.REFUSE),
+        ("ES 09-26.Last.txt", BarsInBreaks.LEAVE_OUT),
+    ]
+
+
+def test_a_payload_queued_before_the_choice_refuses_bars_in_a_break(job_records: JobTables) -> None:
+    # A job queued before step 5.15 has no choice in its payload, and reads as refusing them,
+    # as every import did then.
+    queued = an_import(job_records, Path("ES 03-26.Last.txt"))
+    stored: dict[str, Any] = dict(queued.payload)
+    request = {
+        key: value for key, value in stored["spec"]["request"].items() if key != "bars_in_breaks"
+    }
+    stored["spec"] = {**stored["spec"], "request": request}
+
+    payload = ImportJobPayload.model_validate(stored)
+
+    assert isinstance(payload.spec.request, FileRequest)
+    assert payload.spec.request.bars_in_breaks is BarsInBreaks.REFUSE
 
 
 def test_a_round_of_one_file_counts_its_file(

@@ -24,6 +24,11 @@ const OTHER_OUTCOMES: readonly Readonly<{
 }>[] = [
   { outcome: "refused", one: "would be refused", several: "would be refused" },
   {
+    outcome: "bars_in_breaks",
+    one: "would be refused for its bars in a break",
+    several: "would be refused for their bars in a break",
+  },
+  {
     outcome: "differing",
     one: "holds records that differ from the ones FEAT holds",
     several: "hold records that differ from the ones FEAT holds",
@@ -48,6 +53,7 @@ const ROW_OUTCOMES: Readonly<
 > = {
   imports: { text: "Imports", tone: "quiet" },
   refused: { text: "Refused", tone: "negative" },
+  bars_in_breaks: { text: "Bars in a break", tone: "body" },
   differing: { text: "Differs", tone: "body" },
   imported_before: { text: "Imported before", tone: "quiet" },
   nothing: { text: "Nothing to import", tone: "quiet" },

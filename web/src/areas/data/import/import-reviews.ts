@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { ImportPreviewAnswer, UploadedFile } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { previewSent } from "./import-preview"
+import { fileOf } from "./import-request"
 
 type Schemas = components["schemas"]
 type FileImportAsked = Schemas["FileImportAsked"]
@@ -195,6 +196,7 @@ export function tallyOf(states: readonly FileState[]): Tally {
   const outcomes: Record<Outcome, number> = {
     imports: 0,
     refused: 0,
+    bars_in_breaks: 0,
     differing: 0,
     imported_before: 0,
     nothing: 0,
@@ -220,8 +222,9 @@ export function filesImporting(states: readonly FileState[]): number | null {
 }
 
 /** The round Import sends (web/DESIGN.md, Patterns, Job in its card): the files whose own
- * review says they import as they are, through the profile and the options they share; none
- * until every review is read, or where no file imports. */
+ * review says they import as they are, through the profile and the options they share, and
+ * among them those whose bars in a break are left out, as their reviews read them (ADR-0022);
+ * none until every review is read, or where no file imports. */
 export function filesRequest(
   asks: readonly FileImportAsked[],
   states: readonly FileState[]
@@ -231,19 +234,20 @@ export function filesRequest(
   if (first === undefined || states.some((state) => state.kind === "reading")) {
     return null
   }
-  const sources = asks
-    .filter((_, index) => outcomeOf(states[index]) === "imports")
-    .map((ask) => ask.source)
-  if (sources.length === 0) {
+  const sent = asks.filter((_, index) => outcomeOf(states[index]) === "imports")
+  if (sent.length === 0) {
     return null
   }
   return {
     kind: "files",
-    sources,
+    sources: sent.map((ask) => ask.source),
     profile: first.profile,
     root: first.root,
     time_zone: first.time_zone,
     differing: first.differing,
+    leaving_out_bars_in_breaks: sent
+      .filter((ask) => ask.bars_in_breaks === "leave-out")
+      .map((ask) => ask.source),
   }
 }
 
@@ -278,11 +282,6 @@ export function tooManyFiles(count: number): string | null {
 
 function uploadIdOf(source: ImportSource): string | null {
   return source.kind === "upload" ? source.upload_id : null
-}
-
-/** The file `source` names, by its upload's id or its path. */
-function fileOf(source: ImportSource): string {
-  return source.kind === "upload" ? source.upload_id : source.path
 }
 
 /** Several files' reviews, the way to read the failed ones again, as Try again does, and to

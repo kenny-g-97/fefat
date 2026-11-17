@@ -14,6 +14,7 @@ type Schemas = components["schemas"]
 const VERDICTS: Readonly<Record<Schemas["ImportVerdict"], string>> = {
   imports: "It imports as it is",
   refused: "It would be refused",
+  bars_in_breaks: "It would be refused for its bars in a break",
   differing: "Its records differ from the ones FEAT holds",
   imported_before: "It is imported already: importing it again changes nothing",
   nothing: "It holds nothing to import",

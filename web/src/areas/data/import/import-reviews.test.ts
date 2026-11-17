@@ -30,7 +30,10 @@ function listed(...keys: string[]): ReviewsChange {
   return { kind: "listed", asks: keys.map((key) => ({ key, file: key })) }
 }
 
-function asked(uploadId: string): FileImportAsked {
+function asked(
+  uploadId: string,
+  barsInBreaks: FileImportAsked["bars_in_breaks"] = "refuse"
+): FileImportAsked {
   return {
     kind: "file",
     source: { kind: "upload", upload_id: uploadId },
@@ -39,6 +42,7 @@ function asked(uploadId: string): FileImportAsked {
     root: null,
     time_zone: null,
     differing: "refuse",
+    bars_in_breaks: barsInBreaks,
   }
 }
 
@@ -163,6 +167,7 @@ describe("tallyOf", () => {
     expect(tally.outcomes).toEqual({
       imports: 2,
       refused: 0,
+      bars_in_breaks: 0,
       differing: 1,
       imported_before: 0,
       nothing: 0,
@@ -194,6 +199,29 @@ describe("filesRequest", () => {
       root: null,
       time_zone: null,
       differing: "refuse",
+      leaving_out_bars_in_breaks: [],
+    })
+  })
+
+  it("names the files whose bars in a break are left out among those it sends", () => {
+    const leaving = [
+      asked("a", "leave-out"),
+      asked("b", "leave-out"),
+      asked("c"),
+    ]
+
+    expect(
+      filesRequest(leaving, [
+        answered("imports"),
+        answered("bars_in_breaks"),
+        answered("imports"),
+      ])
+    ).toMatchObject({
+      sources: [
+        { kind: "upload", upload_id: "a" },
+        { kind: "upload", upload_id: "c" },
+      ],
+      leaving_out_bars_in_breaks: [{ kind: "upload", upload_id: "a" }],
     })
   })
 

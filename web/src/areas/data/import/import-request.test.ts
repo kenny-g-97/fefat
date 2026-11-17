@@ -54,6 +54,7 @@ describe("asksOf", () => {
       contract: null,
       root: null,
       differing: "refuse",
+      bars_in_breaks: "refuse",
       profile: { kind: "named", name: "ninjatrader" },
       time_zone: null,
     })
@@ -250,10 +251,40 @@ describe("asksOf", () => {
         contract: null,
         root: null,
         differing: "refuse",
+        bars_in_breaks: "refuse",
         profile: { kind: "named", name: "ninjatrader" },
         time_zone: null,
       }))
     )
+  })
+
+  it("asks each file's own choice for its bars in a break, as the trader approved it", () => {
+    const june = {
+      ...UPLOAD,
+      id: "0193a000-0000-7000-8000-000000000002",
+      name: "XES 06-26.Last.txt",
+    }
+    const several = drafted(
+      drafted(
+        drafted(CHOSEN, {
+          kind: "source",
+          source: { kind: "uploads", uploads: [UPLOAD, june] },
+        }),
+        { kind: "listed profile", name: "ninjatrader" }
+      ),
+      { kind: "bars in breaks", files: [june.id] }
+    )
+    const alone = drafted(
+      drafted(CHOSEN, { kind: "listed profile", name: "ninjatrader" }),
+      { kind: "bars in breaks", files: [UPLOAD.id] }
+    )
+
+    expect(
+      asksOf(several, LISTED, null).several.map((ask) => ask.bars_in_breaks)
+    ).toEqual(["refuse", "leave-out"])
+    expect(asksOf(alone, LISTED, null).review).toMatchObject({
+      bars_in_breaks: "leave-out",
+    })
   })
 })
 
