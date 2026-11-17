@@ -7,7 +7,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import polars as pl
@@ -16,6 +16,7 @@ import pytest
 from fefat.config import resolve_paths
 from fefat.market import instruments
 from fefat.market.calendar import sessions_of
+from fefat.market.engine_units import price_text
 from fefat.market.layout import Dataset, Partition, YearMonth
 from fefat.market.schema import parse_schema_name
 from fefat.market.store import Store
@@ -149,3 +150,14 @@ def minutes_of(each: Listing, days: pl.DataFrame, quiet: float = 0.0) -> pl.Data
             vwap=pl.col("close"),
         )
     )
+
+
+def ninjatrader_lines(bars: pl.DataFrame) -> list[str]:
+    """`bars` as a NinjaTrader 8 export of 1-minute bars writes them, the `ninjatrader` preset's
+    layout: each its close in UTC, its prices, and its volume (step 5.15)."""
+    return [
+        f"{datetime.fromtimestamp(bar['ts_close'] // 10**9, UTC):%Y%m%d %H%M%S};"
+        + ";".join(price_text(bar[price]) for price in ("open", "high", "low", "close"))
+        + f";{bar['volume']}"
+        for bar in bars.iter_rows(named=True)
+    ]

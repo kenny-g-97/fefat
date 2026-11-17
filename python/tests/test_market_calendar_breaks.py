@@ -183,7 +183,9 @@ def test_the_sessions_beside_grow_across_breaks_that_hold_a_bar(sessions: Sessio
 
 
 def test_bars_in_a_break_are_described_in_counts_and_trade_dates(sessions: SessionTable) -> None:
-    # What a refusal says, in counts and dates alone, never a price (D-21).
+    # What the calendar check says of them, here and of stored data alike, in counts and dates
+    # alone, never a price (D-21): the fixtures' 1,381 bars of 03-06, the hour before the open
+    # of 03-09 and the straggler after 03-06's close among them, and 300 of 03-09.
     opened = sessions.session(MARCH_9).open
     ending = fixture_bars().filter(pl.col("ts_open") < opened + 300 * MINUTE)
     bars = with_bars_at(ending, range(opened - HOUR, opened, MINUTE), sessions)
@@ -192,9 +194,8 @@ def test_bars_in_a_break_are_described_in_counts_and_trade_dates(sessions: Sessi
     assert found.describe() == (
         "synthetic/ohlcv-1m/root=ES bars in a break: the break after the trade date 2026-03-06 "
         "holds 61 bars, one closing at the next session's open, as a stretch a platform stamped "
-        "early holds; compare the sessions beside with the platform's chart, or import the file "
-        f"with --bars-in-breaks leave-out, which leaves out the {found.records_beside():,} records "
-        "of the trade dates 2026-03-06, 2026-03-09, those bars among them"
+        "early holds; the sessions beside, 1,741 records of the trade dates 2026-03-06, "
+        "2026-03-09"
     )
 
 

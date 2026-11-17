@@ -15,6 +15,8 @@ import fefat as ff
 from export_samples import sample_lines, with_a_lot_more_in_the_last_bar, written_export
 from fefat.config import resolve_paths
 from fefat.features.examples import rsi
+from fefat.market import instruments
+from fefat.market.calendar import sessions_of
 from fefat.market.importers.profiles import preset_profiles
 from fefat.market.layout import (
     Dataset,
@@ -28,6 +30,8 @@ from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
 from fefat_app.cli import main
+from generated_minutes import minutes_of, ninjatrader_lines
+from test_market_importers_break_bars import ESH2026, FIRST, LAST, WEDNESDAY, with_the_break_after
 from test_market_importers_merge_properties import MARCH_9, es_bars, march_file
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -140,6 +144,35 @@ def test_differing_takes_refuse_or_take_file_alone(capsys: pytest.CaptureFixture
 
     assert exited.value.code == 2
     assert "invalid choice: 'keep-the-store' (choose from" in capsys.readouterr().err
+    assert not resolve_paths(os.environ).data_dir.exists()
+
+
+def test_a_file_with_bars_in_a_break_imports_without_them_with_bars_in_breaks_leave_out(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Step 5.15 (ADR-0022): the preview of a file whose break holds a bar closing at the next
+    # open exits with 1 and says what to do; told to leave them out it exits with 0 and says
+    # what it leaves out; and the option takes refuse or leave-out alone.
+    sessions = sessions_of(
+        instruments.get("ES").session_calendar(), resolve_paths(os.environ).cache_dir
+    )
+    bars = with_the_break_after(
+        minutes_of(ESH2026, sessions.between(FIRST, LAST)), WEDNESDAY, sessions
+    )
+    export = written_export(tmp_path, "ES 03-26.Last.txt", ninjatrader_lines(bars))
+    preview = ["data", "import", "file", str(export), "--profile", "ninjatrader", "--preview"]
+
+    codes = [main(preview), main([*preview, "--bars-in-breaks", "leave-out"])]
+    printed = capsys.readouterr().out
+    with pytest.raises(SystemExit) as exited:
+        main([*preview, "--bars-in-breaks", "keep"])
+
+    assert codes == [1, 0]
+    assert "It would be refused for its bars in a break: compare the sessions beside" in printed
+    assert "records of the trade dates 2026-02-04, 2026-02-05, beside 1 break with a bar" in printed
+    assert printed.rstrip().endswith("It would import as it is.")
+    assert exited.value.code == 2
+    assert "invalid choice: 'keep' (choose from" in capsys.readouterr().err
     assert not resolve_paths(os.environ).data_dir.exists()
 
 

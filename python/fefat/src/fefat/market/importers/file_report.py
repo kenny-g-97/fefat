@@ -7,12 +7,20 @@ quotes, show the file's own values, which stay on the trader's screen (D-21).
 
 from datetime import date
 
-from fefat.market.calendar import utc_text
+from fefat.market.calendar import counted, utc_text
+from fefat.market.calendar_breaks import BreaksWithBars
 from fefat.market.calendar_check import CalendarReport
 from fefat.market.engine_units import price_text
 from fefat.market.importers.report import DIFFERING_VERDICT, DatasetMerge
 from fefat.market.layout import Dataset
 from fefat.market.schema import FrozenModel
+
+BARS_IN_BREAKS_ADVICE = (
+    "compare the sessions beside them with the platform's chart, and where the platform stamped "
+    "that stretch early, import the file with --bars-in-breaks leave-out, which leaves them out"
+)
+"""What to do about a file refused for its bars in a break alone (ADR-0022), as its refusal and
+its preview say."""
 
 
 class StoredBar(FrozenModel):
@@ -60,10 +68,12 @@ class StoredPrint(FrozenModel):
 
 
 class FileReading(FrozenModel):
-    """What a file holds once read with its profile: the dataset its records go to, how many
-    rows and records there are, their contracts and trade dates, what was left out, the
-    problems, the calendar check, and the warnings: what every load of them repeats, and a
-    calendar check that could not test their timing."""
+    """What a file holds once read with its profile, as its import takes it: the dataset its
+    records go to, how many rows and records there are, their contracts and trade dates, what
+    was left out, among it the breaks with a bar closing at the next open and the sessions
+    beside them where the import was told to (ADR-0022), the problems, the calendar check, and
+    the warnings: what every load of them repeats, and a calendar check that could not test
+    their timing."""
 
     source: str
     profile: str
@@ -75,6 +85,7 @@ class FileReading(FrozenModel):
     last_trade_date: date | None
     bars_without_volume: int
     spread_rows: int
+    left_out: BreaksWithBars | None = None
     problems: tuple[str, ...]
     calendar: CalendarReport
     warnings: tuple[str, ...]
@@ -89,6 +100,12 @@ class FileReading(FrozenModel):
             *(found.describe() for found in calendar.breaks_with_bars),
         ]
 
+    def only_bars_in_breaks_refuse(self) -> bool:
+        """Whether the file's one refusal is its breaks with a bar closing at the next open,
+        which an import told to leave them out takes the file without (ADR-0022)."""
+        calendar = self.calendar
+        return bool(calendar.breaks_with_bars) and not self.problems and not calendar.offsets
+
     def lines(self) -> list[str]:
         dates = (
             "no trade date"
@@ -99,6 +116,7 @@ class FileReading(FrozenModel):
         left_out = [
             f"{self.bars_without_volume:,} bars without volume" if self.bars_without_volume else "",
             f"{self.spread_rows:,} rows of spread symbols" if self.spread_rows else "",
+            _breaks_left_out(self.left_out),
         ]
         shown = [part for part in left_out if part]
         return [
@@ -174,11 +192,22 @@ class FilePreview(FrozenModel):
                 f"It is imported already, as raw/{found.raw_path}: importing it again changes "
                 "nothing."
             )
+        if self.reading.only_bars_in_breaks_refuse():
+            return f"It would be refused for its bars in a break: {BARS_IN_BREAKS_ADVICE}."
         if self.reading.refusals():
             return "It would be refused: fix the profile, or the file, and preview it again."
         if found is not None and found.refuses():
             return DIFFERING_VERDICT
         return "It would import as it is."
+
+
+def _breaks_left_out(found: BreaksWithBars | None) -> str:
+    """What the import left out of the file's breaks with a bar closing at the next open, in
+    counts and trade dates; nothing where it left none out."""
+    if found is None:
+        return ""
+    breaks = counted(len(found.breaks), "break")
+    return f"{found.sessions_text()}, beside {breaks} with a bar closing at the next open"
 
 
 class FileImportReport(FrozenModel):

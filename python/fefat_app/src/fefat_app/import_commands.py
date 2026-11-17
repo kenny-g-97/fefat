@@ -3,7 +3,7 @@
 
     fefat data import databento <folder-or-file> [--preview] [--differing {refuse,take-file}]
     fefat data import file <path> --profile <name> [--contract] [--root] [--time-zone]
-        [--preview] [--differing {refuse,take-file}]
+        [--preview] [--differing {refuse,take-file}] [--bars-in-breaks {refuse,leave-out}]
 
 `databento` imports a Databento batch download, or a single DBN file, and prints what it
 imported (`fefat.market.importers.databento`). `file` brings in a bar or tick file of your own
@@ -14,7 +14,9 @@ the store lacks are added, and those it holds are left alone. With `--preview` a
 the file against the store, prints what its import would add, for a file of your own after its
 first records as they would be stored and the problems found, and writes nothing; it exits
 with 1 when the import would be refused. Records the store holds with other values refuse a
-file, unless `--differing take-file` lets the file's stand.
+file, unless `--differing take-file` lets the file's stand. A file of bars whose breaks hold a
+bar closing at the next open is refused, unless `--bars-in-breaks leave-out` leaves those out
+with the sessions beside them (ADR-0022).
 """
 
 import argparse
@@ -25,6 +27,7 @@ from functools import partial
 from pathlib import Path
 
 from fefat.config import FefatPaths, resolve_paths
+from fefat.market.calendar_breaks import BarsInBreaks
 from fefat.market.importers.databento import import_databento, preview_databento
 from fefat.market.importers.file_import import FileImportRequest, import_file, preview_file
 from fefat.market.importers.file_report import FileImportReport
@@ -82,6 +85,14 @@ def add_the_import_commands(
         "print the first records as they would be stored, the problems found, and what the "
         "import would add to the store, and write nothing",
     )
+    exports.add_argument(
+        "--bars-in-breaks",
+        choices=[each.value for each in BarsInBreaks],
+        default=BarsInBreaks.REFUSE.value,
+        help="what to do where a break holds a bar closing at the next session's open, the edge "
+        "of a stretch the platform stamped early: refuse the file, as when left out, or "
+        "leave-out, and the file is imported without those bars and the sessions beside them",
+    )
     exports.set_defaults(run=partial(import_a_file, write_the_report=write_the_report))
 
 
@@ -136,6 +147,7 @@ def import_a_file(arguments: argparse.Namespace, write_the_report: QualityReport
         contract=arguments.contract,
         root=arguments.root,
         time_zone=arguments.time_zone,
+        bars_in_breaks=BarsInBreaks(arguments.bars_in_breaks),
     )
     instruments = instrument_table(store.folder)
     if preview:

@@ -80,8 +80,8 @@ class BreaksWithBars(FrozenModel):
         return [each.trade_date for each in self.sessions_beside]
 
     def describe(self) -> str:
-        """One line: the dataset, the breaks with their bars, and what to do, in counts and trade
-        dates alone (D-21)."""
+        """One line: the dataset, the breaks with their bars, and the sessions beside them with
+        their records, in counts and trade dates alone (D-21)."""
         heading = f"{self.dataset.relative_folder()} bars in a break"
         if len(self.breaks) == 1:
             (only,) = self.breaks
@@ -95,13 +95,16 @@ class BreaksWithBars(FrozenModel):
                 f"{len(self.breaks)} breaks hold {counted(self.bars(), 'bar')}, each with one "
                 f"closing at the next session's open, after the trade dates {dates}"
             )
-        beside = _listed(str(day) for day in self.trade_dates_beside())
         return (
-            f"{heading}: {found}, as a stretch a platform stamped early holds; compare the "
-            "sessions beside with the platform's chart, or import the file with --bars-in-breaks "
-            f"leave-out, which leaves out the {counted(self.records_beside(), 'record')} of the "
-            f"trade dates {beside}, those bars among them"
+            f"{heading}: {found}, as a stretch a platform stamped early holds; the sessions "
+            f"beside, {self.sessions_text()}"
         )
+
+    def sessions_text(self) -> str:
+        """The sessions beside, as their records and trade dates: `2,761 records of the trade
+        dates 2026-03-06, 2026-03-09`, the bars in the breaks among them."""
+        beside = _listed(str(day) for day in self.trade_dates_beside())
+        return f"{counted(self.records_beside(), 'record')} of the trade dates {beside}"
 
 
 def breaks_with_bars(
