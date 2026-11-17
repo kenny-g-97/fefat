@@ -3,6 +3,7 @@ import json
 import pickle
 import shutil
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
@@ -29,6 +30,7 @@ from fefat.market.quality_report import (
     QualityStanding,
     QualityStatus,
     quality_standing,
+    report_written_ns,
     stored_findings,
     write_quality_report,
 )
@@ -416,6 +418,26 @@ def test_a_written_report_reads_back_with_its_status_and_last_trade_date(
         status=QualityStatus.CLEAN, checked_through=MARCH_9
     )
     assert Store(tmp_path / "data").list_datasets() == ()
+
+
+def test_a_report_that_read_older_data_than_the_written_one_leaves_it_as_it_is(
+    tmp_path: Path, cache: Path, clean_report: QualityReport
+) -> None:
+    # Step 5.12 (from the engine accuracy review): an import's own report and a catalog sync's
+    # of one root, written at once; the one whose assessment read older data never replaces,
+    # nor mixes with, the one that read newer.
+    store = copied_fixtures(tmp_path / "data")
+    reports = tmp_path / "data" / "reports"
+    rewrite(store, es_trades("ESH2026", MARCH_5), with_a_duplicate_and_a_print_a_day_late)
+    flagged = assess_quality(store, "synthetic", "ES", cache)
+    older = replace(flagged, read_through_ns=clean_report.read_through_ns - 1)
+    write_quality_report(clean_report, reports)
+
+    write_quality_report(older, reports)
+
+    assert quality_standing(reports, "synthetic", "ES").status is QualityStatus.CLEAN
+    assert report_written_ns(reports, "synthetic", "ES") == clean_report.read_through_ns
+    assert_frame_equal(stored_findings(reports, "synthetic", "ES"), clean_report.findings)
 
 
 def test_a_reports_findings_read_back_and_none_while_it_is_unwritten(

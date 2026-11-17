@@ -3,6 +3,7 @@ import { useRef, useState } from "react"
 import { catalogQuery, type SyncCover } from "@/api/catalog"
 import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
+import { TextLink } from "@/ui/text-link"
 import {
   type CatalogProduct,
   catalogLine,
@@ -148,6 +149,13 @@ function NotImported({
             <span className="text-xs text-muted-foreground">
               {catalogLine(product)}
             </span>
+            <TextLink
+              to="/data/import"
+              search={{ preset: product.recommended_source }}
+              className="ml-auto"
+            >
+              Import
+            </TextLink>
           </li>
         ))}
       </ul>

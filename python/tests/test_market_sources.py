@@ -105,6 +105,16 @@ def test_a_preset_names_the_source_whose_files_it_reads() -> None:
     assert SOURCE_GUIDE.source("ninjatrader").presets[0].id == "ninjatrader"
 
 
+def test_a_provider_names_the_source_of_its_preset_or_the_source_it_is() -> None:
+    # Step 5.12 (from `BACKLOG.md`, a profile's provider that names a source): data imported
+    # through a trader's own profile under a source's id, such as `kibot`, is that source's.
+    assert SOURCE_GUIDE.source_of_provider("databento-csv").id == "databento"
+    assert SOURCE_GUIDE.source_of_provider("ibkr").id == "interactive-brokers"
+    assert SOURCE_GUIDE.source_of_provider("kibot").id == "kibot"
+    with pytest.raises(ValueError, match=r"Expected a preset or a source of the guide"):
+        SOURCE_GUIDE.source_of_provider("synthetic")
+
+
 def test_an_unknown_source_or_preset_is_refused() -> None:
     with pytest.raises(
         ValueError, match=r"Expected a source of the guide \(databento, .*\), got 'x'"

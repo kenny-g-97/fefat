@@ -44,11 +44,18 @@ def run_catalog_sync(
     for done, (provider, product) in enumerate(products):
         message = f"Checking the quality of {provider} {product}"
         progress.advance(100 * done / len(products), message, provider=provider, root=product)
-        report = assess_quality(store, provider, product, cache_folder)
-        write_quality_report(report, reports_folder)
-        status, findings = str(report.status()), report.findings.height
-        written.append(
-            {"provider": provider, "root": product, "status": status, "findings": findings}
-        )
+        written.append(written_report(store, reports_folder, cache_folder, provider, product))
     progress.advance(100, f"Checked {counted(len(products), 'report')}")
     return {"reports": written}
+
+
+def written_report(
+    store: Store, reports_folder: Path, cache_folder: Path, provider: str, root: str
+) -> dict[str, Any]:
+    """Write the quality report of `provider`'s data of `root` into `reports_folder`, as `fefat
+    data quality` writes it, as the catalog sync and an import's job do (step 5.12); its
+    provider, root, status, and count of findings."""
+    report = assess_quality(store, provider, root, cache_folder)
+    write_quality_report(report, reports_folder)
+    status, findings = str(report.status()), report.findings.height
+    return {"provider": provider, "root": root, "status": status, "findings": findings}

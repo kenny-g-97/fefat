@@ -29,7 +29,7 @@ import polars as pl
 
 from fefat.market.bars import in_buckets
 from fefat.market.calendar import SessionTable, sessions_of, utc_text
-from fefat.market.calendar_definition import Calendar, CalendarId
+from fefat.market.calendar_definition import Calendar, CalendarId, known_time_zone
 from fefat.market.contracts import parse_contract_name
 from fefat.market.engine_units import PRICE_SCALE
 from fefat.market.importers.profile_contracts import ImportFacts, with_contracts
@@ -113,7 +113,7 @@ def mapped_records(
 
 def _time_zone(profile: ImportProfile, facts: ImportFacts) -> str:
     if facts.time_zone is not None:
-        return facts.time_zone
+        return known_time_zone(facts.time_zone)
     if profile.timestamp.time_zone is not None:
         return profile.timestamp.time_zone
     raise ValueError(

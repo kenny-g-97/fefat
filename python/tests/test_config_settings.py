@@ -28,6 +28,16 @@ def test_without_a_config_file_the_settings_are_the_defaults(tmp_path: Path) -> 
     assert list(tmp_path.iterdir()) == []
 
 
+def test_the_import_wizard_takes_files_of_the_importers_suffixes_up_to_256_megabytes(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12: a larger file, or a Databento batch, is a path under the import roots.
+    settings = load_settings(tmp_path / "config.toml")
+
+    assert settings.upload_megabytes == 256
+    assert settings.upload_suffixes == (".csv", ".tsv", ".txt", ".parquet", ".zip", ".gz")
+
+
 def test_where_no_physical_core_is_counted_the_pool_counts_logical_processors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -45,13 +55,21 @@ def test_a_config_file_round_trips_through_the_settings(tmp_path: Path) -> None:
         "port = 9001\n"
         "bind_address = '127.0.0.1'\n"
         "process_pool_size = 3\n"
-        f"import_roots = ['{exports.as_posix()}', '{downloads.as_posix()}']\n",
+        f"import_roots = ['{exports.as_posix()}', '{downloads.as_posix()}']\n"
+        "upload_megabytes = 512\n"
+        "upload_suffixes = ['.csv', '.csv.gz']\n",
         encoding="utf-8",
     )
 
     settings = load_settings(config_file)
 
-    assert settings == Settings(port=9001, process_pool_size=3, import_roots=(exports, downloads))
+    assert settings == Settings(
+        port=9001,
+        process_pool_size=3,
+        import_roots=(exports, downloads),
+        upload_megabytes=512,
+        upload_suffixes=(".csv", ".csv.gz"),
+    )
     with pytest.raises(ValueError, match="frozen"):
         settings.port = 9002
 
@@ -67,6 +85,13 @@ def test_a_config_file_round_trips_through_the_settings(tmp_path: Path) -> None:
         "import_roots = ['exports']\n",
         "theme = 'dark'\n",
         "port = \n",
+        "upload_megabytes = 0\n",
+        "upload_megabytes = 1025\n",
+        "upload_megabytes = '256'\n",
+        "upload_suffixes = []\n",
+        "upload_suffixes = ['csv']\n",
+        "upload_suffixes = ['.CSV']\n",
+        "upload_suffixes = ['.c/v']\n",
     ],
 )
 def test_a_config_file_that_breaks_the_settings_is_refused_naming_the_file(

@@ -432,9 +432,10 @@ test("All sources leads to the guide's own page, a source's terms and its Import
   const importWith = databento.getByRole("link", {
     name: "Import with Databento DBN batch download",
   })
+  // Step 5.12: the wizard leads back to the page it was opened from.
   await expect(importWith).toHaveAttribute(
     "href",
-    "/data/import?preset=databento"
+    "/data/import?preset=databento&from=sources"
   )
   await page.mouse.move(700, 36)
   await screenshot(page, "data-sources")
@@ -444,12 +445,18 @@ test("All sources leads to the guide's own page, a source's terms and its Import
 
   await importWith.click()
 
-  await expect(page).toHaveURL("/data/import?preset=databento")
+  // Step 5.12: the wizard, its preset Databento's batch downloads, which it reads by path.
+  await expect(page).toHaveURL("/data/import?preset=databento&from=sources")
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Import")
-  await expect(page.getByText("Not built yet")).toBeVisible()
-  await screenshot(page, "data-import")
-  // From the builder's check of step 5.4: no way back to Data but the sidebar's row.
-  await page.getByRole("link", { name: "Back to Data" }).click()
-  await expect(page).toHaveURL("/data")
+  await expect(
+    page.getByRole("button", { name: "A Databento batch" })
+  ).toHaveAttribute("aria-pressed", "true")
+  await screenshot(page, "data-import", [
+    page.locator("#import-path"),
+    page.getByTestId("import-roots"),
+  ])
+  // From the builder's check of step 5.4, the way back, to the page the wizard was opened from.
+  await page.getByRole("link", { name: "Back to Sources" }).click()
+  await expect(page).toHaveURL("/data/sources")
   expect(errors).toEqual([])
 })

@@ -90,10 +90,14 @@ class JobTables:
         percent: float,
         message: str,
         details: Mapping[str, Any],
+        *,
+        past_stopping: bool = False,
     ) -> Job | None:
+        stopping = {"cancel_requested_at": None} if past_stopping else {}
         with Session(self.engine) as session, session.begin():
             advanced = update(JobRow).where(*_held(job_id, worker_pid))
-            if not _changed_one(session, advanced.values(progress=percent, message=message)):
+            changes = advanced.values(progress=percent, message=message, **stopping)
+            if not _changed_one(session, changes):
                 return None
             said = {"percent": percent, "message": message, "details": dict(details)}
             _add_event(session, job_id, JobEventType.PROGRESS, said)
@@ -127,12 +131,16 @@ class JobTables:
                 session, job_id, JobStatus.QUEUED, JobStatus.CANCELLED, None, finished_at=now
             )
 
-    def request_cancel(self, job_id: str, now: datetime) -> Job | None:
+    def request_cancel(
+        self, job_id: str, now: datetime, *, stoppable_below: float | None = None
+    ) -> Job | None:
+        stoppable = [] if stoppable_below is None else [JobRow.progress < stoppable_below]
         with Session(self.engine) as session, session.begin():
             asked = update(JobRow).where(
                 JobRow.id == job_id,
                 JobRow.status == JobStatus.RUNNING,
                 JobRow.cancel_requested_at.is_(None),
+                *stoppable,
             )
             if not _changed_one(session, asked.values(cancel_requested_at=now)):
                 return None

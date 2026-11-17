@@ -5,7 +5,9 @@
 
 It reads `config.toml`, refusing a bind address other than 127.0.0.1 before anything starts;
 migrates the app's database; removes what executions left in `cache/executions` more than a day
-ago, before any runner of its own (the Phase 4 exit); asks for a password on its first run,
+ago, before any runner of its own (the Phase 4 exit), and the uploads left as long, but those
+of imports still queued or running, which the reaper queues again (step 5.12); asks for a
+password on its first run,
 typed twice at a prompt that does not echo it; sends the server's log to
 `<FEFAT_HOME>/logs/server.log`; and serves the app
 with uvicorn in its own process, on 127.0.0.1 alone, at the port of `config.toml`, 8765 by
@@ -37,6 +39,7 @@ def serve(arguments: argparse.Namespace) -> int:
     paths = resolve_paths(os.environ)
     with opened_container(paths) as container:
         leftovers_removed(paths.executions_dir)
+        leftovers_removed(paths.uploads_dir, container.imports.uploads_of_active_imports())
         if not container.logins.password_is_set():
             print("FEAT has no password yet: set the one its login will ask for.")
             container.logins.set_password(typed_new_password())

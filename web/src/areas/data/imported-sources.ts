@@ -19,8 +19,9 @@ export type ImportedSource<Row> = Named & Readonly<{ rows: readonly Row[] }>
 
 /** The sources `rows` came from, each once in the order the list first shows it, with its rows.
  * A row's source is the one whose presets name its provider, since a preset's id is the
- * provider its datasets are stored under; a provider no preset names, a trader's own import
- * profile, stands for itself, apart from any source, whatever it is called. */
+ * provider its datasets are stored under, else the source whose id it is, as a trader's own
+ * import profile names one without a preset, such as `kibot` (step 5.12, as the SDK's
+ * `SourceGuide.source_of_provider` does); a provider the guide names nowhere stands for itself. */
 export function importedSources<Row extends Readonly<{ provider: string }>>(
   rows: readonly Row[],
   sources: readonly Source[]
@@ -39,9 +40,10 @@ export function importedSources<Row extends Readonly<{ provider: string }>>(
 }
 
 function sourceOf(provider: string, sources: readonly Source[]): Named {
-  const source = sources.find((each) =>
-    each.presets.some((preset) => preset.id === provider)
-  )
+  const source =
+    sources.find((each) =>
+      each.presets.some((preset) => preset.id === provider)
+    ) ?? sources.find((each) => each.id === provider)
   // A folder name holds no space, so a source's key and a provider's never meet.
   return source === undefined
     ? { key: `provider ${provider}`, name: provider, note: UNLISTED }

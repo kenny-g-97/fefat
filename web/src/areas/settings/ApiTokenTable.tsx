@@ -1,8 +1,7 @@
-import { useState } from "react"
 import { useTokenRevocation } from "@/api/api-tokens"
 import type { components } from "@/api/schema"
-import { Button } from "@/ui/button"
 import { IdentityChip } from "@/ui/identity-chip"
+import { InlineConfirmation } from "@/ui/inline-confirmation"
 import { formatInstant } from "@/ui/instant"
 import {
   Table,
@@ -53,10 +52,7 @@ export function ApiTokenTable({
   )
 }
 
-type Revoking = "not asked" | "confirming" | "kept"
-
 function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
-  const [revoking, setRevoking] = useState<Revoking>("not asked")
   const revocation = useTokenRevocation()
   return (
     <TableRow className="h-10 hover:bg-muted">
@@ -72,37 +68,12 @@ function ApiTokenRow({ token }: Readonly<{ token: ApiToken }>) {
           : formatInstant(token.last_used_at)}
       </TableCell>
       <TableCell className="py-0 pr-6 text-right">
-        {revoking === "confirming" ? (
-          // Keep takes the trigger's place and the focus, so a double click keeps the token,
-          // and the trigger takes the focus back when Keep is pressed.
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={revocation.isPending}
-              onClick={() => revocation.mutate(token.name)}
-            >
-              Revoke now
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              autoFocus
-              onClick={() => setRevoking("kept")}
-            >
-              Keep
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            autoFocus={revoking === "kept"}
-            onClick={() => setRevoking("confirming")}
-          >
-            Revoke
-          </Button>
-        )}
+        <InlineConfirmation
+          trigger="Revoke"
+          confirm="Revoke now"
+          pending={revocation.isPending}
+          onConfirm={() => revocation.mutate(token.name)}
+        />
         {revocation.error !== null && (
           <p
             role="alert"

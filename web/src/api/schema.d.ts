@@ -315,6 +315,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/import-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Import Profiles
+         * @description The presets, then the profiles saved under `profiles/`; refused with 409 where a saved
+         *     profile's file is not a profile, which the refusal names.
+         */
+        get: operations["import_profiles_v1_import_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Import
+         * @description Queue the import as an `import` job, of one file or batch, or of several files in one
+         *     round (D-102), its files and its profile checked first; its stages and its end come with
+         *     the job's stream.
+         */
+        post: operations["start_import_v1_imports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Import
+         * @description The file's table, or what its import would do, read by the executor and nothing
+         *     written; a file the SDK refuses is answered as refused, with why.
+         */
+        post: operations["preview_import_v1_imports_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/instruments": {
         parameters: {
             query?: never;
@@ -410,7 +474,8 @@ export interface paths {
          * Cancel Job
          * @description Cancel the job `job_id`: at once while it is queued; while it runs, it is asked to stop,
          *     which its worker does at its next report, or which the server makes it do ten seconds
-         *     later; an ended job is given as it is. Refused with 404 where no job has the id.
+         *     later; an ended job is given as it is. Refused with 404 where no job has the id, and with
+         *     409 for an import that writes, which runs to its end (step 5.12).
          */
         post: operations["cancel_job_v1_jobs__job_id__cancel_post"];
         delete?: never;
@@ -762,6 +827,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload File
+         * @description Keep the file the body holds under `name`, for the import wizard to preview and import.
+         *     Refused with 415 for a body of another media type, 400 for a name the server does not keep
+         *     or an empty file, and 413 for a file past `config.toml`'s `upload_megabytes`.
+         */
+        post: operations["upload_file_v1_uploads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/version": {
         parameters: {
             query?: never;
@@ -827,10 +914,16 @@ export interface components {
         /**
          * AppSettings
          * @description The settings the page shows: the server's, from `config.toml`, the data folder, the
+         *     file of those settings, which the import wizard names for its import roots (step 5.12), the
          *     theme, the charts' style (step 5.4), and each secret's state.
          */
         AppSettings: {
             chart_style: components["schemas"]["ChartStyle"];
+            /**
+             * Config File
+             * Format: path
+             */
+            config_file: string;
             /**
              * Data Dir
              * Format: path
@@ -880,6 +973,29 @@ export interface components {
             timeframe: string;
         };
         /**
+         * BarColumnNames
+         * @description The columns of a bar's prices and volume, and, where the file has them, of its trade
+         *     count and its volume-weighted average price (null in the store without them); named apart
+         *     from the chart's bars in columns, `fefat_app.services.market_bars.BarColumns`, since the API
+         *     describes both (step 5.12).
+         */
+        BarColumnNames: {
+            /** Close */
+            close: string | number;
+            /** High */
+            high: string | number;
+            /** Low */
+            low: string | number;
+            /** Open */
+            open: string | number;
+            /** Trade Count */
+            trade_count?: string | number | null;
+            /** Volume */
+            volume: string | number;
+            /** Vwap */
+            vwap?: string | number | null;
+        };
+        /**
          * BarColumns
          * @description A page's bars, column by column, by their open, the bars of one open by their contract:
          *     each bar's open in whole seconds since the Unix epoch, UTC; its trade date; its prices in the
@@ -912,6 +1028,40 @@ export interface components {
          * @enum {string}
          */
         BarPrices: "adjusted" | "raw";
+        /**
+         * BarSeen
+         * @description A bar as the store would hold it, its instants in ISO 8601 UTC and its prices in the
+         *     instrument's units.
+         */
+        BarSeen: {
+            /** Close */
+            close: number;
+            /** Contract */
+            contract: string;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Open */
+            open: number;
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** Ts Close */
+            ts_close: string;
+            /** Ts Open */
+            ts_open: string;
+            /** Volume */
+            volume: number;
+        };
+        /**
+         * BarStamp
+         * @description Which end of a bar its timestamp marks.
+         * @enum {string}
+         */
+        BarStamp: "open" | "close";
         /**
          * BarsPage
          * @description A page of a window's bars: the instrument and the timeframe asked for, the provider whose
@@ -947,6 +1097,39 @@ export interface components {
             provider: string;
             /** Timeframe */
             timeframe: string;
+        };
+        /**
+         * BatchImportAsked
+         * @description A Databento batch download folder or DBN file, by its path, and what to do with records
+         *     that differ from the store's.
+         */
+        BatchImportAsked: {
+            /** @default refuse */
+            differing: components["schemas"]["DifferingRecords"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "databento";
+            source: components["schemas"]["PathSource"];
+        };
+        /**
+         * BatchSeen
+         * @description What a Databento batch's import would do (`fefat.market.importers.report.
+         *     DatabentoPreview`): the verdict, the account's lines, counts and dates alone, and what each
+         *     of its files adds to each dataset, in counts, a dataset a product and schema of the batch.
+         */
+        BatchSeen: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "databento";
+            /** Lines */
+            lines: components["schemas"]["Capped"][];
+            /** Merges */
+            merges: components["schemas"]["MergeSeen"][];
+            verdict: components["schemas"]["ImportVerdict"];
         };
         /**
          * BinaryOperation
@@ -992,11 +1175,33 @@ export interface components {
             };
         };
         /**
+         * BusinessDaysBeforeThe25th
+         * @description `business_days` trade dates before the last trade date on or before the 25th of the month
+         *     before the contract month.
+         */
+        BusinessDaysBeforeThe25th: {
+            /** Business Days */
+            business_days: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "business-days-before-the-25th";
+        };
+        /**
+         * CalendarId
+         * @description A built-in session calendar: CME Globex's equity index, energy, and metals groups, and
+         *     crypto's 24x7 UTC days (`fefat.market.builtin_calendars`).
+         * @enum {string}
+         */
+        CalendarId: "cme-equity-index" | "cme-energy" | "cme-metals" | "crypto-24x7";
+        /**
          * CandleBody
          * @description A candle's body: outlined in its colour, or filled with it.
          * @enum {string}
          */
         CandleBody: "hollow" | "filled";
+        Capped: string;
         /**
          * CatalogProductStatus
          * @description A product of the catalog: its root, the first trade date of its history, the name of its
@@ -1090,6 +1295,29 @@ export interface components {
             kind: "column";
         };
         /**
+         * ColumnMapping
+         * @description Which columns hold what: the timestamp in one column, or a date and a time joined with a
+         *     space; the bars' or the ticks' values; where the file has them, each record's instrument
+         *     id and contract symbol; and Databento's record type (`rtype`), which must be the one of
+         *     the profile's timeframe.
+         */
+        ColumnMapping: {
+            bars?: components["schemas"]["BarColumnNames"] | null;
+            /** Date */
+            date?: string | number | null;
+            /** Instrument Id */
+            instrument_id?: string | number | null;
+            /** Record Type */
+            record_type?: string | number | null;
+            /** Symbol */
+            symbol?: string | number | null;
+            ticks?: components["schemas"]["TickColumnNames"] | null;
+            /** Time */
+            time?: string | number | null;
+            /** Timestamp */
+            timestamp?: string | number | null;
+        };
+        /**
          * Constant
          * @description A number or a flag, the same on every bar; a price in the bars' 1e-9 units.
          */
@@ -1181,6 +1409,18 @@ export interface components {
             worst_day: components["schemas"]["DayPnl"] | null;
         };
         /**
+         * Dataset
+         * @description One provider's records of one schema for one root, in `<provider>/<schema>/root=<root>`.
+         */
+        Dataset: {
+            /** Provider */
+            provider: string;
+            /** Root */
+            root: string;
+            /** Schema Name */
+            schema_name: string;
+        };
+        /**
          * DatasetInput
          * @description A dataset of alternative data by its name, reserved for Phase 10.
          */
@@ -1249,6 +1489,14 @@ export interface components {
          * @enum {string}
          */
         DesktopUse: "confirmed" | "check-the-terms" | "forbidden";
+        /**
+         * DifferingRecords
+         * @description What an import does with the instants a file and the store dispute (ADR-0021): refuse
+         *     the file, or take each such instant whole from the file. `DifferingRecords(text)` reads
+         *     the text a command or a notebook gives, and refuses any other.
+         * @enum {string}
+         */
+        DifferingRecords: "refuse" | "take-file";
         /**
          * Dimension
          * @description A dimension's score, out of 20.
@@ -1422,6 +1670,117 @@ export interface components {
             type: string;
         };
         /**
+         * FileImportAsked
+         * @description A trader's file through a profile, with the contract, the root, and the time zone the
+         *     profile leaves to the import, as `fefat data import file` takes them, and what to do with
+         *     records that differ from the store's.
+         */
+        FileImportAsked: {
+            /** Contract */
+            contract?: string | null;
+            /** @default refuse */
+            differing: components["schemas"]["DifferingRecords"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "file";
+            profile: components["schemas"]["ProfileChoice"];
+            /** Root */
+            root?: string | null;
+            source: components["schemas"]["ImportSource"];
+            /** Time Zone */
+            time_zone?: string | null;
+        };
+        /**
+         * FileLayout
+         * @description The file's delimiter, one character (a tab for TSV), and whether a header row names its
+         *     columns.
+         */
+        FileLayout: {
+            /** Delimiter */
+            delimiter: string;
+            /** Header */
+            header: boolean;
+        };
+        /**
+         * FileSeen
+         * @description What a file's import would do (`fefat.market.importers.file_report.FilePreview`): the
+         *     verdict; the file's name and profile; the dataset its records go to; what was read, left
+         *     out, and found; the calendar's check, with each offset; the first records as stored; and
+         *     what the file adds to its dataset, or the raw copy of a file imported before.
+         */
+        FileSeen: {
+            /** Bars Without Volume */
+            bars_without_volume: number;
+            /** Contracts */
+            contracts: string[];
+            /** Contracts Total */
+            contracts_total: number;
+            dataset: components["schemas"]["Dataset"];
+            /** Days Checked */
+            days_checked: number;
+            /** File Name */
+            file_name: string;
+            /** First Records */
+            first_records: components["schemas"]["FirstBars"] | components["schemas"]["FirstPrints"];
+            /** First Trade Date */
+            first_trade_date: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "file";
+            /** Last Trade Date */
+            last_trade_date: string | null;
+            merge: components["schemas"]["MergeSeen"] | null;
+            /** Mismatches */
+            mismatches: components["schemas"]["Capped"][];
+            /** Mismatches Total */
+            mismatches_total: number;
+            /** Offsets */
+            offsets: components["schemas"]["OffsetSeen"][];
+            /** Problems */
+            problems: components["schemas"]["Capped"][];
+            /** Problems Total */
+            problems_total: number;
+            /** Profile */
+            profile: string;
+            /** Raw Path */
+            raw_path: string | null;
+            /** Records */
+            records: number;
+            /** Rows Read */
+            rows_read: number;
+            /** Spread Rows */
+            spread_rows: number;
+            verdict: components["schemas"]["ImportVerdict"];
+            /** Warnings */
+            warnings: components["schemas"]["Capped"][];
+        };
+        /**
+         * FilesImportAsked
+         * @description Several of a trader's files in one import (D-102), through one profile, as several
+         *     commands of `fefat data import file` with the same options would take them: no contract,
+         *     since each file's name gives its own; at most `FILES_AT_MOST`.
+         */
+        FilesImportAsked: {
+            /** @default refuse */
+            differing: components["schemas"]["DifferingRecords"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "files";
+            profile: components["schemas"]["ProfileChoice"];
+            /** Root */
+            root?: string | null;
+            /** Sources */
+            sources: components["schemas"]["ImportSource"][];
+            /** Time Zone */
+            time_zone?: string | null;
+        };
+        /**
          * FillPriceDifference
          * @description A trade entered at one decision on one side in the baseline and in a rerun: how far the
          *     rerun's entry price and its exits' average price lie from the baseline's, in ticks, the
@@ -1438,6 +1797,45 @@ export interface components {
             /** Exit Ticks */
             exit_ticks: number | null;
             side: components["schemas"]["PositionSide"];
+        };
+        /**
+         * FirstBars
+         * @description A file's first bars as the store would hold them.
+         */
+        FirstBars: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "bars";
+            /** Rows */
+            rows: components["schemas"]["BarSeen"][];
+        };
+        /**
+         * FirstPrints
+         * @description A file's first prints as the store would hold them.
+         */
+        FirstPrints: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "prints";
+            /** Rows */
+            rows: components["schemas"]["PrintSeen"][];
+        };
+        /**
+         * GivenProfile
+         * @description A profile given whole, as the wizard builds a new one; it is kept under `profiles/`
+         *     once an import with it has written.
+         */
+        GivenProfile: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "given";
+            profile: components["schemas"]["ImportProfile-Input"];
         };
         /**
          * Health
@@ -1467,6 +1865,98 @@ export interface components {
              */
             last: string;
         };
+        ImportPreviewAnswer: components["schemas"]["TablePreview"] | components["schemas"]["FileSeen"] | components["schemas"]["BatchSeen"] | components["schemas"]["RefusedImport"];
+        /**
+         * ImportProfile
+         * @description A file layout of market data and how its records become the store's (module docstring).
+         */
+        "ImportProfile-Input": {
+            columns: components["schemas"]["ColumnMapping"];
+            /** Contract In File Name */
+            contract_in_file_name?: string | null;
+            /** Description */
+            description: string;
+            /** Instrument */
+            instrument?: string | components["schemas"]["NewInstrument-Input"] | null;
+            /** @default market_data */
+            kind: components["schemas"]["ProfileKind"];
+            layout: components["schemas"]["FileLayout"];
+            /** Licence Scope */
+            licence_scope?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * @default {
+             *       "scale": "1",
+             *       "unit": "decimal"
+             *     }
+             */
+            price: components["schemas"]["PriceRule-Input"];
+            /** Provider */
+            provider: string;
+            /** @default contract */
+            series: components["schemas"]["SeriesKind"];
+            /** Timeframe */
+            timeframe: string;
+            timestamp: components["schemas"]["TimestampRule"];
+            /**
+             * @default {
+             *       "asset": "contract",
+             *       "lot": "1"
+             *     }
+             */
+            volume_unit: components["schemas"]["SizeUnit-Input"];
+        };
+        /**
+         * ImportProfile
+         * @description A file layout of market data and how its records become the store's (module docstring).
+         */
+        "ImportProfile-Output": {
+            columns: components["schemas"]["ColumnMapping"];
+            /** Contract In File Name */
+            contract_in_file_name?: string | null;
+            /** Description */
+            description: string;
+            /** Instrument */
+            instrument?: string | components["schemas"]["NewInstrument-Output"] | null;
+            /** @default market_data */
+            kind: components["schemas"]["ProfileKind"];
+            layout: components["schemas"]["FileLayout"];
+            /** Licence Scope */
+            licence_scope?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * @default {
+             *       "scale": "1",
+             *       "unit": "decimal"
+             *     }
+             */
+            price: components["schemas"]["PriceRule-Output"];
+            /** Provider */
+            provider: string;
+            /** @default contract */
+            series: components["schemas"]["SeriesKind"];
+            /** Timeframe */
+            timeframe: string;
+            timestamp: components["schemas"]["TimestampRule"];
+            /**
+             * @default {
+             *       "asset": "contract",
+             *       "lot": "1"
+             *     }
+             */
+            volume_unit: components["schemas"]["SizeUnit-Output"];
+        };
+        ImportSource: components["schemas"]["UploadSource"] | components["schemas"]["PathSource"];
+        /**
+         * ImportVerdict
+         * @description What a preview finds the import would do: import as it is, be refused for the problems
+         *     or offsets found, be refused for records that differ from the store's, change nothing, as a
+         *     file imported before, or import nothing, as a batch whose files hold nothing new.
+         * @enum {string}
+         */
+        ImportVerdict: "imports" | "refused" | "differing" | "imported_before" | "nothing";
         /**
          * IndexedFeature
          * @description A saved feature as the index holds it: its row's id, its name, and its versions in order.
@@ -1720,6 +2210,14 @@ export interface components {
          */
         LintRule: "negative_shift" | "backward_fill" | "centred_window" | "full_sample" | "partition_aggregate" | "reversed" | "forward_join" | "join_on_open" | "reads_data" | "reads_labels" | "name_read_outside" | "non_literal_default";
         /**
+         * ListedProfile
+         * @description A profile the wizard offers, with where it comes from.
+         */
+        ListedProfile: {
+            origin: components["schemas"]["ProfileOrigin"];
+            profile: components["schemas"]["ImportProfile-Output"];
+        };
+        /**
          * LoginRequest
          * @description The password, set at `fefat up`'s first run or by `fefat password set`.
          */
@@ -1729,6 +2227,37 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /**
+         * MergeSeen
+         * @description What a file adds to one dataset FEAT holds (`fefat.market.importers.report.
+         *     DatasetMerge`), in counts: its records new, held, and differing, with the stored records at
+         *     the instants the two dispute; its sessions new to the store and those the store held part
+         *     of; the first trade dates with differing records, beside their total; and the partitions
+         *     the import changes and leaves as they are.
+         */
+        MergeSeen: {
+            dataset: components["schemas"]["Dataset"];
+            /** Differing Sessions */
+            differing_sessions: string[];
+            /** Differing Sessions Total */
+            differing_sessions_total: number;
+            /** Extended Sessions */
+            extended_sessions: number;
+            /** New Sessions */
+            new_sessions: number;
+            /** Partitions Changed */
+            partitions_changed: number;
+            /** Partitions Unchanged */
+            partitions_unchanged: number;
+            /** Records Added */
+            records_added: number;
+            /** Records Differing */
+            records_differing: number;
+            /** Records Held */
+            records_held: number;
+            /** Stored Records Disputed */
+            stored_records_disputed: number;
         };
         /**
          * Metrics
@@ -1773,6 +2302,19 @@ export interface components {
             with_records: number;
         };
         /**
+         * NamedProfile
+         * @description A profile by its name: a preset, or a profile saved under `profiles/`.
+         */
+        NamedProfile: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "named";
+            /** Name */
+            name: string;
+        };
+        /**
          * Negation
          * @description `not` of a flag.
          */
@@ -1795,6 +2337,66 @@ export interface components {
             code: string;
             /** Name */
             name: string;
+        };
+        /**
+         * NewInstrument
+         * @description The specification of a product FEFAT does not know, entered once: `calendar` is a
+         *     built-in calendar's id or the hours of a calendar of its own without holidays, and
+         *     `first_trade_date` the day it began trading, before which no record is imported.
+         */
+        "NewInstrument-Input": {
+            /** Calendar */
+            calendar: components["schemas"]["CalendarId"] | components["schemas"]["SessionHours-Input"];
+            currency: components["schemas"]["Currency"];
+            /**
+             * First Trade Date
+             * Format: date
+             */
+            first_trade_date: string;
+            kind: components["schemas"]["InstrumentKind"];
+            /** Last Trade Rule */
+            last_trade_rule?: (components["schemas"]["ThirdFriday"] | components["schemas"]["BusinessDaysBeforeThe25th"] | components["schemas"]["ThirdLastBusinessDay"]) | null;
+            /**
+             * Lot Step
+             * @default 1
+             */
+            lot_step: number | string;
+            /** Point Value */
+            point_value: number | string;
+            /** Root */
+            root: string;
+            /** Tick Size */
+            tick_size: number | string;
+        };
+        /**
+         * NewInstrument
+         * @description The specification of a product FEFAT does not know, entered once: `calendar` is a
+         *     built-in calendar's id or the hours of a calendar of its own without holidays, and
+         *     `first_trade_date` the day it began trading, before which no record is imported.
+         */
+        "NewInstrument-Output": {
+            /** Calendar */
+            calendar: components["schemas"]["CalendarId"] | components["schemas"]["SessionHours-Output"];
+            currency: components["schemas"]["Currency"];
+            /**
+             * First Trade Date
+             * Format: date
+             */
+            first_trade_date: string;
+            kind: components["schemas"]["InstrumentKind"];
+            /** Last Trade Rule */
+            last_trade_rule?: (components["schemas"]["ThirdFriday"] | components["schemas"]["BusinessDaysBeforeThe25th"] | components["schemas"]["ThirdLastBusinessDay"]) | null;
+            /**
+             * Lot Step
+             * @default 1
+             */
+            lot_step: string;
+            /** Point Value */
+            point_value: string;
+            /** Root */
+            root: string;
+            /** Tick Size */
+            tick_size: string;
         };
         /**
          * NewStrategy
@@ -1829,6 +2431,43 @@ export interface components {
             code: string;
             /** Hypothesis */
             hypothesis: string;
+        };
+        /**
+         * OffsetCause
+         * @description What a dataset's offset points at: hours at the time zone the file's times are in, one
+         *     bar at the side of the bar its timestamps mark, and a half hour or an hour of bars as long
+         *     as one at either.
+         * @enum {string}
+         */
+        OffsetCause: "time-zone" | "bar-stamping" | "time-zone-or-bar-stamping";
+        /**
+         * OffsetDirection
+         * @description Whether a file's records run late or early against their calendar.
+         * @enum {string}
+         */
+        OffsetDirection: "late" | "early";
+        /**
+         * OffsetSeen
+         * @description A file's offset from its calendar (`fefat.market.calendar_offset.CalendarOffset`): what
+         *     it points at, which way and how far its records run, in words, on which trade dates, and
+         *     the SDK's line for it.
+         */
+        OffsetSeen: {
+            cause: components["schemas"]["OffsetCause"];
+            description: components["schemas"]["Capped"];
+            direction: components["schemas"]["OffsetDirection"];
+            /** Duration */
+            duration: string;
+            /**
+             * First Trade Date
+             * Format: date
+             */
+            first_trade_date: string;
+            /**
+             * Last Trade Date
+             * Format: date
+             */
+            last_trade_date: string;
         };
         /**
          * OrderRole
@@ -1875,6 +2514,19 @@ export interface components {
              * Format: password
              */
             new_password: string;
+        };
+        /**
+         * PathSource
+         * @description A file or batch folder named by its path, which must lie under an import root.
+         */
+        PathSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "path";
+            /** Path */
+            path: string;
         };
         /**
          * PeriodOutcome
@@ -1932,6 +2584,63 @@ export interface components {
          */
         PresetStatus: "available" | "planned";
         /**
+         * PriceRule
+         * @description How a price is written, and what multiplies it into the instrument's price, such as
+         *     0.0001 for prices stored times 10,000.
+         */
+        "PriceRule-Input": {
+            /**
+             * Scale
+             * @default 1
+             */
+            scale: number | string;
+            /** @default decimal */
+            unit: components["schemas"]["PriceUnit"];
+        };
+        /**
+         * PriceRule
+         * @description How a price is written, and what multiplies it into the instrument's price, such as
+         *     0.0001 for prices stored times 10,000.
+         */
+        "PriceRule-Output": {
+            /**
+             * Scale
+             * @default 1
+             */
+            scale: string;
+            /** @default decimal */
+            unit: components["schemas"]["PriceUnit"];
+        };
+        /**
+         * PriceUnit
+         * @description How a file writes a price: as a decimal, as an integer count of 1e-9 units, or as
+         *     Databento writes one, either, the same throughout a file.
+         * @enum {string}
+         */
+        PriceUnit: "decimal" | "nano_integer" | "databento";
+        /**
+         * PrintSeen
+         * @description A print as the store would hold it, its instant in ISO 8601 UTC and its price in the
+         *     instrument's units.
+         */
+        PrintSeen: {
+            /** Contract */
+            contract: string;
+            /** Price */
+            price: number;
+            /** Side */
+            side: string;
+            /** Size */
+            size: number;
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** Ts Recv */
+            ts_recv: string;
+        };
+        /**
          * Problem
          * @description An error the API answered (RFC 9457), with the id of the request it ended.
          */
@@ -1952,6 +2661,19 @@ export interface components {
              */
             type: string;
         };
+        ProfileChoice: components["schemas"]["NamedProfile"] | components["schemas"]["GivenProfile"];
+        /**
+         * ProfileKind
+         * @description What a profile imports: market data here; trade logs arrive in Phase 7.
+         * @enum {string}
+         */
+        ProfileKind: "market_data";
+        /**
+         * ProfileOrigin
+         * @description Where a profile comes from: FEFAT's presets, or the trader's `profiles/` folder.
+         * @enum {string}
+         */
+        ProfileOrigin: "preset" | "saved";
         /**
          * QualityFinding
          * @description What a report finds wrong with a dataset on a trade date: a session without records,
@@ -2051,6 +2773,20 @@ export interface components {
              * @default about:blank
              */
             type: string;
+        };
+        /**
+         * RefusedImport
+         * @description What the SDK refused, in its words, as a file it cannot read or a profile that does not
+         *     fit it.
+         */
+        RefusedImport: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "refused";
+            /** Message */
+            message: string;
         };
         /**
          * Replay
@@ -2402,6 +3138,65 @@ export interface components {
             state: components["schemas"]["SecretState"];
         };
         /**
+         * SeriesKind
+         * @description What a dataset's contracts are (step 1.10): dated contracts, or one continuous series
+         *     imported as a synthetic contract, its prices as the file gives them or back-adjusted.
+         * @enum {string}
+         */
+        SeriesKind: "contract" | "continuous" | "continuous-back-adjusted";
+        /**
+         * SessionHours
+         * @description Regular sessions in local time of `time_zone`: each opens at `opens_at`, on the day before
+         *     its trade date when `opens_on_previous_day`, and closes at `closes_at` on its trade date, or
+         *     on the day after when it opens on its trade date and `closes_at` is not after `opens_at` (a
+         *     crypto UTC day runs 00:00 to 00:00). `weekdays` are the days of the week that are trade
+         *     dates.
+         */
+        "SessionHours-Input": {
+            /**
+             * Closes At
+             * Format: time
+             */
+            closes_at: string;
+            /**
+             * Opens At
+             * Format: time
+             */
+            opens_at: string;
+            /** Opens On Previous Day */
+            opens_on_previous_day: boolean;
+            /** Time Zone */
+            time_zone: string;
+            /** Weekdays */
+            weekdays: components["schemas"]["Weekday-Input"][];
+        };
+        /**
+         * SessionHours
+         * @description Regular sessions in local time of `time_zone`: each opens at `opens_at`, on the day before
+         *     its trade date when `opens_on_previous_day`, and closes at `closes_at` on its trade date, or
+         *     on the day after when it opens on its trade date and `closes_at` is not after `opens_at` (a
+         *     crypto UTC day runs 00:00 to 00:00). `weekdays` are the days of the week that are trade
+         *     dates.
+         */
+        "SessionHours-Output": {
+            /**
+             * Closes At
+             * Format: time
+             */
+            closes_at: string;
+            /**
+             * Opens At
+             * Format: time
+             */
+            opens_at: string;
+            /** Opens On Previous Day */
+            opens_on_previous_day: boolean;
+            /** Time Zone */
+            time_zone: string;
+            /** Weekdays */
+            weekdays: components["schemas"]["fefat__market__calendar_definition__Weekday"][];
+        };
+        /**
          * SessionIdentity
          * @description A request of a login session, with the CSRF token that every state-changing request the
          *     session's cookie authenticates must carry in `X-CSRF-Token`, and when the session ends.
@@ -2424,8 +3219,9 @@ export interface components {
          * Settings
          * @description What the server needs before its database opens, from `<FEFAT_HOME>/config.toml`
          *     (`01-architecture.md` sections 4, 6, and 8, D-83): the port it listens on, the address it
-         *     binds, which can only be the loopback (D-54), the size of its process pool, and the folders
-         *     an import may read large files from. What the app edits, such as the password and the
+         *     binds, which can only be the loopback (D-54), the size of its process pool, the folders
+         *     an import may read large files from, and the largest file and the endings of the files
+         *     the import wizard takes (step 5.12). What the app edits, such as the password and the
          *     theme, lives in its database's `settings` table instead; secrets live in the credential
          *     store, never here.
          */
@@ -2448,6 +3244,23 @@ export interface components {
             port: number;
             /** Process Pool Size */
             process_pool_size?: number;
+            /**
+             * Upload Megabytes
+             * @default 256
+             */
+            upload_megabytes: number;
+            /**
+             * Upload Suffixes
+             * @default [
+             *       ".csv",
+             *       ".tsv",
+             *       ".txt",
+             *       ".parquet",
+             *       ".zip",
+             *       ".gz"
+             *     ]
+             */
+            upload_suffixes: string[];
         };
         /**
          * SettingsChange
@@ -2466,6 +3279,28 @@ export interface components {
          * @enum {string}
          */
         Severity: "high" | "medium";
+        /**
+         * SizeUnit
+         * @description What one unit of a `size` or `volume` column is: `lot` of `asset`, such as 1 contract
+         *     or 0.001 BTC.
+         */
+        "SizeUnit-Input": {
+            /** Asset */
+            asset: string;
+            /** Lot */
+            lot: number | string;
+        };
+        /**
+         * SizeUnit
+         * @description What one unit of a `size` or `volume` column is: `lot` of `asset`, such as 1 contract
+         *     or 0.001 BTC.
+         */
+        "SizeUnit-Output": {
+            /** Asset */
+            asset: string;
+            /** Lot */
+            lot: string;
+        };
         /**
          * SlippageTicks
          * @description Ticks by which market and stop-market fills are worse than their reference (F-SLP-01).
@@ -2607,6 +3442,43 @@ export interface components {
             name: string;
         };
         /**
+         * TableAsked
+         * @description A file's table as `layout` reads it, or as its first lines suggest where it is None.
+         */
+        TableAsked: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "table";
+            layout?: components["schemas"]["FileLayout"] | null;
+            source: components["schemas"]["ImportSource"];
+        };
+        /**
+         * TablePreview
+         * @description A file's table: the name of the file its rows are in, its own or the one its `.gz` or
+         *     `.zip` holds, the layout read, and its first columns and rows as text, cut to a cell's
+         *     width, beside how many there are.
+         */
+        TablePreview: {
+            /** Columns */
+            columns: string[];
+            /** Columns Total */
+            columns_total: number;
+            /** File Name */
+            file_name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "table";
+            layout: components["schemas"]["FileLayout"];
+            /** Rows */
+            rows: (string | null)[][];
+            /** Rows Total */
+            rows_total: number;
+        };
+        /**
          * Theme
          * @description The web app's colours (`web/DESIGN.md`): dark, the default the design brief sets, or
          *     light.
@@ -2630,6 +3502,48 @@ export interface components {
             text?: string | null;
             /** Up */
             up?: string | null;
+        };
+        /**
+         * ThirdFriday
+         * @description The third Friday of the contract month, or the last trade date before it when it is
+         *     none.
+         */
+        ThirdFriday: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "third-friday";
+        };
+        /**
+         * ThirdLastBusinessDay
+         * @description The third-last trade date of the contract month.
+         */
+        ThirdLastBusinessDay: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "third-last-business-day";
+        };
+        /**
+         * TickColumnNames
+         * @description The columns of a tick's price and size, its aggressor side (`A`, `B`, or `N`; `N`
+         *     without a column), the event time where it differs from the timestamp, which is the receive
+         *     time, and its sequence (without a column, the store numbers it by its place among the ticks
+         *     of its instant).
+         */
+        TickColumnNames: {
+            /** Event Time */
+            event_time?: string | number | null;
+            /** Price */
+            price: string | number;
+            /** Sequence */
+            sequence?: string | number | null;
+            /** Side */
+            side?: string | number | null;
+            /** Size */
+            size: string | number;
         };
         /**
          * TickFidelity
@@ -2665,6 +3579,26 @@ export interface components {
             kind: "timeframe";
             /** Timeframe */
             timeframe: string;
+        };
+        /**
+         * TimestampForm
+         * @description A timestamp written as a number since the Unix epoch, as ISO 8601 text with an offset
+         *     or none, or as Databento writes one, ISO 8601 or integer nanoseconds.
+         * @enum {string}
+         */
+        TimestampForm: "unix_s" | "unix_ms" | "unix_us" | "unix_ns" | "iso" | "databento";
+        /**
+         * TimestampRule
+         * @description How a timestamp is written: its format, its time zone (null where each import names it,
+         *     since the file's zone is the trader's, such as the TWS login's), and the bar end it marks.
+         */
+        TimestampRule: {
+            /** Format */
+            format: components["schemas"]["TimestampForm"] | string;
+            /** @default open */
+            stamp: components["schemas"]["BarStamp"];
+            /** Time Zone */
+            time_zone: string | null;
         };
         /**
          * TradeStatistics
@@ -2706,6 +3640,45 @@ export interface components {
              * @enum {string}
              */
             kind: "trades";
+        };
+        /**
+         * UploadSource
+         * @description A file kept as an upload, named by its id.
+         */
+        UploadSource: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "upload";
+            /**
+             * Upload Id
+             * Format: uuid
+             */
+            upload_id: string;
+        };
+        /**
+         * UploadedFile
+         * @description A file the browser sent, kept in its own folder of the workspace's uploads until its
+         *     import has written: its id, its name, its size in bytes, its SHA-256, and when it came.
+         */
+        UploadedFile: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sha256 */
+            sha256: string;
+            /** Size */
+            size: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
         };
         /**
          * ValidStrategy
@@ -2798,10 +3771,10 @@ export interface components {
         VolumeColouring: "neutral" | "direction";
         /**
          * Weekday
-         * @description A day of the week, as the specification spells it.
-         * @enum {string}
+         * @description A day of the week, numbered as ISO 8601, `date.isoweekday`, and Polars number them.
+         * @enum {integer}
          */
-        Weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+        "Weekday-Input": 1 | 2 | 3 | 4 | 5 | 6 | 7;
         /**
          * Window
          * @description A window over the last `n` bars of a term, `lag` the term `n` bars before.
@@ -2817,6 +3790,18 @@ export interface components {
             /** Of */
             of: components["schemas"]["Constant"] | components["schemas"]["Column"] | components["schemas"]["FeatureOutput"] | components["schemas"]["BinaryOperation"] | components["schemas"]["Negation"] | components["schemas"]["Window"] | components["schemas"]["AtTimeframe"];
         };
+        /**
+         * Weekday
+         * @description A day of the week, numbered as ISO 8601, `date.isoweekday`, and Polars number them.
+         * @enum {integer}
+         */
+        fefat__market__calendar_definition__Weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+        /**
+         * Weekday
+         * @description A day of the week, as the specification spells it.
+         * @enum {string}
+         */
+        fefat__strategy__exits__Weekday: "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
     };
     responses: never;
     parameters: never;
@@ -3677,6 +4662,182 @@ export interface operations {
             };
         };
     };
+    import_profiles_v1_import_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListedProfile"][];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    start_import_v1_imports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileImportAsked"] | components["schemas"]["FilesImportAsked"] | components["schemas"]["BatchImportAsked"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    preview_import_v1_imports_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TableAsked"] | components["schemas"]["FileImportAsked"] | components["schemas"]["BatchImportAsked"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreviewAnswer"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     instruments_v1_instruments_get: {
         parameters: {
             query?: never;
@@ -3875,6 +5036,15 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4863,6 +6033,86 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    upload_file_v1_uploads_post: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadedFile"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

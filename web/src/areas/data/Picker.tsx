@@ -15,17 +15,36 @@ export type Option = Readonly<{ value: string; label: string }>
 type ChoiceProps = Readonly<{
   id: string
   label: string
+  refusal?: string | null
   className?: string
   children: ReactNode
 }>
 
 /** A field of a toolbar under its label (web/DESIGN.md, Patterns, Forms), which names the field
- * with `id`. */
-export function Choice({ id, label, className, children }: ChoiceProps) {
+ * with `id`; a refusal of what the field holds turns the label to the negative and stands
+ * under the field at `<id>-refusal`, for the field to name, as wide as `className` makes the
+ * choice, the field's own width. */
+export function Choice({
+  id,
+  label,
+  refusal = null,
+  className,
+  children,
+}: ChoiceProps) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <Label htmlFor={id}>{label}</Label>
+      <Label
+        htmlFor={id}
+        className={refusal === null ? undefined : "text-negative"}
+      >
+        {label}
+      </Label>
       {children}
+      {refusal !== null && (
+        <p id={`${id}-refusal`} className="text-negative">
+          {refusal}
+        </p>
+      )}
     </div>
   )
 }
@@ -35,22 +54,35 @@ type PickerProps = Readonly<{
   value: string
   options: readonly Option[]
   onChange: (value: string) => void
+  placeholder?: string
+  label?: string
+  size?: "sm" | "default"
   className?: string
 }>
 
 /** The data area's select (web/DESIGN.md, Patterns, Select): one choice among many, its list a
- * popper under its trigger, 144 px wide where its values need no more. */
+ * popper under its trigger, 144 px wide where its values need no more; with no value chosen,
+ * `""`, it shows `placeholder` in subtle text. A select over a table's column is `sm`, 32 px, and
+ * named by `label`, since no label element names it. */
 export function Picker({
   id,
   value,
   options,
   onChange,
+  placeholder,
+  label,
+  size = "default",
   className = "w-36",
 }: PickerProps) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger id={id} className={className}>
-        <SelectValue />
+      <SelectTrigger
+        id={id}
+        size={size}
+        className={className}
+        aria-label={label}
+      >
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent position="popper">
         {options.map((option) => (

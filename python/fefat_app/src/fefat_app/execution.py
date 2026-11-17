@@ -8,7 +8,8 @@ From step 5.2 (D-93), the library's kinds: a strategy's code validated, a strate
 and a feature version saved, each through the SDK in the runner, never in the server; what the
 SDK refuses comes back as the runner's answer, with the line of the code it is at, rather than as
 a failure. From step 5.3, a saved strategy version's lookup, before a backtest is queued, and its
-backtest, which a job runs (`fefat_app.runs`)."""
+backtest, which a job runs (`fefat_app.runs`). From step 5.12, the import wizard's preview and
+import (`fefat_app.imports`). The kinds and the limits are `fefat_app.execution_kinds`'."""
 
 from collections.abc import Callable
 from datetime import date
@@ -19,39 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from fefat.backtest.record import Hash
 from fefat.strategy.source_lint import StrategyLintFinding
+from fefat_app.execution_kinds import ExecutionKind as ExecutionKind
+from fefat_app.execution_kinds import ExecutionLimits as ExecutionLimits
+from fefat_app.imports import ImportOutput, ImportPreviewOutput, ImportPreviewSpec, ImportSpec
 from fefat_app.runs import RequestedRun, RunToMake, SavedRunFound
-
-
-class ExecutionKind(StrEnum):
-    """What an execution runs: a feature's preview, or a snippet of Python, which the job kinds
-    of the same names run (step 4.5); a strategy's code validated, a strategy version saved, or a
-    feature version saved, which the library's routes run (step 5.2); and a saved version's run
-    looked up, which `POST /v1/runs` runs, and its backtest, which a `backtest` job runs (step
-    5.3)."""
-
-    FEATURE_PREVIEW = "feature_preview"
-    PYTHON_SNIPPET = "python_snippet"
-    STRATEGY_VALIDATION = "strategy_validation"
-    STRATEGY_SAVE = "strategy_save"
-    FEATURE_SAVE = "feature_save"
-    RUN_LOOKUP = "run_lookup"
-    BACKTEST = "backtest"
-
-
-MOST_SECONDS = 24 * 60 * 60
-"""The longest timeout an execution takes: a day, longer than any run FEFAT starts."""
-MOST_BYTES = 2**63 - 1
-"""The largest memory limit an execution takes, the most a limit of 64 bits holds."""
-
-
-class ExecutionLimits(BaseModel):
-    """What an execution may take: the seconds of the wall clock from its start, and the bytes of
-    memory its processes may commit together, past which an allocation fails."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    timeout_seconds: float = Field(gt=0, le=MOST_SECONDS)
-    memory_bytes: int = Field(gt=0, le=MOST_BYTES)
 
 
 class BarsReference(BaseModel):
@@ -164,7 +136,9 @@ type ExecutionSpec = Annotated[
     | StrategySaveSpec
     | FeatureSaveSpec
     | RunLookupSpec
-    | BacktestSpec,
+    | BacktestSpec
+    | ImportPreviewSpec
+    | ImportSpec,
     Field(discriminator="kind"),
 ]
 EXECUTION_SPEC: TypeAdapter[ExecutionSpec] = TypeAdapter(ExecutionSpec)
@@ -364,7 +338,9 @@ class ExecutionSucceeded(BaseModel):
         | StrategySaveOutput
         | FeatureSaveOutput
         | RunLookupOutput
-        | BacktestOutput,
+        | BacktestOutput
+        | ImportPreviewOutput
+        | ImportOutput,
         Field(discriminator="kind"),
     ]
 

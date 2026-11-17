@@ -9,7 +9,8 @@ batch split into several DBN files is refused (`fefat.market.importers.databento
 reads the data file three times, streaming: for the days each instrument has records, which name
 its contracts; to check every partition against what the store holds of it, counting what the
 file adds, what the store already holds, and what differs (`file_writer.checked_records`,
-ADR-0021); and, once nothing refuses the file, to write the partitions that change, merged
+ADR-0021); and, once nothing refuses the file, under the store's import lock, for which
+another import's writes wait (step 5.12), to write the partitions that change, merged
 with the stored ones, a reading that a file which changes none is spared, each new dataset's
 `dataset.json` naming its origin, an import, and the licence scope of Databento's entry in the
 source guide (`fefat.market.sources`). The file is kept unchanged under
@@ -37,7 +38,7 @@ same files, reads the data file twice, and writes nothing: it says what the impo
     print(report.summary())
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path, PurePosixPath
 
@@ -68,6 +69,9 @@ from fefat.market.importers.report import (
     DatabentoImport,
     DatabentoPreview,
     FileImport,
+    ImportProgress,
+    ImportStage,
+    tell_no_one,
 )
 from fefat.market.instruments import STATIC_TABLE, InstrumentTable
 from fefat.market.layout import DatasetMetadata, DatasetOrigin
@@ -149,28 +153,32 @@ class _DataFileImporter:
         placement = RecordPlacement(
             original.source, metadata, days, PROVIDER, self._instruments, self._cache_folder
         )
+        return placement, self.checked_again(original, placement)
+
+    def checked_again(self, original: Original, placement: RecordPlacement) -> FileImport:
+        """The file's records, placed as they were, read against the store in a reading of
+        their own: what they would add to each dataset, as another import's writes meanwhile
+        left the store."""
         _, frames = read_dbn(original.source)
         raw_path = original.raw_path.as_posix()
-        report = checked_records(
+        return checked_records(
             frames, placement, self._store, raw_path, self._metadata, self._differing
         )
-        return placement, report
 
-    def imported(self, download: _Download, imported_on: date) -> FileImport | None:
-        """The download's data file checked whole, refused where its records differ from the
-        store's and no import lets them stand, then kept under `raw`, the partitions it changes
-        written in a third reading, which a file that changes none is spared, and its entry in
-        the raw manifest recorded last, with `imported_on`; `None` for the vendor's daily bars,
-        which are skipped."""
+    def written(
+        self,
+        download: _Download,
+        checked: tuple[RecordPlacement, FileImport],
+        imported_on: date,
+    ) -> FileImport:
+        """The download's data file, `checked` whole and not refused and kept under `raw`, the
+        partitions it changes written in a third reading, of the verified copy under `raw`,
+        which a file that changes none is spared, and its entry in the raw manifest recorded
+        last, with `imported_on`."""
         original = download.data_file
-        checked = self.checked(original)
-        if checked is None:
-            return None
         placement, report = checked
-        require_none_differing(report.merges, original.source)
-        self._store.raw.write(original.raw_path, original.source, original.sha256)
         if any(merge.partitions_changed for merge in report.merges):
-            _, frames = read_dbn(original.source)
+            _, frames = read_dbn(self._store.raw.copy_of(original.raw_path))
             write_records(frames, placement, self._store, self._metadata, self._differing)
         taken = self._differing is DifferingRecords.TAKE_THE_FILE
         version = f"DBN {placement.metadata.version}{download.revision()}"
@@ -195,18 +203,42 @@ def import_databento(
     instruments: InstrumentTable = STATIC_TABLE,
     guide: SourceGuide = SOURCE_GUIDE,
     differing: DifferingRecords | str = DifferingRecords.REFUSE,
+    progress: ImportProgress = tell_no_one,
 ) -> DatabentoImport:
     """Import a Databento batch-download folder or a single DBN file into `store`, merging its
     records into the partitions it overlaps (ADR-0021), with the session tables built in
     `cache_folder`, recording `imported_on` as the day its files were imported and the licence
     scope of Databento's entry in `guide`, and report what was imported. Records the store
     holds with other values refuse the file, nothing written, unless `differing`, the option or
-    its text (`"take-file"`), lets the file's stand."""
+    its text (`"take-file"`), lets the file's stand. Once the data file is checked and its copy
+    under `raw` verified, the last of what can refuse it before then, so that a file refused
+    takes no lock, the import writes under the store's import lock (`Store.held_for_an_import`):
+    there the data file is looked up again as imported, and checked again where another import
+    wrote into the store meanwhile, before its partitions, read from that copy, and the batch's
+    sidecars; `progress` is told each stage it reaches (step 5.12)."""
     importer = _DataFileImporter(store, cache_folder, instruments, guide, differing)
     download = _download(source, store)
-    file = None if download.recorded else importer.imported(download, imported_on)
-    if download.batch is not None:
-        _keep_the_sidecars(download.batch, store, imported_on)
+    original = download.data_file
+    listed = store.list_partitions()
+    checked = None if download.recorded else importer.checked(original)
+    if checked is not None:
+        require_none_differing(checked[1].merges, original.source)
+    sidecars = () if download.batch is None else download.batch.sidecars
+    if checked is None and all(_recorded(store, sidecar) for sidecar in sidecars):
+        return download.reported(DatabentoImport, None)
+    if checked is not None:
+        store.raw.write(original.raw_path, original.source, original.sha256)
+    with store.held_for_an_import():
+        if checked is not None and _recorded(store, original):
+            return replace(download, recorded=True).reported(DatabentoImport, None)
+        if checked is not None and store.list_partitions() != listed:
+            checked = (checked[0], importer.checked_again(original, checked[0]))
+            require_none_differing(checked[1].merges, original.source)
+        progress(ImportStage.FILE_READ)
+        file = None if checked is None else importer.written(download, checked, imported_on)
+        if download.batch is not None:
+            _keep_the_sidecars(download.batch, store, imported_on)
+    progress(ImportStage.PARTITIONS_WRITTEN)
     return download.reported(DatabentoImport, file)
 
 

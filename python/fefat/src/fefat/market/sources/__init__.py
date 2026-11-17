@@ -132,6 +132,19 @@ class SourceGuide(FrozenModel):
             raise ValueError(f"Expected a preset of the guide ({known}), got {preset_id!r}.")
         return found[0]
 
+    def source_of_provider(self, provider: str) -> Source:
+        """The source whose data the provider's datasets hold: the source of the preset the
+        provider is, else the source of the provider's id, as a trader's own profile for a
+        source without a preset names one, such as `kibot` (step 5.12); another is refused."""
+        presets = {preset.id for source in self.sources for preset in source.presets}
+        if provider in presets:
+            return self.source_of_preset(provider)
+        if provider in {source.id for source in self.sources}:
+            return self.source(provider)
+        raise ValueError(
+            f"Expected a preset or a source of the guide as the provider, got {provider!r}."
+        )
+
 
 def parse_source_guide(text: str) -> SourceGuide:
     """The source guide written as YAML in `text`, validated."""

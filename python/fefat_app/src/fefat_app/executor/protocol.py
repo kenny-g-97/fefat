@@ -26,6 +26,7 @@ from fefat_app.execution import (
     StrategySaveOutput,
     StrategyValidationOutput,
 )
+from fefat_app.imports import ImportOutput, ImportPreviewOutput
 
 SPEC_FILE = "spec.json"
 RESULT_FILE = "result.json"
@@ -76,7 +77,9 @@ class RunnerSucceeded(BaseModel):
         | StrategySaveOutput
         | FeatureSaveOutput
         | RunLookupOutput
-        | BacktestOutput,
+        | BacktestOutput
+        | ImportPreviewOutput
+        | ImportOutput,
         Field(discriminator="kind"),
     ]
 

@@ -566,6 +566,12 @@ Not in this step: trade logs for the prop simulator (Phase 7), alternative non-p
 
 2026-11-13 (D-98, from your check of step 5.4's pull request): this step runs after step 5.14, which merges a file into the partitions it overlaps. Step 5.14 carries the later number because IDs are never reused, and the checker lets a step depend on earlier numbers alone, so the order stands here, in D-98, and in the order of `PROGRESS.md`'s rows rather than on the meta line. The wizard also opens for a dataset the store holds: Import more data on a dataset's page (step 5.4, D-97) leads to `/data/import?preset=<provider>`, which the wizard reads as that provider's preset, a name that no preset and no saved profile has read as none, and its preview shows step 5.14's account of what the file adds to the dataset, the sessions added, the records already held, and those that differ, before anything is written. Imported datasets appear in the Data page's list of imported data, which replaced "Your data" (D-97), each with a page of its own. Home's Import data start leads to the wizard. The Playwright flow gains a second file that overlaps the first and adds sessions to it.
 
+2026-11-15 (D-100, your answer at the step's plan): four of the importers' rules move to the new step 5.15, which runs after this one: from the kickoff's Amendment above, a file with bars in a daily break refused for those bars, with their dates, and bars dated again or refused after a calendar change; and, from `BACKLOG.md`, a file read a bar or whole hours off that an import is told to take, and a new partition's `instrument_id` against its contract's stored ones. This step keeps one writer of the raw manifest, the lock, and a profile's error from Polars read as a problem of the preview. Your checks keep the three NinjaTrader MNQ contracts: preview them in the wizard and import those that read clean, the others waiting for step 5.15.
+
+2026-11-15 (D-101, your answers at the step's plan): the browser sends a chosen file as the body of `POST /v1/uploads`, `application/octet-stream` with its name in the query, rather than as the multipart form of the kickoff's Amendment, so that `python-multipart` is not added: the route reads the body once the login has passed, within `config.toml`'s `upload_megabytes`, while every other route keeps its 1 MiB. The wizard is one page of four cards, the file, its layout, its instrument, and the review with Import. `GET /v1/import-profiles` lists the presets and the saved profiles; a new profile is kept by the import that writes with it, as the command line keeps one, so no `POST /v1/import-profiles` is added. Once an import writes, a request to stop it is refused with 409, in the same write that would make it, so that the reaper never ends an import that writes; the report that it writes clears a request made just before, so that the worker does not either, and an import is checked again under the store's lock where another import wrote its dataset meanwhile (from the reviews).
+
+2026-11-16 (D-102, your check of the step's pull request): the wizard imports several files in one round, as NinjaTrader writes one file per contract. Up to 200 files are chosen in the browser's picker or dropped together, each copied as an upload and reviewed by a preview of its own, two at a time in the files' order. Import takes the files whose own review says they import as they are, as one `import` job that imports them one after another, each in a runner of its own, and writes the quality report of each product once, at its end; the others are left out, each with its reason, and Review the files left reads them anew. With several files the Contract field is hidden, each file's name giving its own contract, and the review shows each file's counts with no summed account, which the job's result gives. Once the round's first file writes, the round runs to its end, as one file does. From `BACKLOG.md`: several files in one import.
+
 ### 5.13 End-to-end suite and demo
 
 Depends on: 5.10, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
@@ -665,6 +671,105 @@ Not in this step: the import wizard (5.12), which shows this step's preview; con
 2026-11-14 (as built, D-99 and ADR-0021): the rule you chose at the plan is that a file merges by default, and that records the store holds with other values refuse it unless the import is told that the file's stand (`--differing take-file`). A record is told apart by its place, its instant on the store's clock and its position among the records of that instant, and two files are refused whatever the import is told: one that gives a stored partition another `instrument_id`, and one that overlaps a stored partition in time without a record at one of its instants. Four phrases of the prompt read differently as built. "Hold no prices" (Done means 3): the account of what a file adds, the refusal of differing records, and the Databento importer's report and preview hold counts and dates alone, while a file preview still shows its first records as stored, and a problem the first row it found, as since step 1.10 (D-49), on the trader's screen. "Or reproduced": reproducing a run arrives with step 5.10, which reads a saved run through the check that `Run.explain` and the fidelity check use, so the refusal built here is theirs. "With the partition's name": a run's record keeps its snapshots' hashes, not each file's, so the refusal names the partitions of the run's datasets and dates whose files were written since the run was saved, by their files' times, the rule a stale quality report reads by (D-94), and says that none was where one was removed or put back from a copy. "For the partitions that changed, and for no others": the roll calendar is one per dataset and is built again whole when a partition of it changes, and the features' cache also computes the partitions whose warm-up or roll calendar reads a changed one, so what stays is every partition that reads nothing of the changed data. The check of a whole file before a write costs the DBN importer a third decode of its file. Prints whose file gives them no sequence, as IBKR's Time and Sales through a profile, are numbered by their place in their instant, so such a file starts on a whole instant. `BACKLOG.md` keeps what waits: the store's lock over an import's check and its writes (5.12), a run's record that keeps its files' hashes (5.10), the columns in which records differ, a DBN import that stages its partitions rather than decoding a third time, and a batch split into several files.
 
 2026-11-15 (the step's reviews, D-99): two more files are refused whatever the import is told. Prints without a sequence that dispute their file's first instant of a contract, or its last where the store holds more prints, since the file may hold part of that instant alone. And a file of a back-adjusted series the store holds that holds none of its bars unchanged, since its platform adjusts such a series again at each roll and a shared bar is what shows one price basis: this also refuses an export of later months alone, which the importer of step 1.10 took, while a file that shares bars with the store is left to the rule for differing records. Bars, and ticks stamped to the second, read one bar or whole hours off land on stored instants, so they read as differing, which the default refuses and `--differing take-file` would take: the refusal of a file without a record at a stored instant does not see them, and a refusal of records that are the stored ones at one offset waits in `BACKLOG.md` for your word. The raw manifest records that an import was told that the file's stand, whatever one run of it counted; a session is new, or gains records, for its contract; the write stops at records that differ where the check found none, and a file that changes no partition is not gone over again; `differing="take-file"`, the option's text as a notebook passes it, is read as the option; and a run's refusal says that it reads the files' times, `dataset.json` among them. `BACKLOG.md` gains a back-adjusted series after a roll, a calendar change between two imports of one record (5.12), `Run.explain` on bars after a merge that moves a roll (5.10), and a typed record of an import's arguments, and its line on the end of each import's coverage gains the stale value of a trades feature that the leakage audit reproduced after a backfill of ticks, which a merge makes routine and this step does not fix.
+
+### 5.15 Import rules for breaks, offsets, ids, and calendar changes
+
+Depends on: 5.12, 5.14 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, leakage-auditor, code-review · Security: no · Model hint: hard
+
+#### Purpose
+
+An import that must be refused says why in words you can act on, and four ways a wrong file could still enter the store are closed.
+
+#### Prerequisites
+
+- Steps 5.12 and 5.14 merged: the wizard shows these refusals, and the merge rule is the one they refine.
+- For Your checks: the three NinjaTrader MNQ contracts the store lacks (MNQZ2020, MNQH2024, and MNQH2025) exported again, which costs nothing.
+
+#### Prompt
+
+```text
+Masterplan step 5.15 — Import rules for breaks, offsets, ids, and calendar changes.
+
+Read docs/masterplan/02-engine-and-data.md §1.3 and §1.8, ADR-0021, the import sections of docs/data-guide.md, and `fefat.market.calendar_offset`, `calendar_check`, `importers.partition_merge`, and `importers.partition_buffers`. Four rules of the importers wait from steps 1.10 and 5.14 (D-100); settle each with the builder at the plan:
+
+1. Bars in a break that no offset explains (step 1.10's Your checks, written into step 5.12 by the Phase 5 kickoff): a file with bars through a daily break, a bar in the minute before an open, or extra bars before the open of a session it ends inside is refused today for an offset, as if its time zone or bar stamping were wrong. Refuse such a file for its bars in a break, with their trade dates: count a session as stamped a bar early only where its last bucket is empty too, as a shifted file's is, and look for an offset only in a part of the file that holds a whole session.
+2. A file read a bar or whole hours off that an import is told to take (`BACKLOG.md`): bars, and ticks stamped to the second, read under the wrong time zone or bar stamping land on stored instants and read as differing, which `--differing take-file` takes where the calendar check could not test the file's timing. Refuse records that are the stored ones at one other offset, or say so in the preview, weighing that a refusal no option lifts would keep out for good a vendor's correction it guessed wrongly about.
+3. A new partition's `instrument_id` against its contract's stored ones (`BACKLOG.md`): a merge refuses a file that gives a stored partition another id, while a contract's new month under another id is written, and the contract then loads as two series. Check a new partition against the contract's other partitions.
+4. A calendar change between imports (the kickoff's line, and `BACKLOG.md`): bars keep the trade dates of the session table they were imported with, so after an override or a former close changes a session, stored bars must be dated again or refused, and an overlapping file's record can land in another trade date's partition and be stored twice. Find the records a calendar change dates otherwise, and refuse an import whose records the store holds under another trade date.
+
+Generated files prove each rule. Amend 02 §1.3 and §1.8 and docs/data-guide.md, and ADR-0021 or a record of its own where a rule needs one.
+
+Not in this step: the wizard's screens beyond the words of these refusals (5.12); connectors and downloads (D-38); changing how datasets are partitioned.
+```
+
+#### Done means
+
+1. Generated files with bars through a daily break, with a bar in the minute before an open, and with extra bars before the open of a session the file ends inside are each refused for bars in a break, with their trade dates, while a file stamped a bar early or read hours off is still refused for its offset (tests).
+2. A file whose differing records are the stored ones at one other offset is refused or flagged before it is taken, as the step's plan settles with you (test).
+3. A contract's new month under another instrument id than its stored months is refused, and nothing is written (test).
+4. After a session of a calendar changes, the store says which records are dated otherwise, and an import of a record the store holds under another trade date is refused (tests).
+5. `02-engine-and-data.md` §1.3 and §1.8, the ADR, and `docs/data-guide.md` say the rules.
+
+#### Your checks
+
+- Preview your three re-exported NinjaTrader MNQ contracts in the wizard: each imports, or is refused with the trade dates of its bars in a break.
+
+#### If it fails
+
+- A clean export refused for bars in a break means the check counts a bar the platform prints outside the session as its own, such as a settlement bar after the close; the refusal names the trade dates, so compare them with the platform's chart. Nothing was written.
+
+#### Amendment
+
+2026-11-17 (D-103, your check of step 5.12's pull request): this step keeps the first of its four rules and gains a correction that you approve, and the other three rules move to the new step 5.16. Three of the 32 contracts of your NinjaTrader ES export were refused as stamped a bar early, ES 12-20, ES 06-24, and ES 03-25, and none of them is: each holds a bar that closes at a session's open, in ES 06-24 and ES 03-25 at the Sunday open of the days the United States changed its clocks, 2024-03-10 and 2025-03-09, and in ES 12-20 at six opens, four of them after the daily breaks of 2020-10-19 to 2020-10-22, each of which holds a bar in every minute. Thirty of the 32 files hold bars in a break, a weekend's included, 1 to 84 a file and 458 in ES 12-20, and those without one that closes at an open import with theirs kept (D-43). Read without its bars in a break, each of the three shows no offset, and the calendar can still test its timing. The sessions before those bars each hold a bar in their last minute, but for ES 12-20's session of 2020-09-10, which holds no bar closing after 15:52 Chicago time while its break holds nine from 16:51 to 17:00: the first rule's test as the prompt words it, a session a bar early where its last bucket is empty too, counts that session a bar early.
+
+2026-11-17 (D-103, the correction): a file refused for its bars in a break is imported without them once the trader approves it. `preview_file` and `import_file` take the choice, and `fefat data import file` an option for it. A file is tested for an offset with its bars in a break, as without the choice, so one stamped a bar early by the first rule's test, or read hours off, is refused under either choice and is never offered the correction: its bars inside the sessions are the ones a bar or hours off, and leaving out those in a break would import the rest shifted, a look-ahead of a bar. Under the choice the bars in a break are left out, never moved or changed; the reading and the import's report count them and name the trade dates they follow; and the raw manifest records the choice among the import's arguments, so that the file read again under the other choice is refused (D-50). The wizard's review says how many of a file's bars lie in a break, and after which trade dates, and offers to leave them out behind an inline confirmation, as it offers Take the file's records (D-101), for one file and once for a round of several (D-102); the request names the choice for each file it is approved for, since a file imported before is refused under another (D-50). Settle at the plan: how the first rule's test tells a session stamped a bar early from one whose last minutes are missing while its break holds bars, as ES 12-20's session of 2020-09-10, so that a file only part of which is a bar early is still refused; whether the approval leaves out every bar in a break or those of the breaks that refuse the file alone; whether the sessions beside a break with a bar in every minute are left out too, or named in a warning, since such a stretch can be wrong inside its sessions as well, as that week of your MNQZ2020 was, which no shift of its times brought into line with Databento's bars; and whether a file that imports as it is keeps its bars in a break, as today, given what a backtest reads of one (`BACKLOG.md`).
+
+2026-11-17 (D-103, what the step proves): of Done means, item 1 stays, items 2 to 4 are step 5.16's, and item 5 holds for this step's rule and its correction, with `web/DESIGN.md`. Three items join them, 6 to 8: a generated file refused for its bars in a break imports without them under the choice, the preview and the report counting them with their trade dates, the raw manifest recording the choice, the file refused under the other choice afterwards, and the leak detector passing on the store it wrote (tests); a file stamped a bar early, a file only some of whose whole sessions are stamped so, as two exports joined can be, and one read hours off, are each refused under the choice and offered no correction, and a session whose last minutes are missing while its break holds bars, as ES 12-20's of 2020-09-10, is read as the plan settles (tests); and Playwright approves the correction in the wizard's review, for one generated file and in a round of several, with screenshots in both themes. Your checks gain your ES export: choose its 32 files in the wizard, read which of the three are refused for their bars in a break and how many each holds, approve leaving them out, and import: ES 06-24 and ES 03-25 come in, and ES 12-20 too unless the plan refuses it for its session of 2020-09-10. Where it came in, compare ESZ2020's bars in the week of 2020-10-19 with the store's Databento MES bars, whose prices follow ES's, as that week of your MNQZ2020 was compared with Databento's. Your MNQH2024 and MNQH2025 can come in the same way, from the files you have or exported again, and MNQZ2020 exported again, or from the file you have if the plan leaves the sessions beside such a break out. The step now changes `web/`, so the `ui-verifier` and the `design-reviewer` review it beside the meta line's reviewers, `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` load with `web/DESIGN.md`, and `/security-review` reads the request's new field. Of the prompt's last line, the wizard's screens stay out of this step but for the correction's place in the review, and the three rules of step 5.16 join that line.
+
+### 5.16 Import rules for offsets, ids, and calendar changes
+
+Depends on: 5.14, 5.15 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, leakage-auditor, code-review · Security: no · Model hint: hard
+
+#### Purpose
+
+Three ways a wrong file could still enter the store are closed, and an import that must be refused says why in words you can act on.
+
+#### Prerequisites
+
+- Steps 5.14 and 5.15 merged: the merge rule is the one these rules refine, and step 5.15 settles how a file's timing is tested.
+- For Your checks: a contract the store holds exported again from NinjaTrader, which costs nothing.
+
+#### Prompt
+
+```text
+Masterplan step 5.16 — Import rules for offsets, ids, and calendar changes.
+
+Read docs/masterplan/02-engine-and-data.md §1.3 and §1.8, ADR-0021, the import sections of docs/data-guide.md, and `fefat.market.calendar_offset`, `calendar_check`, `importers.partition_merge`, and `importers.partition_buffers`. Three rules of the importers wait from steps 1.10 and 5.14 (D-100), moved here from step 5.15 (D-103); settle each with the builder at the plan:
+
+1. A file read a bar or whole hours off that an import is told to take (`BACKLOG.md`): bars, and ticks stamped to the second, read under the wrong time zone or bar stamping land on stored instants and read as differing, which `--differing take-file` takes where the calendar check could not test the file's timing. Refuse records that are the stored ones at one other offset, or say so in the preview, weighing that a refusal no option lifts would keep out for good a vendor's correction it guessed wrongly about.
+2. A new partition's `instrument_id` against its contract's stored ones (`BACKLOG.md`): a merge refuses a file that gives a stored partition another id, while a contract's new month under another id is written, and the contract then loads as two series. Check a new partition against the contract's other partitions.
+3. A calendar change between imports (the kickoff's line, and `BACKLOG.md`): bars keep the trade dates of the session table they were imported with, so after an override or a former close changes a session, stored bars must be dated again or refused, and an overlapping file's record can land in another trade date's partition and be stored twice. Find the records a calendar change dates otherwise, and refuse an import whose records the store holds under another trade date.
+
+Generated files prove each rule. Amend 02 §1.3 and §1.8 and docs/data-guide.md, and ADR-0021 or a record of its own where a rule needs one.
+
+Not in this step: bars in a break and the correction a trader approves for them (5.15); the wizard's screens beyond the words of these refusals (5.12); connectors and downloads (D-38); changing how datasets are partitioned.
+```
+
+#### Done means
+
+1. A file whose differing records are the stored ones at one other offset is refused or flagged before it is taken, as the step's plan settles with you (test).
+2. A contract's new month under another instrument id than its stored months is refused, and nothing is written (test).
+3. After a session of a calendar changes, the store says which records are dated otherwise, and an import of a record the store holds under another trade date is refused (tests).
+4. `02-engine-and-data.md` §1.3 and §1.8, the ADR, and `docs/data-guide.md` say the rules.
+
+#### Your checks
+
+- Export again from NinjaTrader a contract the store holds and preview the new file in the wizard: it reads as before, its records already held or added, and none of the new rules refuses it.
+- Run the check this step adds for a calendar change on your store, with the command its pull request names: it should list no record dated otherwise.
+
+#### If it fails
+
+- A vendor's revised file refused as the stored records at one other offset means the rule guessed wrongly, which the plan weighed: the refusal names the offset and the first trade date, so compare those bars with the platform's chart and report both. Nothing was written.
 
 ## Phase exit
 

@@ -1,13 +1,38 @@
-/** A request the server refused: its status, and the detail of its problem as the message. */
+import { z } from "zod"
+
+/** A part of a request the API's schema refused, by where it is in the request, and why. */
+export type FieldRefusal = Readonly<{
+  location: readonly (string | number)[]
+  message: string
+}>
+
+/** A request the server refused: its status, the detail of its problem as the message, and,
+ * for a request its schema refused (422), each part refused, such as a profile's field. */
 export class ApiProblem extends Error {
   readonly status: number
+  readonly refusedFields: readonly FieldRefusal[]
 
-  constructor(status: number, detail: string) {
+  constructor(
+    status: number,
+    detail: string,
+    refusedFields: readonly FieldRefusal[] = []
+  ) {
     super(detail)
     this.name = "ApiProblem"
     this.status = status
+    this.refusedFields = refusedFields
   }
 }
+
+/** A validation problem's errors (`fefat_app.http.problems.ValidationProblem`). */
+const validationErrors = z.object({
+  errors: z.array(
+    z.object({
+      location: z.array(z.union([z.string(), z.number()])),
+      message: z.string(),
+    })
+  ),
+})
 
 type ApiResult<T> = {
   readonly data?: T
@@ -49,5 +74,10 @@ function problemOf({ error, response }: ApiResult<unknown>): ApiProblem {
     typeof error.detail === "string"
       ? error.detail
       : `The server answered ${response.status} ${response.statusText}.`
-  return new ApiProblem(response.status, detail)
+  const refused = validationErrors.safeParse(error)
+  return new ApiProblem(
+    response.status,
+    detail,
+    refused.success ? refused.data.errors : []
+  )
 }

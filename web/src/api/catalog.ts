@@ -80,19 +80,37 @@ export function isSyncing(cover: SyncCover, root: string): boolean {
   return cover.every || cover.roots.has(root)
 }
 
-/** What the catalog syncs under way cover, for a page that shows quality: it follows the jobs
- * and reads the catalog and the datasets' quality again once a sync ends. */
+/** What the catalog syncs under way cover, for a page that shows quality; the shell reads the
+ * catalog and the datasets' quality again once a sync ends (`useStoreReadAfterWrites`). */
 export function useSyncCover(): SyncCover {
   const jobs = useQuery(jobsQuery)
-  useCatalogAfterSyncs(jobs.data)
   return syncsUnderWay(jobs.data === undefined ? [] : jobs.data)
 }
 
-/** Read the catalog and the datasets' quality again once a catalog sync among `jobs` ends,
- * since it wrote the reports both read: a sync another read of the jobs lists as ended for the
- * first time, so that one which ended before any read saw it running counts too. */
-function useCatalogAfterSyncs(jobs: readonly Job[] | undefined): void {
-  const ended = jobs === undefined ? undefined : endedSyncs(jobs)
+/** The kinds of job that write what the data pages read: a catalog sync its reports, and an
+ * import its datasets, its instrument, its reports, and its profile (step 5.12). */
+const STORE_WRITERS: ReadonlySet<Job["kind"]> = new Set([
+  "catalog_sync",
+  "import",
+])
+
+/** What a job that writes the store makes stale: the catalog, the datasets' quality, the
+ * instruments, the chart's spans and bars, and the import profiles. */
+const STORE_READS = [
+  catalogQuery.queryKey,
+  ["datasets"],
+  instrumentsQuery.queryKey,
+  ["market"],
+  ["import-profiles"],
+]
+
+/** Read again, on every page, what a catalog sync or an import among `jobs` wrote, once it
+ * ends: a job another read of the jobs lists as ended for the first time, so that one which
+ * ended before any read saw it running counts too. The shell's top bar calls it once. */
+export function useStoreReadAfterWrites(
+  jobs: readonly Job[] | undefined
+): void {
+  const ended = jobs === undefined ? undefined : endedStoreWrites(jobs)
   const before = useRef(ended)
   useEffect(() => {
     if (ended === undefined) {
@@ -100,25 +118,26 @@ function useCatalogAfterSyncs(jobs: readonly Job[] | undefined): void {
     }
     const earlier = before.current
     before.current = ended
-    if (earlier !== undefined && syncEndedSince(earlier, ended)) {
-      void queryClient.invalidateQueries({ queryKey: catalogQuery.queryKey })
-      void queryClient.invalidateQueries({ queryKey: ["datasets"] })
+    if (earlier !== undefined && writeEndedSince(earlier, ended)) {
+      for (const queryKey of STORE_READS) {
+        void queryClient.invalidateQueries({ queryKey })
+      }
     }
   }, [ended])
 }
 
-/** The ids of the catalog syncs among `jobs` that ended, as one text a hook's dependency can
- * compare from one read of the jobs to the next. */
-export function endedSyncs(jobs: readonly Job[]): string {
+/** The ids of the catalog syncs and the imports among `jobs` that ended, as one text a hook's
+ * dependency can compare from one read of the jobs to the next. */
+export function endedStoreWrites(jobs: readonly Job[]): string {
   return jobs
-    .filter((job) => job.kind === "catalog_sync" && !isActive(job))
+    .filter((job) => STORE_WRITERS.has(job.kind) && !isActive(job))
     .map((job) => job.id)
     .join(" ")
 }
 
-/** Whether `later`, a read of the ended syncs, lists one that `earlier` does not, which ended
+/** Whether `later`, a read of the ended writes, lists one that `earlier` does not, which ended
  * between the two reads. */
-export function syncEndedSince(earlier: string, later: string): boolean {
+export function writeEndedSince(earlier: string, later: string): boolean {
   const known = new Set(earlier.split(" "))
   return later.split(" ").some((id) => id !== "" && !known.has(id))
 }

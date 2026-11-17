@@ -6,7 +6,7 @@ import {
   type StoredDataset,
   type SyncCover,
 } from "@/api/catalog"
-import { formatCount } from "@/ui/figures"
+import { counted, formatCount } from "@/ui/figures"
 
 /** Datasets grouped under a name, a root or a provider, in the API's order. */
 type Grouped = Readonly<{
@@ -161,10 +161,6 @@ export function monthLabel(month: MonthCoverage): string {
   return `${month.month}: ${formatCount(month.with_records)} of ${formatCount(month.sessions)} sessions with records, ${findings}${flagged}`
 }
 
-function counted(count: number, noun: string): string {
-  return `${formatCount(count)} ${noun}${count === 1 ? "" : "s"}`
-}
-
 function imported(
   held: Grouped,
   product: CatalogProduct | null
@@ -206,4 +202,20 @@ function grouped(
     name,
     datasets: datasets.filter((dataset) => nameOf(dataset) === name),
   }))
+}
+
+/** A dataset as the trader's pages name it, its instrument from its provider, as the dataset's
+ * page is titled, then what it holds: `XES from ninjatrader, 1-minute bars`, or a schema of
+ * records by its name, such as `ES from databento, trades`. */
+export function datasetName(
+  dataset: Readonly<{ provider: string; schema_name: string; root: string }>
+): string {
+  const schema = dataset.schema_name
+  const bars = "ohlcv-"
+  const holds = schema.startsWith(bars)
+    ? fidelityLabel(schema.slice(bars.length)).toLowerCase()
+    : schema === "tbbo"
+      ? "TBBO"
+      : schema
+  return `${dataset.root} from ${dataset.provider}, ${holds}`
 }

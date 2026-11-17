@@ -10,7 +10,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from fefat.config import Settings
+from fefat.config import FefatPaths, Settings
 from fefat_app.chart_style import ChartStyle
 from fefat_app.ports import CredentialStore, Preferences, SecretName, Theme
 
@@ -33,12 +33,14 @@ class SecretStatus(BaseModel):
 
 class AppSettings(BaseModel):
     """The settings the page shows: the server's, from `config.toml`, the data folder, the
+    file of those settings, which the import wizard names for its import roots (step 5.12), the
     theme, the charts' style (step 5.4), and each secret's state."""
 
     model_config = ConfigDict(frozen=True)
 
     server: Settings
     data_dir: Path
+    config_file: Path
     theme: Theme
     chart_style: ChartStyle
     secrets: tuple[SecretStatus, ...]
@@ -66,10 +68,10 @@ class SettingsChange(BaseModel):
 
 
 def current_settings(
-    settings: Settings, data_dir: Path, credentials: CredentialStore, preferences: Preferences
+    settings: Settings, paths: FefatPaths, credentials: CredentialStore, preferences: Preferences
 ) -> AppSettings:
-    """The settings of `config.toml`, the data folder, the theme, and whether `credentials`
-    holds each secret."""
+    """The settings of `config.toml`, the data folder and the file of `paths`, the theme, and
+    whether `credentials` holds each secret."""
     statuses = tuple(
         SecretStatus(
             name=name,
@@ -79,7 +81,8 @@ def current_settings(
     )
     return AppSettings(
         server=settings,
-        data_dir=data_dir,
+        data_dir=paths.data_dir,
+        config_file=paths.config_file,
         theme=preferences.theme(),
         chart_style=preferences.chart_style(),
         secrets=statuses,
@@ -89,7 +92,7 @@ def current_settings(
 def apply_settings_change(
     change: SettingsChange,
     settings: Settings,
-    data_dir: Path,
+    paths: FefatPaths,
     credentials: CredentialStore,
     preferences: Preferences,
 ) -> AppSettings:
@@ -104,4 +107,4 @@ def apply_settings_change(
         preferences.replace_theme(change.theme)
     if change.chart_style is not None:
         preferences.replace_chart_style(change.chart_style)
-    return current_settings(settings, data_dir, credentials, preferences)
+    return current_settings(settings, paths, credentials, preferences)

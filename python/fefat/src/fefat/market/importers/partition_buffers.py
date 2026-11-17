@@ -244,9 +244,9 @@ def write_merges(
     file another program holds open, is told with what was written before it: the import run
     again finishes it, since the records it wrote read as held. A merge with records that
     differ, where the import was not told that the file's stand, so that its check refuses them
-    and found none, stops the write: the store or the file changed between the two passes."""
-    # shortcut: no lock, so two imports at once into one dataset can lose one's records; take
-    # the store's lock over an import's check and its writes when imports run as jobs (5.12).
+    and found none, stops the write: the store or the file changed between the two passes. The
+    importers call it under the store's import lock (`Store.held_for_an_import`, step 5.12), and
+    its merges read the stored partitions again, so that two imports at once lose no record."""
     written = 0
     for merge in merges:
         if differing is not DifferingRecords.TAKE_THE_FILE and not merge.differing.is_empty():

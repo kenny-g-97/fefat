@@ -26,15 +26,19 @@ from fefat.market.store import Store
 from fefat_app.database.job_records import JobTables
 from fefat_app.database.run_records import RunTables
 from fefat_app.database.schema import opened_database
+from fefat_app.database.workspace_index import index_profiles
 from fefat_app.execution import FeaturePreviewSpec, PythonSnippetSpec
+from fefat_app.executor.protocol import ERROR_CHARS
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
 from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus
 from fefat_app.jobs.backtests import run_backtest
 from fefat_app.jobs.catalog_sync import run_catalog_sync
 from fefat_app.jobs.demo import run_demo
 from fefat_app.jobs.executions import ExecutionFailedError, ExecutionTimedOutError, run_execution
+from fefat_app.jobs.imports import ImportJobs
 from fefat_app.jobs.progress import JobCancelledError, JobProgress, tried_while_busy
 from fefat_app.ports import Executor, JobRecords, RunRecords
+from fefat_app.uploads import UploadFolders
 
 type JobWork = Callable[[Mapping[str, Any], JobProgress], dict[str, Any]]
 """A kind's work: it takes the job's payload and reports through its progress; its result."""
@@ -53,17 +57,18 @@ class JobTimings:
 
 
 def works_of(
-    executor: Executor, store: Store, paths: FefatPaths, runs: RunRecords
+    executor: Executor, store: Store, paths: FefatPaths, runs: RunRecords, imports: ImportJobs
 ) -> Mapping[JobKind, JobWork]:
     """The work of each kind a worker runs, the trader's code run by `executor`, the catalog
-    sync over `store`, its reports and session tables in the folders of `paths`, and a backtest
-    whose run `runs` indexes; the steps of later phases add theirs."""
+    sync over `store`, its reports and session tables in the folders of `paths`, a backtest
+    whose run `runs` indexes, and an import (step 5.12); the steps of later phases add theirs."""
     return {
         JobKind.DEMO: run_demo,
         JobKind.FEATURE_PREVIEW: partial(run_execution, executor, FeaturePreviewSpec),
         JobKind.PYTHON_SNIPPET: partial(run_execution, executor, PythonSnippetSpec),
         JobKind.CATALOG_SYNC: partial(run_catalog_sync, store, paths.reports_dir, paths.cache_dir),
         JobKind.BACKTEST: partial(run_backtest, executor, runs),
+        JobKind.IMPORT: imports.run,
     }
 
 
@@ -78,7 +83,11 @@ def run_job(job_id: str, paths: FefatPaths, timings: JobTimings) -> None:
         if job is None:
             return
         executor = SubprocessExecutor(paths, warm_previews=False)
-        works = works_of(executor, Store(paths.data_dir), paths, RunTables(engine, paths))
+        store = Store(paths.data_dir)
+        uploads = UploadFolders(paths.uploads_dir, partial(datetime.now, UTC))
+        indexing = partial(index_profiles, engine, paths)
+        imports = ImportJobs(executor, store, paths, indexing, uploads)
+        works = works_of(executor, store, paths, RunTables(engine, paths), imports)
         with _lease_kept(records, job_id, worker_pid, timings):
             _run(records, job, worker_pid, works)
 
@@ -106,11 +115,11 @@ def _outcome(
     except JobCancelledError:
         return JobStatus.CANCELLED, None, None
     except ExecutionTimedOutError as timed_out:
-        return JobStatus.TIMED_OUT, None, str(timed_out)
+        return JobStatus.TIMED_OUT, None, str(timed_out)[:ERROR_CHARS]
     except ExecutionFailedError as failed:
-        return JobStatus.FAILED, None, str(failed)
+        return JobStatus.FAILED, None, str(failed)[:ERROR_CHARS]
     except Exception as failure:
-        return JobStatus.FAILED, None, f"{type(failure).__name__}: {failure}"
+        return JobStatus.FAILED, None, f"{type(failure).__name__}: {failure}"[:ERROR_CHARS]
     return JobStatus.SUCCEEDED, result, None
 
 

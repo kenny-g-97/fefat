@@ -594,6 +594,36 @@ def test_a_file_import_without_the_time_zone_its_profile_leaves_to_it_exits_with
     assert "name it, such as --time-zone America/New_York" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    ("lines", "extra", "refusal"),
+    [
+        (["20260305 143100;1;2;3;4;5;6;7"], [], "a row of more fields than the first"),
+        ([], ["--time-zone", "Chicago"], "an IANA time zone"),
+    ],
+    ids=["ragged rows", "a zone Polars does not know"],
+)
+def test_a_file_polars_refuses_to_read_exits_with_1_in_words_without_a_traceback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    lines: list[str],
+    extra: list[str],
+    refusal: str,
+) -> None:
+    # Step 5.12 (from `BACKLOG.md`): a profile's error from Polars is a refusal in words.
+    export = written_export(
+        tmp_path, NINJATRADER_SAMPLE.name, [*sample_lines("ninjatrader"), *lines]
+    )
+    arguments = ["data", "import", "file", str(export), "--profile", "ninjatrader", *extra]
+
+    code = main(arguments)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert err.startswith("fefat: Expected ")
+    assert refusal in err
+    assert "Traceback" not in err
+
+
 def test_the_profiles_command_lists_the_presets_and_prints_one_as_yaml(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

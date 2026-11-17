@@ -1,16 +1,24 @@
 import path from "node:path"
 import { test, type Locator, type Page } from "@playwright/test"
 
+/** The projects whose pages are saved: the built app's, not the dev server's, which shows the
+ * same pages again. */
+const SAVED_PROJECTS: ReadonlySet<string> = new Set([
+  "desktop",
+  "desktop-import",
+  "desktop-import-next",
+])
+
 /** Save the page as `test-results/screenshots/<name>.png`, which the ui-verifier reads and the
- * pull request shows, from the desktop project alone; `masked` covers what must not leave this
- * machine, such as a local path or a token (D-80). */
+ * pull request shows, from the built app's projects alone; `masked` covers what must not leave
+ * this machine, such as a local path or a token (D-80). */
 export async function screenshot(
   page: Page,
   name: string,
   masked: readonly Locator[] = []
 ) {
   const project = test.info().project
-  if (project.name !== "desktop") {
+  if (!SAVED_PROJECTS.has(project.name)) {
     return
   }
   const file = path.join(project.outputDir, "screenshots", `${name}.png`)

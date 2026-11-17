@@ -7,14 +7,17 @@ second (step 4.2), the trader's preferences the third (step 4.3), the jobs' reco
 dispatcher the fourth and fifth (step 4.4), their models in `fefat_app.job_models` (step 5.3),
 the executor the sixth (step 4.5), its specs and
 results in `fefat_app.execution`, the library's index the seventh (step 5.2), its rows in
-`fefat_app.library`, and the runs' records the eighth (step 5.3), their models in
-`fefat_app.runs`; the blob store, the agent's runtime, and the licence arrive with the steps
+`fefat_app.library`, the runs' records the eighth (step 5.3), their models in
+`fefat_app.runs`, and the import wizard's uploads the ninth (step 5.12), their models in
+`fefat_app.imports`; the blob store, the agent's runtime, and the licence arrive with the steps
 that first use them."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Protocol
+from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
@@ -26,6 +29,7 @@ from fefat_app.execution import (
     StopCheck,
     keep_running,
 )
+from fefat_app.imports import UploadedFile
 from fefat_app.job_models import Job, JobEnd, JobKind, JobStatus, StreamEvent
 from fefat_app.library import IndexedFeature, IndexedStrategy
 from fefat_app.runs import IndexedRun, NewRun, RunWithMetrics, Submitted
@@ -224,9 +228,13 @@ class JobRecords(Protocol):
         percent: float,
         message: str,
         details: Mapping[str, Any],
+        *,
+        past_stopping: bool = False,
     ) -> Job | None:
         """Record how far the running job `job_id` that `worker_pid` holds has come, with a
-        `progress` event; the job, whose `cancel_requested_at` says whether to stop."""
+        `progress` event; the job, whose `cancel_requested_at` says whether to stop. With
+        `past_stopping`, the same write clears a request to stop made before it, as the report
+        that an import writes does, after which no request is taken (step 5.12)."""
         ...
 
     def finish(
@@ -246,9 +254,13 @@ class JobRecords(Protocol):
         """End the queued job `job_id` as cancelled before any worker starts it."""
         ...
 
-    def request_cancel(self, job_id: str, now: datetime) -> Job | None:
-        """Ask the running job `job_id` to stop, unless it was asked before; it stays running
-        until its worker stops it, or the reaper does after the grace (step 4.4)."""
+    def request_cancel(
+        self, job_id: str, now: datetime, *, stoppable_below: float | None = None
+    ) -> Job | None:
+        """Ask the running job `job_id` to stop, unless it was asked before or, where
+        `stoppable_below` is given, its progress has reached it, as an import's once it writes
+        (step 5.12); it stays running until its worker stops it, or the reaper does after the
+        grace (step 4.4)."""
         ...
 
     def requeue(self, job_id: str, worker_pid: int) -> Job | None:
@@ -349,4 +361,22 @@ class RunRecords(Protocol):
 
     def newest(self, limit: int) -> tuple[IndexedRun, ...]:
         """The `limit` newest runs, newest first, without their metrics."""
+        ...
+
+
+class UploadRecords(Protocol):
+    """The files the browser sends for an import (step 5.12, D-93), kept in a folder each under
+    the workspace's uploads, with their name, size, and SHA-256, until the import has written."""
+
+    async def keep(self, name: str, chunks: AsyncIterator[bytes]) -> UploadedFile:
+        """Keep the file `name` whose bytes come in `chunks`, hashed as they come; an empty one
+        is refused, and a file whose chunks stop short leaves nothing."""
+        ...
+
+    def path_of(self, upload_id: UUID) -> Path:
+        """The kept file of `upload_id`; `NoSuchUploadError` where none is kept."""
+        ...
+
+    def remove(self, upload_id: UUID) -> None:
+        """Remove the folder of `upload_id`, once its import has written."""
         ...

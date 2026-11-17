@@ -14,6 +14,7 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import timedelta
@@ -26,6 +27,9 @@ from fefat.market.snapshot import Sha256
 
 DIGEST_SUFFIX = ".digest.json"
 """The suffix of a file's digest beside it: `part.parquet` has `part.digest.json`."""
+REPLACE_SECONDS = 2.0
+"""How long a write tries again to replace a file that another program holds open."""
+REPLACE_PAUSE_SECONDS = 0.01
 
 
 class FileDigestRecord(FrozenModel):
@@ -88,9 +92,19 @@ def _recorded_digest(path: Path) -> FileDigestRecord | None:
 def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
     """Write through a temporary file beside the target, flush it to disk, then replace the
     target in one step (atomic on one NTFS or POSIX volume): a reader, or a power cut, sees
-    the old file or the new one, never half of one."""
+    the old file or the new one, never half of one. Windows refuses to replace a file another
+    program holds open, as a notebook's scan or a chart's read does, so the replace is tried
+    again for `REPLACE_SECONDS` before the refusal comes through (step 5.12)."""
     with _flushed_beside(path, write) as temporary:
-        temporary.replace(path)
+        deadline = time.monotonic() + REPLACE_SECONDS
+        while True:
+            try:
+                temporary.replace(path)
+                return
+            except PermissionError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(REPLACE_PAUSE_SECONDS)
 
 
 def create_atomically(path: Path, write: Callable[[Path], object]) -> None:

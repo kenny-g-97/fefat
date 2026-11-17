@@ -57,6 +57,19 @@ class JobProgress:
             return
         self._stop_unless_held(job)
 
+    def advance_past_stopping(self, percent: float, message: str) -> None:
+        """Report `percent` as `advance` does, at the point past which the work is never
+        stopped, as an import's report that it writes (step 5.12): the same write clears a
+        request to stop made before it, and the report is tried again while the database is
+        busy rather than skipped, since a request taken after a skipped report would stop the
+        work as it writes; only a worker that no longer holds the job stops it."""
+        job = tried_while_busy(
+            lambda: self.records.advance(
+                self.job_id, self.worker_pid, percent, message, {}, past_stopping=True
+            )
+        )
+        self._stop_unless_held(job)
+
     def check(self) -> None:
         """`JobCancelledError` where the work must stop, as at a report, without writing one; a
         read the busy database refused is skipped, the next check reading again."""

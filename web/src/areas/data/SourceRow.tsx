@@ -56,7 +56,10 @@ export function SourceRow({ source }: Readonly<{ source: Source }>) {
                   </span>
                   <span>{preset.reads}</span>
                   {preset.status === "available" && (
-                    <TextLink to="/data/import" search={{ preset: preset.id }}>
+                    <TextLink
+                      to="/data/import"
+                      search={{ preset: preset.id, from: "sources" }}
+                    >
                       Import with {preset.name}
                     </TextLink>
                   )}

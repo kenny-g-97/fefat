@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { endedSyncs, isSyncing, syncEndedSince, syncsUnderWay } from "./catalog"
+import {
+  endedStoreWrites,
+  isSyncing,
+  syncsUnderWay,
+  writeEndedSince,
+} from "./catalog"
 import type { Job } from "./jobs"
 
 function aSync(id: string, status: Job["status"], root: string | null): Job {
@@ -23,26 +28,44 @@ function aSync(id: string, status: Job["status"], root: string | null): Job {
   }
 }
 
-describe("syncEndedSince", () => {
+describe("writeEndedSince", () => {
   it("tells of a sync that ended between two reads of the jobs, seen running or not", () => {
     const older = aSync("1", "succeeded", "ES")
     const ended = aSync("2", "succeeded", "MES")
-    const before = endedSyncs([older])
+    const before = endedStoreWrites([older])
 
-    expect(syncEndedSince(before, endedSyncs([ended, older]))).toBe(true)
+    expect(writeEndedSince(before, endedStoreWrites([ended, older]))).toBe(true)
     expect(
-      syncEndedSince(
-        endedSyncs([aSync("2", "running", "MES"), older]),
-        endedSyncs([ended, older])
+      writeEndedSince(
+        endedStoreWrites([aSync("2", "running", "MES"), older]),
+        endedStoreWrites([ended, older])
       )
     ).toBe(true)
-    expect(syncEndedSince(before, endedSyncs([older]))).toBe(false)
+    expect(writeEndedSince(before, endedStoreWrites([older]))).toBe(false)
     expect(
-      syncEndedSince(endedSyncs([ended, older]), endedSyncs([ended]))
+      writeEndedSince(
+        endedStoreWrites([ended, older]),
+        endedStoreWrites([ended])
+      )
     ).toBe(false)
     expect(
-      syncEndedSince(before, endedSyncs([{ ...ended, kind: "demo" }, older]))
+      writeEndedSince(
+        before,
+        endedStoreWrites([{ ...ended, kind: "demo" }, older])
+      )
     ).toBe(false)
+  })
+
+  it("tells of an import that ended, which wrote the store as a sync does (step 5.12)", () => {
+    const older = aSync("1", "succeeded", "ES")
+    const imported: Job = { ...aSync("2", "failed", null), kind: "import" }
+
+    expect(
+      writeEndedSince(
+        endedStoreWrites([older]),
+        endedStoreWrites([imported, older])
+      )
+    ).toBe(true)
   })
 })
 

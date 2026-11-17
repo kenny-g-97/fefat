@@ -67,14 +67,21 @@ _WINDOWS_DEVICE_NAMES = frozenset(
         "PRN",
         "AUX",
         "NUL",
-        *(f"COM{n}" for n in range(1, 10)),
-        *(f"LPT{n}" for n in range(1, 10)),
+        "CONIN$",
+        "CONOUT$",
+        *(f"{port}{n}" for port in ("COM", "LPT") for n in "123456789¹²³"),
     }
 )
 
 
+def is_a_device_name(name: str) -> bool:
+    """Whether Windows opens a device for a file or folder `name`, such as `NUL.csv`: a stem it
+    keeps for one, whatever extension follows it and with spaces before the extension."""
+    return name.partition(".")[0].rstrip(" ").upper() in _WINDOWS_DEVICE_NAMES
+
+
 def _not_a_device_name(name: str) -> str:
-    if name.partition(".")[0].upper() in _WINDOWS_DEVICE_NAMES:
+    if is_a_device_name(name):
         raise ValueError(f"Expected a folder name, got {name!r}, a device name on Windows.")
     return name
 

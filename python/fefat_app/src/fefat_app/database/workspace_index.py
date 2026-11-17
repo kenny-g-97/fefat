@@ -186,6 +186,13 @@ def _validation_row(
     )
 
 
+def index_profiles(engine: Engine, paths: FefatPaths) -> int:
+    """Index the profiles saved under `paths` that the database has not seen, in a transaction
+    of their own, as an import's job that kept one does (step 5.12); the number added."""
+    with Session(engine) as session, session.begin():
+        return _index_profiles(session, paths.profiles_dir.glob("*.yaml"))
+
+
 def _index_profiles(session: Session, files: Iterable[Path]) -> int:
     """A row for each saved profile file not indexed yet; the number added."""
     indexed = session.scalars(select(ImportProfileRow.sha256)).all()

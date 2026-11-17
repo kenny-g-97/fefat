@@ -8,8 +8,12 @@ instants as ISO 8601, and an empty value as empty text, as a delimited file give
 row's names are stripped as well, of a byte-order mark too; without a header the columns are
 `column_0`, `column_1`, ... by position. Empty lines are left out, and a file without a line
 is refused.
+
+`sniffed_layout` guesses a delimited file's layout from its first lines, for the import wizard,
+which shows a file's rows before a profile reads it (step 5.12).
 """
 
+import csv
 import gzip
 import io
 import zipfile
@@ -20,6 +24,28 @@ import polars as pl
 from fefat.market.importers.profiles import FileLayout
 
 _PARQUET_SUFFIX = ".parquet"
+_SNIFFED_DELIMITERS = ",;\t|"
+_SNIFFED_BYTES = 64 * 1024
+GUESSED_LAYOUT = FileLayout(delimiter=",", header=True)
+"""The layout shown for Parquet, whose columns are its own, and for a file whose first lines
+give no delimiter: a comma and a header, which the trader changes where they are wrong."""
+
+
+def sniffed_layout(path: Path, content: bytes) -> FileLayout:
+    """The layout of the delimited file `path`, whose bytes are `content`, or of the one its
+    `.gz` or `.zip` holds, as Python's `csv.Sniffer` reads its first lines: its delimiter among
+    comma, semicolon, tab, and bar, and whether its first row names its columns."""
+    name, unpacked = _unpacked(path, content)
+    if name.lower().endswith(_PARQUET_SUFFIX):
+        return GUESSED_LAYOUT
+    text = unpacked[:_SNIFFED_BYTES].decode("utf-8", errors="replace").lstrip("﻿")
+    sample = text if len(unpacked) <= _SNIFFED_BYTES else text[: text.rfind("\n") + 1]
+    sniffer = csv.Sniffer()
+    try:
+        delimiter = sniffer.sniff(sample, delimiters=_SNIFFED_DELIMITERS).delimiter
+        return FileLayout(delimiter=delimiter, header=sniffer.has_header(sample))
+    except csv.Error:
+        return GUESSED_LAYOUT
 
 
 def read_table(path: Path, content: bytes, layout: FileLayout) -> tuple[str, pl.DataFrame]:

@@ -14,7 +14,7 @@ const HOME_LINKS: readonly (readonly [string, string])[] = [
   ["Build a strategy", "/strategies"],
   ["Open the feature lab", "/lab"],
   ["Run a backtest", "/runs"],
-  ["Import data", "/data"],
+  ["Import data", "/data/import"],
 ]
 
 const PAGES: readonly SidebarPage[] = [

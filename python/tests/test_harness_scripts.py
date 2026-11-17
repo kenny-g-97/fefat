@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import keyring
@@ -19,8 +20,16 @@ from keyring.backends import null
 
 import dev
 import e2e_server
+from export_samples import HOUR, PRESETS
 from fefat.backtest import saved_runs_in
-from fefat.config import resolve_paths
+from fefat.config import load_settings, resolve_paths
+from fefat.market.calendar_definition import CalendarId
+from fefat.market.calendar_offset import OffsetCause
+from fefat.market.importers.file_import import FileImportRequest, preview_file
+from fefat.market.importers.profiles import NewInstrument
+from fefat.market.instruments import Currency, InstrumentKind
+from fefat.market.last_trade_rules import ThirdFriday
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.status import product_status
 from fefat.market.store import Store
 from fefat_app import database_commands
@@ -224,3 +233,73 @@ def test_the_seed_stops_where_the_index_refuses_what_it_saved(
 
     with pytest.raises(SystemExit, match="Expected `fefat db import-workspace` to index"):
         e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
+
+
+XES = NewInstrument(
+    root="XES",
+    kind=InstrumentKind.FUTURES,
+    tick_size=Decimal("0.25"),
+    point_value=Decimal(50),
+    currency=Currency.USD,
+    calendar=CalendarId.CME_EQUITY_INDEX,
+    last_trade_rule=ThirdFriday(),
+    first_trade_date=date(2010, 1, 4),
+)
+"""The new product the import spec's wizard specifies (step 5.12)."""
+
+
+@pytest.mark.usefixtures("seeding")
+def test_the_seed_writes_two_overlapping_exports_of_a_new_product_under_its_import_root(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12: the import spec's files, beside the home, under the root config.toml names; the
+    # first, read in Chicago's time zone, runs six hours late, the review the spec corrects; the
+    # first revised, its last bar one lot more, whose records differ from the first's; and two
+    # more contracts of the first's dates, ten lots a bar, for a round of several files (D-102).
+    e2e_server.seed(tmp_path / "fefat-e2e", 8766, "horse battery")
+
+    paths = resolve_paths(os.environ)
+    exports = tmp_path / "fefat-e2e-exports"
+    first, second = (exports / folder / "XES 03-26.Last.txt" for folder in ("first", "second"))
+    assert load_settings(paths.config_file).import_roots == (exports,)
+    store = Store(paths.data_dir)
+    profile = PRESETS["ninjatrader"].model_copy(update={"instrument": XES})
+    previews = [
+        preview_file(
+            FileImportRequest(path=path, profile=profile, time_zone=zone),
+            store,
+            instrument_table(store.folder),
+            paths.cache_dir,
+        )
+        for path, zone in (
+            (first, None),
+            (second, None),
+            (first, "America/Chicago"),
+            (exports / "more" / "XES 06-26.Last.txt", None),
+            (exports / "more" / "XES 09-26.Last.txt", None),
+        )
+    ]
+    dates = [(each.reading.first_trade_date, each.reading.last_trade_date) for each in previews]
+    assert dates[:2] == [
+        (date(2026, 2, 2), date(2026, 2, 6)),
+        (date(2026, 2, 5), date(2026, 2, 11)),
+    ]
+    assert [each.reading.refusals() for each in previews[:2]] == [[], []]
+    (offset,) = previews[2].reading.calendar.offsets
+    assert (offset.nanoseconds, offset.cause) == (6 * HOUR, OffsetCause.TIME_ZONE)
+    *same, revised = (exports / "revised" / "XES 03-26.Last.txt").read_text().splitlines()
+    *bars, last = first.read_text().splitlines()
+    assert same == bars
+    assert revised.rsplit(";", 1)[0] == last.rsplit(";", 1)[0]
+    assert int(revised.rsplit(";", 1)[1]) == int(last.rsplit(";", 1)[1]) + 1
+    more = previews[3:]
+    assert [each.reading.contracts for each in more] == [("XESM2026",), ("XESU2026",)]
+    assert [(each.reading.first_trade_date, each.reading.last_trade_date) for each in more] == [
+        dates[0],
+        dates[0],
+    ]
+    assert [each.reading.refusals() for each in more] == [[], []]
+    tens = (exports / "more" / "XES 06-26.Last.txt").read_text().splitlines()
+    assert [line.rsplit(";", 1) for line in tens] == [
+        [line.rsplit(";", 1)[0], "10"] for line in [*bars, last]
+    ]

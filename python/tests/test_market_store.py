@@ -2,6 +2,8 @@ import hashlib
 import json
 import os
 import shutil
+import sys
+import threading
 from collections.abc import Callable, Iterator
 from datetime import date
 from decimal import Decimal
@@ -11,6 +13,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
+from fefat.market import store_files
 from fefat.market.layout import (
     Dataset,
     DatasetMetadata,
@@ -453,6 +456,45 @@ def test_a_write_is_flushed_to_disk_before_it_replaces_its_target(
     assert digest.exists()
 
 
+def test_a_partition_another_program_holds_open_is_replaced_once_it_lets_go(
+    tmp_path: Path,
+) -> None:
+    # Step 5.12 (from `BACKLOG.md`): Windows refuses to replace a file another program holds
+    # open, as a notebook's scan or a chart's read does, so the write tries again for a moment,
+    # where it raised; elsewhere the replace lands at once, the reader still open or not.
+    store = store_with_the_es_trades(tmp_path)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    trades = store.scan_partition(TRADES_OF_MARCH_5).collect().head(10)
+    reader = path.open("rb")
+    threading.Timer(0.2, reader.close).start()
+
+    store.write_partition(TRADES_OF_MARCH_5, trades)
+
+    if sys.platform == "win32":
+        assert reader.closed
+    assert_frame_equal(store.scan_partition(TRADES_OF_MARCH_5).collect(), trades)
+
+
+def test_a_partition_held_open_past_the_wait_is_refused_and_keeps_its_old_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = store_with_the_es_trades(tmp_path)
+    path = tmp_path / TRADES_OF_MARCH_5.relative_path()
+    before = path.read_bytes()
+    trades = store.scan_partition(TRADES_OF_MARCH_5).collect().head(10)
+
+    def held(source: Path, target: Path) -> Path:
+        raise PermissionError(f"[WinError 5] Access is denied: {source} -> {target}")
+
+    monkeypatch.setattr(store_files, "REPLACE_SECONDS", 0.05)
+    monkeypatch.setattr(Path, "replace", held)
+    with pytest.raises(PermissionError, match="Access is denied"):
+        store.write_partition(TRADES_OF_MARCH_5, trades)
+
+    assert path.read_bytes() == before
+    assert sorted(path.parent.iterdir()) == [path.with_suffix(DIGEST_SUFFIX), path]
+
+
 def test_dataset_metadata_reads_back_as_written(tmp_path: Path) -> None:
     store = Store(tmp_path)
     btc = DatasetMetadata(
@@ -668,13 +710,23 @@ def test_a_copy_without_the_stated_hash_is_refused_and_left_out(tmp_path: Path) 
 
 
 def test_a_raw_file_the_manifest_records_is_never_written_again(tmp_path: Path) -> None:
+    # Step 5.12 (from the engine accuracy review): a copy of the same bytes is left as it is, as
+    # another import of the same file recorded it meanwhile, where it was refused; other bytes
+    # are refused, and neither touches the recorded file.
     store = store_with_a_raw_file(tmp_path)
     record(store)
-    source = tmp_path / "bars.dbn"
-    source.write_bytes(RAW_BYTES)
+    kept = tmp_path / "raw" / RAW_PATH
+    before = (kept.read_bytes(), kept.stat().st_mtime_ns)
+    same = tmp_path / "bars.dbn"
+    same.write_bytes(RAW_BYTES)
+    other = tmp_path / "other.dbn"
+    other.write_bytes(b"other vendor bytes")
 
+    store.raw.write(RAW_PATH, same, JOB.published_sha256)
     with pytest.raises(ValueError, match="which it records: raw files never change"):
-        store.raw.write(RAW_PATH, source, JOB.published_sha256)
+        store.raw.write(RAW_PATH, other, hashlib.sha256(b"other vendor bytes").hexdigest())
+
+    assert (kept.read_bytes(), kept.stat().st_mtime_ns) == before
 
 
 def test_a_recorded_raw_file_reads_back_and_a_changed_one_is_refused(tmp_path: Path) -> None:

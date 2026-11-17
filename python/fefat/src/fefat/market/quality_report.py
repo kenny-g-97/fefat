@@ -14,8 +14,9 @@ store never reads `reports` as a provider (`fefat.market.layout`).
     quality_standing(paths.reports_dir, "databento", "MES").status
 """
 
+import os
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self
@@ -27,11 +28,15 @@ from fefat.market.calendar import counted, utc_text
 from fefat.market.importers.report import ConditionDay
 from fefat.market.monthly_coverage import MONTH_COLUMNS, coverage_by_month, flagged_by_the_vendor
 from fefat.market.schema import FrozenModel, require_columns
-from fefat.market.store_files import write_atomically
+from fefat.market.store_files import held_alone, write_atomically
 
 DAYS_FILE_NAME = "days.parquet"
 FINDINGS_FILE_NAME = "findings.parquet"
 MARKDOWN_FILE_NAME = "quality.md"
+REPORT_LOCK_SUFFIX = ".lock"
+"""What names the file beside a report's folder that one writer of the report holds."""
+REPORT_LOCK_WAIT = timedelta(minutes=1)
+"""How long a report's writer waits for another's, whose writes take a moment."""
 DAY_COLUMNS = pl.Schema(
     {
         "trade_date": pl.Date,
@@ -120,7 +125,9 @@ class QualityStanding(FrozenModel):
 class QualityReport:
     """What `fefat.market.quality.assess_quality` found in a root's data from one provider:
     its contracts, the instant by which every record was received, the days its vendor marks
-    other than available (UTC dates, as the vendor gives them), and the two tables, sorted."""
+    other than available (UTC dates, as the vendor gives them), the two tables, sorted, and
+    `read_through_ns`, when the newest partition the assessment listed as it began was last
+    written, in nanoseconds since the Unix epoch, which stamps the report (step 5.12)."""
 
     provider: str
     root: str
@@ -129,6 +136,7 @@ class QualityReport:
     vendor_days: tuple[ConditionDay, ...]
     days: pl.DataFrame
     findings: pl.DataFrame
+    read_through_ns: int
 
     def __post_init__(self) -> None:
         source = f"the quality report of {self.provider} {self.root}"
@@ -193,12 +201,24 @@ def write_quality_report(report: QualityReport, reports_folder: Path) -> Path:
     """Write the report's two tables and its summary to `<reports_folder>/<provider>/<root>/`,
     each file replaced in one step, and return the folder. The findings go first, so that a
     write cut short leaves the new status beside an older last trade date, never an older
-    status beside the new date."""
+    status beside the new date. The days' table takes the time of the newest partition the
+    assessment read (`read_through_ns`), so that a partition written while the report was
+    assessed is newer than the report and reads stale (step 5.12). Two reports of one root,
+    as an import's own and a catalog sync's, are written one at a time, under `<root>.lock`
+    beside the folder, and one whose assessment read older data than the written report's
+    leaves that report as it is."""
     folder = reports_folder / report.provider / report.root
     markdown = report.markdown().encode("utf-8")
-    write_atomically(folder / FINDINGS_FILE_NAME, report.findings.write_parquet)
-    write_atomically(folder / DAYS_FILE_NAME, report.days.write_parquet)
-    write_atomically(folder / MARKDOWN_FILE_NAME, lambda temporary: temporary.write_bytes(markdown))
+    with held_alone(folder.with_name(f"{report.root}{REPORT_LOCK_SUFFIX}"), REPORT_LOCK_WAIT):
+        written = report_written_ns(reports_folder, report.provider, report.root)
+        if written is not None and written > report.read_through_ns:
+            return folder
+        write_atomically(folder / FINDINGS_FILE_NAME, report.findings.write_parquet)
+        write_atomically(folder / DAYS_FILE_NAME, report.days.write_parquet)
+        os.utime(folder / DAYS_FILE_NAME, ns=(report.read_through_ns, report.read_through_ns))
+        write_atomically(
+            folder / MARKDOWN_FILE_NAME, lambda temporary: temporary.write_bytes(markdown)
+        )
     return folder
 
 
@@ -251,7 +271,8 @@ def _stored_tables(
 
 
 def report_written_ns(reports_folder: Path, provider: str, root: str) -> int | None:
-    """When the root's report from `provider` was last written: the time its days' table was, in
+    """When the data the root's report from `provider` read was last written: the time its days'
+    table is stamped with, that of the newest partition its assessment read (step 5.12), in
     nanoseconds since the Unix epoch; None while no report is written."""
     days_path = reports_folder / provider / root / DAYS_FILE_NAME
     if not days_path.is_file():
@@ -266,9 +287,8 @@ def quality_verdict(
     report that checked up to an earlier trade date is stale, and so is one older than a
     partition of the dataset, `written_since` it, as an import that backfills older months
     writes one (step 5.1), since it would vouch for data it never read; a flagged one stays
-    flagged, its last trade date showing how far it got."""
-    # shortcut: a partition written while its report was assessed reads as checked; stamp the
-    # report with its assessment's start when imports run beside reports.
+    flagged, its last trade date showing how far it got. The report's time is its stamp, so a
+    partition written while it was assessed is newer than it (step 5.12)."""
     checked_through = standing.checked_through
     clean = standing.status is QualityStatus.CLEAN
     if not clean or checked_through is None:

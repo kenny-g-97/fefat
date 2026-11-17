@@ -11,7 +11,6 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.types import ASGIApp
 
 import fefat_app
@@ -23,21 +22,21 @@ from fefat_app.http import (
     docs,
     features,
     health,
+    imports,
     jobs,
     login,
     runs,
     strategies,
     streams,
+    uploads,
 )
+from fefat_app.http.body_limits import BodyLimits
 from fefat_app.http.loopback_hosts import LoopbackHosts
 from fefat_app.http.problems import install_problem_handlers, problems_as_problem_json
 from fefat_app.http.request_ids import RequestIds
 from fefat_app.http.security_headers import SecurityHeaders
 from fefat_app.http.web_app import WebAppMount
 
-BODY_BYTES = 1024 * 1024
-"""The largest request body the API reads, refused with 413 past it before it is held in memory;
-a later route that takes files, such as an upload's, sets its own."""
 SERVED_TYPES = (("text/javascript", ".js"), ("text/css", ".css"))
 """The media types of the scripts and styles the app serves, which a machine's registry may name
 otherwise: Windows' runner names `.js` application/javascript and some machines text/plain, a
@@ -66,7 +65,7 @@ def build_api() -> FastAPI:
         strict_content_type=True,  # D-86: no page of another site logs in with an untyped body
         lifespan=_dispatching,
     )
-    api.add_middleware(RequestBodyLimitMiddleware, max_body_size=BODY_BYTES)
+    api.add_middleware(BodyLimits, upload_path=uploads.UPLOADS_PATH)
     install_problem_handlers(api)
     for router in (
         health.router,
@@ -76,6 +75,8 @@ def build_api() -> FastAPI:
         jobs.router,
         streams.router,
         catalog.router,
+        uploads.router,
+        imports.router,
         strategies.router,
         features.router,
         runs.router,

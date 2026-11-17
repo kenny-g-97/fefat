@@ -9,6 +9,7 @@ from fefat.market.layout import (
     Partitioning,
     PartitionRequest,
     YearMonth,
+    is_a_device_name,
     partitioning,
 )
 from fefat.market.schema import parse_schema_name
@@ -164,3 +165,22 @@ def test_a_name_windows_keeps_for_a_device_is_refused_as_a_folder_name(name: str
     # Windows; such a name is refused wherever a folder name is.
     with pytest.raises(ValueError, match="device"):
         Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root=name)
+
+
+@pytest.mark.parametrize(
+    ("name", "device"),
+    [
+        ("NUL.csv", True),
+        ("nul.tar.gz", True),
+        ("NUL .csv", True),
+        ("com¹.txt", True),
+        ("CONIN$.csv", True),
+        ("console.csv", False),
+        ("NULL.csv", False),
+        ("com0.csv", False),
+    ],
+)
+def test_a_file_name_windows_opens_as_a_device_is_told_apart(name: str, device: bool) -> None:
+    # The wizard's upload names a file in FEAT's folder (step 5.12): Windows opens a device for
+    # a stem it reserves, whatever extension follows and with spaces before the extension.
+    assert is_a_device_name(name) is device

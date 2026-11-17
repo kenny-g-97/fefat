@@ -35,6 +35,39 @@ from fefat.market.store import Store
 
 
 @pytest.mark.parametrize(
+    ("lines", "time_zone", "refusal"),
+    [
+        (
+            [*sample_lines("ninjatrader"), "20260305 143100;1;2;3;4;5;6;7"],
+            None,
+            "Expected ES 03-26.Last.txt to read with the profile ninjatrader, its fields "
+            "separated by ';' and no header row, got a row of more fields than the first",
+        ),
+        (
+            sample_lines("ninjatrader"),
+            "Chicago",
+            "Expected an IANA time zone such as America/Chicago, got 'Chicago'",
+        ),
+    ],
+    ids=["ragged rows", "a zone Polars does not know"],
+)
+def test_what_polars_refuses_to_read_refuses_the_preview_and_the_import_in_words(
+    tmp_path: Path, lines: list[str], time_zone: str | None, refusal: str
+) -> None:
+    # Step 5.12 (from `BACKLOG.md`): a profile's error from Polars, which reached the trader as
+    # a traceback, is a refusal that says what to check, and the store stays as it was.
+    export = written_export(tmp_path / "exports", "ES 03-26.Last.txt", lines)
+    request = FileImportRequest(path=export, profile=PRESETS["ninjatrader"], time_zone=time_zone)
+
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        previewed(tmp_path, request)
+    with pytest.raises(ValueError, match=re.escape(refusal)):
+        imported(tmp_path, request)
+
+    assert not (tmp_path / "data").exists()
+
+
+@pytest.mark.parametrize(
     ("preset", "name", "lines", "refusal"),
     [
         (

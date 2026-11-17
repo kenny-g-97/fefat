@@ -1,6 +1,7 @@
 import hashlib
 import os
 import shutil
+import time
 from datetime import date
 from pathlib import Path, PurePosixPath
 
@@ -198,6 +199,40 @@ def test_a_report_older_than_a_backfill_of_its_dataset_is_stale_until_written_ag
         ("trades", date(2026, 3, 4), "stale", MARCH_9),
     ]
     assert checked_again.filter(es).get_column("quality").to_list() == ["clean"] * 3
+
+
+@pytest.mark.parametrize("written", ["while it was assessed", "before it was assessed"])
+def test_a_report_vouches_for_the_partitions_its_assessment_read_alone(
+    tmp_path: Path, written: str
+) -> None:
+    # Step 5.12 (from `BACKLOG.md`, a report stamped with its assessment's start): imports now
+    # run as jobs beside quality checks, so a partition written after the assessment read the
+    # store, and before the report was written, must read stale, not checked. The times are set,
+    # since Windows' clock can give two writes one time.
+    store = copied_fixtures(tmp_path / "store")
+    reports = tmp_path / "store" / "reports"
+    cache = tmp_path / "cache"
+    now = time.time_ns()
+    for partition in store.folder.rglob("part.parquet"):
+        written_at(partition, now - 10 * MINUTE)
+    trades = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
+    march_4 = Partition(dataset=trades, contract="ESH2026", key=date(2026, 3, 4))
+    march_5 = store.scan_partition(Partition(dataset=trades, contract="ESH2026", key=MARCH_5))
+    earlier = march_5.collect().with_columns(pl.col("ts_recv") - DAY, pl.col("ts_event") - DAY)
+
+    if written == "before it was assessed":
+        store.write_partition(march_4, earlier)
+        written_at(store.folder / march_4.relative_path(), now - 5 * MINUTE)
+    report = assess_quality(store, "synthetic", "ES", cache)
+    if written == "while it was assessed":
+        store.write_partition(march_4, earlier)
+        written_at(store.folder / march_4.relative_path(), now - 5 * MINUTE)
+    write_quality_report(report, reports)
+
+    status = product_status(store, reports, catalog_of_mes_and_es(MARCH_5))
+    es = status.filter((pl.col("root") == "ES") & (pl.col("schema") == "trades"))
+    expected = "stale" if written == "while it was assessed" else "clean"
+    assert es.get_column("quality").to_list() == [expected]
 
 
 @pytest.mark.parametrize(
