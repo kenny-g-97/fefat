@@ -166,6 +166,12 @@ export function fileOf(source: AskedSource): string {
   return source.kind === "upload" ? source.upload_id : source.path
 }
 
+/** The files `source` names, each by its upload's id or its path, as the draft names the
+ * files whose bars in a break are left out. */
+export function filesOf(source: Source): readonly string[] {
+  return sourcesOf(source).map(fileOf)
+}
+
 function sourcesOf(source: Source): readonly AskedSource[] {
   switch (source.kind) {
     case "none":

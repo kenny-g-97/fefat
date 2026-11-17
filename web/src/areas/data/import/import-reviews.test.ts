@@ -8,6 +8,7 @@ import {
   filesImporting,
   filesLeft,
   filesRequest,
+  filesWithBarsInBreaks,
   fileStates,
   nextReview,
   type ReviewedFile,
@@ -233,6 +234,54 @@ describe("filesRequest", () => {
         { kind: "failed", error: new Error("Gone.") },
       ])
     ).toBeNull()
+  })
+})
+
+describe("filesWithBarsInBreaks", () => {
+  it("names the files that leaving out their bars in a break lets in, or that it left out", () => {
+    // A file refused for its bars alone, one read without them, and one still read again are
+    // offered; one whose bars cannot be left out, and one without any, are not (ADR-0022).
+    const breaks = {
+      left_out: false,
+      bars: 60,
+      breaks: ["2026-02-04"],
+      breaks_total: 1,
+      sessions: ["2026-02-04", "2026-02-05"],
+      sessions_total: 2,
+      records: 2_820,
+    }
+    const read = (
+      id: string,
+      verdict: Parameters<typeof seenFile>[1],
+      found: typeof breaks | null
+    ) => seenFile(`ES ${id}.Last.txt`, verdict, null, found)
+    const files: ReviewedFile[] = [
+      {
+        upload: upload("a"),
+        state: {
+          kind: "answered",
+          answer: read("a", "bars_in_breaks", breaks),
+        },
+      },
+      {
+        upload: upload("b"),
+        state: {
+          kind: "answered",
+          answer: read("b", "imports", { ...breaks, left_out: true }),
+        },
+      },
+      {
+        upload: upload("c"),
+        state: { kind: "answered", answer: read("c", "refused", breaks) },
+      },
+      { upload: upload("d"), state: answered("imports") },
+      {
+        upload: upload("e"),
+        state: { kind: "reading", last: read("e", "bars_in_breaks", breaks) },
+      },
+    ]
+
+    expect(filesWithBarsInBreaks(files)).toEqual(["a", "b", "e"])
   })
 })
 

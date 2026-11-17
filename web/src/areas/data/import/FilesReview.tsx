@@ -6,12 +6,14 @@ import { type AsideTone, DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
 import {
   type FileState,
+  filesWithBarsInBreaks,
   type Outcome,
   outcomeOf,
   type ReviewedFile,
   shownState,
   tallyOf,
 } from "./import-reviews"
+import { LeaveOutBars } from "./BarsInBreaks"
 import { FileReview } from "./FileReview"
 import { TakeRecords } from "./Merge"
 
@@ -85,6 +87,7 @@ export function FilesReview({
   const states = files.map((file) => file.state)
   const shown = states.map(shownState)
   const tally = tallyOf(shown)
+  const withBreaks = filesWithBarsInBreaks(files)
   const merges = shown.flatMap((state) =>
     state.kind === "answered" &&
     state.answer.kind === "file" &&
@@ -127,6 +130,14 @@ export function FilesReview({
           />
         ))}
       </div>
+      {withBreaks.length > 0 && (
+        <LeaveOutBars
+          files={withBreaks}
+          records={null}
+          draft={draft}
+          change={change}
+        />
+      )}
       {merges.some((merge) => merge.records_differing > 0) && (
         <TakeRecords disputed={null} draft={draft} change={change} />
       )}
