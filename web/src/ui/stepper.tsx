@@ -71,16 +71,14 @@ function StepRow({ step, number, current, onPress }: StepRowProps) {
         "flex min-h-18 w-full items-center gap-3 rounded-xl border p-2 text-left disabled:opacity-50",
         current
           ? "border-brand-soft-border bg-brand-soft"
-          : "border-transparent hover:border-border hover:bg-muted"
+          : "border-transparent enabled:hover:border-border enabled:hover:bg-muted"
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-xl text-xs font-semibold",
-          current
-            ? "bg-brand-soft-border text-brand-soft-foreground"
-            : "bg-accent text-foreground"
+          "flex size-7 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-foreground",
+          current ? "bg-brand-soft-border" : "bg-accent"
         )}
       >
         {state.kind === "complete" ? <Check className="size-4" /> : number}
@@ -95,7 +93,7 @@ function StepRow({ step, number, current, onPress }: StepRowProps) {
           {step.name}
           <span className="sr-only">{markOf(state)}</span>
         </span>
-        <span className={cn("text-xs", lineTone(state, current))}>
+        <span className={cn("text-xs wrap-anywhere", lineTone(state, current))}>
           {state.line}
         </span>
       </span>
