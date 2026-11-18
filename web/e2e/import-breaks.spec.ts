@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import path from "node:path"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
@@ -257,5 +258,73 @@ test("a round waits on its files' bars in a break, then leaves them out with one
     "Left out 5,538 records, the bars in a break and the sessions the review listed, as you approved."
   )
   await screenshot(page, "import-several-left-out-done")
+  expect(errors).toEqual([])
+})
+
+test("a file that cannot be read says why on its row, closed and open", async ({
+  loggedIn: page,
+}) => {
+  test.setTimeout(10 * 60_000)
+  const errors = consoleErrors(page)
+  const root = await importRoot(page)
+  await page.goto("/data/import")
+  await shown(page, "file")
+
+  // A .gz that is no archive, which the server refuses before any verdict, beside an export
+  // the round above imported, which needs no decision.
+  const broken = "XES 12-28.Last.txt.gz"
+  const picker = page.waitForEvent("filechooser")
+  await page.getByRole("button", { name: "Choose files", exact: true }).click()
+  await (
+    await picker
+  ).setFiles([
+    {
+      name: broken,
+      mimeType: "application/gzip",
+      buffer: Buffer.from("not an archive"),
+    },
+    {
+      name: WITHOUT_A_BREAK,
+      mimeType: "text/plain",
+      buffer: readFileSync(path.join(root, "breaks", WITHOUT_A_BREAK)),
+    },
+  ])
+  await expect(page.getByTestId("import-chosen")).toContainText(
+    "and 1 more file"
+  )
+  await continued(page, "layout")
+  await chosen(page, "import-profile", "xes-minutes, yours")
+  await step(page, "review")
+
+  // Closed, the row says Not read and why, in the negative (D-105).
+  const rows = page.getByTestId("review-file")
+  const row = rows.filter({ hasText: broken })
+  const aside = row.getByTestId("review-file-aside")
+  await expect(aside).toHaveText("Not read", { timeout: READ_MS })
+  await expect.poll(() => signOf(aside)).toBe("negative")
+  const reason = row.getByTestId("review-file-reason")
+  await expect(reason).toBeVisible()
+  const why = await reason.textContent()
+  if (why === null || why === "") {
+    throw new Error(
+      "Expected the row to say why its file was not read, got nothing."
+    )
+  }
+  await expect(
+    rows.filter({ hasText: WITHOUT_A_BREAK }).getByTestId("review-file-aside")
+  ).toHaveText("Imported before")
+  await expect(page.getByTestId("import-waits")).toHaveText(
+    "Decide what to do with 1 file first"
+  )
+
+  // Open, the reason gives way to what the row discloses: why, and the skip.
+  await row.locator("summary").first().click()
+  await expect(reason).toBeHidden()
+  await expect(row.getByTestId("review-file-why")).toHaveText(why)
+  await row.getByRole("button", { name: "Skip this file" }).click()
+  await expect(row.getByRole("button", { name: "Do not skip" })).toBeFocused()
+  await expect(row.getByTestId("review-file-why")).toHaveText(why)
+  await expect(page.getByTestId("import-waits")).toHaveText("No file to import")
+  await screenshot(page, "import-several-unread")
   expect(errors).toEqual([])
 })

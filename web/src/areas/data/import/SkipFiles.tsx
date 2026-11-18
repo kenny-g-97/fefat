@@ -12,8 +12,9 @@ type SkipFilesProps = Readonly<{
 /** Under a round's rows (web/DESIGN.md, Patterns, Review; D-105): while files that do not
  * import wait for a decision, how many, and Skip the files, which skips every one of them;
  * once none waits and some are skipped, that they stay out of the import until the files, the
- * layout, or the instrument change, and Skip none. A skip asks for no confirmation, since it writes nothing and one
- * click takes it back, and each button takes the focus from the other it replaces. */
+ * layout, or the instrument change, and Skip none. A skip asks for no confirmation, since it
+ * writes nothing and one click takes it back, and each button takes the focus from the other it
+ * replaces. */
 export function SkipFiles({ toDecide, draft, change }: SkipFilesProps) {
   const [button, focusNext] = useFocusAfterPress()
   const skipped = draft.skipped
@@ -72,17 +73,22 @@ function waitingLine(files: number): string {
 
 type SkipFileProps = Readonly<{
   file: string
+  offered: boolean
   draft: Draft
   change: Dispatch<DraftChange>
 }>
 
 /** At the foot of the review of a round's file that does not import, or that was skipped
  * (D-105): Skip this file, or once skipped, Do not skip, each taking the focus from the other
- * it replaces. */
-export function SkipFile({ file, draft, change }: SkipFileProps) {
+ * it replaces. It stays drawn while not `offered`, showing nothing, so that a press that ends
+ * the offer, such as Do not skip for a file that imports by then, still hands the focus on. */
+export function SkipFile({ file, offered, draft, change }: SkipFileProps) {
   const [button, focusNext] = useFocusAfterPress()
   const skipped = draft.skipped
   const isSkipped = skipped.includes(file)
+  if (!offered) {
+    return null
+  }
   return (
     <Button
       key={isSkipped ? "do not skip" : "skip"}
@@ -108,7 +114,7 @@ export function SkipFile({ file, draft, change }: SkipFileProps) {
 /** The button a press replaces, and the way to give it the focus once it is drawn after that
  * press alone, so that a change made elsewhere, such as a skip in a file's row, never moves the
  * focus here; where the press leaves no button, as Skip none does once no file waits, the focus
- * goes to the frame the button stood in, the review's, rather than to the page. */
+ * goes to the step's card it stood in, a group named for its step, rather than to the page. */
 function useFocusAfterPress(): readonly [
   RefObject<HTMLButtonElement | null>,
   () => void,
@@ -131,7 +137,7 @@ function useFocusAfterPress(): readonly [
       frame.current =
         button.current === null
           ? null
-          : button.current.closest<HTMLElement>("[tabindex='-1']")
+          : button.current.closest<HTMLElement>("[role='group'][tabindex='-1']")
     },
   ]
 }

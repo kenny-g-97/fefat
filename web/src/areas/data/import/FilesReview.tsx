@@ -213,9 +213,10 @@ type FileRowProps = Readonly<{
 }>
 
 /** A file's row: its name, its records, and its outcome in its sign's colour, with what stops
- * it under its name, where something does (D-105), opening to its own review, which ends on
- * Skip this file where the file waits for a decision; a skipped row reads Skipped, quiet; and
- * while it is read again after a change, its last review, marked as one to read again. */
+ * it under its name, where something does (D-105), opening to its own review, or for a file not
+ * read to why, which ends on Skip this file where the file waits for a decision; a skipped row
+ * reads Skipped, quiet; and while it is read again after a change, its last review, marked as
+ * one to read again. */
 function FileRow({
   file,
   skipped,
@@ -228,9 +229,14 @@ function FileRow({
   const shown = shownState(state)
   const aside = skipped ? SKIPPED : asideOf(state, outcomeOf(shown))
   const reason = skipped ? null : whyNot(state, zone)
-  const skip = decides ? (
-    <SkipFile file={upload.id} draft={draft} change={change} />
-  ) : null
+  const skip = (
+    <SkipFile
+      file={upload.id}
+      offered={decides}
+      draft={draft}
+      change={change}
+    />
+  )
   if (shown.kind === "answered" && shown.answer.kind === "file") {
     const seen = shown.answer
     return (
@@ -268,6 +274,7 @@ function FileRow({
       </DisclosureRow>
     )
   }
+  const why = whyNot(shown, zone)
   return (
     <DisclosureRow
       testId="review-file"
@@ -276,7 +283,14 @@ function FileRow({
       asideTone={aside.tone}
       reason={reason}
     >
-      <div className="flex flex-col pb-3">{skip}</div>
+      <div className="flex flex-col items-start gap-3 pb-3">
+        {why !== null && (
+          <p className="text-negative" data-testid="review-file-why">
+            {why}
+          </p>
+        )}
+        {skip}
+      </div>
     </DisclosureRow>
   )
 }
