@@ -13,7 +13,7 @@ import { SectionFailure } from "@/ui/section-failure"
 import { Segmented } from "@/ui/segmented"
 import type { Draft, DraftChange, Reading } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
-import { tooManyFiles } from "./import-reviews"
+import { tooManyFiles } from "./import-round"
 
 type AppSettings = components["schemas"]["AppSettings"]
 

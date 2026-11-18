@@ -3,6 +3,7 @@ import type {
   FileSeen,
   ImportPreviewAnswer,
   MergeSeen,
+  RoundFiles,
 } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { counted, formatCount } from "@/ui/figures"
@@ -147,4 +148,30 @@ export function listedDates(dates: readonly string[], total: number): string {
   return more > 0
     ? `${dates.join(", ")}, and ${formatCount(more)} more`
     : dates.join(", ")
+}
+
+/** What a round did with the files `chosen`, in one sentence (web/DESIGN.md, Patterns, Job in
+ * its card): how many it imported, found imported before, and did not import, how many the
+ * trader `skipped` (D-105), and how many others were not sent, as their reviews said. */
+export function roundLine(
+  round: RoundFiles,
+  chosen: number,
+  skipped: number,
+  notSent: number
+): string {
+  const before =
+    round.files_imported_before > 0
+      ? `, ${counted(round.files_imported_before, "file")} imported before`
+      : ""
+  const leftOut =
+    round.not_imported.length > 0
+      ? `, ${counted(round.not_imported.length, "file")} not imported`
+      : ""
+  const skips =
+    skipped > 0 ? `, ${formatCount(skipped)} skipped, as you chose` : ""
+  const held =
+    notSent > 0
+      ? `, ${formatCount(notSent)} not sent, as ${notSent === 1 ? "its review" : "their reviews"} said`
+      : ""
+  return `${formatCount(round.files_imported)} of ${counted(chosen, "file")} imported${before}${leftOut}${skips}${held}.`
 }

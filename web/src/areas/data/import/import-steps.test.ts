@@ -14,12 +14,16 @@ import {
   seenFile,
 } from "./import-fixtures.test-support"
 import { asksOf } from "./import-request"
-import type { FileState, ReviewedFile } from "./import-reviews"
+import type { FileState } from "./import-reviews"
+import type { ReviewedFile } from "./import-round"
 import {
-  importWaits,
   type ReviewFacts,
   type ReviewStanding,
   reviewStanding,
+} from "./import-standing"
+import {
+  importWaits,
+  layoutOffsets,
   shownStep,
   stepAfter,
   stepBefore,
@@ -308,6 +312,11 @@ describe("stepStates", () => {
       kind: "complete",
       line: "Imported",
     })
+    expect(line({ kind: "importing" })).toEqual({
+      kind: "incomplete",
+      line: "Importing",
+      alert: false,
+    })
   })
 })
 
@@ -343,7 +352,7 @@ describe("importWaits", () => {
     )
     expect(waits(PRESET, WAITING)).toBe("Complete File first")
     expect(waits(LISTED_ONE, REFUSED, [late("time-zone")])).toBe(
-      "Complete Layout first"
+      "Check the time zone under Layout first"
     )
     expect(waits(BATCH, WAITING)).toBe("Complete File first")
   })
@@ -386,9 +395,10 @@ describe("importWaits", () => {
     expect(waits(ROUND, { kind: "nothing to send" })).toBe("No file to import")
   })
 
-  it("says nothing once Import has something to send, or wrote", () => {
+  it("says nothing once Import has something to send, and that it imported or is importing", () => {
     expect(waits(LISTED_ONE, { kind: "ready", files: null })).toBeNull()
-    expect(waits(ROUND, { kind: "imported" })).toBeNull()
+    expect(waits(ROUND, { kind: "imported" })).toBe("Imported")
+    expect(waits(ROUND, { kind: "importing" })).toBe("Importing")
   })
 })
 
@@ -408,6 +418,7 @@ describe("reviewStanding", () => {
       asks,
       request,
       imported: false,
+      importing: false,
       review,
       files: [],
       skipped: [],
@@ -419,6 +430,7 @@ describe("reviewStanding", () => {
         asks: asksOf(EMPTY, LISTED, null),
         request: null,
         imported: false,
+        importing: false,
         review: unasked,
         files: [],
         skipped: [],
@@ -469,6 +481,7 @@ describe("reviewStanding", () => {
         asks,
         request: asks.review,
         imported: true,
+        importing: false,
         review: answered("imports"),
         files: [],
         skipped: [],
@@ -490,6 +503,7 @@ describe("reviewStanding", () => {
         asks: round,
         request,
         imported: false,
+        importing: false,
         review: unasked,
         files: reviewed,
         skipped,
@@ -524,6 +538,14 @@ describe("reviewStanding", () => {
     expect(
       standing(files({ kind: "answered", answer }, differs), null, [JUNE.id])
     ).toEqual({ kind: "nothing to send" })
+    // A skipped file read again holds nothing back (the code review).
+    expect(
+      standing(
+        files({ kind: "answered", answer }, { kind: "reading", last: null }),
+        null,
+        [JUNE.id]
+      )
+    ).toEqual({ kind: "nothing to send" })
     const sent: ImportAsked = {
       kind: "files",
       sources: [
@@ -542,5 +564,48 @@ describe("reviewStanding", () => {
         sent
       )
     ).toEqual({ kind: "ready", files: 2 })
+  })
+})
+
+describe("layoutOffsets", () => {
+  it("points at the layout a refused file's offsets alone, never those of a file imported before", () => {
+    const refused = {
+      ...seenFile("XES 03-26.Last.txt", "refused"),
+      offsets: [late("time-zone")],
+    }
+    const before = { ...refused, verdict: "imported_before" as const }
+
+    expect(layoutOffsets(refused)).toEqual([late("time-zone")])
+    expect(layoutOffsets(before)).toEqual([])
+    expect(layoutOffsets(null)).toEqual([])
+    expect(
+      layoutOffsets({ kind: "refused", message: "Expected a table." })
+    ).toEqual([])
+  })
+})
+
+describe("reviewStanding while the import runs", () => {
+  it("says the import is under way once sent, until it wrote", () => {
+    const asks = asksOf(LISTED_ONE, LISTED, null)
+    const answer = {
+      answer: seenFile("XES 03-26.Last.txt", "imports"),
+      current: true,
+      reading: false,
+      error: null,
+    }
+    const facts = {
+      asks,
+      request: asks.review,
+      review: answer,
+      files: [],
+      skipped: [],
+    }
+
+    expect(
+      reviewStanding({ ...facts, imported: false, importing: true })
+    ).toEqual({ kind: "importing" })
+    expect(
+      reviewStanding({ ...facts, imported: true, importing: false })
+    ).toEqual({ kind: "imported" })
   })
 })

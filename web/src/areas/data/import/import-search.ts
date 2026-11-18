@@ -1,7 +1,18 @@
 import { z } from "zod"
 import type { ListedProfile } from "@/api/imports"
 import { datasetSearch } from "../chart-search"
-import { STEPS } from "./import-steps"
+import type { Card } from "./import-draft"
+
+/** The import wizard's steps in their order, a card each and the review last (web/DESIGN.md,
+ * Patterns, Import wizard; D-105), as the address names them. */
+export const STEPS = [
+  "file",
+  "layout",
+  "instrument",
+  "review",
+] as const satisfies readonly (Card | "review")[]
+
+export type Step = (typeof STEPS)[number]
 
 /** The import page's search parameters (step 5.12): the preset a source's Import names, the
  * page it was opened from, which its back link leads to, and for a dataset's Import more data

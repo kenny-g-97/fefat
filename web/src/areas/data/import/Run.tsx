@@ -12,7 +12,7 @@ import { PercentBar } from "@/ui/percent-bar"
 import { TextLink } from "@/ui/text-link"
 import { datasetName } from "../datasets"
 import type { ChosenUploads } from "./import-draft"
-import { filesLeft, type ReviewedFile } from "./import-reviews"
+import { filesLeft, type ReviewedFile } from "./import-round"
 import { keptLine } from "./import-run"
 import { RoundAccount } from "./RoundAccount"
 

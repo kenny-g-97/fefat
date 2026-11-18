@@ -6,32 +6,27 @@ import {
   useReducer,
   useRef,
 } from "react"
-import type {
-  FileSeen,
-  ImportPreviewAnswer,
-  ListedProfile,
-} from "@/api/imports"
+import type { ImportPreviewAnswer, ListedProfile } from "@/api/imports"
 import { Stepper } from "@/ui/stepper"
 import { useStrayDropsIgnored } from "@/ui/stray-drops"
 import { type ChosenUploads, drafted, startingDraft } from "./import-draft"
 import { useLatestPreview } from "./import-preview"
 import { asksOf, zoneOf } from "./import-request"
+import { useFileReviews } from "./import-reviews"
 import {
   filesImporting,
   filesRequest,
   leadAnswer,
   reviewedFiles,
-  useFileReviews,
-} from "./import-reviews"
+} from "./import-round"
 import { importKey, importRequest, useImportRun } from "./import-run"
-import { presetChoice } from "./import-search"
+import { presetChoice, type Step, STEPS } from "./import-search"
+import { reviewStanding } from "./import-standing"
 import {
   importWaits,
-  reviewStanding,
+  layoutOffsets,
   shownStep,
-  type Step,
   STEP_NAMES,
-  STEPS,
   stepStates,
 } from "./import-steps"
 import { FileCard } from "./FileCard"
@@ -39,8 +34,6 @@ import { InstrumentCard } from "./InstrumentCard"
 import { LayoutCard } from "./LayoutCard"
 import { ReviewCard } from "./ReviewCard"
 import { StepFoot } from "./StepFoot"
-
-const NO_OFFSETS: FileSeen["offsets"] = []
 
 type ImportWizardProps = Readonly<{
   profiles: readonly ListedProfile[]
@@ -92,11 +85,12 @@ export function ImportWizard({
   const first = several
     ? leadAnswer(reviewed, draft.skipped)
     : currentAnswerOf(review)
-  const offsets = first?.kind === "file" ? first.offsets : NO_OFFSETS
+  const offsets = layoutOffsets(first)
   const standing = reviewStanding({
     asks,
     request,
     imported: run.imported,
+    importing: request !== null && !run.importable,
     review,
     files: reviewed,
     skipped: draft.skipped,
@@ -184,7 +178,8 @@ type StepCardProps = Readonly<{
   children: ReactNode
 }>
 
-/** A step's card, hidden while another step is shown, and the focus's target once shown. */
+/** A step's card, hidden while another step is shown, and the focus's target once shown,
+ * named for its step, so that a screen reader says where the focus went. */
 function StepCard({ step, shown, card, children }: StepCardProps) {
   const visible = step === shown
   return (
@@ -192,6 +187,8 @@ function StepCard({ step, shown, card, children }: StepCardProps) {
       hidden={!visible}
       ref={visible ? card : undefined}
       tabIndex={-1}
+      role="group"
+      aria-label={STEP_NAMES[step]}
       className="rounded-xl"
       data-testid={`step-card-${step}`}
     >

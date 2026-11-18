@@ -5,14 +5,17 @@ import { type AsideTone, DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
 import {
   type FileState,
-  filesToDecide,
-  filesWithBarsInBreaks,
   type Outcome,
   outcomeOf,
-  type ReviewedFile,
   shownState,
   tallyOf,
 } from "./import-reviews"
+import {
+  filesToDecide,
+  filesWithBarsInBreaks,
+  notSkipped,
+  type ReviewedFile,
+} from "./import-round"
 import { LeaveOutBars } from "./BarsInBreaks"
 import { OUTCOME_NAMES, OUTCOME_SIGNS, whyNot } from "./import-outcomes"
 import { FileReview } from "./FileReview"
@@ -88,7 +91,7 @@ export function FilesReview({
   zone,
 }: FilesReviewProps) {
   const skipped = draft.skipped
-  const kept = files.filter(({ upload }) => !skipped.includes(upload.id))
+  const kept = notSkipped(files, skipped)
   const shown = kept.map(({ state }) => shownState(state))
   const tally = tallyOf(shown)
   const read = files.filter(

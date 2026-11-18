@@ -5,22 +5,24 @@ import { seenFile } from "./import-fixtures.test-support"
 import {
   EMPTY_REVIEWS,
   type FileState,
+  fileStates,
+  nextReview,
+  outcomeOf,
+  type ReviewsChange,
+  type ReviewsQueue,
+  reviewsQueued,
+  tallyOf,
+} from "./import-reviews"
+import {
   filesImporting,
   filesLeft,
   filesRequest,
   filesToDecide,
   filesWithBarsInBreaks,
-  fileStates,
   leadAnswer,
-  nextReview,
-  outcomeOf,
   type ReviewedFile,
-  type ReviewsChange,
-  type ReviewsQueue,
-  reviewsQueued,
-  tallyOf,
   tooManyFiles,
-} from "./import-reviews"
+} from "./import-round"
 
 type FileImportAsked = components["schemas"]["FileImportAsked"]
 type ImportSource = components["schemas"]["ImportSource"]
@@ -272,6 +274,21 @@ describe("filesRequest", () => {
         []
       )
     ).toMatchObject({ sources: [{ kind: "upload", upload_id: "a" }] })
+  })
+
+  it("holds nothing back for a skipped file read again (the code review)", () => {
+    expect(
+      filesRequest(
+        asks,
+        [answered("imports"), READING, answered("imports")],
+        ["b"]
+      )
+    ).toMatchObject({
+      sources: [
+        { kind: "upload", upload_id: "a" },
+        { kind: "upload", upload_id: "c" },
+      ],
+    })
   })
 
   it("never sends a skipped file, though a later choice lets it import", () => {

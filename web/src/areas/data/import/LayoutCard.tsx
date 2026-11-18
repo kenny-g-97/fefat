@@ -24,7 +24,7 @@ type LayoutCardProps = Readonly<{
   profiles: readonly ListedProfile[]
   table: TablePreview | null
   preview: LatestPreview
-  offsets: FileSeen["offsets"]
+  offsets: Readonly<FileSeen["offsets"]>
 }>
 
 /** The wizard's second step: the profile the file reads with, a preset, one the trader saved,

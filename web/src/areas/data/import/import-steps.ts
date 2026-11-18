@@ -1,29 +1,18 @@
-import type { ImportAsked, ImportProfile, ListedProfile } from "@/api/imports"
+import type {
+  ImportPreviewAnswer,
+  ImportProfile,
+  ListedProfile,
+} from "@/api/imports"
 import type { components } from "@/api/schema"
 import { counted } from "@/ui/figures"
 import type { StepState } from "@/ui/stepper"
 import type { Card, Draft, Missing, ProfileDraft, Source } from "./import-draft"
-import type { PreviewState } from "./import-preview"
 import { type Asks, listedProfile, offsetRefusal } from "./import-request"
 import { OUTCOME_NAMES, VERDICTS } from "./import-outcomes"
-import {
-  filesToDecide,
-  type NotImporting,
-  type ReviewedFile,
-} from "./import-reviews"
+import { type Step, STEPS } from "./import-search"
+import type { ReviewStanding } from "./import-standing"
 
 type OffsetSeen = components["schemas"]["OffsetSeen"]
-
-/** The import wizard's steps in their order, a card each and the review last (web/DESIGN.md,
- * Patterns, Import wizard; D-105). */
-export const STEPS = [
-  "file",
-  "layout",
-  "instrument",
-  "review",
-] as const satisfies readonly (Card | "review")[]
-
-export type Step = (typeof STEPS)[number]
 
 /** The steps before the review, each a card that gives the review what it reads. */
 const CARDS: readonly Card[] = ["file", "layout", "instrument"]
@@ -36,87 +25,6 @@ export const STEP_NAMES: Readonly<Record<Step, string>> = {
   review: "Review",
 }
 
-/** Where the review stands, which its step and Import's reason say: the import wrote; Import
- * has a request to send, of a round's files or of one file or batch; or what it waits for:
- * the steps before it, a read, the first or a change's, a decision on some files of a round,
- * a file or batch whose verdict does not import, or a round with no file to send. */
-export type ReviewStanding =
-  | Readonly<{ kind: "imported" }>
-  | Readonly<{ kind: "ready"; files: number | null }>
-  | Readonly<{ kind: "waiting" }>
-  | Readonly<{ kind: "reading"; again: boolean }>
-  | Readonly<{ kind: "to decide"; files: number }>
-  | Readonly<{ kind: "not importing"; outcome: NotImporting }>
-  | Readonly<{ kind: "nothing to send" }>
-
-/** What the wizard knows of the review: what the draft asks, the request Import would send,
- * whether its import wrote, a file's or a batch's review, and a round's files with those the
- * trader skipped. */
-export type ReviewFacts = Readonly<{
-  asks: Asks
-  request: ImportAsked | null
-  imported: boolean
-  review: Pick<PreviewState, "answer" | "current" | "reading" | "error">
-  files: readonly ReviewedFile[]
-  skipped: readonly string[]
-}>
-
-/** Where the review stands (`ReviewStanding`): ready exactly where Import has a request to
- * send, its one gate (D-105). */
-export function reviewStanding(facts: ReviewFacts): ReviewStanding {
-  if (facts.imported) {
-    return { kind: "imported" }
-  }
-  const request = facts.request
-  if (request !== null) {
-    const files = request.kind === "files" ? request.sources.length : null
-    return { kind: "ready", files }
-  }
-  if (facts.asks.missing.length > 0) {
-    return { kind: "waiting" }
-  }
-  return facts.asks.several.length > 0
-    ? roundStanding(facts.files, facts.skipped)
-    : oneStanding(facts.review)
-}
-
-function roundStanding(
-  files: readonly ReviewedFile[],
-  skipped: readonly string[]
-): ReviewStanding {
-  const reading = files.filter(({ state }) => state.kind === "reading")
-  if (reading.length > 0) {
-    const again = reading.some(
-      ({ state }) => state.kind === "reading" && state.last !== null
-    )
-    return { kind: "reading", again }
-  }
-  const toDecide = filesToDecide(files, skipped)
-  if (toDecide.length > 0) {
-    return { kind: "to decide", files: toDecide.length }
-  }
-  return { kind: "nothing to send" }
-}
-
-function oneStanding(review: ReviewFacts["review"]): ReviewStanding {
-  if (review.error !== null) {
-    return { kind: "not importing", outcome: "unread" }
-  }
-  const answer = review.current ? review.answer : null
-  if (answer === null) {
-    return { kind: "reading", again: review.answer !== null }
-  }
-  if (answer.kind === "refused" || answer.kind === "table") {
-    return { kind: "not importing", outcome: "unread" }
-  }
-  if (answer.verdict === "imports") {
-    throw new Error(
-      "Expected Import's request for a review that imports, got none."
-    )
-  }
-  return { kind: "not importing", outcome: answer.verdict }
-}
-
 /** What the wizard knows when it marks its steps: the draft and what it asks, the listed
  * profiles it names, the offsets of the review the layout is read against, and where the
  * review stands. */
@@ -127,6 +35,19 @@ export type StepFacts = Readonly<{
   offsets: readonly OffsetSeen[]
   review: ReviewStanding
 }>
+
+const NO_OFFSETS: readonly OffsetSeen[] = []
+
+/** The offsets of `answer` that point back at the layout: a refused file's, since an offset
+ * refuses the file it is found in; a file imported before keeps its calendar's offsets in its
+ * answer, but needs nothing, so its offsets point at no field (D-105). */
+export function layoutOffsets(
+  answer: ImportPreviewAnswer | null
+): readonly OffsetSeen[] {
+  return answer?.kind === "file" && answer.verdict === "refused"
+    ? answer.offsets
+    : NO_OFFSETS
+}
 
 const NOT_NEEDED: StepState = {
   kind: "not needed",
@@ -190,6 +111,8 @@ function reviewState(
   switch (standing.kind) {
     case "imported":
       return { kind: "complete", line: "Imported" }
+    case "importing":
+      return waiting("Importing")
     case "ready":
       return {
         kind: "complete",
@@ -214,17 +137,30 @@ function reviewState(
 }
 
 /** Why Import is disabled, beside it on the last step (D-105), or none where it may send:
- * the steps still to complete first, then that a read is in progress, the files that wait for a
- * decision, a file's or a batch's verdict, and a round with no file to send. */
+ * that it imported, or is importing; else the steps still to complete first, an alert in its
+ * own words, then that a read is in progress, the files that wait for a decision, a file's or a
+ * batch's verdict, and a round with no file to send. */
 export function importWaits(
   states: Readonly<Record<Step, StepState>>,
   standing: ReviewStanding,
   draft: Draft
 ): string | null {
-  if (standing.kind === "imported" || standing.kind === "ready") {
-    return null
+  switch (standing.kind) {
+    case "ready":
+      return null
+    case "imported":
+      return "Imported"
+    case "importing":
+      return "Importing"
   }
   const incomplete = CARDS.filter((card) => states[card].kind === "incomplete")
+  const [only] = incomplete
+  if (incomplete.length === 1 && only !== undefined) {
+    const state = states[only]
+    if (state.kind === "incomplete" && state.alert) {
+      return `${state.line} under ${STEP_NAMES[only]} first`
+    }
+  }
   if (incomplete.length > 0) {
     return `Complete ${namesOf(incomplete)} first`
   }

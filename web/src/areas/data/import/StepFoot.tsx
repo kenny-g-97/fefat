@@ -1,9 +1,10 @@
-import type { MouseEvent } from "react"
+import { type MouseEvent, useId } from "react"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
 import type { Draft } from "./import-draft"
 import type { ImportRun } from "./import-run"
-import { type Step, STEP_NAMES, stepAfter, stepBefore } from "./import-steps"
+import type { Step } from "./import-search"
+import { STEP_NAMES, stepAfter, stepBefore } from "./import-steps"
 
 type StepFootProps = Readonly<{
   draft: Draft
@@ -30,6 +31,7 @@ export function StepFoot({
 }: StepFootProps) {
   const before = stepBefore(shown, draft)
   const after = stepAfter(shown, draft)
+  const waits = useId()
   return (
     <div className="flex flex-wrap items-center gap-4">
       {before !== null && (
@@ -53,10 +55,13 @@ export function StepFoot({
           </Button>
         ) : (
           <>
-            <ImportWaits run={run} reason={reason} />
+            <ImportWaits id={waits} run={run} reason={reason} />
             <Button
               key="import"
               data-testid="import-run"
+              aria-describedby={
+                run.refusal !== null || reason !== null ? waits : undefined
+              }
               disabled={!run.importable}
               onClick={firstClick(run.importNow)}
             >
@@ -71,21 +76,22 @@ export function StepFoot({
   )
 }
 
-/** Beside Import: the server's refusal of the import while the draft is the one refused, else
- * why Import waits. */
+/** Beside Import, which it describes: the server's refusal of the import while the draft is
+ * the one refused, else why Import waits. */
 function ImportWaits({
+  id,
   run,
   reason,
-}: Readonly<{ run: ImportRun; reason: string | null }>) {
+}: Readonly<{ id: string; run: ImportRun; reason: string | null }>) {
   if (run.refusal !== null) {
     return (
-      <p role="alert" className="text-negative">
+      <p id={id} role="alert" className="text-negative">
         {run.refusal.message}
       </p>
     )
   }
   return reason === null ? null : (
-    <p className="text-foreground-secondary" data-testid="import-waits">
+    <p id={id} className="text-foreground-secondary" data-testid="import-waits">
       {reason}
     </p>
   )

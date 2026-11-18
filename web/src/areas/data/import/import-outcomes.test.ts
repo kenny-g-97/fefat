@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { FileSeen, MergeSeen } from "@/api/imports"
 import { seenFile } from "./import-fixtures.test-support"
-import { OUTCOME_SIGNS, whyNot } from "./import-outcomes"
+import { OUTCOME_SIGNS, roundLine, whyNot } from "./import-outcomes"
 import type { FileState } from "./import-reviews"
 
 const NAME = "XES 03-26.Last.txt"
@@ -108,5 +108,25 @@ describe("OUTCOME_SIGNS", () => {
       imported_before: "none",
       nothing: "none",
     })
+  })
+})
+
+describe("roundLine", () => {
+  it("counts a round's files skipped apart from those its reviews kept out (D-105)", () => {
+    const round = {
+      files_imported: 2,
+      files_imported_before: 0,
+      not_imported: [],
+    }
+
+    expect(roundLine(round, 3, 1, 0)).toBe(
+      "2 of 3 files imported, 1 skipped, as you chose."
+    )
+    expect(roundLine(round, 4, 1, 1)).toBe(
+      "2 of 4 files imported, 1 skipped, as you chose, 1 not sent, as its review said."
+    )
+    expect(roundLine({ ...round, files_imported_before: 1 }, 5, 0, 2)).toBe(
+      "2 of 5 files imported, 1 file imported before, 2 not sent, as their reviews said."
+    )
   })
 })
