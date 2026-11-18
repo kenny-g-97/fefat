@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode } from "react"
+import { type Dispatch, type ReactNode, useState } from "react"
 import type { BreaksSeen } from "@/api/imports"
 import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
@@ -10,8 +10,9 @@ type BarsInBreaksProps = Readonly<{ breaks: BreaksSeen; children?: ReactNode }>
 /** A file's breaks that hold a bar closing at the next session's open, the edge of a stretch
  * the platform stamped early (ADR-0022), in a box in the card as the merge's (web/DESIGN.md,
  * Patterns, Review), each line a label and its counts: the bars and the trade dates of the
- * breaks they lie in, the sessions beside them, and the records leaving them out leaves out;
- * at its foot, where the review shows one file, what to do with them (`LeaveOutBars`). */
+ * breaks they lie in, the sessions beside them, the sessions ending a bar early that go with
+ * them where there are any (D-104), and the records leaving them out leaves out; at its foot,
+ * where the review shows one file, what to do with them (`LeaveOutBars`). */
 export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
   return (
     <div
@@ -22,6 +23,11 @@ export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
       <ul className="flex flex-col gap-1 text-foreground-secondary">
         <li>{breaksLine(breaks)}</li>
         <li>{`Sessions beside: ${listed(breaks.sessions, breaks.sessions_total)}`}</li>
+        {breaks.ending_a_bar_early_total > 0 && (
+          <li>
+            {`Sessions ending a bar early: ${listed(breaks.ending_a_bar_early, breaks.ending_a_bar_early_total)}`}
+          </li>
+        )}
         <li>{`Records: ${formatCount(breaks.records)} in all, those bars among them`}</li>
       </ul>
       {children}
@@ -55,35 +61,37 @@ type LeaveOutBarsProps = Readonly<{
  * Leave out the bars in a break behind an inline confirmation that counts the records that go,
  * `records`, or for several files (D-102) the files, since two files of one contract share
  * sessions; once approved for every one of `files`, what is left out and the way back, which
- * takes the focus from the confirm it replaces. The trigger starts its own line, so that Keep
- * takes its place, as Take the file's records does. */
+ * takes the focus from the confirm it replaces and, pressed, gives it to the trigger again. The
+ * trigger starts its own line, so that Keep takes its place, as Take the file's records does. */
 export function LeaveOutBars({
   files,
   records,
   draft,
   change,
 }: LeaveOutBarsProps) {
+  const [takenBack, setTakenBack] = useState(false)
   const offered = files.filter((file) => !draft.breaksLeftOut.includes(file))
   if (offered.length === 0) {
     return (
       <div className="flex flex-col items-start gap-3" data-testid="leave-out">
         <p className="text-foreground-secondary">
           {records === null
-            ? `The bars in a break of ${counted(files.length, "file")} and the sessions beside them are left out of the import; each file's row says which.`
-            : "These bars and the sessions beside them are left out of the import, so the calendar check may list those sessions as without prints."}
+            ? `The bars in a break of ${counted(files.length, "file")} and the sessions their rows list are left out of the import, so each file's calendar check may list those sessions as having no prints.`
+            : "These bars and the sessions above are left out of the import, so the calendar check may list those sessions as having no prints."}
         </p>
         <Button
           variant="ghost"
           size="sm"
           autoFocus
-          onClick={() =>
+          onClick={() => {
+            setTakenBack(true)
             change({
               kind: "bars in breaks",
               files: draft.breaksLeftOut.filter(
                 (file) => !files.includes(file)
               ),
             })
-          }
+          }}
         >
           Leave nothing out
         </Button>
@@ -109,12 +117,14 @@ export function LeaveOutBars({
             : `Leave out ${counted(records, "record")}`
         }
         align="start"
-        onConfirm={() =>
+        focused={takenBack}
+        onConfirm={() => {
+          setTakenBack(false)
           change({
             kind: "bars in breaks",
             files: [...draft.breaksLeftOut, ...offered],
           })
-        }
+        }}
       />
     </div>
   )

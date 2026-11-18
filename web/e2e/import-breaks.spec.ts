@@ -75,19 +75,21 @@ test("a file with bars in a break imports without them once you approve", async 
   await expect(wayBack).toBeFocused()
   const leaveOut = page.getByTestId("leave-out")
   await expect(leaveOut).toContainText(
-    "These bars and the sessions beside them are left out of the import, so the calendar check may list those sessions as without prints."
+    "These bars and the sessions above are left out of the import, so the calendar check may list those sessions as having no prints."
   )
   await expect(
     page.getByText("Reading your latest change", { exact: true })
   ).toHaveCount(0, { timeout: READ_MS })
   await inBothThemes(page, "import-left-out")
 
-  // The way back refuses the file again; approved once more, it imports.
+  // The way back refuses the file again and gives the focus to the offer; approved once more,
+  // it imports.
   await wayBack.click()
   await expect(verdict(page)).toHaveText(
     "It would be refused for its bars in a break",
     { timeout: READ_MS }
   )
+  await expect(offer).toBeFocused()
   await offer.click()
   await confirm.click()
   await expect(verdict(page)).toHaveText(
@@ -96,7 +98,7 @@ test("a file with bars in a break imports without them once you approve", async 
   )
   await page.getByTestId("import-run").click()
   await expect(page.getByTestId("import-left-out")).toHaveText(
-    "Left out 2,769 records, the bars in a break and the sessions beside them, as you approved.",
+    "Left out 2,769 records, the bars in a break and the sessions the review listed, as you approved.",
     { timeout: IMPORT_MS }
   )
   await screenshot(page, "import-left-out-done")
@@ -155,15 +157,17 @@ test("a round leaves out the files' bars in a break with one approval", async ({
     "1 of 3 files import as they are",
     { timeout: READ_MS }
   )
+  // The headline counts the last answers while the files are read again, so the round's
+  // own line waits for the new ones.
   await expect(
     page.getByText("2 files import without their bars in a break")
-  ).toBeVisible()
+  ).toBeVisible({ timeout: READ_MS })
   await expect(
     page.getByRole("button", { name: "Leave nothing out" })
   ).toBeFocused()
   await expect(row).toContainText("Without bars in a break")
   await expect(page.getByTestId("leave-out")).toContainText(
-    "The bars in a break of 2 files and the sessions beside them are left out of the import; each file's row says which."
+    "The bars in a break of 2 files and the sessions their rows list are left out of the import, so each file's calendar check may list those sessions as having no prints."
   )
   await inBothThemes(page, "import-several-left-out")
 
@@ -175,7 +179,7 @@ test("a round leaves out the files' bars in a break with one approval", async ({
     { timeout: IMPORT_MS }
   )
   await expect(page.getByTestId("import-left-out")).toHaveText(
-    "Left out 5,538 records, the bars in a break and the sessions beside them, as you approved."
+    "Left out 5,538 records, the bars in a break and the sessions the review listed, as you approved."
   )
   await screenshot(page, "import-several-left-out-done")
   expect(errors).toEqual([])
