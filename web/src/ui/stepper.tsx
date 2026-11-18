@@ -23,8 +23,9 @@ type StepperProps<Id extends string> = Readonly<{
 
 /** A task's steps down the left of its page (web/DESIGN.md, Patterns, Stepper): each a button
  * that opens its step, its number or, once complete, a check in a tile, its name, and one line
- * of what it needs or what was chosen; the current one in the active item's soft fill, as the
- * sidebar marks its page, and a step not needed disabled. */
+ * of what it needs or what was chosen, every row one height that holds that line on two lines;
+ * the current one in the active item's soft fill, as the sidebar marks its page, and a step not
+ * needed disabled. */
 export function Stepper<Id extends string>({
   label,
   steps,
@@ -67,7 +68,7 @@ function StepRow({ step, number, current, onPress }: StepRowProps) {
       disabled={state.kind === "not needed"}
       onClick={onPress}
       className={cn(
-        "flex w-full items-center gap-3 rounded-xl border p-2 text-left disabled:opacity-50",
+        "flex min-h-18 w-full items-center gap-3 rounded-xl border p-2 text-left disabled:opacity-50",
         current
           ? "border-brand-soft-border bg-brand-soft"
           : "border-transparent hover:border-border hover:bg-muted"
