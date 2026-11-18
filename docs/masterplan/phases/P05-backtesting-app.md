@@ -19,7 +19,7 @@
 - "Playwright passes on both projects" reads as the desktop project at 1280 by 800, with the dev-proxy project keeping its own specs; no step has a phone layout (D-54); screenshots are copied to `docs/validation/screenshots/<step>/`.
 - The harness's seed (`scripts/e2e_server.py`) grows with the steps: step 5.3 adds the demo strategy and its first run, which later specs call `demo-run-01`.
 
-**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3 and 5.7 to 5.10; `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, and 5.13, each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
+**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3 and 5.7 to 5.10; `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, and 5.17 (D-105), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
 
 **Open decisions for the kickoff** (settled 2026-11-10, D-93)**.** Which of your real strategies to seed as the demo (a simple one you understand well); the metrics you want on the KPI cards first.
 
@@ -572,6 +572,8 @@ Not in this step: trade logs for the prop simulator (Phase 7), alternative non-p
 
 2026-11-16 (D-102, your check of the step's pull request): the wizard imports several files in one round, as NinjaTrader writes one file per contract. Up to 200 files are chosen in the browser's picker or dropped together, each copied as an upload and reviewed by a preview of its own, two at a time in the files' order. Import takes the files whose own review says they import as they are, as one `import` job that imports them one after another, each in a runner of its own, and writes the quality report of each product once, at its end; the others are left out, each with its reason, and Review the files left reads them anew. With several files the Contract field is hidden, each file's name giving its own contract, and the review shows each file's counts with no summed account, which the job's result gives. Once the round's first file writes, the round runs to its end, as one file does. From `BACKLOG.md`: several files in one import.
 
+2026-11-18 (D-105, your check of step 5.15's pull request): the one page of four cards (D-101) becomes a stepper in step 5.17, the four cards as four steps listed down the left of the page, one shown at a time and each marked complete or not, with Import under the last.
+
 ### 5.13 End-to-end suite and demo
 
 Depends on: 5.10, 5.12 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
@@ -772,6 +774,58 @@ Not in this step: bars in a break and the correction a trader approves for them 
 #### If it fails
 
 - A vendor's revised file refused as the stored records at one other offset means the rule guessed wrongly, which the plan weighed: the refusal names the offset and the first trade date, so compare those bars with the platform's chart and report both. Nothing was written.
+
+#### Amendment
+
+2026-11-18 (D-105, your check of step 5.15's pull request): this step runs after the new step 5.17, which lays the import wizard out as a stepper, so that the refusals this step words for the app land on the wizard's new pages; its row stands after 5.17's in `PROGRESS.md`, which the step runner's `next` reads from the top (D-98).
+
+### 5.17 Import wizard as a stepper
+
+Depends on: 5.12, 5.15 · Plan mode: required · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
+
+#### Purpose
+
+The import wizard walks you through its four steps a page at a time, says what each still needs, and imports only once every step is complete and every file that does not import has your decision.
+
+#### Prerequisites
+
+- Steps 5.12 and 5.15 merged: the wizard, its rounds of several files, and the correction of bars in a break are what the steps lay out.
+- For Your checks: your NinjaTrader exports, as for step 5.15.
+
+#### Prompt
+
+```text
+Masterplan step 5.17 — Import wizard as a stepper.
+
+Read web/DESIGN.md (Patterns: Import wizard, Live draft, Review, Job in its card, Inline confirmation, Disclosure row), the wizard under web/src/areas/data/import/, and the import specs under web/e2e/. Your check of step 5.15's pull request (D-105) asks for the wizard as a stepper, in the structure of a screenshot you shared and in FEAT's own design system:
+
+1. The four cards, File, Layout, Instrument, and Review, become four steps listed down the left of the page, one step's card shown at a time with Back and Continue under it. Each step in the list opens it and says whether it is complete, and what it still needs or what was chosen. The step is in the page's address, so that the browser's Back moves between steps, and the draft, a copy in progress, and an import's job outlive every change of step.
+2. Import stands in Continue's place on the last step, disabled with its reason beside it until every step is complete.
+3. In the review, a file that imports reads Imports in the positive colour, and any other says what stops it in the negative colour on its row; the design brief gains this exception to colour meaning sign.
+4. In a round of several files, Import waits until each file that does not import has a decision: the correction its kind of problem takes, approved once for every file it fits as today, or Skip, for one file in its row or for all those left at once. A skipped file is never sent.
+
+The SDK, the server, and the API stay as they are.
+
+Not in this step: a draft kept across a reload, a correction for one file apart from the others of its round, the phone layout (D-54), and step 5.16's import rules.
+```
+
+#### Done means
+
+1. The import page shows one step at a time beside the list of its four steps; Continue, Back, a step of the list, and the browser's Back each change the step, and the draft, a copy in progress, and an import's job outlive every change (Playwright, with screenshots of each step in both themes; vitest for the address).
+2. Each step of the list is marked complete or not and says what it still needs or what was chosen; a Databento batch needs no Layout and no Instrument; an offset the review finds that points at the layout marks that step (vitest for the rules, Playwright for the page).
+3. Import stands in Continue's place on the last step, disabled with its reason beside it until every step is complete (vitest, Playwright).
+4. In a round, Import stays disabled until each file that does not import is corrected or skipped, one file in its row or all those left at once; a skipped file is never sent, even where a later choice would let it import; and the done card counts the files skipped (vitest, Playwright).
+5. A file that imports reads Imports in the positive colour, and any other says what stops it in the negative colour on its row, without being opened; one file's verdict takes the same colours; both keep their contrast in both themes (Playwright).
+6. `web/DESIGN.md`, the design brief's line, and `docs/data-guide.md` say the stepper, the colours, and the decisions, and the quality floor holds on each step's page (the quality-floor spec).
+
+#### Your checks
+
+- Open Import and walk the four steps with Continue, Back, the list at the left, and the browser's Back, with one of your NinjaTrader files: each step says what it needs, then what you chose, and the file is still chosen when you come back to File.
+- Choose a round of your NinjaTrader files in which one or more do not import as they are, such as one of step 5.15's six: the rows read Imports in green or say in red what stops them, and Import is disabled and says how many files wait for your decision. Skip one in its row and decide on the others: Import names the files it sends, and the done card says how many were skipped.
+
+#### If it fails
+
+- A step marked complete whose page still asks for something, or an Import that sends while a file waits for a decision, means a step's rule misses a case: tell Claude Code which step, what it showed, and which files were chosen. Nothing is written before Import.
 
 ## Phase exit
 
