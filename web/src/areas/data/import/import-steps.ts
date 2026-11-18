@@ -5,12 +5,8 @@ import type { StepState } from "@/ui/stepper"
 import type { Card, Draft, Missing, ProfileDraft, Source } from "./import-draft"
 import type { PreviewState } from "./import-preview"
 import { type Asks, listedProfile, offsetRefusal } from "./import-request"
-import {
-  type NotImporting,
-  OUTCOME_NAMES,
-  type ReviewedFile,
-  VERDICTS,
-} from "./import-reviews"
+import { OUTCOME_NAMES, VERDICTS } from "./import-outcomes"
+import type { NotImporting, ReviewedFile } from "./import-reviews"
 
 type OffsetSeen = components["schemas"]["OffsetSeen"]
 

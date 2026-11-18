@@ -1,5 +1,4 @@
 import type { Dispatch } from "react"
-import type { ImportPreviewAnswer } from "@/api/imports"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
 import { type AsideTone, DisclosureRow } from "../DisclosureRow"
@@ -8,13 +7,13 @@ import {
   type FileState,
   filesWithBarsInBreaks,
   type Outcome,
-  OUTCOME_NAMES,
   outcomeOf,
   type ReviewedFile,
   shownState,
   tallyOf,
 } from "./import-reviews"
 import { LeaveOutBars } from "./BarsInBreaks"
+import { OUTCOME_NAMES, OUTCOME_SIGNS, whyNot } from "./import-outcomes"
 import { FileReview } from "./FileReview"
 import { TakeRecords } from "./Merge"
 
@@ -54,18 +53,14 @@ const OTHER_OUTCOMES: readonly Readonly<{
   { outcome: "unread", one: "could not be read", several: "could not be read" },
 ]
 
-/** The tone each outcome takes in a file's row (web/DESIGN.md, Principles): a file that cannot
- * import in the negative, one that differs in body text, the others quiet. */
-const ROW_TONES: Readonly<Record<Outcome, AsideTone>> = {
-  imports: "quiet",
-  imports_without_bars: "body",
-  refused: "negative",
-  bars_in_breaks: "body",
-  differing: "body",
-  imported_before: "quiet",
-  nothing: "quiet",
-  unread: "negative",
-}
+/** The tone each sign of an outcome takes in a file's row (D-105): a file that imports in the
+ * positive, one that something stops in the negative, and one imported before or empty quiet. */
+const ROW_TONES: Readonly<Record<(typeof OUTCOME_SIGNS)[Outcome], AsideTone>> =
+  {
+    positive: "positive",
+    negative: "negative",
+    none: "quiet",
+  }
 
 type FilesReviewProps = Readonly<{
   files: readonly ReviewedFile[]
@@ -185,9 +180,9 @@ type FileRowProps = Readonly<{
   zone: string | null
 }>
 
-/** A file's row: its name, its records or why it was not read, and its outcome in its tone,
- * opening to its own review; while it is read again after a change, its last review, marked
- * as one to read again. */
+/** A file's row: its name, its records, and its outcome in its sign's colour, with what stops
+ * it under its name, where something does (D-105), opening to its own review; while it is read
+ * again after a change, its last review, marked as one to read again. */
 function FileRow({ name, state, draft, change, zone }: FileRowProps) {
   const shown = shownState(state)
   const outcome = outcomeOf(shown)
@@ -201,6 +196,7 @@ function FileRow({ name, state, draft, change, zone }: FileRowProps) {
         note={`${counted(seen.records, "record")}, ${seen.contracts.join(", ") || "no contract"}`}
         aside={aside.text}
         asideTone={aside.tone}
+        reason={whyNot(state, zone)}
       >
         <div className="pb-4">
           <FileReview
@@ -227,12 +223,12 @@ function FileRow({ name, state, draft, change, zone }: FileRowProps) {
     <DisclosureRow
       testId="review-file"
       name={name}
-      note="Not read: open for why"
       aside={aside.text}
       asideTone={aside.tone}
+      reason={whyNot(shown, zone)}
     >
       <p role="alert" className="pb-3 text-negative">
-        {shown.kind === "failed" ? shown.error.message : reasonOf(shown.answer)}
+        {whyNot(shown, zone)}
       </p>
     </DisclosureRow>
   )
@@ -246,11 +242,8 @@ function asideOf(
   if (state.kind === "reading" || outcome === null) {
     return { text: "To read again", tone: "quiet" }
   }
-  return { text: OUTCOME_NAMES[outcome], tone: ROW_TONES[outcome] }
-}
-
-function reasonOf(answer: ImportPreviewAnswer): string {
-  return answer.kind === "refused"
-    ? answer.message
-    : `Expected a file's review, got a ${answer.kind} one.`
+  return {
+    text: OUTCOME_NAMES[outcome],
+    tone: ROW_TONES[OUTCOME_SIGNS[outcome]],
+  }
 }

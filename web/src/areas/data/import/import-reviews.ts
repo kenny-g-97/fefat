@@ -183,30 +183,6 @@ export type Outcome =
  * differ, not read, imported before, or empty. */
 export type NotImporting = Exclude<Outcome, "imports" | "imports_without_bars">
 
-/** What a preview finds the import of a file or a batch would do, as its review's headline
- * says it, and Import's reason where the review shows one file or batch (D-105). */
-export const VERDICTS: Readonly<Record<Schemas["ImportVerdict"], string>> = {
-  imports: "It imports as it is",
-  refused: "It would be refused",
-  bars_in_breaks: "It would be refused for its bars in a break",
-  differing: "Its records differ from the ones FEAT holds",
-  imported_before: "It is imported already: importing it again changes nothing",
-  nothing: "It holds nothing to import",
-}
-
-/** Each outcome in a word or two, as a file's row ends on it, and the Review step says one
- * file's (D-105). */
-export const OUTCOME_NAMES: Readonly<Record<Outcome, string>> = {
-  imports: "Imports",
-  imports_without_bars: "Without bars in a break",
-  refused: "Refused",
-  bars_in_breaks: "Bars in a break",
-  differing: "Differs",
-  imported_before: "Imported before",
-  nothing: "Nothing to import",
-  unread: "Not read",
-}
-
 /** What `state` says of its file's import; none while it is read. */
 export function outcomeOf(state: FileState): Outcome | null {
   if (state.kind === "reading") {

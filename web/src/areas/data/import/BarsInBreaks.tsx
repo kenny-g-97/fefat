@@ -4,6 +4,7 @@ import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
 import { InlineConfirmation } from "@/ui/inline-confirmation"
 import type { Draft, DraftChange } from "./import-draft"
+import { barsLine, listedDates } from "./import-outcomes"
 
 type BarsInBreaksProps = Readonly<{ breaks: BreaksSeen; children?: ReactNode }>
 
@@ -21,11 +22,11 @@ export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
     >
       <p className="font-medium text-foreground">Bars in a break</p>
       <ul className="flex flex-col gap-1 text-foreground-secondary">
-        <li>{breaksLine(breaks)}</li>
-        <li>{`Sessions beside: ${listed(breaks.sessions, breaks.sessions_total)}`}</li>
+        <li>{`Breaks: ${barsLine(breaks)}`}</li>
+        <li>{`Sessions beside: ${listedDates(breaks.sessions, breaks.sessions_total)}`}</li>
         {breaks.ending_a_bar_early_total > 0 && (
           <li>
-            {`Sessions ending a bar early: ${listed(breaks.ending_a_bar_early, breaks.ending_a_bar_early_total)}`}
+            {`Sessions ending a bar early: ${listedDates(breaks.ending_a_bar_early, breaks.ending_a_bar_early_total)}`}
           </li>
         )}
         <li>{`Records: ${formatCount(breaks.records)} in all, those bars among them`}</li>
@@ -33,21 +34,6 @@ export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
       {children}
     </div>
   )
-}
-
-function breaksLine(breaks: BreaksSeen): string {
-  const bars = counted(breaks.bars, "bar")
-  const dates = listed(breaks.breaks, breaks.breaks_total)
-  return breaks.breaks_total === 1
-    ? `Breaks: ${bars} in the break after the trade date ${dates}`
-    : `Breaks: ${bars} in ${formatCount(breaks.breaks_total)} breaks, after the trade dates ${dates}`
-}
-
-function listed(dates: readonly string[], total: number): string {
-  const more = total - dates.length
-  return more > 0
-    ? `${dates.join(", ")}, and ${formatCount(more)} more`
-    : dates.join(", ")
 }
 
 type LeaveOutBarsProps = Readonly<{

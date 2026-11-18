@@ -1,6 +1,6 @@
+import { cn } from "cn"
 import type { Dispatch } from "react"
 import type { BatchSeen, FileSeen } from "@/api/imports"
-import type { components } from "@/api/schema"
 import { counted, formatCount } from "@/ui/figures"
 import { datasetName } from "../datasets"
 import { DisclosureRow } from "../DisclosureRow"
@@ -8,10 +8,15 @@ import type { Draft, DraftChange } from "./import-draft"
 import { BarsInBreaks, LeaveOutBars } from "./BarsInBreaks"
 import { FirstRecords } from "./FirstRecords"
 import { filesOf } from "./import-request"
-import { VERDICTS } from "./import-reviews"
+import { OUTCOME_SIGNS, offsetLine, VERDICTS } from "./import-outcomes"
 import { Merge, TakeRecords } from "./Merge"
 
-type Schemas = components["schemas"]
+/** A verdict's colour, its sign's (D-105): heading text where it is no error. */
+const SIGN_TEXT = {
+  positive: "text-positive",
+  negative: "text-negative",
+  none: "text-foreground",
+} as const
 
 type FileReviewProps = Readonly<{
   seen: FileSeen
@@ -37,11 +42,10 @@ export function FileReview({
     <div className="flex flex-col gap-4">
       <p
         data-testid="review-verdict"
-        className={
-          alone
-            ? "text-base font-semibold text-foreground"
-            : "font-medium text-foreground"
-        }
+        className={cn(
+          alone ? "text-base font-semibold" : "font-medium",
+          SIGN_TEXT[OUTCOME_SIGNS[seen.verdict]]
+        )}
       >
         {verdictOf(seen)}
       </p>
@@ -114,7 +118,10 @@ export function BatchReview({
     <div className="flex flex-col gap-4">
       <p
         data-testid="review-verdict"
-        className="text-base font-semibold text-foreground"
+        className={cn(
+          "text-base font-semibold",
+          SIGN_TEXT[OUTCOME_SIGNS[seen.verdict]]
+        )}
       >
         {VERDICTS[seen.verdict]}
       </p>
@@ -218,26 +225,4 @@ function verdictOf(seen: FileSeen): string {
   return seen.verdict === "imports" && seen.breaks_with_bars?.left_out === true
     ? "It imports without its bars in a break"
     : VERDICTS[seen.verdict]
-}
-
-/** An offset in words, with what to check, the time zone included where it points at one. */
-function offsetLine(
-  offset: Schemas["OffsetSeen"],
-  zone: string | null
-): string {
-  const dates =
-    offset.first_trade_date === offset.last_trade_date
-      ? `the trade date ${offset.first_trade_date}`
-      : `the trade dates ${offset.first_trade_date} to ${offset.last_trade_date}`
-  const read =
-    zone === null
-      ? "the time zone of the file's times"
-      : `the time zone of the file's times, ${zone}`
-  const check = {
-    "time-zone": `check ${read}`,
-    "bar-stamping":
-      "check whether the file stamps each bar at its open or its close",
-    "time-zone-or-bar-stamping": `check ${read}, and whether the file stamps each bar at its open or its close`,
-  }[offset.cause]
-  return `The records run ${offset.duration} ${offset.direction} against their calendar on ${dates}: ${check}.`
 }
