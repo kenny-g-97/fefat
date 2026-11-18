@@ -31,13 +31,50 @@ describe("asksOf", () => {
       table: null,
       review: null,
       several: [],
-      missing: [{ card: "file", text: "Choose files, or type a path" }],
+      missing: [
+        { card: "file", text: "Choose files, or type a path" },
+        { card: "layout", text: "Choose a profile, or make one" },
+      ],
     })
     expect(asksOf(CHOSEN, LISTED, null)).toEqual({
       table: { kind: "table", source: SOURCE },
       review: null,
       several: [],
       missing: [{ card: "layout", text: "Choose a profile, or make one" }],
+    })
+  })
+
+  it("says what every card misses before a file, as each step of the wizard does (D-105)", () => {
+    const zoneless = startingDraft({ kind: "profile", name: "ibkr" })
+    const made = drafted(startingDraft({ kind: "none" }), {
+      kind: "new profile",
+      base: NINJATRADER,
+    })
+    const nameless = drafted(made, {
+      kind: "profile fields",
+      fields: { name: " " },
+    })
+
+    expect(asksOf(zoneless, LISTED, null).missing).toEqual([
+      { card: "file", text: "Choose files, or type a path" },
+      { card: "layout", text: "Type the time zone of the file's times" },
+    ])
+    expect(
+      asksOf(
+        startingDraft({ kind: "profile", name: "ninjatrader" }),
+        LISTED,
+        null
+      ).missing
+    ).toEqual([{ card: "file", text: "Choose files, or type a path" }])
+    expect(asksOf(nameless, LISTED, null).missing).toEqual([
+      { card: "file", text: "Choose files, or type a path" },
+      { card: "layout", text: "Give the profile a name" },
+    ])
+    expect(asksOf(startingDraft({ kind: "batch" }), LISTED, null)).toEqual({
+      table: null,
+      review: null,
+      several: [],
+      missing: [{ card: "file", text: "Type the path of the batch's folder" }],
     })
   })
 

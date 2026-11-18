@@ -11,13 +11,15 @@ import { profileOf } from "./import-profile"
 
 type FileImportAsked = components["schemas"]["FileImportAsked"]
 type AskedSource = FileImportAsked["source"]
+type FileLayout = components["schemas"]["FileLayout"]
 /** A review's ask, which is also its import's request: a file's or a batch's. */
 export type ReviewAsked = Exclude<ImportAsked, Readonly<{ kind: "files" }>>
 
 /** What can be asked of the server now: the file's table, the first file's where several are
  * chosen, once a file is chosen; and once nothing is missing, the review, the preview of what
  * its import would do, which is also the import's request, or where several files are chosen,
- * each file's review instead, its contract the one its name gives (D-102). */
+ * each file's review instead, its contract the one its name gives (D-102); and what every card
+ * still misses, each step of the wizard saying its own (D-105). */
 export type Asks = Readonly<{
   table: PreviewAsked | null
   review: ReviewAsked | null
@@ -32,31 +34,21 @@ export function asksOf(
   table: TablePreview | null
 ): Asks {
   const [source, ...others] = sourcesOf(draft.source)
+  if (draft.reading === "batch") {
+    return batchAsks(draft, source)
+  }
+  const profile = profileAsks(draft, profiles, table)
   if (source === undefined) {
-    const text =
-      draft.reading === "batch"
-        ? "Type the path of the batch's folder"
-        : "Choose files, or type a path"
+    const file: Missing = { card: "file", text: "Choose files, or type a path" }
     return {
       table: null,
       review: null,
       several: [],
-      missing: [{ card: "file", text }],
+      missing: [file, ...profile.missing],
     }
   }
-  if (draft.reading === "batch") {
-    if (source.kind !== "path") {
-      throw new Error("Expected a batch named by its path, got an upload.")
-    }
-    const review: ReviewAsked = {
-      kind: "databento",
-      source,
-      differing: draft.differing,
-    }
-    return { table: null, review, several: [], missing: [] }
-  }
-  const asks = fileAsks(draft, source, profiles, table)
-  if (others.length === 0 || asks.review?.kind !== "file") {
+  const asks = fileAsks(draft, source, profile)
+  if (others.length === 0 || asks.review === null) {
     return { ...asks, several: [] }
   }
   const first = asks.review
@@ -69,53 +61,71 @@ export function asksOf(
   return { ...asks, review: null, several }
 }
 
-function fileAsks(
+/** A Databento batch's asks: its review once its folder's path is typed. */
+function batchAsks(draft: Draft, source: AskedSource | undefined): Asks {
+  if (source === undefined) {
+    const missing: Missing = {
+      card: "file",
+      text: "Type the path of the batch's folder",
+    }
+    return { table: null, review: null, several: [], missing: [missing] }
+  }
+  if (source.kind !== "path") {
+    throw new Error("Expected a batch named by its path, got an upload.")
+  }
+  const review: ReviewAsked = {
+    kind: "databento",
+    source,
+    differing: draft.differing,
+  }
+  return { table: null, review, several: [], missing: [] }
+}
+
+/** What the draft's profile gives the asks of every file, whichever is chosen: the layout the
+ * file's table is read with, once a profile sets one; its part of a file's review, once it
+ * misses nothing; and what it misses. */
+type ProfileAsks = Readonly<{
+  layout: FileLayout | null
+  review: Pick<FileImportAsked, "profile" | "time_zone"> | null
+  missing: readonly Missing[]
+}>
+
+function profileAsks(
   draft: Draft,
-  source: AskedSource,
   profiles: readonly ListedProfile[],
   table: TablePreview | null
-): Omit<Asks, "several"> {
+): ProfileAsks {
   const profile = draft.profile
   if (profile.kind === "none") {
-    return {
-      table: { kind: "table", source },
-      review: null,
-      missing: [{ card: "layout", text: "Choose a profile, or make one" }],
+    const missing: Missing = {
+      card: "layout",
+      text: "Choose a profile, or make one",
     }
+    return { layout: null, review: null, missing: [missing] }
   }
   if (profile.kind === "listed") {
-    return listedAsks(draft, source, listedProfile(profiles, profile.name))
+    return listedAsks(draft, listedProfile(profiles, profile.name))
   }
   const base = listedProfile(profiles, profile.base)
   const { delimiter, header } = profile.fields
-  const tableAsked: PreviewAsked = {
-    kind: "table",
-    source,
-    layout: { delimiter, header },
-  }
   const built = profileOf(base, profile.fields, draft.instrument, table)
   if (built.kind === "missing") {
-    return { table: tableAsked, review: null, missing: built.missing }
+    return {
+      layout: { delimiter, header },
+      review: null,
+      missing: built.missing,
+    }
   }
-  const review: FileImportAsked = {
-    ...fileFields(draft, source),
-    profile: { kind: "given", profile: built.profile },
+  return {
+    layout: { delimiter, header },
+    review: { profile: { kind: "given", profile: built.profile } },
+    missing: [],
   }
-  return { table: tableAsked, review, missing: [] }
 }
 
 /** A listed profile's asks: the time zone the trader typed where the profile leaves it to
  * the import, and none otherwise. */
-function listedAsks(
-  draft: Draft,
-  source: AskedSource,
-  listed: ImportProfile
-): Omit<Asks, "several"> {
-  const tableAsked: PreviewAsked = {
-    kind: "table",
-    source,
-    layout: listed.layout,
-  }
+function listedAsks(draft: Draft, listed: ImportProfile): ProfileAsks {
   const asksZone = listed.timestamp.time_zone === null
   const zone = draft.timeZone.trim()
   if (asksZone && zone === "") {
@@ -123,14 +133,38 @@ function listedAsks(
       card: "layout",
       text: "Type the time zone of the file's times",
     }
-    return { table: tableAsked, review: null, missing: [missing] }
+    return { layout: listed.layout, review: null, missing: [missing] }
   }
-  const review: FileImportAsked = {
-    ...fileFields(draft, source),
-    profile: { kind: "named", name: listed.name },
-    time_zone: asksZone ? zone : null,
+  return {
+    layout: listed.layout,
+    review: {
+      profile: { kind: "named", name: listed.name },
+      time_zone: asksZone ? zone : null,
+    },
+    missing: [],
   }
-  return { table: tableAsked, review, missing: [] }
+}
+
+/** The asks of the file `source` through the draft's profile: its table, read with the
+ * profile's layout once there is one, and its review once the profile misses nothing. */
+function fileAsks(
+  draft: Draft,
+  source: AskedSource,
+  profile: ProfileAsks
+): Readonly<{
+  table: PreviewAsked
+  review: FileImportAsked | null
+  missing: readonly Missing[]
+}> {
+  const table: PreviewAsked =
+    profile.layout === null
+      ? { kind: "table", source }
+      : { kind: "table", source, layout: profile.layout }
+  const review =
+    profile.review === null
+      ? null
+      : { ...fileFields(draft, source), ...profile.review }
+  return { table, review, missing: profile.missing }
 }
 
 /** What every file's ask holds beside its profile: the file, the contract and the root typed,

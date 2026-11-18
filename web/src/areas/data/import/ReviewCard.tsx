@@ -2,7 +2,7 @@ import { type Dispatch, useRef } from "react"
 import { ApiProblem } from "@/api/problems"
 import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
-import type { Card, ChosenUploads, Draft, DraftChange } from "./import-draft"
+import type { ChosenUploads, Draft, DraftChange } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
 import type { Asks } from "./import-request"
 import {
@@ -12,15 +12,10 @@ import {
   reviewedFiles,
 } from "./import-reviews"
 import { importKey, importRequest, useImportRun } from "./import-run"
+import { STEP_NAMES } from "./import-steps"
 import { BatchReview, FileReview } from "./FileReview"
 import { FilesReview } from "./FilesReview"
 import { Run } from "./Run"
-
-const CARD_NAMES: Readonly<Record<Card, string>> = {
-  file: "File",
-  layout: "Layout",
-  instrument: "Instrument",
-}
 
 type ReviewCardProps = Readonly<{
   draft: Draft
@@ -77,7 +72,7 @@ export function ReviewCard({
             {asks.missing.map((missing) => (
               <li key={`${missing.card} ${missing.text}`}>
                 <span className="font-medium text-foreground">
-                  {CARD_NAMES[missing.card]}
+                  {STEP_NAMES[missing.card]}
                 </span>
                 : {missing.text}
               </li>

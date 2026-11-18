@@ -8,6 +8,7 @@ import {
   type FileState,
   filesWithBarsInBreaks,
   type Outcome,
+  OUTCOME_NAMES,
   outcomeOf,
   type ReviewedFile,
   shownState,
@@ -53,19 +54,17 @@ const OTHER_OUTCOMES: readonly Readonly<{
   { outcome: "unread", one: "could not be read", several: "could not be read" },
 ]
 
-/** Each outcome in a file's row, in the tone its sign takes (web/DESIGN.md, Principles):
- * a file that cannot import in the negative, one that differs in body text, the others quiet. */
-const ROW_OUTCOMES: Readonly<
-  Record<Outcome, Readonly<{ text: string; tone: AsideTone }>>
-> = {
-  imports: { text: "Imports", tone: "quiet" },
-  imports_without_bars: { text: "Without bars in a break", tone: "body" },
-  refused: { text: "Refused", tone: "negative" },
-  bars_in_breaks: { text: "Bars in a break", tone: "body" },
-  differing: { text: "Differs", tone: "body" },
-  imported_before: { text: "Imported before", tone: "quiet" },
-  nothing: { text: "Nothing to import", tone: "quiet" },
-  unread: { text: "Not read", tone: "negative" },
+/** The tone each outcome takes in a file's row (web/DESIGN.md, Principles): a file that cannot
+ * import in the negative, one that differs in body text, the others quiet. */
+const ROW_TONES: Readonly<Record<Outcome, AsideTone>> = {
+  imports: "quiet",
+  imports_without_bars: "body",
+  refused: "negative",
+  bars_in_breaks: "body",
+  differing: "body",
+  imported_before: "quiet",
+  nothing: "quiet",
+  unread: "negative",
 }
 
 type FilesReviewProps = Readonly<{
@@ -247,7 +246,7 @@ function asideOf(
   if (state.kind === "reading" || outcome === null) {
     return { text: "To read again", tone: "quiet" }
   }
-  return ROW_OUTCOMES[outcome]
+  return { text: OUTCOME_NAMES[outcome], tone: ROW_TONES[outcome] }
 }
 
 function reasonOf(answer: ImportPreviewAnswer): string {
