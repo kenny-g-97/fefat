@@ -8,8 +8,10 @@ import {
   filesImporting,
   filesLeft,
   filesRequest,
+  filesToDecide,
   filesWithBarsInBreaks,
   fileStates,
+  leadAnswer,
   nextReview,
   outcomeOf,
   type ReviewedFile,
@@ -211,16 +213,20 @@ describe("tallyOf", () => {
 describe("filesRequest", () => {
   const asks = [asked("a"), asked("b"), asked("c")]
 
-  it("asks the round of the files that import as they are, once every review is read", () => {
+  it("asks the round of the files that import as they are, once every review is read and the others decided", () => {
     expect(
-      filesRequest(asks, [answered("imports"), READING, answered("imports")])
+      filesRequest(
+        asks,
+        [answered("imports"), READING, answered("imports")],
+        []
+      )
     ).toBeNull()
     expect(
-      filesRequest(asks, [
-        answered("imports"),
-        answered("refused"),
-        answered("imports"),
-      ])
+      filesRequest(
+        asks,
+        [answered("imports"), answered("refused"), answered("imports")],
+        ["b"]
+      )
     ).toEqual({
       kind: "files",
       sources: [
@@ -235,6 +241,54 @@ describe("filesRequest", () => {
     })
   })
 
+  it("waits while a file that does not import has no decision (D-105)", () => {
+    for (const verdict of ["refused", "bars_in_breaks", "differing"] as const) {
+      expect(
+        filesRequest(
+          asks,
+          [answered("imports"), answered(verdict), answered("imports")],
+          []
+        )
+      ).toBeNull()
+    }
+    expect(
+      filesRequest(
+        asks,
+        [
+          answered("imports"),
+          { kind: "failed", error: new Error("Gone.") },
+          answered("imports"),
+        ],
+        []
+      )
+    ).toBeNull()
+  })
+
+  it("sends a round beside files imported before or empty, which wait for no decision", () => {
+    expect(
+      filesRequest(
+        asks,
+        [answered("imports"), answered("imported_before"), answered("nothing")],
+        []
+      )
+    ).toMatchObject({ sources: [{ kind: "upload", upload_id: "a" }] })
+  })
+
+  it("never sends a skipped file, though a later choice lets it import", () => {
+    expect(
+      filesRequest(
+        asks,
+        [answered("imports"), answered("imports"), answered("imports")],
+        ["b"]
+      )
+    ).toMatchObject({
+      sources: [
+        { kind: "upload", upload_id: "a" },
+        { kind: "upload", upload_id: "c" },
+      ],
+    })
+  })
+
   it("names the files whose bars in a break are left out among those it sends", () => {
     const leaving = [
       asked("a", "leave-out"),
@@ -243,11 +297,11 @@ describe("filesRequest", () => {
     ]
 
     expect(
-      filesRequest(leaving, [
-        LEFT_OUT,
-        answered("bars_in_breaks"),
-        answered("imports"),
-      ])
+      filesRequest(
+        leaving,
+        [LEFT_OUT, answered("bars_in_breaks"), answered("imports")],
+        ["b"]
+      )
     ).toMatchObject({
       sources: [
         { kind: "upload", upload_id: "a" },
@@ -257,14 +311,62 @@ describe("filesRequest", () => {
     })
   })
 
-  it("asks nothing where no file imports as it is", () => {
+  it("asks nothing where no file left imports as it is", () => {
     expect(
-      filesRequest(asks, [
-        answered("refused"),
-        answered("differing"),
-        { kind: "failed", error: new Error("Gone.") },
-      ])
+      filesRequest(
+        asks,
+        [
+          answered("refused"),
+          answered("differing"),
+          { kind: "failed", error: new Error("Gone.") },
+        ],
+        ["a", "b", "c"]
+      )
     ).toBeNull()
+  })
+})
+
+describe("filesToDecide", () => {
+  it("lists the files that do not import and wait for a decision, skipped ones aside", () => {
+    const files: readonly ReviewedFile[] = [
+      { upload: upload("a"), state: answered("imports") },
+      { upload: upload("b"), state: answered("refused") },
+      { upload: upload("c"), state: answered("differing") },
+      {
+        upload: upload("d"),
+        state: { kind: "failed", error: new Error("Gone.") },
+      },
+      { upload: upload("e"), state: answered("imported_before") },
+      { upload: upload("f"), state: answered("nothing") },
+      { upload: upload("g"), state: LEFT_OUT },
+      {
+        upload: upload("h"),
+        state: { kind: "reading", last: seenFile("h", "bars_in_breaks") },
+      },
+      { upload: upload("i"), state: READING },
+    ]
+
+    expect(filesToDecide(files, ["c"]).map((file) => file.upload.id)).toEqual([
+      "b",
+      "d",
+      "h",
+    ])
+  })
+})
+
+describe("leadAnswer", () => {
+  it("reads the round's layout against its first file not skipped, once read", () => {
+    const refused = seenFile("ES a.Last.txt", "refused")
+    const imports = seenFile("ES b.Last.txt", "imports")
+    const files: readonly ReviewedFile[] = [
+      { upload: upload("a"), state: { kind: "answered", answer: refused } },
+      { upload: upload("b"), state: { kind: "answered", answer: imports } },
+    ]
+
+    expect(leadAnswer(files, [])).toBe(refused)
+    expect(leadAnswer(files, ["a"])).toBe(imports)
+    expect(leadAnswer(files, ["a", "b"])).toBeNull()
+    expect(leadAnswer([{ upload: upload("a"), state: READING }], [])).toBeNull()
   })
 })
 
@@ -303,24 +405,27 @@ describe("filesWithBarsInBreaks", () => {
       },
     ]
 
-    expect(filesWithBarsInBreaks(files)).toEqual(["a", "b", "e"])
+    expect(filesWithBarsInBreaks(files, [])).toEqual(["a", "b", "e"])
+    expect(filesWithBarsInBreaks(files, ["a"])).toEqual(["b", "e"])
   })
 })
 
 describe("filesImporting", () => {
-  it("counts the files Import sends, by their last review while they are read again", () => {
+  it("counts the files Import sends, by their last review while they are read again, skipped ones aside", () => {
     const answer = seenFile("ES 03-26.Last.txt", "imports")
+    const files: readonly ReviewedFile[] = [
+      { upload: upload("a"), state: { kind: "reading", last: answer } },
+      { upload: upload("b"), state: answered("imports") },
+      { upload: upload("c"), state: LEFT_OUT },
+      { upload: upload("d"), state: answered("differing") },
+      { upload: upload("e"), state: READING },
+    ]
 
+    expect(filesImporting(files, [])).toBe(3)
+    expect(filesImporting(files, ["b"])).toBe(2)
     expect(
-      filesImporting([
-        { kind: "reading", last: answer },
-        answered("imports"),
-        LEFT_OUT,
-        answered("differing"),
-        READING,
-      ])
-    ).toBe(3)
-    expect(filesImporting([answered("refused")])).toBeNull()
+      filesImporting([{ upload: upload("a"), state: answered("refused") }], [])
+    ).toBeNull()
   })
 })
 

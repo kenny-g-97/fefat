@@ -403,7 +403,15 @@ describe("reviewStanding", () => {
   const one = (
     review: ReviewFacts["review"],
     request: ImportAsked | null = null
-  ) => reviewStanding({ asks, request, imported: false, review, files: [] })
+  ) =>
+    reviewStanding({
+      asks,
+      request,
+      imported: false,
+      review,
+      files: [],
+      skipped: [],
+    })
 
   it("waits while the steps before the review miss something", () => {
     expect(
@@ -413,6 +421,7 @@ describe("reviewStanding", () => {
         imported: false,
         review: unasked,
         files: [],
+        skipped: [],
       })
     ).toEqual({ kind: "waiting" })
   })
@@ -462,6 +471,7 @@ describe("reviewStanding", () => {
         imported: true,
         review: answered("imports"),
         files: [],
+        skipped: [],
       })
     ).toEqual({ kind: "imported" })
   })
@@ -473,7 +483,8 @@ describe("reviewStanding", () => {
       [MARCH, JUNE].map((upload, index) => ({ upload, state: states[index] }))
     const standing = (
       reviewed: readonly ReviewedFile[],
-      request: ImportAsked | null = null
+      request: ImportAsked | null = null,
+      skipped: readonly string[] = []
     ) =>
       reviewStanding({
         asks: round,
@@ -481,6 +492,7 @@ describe("reviewStanding", () => {
         imported: false,
         review: unasked,
         files: reviewed,
+        skipped,
       })
 
     expect(
@@ -500,6 +512,18 @@ describe("reviewStanding", () => {
     expect(standing(files(refused, refused))).toEqual({
       kind: "nothing to send",
     })
+    // D-105: a file that does not import waits for a decision, until it is skipped.
+    const differs: FileState = {
+      kind: "answered",
+      answer: seenFile("XES 06-26.Last.txt", "differing"),
+    }
+    expect(standing(files({ kind: "answered", answer }, differs))).toEqual({
+      kind: "to decide",
+      files: 1,
+    })
+    expect(
+      standing(files({ kind: "answered", answer }, differs), null, [JUNE.id])
+    ).toEqual({ kind: "nothing to send" })
     const sent: ImportAsked = {
       kind: "files",
       sources: [

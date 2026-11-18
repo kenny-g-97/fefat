@@ -5,6 +5,7 @@ import { type AsideTone, DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
 import {
   type FileState,
+  filesToDecide,
   filesWithBarsInBreaks,
   type Outcome,
   outcomeOf,
@@ -16,6 +17,7 @@ import { LeaveOutBars } from "./BarsInBreaks"
 import { OUTCOME_NAMES, OUTCOME_SIGNS, whyNot } from "./import-outcomes"
 import { FileReview } from "./FileReview"
 import { TakeRecords } from "./Merge"
+import { SkipFile, SkipFiles } from "./SkipFiles"
 
 /** What the files of each outcome but `imports` would do, as the headline's lines say it, for
  * one file and for several. */
@@ -72,11 +74,12 @@ type FilesReviewProps = Readonly<{
 
 /** What the import of several files would do (web/DESIGN.md, Patterns, Review, several
  * files; D-102): how many are read, then how many import as they are, with a line for each
- * other outcome, and Try again, which reads the failed files again; a row per file, which
- * opens to its own review; and, where records differ in any, what to do with them, for every
- * file at once, with no count of the stored records that give way, since two files of one
- * contract dispute the same ones: each file's own box counts its own, and the sum is the
- * import's to give. */
+ * other outcome and for the files skipped, and Try again, which reads the failed files again; a
+ * row per file, which opens to its own review; where records differ in any, what to do with
+ * them, for every file at once, with no count of the stored records that give way, since two
+ * files of one contract dispute the same ones: each file's own box counts its own, and the sum
+ * is the import's to give; and a decision on each file that does not import (D-105), a skip for
+ * those left at once, the corrections and the skips leaving the skipped files out. */
 export function FilesReview({
   files,
   tryAgain,
@@ -84,10 +87,15 @@ export function FilesReview({
   change,
   zone,
 }: FilesReviewProps) {
-  const states = files.map((file) => file.state)
-  const shown = states.map(shownState)
+  const skipped = draft.skipped
+  const kept = files.filter(({ upload }) => !skipped.includes(upload.id))
+  const shown = kept.map(({ state }) => shownState(state))
   const tally = tallyOf(shown)
-  const withBreaks = filesWithBarsInBreaks(files)
+  const read = files.filter(
+    ({ state }) => shownState(state).kind !== "reading"
+  ).length
+  const withBreaks = filesWithBarsInBreaks(files, skipped)
+  const toDecide = filesToDecide(files, skipped).map(({ upload }) => upload.id)
   const merges = shown.flatMap((state) =>
     state.kind === "answered" &&
     state.answer.kind === "file" &&
@@ -97,33 +105,41 @@ export function FilesReview({
   )
   return (
     <div className="flex flex-col gap-4">
-      {tally.read < files.length ? (
+      {read < files.length ? (
         <p
           className="text-xs text-muted-foreground"
           data-testid="review-reading"
         >
-          {`Read ${tally.read} of ${files.length} files`}
+          {`Read ${read} of ${files.length} files`}
         </p>
       ) : (
-        <Headline outcomes={tally.outcomes} files={files.length} />
+        <Headline
+          outcomes={tally.outcomes}
+          files={files.length}
+          skipped={files.length - kept.length}
+        />
       )}
-      {tally.read === files.length &&
-        states.some((state) => state.kind === "reading") && (
+      {read === files.length &&
+        files.some(({ state }) => state.kind === "reading") && (
           <p className="text-xs text-muted-foreground">
             Reading your latest change
           </p>
         )}
-      {states.some((state) => state.kind === "failed") && (
+      {files.some(({ state }) => state.kind === "failed") && (
         <Button variant="ghost" className="self-start" onClick={tryAgain}>
           Try again
         </Button>
       )}
       <div data-testid="review-files" className="border-b">
-        {files.map(({ upload, state }) => (
+        {files.map((file) => (
           <FileRow
-            key={upload.id}
-            name={upload.name}
-            state={state}
+            key={file.upload.id}
+            file={file}
+            skipped={skipped.includes(file.upload.id)}
+            decides={
+              skipped.includes(file.upload.id) ||
+              toDecide.includes(file.upload.id)
+            }
             draft={draft}
             change={change}
             zone={zone}
@@ -141,20 +157,32 @@ export function FilesReview({
       {merges.some((merge) => merge.records_differing > 0) && (
         <TakeRecords disputed={null} draft={draft} change={change} />
       )}
+      {read === files.length && (
+        <SkipFiles toDecide={toDecide} draft={draft} change={change} />
+      )}
     </div>
   )
 }
 
-function Headline({
-  outcomes,
-  files,
-}: Readonly<{ outcomes: Readonly<Record<Outcome, number>>; files: number }>) {
+type HeadlineProps = Readonly<{
+  outcomes: Readonly<Record<Outcome, number>>
+  files: number
+  skipped: number
+}>
+
+function Headline({ outcomes, files, skipped }: HeadlineProps) {
   const others = OTHER_OUTCOMES.flatMap(({ outcome, one, several }) => {
     const count = outcomes[outcome]
     return count === 0
       ? []
       : [`${counted(count, "file")} ${count === 1 ? one : several}`]
   })
+  const skips =
+    skipped === 0
+      ? []
+      : [
+          `${counted(skipped, "file")} ${skipped === 1 ? "is" : "are"} skipped, as you chose`,
+        ]
   return (
     <div className="flex flex-col gap-1">
       <p
@@ -163,7 +191,7 @@ function Headline({
       >
         {`${outcomes.imports} of ${counted(files, "file")} import as they are`}
       </p>
-      {others.map((line) => (
+      {[...others, ...skips].map((line) => (
         <p key={line} className="text-foreground-secondary">
           {line}
         </p>
@@ -173,32 +201,45 @@ function Headline({
 }
 
 type FileRowProps = Readonly<{
-  name: string
-  state: FileState
+  file: ReviewedFile
+  skipped: boolean
+  decides: boolean
   draft: Draft
   change: Dispatch<DraftChange>
   zone: string | null
 }>
 
 /** A file's row: its name, its records, and its outcome in its sign's colour, with what stops
- * it under its name, where something does (D-105), opening to its own review; while it is read
- * again after a change, its last review, marked as one to read again. */
-function FileRow({ name, state, draft, change, zone }: FileRowProps) {
+ * it under its name, where something does (D-105), opening to its own review, which ends on
+ * Skip this file where the file waits for a decision; a skipped row reads Skipped, quiet; and
+ * while it is read again after a change, its last review, marked as one to read again. */
+function FileRow({
+  file,
+  skipped,
+  decides,
+  draft,
+  change,
+  zone,
+}: FileRowProps) {
+  const { upload, state } = file
   const shown = shownState(state)
-  const outcome = outcomeOf(shown)
-  const aside = asideOf(state, outcome)
+  const aside = skipped ? SKIPPED : asideOf(state, outcomeOf(shown))
+  const reason = skipped ? null : whyNot(state, zone)
+  const skip = decides ? (
+    <SkipFile file={upload.id} draft={draft} change={change} />
+  ) : null
   if (shown.kind === "answered" && shown.answer.kind === "file") {
     const seen = shown.answer
     return (
       <DisclosureRow
         testId="review-file"
-        name={name}
+        name={upload.name}
         note={`${counted(seen.records, "record")}, ${seen.contracts.join(", ") || "no contract"}`}
         aside={aside.text}
         asideTone={aside.tone}
-        reason={whyNot(state, zone)}
+        reason={reason}
       >
-        <div className="pb-4">
+        <div className="flex flex-col gap-4 pb-4">
           <FileReview
             seen={seen}
             draft={draft}
@@ -206,13 +247,18 @@ function FileRow({ name, state, draft, change, zone }: FileRowProps) {
             zone={zone}
             alone={false}
           />
+          {skip}
         </div>
       </DisclosureRow>
     )
   }
   if (shown.kind === "reading") {
     return (
-      <DisclosureRow testId="review-file" name={name} note="Not read yet">
+      <DisclosureRow
+        testId="review-file"
+        name={upload.name}
+        note="Not read yet"
+      >
         <p className="pb-3 text-xs text-muted-foreground">
           Its review shows here once it is read.
         </p>
@@ -222,16 +268,19 @@ function FileRow({ name, state, draft, change, zone }: FileRowProps) {
   return (
     <DisclosureRow
       testId="review-file"
-      name={name}
+      name={upload.name}
       aside={aside.text}
       asideTone={aside.tone}
-      reason={whyNot(shown, zone)}
+      reason={reason}
     >
-      <p role="alert" className="pb-3 text-negative">
-        {whyNot(shown, zone)}
-      </p>
+      <div className="flex flex-col pb-3">{skip}</div>
     </DisclosureRow>
   )
+}
+
+const SKIPPED: Readonly<{ text: string; tone: AsideTone }> = {
+  text: "Skipped",
+  tone: "quiet",
 }
 
 /** A row's outcome, or that its last review is to be read again. */

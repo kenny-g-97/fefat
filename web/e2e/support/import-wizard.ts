@@ -39,6 +39,28 @@ export async function stepSays(
   await expect(row).toContainText(line)
 }
 
+/** The sign colour `locator`'s text takes in the theme shown: the positive's, the negative's,
+ * or neither (D-105). */
+export function signOf(
+  locator: Locator
+): Promise<"positive" | "negative" | "neither"> {
+  return locator.evaluate((element) => {
+    const token = (name: string) => {
+      const probe = document.createElement("span")
+      probe.style.color = `var(${name})`
+      document.body.append(probe)
+      const colour = getComputedStyle(probe).color
+      probe.remove()
+      return colour
+    }
+    const own = getComputedStyle(element).color
+    if (own === token("--positive")) {
+      return "positive"
+    }
+    return own === token("--negative") ? "negative" : "neither"
+  })
+}
+
 /** Expect the page not to scroll sideways, whatever a card's table holds. */
 export async function noSidewaysScroll(page: Page) {
   const overflow = await page.evaluate(

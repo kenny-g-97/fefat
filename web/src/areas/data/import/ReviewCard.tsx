@@ -88,6 +88,7 @@ export function ReviewCard({
             sent={run.sent}
             files={{
               reviewed: files.reviewed,
+              skipped: draft.skipped.length,
               onReviewLeft: (left) => {
                 onReviewLeft(left)
                 focused.current?.focus()

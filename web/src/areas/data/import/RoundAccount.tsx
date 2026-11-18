@@ -7,19 +7,21 @@ type RoundAccountProps = Readonly<{
   round: RoundFiles | undefined
   chosen: number
   sent: number
+  skipped: number
   left: readonly UploadedFile[]
   onReviewLeft: (files: ChosenUploads) => void
 }>
 
 /** What a round of several files did with them (web/DESIGN.md, Patterns, Job in its card;
  * D-102): of the files `chosen`, how many it imported, found imported before, and left out,
- * and how many were not `sent`, each file left out with why; then Review the files left, those
- * it left out and those not sent that hold records to import, which the wizard reads anew as
- * its files. */
+ * how many the trader `skipped` (D-105), and how many others were not `sent`, each file left
+ * out with why; then Review the files left, those it left out and those not sent that hold
+ * records to import, the skipped among them, which the wizard reads anew as its files. */
 export function RoundAccount({
   round,
   chosen,
   sent,
+  skipped,
   left,
   onReviewLeft,
 }: RoundAccountProps) {
@@ -31,7 +33,7 @@ export function RoundAccount({
     >
       {round !== undefined && (
         <p className="text-foreground-secondary">
-          {roundLine(round, chosen, chosen - sent)}
+          {roundLine(round, chosen, skipped, chosen - sent - skipped)}
         </p>
       )}
       {round !== undefined && round.not_imported.length > 0 && (
@@ -59,7 +61,12 @@ export function RoundAccount({
   )
 }
 
-function roundLine(round: RoundFiles, chosen: number, notSent: number): string {
+function roundLine(
+  round: RoundFiles,
+  chosen: number,
+  skipped: number,
+  notSent: number
+): string {
   const before =
     round.files_imported_before > 0
       ? `, ${counted(round.files_imported_before, "file")} imported before`
@@ -68,9 +75,11 @@ function roundLine(round: RoundFiles, chosen: number, notSent: number): string {
     round.not_imported.length > 0
       ? `, ${counted(round.not_imported.length, "file")} not imported`
       : ""
+  const skips =
+    skipped > 0 ? `, ${formatCount(skipped)} skipped, as you chose` : ""
   const held =
     notSent > 0
       ? `, ${formatCount(notSent)} not sent, as ${notSent === 1 ? "its review" : "their reviews"} said`
       : ""
-  return `${formatCount(round.files_imported)} of ${counted(chosen, "file")} imported${before}${leftOut}${held}.`
+  return `${formatCount(round.files_imported)} of ${counted(chosen, "file")} imported${before}${leftOut}${skips}${held}.`
 }

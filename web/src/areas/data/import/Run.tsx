@@ -16,10 +16,11 @@ import { filesLeft, type ReviewedFile } from "./import-reviews"
 import { keptLine } from "./import-run"
 import { RoundAccount } from "./RoundAccount"
 
-/** The draft's files with their reviews, of which a round leaves some, and the way to
- * review those left. */
+/** The draft's files with their reviews, of which a round leaves some, how many the trader
+ * skipped (D-105), and the way to review those left. */
 type RoundFilesLeft = Readonly<{
   reviewed: readonly ReviewedFile[]
+  skipped: number
   onReviewLeft: (files: ChosenUploads) => void
 }>
 
@@ -64,6 +65,7 @@ function Imported({ job, sent, files }: ImportJobProps) {
         round={result.round}
         chosen={files.reviewed.length}
         sent={sent.sources.length}
+        skipped={files.skipped}
         left={filesLeft(
           files.reviewed,
           sent.sources,

@@ -17,9 +17,9 @@ import { type ChosenUploads, drafted, startingDraft } from "./import-draft"
 import { useLatestPreview } from "./import-preview"
 import { asksOf, zoneOf } from "./import-request"
 import {
-  type FileState,
   filesImporting,
   filesRequest,
+  leadAnswer,
   reviewedFiles,
   useFileReviews,
 } from "./import-reviews"
@@ -86,10 +86,12 @@ export function ImportWizard({
   const uploads = draft.source.kind === "uploads" ? draft.source.uploads : []
   const reviewed = several ? reviewedFiles(uploads, reviews.states) : []
   const request = several
-    ? filesRequest(asks.several, reviews.states)
+    ? filesRequest(asks.several, reviews.states, draft.skipped)
     : importRequest(asks, review)
-  const run = useImportRun(importKey(asks), request)
-  const first = several ? answerOf(reviews.states) : currentAnswerOf(review)
+  const run = useImportRun(importKey(asks, draft.skipped), request)
+  const first = several
+    ? leadAnswer(reviewed, draft.skipped)
+    : currentAnswerOf(review)
   const offsets = first?.kind === "file" ? first.offsets : NO_OFFSETS
   const standing = reviewStanding({
     asks,
@@ -97,6 +99,7 @@ export function ImportWizard({
     imported: run.imported,
     review,
     files: reviewed,
+    skipped: draft.skipped,
   })
   const states = stepStates({
     draft,
@@ -167,7 +170,7 @@ export function ImportWizard({
           onStep={onStep}
           run={run}
           reason={importWaits(states, standing, draft)}
-          importing={several ? filesImporting(reviews.states) : null}
+          importing={several ? filesImporting(reviewed, draft.skipped) : null}
         />
       </div>
     </div>
@@ -212,12 +215,6 @@ function useCardShown(shown: Step): RefObject<HTMLDivElement | null> {
     card.current?.focus({ preventScroll: true })
   }, [shown])
   return card
-}
-
-/** The first file's answer, once read. */
-function answerOf(states: readonly FileState[]): ImportPreviewAnswer | null {
-  const [first] = states
-  return first !== undefined && first.kind === "answered" ? first.answer : null
 }
 
 /** The review's answer while it is the latest draft's. */

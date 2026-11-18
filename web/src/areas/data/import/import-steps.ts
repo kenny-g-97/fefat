@@ -6,7 +6,11 @@ import type { Card, Draft, Missing, ProfileDraft, Source } from "./import-draft"
 import type { PreviewState } from "./import-preview"
 import { type Asks, listedProfile, offsetRefusal } from "./import-request"
 import { OUTCOME_NAMES, VERDICTS } from "./import-outcomes"
-import type { NotImporting, ReviewedFile } from "./import-reviews"
+import {
+  filesToDecide,
+  type NotImporting,
+  type ReviewedFile,
+} from "./import-reviews"
 
 type OffsetSeen = components["schemas"]["OffsetSeen"]
 
@@ -46,13 +50,15 @@ export type ReviewStanding =
   | Readonly<{ kind: "nothing to send" }>
 
 /** What the wizard knows of the review: what the draft asks, the request Import would send,
- * whether its import wrote, a file's or a batch's review, and a round's files. */
+ * whether its import wrote, a file's or a batch's review, and a round's files with those the
+ * trader skipped. */
 export type ReviewFacts = Readonly<{
   asks: Asks
   request: ImportAsked | null
   imported: boolean
   review: Pick<PreviewState, "answer" | "current" | "reading" | "error">
   files: readonly ReviewedFile[]
+  skipped: readonly string[]
 }>
 
 /** Where the review stands (`ReviewStanding`): ready exactly where Import has a request to
@@ -70,17 +76,24 @@ export function reviewStanding(facts: ReviewFacts): ReviewStanding {
     return { kind: "waiting" }
   }
   return facts.asks.several.length > 0
-    ? roundStanding(facts.files)
+    ? roundStanding(facts.files, facts.skipped)
     : oneStanding(facts.review)
 }
 
-function roundStanding(files: readonly ReviewedFile[]): ReviewStanding {
+function roundStanding(
+  files: readonly ReviewedFile[],
+  skipped: readonly string[]
+): ReviewStanding {
   const reading = files.filter(({ state }) => state.kind === "reading")
   if (reading.length > 0) {
     const again = reading.some(
       ({ state }) => state.kind === "reading" && state.last !== null
     )
     return { kind: "reading", again }
+  }
+  const toDecide = filesToDecide(files, skipped)
+  if (toDecide.length > 0) {
+    return { kind: "to decide", files: toDecide.length }
   }
   return { kind: "nothing to send" }
 }

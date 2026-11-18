@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { ImportPreviewAnswer, UploadedFile } from "@/api/imports"
 import type { components } from "@/api/schema"
+import { OUTCOME_SIGNS } from "./import-outcomes"
 import { previewSent } from "./import-preview"
 import { fileOf } from "./import-request"
 
@@ -204,6 +205,44 @@ function imports(outcome: Outcome | null): boolean {
   return outcome === "imports" || outcome === "imports_without_bars"
 }
 
+/** Whether an outcome waits for the trader's decision before a round imports (D-105): a file
+ * refused, with bars in a break, with records that differ, or not read; not one that imports,
+ * was imported before, or holds nothing. */
+function waitsForDecision(outcome: Outcome | null): boolean {
+  return outcome !== null && OUTCOME_SIGNS[outcome] === "negative"
+}
+
+/** The files of `files` the trader did not skip. */
+function notSkipped(
+  files: readonly ReviewedFile[],
+  skipped: readonly string[]
+): readonly ReviewedFile[] {
+  return files.filter(({ upload }) => !skipped.includes(upload.id))
+}
+
+/** The files that do not import and wait for a decision, by their reviews or, while they are
+ * read again, their last ones, those skipped aside (D-105). */
+export function filesToDecide(
+  files: readonly ReviewedFile[],
+  skipped: readonly string[]
+): readonly ReviewedFile[] {
+  return notSkipped(files, skipped).filter(({ state }) =>
+    waitsForDecision(outcomeOf(shownState(state)))
+  )
+}
+
+/** The answer a round's layout is read against: its first file's not skipped, once read, so
+ * that an offset of a file the trader skipped points at no field (D-105). */
+export function leadAnswer(
+  files: readonly ReviewedFile[],
+  skipped: readonly string[]
+): ImportPreviewAnswer | null {
+  const [lead] = notSkipped(files, skipped)
+  return lead !== undefined && lead.state.kind === "answered"
+    ? lead.state.answer
+    : null
+}
+
 /** How many files were read, and how many of them each outcome holds. */
 export type Tally = Readonly<{
   read: number
@@ -233,11 +272,13 @@ export function tallyOf(states: readonly FileState[]): Tally {
 
 /** The files whose reviews, or last reviews while they are read again, find bars in a break
  * that leaving out would let them import, or that are left out already, by their uploads'
- * ids (ADR-0022): those the round's Leave out the files' bars in a break names. */
+ * ids (ADR-0022): those the round's Leave out the files' bars in a break names, the skipped
+ * ones aside (D-105). */
 export function filesWithBarsInBreaks(
-  files: readonly ReviewedFile[]
+  files: readonly ReviewedFile[],
+  skipped: readonly string[]
 ): string[] {
-  return files
+  return notSkipped(files, skipped)
     .filter(({ state }) => {
       const shown = shownState(state)
       if (shown.kind !== "answered" || shown.answer.kind !== "file") {
@@ -253,9 +294,13 @@ export function filesWithBarsInBreaks(
 }
 
 /** How many files Import sends, by each file's review or, while it is read again, its last
- * one, so that Import's name holds still through a change; none where none imports. */
-export function filesImporting(states: readonly FileState[]): number | null {
-  const count = states.filter((state) =>
+ * one, so that Import's name holds still through a change, the skipped ones aside; none where
+ * none imports. */
+export function filesImporting(
+  files: readonly ReviewedFile[],
+  skipped: readonly string[]
+): number | null {
+  const count = notSkipped(files, skipped).filter(({ state }) =>
     imports(outcomeOf(shownState(state)))
   ).length
   return count === 0 ? null : count
@@ -264,17 +309,30 @@ export function filesImporting(states: readonly FileState[]): number | null {
 /** The round Import sends (web/DESIGN.md, Patterns, Job in its card): the files whose own
  * review says they import as they are, through the profile and the options they share, and
  * among them those whose bars in a break are left out, as their reviews read them (ADR-0022);
- * none until every review is read, or where no file imports. */
+ * none until every review is read and each file that does not import has a decision, a
+ * correction that lets it import or a skip (D-105), and none where no file imports. A skipped
+ * file is never sent, even once a later choice lets it import. */
 export function filesRequest(
   asks: readonly FileImportAsked[],
-  states: readonly FileState[]
+  states: readonly FileState[],
+  skipped: readonly string[]
 ): FilesImportAsked | null {
   requireOnePerFile(asks.length, states)
   const [first] = asks
   if (first === undefined || states.some((state) => state.kind === "reading")) {
     return null
   }
-  const sent = asks.filter((_, index) => imports(outcomeOf(states[index])))
+  const kept = asks.flatMap((ask, index) =>
+    skipped.includes(fileOf(ask.source))
+      ? []
+      : [{ ask, outcome: outcomeOf(states[index]) }]
+  )
+  if (kept.some(({ outcome }) => waitsForDecision(outcome))) {
+    return null
+  }
+  const sent = kept
+    .filter(({ outcome }) => imports(outcome))
+    .map(({ ask }) => ask)
   if (sent.length === 0) {
     return null
   }

@@ -35,6 +35,35 @@ describe("drafted", () => {
     ).toEqual([])
   })
 
+  it("keeps the files skipped through the three decisions, and skips none once what is read changes (D-105)", () => {
+    const skipping = drafted(startingDraft({ kind: "none" }), {
+      kind: "skipped",
+      files: ["b"],
+    })
+
+    expect(skipping.skipped).toEqual(["b"])
+    const taken = drafted(skipping, {
+      kind: "differing",
+      differing: "take-file",
+    })
+    expect(taken.skipped).toEqual(["b"])
+    expect(taken.differing).toBe("take-file")
+    expect(
+      drafted(taken, { kind: "skipped", files: ["b", "c"] }).differing
+    ).toBe("take-file")
+    const leaving = drafted(taken, { kind: "bars in breaks", files: ["a"] })
+    expect(leaving.skipped).toEqual(["b"])
+    const again = drafted(leaving, { kind: "skipped", files: ["b", "c"] })
+    expect(again.breaksLeftOut).toEqual(["a"])
+    expect(again.skipped).toEqual(["b", "c"])
+    expect(
+      drafted(again, { kind: "time zone", timeZone: "UTC" }).skipped
+    ).toEqual([])
+    expect(
+      drafted(again, { kind: "source", source: { kind: "none" } }).skipped
+    ).toEqual([])
+  })
+
   it("copies a new profile from its base under a name of the trader's own", () => {
     const draft = drafted(
       startingDraft({ kind: "profile", name: "ninjatrader" }),

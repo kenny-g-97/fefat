@@ -76,7 +76,8 @@ export type InstrumentDraft =
 export type DifferingRecords = components["schemas"]["DifferingRecords"]
 
 /** The wizard's draft: everything the trader chose and typed, from which each preview and the
- * import are asked. */
+ * import are asked, and the files of a round the trader skipped, which the round never sends
+ * (D-105). */
 export type Draft = Readonly<{
   reading: Reading
   source: Source
@@ -87,6 +88,7 @@ export type Draft = Readonly<{
   instrument: InstrumentDraft
   differing: DifferingRecords
   breaksLeftOut: readonly string[]
+  skipped: readonly string[]
 }>
 
 export type DraftChange =
@@ -102,6 +104,7 @@ export type DraftChange =
   | Readonly<{ kind: "instrument fields"; fields: Partial<InstrumentFields> }>
   | Readonly<{ kind: "differing"; differing: DifferingRecords }>
   | Readonly<{ kind: "bars in breaks"; files: readonly string[] }>
+  | Readonly<{ kind: "skipped"; files: readonly string[] }>
 
 /** A new instrument's fields before the trader types them: futures in US dollars on the CME's
  * equity index calendar, expiring on the third Friday, as the most common product is. */
@@ -133,6 +136,7 @@ export function startingDraft(choice: PresetChoice): Draft {
     instrument: { kind: "profile's" },
     differing: "refuse",
     breaksLeftOut: [],
+    skipped: [],
   }
 }
 
@@ -140,12 +144,15 @@ export function startingDraft(choice: PresetChoice): Draft {
  * refuses them again, since the trader chose to take them for the file the review showed, and
  * any change but those two leaves no file's bars in a break out any more, since the trader
  * approved that for the reading the review showed (ADR-0022); leaving out the bars of other
- * files reads them again, so it refuses differing records again too. */
+ * files reads them again, so it refuses differing records again too. A change of what is read
+ * skips no file any more, while the three decisions keep the files skipped (D-105), and a skip,
+ * which reads nothing again, keeps the other two. */
 export function drafted(draft: Draft, change: DraftChange): Draft {
   const refused = {
     ...draft,
     differing: "refuse",
     breaksLeftOut: [],
+    skipped: [],
   } satisfies Draft
   switch (change.kind) {
     case "reading":
@@ -189,6 +196,8 @@ export function drafted(draft: Draft, change: DraftChange): Draft {
       return { ...draft, differing: change.differing }
     case "bars in breaks":
       return { ...draft, differing: "refuse", breaksLeftOut: change.files }
+    case "skipped":
+      return { ...draft, skipped: change.files }
   }
 }
 
