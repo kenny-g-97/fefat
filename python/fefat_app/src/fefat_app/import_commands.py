@@ -90,7 +90,7 @@ def add_the_import_commands(
         choices=[each.value for each in BarsInBreaks],
         default=BarsInBreaks.REFUSE.value,
         help="what to do where a break holds a bar closing at the next session's open, the edge "
-        "of a stretch the platform stamped early: refuse the file, as when left out, or "
+        "of a stretch the platform stamped early: refuse the file, as without the option, or "
         "leave-out, and the file is imported without those bars and the sessions beside them",
     )
     exports.set_defaults(run=partial(import_a_file, write_the_report=write_the_report))

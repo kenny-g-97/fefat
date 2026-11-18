@@ -331,7 +331,7 @@ def test_a_round_leaves_out_the_bars_in_a_break_of_the_files_it_names_alone(
     assert started.status_code == 202, started.text
     assert job["status"] == "succeeded", job["error"]
     (written,) = job["result"]["datasets"]
-    assert (written["records_left_out"], written["sessions_left_out"]) == (LEFT_OUT, 2)
+    assert written["records_left_out"] == LEFT_OUT
     assert written["records_added"] == stored_bars() == 2 * 13_800 - 2 * 1_380
     assert job["result"]["round"]["files_imported"] == 2
 

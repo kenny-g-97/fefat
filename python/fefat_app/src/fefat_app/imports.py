@@ -510,7 +510,8 @@ type ImportPreviewAnswer = Annotated[
 class DatasetWritten(FrozenModel):
     """What an import wrote into one dataset: the records it added, those the store held
     already, those of the file taken in place of stored ones, the trade dates new to it, and
-    the records and sessions it left out beside the file's breaks with bars (ADR-0022)."""
+    the records it left out, the file's bars in a break and the sessions beside them, which a
+    round adds up over files whose sessions may share trade dates (ADR-0022)."""
 
     dataset: Dataset
     records_added: int = Field(ge=0)
@@ -518,7 +519,6 @@ class DatasetWritten(FrozenModel):
     records_taken: int = Field(ge=0)
     new_sessions: int = Field(ge=0)
     records_left_out: int = Field(default=0, ge=0)
-    sessions_left_out: int = Field(default=0, ge=0)
 
 
 class ImportWrote(FrozenModel):

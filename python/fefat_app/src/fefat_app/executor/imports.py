@@ -257,7 +257,13 @@ def _breaks_seen(
     found: tuple[BreaksWithBars, ...], left_out: BreaksWithBars | None
 ) -> BreaksSeen | None:
     """A file's breaks with a bar closing at the next open in counts and trade dates, those
-    its reading found, or those its import leaves out (ADR-0022); none without them."""
+    its reading found, or those its import leaves out, after which the records it takes hold
+    none (ADR-0022); none without them."""
+    if left_out is not None and found:
+        raise ValueError(
+            "Expected no bar in a break closing at the next open among the records left without "
+            f"the sessions beside such breaks, got {found[0].describe()}."
+        )
     seen = left_out if left_out is not None else next(iter(found), None)
     if seen is None:
         return None
@@ -357,8 +363,8 @@ def _print(stored: StoredPrint) -> PrintSeen:
 
 
 def _written(merge: DatasetMerge, left_out: BreaksWithBars | None = None) -> DatasetWritten:
-    """What an import wrote into a dataset, with the records and sessions it left out beside
-    the file's breaks with bars, if any (ADR-0022)."""
+    """What an import wrote into a dataset, with the records it left out beside the file's
+    breaks with bars, if any (ADR-0022)."""
     return DatasetWritten(
         dataset=merge.dataset,
         records_added=merge.records_added,
@@ -366,7 +372,6 @@ def _written(merge: DatasetMerge, left_out: BreaksWithBars | None = None) -> Dat
         records_taken=merge.records_differing if merge.replaces() else 0,
         new_sessions=len(merge.new_sessions),
         records_left_out=0 if left_out is None else left_out.records_beside(),
-        sessions_left_out=0 if left_out is None else len(left_out.sessions_beside),
     )
 
 
