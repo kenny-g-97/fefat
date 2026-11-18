@@ -32,6 +32,7 @@ FIRST, LAST = date(2026, 2, 2), date(2026, 2, 13)
 ESH2026 = listing("ESH2026", 1001, ("2026-02-02", "2026-02-13"), ("2026-02-02", "2026-02-13"))
 ESM2026 = listing("ESM2026", 1003, ("2026-02-02", "2026-02-13"), ("2026-02-02", "2026-02-13"))
 TUESDAY, WEDNESDAY, THURSDAY = date(2026, 2, 3), date(2026, 2, 4), date(2026, 2, 5)
+FRIDAY = date(2026, 2, 6)
 LEAVE_OUT = BarsInBreaks.LEAVE_OUT
 COMPARED = ("ts_open", "ts_close", "open", "high", "low", "close", "volume")
 """The columns a NinjaTrader export carries, which the store's bars keep as the file has them."""
@@ -372,6 +373,34 @@ def test_a_session_ending_a_bar_early_is_left_out_with_the_sessions_beside(
     assert [each.trade_date for each in report.reading.left_out.sessions_ending_a_bar_early] == [
         TUESDAY
     ]
+    assert (
+        f"  Left out: {report.reading.left_out.sessions_text()}, beside 1 break with a bar closing "
+        "at the next open, and 1 session whose last bar ends a bar before the close"
+    ) in report.summary().splitlines()
+
+
+def test_a_session_ending_a_bar_early_still_counts_in_the_test_of_what_remains(
+    tmp_path: Path, bars: pl.DataFrame, sessions: SessionTable
+) -> None:
+    # The engine review's third pass (D-104): two exports joined, a bar early from Wednesday on,
+    # the last minute of Wednesday, the first of Thursday, and the first and last of Friday
+    # without a trade. Thursday ends a bar early and goes with Tuesday and Wednesday, the
+    # sessions beside; read with Thursday still in, what remains cannot be timed, so the file is
+    # refused under both choices, rather than store Friday a minute early.
+    quiet = [
+        sessions.session(WEDNESDAY).close - MINUTE,
+        sessions.session(THURSDAY).open,
+        sessions.session(FRIDAY).open,
+        sessions.session(FRIDAY).close - MINUTE,
+    ]
+    kept = bars.filter((pl.col("trade_date") <= FRIDAY) & ~pl.col("ts_open").is_in(quiet))
+    path = exported(tmp_path, moved(kept, -MINUTE, WEDNESDAY))
+
+    for choice in BarsInBreaks:
+        preview = previewed(request_of(path, choice))
+        assert preview.reading.left_out is None
+        (why,) = [refusal for refusal in preview.refusals() if "not to be left out" in refusal]
+        assert "the calendar could not check the time zone and bar stamping" in why
 
 
 def test_a_file_whose_sessions_all_lie_beside_such_a_break_is_offered_no_correction(
@@ -393,7 +422,7 @@ def test_a_file_whose_sessions_all_lie_beside_such_a_break_is_offered_no_correct
         preview = previewed(request_of(path, choice))
         assert preview.reading.left_out is None
         (why,) = [refusal for refusal in preview.refusals() if "not to be left out" in refusal]
-        assert why.endswith("the sessions beside them hold every record of the file")
+        assert why.endswith("the sessions it leaves out hold every record of the file")
 
 
 def test_told_to_leave_them_out_a_file_without_them_is_refused(

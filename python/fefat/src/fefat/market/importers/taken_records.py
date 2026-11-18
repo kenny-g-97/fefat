@@ -2,11 +2,12 @@
 5.15, ADR-0022): the records as read, or, told to leave them out, the records without the
 sessions beside the breaks that hold a bar closing at the next open and without the sessions
 whose last bar ends a bar before the close (`fefat.market.calendar_breaks`, D-104). The
-correction applies only to a file of one contract, since
-the calendar checks a file's contracts together and the records one leaves could hide another's
-offset, and only where the records it leaves, checked again, show no offset and the calendar
-can still test their timing, since one bar before one open may be the only sign of a thin file
-stamped a bar early; otherwise the file is refused under either choice. Told to leave them out,
+correction applies only to a file of one contract, since the calendar checks a file's contracts
+together and the records one leaves could hide another's offset, and only where the records it
+leaves are some and, checked again with the sessions ending a bar early still among them, show
+no offset and can still be timed by the calendar, since one bar before one open may be the only
+sign of a thin file stamped a bar early, and leaving out such a sign would make the rest look
+testable; otherwise the file is refused under either choice. Told to leave them out,
 a file without such a break is refused, so that the raw manifest records the choice only where
 sessions were left out.
 
@@ -52,27 +53,30 @@ def taken_records(
     if contracts > 1:
         return replace(as_read, refusals=(_of_several_contracts(dataset, contracts),))
     (found,) = calendar.breaks_with_bars
+    timed = mapped.records.filter(~pl.col("trade_date").is_in(found.trade_dates_beside()))
     kept = replace(mapped, records=without_the_sessions_left_out(mapped.records, found))
-    kept_calendar = check_records(dataset, kept.records.lazy(), kept.sessions)
-    refusal = _why_not_left_out(dataset, kept.records, kept_calendar, kept.sessions)
+    refusal = _why_not_left_out(dataset, timed, kept.records, mapped.sessions)
     if refusal is not None:
         return replace(as_read, refusals=(refusal,))
-    if leaving_out:
-        return TakenRecords(records=kept, calendar=kept_calendar, left_out=found, refusals=())
-    return as_read
+    if not leaving_out:
+        return as_read
+    kept_calendar = check_records(dataset, kept.records.lazy(), kept.sessions)
+    return TakenRecords(records=kept, calendar=kept_calendar, left_out=found, refusals=())
 
 
 def _why_not_left_out(
-    dataset: Dataset, records: pl.DataFrame, calendar: CalendarReport, sessions: SessionTable
+    dataset: Dataset, timed: pl.DataFrame, kept: pl.DataFrame, sessions: SessionTable
 ) -> str | None:
-    """Why the records left without the sessions beside the breaks cannot be taken: none left,
-    an offset, or a timing the calendar cannot test; none where they can."""
-    if records.is_empty():
-        return _not_left_out(dataset, "the sessions beside them hold every record of the file")
+    """Why the records the correction leaves, `kept`, cannot be taken: none left, or an offset
+    or a timing the calendar cannot test in `timed`, the records without the sessions beside
+    the breaks, those ending a bar early still among them; none where they can."""
+    if kept.is_empty():
+        return _not_left_out(dataset, "the sessions it leaves out hold every record of the file")
+    calendar = check_records(dataset, timed.lazy(), sessions)
     if calendar.offsets:
         (offset,) = calendar.offsets
         return _not_left_out(dataset, f"without the sessions beside them, {offset.describe()}")
-    if not timing_checked(dataset, records, sessions):
+    if not timing_checked(dataset, timed, sessions):
         return _not_left_out(
             dataset,
             "without the sessions beside them, the calendar could not check the time zone and "

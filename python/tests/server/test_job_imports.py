@@ -835,11 +835,10 @@ def test_a_payload_queued_before_the_choice_refuses_bars_in_a_break(job_records:
     assert payload.spec.request.bars_in_breaks is BarsInBreaks.REFUSE
 
 
-def test_a_reading_that_left_out_such_breaks_yet_holds_one_is_refused() -> None:
-    # The step's review: the records the correction takes hold no bar in a break closing at the
-    # next open, since the sessions beside every such break go with it (ADR-0022), so a reading
-    # that says otherwise is a fault the runner refuses rather than words one way or the other.
-    found = BreaksWithBars(
+def a_finding(*ending: SessionLeftOut) -> BreaksWithBars:
+    """A file's break after 02-04 with 60 bars, the sessions beside it, and `ending`, the
+    sessions ending a bar early that go with them."""
+    return BreaksWithBars(
         dataset=Dataset(
             provider="ninjatrader", schema_name=parse_schema_name("ohlcv-1m"), root="ES"
         ),
@@ -848,10 +847,36 @@ def test_a_reading_that_left_out_such_breaks_yet_holds_one_is_refused() -> None:
             SessionLeftOut(trade_date=date(2026, 2, 4), records=1_440),
             SessionLeftOut(trade_date=date(2026, 2, 5), records=1_380),
         ),
+        sessions_ending_a_bar_early=ending,
     )
+
+
+def test_a_reading_that_left_out_such_breaks_yet_holds_one_is_refused() -> None:
+    # The step's review: the records the correction takes hold no bar in a break closing at the
+    # next open, since the sessions beside every such break go with it (ADR-0022), so a reading
+    # that says otherwise is a fault the runner refuses rather than words one way or the other.
+    found = a_finding()
 
     with pytest.raises(ValueError, match="Expected no bar in a break closing at the next open"):
         _breaks_seen((found,), found)
+
+
+def test_the_runner_names_the_sessions_ending_a_bar_early_and_counts_every_record_left_out() -> (
+    None
+):
+    # The step's third review: the account the wizard words lists a session ending a bar early
+    # apart from the sessions beside, and its records among those left out (D-104).
+    seen = _breaks_seen(
+        (a_finding(SessionLeftOut(trade_date=date(2026, 2, 3), records=1_379)),), None
+    )
+
+    assert seen is not None
+    assert (seen.sessions, seen.ending_a_bar_early, seen.ending_a_bar_early_total) == (
+        (date(2026, 2, 4), date(2026, 2, 5)),
+        (date(2026, 2, 3),),
+        1,
+    )
+    assert seen.records == 1_440 + 1_380 + 1_379
 
 
 def test_a_round_of_one_file_counts_its_file(
