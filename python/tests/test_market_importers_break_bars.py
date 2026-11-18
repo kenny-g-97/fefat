@@ -30,7 +30,8 @@ from test_market_importers_previews import priced
 MINUTE = 60_000_000_000
 FIRST, LAST = date(2026, 2, 2), date(2026, 2, 13)
 ESH2026 = listing("ESH2026", 1001, ("2026-02-02", "2026-02-13"), ("2026-02-02", "2026-02-13"))
-WEDNESDAY, THURSDAY = date(2026, 2, 4), date(2026, 2, 5)
+ESM2026 = listing("ESM2026", 1003, ("2026-02-02", "2026-02-13"), ("2026-02-02", "2026-02-13"))
+TUESDAY, WEDNESDAY, THURSDAY = date(2026, 2, 3), date(2026, 2, 4), date(2026, 2, 5)
 LEAVE_OUT = BarsInBreaks.LEAVE_OUT
 COMPARED = ("ts_open", "ts_close", "open", "high", "low", "close", "volume")
 """The columns a NinjaTrader export carries, which the store's bars keep as the file has them."""
@@ -70,6 +71,23 @@ def moved(bars: pl.DataFrame, nanoseconds: int, since: date = FIRST) -> pl.DataF
 def exported(folder: Path, bars: pl.DataFrame) -> Path:
     """`bars` written as NinjaTrader exports ESH2026, in `folder`."""
     return written_export(folder, "ES 03-26.Last.txt", ninjatrader_lines(bars))
+
+
+def databento_lines(*contracts: tuple[str, pl.DataFrame]) -> list[str]:
+    """The bars of each contract, under its Databento symbol, as a Databento CSV of 1-minute
+    bars writes them, the `databento-csv` preset's layout: each stamped at its open, in
+    nanoseconds, and its prices in units of 1e-9."""
+    columns = ("ts_open", "rtype", "publisher_id", "instrument_id", "open", "high", "low")
+    columns += ("close", "volume", "symbol")
+    rows = pl.concat(
+        bars.with_columns(rtype=pl.lit(33), publisher_id=pl.lit(1), symbol=pl.lit(symbol)).select(
+            columns
+        )
+        for symbol, bars in contracts
+    ).sort("ts_open", "symbol")
+    line = pl.concat_str([pl.col(name).cast(pl.String) for name in columns], separator=",")
+    header = "ts_event,rtype,publisher_id,instrument_id,open,high,low,close,volume,symbol"
+    return [header, *rows.select(line).to_series().to_list()]
 
 
 def request_of(
@@ -298,6 +316,55 @@ def test_a_thin_file_a_bar_early_is_offered_no_correction(
     for preview in (as_read, told):
         (why,) = [refusal for refusal in preview.refusals() if "not to be left out" in refusal]
         assert "the calendar could not check the time zone and bar stamping" in why
+
+
+def test_a_file_of_several_contracts_is_offered_no_correction(
+    tmp_path: Path, bars: pl.DataFrame, sessions: SessionTable
+) -> None:
+    # Engine review, finding 3 (D-104): the calendar checks a file's contracts together, so the
+    # records one contract leaves could hide another's offset. The correction applies to a file
+    # of one contract alone: this Databento file of ESH2026, a bar in every minute of the break
+    # after Wednesday, and ESM2026 is refused under both choices.
+    path = written_export(
+        tmp_path,
+        "glbx-mdp3-20260202-20260213.ohlcv-1m.csv",
+        databento_lines(
+            ("ESH6", with_the_break_after(bars, WEDNESDAY, sessions)),
+            ("ESM6", minutes_of(ESM2026, sessions.between(FIRST, LAST))),
+        ),
+    )
+
+    for choice in BarsInBreaks:
+        preview = previewed(
+            FileImportRequest(path=path, profile=PRESETS["databento-csv"], bars_in_breaks=choice)
+        )
+        assert len(preview.reading.calendar.breaks_with_bars) == 1
+        assert preview.reading.left_out is None
+        assert not preview.reading.only_bars_in_breaks_refuse()
+        (why,) = [refusal for refusal in preview.refusals() if "not to be left out" in refusal]
+        assert "the file holds 2 contracts" in why
+
+
+def test_a_file_whose_sessions_all_lie_beside_such_a_break_is_offered_no_correction(
+    tmp_path: Path, bars: pl.DataFrame, sessions: SessionTable
+) -> None:
+    # Tuesday, Wednesday, and Thursday alone, a bar in every minute of the break after
+    # Wednesday and a stray in the break after Tuesday, which joins Tuesday to the sessions
+    # beside: they hold every record, so nothing is left to import, and the file is refused
+    # under both choices.
+    days = bars.filter(beside(TUESDAY, WEDNESDAY, THURSDAY))
+    stray = (
+        days.filter(pl.col("trade_date") == TUESDAY)
+        .tail(1)
+        .with_columns(pl.col("ts_open") + 6 * MINUTE, pl.col("ts_close") + 6 * MINUTE)
+    )
+    path = exported(tmp_path, with_the_break_after(pl.concat([days, stray]), WEDNESDAY, sessions))
+
+    for choice in BarsInBreaks:
+        preview = previewed(request_of(path, choice))
+        assert preview.reading.left_out is None
+        (why,) = [refusal for refusal in preview.refusals() if "not to be left out" in refusal]
+        assert why.endswith("the sessions beside them hold every record of the file")
 
 
 def test_told_to_leave_them_out_a_file_without_them_is_refused(

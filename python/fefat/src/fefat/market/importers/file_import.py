@@ -356,7 +356,11 @@ def _reading(
     dates = records.select(pl.col("trade_date").min(), pl.col("trade_date").max().alias("last"))
     first, last = dates.row(0) if not records.is_empty() else (None, None)
     calendar = taken.calendar
-    unchecked = not calendar.offsets and not timing_checked(dataset, records, mapped.sessions)
+    unchecked = (
+        taken.left_out is None
+        and not calendar.offsets
+        and not timing_checked(dataset, records, mapped.sessions)
+    )
     reading = FileReading(
         source=str(request.path),
         profile=profile.name,

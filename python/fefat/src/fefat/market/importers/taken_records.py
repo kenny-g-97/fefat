@@ -1,11 +1,13 @@
 """The records an import of a trader's file takes under its choice for bars in a break (step
 5.15, ADR-0022): the records as read, or, told to leave them out, the records without the
 sessions beside the breaks that hold a bar closing at the next open
-(`fefat.market.calendar_breaks`). The correction applies only where the records it leaves,
-checked again, show no offset and the calendar can still test their timing, since one bar before
-one open may be the only sign of a thin file stamped a bar early; otherwise the file is refused
-under either choice. Told to leave them out, a file without such a break is refused, so that the
-raw manifest records the choice only where sessions were left out.
+(`fefat.market.calendar_breaks`). The correction applies only to a file of one contract, since
+the calendar checks a file's contracts together and the records one leaves could hide another's
+offset, and only where the records it leaves, checked again, show no offset and the calendar
+can still test their timing, since one bar before one open may be the only sign of a thin file
+stamped a bar early; otherwise the file is refused under either choice. Told to leave them out,
+a file without such a break is refused, so that the raw manifest records the choice only where
+sessions were left out.
 
     taken = taken_records(dataset, mapped, BarsInBreaks.LEAVE_OUT)
 """
@@ -45,6 +47,9 @@ def taken_records(
         if leaving_out and not calendar.offsets:
             return replace(as_read, refusals=(_nothing_to_leave_out(dataset),))
         return as_read
+    contracts = mapped.records.get_column("contract").n_unique()
+    if contracts > 1:
+        return replace(as_read, refusals=(_of_several_contracts(dataset, contracts),))
     (found,) = calendar.breaks_with_bars
     kept = replace(mapped, records=without_the_sessions_beside(mapped.records, found))
     kept_calendar = check_records(dataset, kept.records.lazy(), kept.sessions)
@@ -61,19 +66,32 @@ def _why_not_left_out(
 ) -> str | None:
     """Why the records left without the sessions beside the breaks cannot be taken: none left,
     an offset, or a timing the calendar cannot test; none where they can."""
-    heading = f"{dataset.relative_folder()} bars in a break, not to be left out"
     if records.is_empty():
-        return f"{heading}: the sessions beside them hold every record of the file"
+        return _not_left_out(dataset, "the sessions beside them hold every record of the file")
     if calendar.offsets:
         (offset,) = calendar.offsets
-        return f"{heading}: without the sessions beside them, {offset.describe()}"
+        return _not_left_out(dataset, f"without the sessions beside them, {offset.describe()}")
     if not timing_checked(dataset, records, sessions):
-        return (
-            f"{heading}: without the sessions beside them, the calendar could not check the "
-            "time zone and bar stamping of the records left, which the sessions left out may "
-            "alone have shown, so compare the file's bars with the platform's chart"
+        return _not_left_out(
+            dataset,
+            "without the sessions beside them, the calendar could not check the time zone and "
+            "bar stamping of the records left, which the sessions left out may alone have shown, "
+            "so compare the file's bars with the platform's chart",
         )
     return None
+
+
+def _of_several_contracts(dataset: Dataset, contracts: int) -> str:
+    return _not_left_out(
+        dataset,
+        f"the file holds {contracts} contracts, which the calendar checks together, so the "
+        "records one leaves could hide another's offset; leaving them out applies to a file of "
+        "one contract",
+    )
+
+
+def _not_left_out(dataset: Dataset, why: str) -> str:
+    return f"{dataset.relative_folder()} bars in a break, not to be left out: {why}"
 
 
 def _nothing_to_leave_out(dataset: Dataset) -> str:
