@@ -25,6 +25,12 @@ from fefat.market.schema import FrozenModel
 
 _LISTED_AT_MOST = 10
 """How many trade dates a line names before it says how many more there are."""
+REACHES_THE_NEXT_OPEN = (pl.col("ts_open") > pl.col("session_close")) & (
+    pl.col("ts_close") == pl.col("next_open")
+)
+"""Whether a bar beside its session (`bars_with_their_sessions`) opens after the close and
+closes at the next session's open: the edge of a stretch a platform stamped early, which the
+calendar's offsets read too (`fefat.market.calendar_offset`)."""
 
 
 class BarsInBreaks(StrEnum):
@@ -113,13 +119,16 @@ def breaks_with_bars(
     """The breaks of `bars`, dated by `trade_date`, that hold a bar opening after the close and
     closing at the next open, with the sessions beside them (module docstring); none where no
     break does."""
-    dated = _dated_breaks(bars, sessions)
+    bounded = bars_with_their_sessions(bars, sessions)
+    if bounded is None:
+        return None
+    dated = _dated_breaks(bounded)
     reaching = dated.filter("reaches_the_next_open")
     if reaching.is_empty():
         return None
     with_bars = set(dated.filter(pl.col("in_the_break") > 0).get_column("trade_date").to_list())
     beside = _sessions_beside(reaching.get_column("trade_date").to_list(), with_bars, sessions)
-    held = dated.filter(pl.col("trade_date").is_in(sorted(beside)) & (pl.col("records") > 0))
+    held = dated.filter(pl.col("trade_date").is_in(sorted(beside)))
     return BreaksWithBars(
         dataset=dataset,
         breaks=tuple(
@@ -139,38 +148,33 @@ def without_the_sessions_beside(records: pl.DataFrame, found: BreaksWithBars) ->
     return records.filter(~pl.col("trade_date").is_in(found.trade_dates_beside()))
 
 
-def _dated_breaks(bars: pl.LazyFrame, sessions: SessionTable) -> pl.DataFrame:
-    """Per trade date of `bars`, in order: its records, how many bars open in the break after
-    its session, at or after the close, and whether one opens after the close and closes at the
-    next open."""
+def bars_with_their_sessions(bars: pl.LazyFrame, sessions: SessionTable) -> pl.LazyFrame | None:
+    """The `trade_date`, `ts_open`, and `ts_close` of `bars`, each beside the `session_open` and
+    `session_close` of its session and the `next_open` of the session after it, which
+    `REACHES_THE_NEXT_OPEN` reads; none without bars."""
     first, last = (
         bars.select(first=pl.col("trade_date").min(), last=pl.col("trade_date").max())
         .collect(engine="streaming")
         .row(0)
     )
     if first is None:
-        return pl.DataFrame(
-            schema={
-                "trade_date": pl.Date,
-                "records": pl.UInt32,
-                "in_the_break": pl.UInt32,
-                "reaches_the_next_open": pl.Boolean,
-            }
-        )
+        return None
     bounds = sessions.between_with_next_opens(first, last).select(
-        "trade_date", "next_open", session_close="close"
+        "trade_date", "next_open", session_open="open", session_close="close"
     )
-    opens, session_close = pl.col("ts_open"), pl.col("session_close")
+    return bars.select("trade_date", "ts_open", "ts_close").join(bounds.lazy(), on="trade_date")
+
+
+def _dated_breaks(bounded: pl.LazyFrame) -> pl.DataFrame:
+    """Per trade date of bars beside their sessions (`bars_with_their_sessions`), in order: its
+    records, how many bars open in the break after its session, at or after the close, and
+    whether one opens after the close and closes at the next open."""
     return (
-        bars.select("trade_date", "ts_open", "ts_close")
-        .join(bounds.lazy(), on="trade_date")
-        .group_by("trade_date")
+        bounded.group_by("trade_date")
         .agg(
             records=pl.len(),
-            in_the_break=(opens >= session_close).sum(),
-            reaches_the_next_open=(
-                (opens > session_close) & (pl.col("ts_close") == pl.col("next_open"))
-            ).any(),
+            in_the_break=(pl.col("ts_open") >= pl.col("session_close")).sum(),
+            reaches_the_next_open=REACHES_THE_NEXT_OPEN.any(),
         )
         .sort("trade_date")
         .collect(engine="streaming")

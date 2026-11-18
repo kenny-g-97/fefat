@@ -1,9 +1,10 @@
 """Bars in a break against an offset (step 5.15, ADR-0022): a file that holds bars through a
 break, a bar in the minute before an open, or bars before the open of a session it ends inside
-shows no offset but bars in a break, with the sessions beside them, while a file stamped a bar early, wholly or in a part of whole sessions, or a
-part of it read hours off, still does. The fixtures' ESH2026 1-minute bars hold three whole
-sessions, 2026-03-05, 03-06, and 03-09, across the clock change of 2026-03-08; the bars of
-longer spans are generated on the calendar."""
+shows no offset but bars in a break, with the sessions beside them, while a file stamped a bar
+early, wholly or in a part of whole sessions, or a part of it read hours off, still does. The
+fixtures' ESH2026 1-minute bars hold three whole sessions, 2026-03-05, 03-06, and 03-09, across
+the clock change of 2026-03-08; the bars and trades of longer spans are generated on the
+calendar."""
 
 from collections.abc import Iterable
 from datetime import date
@@ -24,6 +25,7 @@ from fefat.market.store import Store
 FIXTURES = Store(Path(__file__).resolve().parents[2] / "fixtures")
 ES_MINUTES = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
 ES_HOURS = Dataset(provider="synthetic", schema_name=parse_schema_name("ohlcv-1h"), root="ES")
+ES_TRADES = Dataset(provider="synthetic", schema_name=parse_schema_name("trades"), root="ES")
 ESH2026_MINUTES = Partition(
     dataset=ES_MINUTES, contract="ESH2026", key=YearMonth(year=2026, month=3)
 )
@@ -230,7 +232,9 @@ def test_hourly_bars_an_hour_late_after_a_clock_change_show_that_offset(
     # Times kept in Central daylight time all year, read as Chicago's, run an hour late once
     # standard time starts on 2026-11-01. The part after the change spans whole sessions, which
     # its bars, each opening an hour before the next, never reach the close of alone, so the
-    # part's span, not each session's bars, decides that its hours count (ADR-0022).
+    # part's span, not each session's bars, decides that its hours count (ADR-0022). The check
+    # words the hour as 30 minutes, the smallest move that puts every hourly bar inside its
+    # session, as before step 5.15 (BACKLOG).
     days = sessions.between(date(2026, 10, 12), date(2026, 11, 17))
     late = date(2026, 11, 2)
     opens = [
@@ -263,4 +267,68 @@ def test_thin_sessions_an_hour_early_before_a_clock_change_show_that_offset(
 
     assert offsets(ES_MINUTES, generated(opens, MINUTE, sessions), sessions) == [
         (-HOUR, OffsetCause.TIME_ZONE, date(2026, 10, 19), date(2026, 10, 30))
+    ]
+
+
+def an_hour_early_after_the_spring_change(sessions: SessionTable) -> list[int]:
+    """The minutes of whole sessions from 2026-03-02 to 03-06, then of the first 300 minutes of
+    03-09 an hour early, as times kept in standard time across the clock change of 03-08 give
+    of a file that ends inside that session."""
+    days = sessions.between(date(2026, 3, 2), MARCH_6).select("open", "close")
+    opened = sessions.session(MARCH_9).open
+    whole = [minute for start, end in days.rows() for minute in range(start, end, MINUTE)]
+    return [*whole, *range(opened - HOUR, opened + 240 * MINUTE, MINUTE)]
+
+
+def test_a_part_an_hour_early_whose_bars_reach_no_open_shows_that_offset(
+    sessions: SessionTable,
+) -> None:
+    # Gap 1 of the step's review (D-104): the part after the change spans no whole session,
+    # and the 60th minute of 03-09 had no trade, so no bar of the part closes at the open. No
+    # break explains its hours, which count, as before step 5.15; the part of your MNQ 03-24,
+    # whose bars reach the open, reads as bars in a break.
+    reaching = sessions.session(MARCH_9).open - MINUTE
+    opens = [each for each in an_hour_early_after_the_spring_change(sessions) if each != reaching]
+
+    assert offsets(ES_MINUTES, generated(opens, MINUTE, sessions), sessions) == [
+        (-HOUR, OffsetCause.TIME_ZONE, MARCH_9, MARCH_9)
+    ]
+
+
+def test_trades_a_part_an_hour_early_show_that_offset(sessions: SessionTable) -> None:
+    # Gap 1: no trade is a bar in a break, so the hours of a part of a file of trades count
+    # however few sessions it spans, as before step 5.15.
+    prints = pl.DataFrame(
+        {"ts_recv": an_hour_early_after_the_spring_change(sessions)}, schema={"ts_recv": pl.Int64}
+    )
+    trades = sessions.assign_trade_dates_or_previous(prints, "ts_recv").drop("in_session")
+
+    assert offsets(ES_TRADES, trades.lazy(), sessions) == [
+        (-HOUR, OffsetCause.TIME_ZONE, MARCH_9, MARCH_9)
+    ]
+
+
+def test_a_session_a_bar_early_before_a_bar_at_the_next_open_shows_that_offset(
+    sessions: SessionTable,
+) -> None:
+    # Engine review, finding 2 (D-104): from 02-03 on the bars run a bar early, as two exports
+    # joined give, but the first minutes of 02-03 and 02-04 had no trade, so only 02-05 opens
+    # after a bar closing at its open, and the file ends inside it. 02-04, the session before
+    # that bar, holds no bar in its last bucket and one in the bucket before, as a session a
+    # bar early does. Read as bars in a break, the correction would leave out 02-04 and 02-05
+    # and store 02-03 a bar early.
+    monday, tuesday, wednesday, thursday = (
+        sessions.session(date(2026, 2, day)) for day in (2, 3, 4, 5)
+    )
+    unheaded = [
+        minute
+        for session in (tuesday, wednesday)
+        for minute in range(session.open + MINUTE, session.close, MINUTE)
+    ]
+    ending = range(thursday.open, thursday.open + 300 * MINUTE, MINUTE)
+    early = [minute - MINUTE for minute in [*unheaded, *ending]]
+    opens = [*range(monday.open, monday.close, MINUTE), *early]
+
+    assert offsets(ES_MINUTES, generated(opens, MINUTE, sessions), sessions) == [
+        (-MINUTE, OffsetCause.BAR_STAMPING, date(2026, 2, 2), date(2026, 2, 5))
     ]

@@ -18,10 +18,11 @@ the holiday rules lack shows as an early last print: add it to
 It also finds a dataset's offset (step 1.10), the time by which its records run late or early
 against the calendar, as an import read in the wrong time zone or with the wrong bar stamping
 gives (`02-engine-and-data.md` §1.8): whole or half hours when moving the records, or those on
-one side of a change of the calendar's offset from UTC that span a whole session, by them puts
-inside the sessions most of those outside, and one bar when a session after a bar closing at
-its open runs a bar early, or most sessions a bar opening at the close and their first a bar
-after the open (`fefat.market.calendar_offset`). Where intraday bars show no offset, it finds
+one side of a change of the calendar's offset from UTC that span a whole session or hold no bar
+closing at an open, by them puts inside the sessions most of those outside, and one bar when a
+session beside a bar closing at the next open runs a bar early, or most sessions a bar opening
+at the close and their first a bar after the open (`fefat.market.calendar_offset`). Where
+intraday bars show no offset, it finds
 their breaks that hold a bar closing at the next open, the edge of a stretch a platform stamped
 early, with the sessions beside them (`fefat.market.calendar_breaks`, step 5.15).
 `check_records` runs the same check on records an import has not stored yet.
