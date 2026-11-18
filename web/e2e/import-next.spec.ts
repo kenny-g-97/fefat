@@ -91,9 +91,15 @@ test("the next export imports by the profile alone, and a revised one asks befor
   await expect(keep).toBeFocused()
   await inBothThemes(page, "import-take-records")
   await keep.click()
-  await expect(
-    page.getByRole("button", { name: "Take the file's records" })
-  ).toBeFocused()
+  const take = page.getByRole("button", { name: "Take the file's records" })
+  await expect(take).toBeFocused()
+  // Taken, the way back takes the focus from the confirm it replaces (step 5.15).
+  await take.click()
+  await page.getByRole("button", { name: "Replace 1 stored record" }).click()
+  const stored = page.getByRole("button", { name: "Keep the stored records" })
+  await expect(stored).toBeFocused()
+  await stored.click()
+  await expect(take).toBeVisible()
   await expect(page.getByTestId("import-run")).toBeDisabled()
 
   // The dataset the imports wrote, on its own page.

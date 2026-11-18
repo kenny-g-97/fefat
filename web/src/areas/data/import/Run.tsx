@@ -176,7 +176,7 @@ function Written({ written }: Readonly<{ written: DatasetWritten }>) {
       </p>
       {written.records_left_out > 0 && (
         <p className="text-foreground-secondary" data-testid="import-left-out">
-          {`Left out ${counted(written.records_left_out, "record")} of ${counted(written.sessions_left_out, "session")} beside bars in a break, as you approved.`}
+          {`Left out ${counted(written.records_left_out, "record")}, the bars in a break and the sessions beside them, as you approved.`}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">

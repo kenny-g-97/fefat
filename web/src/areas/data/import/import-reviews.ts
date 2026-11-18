@@ -171,9 +171,13 @@ function requireOnePerFile(files: number, states: readonly FileState[]) {
   }
 }
 
-/** What a file's review says of its import: a verdict, or that the file could not be read,
- * refused before a verdict or failed. */
-export type Outcome = Schemas["ImportVerdict"] | "unread"
+/** What a file's review says of its import: a verdict, that it imports without its bars in
+ * a break, which the trader approved (ADR-0022), or that the file could not be read, refused
+ * before a verdict or failed. */
+export type Outcome =
+  | Schemas["ImportVerdict"]
+  | "imports_without_bars"
+  | "unread"
 
 /** What `state` says of its file's import; none while it is read. */
 export function outcomeOf(state: FileState): Outcome | null {
@@ -183,7 +187,17 @@ export function outcomeOf(state: FileState): Outcome | null {
   if (state.kind === "failed" || state.answer.kind !== "file") {
     return "unread"
   }
-  return state.answer.verdict
+  const answer = state.answer
+  return answer.verdict === "imports" &&
+    answer.breaks_with_bars?.left_out === true
+    ? "imports_without_bars"
+    : answer.verdict
+}
+
+/** Whether an outcome sends its file with the round: it imports, as it is or without its
+ * bars in a break. */
+function imports(outcome: Outcome | null): boolean {
+  return outcome === "imports" || outcome === "imports_without_bars"
 }
 
 /** How many files were read, and how many of them each outcome holds. */
@@ -195,6 +209,7 @@ export type Tally = Readonly<{
 export function tallyOf(states: readonly FileState[]): Tally {
   const outcomes: Record<Outcome, number> = {
     imports: 0,
+    imports_without_bars: 0,
     refused: 0,
     bars_in_breaks: 0,
     differing: 0,
@@ -236,8 +251,8 @@ export function filesWithBarsInBreaks(
 /** How many files Import sends, by each file's review or, while it is read again, its last
  * one, so that Import's name holds still through a change; none where none imports. */
 export function filesImporting(states: readonly FileState[]): number | null {
-  const count = states.filter(
-    (state) => outcomeOf(shownState(state)) === "imports"
+  const count = states.filter((state) =>
+    imports(outcomeOf(shownState(state)))
   ).length
   return count === 0 ? null : count
 }
@@ -255,7 +270,7 @@ export function filesRequest(
   if (first === undefined || states.some((state) => state.kind === "reading")) {
     return null
   }
-  const sent = asks.filter((_, index) => outcomeOf(states[index]) === "imports")
+  const sent = asks.filter((_, index) => imports(outcomeOf(states[index])))
   if (sent.length === 0) {
     return null
   }

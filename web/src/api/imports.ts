@@ -120,7 +120,6 @@ const writtenDataset = z.object({
   records_held: z.number(),
   records_taken: z.number(),
   records_left_out: z.number().default(0),
-  sessions_left_out: z.number().default(0),
 })
 
 const notImported = z.object({

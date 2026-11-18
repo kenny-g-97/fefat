@@ -24,6 +24,11 @@ const OTHER_OUTCOMES: readonly Readonly<{
   one: string
   several: string
 }>[] = [
+  {
+    outcome: "imports_without_bars",
+    one: "imports without its bars in a break",
+    several: "import without their bars in a break",
+  },
   { outcome: "refused", one: "would be refused", several: "would be refused" },
   {
     outcome: "bars_in_breaks",
@@ -54,6 +59,7 @@ const ROW_OUTCOMES: Readonly<
   Record<Outcome, Readonly<{ text: string; tone: AsideTone }>>
 > = {
   imports: { text: "Imports", tone: "quiet" },
+  imports_without_bars: { text: "Without bars in a break", tone: "body" },
   refused: { text: "Refused", tone: "negative" },
   bars_in_breaks: { text: "Bars in a break", tone: "body" },
   differing: { text: "Differs", tone: "body" },

@@ -11,6 +11,7 @@ import {
   filesWithBarsInBreaks,
   fileStates,
   nextReview,
+  outcomeOf,
   type ReviewedFile,
   type ReviewsChange,
   type ReviewsQueue,
@@ -62,6 +63,32 @@ const READING: FileState = { kind: "reading", last: null }
 function answered(verdict: Parameters<typeof seenFile>[1]): FileState {
   return { kind: "answered", answer: seenFile("ES 03-26.Last.txt", verdict) }
 }
+
+const BREAKS = {
+  left_out: false,
+  bars: 60,
+  breaks: ["2026-02-04"],
+  breaks_total: 1,
+  sessions: ["2026-02-04", "2026-02-05"],
+  sessions_total: 2,
+  records: 2_820,
+}
+
+/** A file whose review says it imports once its bars in a break are left out (ADR-0022). */
+const LEFT_OUT: FileState = {
+  kind: "answered",
+  answer: seenFile("ES 03-26.Last.txt", "imports", null, {
+    ...BREAKS,
+    left_out: true,
+  }),
+}
+
+describe("outcomeOf", () => {
+  it("tells a file imported without its bars in a break from one imported as it is", () => {
+    expect(outcomeOf(LEFT_OUT)).toBe("imports_without_bars")
+    expect(outcomeOf(answered("imports"))).toBe("imports")
+  })
+})
 
 describe("the reviews' queue", () => {
   it("sends the files' reviews in their order, two at a time", () => {
@@ -158,15 +185,17 @@ describe("tallyOf", () => {
     const tally = tallyOf([
       answered("imports"),
       answered("imports"),
+      LEFT_OUT,
       answered("differing"),
       { kind: "answered", answer: { kind: "refused", message: "Expected." } },
       { kind: "failed", error: new Error("Gone.") },
       READING,
     ])
 
-    expect(tally.read).toBe(5)
+    expect(tally.read).toBe(6)
     expect(tally.outcomes).toEqual({
       imports: 2,
+      imports_without_bars: 1,
       refused: 0,
       bars_in_breaks: 0,
       differing: 1,
@@ -213,7 +242,7 @@ describe("filesRequest", () => {
 
     expect(
       filesRequest(leaving, [
-        answered("imports"),
+        LEFT_OUT,
         answered("bars_in_breaks"),
         answered("imports"),
       ])
@@ -241,43 +270,34 @@ describe("filesWithBarsInBreaks", () => {
   it("names the files that leaving out their bars in a break lets in, or that it left out", () => {
     // A file refused for its bars alone, one read without them, and one still read again are
     // offered; one whose bars cannot be left out, and one without any, are not (ADR-0022).
-    const breaks = {
-      left_out: false,
-      bars: 60,
-      breaks: ["2026-02-04"],
-      breaks_total: 1,
-      sessions: ["2026-02-04", "2026-02-05"],
-      sessions_total: 2,
-      records: 2_820,
-    }
     const read = (
       id: string,
       verdict: Parameters<typeof seenFile>[1],
-      found: typeof breaks | null
+      found: typeof BREAKS | null
     ) => seenFile(`ES ${id}.Last.txt`, verdict, null, found)
     const files: ReviewedFile[] = [
       {
         upload: upload("a"),
         state: {
           kind: "answered",
-          answer: read("a", "bars_in_breaks", breaks),
+          answer: read("a", "bars_in_breaks", BREAKS),
         },
       },
       {
         upload: upload("b"),
         state: {
           kind: "answered",
-          answer: read("b", "imports", { ...breaks, left_out: true }),
+          answer: read("b", "imports", { ...BREAKS, left_out: true }),
         },
       },
       {
         upload: upload("c"),
-        state: { kind: "answered", answer: read("c", "refused", breaks) },
+        state: { kind: "answered", answer: read("c", "refused", BREAKS) },
       },
       { upload: upload("d"), state: answered("imports") },
       {
         upload: upload("e"),
-        state: { kind: "reading", last: read("e", "bars_in_breaks", breaks) },
+        state: { kind: "reading", last: read("e", "bars_in_breaks", BREAKS) },
       },
     ]
 
@@ -293,10 +313,11 @@ describe("filesImporting", () => {
       filesImporting([
         { kind: "reading", last: answer },
         answered("imports"),
+        LEFT_OUT,
         answered("differing"),
         READING,
       ])
-    ).toBe(2)
+    ).toBe(3)
     expect(filesImporting([answered("refused")])).toBeNull()
   })
 })

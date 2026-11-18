@@ -73,6 +73,7 @@ export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
         <Button
           variant="ghost"
           size="sm"
+          autoFocus
           onClick={() => change({ kind: "differing", differing: "refuse" })}
         >
           Keep the stored records
