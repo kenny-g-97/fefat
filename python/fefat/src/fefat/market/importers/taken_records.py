@@ -1,7 +1,8 @@
 """The records an import of a trader's file takes under its choice for bars in a break (step
 5.15, ADR-0022): the records as read, or, told to leave them out, the records without the
-sessions beside the breaks that hold a bar closing at the next open
-(`fefat.market.calendar_breaks`). The correction applies only to a file of one contract, since
+sessions beside the breaks that hold a bar closing at the next open and without the sessions
+whose last bar ends a bar before the close (`fefat.market.calendar_breaks`, D-104). The
+correction applies only to a file of one contract, since
 the calendar checks a file's contracts together and the records one leaves could hide another's
 offset, and only where the records it leaves, checked again, show no offset and the calendar
 can still test their timing, since one bar before one open may be the only sign of a thin file
@@ -17,7 +18,7 @@ from dataclasses import dataclass, replace
 import polars as pl
 
 from fefat.market.calendar import SessionTable
-from fefat.market.calendar_breaks import BarsInBreaks, BreaksWithBars, without_the_sessions_beside
+from fefat.market.calendar_breaks import BarsInBreaks, BreaksWithBars, without_the_sessions_left_out
 from fefat.market.calendar_check import CalendarReport, check_records
 from fefat.market.calendar_offset import timing_checked
 from fefat.market.importers.profile_records import MappedRecords
@@ -51,7 +52,7 @@ def taken_records(
     if contracts > 1:
         return replace(as_read, refusals=(_of_several_contracts(dataset, contracts),))
     (found,) = calendar.breaks_with_bars
-    kept = replace(mapped, records=without_the_sessions_beside(mapped.records, found))
+    kept = replace(mapped, records=without_the_sessions_left_out(mapped.records, found))
     kept_calendar = check_records(dataset, kept.records.lazy(), kept.sessions)
     refusal = _why_not_left_out(dataset, kept.records, kept_calendar, kept.sessions)
     if refusal is not None:

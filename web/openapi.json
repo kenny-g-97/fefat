@@ -845,7 +845,7 @@
       },
       "BreaksSeen": {
         "additionalProperties": false,
-        "description": "A file's breaks that hold a bar closing at the next open, the edge of a stretch a\nplatform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts\nand trade dates: whether its import leaves them out, the bars in them, the trade dates they\nfollow and the sessions beside them that the correction leaves out, the first of each\nbeside their totals, and those sessions' records, the bars among them.",
+        "description": "A file's breaks that hold a bar closing at the next open, the edge of a stretch a\nplatform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts\nand trade dates: whether its import leaves them out, the bars in them, the trade dates they\nfollow, the sessions beside them, and the other sessions whose last bar ends a bar before the\nclose, which the correction leaves out with them (D-104), the first of each beside their\ntotals, and the records of every session left out, the bars among them.",
         "properties": {
           "bars": {
             "minimum": 1.0,
@@ -865,6 +865,20 @@
           "breaks_total": {
             "minimum": 1.0,
             "title": "Breaks Total",
+            "type": "integer"
+          },
+          "ending_a_bar_early": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Ending A Bar Early",
+            "type": "array"
+          },
+          "ending_a_bar_early_total": {
+            "minimum": 0.0,
+            "title": "Ending A Bar Early Total",
             "type": "integer"
           },
           "left_out": {
@@ -899,6 +913,8 @@
           "breaks_total",
           "sessions",
           "sessions_total",
+          "ending_a_bar_early",
+          "ending_a_bar_early_total",
           "records"
         ],
         "title": "BreaksSeen",

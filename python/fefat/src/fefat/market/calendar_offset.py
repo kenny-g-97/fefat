@@ -28,7 +28,12 @@ from enum import StrEnum
 import polars as pl
 
 from fefat.market.calendar import SessionTable
-from fefat.market.calendar_breaks import REACHES_THE_NEXT_OPEN, bars_with_their_sessions
+from fefat.market.calendar_breaks import (
+    ENDS_A_BAR_EARLY,
+    REACHES_THE_NEXT_OPEN,
+    bars_with_their_sessions,
+    session_edges,
+)
 from fefat.market.layout import Dataset
 from fefat.market.schema import BarSchemaName, FrozenModel, Timeframe, TimeUnit
 
@@ -291,31 +296,10 @@ def _stamping_offset(bars: pl.LazyFrame, sessions: SessionTable, width: int) -> 
 
 
 def _session_edges(bars: pl.LazyFrame, sessions: SessionTable, width: int) -> pl.DataFrame | None:
-    """A row per trade date of `bars`, `width` long: its session's open and the next session's,
-    whether a bar opens inside the session, whether the break after it holds a bar opening after
-    the close and closing at the next open, whether a bar opens in the session's last bucket and
-    in the bucket before it, and whether the session holds a bar opening at its close while its
-    first bar opens a bar after its open; none without bars."""
+    """A row per trade date of `bars`, `width` long, with the edges of its session
+    (`fefat.market.calendar_breaks.session_edges`); none without bars."""
     bounded = bars_with_their_sessions(bars, sessions)
-    if bounded is None:
-        return None
-    opens, session_open, session_close = (
-        pl.col(name) for name in ("ts_open", "session_open", "session_close")
-    )
-    last_bucket = session_open + (session_close - session_open - 1) // width * width
-    return (
-        bounded.group_by("trade_date")
-        .agg(
-            session_open.first(),
-            pl.col("next_open").first(),
-            inside=(opens < session_close).any(),
-            reaches_the_next_open=REACHES_THE_NEXT_OPEN.any(),
-            last_bucket=(opens == last_bucket).any(),
-            bucket_before_the_last=(opens == last_bucket - width).any(),
-            late=(opens == session_close).any() & (opens.min() == session_open.first() + width),
-        )
-        .collect(engine="streaming")
-    )
+    return None if bounded is None else session_edges(bounded, width)
 
 
 def _runs_a_bar_early(edges: pl.DataFrame) -> bool:
@@ -328,8 +312,7 @@ def _runs_a_bar_early(edges: pl.DataFrame) -> bool:
     with_bars = edges.filter("inside")
     headed = pl.col("session_open").is_in(reached.implode())
     beside_the_bar = headed | pl.col("reaches_the_next_open")
-    shifted = ~pl.col("last_bucket") & pl.col("bucket_before_the_last")
-    if not with_bars.filter(beside_the_bar & shifted).is_empty():
+    if not with_bars.filter(beside_the_bar & ENDS_A_BAR_EARLY).is_empty():
         return True
     headed_sessions = with_bars.filter(headed).height
     return headed_sessions > 0 and headed_sessions * 2 >= with_bars.height

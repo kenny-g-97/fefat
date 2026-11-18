@@ -332,3 +332,38 @@ def test_a_session_a_bar_early_before_a_bar_at_the_next_open_shows_that_offset(
     assert offsets(ES_MINUTES, generated(opens, MINUTE, sessions), sessions) == [
         (-MINUTE, OffsetCause.BAR_STAMPING, date(2026, 2, 2), date(2026, 2, 5))
     ]
+
+
+def test_a_session_ending_a_bar_early_away_from_such_a_bar_is_left_out_with_them(
+    sessions: SessionTable,
+) -> None:
+    # The second review of the correction (D-104): two exports joined at the close of 02-03, the
+    # second a bar early, the last minute of 02-04 and the first of 02-05 without a trade. The
+    # bar closing at the open of 02-04 has no sign beside it, 02-03 being right and 02-04 missing
+    # its last two buckets, while 02-05 ends a bar before its close, as a session a bar early
+    # does: the correction leaves it out too, and the check says so, rather than store it early.
+    monday, tuesday, wednesday, thursday = (
+        sessions.session(date(2026, 2, day)) for day in (2, 3, 4, 5)
+    )
+    right = [
+        minute
+        for session in (monday, tuesday)
+        for minute in range(session.open, session.close, MINUTE)
+    ]
+    shifted_wednesday = range(wednesday.open, wednesday.close - MINUTE, MINUTE)
+    shifted_thursday = range(thursday.open + MINUTE, thursday.close, MINUTE)
+    early = [minute - MINUTE for minute in [*shifted_wednesday, *shifted_thursday]]
+    bars = generated([*right, *early], MINUTE, sessions)
+
+    assert breaks_found(bars, sessions) == [
+        ([(date(2026, 2, 3), 1)], [date(2026, 2, 3), date(2026, 2, 4)])
+    ]
+    (found,) = check_records(ES_MINUTES, bars, sessions).breaks_with_bars
+    assert [each.trade_date for each in found.sessions_ending_a_bar_early] == [date(2026, 2, 5)]
+    assert found.trade_dates_left_out() == [date(2026, 2, day) for day in (3, 4, 5)]
+    # 1,380 bars of 02-03 and the one after it in its break, 1,378 of 02-04, 1,379 of 02-05.
+    assert found.describe().endswith(
+        "the sessions beside and 1 other session whose last bar ends a bar before the close, as "
+        "a session a bar early does, 4,138 records of the trade dates 2026-02-03, 2026-02-04, "
+        "2026-02-05"
+    )

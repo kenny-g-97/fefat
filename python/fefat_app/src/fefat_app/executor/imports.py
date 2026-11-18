@@ -274,7 +274,11 @@ def _breaks_seen(
         breaks_total=len(seen.breaks),
         sessions=tuple(seen.trade_dates_beside()[:LISTED_AT_MOST]),
         sessions_total=len(seen.sessions_beside),
-        records=seen.records_beside(),
+        ending_a_bar_early=tuple(
+            each.trade_date for each in seen.sessions_ending_a_bar_early[:LISTED_AT_MOST]
+        ),
+        ending_a_bar_early_total=len(seen.sessions_ending_a_bar_early),
+        records=seen.records_left_out(),
     )
 
 
@@ -371,7 +375,7 @@ def _written(merge: DatasetMerge, left_out: BreaksWithBars | None = None) -> Dat
         records_held=merge.records_held,
         records_taken=merge.records_differing if merge.replaces() else 0,
         new_sessions=len(merge.new_sessions),
-        records_left_out=0 if left_out is None else left_out.records_beside(),
+        records_left_out=0 if left_out is None else left_out.records_left_out(),
     )
 
 

@@ -299,6 +299,8 @@ def test_a_file_with_bars_in_a_break_is_answered_with_them_and_reads_without_the
         "breaks_total": 1,
         "sessions": ["2026-02-04", "2026-02-05"],
         "sessions_total": 2,
+        "ending_a_bar_early": [],
+        "ending_a_bar_early_total": 0,
         "records": LEFT_OUT,
     }
     assert left_out["verdict"] == "imports"

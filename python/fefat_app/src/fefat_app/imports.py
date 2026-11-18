@@ -439,8 +439,9 @@ class BreaksSeen(FrozenModel):
     """A file's breaks that hold a bar closing at the next open, the edge of a stretch a
     platform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts
     and trade dates: whether its import leaves them out, the bars in them, the trade dates they
-    follow and the sessions beside them that the correction leaves out, the first of each
-    beside their totals, and those sessions' records, the bars among them."""
+    follow, the sessions beside them, and the other sessions whose last bar ends a bar before the
+    close, which the correction leaves out with them (D-104), the first of each beside their
+    totals, and the records of every session left out, the bars among them."""
 
     left_out: bool
     bars: int = Field(ge=1)
@@ -448,6 +449,8 @@ class BreaksSeen(FrozenModel):
     breaks_total: int = Field(ge=1)
     sessions: tuple[date, ...] = Field(min_length=1, max_length=LISTED_AT_MOST)
     sessions_total: int = Field(ge=1)
+    ending_a_bar_early: tuple[date, ...] = Field(max_length=LISTED_AT_MOST)
+    ending_a_bar_early_total: int = Field(ge=0)
     records: int = Field(ge=1)
 
 

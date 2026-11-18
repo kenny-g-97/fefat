@@ -176,7 +176,7 @@ def test_told_to_leave_them_out_an_import_takes_the_file_without_the_sessions_be
     for reading in (preview.reading, report.reading):
         assert reading.refusals() == []
         assert reading.left_out is not None
-        assert reading.left_out.records_beside() == left_out
+        assert reading.left_out.records_left_out() == left_out
         assert reading.records == kept.height
     assert preview.summary().splitlines()[-1] == "It would import as it is."
     assert (
@@ -343,6 +343,35 @@ def test_a_file_of_several_contracts_is_offered_no_correction(
         assert not preview.reading.only_bars_in_breaks_refuse()
         (why,) = [refusal for refusal in preview.refusals() if "not to be left out" in refusal]
         assert "the file holds 2 contracts" in why
+
+
+def test_a_session_ending_a_bar_early_is_left_out_with_the_sessions_beside(
+    tmp_path: Path, bars: pl.DataFrame, sessions: SessionTable
+) -> None:
+    # The second leakage audit (D-104): two exports joined, a bar early from Tuesday on, the
+    # first minutes of Tuesday and Wednesday and the last of Wednesday without a trade, and the
+    # file ending 300 minutes into Thursday. Only the bar closing at Thursday's open lies in a
+    # break, and neither session beside it shows a sign; Tuesday ends a bar before its close, as
+    # a session a bar early does, so the correction leaves it out too and stores Monday alone.
+    quiet = [sessions.session(day).open for day in (TUESDAY, WEDNESDAY)]
+    quiet.append(sessions.session(WEDNESDAY).close - MINUTE)
+    ending = sessions.session(THURSDAY).open + 300 * MINUTE
+    kept = bars.filter(
+        (pl.col("trade_date") <= THURSDAY)
+        & ~pl.col("ts_open").is_in(quiet)
+        & (pl.col("ts_open") < ending)
+    )
+    path = exported(tmp_path, moved(kept, -MINUTE, TUESDAY))
+
+    report = imported(request_of(path, LEAVE_OUT))
+
+    assert stored_bars().get_column("trade_date").unique().to_list() == [FIRST]
+    assert isinstance(report, FileImportReport)
+    assert report.reading.left_out is not None
+    assert report.reading.left_out.trade_dates_left_out() == [TUESDAY, WEDNESDAY, THURSDAY]
+    assert [each.trade_date for each in report.reading.left_out.sessions_ending_a_bar_early] == [
+        TUESDAY
+    ]
 
 
 def test_a_file_whose_sessions_all_lie_beside_such_a_break_is_offered_no_correction(

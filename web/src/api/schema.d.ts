@@ -1186,8 +1186,9 @@ export interface components {
          * @description A file's breaks that hold a bar closing at the next open, the edge of a stretch a
          *     platform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts
          *     and trade dates: whether its import leaves them out, the bars in them, the trade dates they
-         *     follow and the sessions beside them that the correction leaves out, the first of each
-         *     beside their totals, and those sessions' records, the bars among them.
+         *     follow, the sessions beside them, and the other sessions whose last bar ends a bar before the
+         *     close, which the correction leaves out with them (D-104), the first of each beside their
+         *     totals, and the records of every session left out, the bars among them.
          */
         BreaksSeen: {
             /** Bars */
@@ -1196,6 +1197,10 @@ export interface components {
             breaks: string[];
             /** Breaks Total */
             breaks_total: number;
+            /** Ending A Bar Early */
+            ending_a_bar_early: string[];
+            /** Ending A Bar Early Total */
+            ending_a_bar_early_total: number;
             /** Left Out */
             left_out: boolean;
             /** Records */

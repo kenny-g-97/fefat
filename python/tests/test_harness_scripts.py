@@ -331,7 +331,7 @@ def test_the_seed_writes_exports_with_bars_in_a_break_for_the_correction(tmp_pat
         assert refused.only_bars_in_breaks_refuse()
         assert [(each.after, each.bars) for each in found.breaks] == [(date(2026, 2, 3), 9)]
         assert found.trade_dates_beside() == [date(2026, 2, 3), date(2026, 2, 4)]
-        assert found.records_beside() == 2 * 1_380 + 9
+        assert found.records_left_out() == 2 * 1_380 + 9
         assert (left_out.refusals(), left_out.records) == ([], 3 * 1_380)
     clean = previewed(e2e_server.XES_WITHOUT_A_BREAK, BarsInBreaks.REFUSE).reading
     assert (clean.refusals(), clean.records) == ([], 5 * 1_380)

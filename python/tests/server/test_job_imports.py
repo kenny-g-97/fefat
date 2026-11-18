@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -29,10 +29,16 @@ from export_samples import (
     written_export,
 )
 from fefat.config import resolve_paths
-from fefat.market.calendar_breaks import BarsInBreaks
+from fefat.market.calendar_breaks import (
+    BarsInBreaks,
+    BreaksWithBars,
+    BreakWithBars,
+    SessionLeftOut,
+)
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import keep_profile
 from fefat.market.layout import Dataset
+from fefat.market.schema import parse_schema_name
 from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
@@ -47,7 +53,7 @@ from fefat_app.execution import (
     StopCheck,
     keep_running,
 )
-from fefat_app.executor.imports import import_output
+from fefat_app.executor.imports import _breaks_seen, import_output
 from fefat_app.executor.protocol import ERROR_CHARS
 from fefat_app.executor.runner_process import leftovers_removed
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
@@ -827,6 +833,25 @@ def test_a_payload_queued_before_the_choice_refuses_bars_in_a_break(job_records:
 
     assert isinstance(payload.spec.request, FileRequest)
     assert payload.spec.request.bars_in_breaks is BarsInBreaks.REFUSE
+
+
+def test_a_reading_that_left_out_such_breaks_yet_holds_one_is_refused() -> None:
+    # The step's review: the records the correction takes hold no bar in a break closing at the
+    # next open, since the sessions beside every such break go with it (ADR-0022), so a reading
+    # that says otherwise is a fault the runner refuses rather than words one way or the other.
+    found = BreaksWithBars(
+        dataset=Dataset(
+            provider="ninjatrader", schema_name=parse_schema_name("ohlcv-1m"), root="ES"
+        ),
+        breaks=(BreakWithBars(after=date(2026, 2, 4), bars=60),),
+        sessions_beside=(
+            SessionLeftOut(trade_date=date(2026, 2, 4), records=1_440),
+            SessionLeftOut(trade_date=date(2026, 2, 5), records=1_380),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Expected no bar in a break closing at the next open"):
+        _breaks_seen((found,), found)
 
 
 def test_a_round_of_one_file_counts_its_file(

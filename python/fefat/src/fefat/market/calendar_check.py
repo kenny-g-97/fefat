@@ -22,10 +22,10 @@ one side of a change of the calendar's offset from UTC that span a whole session
 closing at an open, by them puts inside the sessions most of those outside, and one bar when a
 session beside a bar closing at the next open runs a bar early, or most sessions a bar opening
 at the close and their first a bar after the open (`fefat.market.calendar_offset`). Where
-intraday bars show no offset, it finds
-their breaks that hold a bar closing at the next open, the edge of a stretch a platform stamped
-early, with the sessions beside them (`fefat.market.calendar_breaks`, step 5.15).
-`check_records` runs the same check on records an import has not stored yet.
+intraday bars show no offset, it finds their breaks that hold a bar closing at the next open,
+the edge of a stretch a platform stamped early, with the sessions beside them and the other
+sessions ending a bar early (`fefat.market.calendar_breaks`, step 5.15). `check_records` runs
+the same check on records an import has not stored yet.
 
     paths = resolve_paths(os.environ)
     print(validate_calendar(Store(paths.data_dir), paths.cache_dir).summary())

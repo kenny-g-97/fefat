@@ -71,6 +71,8 @@ const BREAKS = {
   breaks_total: 1,
   sessions: ["2026-02-04", "2026-02-05"],
   sessions_total: 2,
+  ending_a_bar_early: [],
+  ending_a_bar_early_total: 0,
   records: 2_820,
 }
 

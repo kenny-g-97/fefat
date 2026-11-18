@@ -207,7 +207,13 @@ def _breaks_left_out(found: BreaksWithBars | None) -> str:
     if found is None:
         return ""
     breaks = counted(len(found.breaks), "break")
-    return f"{found.sessions_text()}, beside {breaks} with a bar closing at the next open"
+    ending = len(found.sessions_ending_a_bar_early)
+    also = (
+        f", and {counted(ending, 'session')} whose last bar ends a bar before the close"
+        if ending
+        else ""
+    )
+    return f"{found.sessions_text()}, beside {breaks} with a bar closing at the next open{also}"
 
 
 class FileImportReport(FrozenModel):
