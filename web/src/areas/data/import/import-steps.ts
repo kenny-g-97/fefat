@@ -1,6 +1,7 @@
 import type { ImportAsked, ImportProfile, ListedProfile } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { counted } from "@/ui/figures"
+import type { StepState } from "@/ui/stepper"
 import type { Card, Draft, Missing, ProfileDraft, Source } from "./import-draft"
 import type { PreviewState } from "./import-preview"
 import { type Asks, listedProfile, offsetRefusal } from "./import-request"
@@ -34,14 +35,6 @@ export const STEP_NAMES: Readonly<Record<Step, string>> = {
   instrument: "Instrument",
   review: "Review",
 }
-
-/** What the list says of a step (web/DESIGN.md, Patterns, Stepper): that what is read does
- * not need it, that it is complete, with what was chosen, or what it still needs, an alert
- * where the review points back at it. */
-export type StepState =
-  | Readonly<{ kind: "not needed"; line: string }>
-  | Readonly<{ kind: "complete"; line: string }>
-  | Readonly<{ kind: "incomplete"; line: string; alert: boolean }>
 
 /** Where the review stands, which its step and Import's reason say: the import wrote; Import
  * has a request to send, of a round's files or of one file or batch; or what it waits for:

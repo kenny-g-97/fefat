@@ -1,6 +1,51 @@
-import type { Locator, Page } from "@playwright/test"
+import { expect, type Locator, type Page } from "@playwright/test"
 import { z } from "zod"
 import { screenshot } from "./screenshots.ts"
+
+/** The wizard's steps, as its list and its cards' frames name them (D-105). */
+export type WizardStep = "file" | "layout" | "instrument" | "review"
+
+/** Wait until `name` is the step shown: the current one of the list, its card in view. A text
+ * assertion passes on a hidden card, so every assertion of a card follows this. */
+export async function shown(page: Page, name: WizardStep) {
+  await expect(page.getByTestId(`step-${name}`)).toHaveAttribute(
+    "aria-current",
+    "step"
+  )
+  await expect(page.getByTestId(`step-card-${name}`)).toBeVisible()
+}
+
+/** Open the step `name` from the list at the left. */
+export async function step(page: Page, name: WizardStep) {
+  await page.getByTestId(`step-${name}`).click()
+  await shown(page, name)
+}
+
+/** Press Continue, and wait for the step `to` it opens. */
+export async function continued(page: Page, to: WizardStep) {
+  await page.getByTestId("step-continue").click()
+  await shown(page, to)
+}
+
+/** Expect the list's step `name` to be marked `mark` and to say `line`. */
+export async function stepSays(
+  page: Page,
+  name: WizardStep,
+  mark: "complete" | "incomplete" | "not needed",
+  line: string
+) {
+  const row = page.getByTestId(`step-${name}`)
+  await expect(row).toHaveAttribute("data-state", mark)
+  await expect(row).toContainText(line)
+}
+
+/** Expect the page not to scroll sideways, whatever a card's table holds. */
+export async function noSidewaysScroll(page: Page) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth
+  )
+  expect(overflow).toBeLessThanOrEqual(0)
+}
 
 /** The name NinjaTrader gives the seed's exports of XES (`scripts/e2e_server.py`). */
 export const EXPORT = "XES 03-26.Last.txt"

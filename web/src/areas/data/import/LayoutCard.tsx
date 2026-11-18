@@ -8,7 +8,9 @@ import type {
 import { KeptField } from "@/ui/kept-field"
 import { Panel } from "@/ui/panel"
 import { Choice } from "../Picker"
+import { TableState } from "./FileCard"
 import type { Draft, DraftChange, ProfileDraft } from "./import-draft"
+import type { LatestPreview } from "./import-preview"
 import { columnKeys, shownRoles } from "./import-profile"
 import { listedProfile, offsetRefusal } from "./import-request"
 import { rolesOf, withRole } from "./import-roles"
@@ -21,17 +23,20 @@ type LayoutCardProps = Readonly<{
   change: Dispatch<DraftChange>
   profiles: readonly ListedProfile[]
   table: TablePreview | null
+  preview: LatestPreview
   offsets: FileSeen["offsets"]
 }>
 
-/** The wizard's second card: the profile the file reads with, a preset, one the trader saved,
+/** The wizard's second step: the profile the file reads with, a preset, one the trader saved,
  * or a new one made from either, whose base stays fixed while it is drafted, and the file's
- * first rows under the columns' roles. */
+ * first rows under the columns' roles, with the table's read as File shows it, since a
+ * profile's layout reads the table again (D-105). */
 export function LayoutCard({
   draft,
   change,
   profiles,
   table,
+  preview,
   offsets,
 }: LayoutCardProps) {
   const profile = draft.profile
@@ -65,6 +70,7 @@ export function LayoutCard({
             offsets={offsets}
           />
         )}
+        <TableState table={preview} />
         {table !== null && (
           <Rows
             table={table}

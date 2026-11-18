@@ -187,7 +187,9 @@ function rootsNote(settings: AppSettings | undefined): string {
   return `FEAT reads a path under one of its import roots, ${roots.join(", ")}, which import_roots in ${settings.config_file} lists.`
 }
 
-function TableState({ table }: Readonly<{ table: LatestPreview }>) {
+/** Whether the file reads as a table: why not, or that it is being read; on the File step and
+ * on Layout, where its rows stand. */
+export function TableState({ table }: Readonly<{ table: LatestPreview }>) {
   if (table.error !== null) {
     return <SectionFailure error={table.error} onRetry={table.readAgain} />
   }
