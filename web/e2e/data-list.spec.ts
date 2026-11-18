@@ -471,6 +471,7 @@ test("All sources leads to the guide's own page, a source's terms and its Import
   await expect(page).toHaveURL(
     "/data/import?preset=databento&from=sources&step=review"
   )
+  await expect(page.getByTestId("step-back")).toHaveText("Back to File")
   await page.getByTestId("step-back").click()
   await expect(page.getByTestId("step-file")).toHaveAttribute(
     "aria-current",

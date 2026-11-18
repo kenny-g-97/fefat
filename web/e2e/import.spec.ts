@@ -152,7 +152,7 @@ test("a new product's export imports once its time zone is corrected", async ({
   await stepSays(page, "layout", "incomplete", "Check the time zone")
   await expect(page.getByTestId("import-run")).toBeDisabled()
   await expect(page.getByTestId("import-waits")).toHaveText(
-    "Complete Layout first"
+    "Check the time zone under Layout first"
   )
   await inBothThemes(page, "import-time-zone-late")
 
@@ -193,11 +193,21 @@ test("a new product's export imports once its time zone is corrected", async ({
     "aria-invalid",
     "false"
   )
+  // Back, named for the step it opens, returns to File, the file still chosen.
+  await expect(page.getByTestId("step-back")).toHaveText("Back to File")
+  await page.getByTestId("step-back").click()
+  await shown(page, "file")
+  await expect(page.getByTestId("import-chosen")).toContainText(EXPORT)
+  await stepSays(page, "file", "complete", EXPORT)
 
   // The list answers the keyboard: Tab to Instrument and Enter, the focus on its card.
   await page.getByTestId("step-layout").focus()
   await page.keyboard.press("Tab")
   await expect(page.getByTestId("step-instrument")).toBeFocused()
+  await expect(page.getByTestId("step-instrument")).toHaveCSS(
+    "outline-style",
+    "solid"
+  )
   await page.keyboard.press("Enter")
   await shown(page, "instrument")
   await expect(page.getByTestId("step-card-instrument")).toBeFocused()
@@ -221,6 +231,7 @@ test("a new product's export imports once its time zone is corrected", async ({
   await expect(page.getByTestId("import-run")).toBeDisabled()
   await expect(verdict(page)).toHaveCount(0)
   await stepSays(page, "review", "complete", "Imported")
+  await expect(page.getByTestId("import-waits")).toHaveText("Imported")
   await screenshot(page, "import-done")
   await step(page, "file")
   await step(page, "review")

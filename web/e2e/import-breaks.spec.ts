@@ -9,6 +9,7 @@ import {
   importRoot,
   inBothThemes,
   READ_MS,
+  shown,
   signOf,
   step,
   stepSays,
@@ -42,6 +43,7 @@ test("a file with bars in a break imports without them once you approve", async 
   const errors = consoleErrors(page)
   const root = await importRoot(page)
   await page.goto("/data/import")
+  await shown(page, "file")
 
   const picker = page.waitForEvent("filechooser")
   await page.getByRole("button", { name: "Choose files", exact: true }).click()
@@ -129,6 +131,7 @@ test("a round waits on its files' bars in a break, then leaves them out with one
   const errors = consoleErrors(page)
   const root = await importRoot(page)
   await page.goto("/data/import")
+  await shown(page, "file")
 
   const picker = page.waitForEvent("filechooser")
   await page.getByRole("button", { name: "Choose files", exact: true }).click()
@@ -178,6 +181,22 @@ test("a round waits on its files' bars in a break, then leaves them out with one
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-several-refused")
+
+  // Skip the 2 files leaves the file that imports, and Skip none takes the skips back (D-105).
+  const skipAll = page.getByRole("button", { name: "Skip the 2 files" })
+  await skipAll.click()
+  const skipNone = page.getByRole("button", { name: "Skip none" })
+  await expect(skipNone).toBeFocused()
+  await expect(rows.getByTestId("review-file-aside")).toHaveText([
+    "Skipped",
+    "Skipped",
+    "Imports",
+  ])
+  await expect(run).toHaveText("Import 1 file")
+  await expect(run).toBeEnabled()
+  await skipNone.click()
+  await expect(skipAll).toBeFocused()
+  await expect(run).toBeDisabled()
 
   // The row's own summary; its review holds the calendar check's, which lists those bars, and
   // whose chevron stays closed while the row it stands in is open.

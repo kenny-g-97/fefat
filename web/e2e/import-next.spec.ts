@@ -176,6 +176,7 @@ test("a round waits for a decision on the file that differs, then imports the ot
     await route.fulfill({ response })
   })
   await page.goto("/data/import")
+  await shown(page, "file")
 
   // Three files at once through the picker, each its own contract, read through the saved
   // profile; the contract is the files' names', so its field gives way to a note.
@@ -264,6 +265,8 @@ test("a round waits for a decision on the file that differs, then imports the ot
   await expect(run).toBeEnabled()
   await expect(page.getByTestId("import-waits")).toHaveCount(0)
   await stepSays(page, "review", "complete", "2 files to import")
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-several-skipped")
   await skipNone.click()
   await expect(skipAll).toBeFocused()
@@ -298,6 +301,7 @@ test("a round waits for a decision on the file that differs, then imports the ot
   )
   await screenshot(page, "import-several-done")
   await page.getByTestId("review-left").click()
+  await shown(page, "review")
   await expect(page.getByTestId("import-review")).toBeFocused()
   await stepSays(page, "file", "complete", EXPORT)
   await expect(page.getByTestId("several-contracts")).toHaveCount(0)
