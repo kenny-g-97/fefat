@@ -22,6 +22,7 @@ import polars as pl
 
 from fefat.config import resolve_paths
 from fefat.market.calendar import utc_text
+from fefat.market.calendar_breaks import BreaksWithBars
 from fefat.market.calendar_offset import CalendarOffset, duration_text
 from fefat.market.engine_units import PRICE_SCALE
 from fefat.market.importers.databento import import_databento, preview_databento
@@ -55,6 +56,7 @@ from fefat_app.imports import (
     WRITING_PERCENT,
     BarSeen,
     BatchSeen,
+    BreaksSeen,
     DatasetWritten,
     FileRequest,
     FileSeen,
@@ -183,7 +185,7 @@ def _file_wrote(
         except (ValueError, OSError) as refused:
             refusal = str(refused)[:LINE_CHARS]
     return ImportWrote(
-        datasets=(_written(imported.merge),),
+        datasets=(_written(imported.merge, imported.reading.left_out),),
         instrument_saved=imported.instrument_saved,
         profile_kept=kept,
         profile_refusal=refusal,
@@ -218,6 +220,7 @@ def _file_seen(preview: FilePreview, file_name: str) -> FileSeen:
         dataset=reading.dataset,
         rows_read=reading.rows_read,
         records=reading.records,
+        breaks_with_bars=_breaks_seen(reading.calendar.breaks_with_bars, reading.left_out),
         contracts=reading.contracts[:LISTED_AT_MOST],
         contracts_total=len(reading.contracts),
         first_trade_date=reading.first_trade_date,
@@ -241,11 +244,42 @@ def _file_verdict(preview: FilePreview) -> ImportVerdict:
     found = preview.against_the_store
     if isinstance(found, AlreadyImported):
         return ImportVerdict.IMPORTED_BEFORE
+    if preview.reading.only_bars_in_breaks_refuse():
+        return ImportVerdict.BARS_IN_BREAKS
     if preview.reading.refusals():
         return ImportVerdict.REFUSED
     if found is not None and found.refuses():
         return ImportVerdict.DIFFERING
     return ImportVerdict.IMPORTS
+
+
+def _breaks_seen(
+    found: tuple[BreaksWithBars, ...], left_out: BreaksWithBars | None
+) -> BreaksSeen | None:
+    """A file's breaks with a bar closing at the next open in counts and trade dates, those
+    its reading found, or those its import leaves out, after which the records it takes hold
+    none (ADR-0022); none without them."""
+    if left_out is not None and found:
+        raise ValueError(
+            "Expected no bar in a break closing at the next open among the records left without "
+            f"the sessions beside such breaks, got {found[0].describe()}."
+        )
+    seen = left_out if left_out is not None else next(iter(found), None)
+    if seen is None:
+        return None
+    return BreaksSeen(
+        left_out=left_out is not None,
+        bars=seen.bars(),
+        breaks=tuple(each.after for each in seen.breaks[:LISTED_AT_MOST]),
+        breaks_total=len(seen.breaks),
+        sessions=tuple(seen.trade_dates_beside()[:LISTED_AT_MOST]),
+        sessions_total=len(seen.sessions_beside),
+        ending_a_bar_early=tuple(
+            each.trade_date for each in seen.sessions_ending_a_bar_early[:LISTED_AT_MOST]
+        ),
+        ending_a_bar_early_total=len(seen.sessions_ending_a_bar_early),
+        records=seen.records_left_out(),
+    )
 
 
 def _batch_seen(preview: DatabentoPreview) -> BatchSeen:
@@ -332,13 +366,16 @@ def _print(stored: StoredPrint) -> PrintSeen:
     )
 
 
-def _written(merge: DatasetMerge) -> DatasetWritten:
+def _written(merge: DatasetMerge, left_out: BreaksWithBars | None = None) -> DatasetWritten:
+    """What an import wrote into a dataset, with the records it left out beside the file's
+    breaks with bars, if any (ADR-0022)."""
     return DatasetWritten(
         dataset=merge.dataset,
         records_added=merge.records_added,
         records_held=merge.records_held,
         records_taken=merge.records_differing if merge.replaces() else 0,
         new_sessions=len(merge.new_sessions),
+        records_left_out=0 if left_out is None else left_out.records_left_out(),
     )
 
 
@@ -349,6 +386,7 @@ def _file_request(request: FileRequest) -> FileImportRequest:
         contract=request.contract,
         root=request.root,
         time_zone=request.time_zone,
+        bars_in_breaks=request.bars_in_breaks,
     )
 
 

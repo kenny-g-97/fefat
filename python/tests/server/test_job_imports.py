@@ -11,7 +11,7 @@ import os
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -29,9 +29,16 @@ from export_samples import (
     written_export,
 )
 from fefat.config import resolve_paths
+from fefat.market.calendar_breaks import (
+    BarsInBreaks,
+    BreaksWithBars,
+    BreakWithBars,
+    SessionLeftOut,
+)
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import keep_profile
 from fefat.market.layout import Dataset
+from fefat.market.schema import parse_schema_name
 from fefat.market.store import Store
 from fefat_app.container import Container
 from fefat_app.database.job_records import JobTables
@@ -46,7 +53,7 @@ from fefat_app.execution import (
     StopCheck,
     keep_running,
 )
-from fefat_app.executor.imports import import_output
+from fefat_app.executor.imports import _breaks_seen, import_output
 from fefat_app.executor.protocol import ERROR_CHARS
 from fefat_app.executor.runner_process import leftovers_removed
 from fefat_app.executor.subprocess_executor import SubprocessExecutor
@@ -772,6 +779,104 @@ def test_other_files_are_refused_beside_one_import_and_a_round_beside_a_batch() 
         ImportJobPayload(
             spec=ImportSpec(request=batch, limits=IMPORT_LIMITS), upload_id=None, in_round=True
         )
+
+
+def test_each_file_of_a_round_keeps_its_own_choice_for_its_bars_in_a_break() -> None:
+    # Step 5.15: a round names the files the correction is approved for, and each file's import
+    # carries its own choice, the first's in the spec and the others' beside their paths.
+    file = FileRequest(
+        path=Path("ES 03-26.Last.txt"),
+        profile=PRESETS["ninjatrader"],
+        keep_profile=False,
+        contract=None,
+        root=None,
+        time_zone=None,
+        differing=DifferingRecords.REFUSE,
+        bars_in_breaks=BarsInBreaks.LEAVE_OUT,
+    )
+    others = (
+        RoundFile(path=Path("ES 06-26.Last.txt"), upload_id=None),
+        RoundFile(
+            path=Path("ES 09-26.Last.txt"), upload_id=None, bars_in_breaks=BarsInBreaks.LEAVE_OUT
+        ),
+    )
+    payload = ImportJobPayload(
+        spec=ImportSpec(request=file, limits=IMPORT_LIMITS),
+        upload_id=None,
+        others=others,
+        in_round=True,
+    )
+
+    chosen = [
+        (spec.request.path.name, getattr(spec.request, "bars_in_breaks", None))
+        for spec, _ in payload.files()
+    ]
+
+    assert chosen == [
+        ("ES 03-26.Last.txt", BarsInBreaks.LEAVE_OUT),
+        ("ES 06-26.Last.txt", BarsInBreaks.REFUSE),
+        ("ES 09-26.Last.txt", BarsInBreaks.LEAVE_OUT),
+    ]
+
+
+def test_a_payload_queued_before_the_choice_refuses_bars_in_a_break(job_records: JobTables) -> None:
+    # A job queued before step 5.15 has no choice in its payload, and reads as refusing them,
+    # as every import did then.
+    queued = an_import(job_records, Path("ES 03-26.Last.txt"))
+    stored: dict[str, Any] = dict(queued.payload)
+    request = {
+        key: value for key, value in stored["spec"]["request"].items() if key != "bars_in_breaks"
+    }
+    stored["spec"] = {**stored["spec"], "request": request}
+
+    payload = ImportJobPayload.model_validate(stored)
+
+    assert isinstance(payload.spec.request, FileRequest)
+    assert payload.spec.request.bars_in_breaks is BarsInBreaks.REFUSE
+
+
+def a_finding(*ending: SessionLeftOut) -> BreaksWithBars:
+    """A file's break after 02-04 with 60 bars, the sessions beside it, and `ending`, the
+    sessions ending a bar early that go with them."""
+    return BreaksWithBars(
+        dataset=Dataset(
+            provider="ninjatrader", schema_name=parse_schema_name("ohlcv-1m"), root="ES"
+        ),
+        breaks=(BreakWithBars(after=date(2026, 2, 4), bars=60),),
+        sessions_beside=(
+            SessionLeftOut(trade_date=date(2026, 2, 4), records=1_440),
+            SessionLeftOut(trade_date=date(2026, 2, 5), records=1_380),
+        ),
+        sessions_ending_a_bar_early=ending,
+    )
+
+
+def test_a_reading_that_left_out_such_breaks_yet_holds_one_is_refused() -> None:
+    # The step's review: the records the correction takes hold no bar in a break closing at the
+    # next open, since the sessions beside every such break go with it (ADR-0022), so a reading
+    # that says otherwise is a fault the runner refuses rather than words one way or the other.
+    found = a_finding()
+
+    with pytest.raises(ValueError, match="Expected no bar in a break closing at the next open"):
+        _breaks_seen((found,), found)
+
+
+def test_the_runner_names_the_sessions_ending_a_bar_early_and_counts_every_record_left_out() -> (
+    None
+):
+    # The step's third review: the account the wizard words lists a session ending a bar early
+    # apart from the sessions beside, and its records among those left out (D-104).
+    seen = _breaks_seen(
+        (a_finding(SessionLeftOut(trade_date=date(2026, 2, 3), records=1_379)),), None
+    )
+
+    assert seen is not None
+    assert (seen.sessions, seen.ending_a_bar_early, seen.ending_a_bar_early_total) == (
+        (date(2026, 2, 4), date(2026, 2, 5)),
+        (date(2026, 2, 3),),
+        1,
+    )
+    assert seen.records == 1_440 + 1_380 + 1_379
 
 
 def test_a_round_of_one_file_counts_its_file(

@@ -174,6 +174,11 @@ function Written({ written }: Readonly<{ written: DatasetWritten }>) {
       <p className="text-foreground-secondary">
         {`Imported ${counted(written.records_added, "record")} into ${datasetName(written.dataset)}, ${formatCount(written.records_held)} held already${taken}.`}
       </p>
+      {written.records_left_out > 0 && (
+        <p className="text-foreground-secondary" data-testid="import-left-out">
+          {`Left out ${counted(written.records_left_out, "record")}, the bars in a break and the sessions the review listed, as you approved.`}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <TextLink
           to="/data/dataset"

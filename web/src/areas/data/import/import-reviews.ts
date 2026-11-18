@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { ImportPreviewAnswer, UploadedFile } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { previewSent } from "./import-preview"
+import { fileOf } from "./import-request"
 
 type Schemas = components["schemas"]
 type FileImportAsked = Schemas["FileImportAsked"]
@@ -170,9 +171,13 @@ function requireOnePerFile(files: number, states: readonly FileState[]) {
   }
 }
 
-/** What a file's review says of its import: a verdict, or that the file could not be read,
- * refused before a verdict or failed. */
-export type Outcome = Schemas["ImportVerdict"] | "unread"
+/** What a file's review says of its import: a verdict, that it imports without its bars in
+ * a break, which the trader approved (ADR-0022), or that the file could not be read, refused
+ * before a verdict or failed. */
+export type Outcome =
+  | Schemas["ImportVerdict"]
+  | "imports_without_bars"
+  | "unread"
 
 /** What `state` says of its file's import; none while it is read. */
 export function outcomeOf(state: FileState): Outcome | null {
@@ -182,7 +187,17 @@ export function outcomeOf(state: FileState): Outcome | null {
   if (state.kind === "failed" || state.answer.kind !== "file") {
     return "unread"
   }
-  return state.answer.verdict
+  const answer = state.answer
+  return answer.verdict === "imports" &&
+    answer.breaks_with_bars?.left_out === true
+    ? "imports_without_bars"
+    : answer.verdict
+}
+
+/** Whether an outcome sends its file with the round: it imports, as it is or without its
+ * bars in a break. */
+function imports(outcome: Outcome | null): boolean {
+  return outcome === "imports" || outcome === "imports_without_bars"
 }
 
 /** How many files were read, and how many of them each outcome holds. */
@@ -194,7 +209,9 @@ export type Tally = Readonly<{
 export function tallyOf(states: readonly FileState[]): Tally {
   const outcomes: Record<Outcome, number> = {
     imports: 0,
+    imports_without_bars: 0,
     refused: 0,
+    bars_in_breaks: 0,
     differing: 0,
     imported_before: 0,
     nothing: 0,
@@ -210,18 +227,40 @@ export function tallyOf(states: readonly FileState[]): Tally {
   return { read, outcomes }
 }
 
+/** The files whose reviews, or last reviews while they are read again, find bars in a break
+ * that leaving out would let them import, or that are left out already, by their uploads'
+ * ids (ADR-0022): those the round's Leave out the files' bars in a break names. */
+export function filesWithBarsInBreaks(
+  files: readonly ReviewedFile[]
+): string[] {
+  return files
+    .filter(({ state }) => {
+      const shown = shownState(state)
+      if (shown.kind !== "answered" || shown.answer.kind !== "file") {
+        return false
+      }
+      const breaks = shown.answer.breaks_with_bars
+      return (
+        breaks !== null &&
+        (breaks.left_out || shown.answer.verdict === "bars_in_breaks")
+      )
+    })
+    .map(({ upload }) => upload.id)
+}
+
 /** How many files Import sends, by each file's review or, while it is read again, its last
  * one, so that Import's name holds still through a change; none where none imports. */
 export function filesImporting(states: readonly FileState[]): number | null {
-  const count = states.filter(
-    (state) => outcomeOf(shownState(state)) === "imports"
+  const count = states.filter((state) =>
+    imports(outcomeOf(shownState(state)))
   ).length
   return count === 0 ? null : count
 }
 
 /** The round Import sends (web/DESIGN.md, Patterns, Job in its card): the files whose own
- * review says they import as they are, through the profile and the options they share; none
- * until every review is read, or where no file imports. */
+ * review says they import as they are, through the profile and the options they share, and
+ * among them those whose bars in a break are left out, as their reviews read them (ADR-0022);
+ * none until every review is read, or where no file imports. */
 export function filesRequest(
   asks: readonly FileImportAsked[],
   states: readonly FileState[]
@@ -231,19 +270,20 @@ export function filesRequest(
   if (first === undefined || states.some((state) => state.kind === "reading")) {
     return null
   }
-  const sources = asks
-    .filter((_, index) => outcomeOf(states[index]) === "imports")
-    .map((ask) => ask.source)
-  if (sources.length === 0) {
+  const sent = asks.filter((_, index) => imports(outcomeOf(states[index])))
+  if (sent.length === 0) {
     return null
   }
   return {
     kind: "files",
-    sources,
+    sources: sent.map((ask) => ask.source),
     profile: first.profile,
     root: first.root,
     time_zone: first.time_zone,
     differing: first.differing,
+    leaving_out_bars_in_breaks: sent
+      .filter((ask) => ask.bars_in_breaks === "leave-out")
+      .map((ask) => ask.source),
   }
 }
 
@@ -278,11 +318,6 @@ export function tooManyFiles(count: number): string | null {
 
 function uploadIdOf(source: ImportSource): string | null {
   return source.kind === "upload" ? source.upload_id : null
-}
-
-/** The file `source` names, by its upload's id or its path. */
-function fileOf(source: ImportSource): string {
-  return source.kind === "upload" ? source.upload_id : source.path
 }
 
 /** Several files' reviews, the way to read the failed ones again, as Try again does, and to

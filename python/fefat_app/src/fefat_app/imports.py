@@ -19,6 +19,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
 
+from fefat.market.calendar_breaks import BarsInBreaks
 from fefat.market.calendar_offset import OffsetCause
 from fefat.market.importers.partition_merge import DifferingRecords
 from fefat.market.importers.profiles import FileLayout, ImportProfile
@@ -102,11 +103,14 @@ class AnswerKind(StrEnum):
 
 class ImportVerdict(StrEnum):
     """What a preview finds the import would do: import as it is, be refused for the problems
-    or offsets found, be refused for records that differ from the store's, change nothing, as a
-    file imported before, or import nothing, as a batch whose files hold nothing new."""
+    or offsets found, be refused for its bars in a break alone, which the trader may leave out
+    with the sessions beside them (ADR-0022), be refused for records that differ from the
+    store's, change nothing, as a file imported before, or import nothing, as a batch whose files
+    hold nothing new."""
 
     IMPORTS = "imports"
     REFUSED = "refused"
+    BARS_IN_BREAKS = "bars_in_breaks"
     DIFFERING = "differing"
     IMPORTED_BEFORE = "imported_before"
     NOTHING = "nothing"
@@ -178,6 +182,7 @@ class FileImportAsked(FrozenModel):
     root: FolderName | None = None
     time_zone: str | None = Field(default=None, min_length=1, max_length=64)
     differing: DifferingRecords = DifferingRecords.REFUSE
+    bars_in_breaks: BarsInBreaks = BarsInBreaks.REFUSE
 
 
 class FilesImportAsked(FrozenModel):
@@ -191,6 +196,25 @@ class FilesImportAsked(FrozenModel):
     root: FolderName | None = None
     time_zone: str | None = Field(default=None, min_length=1, max_length=64)
     differing: DifferingRecords = DifferingRecords.REFUSE
+    leaving_out_bars_in_breaks: tuple[ImportSource, ...] = Field(
+        default=(), max_length=FILES_AT_MOST
+    )
+
+    @model_validator(mode="after")
+    def _bars_left_out_of_files_it_imports(self) -> Self:
+        stray = [source for source in self.leaving_out_bars_in_breaks if source not in self.sources]
+        if stray:
+            raise ValueError(
+                "Expected the files whose bars in a break are left out among the files the "
+                f"round imports, got {len(stray)} beside them."
+            )
+        return self
+
+    def bars_in_breaks_of(self, source: ImportSource) -> BarsInBreaks:
+        """What the round does with the bars in a break of the file `source` (ADR-0022)."""
+        if source in self.leaving_out_bars_in_breaks:
+            return BarsInBreaks.LEAVE_OUT
+        return BarsInBreaks.REFUSE
 
 
 class BatchImportAsked(FrozenModel):
@@ -231,6 +255,7 @@ class FileRequest(FrozenModel):
     root: str | None
     time_zone: str | None
     differing: DifferingRecords
+    bars_in_breaks: BarsInBreaks = BarsInBreaks.REFUSE
 
 
 class BatchRequest(FrozenModel):
@@ -266,11 +291,12 @@ class ImportSpec(FrozenModel):
 
 
 class RoundFile(FrozenModel):
-    """A file of a round (D-102): the path the server resolved, and the upload it reads, if it
-    is one."""
+    """A file of a round (D-102): the path the server resolved, the upload it reads, if it is
+    one, and what its import does with its bars in a break (ADR-0022)."""
 
     path: Path
     upload_id: UUID | None
+    bars_in_breaks: BarsInBreaks = BarsInBreaks.REFUSE
 
 
 class ImportJobPayload(FrozenModel):
@@ -296,12 +322,14 @@ class ImportJobPayload(FrozenModel):
 
     def files(self) -> tuple[tuple[ImportSpec, UUID | None], ...]:
         """Each file's import and the upload it reads: the first's, then each other's."""
-        others = ((self._spec_of(other.path), other.upload_id) for other in self.others)
+        others = ((self._spec_of(other), other.upload_id) for other in self.others)
         return ((self.spec, self.upload_id), *others)
 
-    def _spec_of(self, path: Path) -> ImportSpec:
-        """The first file's import, of the file at `path`."""
-        request = self.spec.request.model_copy(update={"path": path})
+    def _spec_of(self, other: RoundFile) -> ImportSpec:
+        """The first file's import, of the file `other`, with its own choice for its bars in a
+        break."""
+        update = {"path": other.path, "bars_in_breaks": other.bars_in_breaks}
+        request = self.spec.request.model_copy(update=update)
         return self.spec.model_copy(update={"request": request})
 
 
@@ -407,6 +435,25 @@ class MergeSeen(FrozenModel):
     partitions_unchanged: int = Field(ge=0)
 
 
+class BreaksSeen(FrozenModel):
+    """A file's breaks that hold a bar closing at the next open, the edge of a stretch a
+    platform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts
+    and trade dates: whether its import leaves them out, the bars in them, the trade dates they
+    follow, the sessions beside them, and the other sessions whose last bar ends a bar before the
+    close, which the correction leaves out with them (D-104), the first of each beside their
+    totals, and the records of every session left out, the bars among them."""
+
+    left_out: bool
+    bars: int = Field(ge=1)
+    breaks: tuple[date, ...] = Field(min_length=1, max_length=LISTED_AT_MOST)
+    breaks_total: int = Field(ge=1)
+    sessions: tuple[date, ...] = Field(min_length=1, max_length=LISTED_AT_MOST)
+    sessions_total: int = Field(ge=1)
+    ending_a_bar_early: tuple[date, ...] = Field(max_length=LISTED_AT_MOST)
+    ending_a_bar_early_total: int = Field(ge=0)
+    records: int = Field(ge=1)
+
+
 class FileSeen(FrozenModel):
     """What a file's import would do (`fefat.market.importers.file_report.FilePreview`): the
     verdict; the file's name and profile; the dataset its records go to; what was read, left
@@ -420,6 +467,7 @@ class FileSeen(FrozenModel):
     dataset: Dataset
     rows_read: int = Field(ge=0)
     records: int = Field(ge=0)
+    breaks_with_bars: BreaksSeen | None
     contracts: tuple[str, ...] = Field(max_length=LISTED_AT_MOST)
     contracts_total: int = Field(ge=0)
     first_trade_date: date | None
@@ -464,13 +512,16 @@ type ImportPreviewAnswer = Annotated[
 
 class DatasetWritten(FrozenModel):
     """What an import wrote into one dataset: the records it added, those the store held
-    already, those of the file taken in place of stored ones, and the trade dates new to it."""
+    already, those of the file taken in place of stored ones, the trade dates new to it, and
+    the records it left out, the file's bars in a break and the sessions beside them, which a
+    round adds up over files whose sessions may share trade dates (ADR-0022)."""
 
     dataset: Dataset
     records_added: int = Field(ge=0)
     records_held: int = Field(ge=0)
     records_taken: int = Field(ge=0)
     new_sessions: int = Field(ge=0)
+    records_left_out: int = Field(default=0, ge=0)
 
 
 class ImportWrote(FrozenModel):

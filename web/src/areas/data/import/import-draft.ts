@@ -86,6 +86,7 @@ export type Draft = Readonly<{
   root: string
   instrument: InstrumentDraft
   differing: DifferingRecords
+  breaksLeftOut: readonly string[]
 }>
 
 export type DraftChange =
@@ -100,6 +101,7 @@ export type DraftChange =
   | Readonly<{ kind: "instrument"; instrument: InstrumentDraft }>
   | Readonly<{ kind: "instrument fields"; fields: Partial<InstrumentFields> }>
   | Readonly<{ kind: "differing"; differing: DifferingRecords }>
+  | Readonly<{ kind: "bars in breaks"; files: readonly string[] }>
 
 /** A new instrument's fields before the trader types them: futures in US dollars on the CME's
  * equity index calendar, expiring on the third Friday, as the most common product is. */
@@ -130,13 +132,21 @@ export function startingDraft(choice: PresetChoice): Draft {
     root: "",
     instrument: { kind: "profile's" },
     differing: "refuse",
+    breaksLeftOut: [],
   }
 }
 
 /** The draft after `change`: any change but the choice of what to do with differing records
- * refuses them again, since the trader chose to take them for the file the review showed. */
+ * refuses them again, since the trader chose to take them for the file the review showed, and
+ * any change but those two leaves no file's bars in a break out any more, since the trader
+ * approved that for the reading the review showed (ADR-0022); leaving out the bars of other
+ * files reads them again, so it refuses differing records again too. */
 export function drafted(draft: Draft, change: DraftChange): Draft {
-  const refused = { ...draft, differing: "refuse" } satisfies Draft
+  const refused = {
+    ...draft,
+    differing: "refuse",
+    breaksLeftOut: [],
+  } satisfies Draft
   switch (change.kind) {
     case "reading":
       return { ...refused, reading: change.reading, source: { kind: "none" } }
@@ -177,6 +187,8 @@ export function drafted(draft: Draft, change: DraftChange): Draft {
       }
     case "differing":
       return { ...draft, differing: change.differing }
+    case "bars in breaks":
+      return { ...draft, differing: "refuse", breaksLeftOut: change.files }
   }
 }
 

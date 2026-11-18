@@ -5,7 +5,9 @@ import { counted, formatCount } from "@/ui/figures"
 import { datasetName } from "../datasets"
 import { DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
+import { BarsInBreaks, LeaveOutBars } from "./BarsInBreaks"
 import { FirstRecords } from "./FirstRecords"
+import { filesOf } from "./import-request"
 import { Merge, TakeRecords } from "./Merge"
 
 type Schemas = components["schemas"]
@@ -14,6 +16,7 @@ type Schemas = components["schemas"]
 const VERDICTS: Readonly<Record<Schemas["ImportVerdict"], string>> = {
   imports: "It imports as it is",
   refused: "It would be refused",
+  bars_in_breaks: "It would be refused for its bars in a break",
   differing: "Its records differ from the ones FEAT holds",
   imported_before: "It is imported already: importing it again changes nothing",
   nothing: "It holds nothing to import",
@@ -49,7 +52,7 @@ export function FileReview({
             : "font-medium text-foreground"
         }
       >
-        {VERDICTS[seen.verdict]}
+        {verdictOf(seen)}
       </p>
       <p className="text-foreground-secondary">{readingLine(seen)}</p>
       {seen.offsets.map((offset) => (
@@ -61,6 +64,20 @@ export function FileReview({
           {offsetLine(offset, zone)}
         </p>
       ))}
+      {seen.breaks_with_bars !== null && (
+        <BarsInBreaks breaks={seen.breaks_with_bars}>
+          {alone &&
+            (seen.breaks_with_bars.left_out ||
+              seen.verdict === "bars_in_breaks") && (
+              <LeaveOutBars
+                files={filesOf(draft.source)}
+                records={seen.breaks_with_bars.records}
+                draft={draft}
+                change={change}
+              />
+            )}
+        </BarsInBreaks>
+      )}
       <Listed
         title="Problems"
         lines={seen.problems}
@@ -203,6 +220,13 @@ function readingLine(seen: FileSeen): string {
   return leftOut.length === 0
     ? read
     : `${read} Left out: ${leftOut.join(" and ")}.`
+}
+
+/** The verdict's words, a file that imports once its bars in a break are left out saying so. */
+function verdictOf(seen: FileSeen): string {
+  return seen.verdict === "imports" && seen.breaks_with_bars?.left_out === true
+    ? "It imports without its bars in a break"
+    : VERDICTS[seen.verdict]
 }
 
 /** An offset in words, with what to check, the time zone included where it points at one. */

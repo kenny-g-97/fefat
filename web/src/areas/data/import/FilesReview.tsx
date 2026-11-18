@@ -6,12 +6,14 @@ import { type AsideTone, DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
 import {
   type FileState,
+  filesWithBarsInBreaks,
   type Outcome,
   outcomeOf,
   type ReviewedFile,
   shownState,
   tallyOf,
 } from "./import-reviews"
+import { LeaveOutBars } from "./BarsInBreaks"
 import { FileReview } from "./FileReview"
 import { TakeRecords } from "./Merge"
 
@@ -22,7 +24,17 @@ const OTHER_OUTCOMES: readonly Readonly<{
   one: string
   several: string
 }>[] = [
+  {
+    outcome: "imports_without_bars",
+    one: "imports without its bars in a break",
+    several: "import without their bars in a break",
+  },
   { outcome: "refused", one: "would be refused", several: "would be refused" },
+  {
+    outcome: "bars_in_breaks",
+    one: "would be refused for its bars in a break",
+    several: "would be refused for their bars in a break",
+  },
   {
     outcome: "differing",
     one: "holds records that differ from the ones FEAT holds",
@@ -47,7 +59,9 @@ const ROW_OUTCOMES: Readonly<
   Record<Outcome, Readonly<{ text: string; tone: AsideTone }>>
 > = {
   imports: { text: "Imports", tone: "quiet" },
+  imports_without_bars: { text: "Without bars in a break", tone: "body" },
   refused: { text: "Refused", tone: "negative" },
+  bars_in_breaks: { text: "Bars in a break", tone: "body" },
   differing: { text: "Differs", tone: "body" },
   imported_before: { text: "Imported before", tone: "quiet" },
   nothing: { text: "Nothing to import", tone: "quiet" },
@@ -79,6 +93,7 @@ export function FilesReview({
   const states = files.map((file) => file.state)
   const shown = states.map(shownState)
   const tally = tallyOf(shown)
+  const withBreaks = filesWithBarsInBreaks(files)
   const merges = shown.flatMap((state) =>
     state.kind === "answered" &&
     state.answer.kind === "file" &&
@@ -121,6 +136,14 @@ export function FilesReview({
           />
         ))}
       </div>
+      {withBreaks.length > 0 && (
+        <LeaveOutBars
+          files={withBreaks}
+          records={null}
+          draft={draft}
+          change={change}
+        />
+      )}
       {merges.some((merge) => merge.records_differing > 0) && (
         <TakeRecords disputed={null} draft={draft} change={change} />
       )}

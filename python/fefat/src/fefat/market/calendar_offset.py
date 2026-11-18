@@ -1,13 +1,17 @@
 """A dataset's offset from its calendar (step 1.10, `02-engine-and-data.md` §1.8): the time
 by which its records run late or early, as an import read in the wrong time zone or with the
 wrong bar stamping gives. Whole or half hours show when moving the records back by them puts
-inside the sessions most of the records outside them, over the whole dataset or over its part
+inside the sessions most of the records outside them, over the whole dataset, or over its part
 on one side of a change of the calendar's offset from UTC, as times kept in standard time across
-a daylight-saving change give. One bar shows when any session's break holds a bar that opens
-after the close and closes at the next open (a file that stamps each bar's open, read as its
-close), since nothing prints in the minute before an open, or when most sessions hold a bar
-opening at the close and open their first a bar after the open (the opposite mistake), since
-a correct file may hold a straggler at the close, or start inside a session.
+a daylight-saving change give, where that part, moved back, spans a whole session, or where no
+bar of it closes at an open from the break before it. One bar early shows when a session beside
+a bar closing at the next open, the session that bar opens or the one before it, holds no bar in
+its last bucket and one in the bucket before, as a file that stamps each bar's open, read as its
+close, gives, or when at least half the sessions with bars have such a bar before their open;
+one bar late, when most sessions hold a bar opening at the close and open their first a bar
+after the open (the opposite mistake), since a correct file may hold a straggler at the close,
+or start inside a session. A bar closing at an open otherwise is a bar in a break, the edge of a
+stretch a platform stamped early (`fefat.market.calendar_breaks`, ADR-0022, step 5.15).
 The calendar check (`fefat.market.calendar_check`) reports it beside its mismatches.
 
 An offset shows only where records reach the edges of sessions that a break bounds:
@@ -24,6 +28,12 @@ from enum import StrEnum
 import polars as pl
 
 from fefat.market.calendar import SessionTable
+from fefat.market.calendar_breaks import (
+    ENDS_A_BAR_EARLY,
+    REACHES_THE_NEXT_OPEN,
+    bars_with_their_sessions,
+    session_edges,
+)
 from fefat.market.layout import Dataset
 from fefat.market.schema import BarSchemaName, FrozenModel, Timeframe, TimeUnit
 
@@ -42,6 +52,9 @@ _SIGNIFICANT_MINUTES = 10
 """How many minutes must lie outside every session for an offset to be looked for, so that
 a straggler after a close in a small part of a file, which any move into the session would
 fix, shows none."""
+_WHOLE_SESSION_MARGIN = _HALF_HOUR
+"""How far inside a session's open and close the first and last minute of a part of a file may
+lie for the part to span that session whole (`_part_runs_off`)."""
 TIMING_UNCHECKED = (
     "the calendar could not check the file's time zone and bar stamping: its records moved by "
     "an hour or a bar would still fit their sessions, as records of regular hours only, thin "
@@ -117,16 +130,15 @@ def records_offset(
         .get_column(clock)
     )
     width = None if timeframe is None else timeframe.nominal_nanoseconds()
-    for part in (minutes, *_parts_by_utc_offset(minutes, sessions)):
-        zone = _zone_offset(part, sessions)
-        if zone is not None:
-            cause = (
-                OffsetCause.TIME_ZONE_OR_BAR_STAMPING
-                if abs(zone) == width
-                else OffsetCause.TIME_ZONE
-            )
-            return _offset(dataset, part, zone, cause, sessions)
-    if width is None or timeframe is None or timeframe.unit is TimeUnit.DAY:
+    intraday = timeframe is not None and timeframe.unit is not TimeUnit.DAY
+    hours = _hours_offset(minutes, sessions, records if intraday else None)
+    if hours is not None:
+        zone, part = hours
+        cause = (
+            OffsetCause.TIME_ZONE_OR_BAR_STAMPING if abs(zone) == width else OffsetCause.TIME_ZONE
+        )
+        return _offset(dataset, part, zone, cause, sessions)
+    if width is None or not intraday:
         return None
     stamping = _stamping_offset(records, sessions, width)
     if stamping is None:
@@ -159,6 +171,65 @@ def timing_checked(dataset: Dataset, records: pl.DataFrame, sessions: SessionTab
 def _timeframe(dataset: Dataset) -> Timeframe | None:
     schema_name = dataset.schema_name
     return schema_name.timeframe if isinstance(schema_name, BarSchemaName) else None
+
+
+def _hours_offset(
+    minutes: pl.Series, sessions: SessionTable, bars: pl.LazyFrame | None
+) -> tuple[int, pl.Series] | None:
+    """The half hours by which the minutes run late, with the minutes that run so: all of them,
+    or those on one side of a change of the calendar's offset from UTC where, moved back by
+    them, they span a whole session (`_part_runs_off`), or where no bar of `bars`, a file's
+    intraday bars, among them closes at an open from the break before it (`_reaches_an_open`),
+    since a few hours of a session after a clock change read as far off beside such a bar, the
+    edge of a stretch a platform stamped early (ADR-0022); none where neither shows."""
+    zone = _zone_offset(minutes, sessions)
+    if zone is not None:
+        return zone, minutes
+    for part in _parts_by_utc_offset(minutes, sessions):
+        zone = _zone_offset(part, sessions)
+        if zone is None:
+            continue
+        if _part_runs_off(part - zone, sessions) or not _reaches_an_open(part, bars, sessions):
+            return zone, part
+    return None
+
+
+def _reaches_an_open(part: pl.Series, bars: pl.LazyFrame | None, sessions: SessionTable) -> bool:
+    """Whether a bar of `bars` at one of the part's minutes opens after its session's close and
+    closes at the next session's open (`REACHES_THE_NEXT_OPEN`); never for ticks and daily bars,
+    given as None."""
+    bounded = None if bars is None else bars_with_their_sessions(bars, sessions)
+    if bounded is None:
+        return False
+    reaching = (
+        bounded.filter(REACHES_THE_NEXT_OPEN)
+        .select(pl.col("ts_open") // _MINUTE * _MINUTE)
+        .collect(engine="streaming")
+        .get_column("ts_open")
+    )
+    return bool(part.is_in(reaching.implode()).any())
+
+
+def _part_runs_off(moved: pl.Series, sessions: SessionTable) -> bool:
+    """Whether a part of a file, its minutes moved back by its hours, spans a session whole: its
+    first minute under `_WHOLE_SESSION_MARGIN` after the session's open, and its last within it
+    of the session's close. A part with minutes in sessions of three trade dates or more spans
+    the middle one, so thin sessions count while a few hours after a clock change do not.
+    Minutes beyond the session table are left out."""
+    first_open, last_close = sessions.span()
+    kept = moved.filter(moved.is_between(first_open, last_close, closed="left"))
+    if kept.is_empty():
+        return False
+    first, last = kept.min(), kept.max()
+    reach = pl.DataFrame({"instant": [first, last]}, schema={"instant": pl.Int64})
+    first_date, last_date = _first_and_last(
+        sessions.assign_trade_dates_or_previous(reach, "instant")
+    )
+    spanned = sessions.between(first_date, last_date).filter(
+        (pl.col("open") + _WHOLE_SESSION_MARGIN > first)
+        & (pl.col("close") - _WHOLE_SESSION_MARGIN <= last)
+    )
+    return not spanned.is_empty()
 
 
 def _zone_offset(minutes: pl.Series, sessions: SessionTable) -> int | None:
@@ -212,39 +283,48 @@ def _outside(instants: pl.Series, sessions: SessionTable) -> int:
 
 
 def _stamping_offset(bars: pl.LazyFrame, sessions: SessionTable, width: int) -> int | None:
-    """One bar early, when any session's break holds a bar that opens after the close and
-    closes at the next open, as a file that stamps each bar's open, read as its close, gives;
-    one bar late, when at least half the sessions with bars hold one opening at the close and
-    open their first one bar after the open, as the opposite mistake gives, since a correct
-    file may hold a straggler at the close, or start inside a session."""
-    first, last = (
-        bars.select(first=pl.col("trade_date").min(), last=pl.col("trade_date").max())
-        .collect(engine="streaming")
-        .row(0)
-    )
-    if first is None:
+    """One bar early, then one bar late, as the edges of the bars' sessions show them
+    (`_session_edges`, `_runs_a_bar_early`, `_runs_a_bar_late`); none otherwise."""
+    edges = _session_edges(bars, sessions, width)
+    if edges is None:
         return None
-    bounds = sessions.between_with_next_opens(first, last).select(
-        "trade_date", "next_open", session_open="open", session_close="close"
-    )
-    after_the_close = pl.col("ts_open") > pl.col("session_close")
-    edges = (
-        bars.select("trade_date", "ts_open", "ts_close")
-        .join(bounds.lazy(), on="trade_date")
-        .group_by("trade_date")
-        .agg(
-            late=(pl.col("ts_open") == pl.col("session_close")).any()
-            & (pl.col("ts_open").min() == pl.col("session_open").first() + width),
-            early=(after_the_close & (pl.col("ts_close") == pl.col("next_open"))).any(),
-        )
-        .collect(engine="streaming")
-    )
-    late, early = (int(edges.get_column(column).sum()) for column in ("late", "early"))
-    if early > 0:
+    if _runs_a_bar_early(edges):
         return -width
-    if late > 0 and late * 2 >= edges.height:
+    if _runs_a_bar_late(edges):
         return width
     return None
+
+
+def _session_edges(bars: pl.LazyFrame, sessions: SessionTable, width: int) -> pl.DataFrame | None:
+    """A row per trade date of `bars`, `width` long, with the edges of its session
+    (`fefat.market.calendar_breaks.session_edges`); none without bars."""
+    bounded = bars_with_their_sessions(bars, sessions)
+    return None if bounded is None else session_edges(bounded, width)
+
+
+def _runs_a_bar_early(edges: pl.DataFrame) -> bool:
+    """Whether a session beside a bar closing at the next open, the session that bar opens or
+    the one before it, holds no bar in its last bucket and one in the bucket before, as a file
+    that stamps each bar's open, read as its close, gives, or at least half the sessions with
+    bars have such a bar before their open; a bar closing at an open otherwise is a bar in a
+    break (ADR-0022), since nothing prints in the minute before an open."""
+    reached = edges.filter("reaches_the_next_open").get_column("next_open")
+    with_bars = edges.filter("inside")
+    headed = pl.col("session_open").is_in(reached.implode())
+    beside_the_bar = headed | pl.col("reaches_the_next_open")
+    if not with_bars.filter(beside_the_bar & ENDS_A_BAR_EARLY).is_empty():
+        return True
+    headed_sessions = with_bars.filter(headed).height
+    return headed_sessions > 0 and headed_sessions * 2 >= with_bars.height
+
+
+def _runs_a_bar_late(edges: pl.DataFrame) -> bool:
+    """Whether at least half the trade dates with bars hold one opening at the close and open
+    their first one bar after the open, as a file that stamps each bar's close, read as its
+    open, gives, since a correct file may hold a straggler at the close, or start inside a
+    session."""
+    late = int(edges.get_column("late").sum())
+    return late > 0 and late * 2 >= edges.height
 
 
 def _offset(

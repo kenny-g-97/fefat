@@ -6,6 +6,7 @@ type InlineConfirmationProps = Readonly<{
   confirm: string
   pending?: boolean
   align?: "start" | "end"
+  focused?: boolean
   onConfirm: () => void
 }>
 
@@ -19,15 +20,18 @@ type Asking =
  * width, with the confirm beside it as the danger action, so that a double click keeps; Keep
  * stands first where the trigger starts its line, `align="start"`, its label where the
  * trigger's began, and last where it ends it, and the trigger takes the focus back once Keep is
- * pressed. */
+ * pressed, or as it appears where `focused`, as after the way back of a confirmed choice. */
 export function InlineConfirmation({
   trigger,
   confirm,
   pending = false,
   align = "end",
+  focused = false,
   onConfirm,
 }: InlineConfirmationProps) {
-  const [asking, setAsking] = useState<Asking>({ kind: "not asked" })
+  const [asking, setAsking] = useState<Asking>(
+    focused ? { kind: "kept" } : { kind: "not asked" }
+  )
   if (asking.kind === "confirming") {
     const keep = (
       <Button

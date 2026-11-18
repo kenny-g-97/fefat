@@ -9,6 +9,14 @@ export const MORE: readonly [string, string] = [
   "XES 06-26.Last.txt",
   "XES 09-26.Last.txt",
 ]
+/** The seed's exports under `breaks`: three contracts whose break after 2026-02-03 holds nine
+ * bars, the last closing at the next open, and one without them (step 5.15). */
+export const WITH_A_BREAK: readonly [string, string, string] = [
+  "XES 12-26.Last.txt",
+  "XES 03-27.Last.txt",
+  "XES 06-27.Last.txt",
+]
+export const WITHOUT_A_BREAK = "XES 09-27.Last.txt"
 /** How long a preview may take to read a file. */
 export const READ_MS = 60_000
 /** How long an import's job may take. */

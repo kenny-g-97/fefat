@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode } from "react"
+import { type Dispatch, type ReactNode, useState } from "react"
 import type { MergeSeen } from "@/api/imports"
 import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
@@ -52,9 +52,11 @@ type TakeRecordsProps = Readonly<{
 /** Where the file's records differ from the stored ones (plan call 8): what to check first, and
  * Take the file's records behind an inline confirmation that counts the stored records that
  * give way, `disputed`, over every dataset the import writes, or for several files (D-102),
- * none, since two files of one contract dispute the same ones; once taken, the way back. The
+ * none, since two files of one contract dispute the same ones; once taken, the way back, which
+ * takes the focus from the confirm it replaces and, pressed, gives it to the trigger again. The
  * trigger starts its own line, so that Keep takes its place. */
 export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
+  const [takenBack, setTakenBack] = useState(false)
   const stored =
     disputed === null
       ? "the stored records they differ from"
@@ -73,7 +75,11 @@ export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => change({ kind: "differing", differing: "refuse" })}
+          autoFocus
+          onClick={() => {
+            setTakenBack(true)
+            change({ kind: "differing", differing: "refuse" })
+          }}
         >
           Keep the stored records
         </Button>
@@ -93,7 +99,11 @@ export function TakeRecords({ disputed, draft, change }: TakeRecordsProps) {
           disputed === null ? "Replace the stored records" : `Replace ${stored}`
         }
         align="start"
-        onConfirm={() => change({ kind: "differing", differing: "take-file" })}
+        focused={takenBack}
+        onConfirm={() => {
+          setTakenBack(false)
+          change({ kind: "differing", differing: "take-file" })
+        }}
       />
     </div>
   )

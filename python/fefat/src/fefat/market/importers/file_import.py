@@ -6,8 +6,10 @@ the calendar check on its records (`fefat.market.calendar_check.check_records`),
 the first rows as the store would hold them, the problems, the check, and the warnings, among
 them a calendar that could not test the file's timing (`fefat.market.calendar_offset`), and,
 for a file that reads without problems, what it would add to its dataset, writing nothing.
-`import_file` does the same, refuses a file with problems or whose records run late or
-early against their calendar, and otherwise reads each partition of its records, in the dataset
+`import_file` does the same, refuses a file with problems, whose records run late or early
+against their calendar, or whose breaks hold a bar closing at the next open, unless told to leave
+those out with the sessions beside them (`fefat.market.importers.taken_records`, ADR-0022), and
+otherwise reads each partition of its records, in the dataset
 `<provider>/<schema>/root=<root>`, against what the store holds of it (ADR-0021): records the
 store lacks are added, those it holds are counted, and those it holds with other values refuse
 the file, unless the import lets the file's stand. Only then does it write, once nothing can
@@ -31,11 +33,12 @@ from pathlib import Path, PurePosixPath
 
 import polars as pl
 
-from fefat.market.calendar_check import check_records
+from fefat.market.calendar_breaks import BarsInBreaks
 from fefat.market.calendar_offset import TIMING_UNCHECKED, timing_checked
 from fefat.market.dataset_choice import dataset_warnings
 from fefat.market.importers.canonical import partition_key, partition_of
 from fefat.market.importers.file_report import (
+    BARS_IN_BREAKS_ADVICE,
     AlreadyImported,
     FileImportReport,
     FilePreview,
@@ -66,6 +69,7 @@ from fefat.market.importers.profile_records import (
 from fefat.market.importers.profiles import ImportProfile
 from fefat.market.importers.report import DatasetMerge, ImportProgress, ImportStage, tell_no_one
 from fefat.market.importers.tabular import read_table
+from fefat.market.importers.taken_records import taken_records
 from fefat.market.instruments import InstrumentTable
 from fefat.market.layout import Dataset, DatasetMetadata, DatasetOrigin, Partition, SeriesKind
 from fefat.market.raw_manifest import checked_raw_path
@@ -92,18 +96,23 @@ PRINTS_AT_THE_END_OF_THEIR_STAMP = (
 PRINTS_AT_THE_END_OF_THEIR_STAMP_RECORDED = ", prints received at the end of their stamp"
 """How the raw manifest records that rule among an import's arguments, so that a file imported
 before it is refused rather than read as imported (D-50, D-70)."""
+BARS_IN_BREAKS_LEFT_OUT_RECORDED = ", bars in a break left out with the sessions beside them"
+"""How the raw manifest records an import told to leave out its bars in a break, so that the
+file read again under the other choice is refused (D-50, ADR-0022)."""
 
 
 @dataclass(frozen=True)
 class FileImportRequest:
-    """One file to import: its path, its profile, and the contract, root, and time zone the
-    command names, each None when it names none."""
+    """One file to import: its path, its profile, the contract, root, and time zone the command
+    names, each None when it names none, and what to do with its bars in a break that reach
+    the next open (ADR-0022)."""
 
     path: Path
     profile: ImportProfile
     contract: str | None = None
     root: str | None = None
     time_zone: str | None = None
+    bars_in_breaks: BarsInBreaks = BarsInBreaks.REFUSE
 
 
 def preview_file(
@@ -124,17 +133,17 @@ def preview_file(
     raw_path = _raw_path(request, hashlib.sha256(content).hexdigest())
     imported = _imported_before(store, request, raw_path, _import_arguments(request))
     mapped = _mapped(request, content, instruments, cache_folder)
-    reading = _reading(request, mapped)
+    reading, taken = _reading(request, mapped)
     metadata = _metadata(request.profile, guide)
     against_the_store = None
     if imported:
         against_the_store = AlreadyImported(source=str(request.path), raw_path=raw_path.as_posix())
     elif not reading.refusals():
-        partitions = _partitions(reading.dataset, mapped)
+        partitions = _partitions(reading.dataset, taken)
         merging = _FileMerge(store, partitions, _identity(request.profile), metadata)
         against_the_store = merging.checked(differing)
     return FilePreview(
-        reading=reading, first_records=_first_records(mapped), against_the_store=against_the_store
+        reading=reading, first_records=_first_records(taken), against_the_store=against_the_store
     )
 
 
@@ -167,11 +176,11 @@ def import_file(
     if _imported_before(store, request, raw_path, arguments):
         return imported
     mapped = _mapped(request, content, instruments, cache_folder)
-    reading = _reading(request, mapped)
+    reading, taken = _reading(request, mapped)
     _require_no_refusals(request, reading)
     merging = _FileMerge(
         store=store,
-        partitions=_partitions(reading.dataset, mapped),
+        partitions=_partitions(reading.dataset, taken),
         identity=_identity(request.profile),
         metadata=_metadata(request.profile, guide),
     )
@@ -333,17 +342,26 @@ def _refused_by_polars(request: FileImportRequest, error: pl.exceptions.PolarsEr
     )
 
 
-def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
+def _reading(
+    request: FileImportRequest, mapped: MappedRecords
+) -> tuple[FileReading, MappedRecords]:
+    """What the file holds once read with its profile, and the records its import takes under
+    its choice for bars in a break (`taken_records`)."""
     profile = request.profile
     dataset = Dataset(
         provider=profile.provider, schema_name=mapped.schema_name, root=mapped.instrument.root
     )
-    records = mapped.records
+    taken = taken_records(dataset, mapped, request.bars_in_breaks)
+    records = taken.records.records
     dates = records.select(pl.col("trade_date").min(), pl.col("trade_date").max().alias("last"))
     first, last = dates.row(0) if not records.is_empty() else (None, None)
-    calendar = check_records(dataset, records.lazy(), mapped.sessions)
-    unchecked = not calendar.offsets and not timing_checked(dataset, records, mapped.sessions)
-    return FileReading(
+    calendar = taken.calendar
+    unchecked = (
+        taken.left_out is None
+        and not calendar.offsets
+        and not timing_checked(dataset, records, mapped.sessions)
+    )
+    reading = FileReading(
         source=str(request.path),
         profile=profile.name,
         dataset=dataset,
@@ -354,7 +372,8 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
         last_trade_date=last,
         bars_without_volume=mapped.bars_without_volume,
         spread_rows=mapped.spread_rows,
-        problems=tuple(problem.describe() for problem in mapped.problems),
+        left_out=taken.left_out,
+        problems=(*(problem.describe() for problem in mapped.problems), *taken.refusals),
         calendar=calendar,
         warnings=(
             *dataset_warnings(dataset, profile.series),
@@ -363,6 +382,7 @@ def _reading(request: FileImportRequest, mapped: MappedRecords) -> FileReading:
             *([TIMING_UNCHECKED] if unchecked else []),
         ),
     )
+    return reading, taken.records
 
 
 def _daily(profile: ImportProfile) -> bool:
@@ -371,8 +391,9 @@ def _daily(profile: ImportProfile) -> bool:
 
 def _import_arguments(request: FileImportRequest) -> str:
     """What besides the file decides its records, as the raw manifest records it: the profile,
-    the contract, root, and time zone the command named, if any, and whether its prints are
-    received at the end of their stamp (D-70)."""
+    the contract, root, and time zone the command named, if any, whether its bars in a break
+    were left out with the sessions beside them (ADR-0022), and whether its prints are received
+    at the end of their stamp (D-70)."""
     # shortcut: a profile edited under its name is not told apart; record the profile's hash
     # when profiles get versions.
     named = (
@@ -381,10 +402,13 @@ def _import_arguments(request: FileImportRequest) -> str:
         ("time zone", request.time_zone),
     )
     given = "".join(f", {name} {value}" for name, value in named if value is not None)
+    left_out = (
+        BARS_IN_BREAKS_LEFT_OUT_RECORDED if request.bars_in_breaks is BarsInBreaks.LEAVE_OUT else ""
+    )
     stamped = (
         PRINTS_AT_THE_END_OF_THEIR_STAMP_RECORDED if tick_arrival_offset(request.profile) else ""
     )
-    return f"import profile {request.profile.name}{given}{stamped}"
+    return f"import profile {request.profile.name}{given}{left_out}{stamped}"
 
 
 def _require_no_refusals(request: FileImportRequest, reading: FileReading) -> None:
@@ -392,9 +416,12 @@ def _require_no_refusals(request: FileImportRequest, reading: FileReading) -> No
     if not refusals:
         return
     listed = "\n".join(f"  {refusal}" for refusal in refusals)
+    advice = (
+        f" To import it: {BARS_IN_BREAKS_ADVICE}." if reading.only_bars_in_breaks_refuse() else ""
+    )
     raise ValueError(
         f"Expected {request.path} to read with the profile {request.profile.name} without "
-        f"problems, got:\n{listed}\nNothing was written; --preview shows the records."
+        f"problems, got:\n{listed}\nNothing was written; --preview shows the records.{advice}"
     )
 
 

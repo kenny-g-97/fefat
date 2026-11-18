@@ -20,7 +20,11 @@ const desktop = {
  * the seed exact (step 5.12, plan call 12): the wizard's first import, then the next ones, which
  * read what the first kept, each in a project of its own, since a project's dependencies alone
  * order two spec files, and a clip is set per file. */
-const STORE_WRITERS = ["import.spec.ts", "import-next.spec.ts"]
+const STORE_WRITERS = [
+  "import.spec.ts",
+  "import-next.spec.ts",
+  "import-breaks.spec.ts",
+]
 
 /** The UI harness of step 4.3 (`just e2e`): every spec against the built app that `fefat up`
  * serves on a seeded temporary home, and the login and the jobs' streams (step 4.4) once more
@@ -53,6 +57,12 @@ export default defineConfig({
       name: "desktop-import-next",
       testMatch: ["import-next.spec.ts"],
       dependencies: ["desktop-import"],
+      use: { ...desktop, baseURL: `http://127.0.0.1:${SERVER_PORT}` },
+    },
+    {
+      name: "desktop-import-breaks",
+      testMatch: ["import-breaks.spec.ts"],
+      dependencies: ["desktop-import-next"],
       use: { ...desktop, baseURL: `http://127.0.0.1:${SERVER_PORT}` },
     },
   ],

@@ -18,11 +18,14 @@ the holiday rules lack shows as an early last print: add it to
 It also finds a dataset's offset (step 1.10), the time by which its records run late or early
 against the calendar, as an import read in the wrong time zone or with the wrong bar stamping
 gives (`02-engine-and-data.md` §1.8): whole or half hours when moving the records, or those on
-one side of a change of the calendar's offset from UTC, by them puts inside the sessions most
-of those outside, and one bar when any session's break holds a bar closing at the next open,
-or most sessions a bar opening at the close and their first a bar after the open
-(`fefat.market.calendar_offset`).
-`check_records` runs the same check on records an import has not stored yet.
+one side of a change of the calendar's offset from UTC that span a whole session or hold no bar
+closing at an open, by them puts inside the sessions most of those outside, and one bar when a
+session beside a bar closing at the next open runs a bar early, or most sessions a bar opening
+at the close and their first a bar after the open (`fefat.market.calendar_offset`). Where
+intraday bars show no offset, it finds their breaks that hold a bar closing at the next open,
+the edge of a stretch a platform stamped early, with the sessions beside them and the other
+sessions ending a bar early (`fefat.market.calendar_breaks`, step 5.15). `check_records` runs
+the same check on records an import has not stored yet.
 
     paths = resolve_paths(os.environ)
     print(validate_calendar(Store(paths.data_dir), paths.cache_dir).summary())
@@ -39,10 +42,11 @@ import polars as pl
 from pydantic import Field
 
 from fefat.market.calendar import Session, SessionTable, utc_text
+from fefat.market.calendar_breaks import BreaksWithBars, breaks_with_bars
 from fefat.market.calendar_offset import CalendarOffset, records_offset
 from fefat.market.layout import Dataset, Partition
 from fefat.market.saved_instruments import instrument_table
-from fefat.market.schema import FrozenModel, SchemaKind
+from fefat.market.schema import BarSchemaName, FrozenModel, SchemaKind, TimeUnit
 from fefat.market.store import Store
 
 DEFAULT_TOLERANCE = timedelta(minutes=5)
@@ -125,22 +129,26 @@ def _observed(mismatch: SessionMismatch | MissingSession) -> str:
 
 class CalendarReport(FrozenModel):
     """What `validate_calendar` or `check_records` found: how many dataset trade dates were
-    checked, the mismatches, sorted by dataset, trade date, and kind, and each dataset's
-    offset, where its records run late or early as a whole."""
+    checked, the mismatches, sorted by dataset, trade date, and kind, each dataset's offset,
+    where its records run late or early as a whole, and each dataset's breaks that hold a bar
+    closing at the next open, where it has no offset."""
 
     days_checked: int = Field(ge=0)
     mismatches: tuple[CalendarMismatch, ...]
     offsets: tuple[CalendarOffset, ...] = ()
+    breaks_with_bars: tuple[BreaksWithBars, ...] = ()
 
     def summary(self) -> str:
-        """A line per offset and per mismatch, or one line saying there are none."""
-        if not self.mismatches and not self.offsets:
+        """A line per offset, per dataset's breaks with bars, and per mismatch, or one line
+        saying there are none."""
+        if not self.mismatches and not self.offsets and not self.breaks_with_bars:
             return f"Trade dates checked: {self.days_checked}. Mismatches: none."
         heading = f"Trade dates checked: {self.days_checked}. Mismatches: {len(self.mismatches)}."
         return "\n".join(
             [
                 heading,
                 *(offset.describe() for offset in self.offsets),
+                *(found.describe() for found in self.breaks_with_bars),
                 *(mismatch.describe() for mismatch in self.mismatches),
             ]
         )
@@ -162,6 +170,7 @@ def validate_calendar(
         days_checked=sum(report.days_checked for report in reports),
         mismatches=tuple(mismatch for report in reports for mismatch in report.mismatches),
         offsets=tuple(offset for report in reports for offset in report.offsets),
+        breaks_with_bars=tuple(found for report in reports for found in report.breaks_with_bars),
     )
 
 
@@ -178,11 +187,21 @@ def check_records(
         return CalendarReport(days_checked=0, mismatches=())
     joined = _beside_their_sessions(prints, sessions)
     offset = records_offset(dataset, records, sessions)
+    found = None
+    if offset is None and _intraday_bars(dataset):
+        found = breaks_with_bars(dataset, records, sessions)
     return CalendarReport(
         days_checked=joined.height,
         mismatches=tuple(_mismatches(dataset, joined, tolerance)),
         offsets=() if offset is None else (offset,),
+        breaks_with_bars=() if found is None else (found,),
     )
+
+
+def _intraday_bars(dataset: Dataset) -> bool:
+    """Whether the dataset holds bars shorter than a day, whose breaks can hold bars."""
+    schema_name = dataset.schema_name
+    return isinstance(schema_name, BarSchemaName) and schema_name.timeframe.unit is not TimeUnit.DAY
 
 
 def _checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]:

@@ -496,6 +496,15 @@
         "title": "BarStamp",
         "type": "string"
       },
+      "BarsInBreaks": {
+        "description": "What an import does with a file whose breaks hold a bar closing at the next open: refuse\nthe file, or leave out those bars with the sessions beside them (ADR-0022).",
+        "enum": [
+          "refuse",
+          "leave-out"
+        ],
+        "title": "BarsInBreaks",
+        "type": "string"
+      },
       "BarsPage": {
         "description": "A page of a window's bars: the instrument and the timeframe asked for, the provider whose\ndatasets the bars come from, the bars, the instant the next page opens at, which the caller\nsends as the window's start, none on the last page, and what `load` warns of the datasets\nthe page's bars come from, as a notebook shows it (step 5.4).",
         "properties": {
@@ -832,6 +841,83 @@
           "fidelity"
         ],
         "title": "Breakdowns",
+        "type": "object"
+      },
+      "BreaksSeen": {
+        "additionalProperties": false,
+        "description": "A file's breaks that hold a bar closing at the next open, the edge of a stretch a\nplatform stamped early (`fefat.market.calendar_breaks.BreaksWithBars`, ADR-0022), in counts\nand trade dates: whether its import leaves them out, the bars in them, the trade dates they\nfollow, the sessions beside them, and the other sessions whose last bar ends a bar before the\nclose, which the correction leaves out with them (D-104), the first of each beside their\ntotals, and the records of every session left out, the bars among them.",
+        "properties": {
+          "bars": {
+            "minimum": 1.0,
+            "title": "Bars",
+            "type": "integer"
+          },
+          "breaks": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Breaks",
+            "type": "array"
+          },
+          "breaks_total": {
+            "minimum": 1.0,
+            "title": "Breaks Total",
+            "type": "integer"
+          },
+          "ending_a_bar_early": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Ending A Bar Early",
+            "type": "array"
+          },
+          "ending_a_bar_early_total": {
+            "minimum": 0.0,
+            "title": "Ending A Bar Early Total",
+            "type": "integer"
+          },
+          "left_out": {
+            "title": "Left Out",
+            "type": "boolean"
+          },
+          "records": {
+            "minimum": 1.0,
+            "title": "Records",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Sessions",
+            "type": "array"
+          },
+          "sessions_total": {
+            "minimum": 1.0,
+            "title": "Sessions Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "left_out",
+          "bars",
+          "breaks",
+          "breaks_total",
+          "sessions",
+          "sessions_total",
+          "ending_a_bar_early",
+          "ending_a_bar_early_total",
+          "records"
+        ],
+        "title": "BreaksSeen",
         "type": "object"
       },
       "BusinessDaysBeforeThe25th": {
@@ -1969,6 +2055,10 @@
         "additionalProperties": false,
         "description": "A trader's file through a profile, with the contract, the root, and the time zone the\nprofile leaves to the import, as `fefat data import file` takes them, and what to do with\nrecords that differ from the store's.",
         "properties": {
+          "bars_in_breaks": {
+            "$ref": "#/components/schemas/BarsInBreaks",
+            "default": "refuse"
+          },
           "contract": {
             "anyOf": [
               {
@@ -2060,6 +2150,16 @@
             "minimum": 0.0,
             "title": "Bars Without Volume",
             "type": "integer"
+          },
+          "breaks_with_bars": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BreaksSeen"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contracts": {
             "items": {
@@ -2227,6 +2327,7 @@
           "dataset",
           "rows_read",
           "records",
+          "breaks_with_bars",
           "contracts",
           "contracts_total",
           "first_trade_date",
@@ -2260,6 +2361,15 @@
             "default": "files",
             "title": "Kind",
             "type": "string"
+          },
+          "leaving_out_bars_in_breaks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ImportSource"
+            },
+            "maxItems": 200,
+            "title": "Leaving Out Bars In Breaks",
+            "type": "array"
           },
           "profile": {
             "$ref": "#/components/schemas/ProfileChoice"
@@ -2702,10 +2812,11 @@
         ]
       },
       "ImportVerdict": {
-        "description": "What a preview finds the import would do: import as it is, be refused for the problems\nor offsets found, be refused for records that differ from the store's, change nothing, as a\nfile imported before, or import nothing, as a batch whose files hold nothing new.",
+        "description": "What a preview finds the import would do: import as it is, be refused for the problems\nor offsets found, be refused for its bars in a break alone, which the trader may leave out\nwith the sessions beside them (ADR-0022), be refused for records that differ from the\nstore's, change nothing, as a file imported before, or import nothing, as a batch whose files\nhold nothing new.",
         "enum": [
           "imports",
           "refused",
+          "bars_in_breaks",
           "differing",
           "imported_before",
           "nothing"

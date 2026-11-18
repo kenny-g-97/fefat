@@ -26,6 +26,7 @@ export type TablePreview = components["schemas"]["TablePreview"]
 export type FileSeen = components["schemas"]["FileSeen"]
 export type BatchSeen = components["schemas"]["BatchSeen"]
 export type MergeSeen = components["schemas"]["MergeSeen"]
+export type BreaksSeen = components["schemas"]["BreaksSeen"]
 
 /** The presets, then the profiles saved under `profiles/`, read again once an import ends,
  * since it may keep one. */
@@ -118,6 +119,7 @@ const writtenDataset = z.object({
   records_added: z.number(),
   records_held: z.number(),
   records_taken: z.number(),
+  records_left_out: z.number().default(0),
 })
 
 const notImported = z.object({
