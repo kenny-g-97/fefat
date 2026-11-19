@@ -16,7 +16,8 @@ type Asking =
 /** An action that cannot be undone, asked once in place (web/DESIGN.md, Patterns, Inline
  * confirmation): the trigger gives way to Keep, focused, in the trigger's place and at least its
  * width, with the confirm before it as the danger action, so that a double click keeps, and the
- * trigger takes the focus back once Keep is pressed. */
+ * trigger takes the focus back once Keep is pressed. Both wait while the confirm's request
+ * runs, since what it asked for can no longer be kept (step 5.18). */
 export function InlineConfirmation({
   trigger,
   confirm,
@@ -39,6 +40,7 @@ export function InlineConfirmation({
           variant="ghost"
           size="sm"
           autoFocus
+          disabled={pending}
           style={{ minWidth: asking.width }}
           onClick={() => setAsking({ kind: "kept" })}
         >

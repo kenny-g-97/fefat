@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react"
 import { z } from "zod"
 import { api, queryClient } from "./client"
 import { isActive, type Job, jobsQuery } from "./jobs"
-import { answer } from "./problems"
+import { answer, succeeded } from "./problems"
 import type { components } from "./schema"
 
 export type CatalogStatus = components["schemas"]["CatalogStatus"]
@@ -11,6 +11,7 @@ export type StoredDataset = components["schemas"]["StoredDataset"]
 export type InstrumentVersion = components["schemas"]["InstrumentVersion"]
 export type Source = components["schemas"]["Source"]
 export type MonthCoverage = components["schemas"]["MonthCoverage"]
+export type DeletionPreview = components["schemas"]["DeletionPreview"]
 
 /** The catalog's products with the datasets that cover them, then the datasets of the roots it
  * does not list, the trader's own. */
@@ -57,6 +58,37 @@ export function useCatalogSync() {
   })
 }
 
+/** What a delete of a provider's data of a root removes, which its dataset's page says before
+ * it asks (step 5.18, ADR-0023): FEAT's copies of the files it came from, those kept since they
+ * also hold another instrument, its quality report, and the saved runs that read it. */
+export function deletionQuery(provider: string, root: string) {
+  return queryOptions({
+    queryKey: ["stored-data", provider, root],
+    queryFn: async () =>
+      answer(
+        await api.GET("/v1/stored-data/{provider}/{root}/deletion", {
+          params: { path: { provider, root } },
+        })
+      ),
+  })
+}
+
+/** Delete a provider's data of a root (step 5.18, ADR-0023); every read of the store is asked
+ * again either way, since a delete refused part way has removed some of it. */
+export function useStoredDataDeletion(provider: string, root: string) {
+  return useMutation({
+    mutationFn: async () =>
+      succeeded(
+        await api.DELETE("/v1/stored-data/{provider}/{root}", {
+          params: { path: { provider, root } },
+        })
+      ),
+    onSettled: () => {
+      readTheStoreAgain()
+    },
+  })
+}
+
 /** A catalog sync's payload, which the OpenAPI document does not type: its root, or none for
  * every product. */
 const syncPayload = z.object({ root: z.string().nullable() })
@@ -94,15 +126,24 @@ const STORE_WRITERS: ReadonlySet<Job["kind"]> = new Set([
   "import",
 ])
 
-/** What a job that writes the store makes stale: the catalog, the datasets' quality, the
- * instruments, the chart's spans and bars, and the import profiles. */
+/** What a job that writes the store makes stale, and a delete: the catalog, the datasets'
+ * quality, the instruments, the chart's spans and bars, the import profiles, and what a delete
+ * would remove. */
 const STORE_READS = [
   catalogQuery.queryKey,
   ["datasets"],
   instrumentsQuery.queryKey,
   ["market"],
   ["import-profiles"],
+  ["stored-data"],
 ]
+
+/** Ask again, on every page, each read of the store (`STORE_READS`). */
+function readTheStoreAgain(): void {
+  for (const queryKey of STORE_READS) {
+    void queryClient.invalidateQueries({ queryKey })
+  }
+}
 
 /** Read again, on every page, what a catalog sync or an import among `jobs` wrote, once it
  * ends: a job another read of the jobs lists as ended for the first time, so that one which
@@ -119,9 +160,7 @@ export function useStoreReadAfterWrites(
     const earlier = before.current
     before.current = ended
     if (earlier !== undefined && writeEndedSince(earlier, ended)) {
-      for (const queryKey of STORE_READS) {
-        void queryClient.invalidateQueries({ queryKey })
-      }
+      readTheStoreAgain()
     }
   }, [ended])
 }
