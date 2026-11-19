@@ -835,6 +835,57 @@ Not in this step: a draft kept across a reload, a correction for one file apart 
 
 2026-11-19 (D-106, your check of the step's pull request): the review asks each decision as a choice. Under a round's rows, once every file is read, one box stands for each kind of problem, bars in a break first, then records that differ, then the files no correction fits, and says what the files share and what to check. The first two offer their options as a radio list, each option named by what happens to the files and followed by what it does: "Import them without those bars" or "Skip them", and "Import it and replace the stored records", which says that it cannot be undone once imported, or "Skip it"; no option is chosen at first, and the answer is for every file of the kind. The third offers "Skip the 2 files", as no correction fits them. A row still skips its own file, even once its box let it in, and its box then counts the files skipped, its correction leaving that skip as it stands unless each of its files is skipped; skipping a kind takes its correction back, so that Do not skip in a row brings no correction back unseen; and choosing the bars' correction reads those files again, so that their records that differ are asked again (step 5.15), records being taken for the files the box named alone, those files sent last in the round's import (from the follow-up's reviews, which you kept). One file, and a batch, choose under their box of counts, "Do not import the file" chosen at the start. The choice is the approval: Import asks nothing more. Of Done means, item 4 reads "one file in its row or all those of a kind at once", and item 6's decisions are these choices, which `web/DESIGN.md` names the Decision pattern. Your checks read the decisions in these boxes.
 
+### 5.18 Delete an instrument's stored data
+
+Depends on: 5.4, 5.14 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: default
+
+#### Purpose
+
+You delete what FEAT holds of an instrument from one provider, after a confirmation that says what goes, and can import its files again as new.
+
+#### Prerequisites
+
+- Steps 5.4 and 5.14 merged: the dataset's page holds the delete, and a merge is why a delete takes an instrument's data from a provider whole.
+- For Your checks: `just dev`, whose throwaway copy of the fixtures puts nothing of yours at stake.
+
+#### Prompt
+
+```text
+Masterplan step 5.18 — Delete an instrument's stored data.
+
+Read docs/masterplan/02-engine-and-data.md §1.1 and §1.8, ADR-0019 and ADR-0021, `fefat.market` (`store`, `store_files`, `raw_files`, `raw_manifest`, `quality_report`, `engine_cache`), `fefat.backtest.pinned_data`, the catalog's service and routes in `fefat_app`, and the dataset's page under web/src/areas/data/. Nothing in FEAT deletes stored data today (D-107). Let a trader delete one instrument's data from one provider, a row of the Data page's list:
+
+1. The SDK says what a delete removes, writing nothing, then removes it: every dataset of the provider and the root, FEAT's copies of the files they were imported from with their entries in the raw manifest, so that those files import again as new, the quality report, and the engine's cache. A raw file that also holds another root still stored is kept and named. The order of removal leaves the row listed, and the delete asked again finishes, wherever it is interrupted; nothing outside the pair's own files is removed, whatever text names it.
+2. Saved runs stand: the confirmation counts those that read the data, and a run whose data is gone refuses to be explained or checked again in words that say so.
+3. `fefat data delete <provider> <root>` prints what would go, and deletes with `--yes`.
+4. The server answers what a delete removes, and deletes, refused while a job is queued or running or an import writes.
+5. The dataset's page ends in a card that says what goes, with Delete, then Delete now and Keep (web/DESIGN.md, Inline confirmation).
+
+Not in this step: deleting one imported file or a range of dates, several instruments at once, a saved run, or the instrument's saved specification; taking one root out of a Databento batch shared with others.
+```
+
+#### Done means
+
+1. The SDK says what a delete of one provider's data of a root removes, writing nothing, and then removes exactly that: every dataset of the pair, FEAT's copies of the files they were imported from with their entries in the raw manifest, the quality report, and the engine's cache; every other file of the store and the cache stays byte for byte as it was (pytest).
+2. After a delete, a file imported before imports again as new, under other arguments too (pytest).
+3. A raw file that also holds another root still stored is kept and named; it goes with the last of its roots, and a batch's side files with it (pytest).
+4. A delete interrupted, by a crash or a file held open, leaves the row listed until its last record goes, and asking again finishes it; nothing outside the pair's own files is removed, whatever text names the provider and the root (pytest).
+5. A saved run that read deleted data keeps its record and results, is counted by the confirmation, and refuses to be explained or checked again in words that say its data was deleted (pytest).
+6. `fefat data delete <provider> <root>` prints what would go and deletes only with `--yes` (pytest).
+7. The server answers what a delete removes, and deletes; it refuses with 404 where the store holds no such data, with 409 while a job is queued or running, an import writes, or a file is held open, and with 403 without the session's CSRF header (pytest; the API document regenerated).
+8. The instrument's page ends in a card that says what goes; Delete asks before it deletes, a double click keeps, a refusal shows under it, and after Delete now the Data page no longer lists the row; the card keeps its contrast in both themes (vitest for the words; Playwright, with screenshots in both themes).
+9. `web/DESIGN.md`, `docs/data-guide.md`, `01-architecture.md`, `02-engine-and-data.md`, and the ADR say the delete.
+
+#### Your checks
+
+- Run `just dev`, which serves a throwaway copy of the fixtures. Open ES from synthetic on the Data page and read the card at the end of its page: it names the kinds of data, their dates, the files, and the one saved run that read them. Press Delete, then Keep: nothing changes. Open MES from synthetic, press Delete, then Delete now: you are back on the Data page, and MES is gone from it and from the chart's picker.
+- In the same `just dev`, import one of the XES exports the import page offers, delete XES from its page, and import the same file again: it imports as new.
+- On your own store, from a terminal: `fefat data delete ninjatrader ES`, without `--yes`, prints what a delete would remove, and deletes nothing.
+
+#### If it fails
+
+- A delete refused for a file held open means that a chart, a notebook, or another program reads it: close it and press Delete now again, which finishes the delete. Anything else a delete left behind, or anything it removed that it should not have, is for Claude Code, with the instrument, the provider, and the refusal's words.
+
 ## Phase exit
 
 ```text
