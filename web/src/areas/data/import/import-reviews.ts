@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react"
-import type { ImportPreviewAnswer, UploadedFile } from "@/api/imports"
+import type { ImportPreviewAnswer } from "@/api/imports"
 import type { components } from "@/api/schema"
 import { previewSent } from "./import-preview"
 import { fileOf } from "./import-request"
 
 type Schemas = components["schemas"]
 type FileImportAsked = Schemas["FileImportAsked"]
-type FilesImportAsked = Schemas["FilesImportAsked"]
-type ImportSource = Schemas["ImportSource"]
-
-/** How many files one import takes in a round, as the server's `FILES_AT_MOST` (D-102). */
-export const FILES_AT_MOST = 200
 
 /** A file's review once its request came back: the server's answer, or why it failed. */
 export type Settled =
@@ -151,26 +146,6 @@ export function shownState(state: FileState): FileState {
     : state
 }
 
-/** A file of several and its review. */
-export type ReviewedFile = Readonly<{ upload: UploadedFile; state: FileState }>
-
-/** Each of `uploads` with its review, `states` holding one for each in their order. */
-export function reviewedFiles(
-  uploads: readonly UploadedFile[],
-  states: readonly FileState[]
-): readonly ReviewedFile[] {
-  requireOnePerFile(uploads.length, states)
-  return uploads.map((upload, index) => ({ upload, state: states[index] }))
-}
-
-function requireOnePerFile(files: number, states: readonly FileState[]) {
-  if (states.length !== files) {
-    throw new Error(
-      `Expected a review of each of the ${files} files, got ${states.length}.`
-    )
-  }
-}
-
 /** What a file's review says of its import: a verdict, that it imports without its bars in
  * a break, which the trader approved (ADR-0022), or that the file could not be read, refused
  * before a verdict or failed. */
@@ -178,6 +153,10 @@ export type Outcome =
   | Schemas["ImportVerdict"]
   | "imports_without_bars"
   | "unread"
+
+/** An outcome that does not send its file: refused, for its bars in a break, for records that
+ * differ, not read, imported before, or empty. */
+export type NotImporting = Exclude<Outcome, "imports" | "imports_without_bars">
 
 /** What `state` says of its file's import; none while it is read. */
 export function outcomeOf(state: FileState): Outcome | null {
@@ -192,12 +171,6 @@ export function outcomeOf(state: FileState): Outcome | null {
     answer.breaks_with_bars?.left_out === true
     ? "imports_without_bars"
     : answer.verdict
-}
-
-/** Whether an outcome sends its file with the round: it imports, as it is or without its
- * bars in a break. */
-function imports(outcome: Outcome | null): boolean {
-  return outcome === "imports" || outcome === "imports_without_bars"
 }
 
 /** How many files were read, and how many of them each outcome holds. */
@@ -225,99 +198,6 @@ export function tallyOf(states: readonly FileState[]): Tally {
   }
   const read = states.filter((state) => state.kind !== "reading").length
   return { read, outcomes }
-}
-
-/** The files whose reviews, or last reviews while they are read again, find bars in a break
- * that leaving out would let them import, or that are left out already, by their uploads'
- * ids (ADR-0022): those the round's Leave out the files' bars in a break names. */
-export function filesWithBarsInBreaks(
-  files: readonly ReviewedFile[]
-): string[] {
-  return files
-    .filter(({ state }) => {
-      const shown = shownState(state)
-      if (shown.kind !== "answered" || shown.answer.kind !== "file") {
-        return false
-      }
-      const breaks = shown.answer.breaks_with_bars
-      return (
-        breaks !== null &&
-        (breaks.left_out || shown.answer.verdict === "bars_in_breaks")
-      )
-    })
-    .map(({ upload }) => upload.id)
-}
-
-/** How many files Import sends, by each file's review or, while it is read again, its last
- * one, so that Import's name holds still through a change; none where none imports. */
-export function filesImporting(states: readonly FileState[]): number | null {
-  const count = states.filter((state) =>
-    imports(outcomeOf(shownState(state)))
-  ).length
-  return count === 0 ? null : count
-}
-
-/** The round Import sends (web/DESIGN.md, Patterns, Job in its card): the files whose own
- * review says they import as they are, through the profile and the options they share, and
- * among them those whose bars in a break are left out, as their reviews read them (ADR-0022);
- * none until every review is read, or where no file imports. */
-export function filesRequest(
-  asks: readonly FileImportAsked[],
-  states: readonly FileState[]
-): FilesImportAsked | null {
-  requireOnePerFile(asks.length, states)
-  const [first] = asks
-  if (first === undefined || states.some((state) => state.kind === "reading")) {
-    return null
-  }
-  const sent = asks.filter((_, index) => imports(outcomeOf(states[index])))
-  if (sent.length === 0) {
-    return null
-  }
-  return {
-    kind: "files",
-    sources: sent.map((ask) => ask.source),
-    profile: first.profile,
-    root: first.root,
-    time_zone: first.time_zone,
-    differing: first.differing,
-    leaving_out_bars_in_breaks: sent
-      .filter((ask) => ask.bars_in_breaks === "leave-out")
-      .map((ask) => ask.source),
-  }
-}
-
-/** The files a round left: those its import left out, and those not sent that hold records
- * to import, refused, differing, or not read, rather than imported before or empty. */
-export function filesLeft(
-  files: readonly ReviewedFile[],
-  sent: readonly ImportSource[],
-  notImported: readonly Readonly<{ upload_id: string | null }>[]
-): UploadedFile[] {
-  const sentIds = new Set(sent.map(uploadIdOf))
-  const leftIds = new Set(notImported.map((each) => each.upload_id))
-  return files
-    .filter(({ upload, state }) =>
-      sentIds.has(upload.id) ? leftIds.has(upload.id) : !doneWith(state)
-    )
-    .map(({ upload }) => upload)
-}
-
-function doneWith(state: FileState): boolean {
-  const outcome = outcomeOf(state)
-  return outcome === "imported_before" || outcome === "nothing"
-}
-
-/** Why `count` files are too many for one import, before any is copied; none where they are
- * not. */
-export function tooManyFiles(count: number): string | null {
-  return count > FILES_AT_MOST
-    ? `Expected ${FILES_AT_MOST} files at most in one import, got ${count}: choose fewer, and import the others next.`
-    : null
-}
-
-function uploadIdOf(source: ImportSource): string | null {
-  return source.kind === "upload" ? source.upload_id : null
 }
 
 /** Several files' reviews, the way to read the failed ones again, as Try again does, and to

@@ -455,6 +455,29 @@ test("All sources leads to the guide's own page, a source's terms and its Import
     page.locator("#import-path"),
     page.getByTestId("import-roots"),
   ])
+  // Step 5.17 (D-105): a batch needs no Layout and no Instrument, which the list says, disabled,
+  // and Continue passes over them to the review, the address keeping the preset and the page.
+  for (const needless of ["step-layout", "step-instrument"]) {
+    const row = page.getByTestId(needless)
+    await expect(row).toHaveAttribute("data-state", "not needed")
+    await expect(row).toContainText("Not needed for a batch")
+    await expect(row).toBeDisabled()
+  }
+  await page.getByTestId("step-continue").click()
+  await expect(page.getByTestId("step-review")).toHaveAttribute(
+    "aria-current",
+    "step"
+  )
+  await expect(page).toHaveURL(
+    "/data/import?preset=databento&from=sources&step=review"
+  )
+  await expect(page.getByTestId("step-back")).toHaveText("Back to File")
+  await page.getByTestId("step-back").click()
+  await expect(page.getByTestId("step-file")).toHaveAttribute(
+    "aria-current",
+    "step"
+  )
+  await expect(page).toHaveURL("/data/import?preset=databento&from=sources")
   // From the builder's check of step 5.4, the way back, to the page the wizard was opened from.
   await page.getByRole("link", { name: "Back to Sources" }).click()
   await expect(page).toHaveURL("/data/sources")

@@ -1,29 +1,28 @@
+import { cn } from "cn"
 import type { Dispatch } from "react"
 import type { BatchSeen, FileSeen } from "@/api/imports"
-import type { components } from "@/api/schema"
 import { counted, formatCount } from "@/ui/figures"
 import { datasetName } from "../datasets"
 import { DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
-import { BarsInBreaks, LeaveOutBars } from "./BarsInBreaks"
+import { BarsChoice, BarsInBreaks } from "./BarsInBreaks"
+import { Decision } from "./Decision"
 import { FirstRecords } from "./FirstRecords"
+import { correctsBars, differs, RECORDS_MESSAGE } from "./import-decisions"
 import { filesOf } from "./import-request"
-import { Merge, TakeRecords } from "./Merge"
+import { OUTCOME_SIGNS, offsetLine, VERDICTS } from "./import-outcomes"
+import { Merge, RecordsChoice } from "./Merge"
 
-type Schemas = components["schemas"]
-
-/** What a preview finds the import would do, as its headline says it. */
-const VERDICTS: Readonly<Record<Schemas["ImportVerdict"], string>> = {
-  imports: "It imports as it is",
-  refused: "It would be refused",
-  bars_in_breaks: "It would be refused for its bars in a break",
-  differing: "Its records differ from the ones FEAT holds",
-  imported_before: "It is imported already: importing it again changes nothing",
-  nothing: "It holds nothing to import",
-}
+/** A verdict's colour, its sign's (D-105): heading text where it is no error. */
+const SIGN_TEXT = {
+  positive: "text-positive",
+  negative: "text-negative",
+  none: "text-foreground",
+} as const
 
 type FileReviewProps = Readonly<{
   seen: FileSeen
+  current: boolean
   draft: Draft
   change: Dispatch<DraftChange>
   zone: string | null
@@ -33,10 +32,13 @@ type FileReviewProps = Readonly<{
 /** What a file's import would do: the verdict, what was read and left out, each offset from
  * the calendar with what it points at and the time zone the file is read in, the problems, the
  * warnings, the calendar's check, the first records as stored, and what the file adds to the
- * data FEAT holds, with what to do with records that differ where the file is reviewed `alone`,
- * a round of several files asking it once for them all (D-102). */
+ * data FEAT holds; where the file is reviewed `alone`, each box ends on its choice, the bars in
+ * a break or the records that differ, which wait while the review shown is not the draft's
+ * latest, while a round of several files asks them under its rows, once for every file of a kind
+ * (D-106). */
 export function FileReview({
   seen,
+  current,
   draft,
   change,
   zone,
@@ -46,11 +48,10 @@ export function FileReview({
     <div className="flex flex-col gap-4">
       <p
         data-testid="review-verdict"
-        className={
-          alone
-            ? "text-base font-semibold text-foreground"
-            : "font-medium text-foreground"
-        }
+        className={cn(
+          alone ? "text-base font-semibold" : "font-medium",
+          SIGN_TEXT[OUTCOME_SIGNS[seen.verdict]]
+        )}
       >
         {verdictOf(seen)}
       </p>
@@ -66,16 +67,15 @@ export function FileReview({
       ))}
       {seen.breaks_with_bars !== null && (
         <BarsInBreaks breaks={seen.breaks_with_bars}>
-          {alone &&
-            (seen.breaks_with_bars.left_out ||
-              seen.verdict === "bars_in_breaks") && (
-              <LeaveOutBars
-                files={filesOf(draft.source)}
-                records={seen.breaks_with_bars.records}
-                draft={draft}
-                change={change}
-              />
-            )}
+          {alone && correctsBars(seen) && (
+            <BarsChoice
+              files={filesOf(draft.source)}
+              records={seen.breaks_with_bars.records}
+              current={current}
+              draft={draft}
+              change={change}
+            />
+          )}
         </BarsInBreaks>
       )}
       <Listed
@@ -93,12 +93,20 @@ export function FileReview({
       <FirstRecords records={seen.first_records} />
       {seen.merge !== null && (
         <Merge merge={seen.merge}>
-          {alone && seen.merge.records_differing > 0 && (
-            <TakeRecords
-              disputed={seen.merge.stored_records_disputed}
-              draft={draft}
-              change={change}
-            />
+          {alone && differs(seen) && (
+            <div className="flex flex-col gap-3">
+              <p className="text-foreground-secondary">
+                {RECORDS_MESSAGE.file}
+              </p>
+              <RecordsChoice
+                subject="file"
+                files={filesOf(draft.source)}
+                disputed={seen.merge.stored_records_disputed}
+                current={current}
+                draft={draft}
+                change={change}
+              />
+            </div>
           )}
         </Merge>
       )}
@@ -108,12 +116,20 @@ export function FileReview({
 
 /** What a Databento batch's import would do: the verdict, the batch's account in counts and
  * dates, what its files add to each dataset, and, where records differ in any, what to do with
- * them, for every dataset at once, the stored records that give way counted over all of them. */
+ * them, for every dataset at once, in a box of its own under theirs (D-106), the stored records
+ * that give way counted over all of them, the choice waiting while the review shown is not the
+ * draft's latest. */
 export function BatchReview({
   seen,
+  current,
   draft,
   change,
-}: Readonly<{ seen: BatchSeen; draft: Draft; change: Dispatch<DraftChange> }>) {
+}: Readonly<{
+  seen: BatchSeen
+  current: boolean
+  draft: Draft
+  change: Dispatch<DraftChange>
+}>) {
   const differing = seen.merges.some((merge) => merge.records_differing > 0)
   const disputed = seen.merges.reduce(
     (total, merge) => total + merge.stored_records_disputed,
@@ -123,7 +139,10 @@ export function BatchReview({
     <div className="flex flex-col gap-4">
       <p
         data-testid="review-verdict"
-        className="text-base font-semibold text-foreground"
+        className={cn(
+          "text-base font-semibold",
+          SIGN_TEXT[OUTCOME_SIGNS[seen.verdict]]
+        )}
       >
         {VERDICTS[seen.verdict]}
       </p>
@@ -134,7 +153,21 @@ export function BatchReview({
         <Merge key={datasetName(merge.dataset)} merge={merge} />
       ))}
       {differing && (
-        <TakeRecords disputed={disputed} draft={draft} change={change} />
+        <Decision
+          title="Records that differ"
+          message={RECORDS_MESSAGE.batch}
+          holds="options"
+          testId="batch-decision"
+        >
+          <RecordsChoice
+            subject="batch"
+            files={filesOf(draft.source)}
+            disputed={disputed}
+            current={current}
+            draft={draft}
+            change={change}
+          />
+        </Decision>
       )}
     </div>
   )
@@ -227,26 +260,4 @@ function verdictOf(seen: FileSeen): string {
   return seen.verdict === "imports" && seen.breaks_with_bars?.left_out === true
     ? "It imports without its bars in a break"
     : VERDICTS[seen.verdict]
-}
-
-/** An offset in words, with what to check, the time zone included where it points at one. */
-function offsetLine(
-  offset: Schemas["OffsetSeen"],
-  zone: string | null
-): string {
-  const dates =
-    offset.first_trade_date === offset.last_trade_date
-      ? `the trade date ${offset.first_trade_date}`
-      : `the trade dates ${offset.first_trade_date} to ${offset.last_trade_date}`
-  const read =
-    zone === null
-      ? "the time zone of the file's times"
-      : `the time zone of the file's times, ${zone}`
-  const check = {
-    "time-zone": `check ${read}`,
-    "bar-stamping":
-      "check whether the file stamps each bar at its open or its close",
-    "time-zone-or-bar-stamping": `check ${read}, and whether the file stamps each bar at its open or its close`,
-  }[offset.cause]
-  return `The records run ${offset.duration} ${offset.direction} against their calendar on ${dates}: ${check}.`
 }

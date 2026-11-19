@@ -7,67 +7,22 @@ import {
   importResult,
 } from "@/api/imports"
 import { isActive, type Job } from "@/api/jobs"
-import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
 import { PercentBar } from "@/ui/percent-bar"
 import { TextLink } from "@/ui/text-link"
 import { datasetName } from "../datasets"
 import type { ChosenUploads } from "./import-draft"
-import { filesLeft, type ReviewedFile } from "./import-reviews"
-import { type ImportRun, keptLine } from "./import-run"
+import { filesLeft, type ReviewedFile } from "./import-round"
+import { keptLine } from "./import-run"
 import { RoundAccount } from "./RoundAccount"
 
-/** The draft's files with their reviews, of which a round leaves some, and the way to
- * review those left. */
+/** The draft's files with their reviews, of which a round leaves some, how many the trader
+ * skipped (D-105), and the way to review those left. */
 type RoundFilesLeft = Readonly<{
   reviewed: readonly ReviewedFile[]
+  skipped: number
   onReviewLeft: (files: ChosenUploads) => void
 }>
-
-type RunProps = Readonly<{
-  run: ImportRun
-  reading: boolean
-  importing: number | null
-  files: RoundFilesLeft
-}>
-
-/** Import and its job, in the review's card (web/DESIGN.md, Patterns, Job in its card): Import
- * sends the latest draft's request once its own answer says it imports as it is, or for
- * several files once each is read, naming how many it sends (`importing`), the reading line
- * beside it while a change is read; the
- * job's bar and message follow from the jobs drawer's own reads, then what it wrote and kept,
- * with the way to the dataset and its chart, and for a round what it did with each file
- * (`RoundAccount`); or why it failed. */
-export function Run({ run, reading, importing, files }: RunProps) {
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-4">
-        <Button
-          data-testid="import-run"
-          disabled={!run.importable}
-          onClick={run.importNow}
-        >
-          {importing === null
-            ? "Import"
-            : `Import ${counted(importing, "file")}`}
-        </Button>
-        {reading && (
-          <p className="text-xs text-muted-foreground">
-            Reading your latest change
-          </p>
-        )}
-        {run.refusal !== null && (
-          <p role="alert" className="text-negative">
-            {run.refusal.message}
-          </p>
-        )}
-      </div>
-      {run.job !== undefined && (
-        <ImportJob job={run.job} sent={run.sent} files={files} />
-      )}
-    </div>
-  )
-}
 
 type ImportJobProps = Readonly<{
   job: Job
@@ -75,7 +30,11 @@ type ImportJobProps = Readonly<{
   files: RoundFilesLeft
 }>
 
-function ImportJob({ job, sent, files }: ImportJobProps) {
+/** An import's job, in the review's card (web/DESIGN.md, Patterns, Job in its card), Import
+ * standing under the card (D-105): the job's bar and message, which follow from the jobs
+ * drawer's own reads, then what it wrote and kept, with the way to the dataset and its chart,
+ * and for a round what it did with each file (`RoundAccount`); or why it failed. */
+export function ImportJob({ job, sent, files }: ImportJobProps) {
   if (isActive(job)) {
     return (
       <div className="flex flex-col gap-2" data-testid="import-job">
@@ -106,6 +65,7 @@ function Imported({ job, sent, files }: ImportJobProps) {
         round={result.round}
         chosen={files.reviewed.length}
         sent={sent.sources.length}
+        skipped={files.skipped}
         left={filesLeft(
           files.reviewed,
           sent.sources,

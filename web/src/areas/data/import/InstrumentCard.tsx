@@ -19,11 +19,12 @@ type InstrumentCardProps = Readonly<{
   profiles: readonly ListedProfile[]
 }>
 
-/** The wizard's third card: the contract and the root, where the file's name does not say
+/** The wizard's third step: the contract and the root, where the file's name does not say
  * them, the contract hidden where several files are chosen, each file's name giving its own
- * (D-102); and the instrument: under a listed profile, the one it reads its records as; for a
- * new profile, that one or a new one, which the profile carries and the import saves for later
- * imports and loads. */
+ * (D-102); and the instrument: before a profile, that it follows from the one chosen under
+ * Layout (D-105); under a listed profile, the one it reads its records as; for a new profile,
+ * that one or a new one, which the profile carries and the import saves for later imports and
+ * loads. */
 export function InstrumentCard({
   draft,
   change,
@@ -72,6 +73,14 @@ export function InstrumentCard({
             />
           </Choice>
         </div>
+        {profile.kind === "none" && (
+          <p
+            className="text-foreground-secondary"
+            data-testid="profile-instrument"
+          >
+            The instrument follows from the profile you choose under Layout.
+          </p>
+        )}
         {profile.kind === "new" && (
           <RadioChoice
             id="import-instrument"

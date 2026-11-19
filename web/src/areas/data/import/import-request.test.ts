@@ -31,13 +31,50 @@ describe("asksOf", () => {
       table: null,
       review: null,
       several: [],
-      missing: [{ card: "file", text: "Choose files, or type a path" }],
+      missing: [
+        { card: "file", text: "Choose files, or type a path" },
+        { card: "layout", text: "Choose a profile, or make one" },
+      ],
     })
     expect(asksOf(CHOSEN, LISTED, null)).toEqual({
       table: { kind: "table", source: SOURCE },
       review: null,
       several: [],
       missing: [{ card: "layout", text: "Choose a profile, or make one" }],
+    })
+  })
+
+  it("says what every card misses before a file, as each step of the wizard does (D-105)", () => {
+    const zoneless = startingDraft({ kind: "profile", name: "ibkr" })
+    const made = drafted(startingDraft({ kind: "none" }), {
+      kind: "new profile",
+      base: NINJATRADER,
+    })
+    const nameless = drafted(made, {
+      kind: "profile fields",
+      fields: { name: " " },
+    })
+
+    expect(asksOf(zoneless, LISTED, null).missing).toEqual([
+      { card: "file", text: "Choose files, or type a path" },
+      { card: "layout", text: "Type the time zone of the file's times" },
+    ])
+    expect(
+      asksOf(
+        startingDraft({ kind: "profile", name: "ninjatrader" }),
+        LISTED,
+        null
+      ).missing
+    ).toEqual([{ card: "file", text: "Choose files, or type a path" }])
+    expect(asksOf(nameless, LISTED, null).missing).toEqual([
+      { card: "file", text: "Choose files, or type a path" },
+      { card: "layout", text: "Give the profile a name" },
+    ])
+    expect(asksOf(startingDraft({ kind: "batch" }), LISTED, null)).toEqual({
+      table: null,
+      review: null,
+      several: [],
+      missing: [{ card: "file", text: "Type the path of the batch's folder" }],
     })
   })
 
@@ -285,6 +322,86 @@ describe("asksOf", () => {
     expect(asksOf(alone, LISTED, null).review).toMatchObject({
       bars_in_breaks: "leave-out",
     })
+  })
+
+  it("asks each file's own choice for its records that differ, and a batch's, as the trader chose it (the ponytail review)", () => {
+    const june = {
+      ...UPLOAD,
+      id: "0193a000-0000-7000-8000-000000000002",
+      name: "XES 06-26.Last.txt",
+    }
+    const several = drafted(
+      drafted(
+        drafted(CHOSEN, {
+          kind: "source",
+          source: { kind: "uploads", uploads: [UPLOAD, june] },
+        }),
+        { kind: "listed profile", name: "ninjatrader" }
+      ),
+      { kind: "records taken", files: [june.id] }
+    )
+    const alone = drafted(
+      drafted(CHOSEN, { kind: "listed profile", name: "ninjatrader" }),
+      { kind: "records taken", files: [UPLOAD.id] }
+    )
+    const batch = drafted(
+      drafted(startingDraft({ kind: "batch" }), {
+        kind: "source",
+        source: { kind: "path", path: "D:/batches/GLBX-1 " },
+      }),
+      { kind: "records taken", files: ["D:/batches/GLBX-1"] }
+    )
+
+    expect(
+      asksOf(several, LISTED, null).several.map((ask) => ask.differing)
+    ).toEqual(["refuse", "take-file"])
+    expect(asksOf(alone, LISTED, null).review).toMatchObject({
+      differing: "take-file",
+    })
+    expect(asksOf(batch, LISTED, null).review).toMatchObject({
+      differing: "take-file",
+    })
+  })
+
+  it("asks a file whose bars are left out to refuse its records that differ, though another file's were taken since (the ponytail review)", () => {
+    // Answered top to bottom: the bars of y left out, then the records of d taken, before y's
+    // new review shows whether its records differ too.
+    const y = {
+      ...UPLOAD,
+      id: "0193a000-0000-7000-8000-000000000002",
+      name: "XES 06-26.Last.txt",
+    }
+    const round = drafted(
+      drafted(CHOSEN, {
+        kind: "source",
+        source: { kind: "uploads", uploads: [UPLOAD, y] },
+      }),
+      { kind: "listed profile", name: "ninjatrader" }
+    )
+    const answered = drafted(
+      drafted(round, {
+        kind: "decided",
+        problem: "bars in breaks",
+        files: [y.id],
+        answer: "corrected",
+      }),
+      {
+        kind: "decided",
+        problem: "differing",
+        files: [UPLOAD.id],
+        answer: "corrected",
+      }
+    )
+
+    expect(
+      asksOf(answered, LISTED, null).several.map((ask) => [
+        ask.bars_in_breaks,
+        ask.differing,
+      ])
+    ).toEqual([
+      ["refuse", "take-file"],
+      ["leave-out", "refuse"],
+    ])
   })
 })
 

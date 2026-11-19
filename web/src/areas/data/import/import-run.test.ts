@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest"
 import type { BatchSeen, ImportAsked, ImportResult } from "@/api/imports"
 import type { Job } from "@/api/jobs"
 import type { Asks } from "./import-request"
-import { importRequest, keptLine, startedAlready } from "./import-run"
+import {
+  importKey,
+  importRequest,
+  keptLine,
+  startedAlready,
+} from "./import-run"
 
 const ASKED: ImportAsked = {
   kind: "databento",
@@ -54,6 +59,26 @@ describe("importRequest", () => {
     expect(
       importRequest(ASKS, { answer: seen("differing"), current: true })
     ).toBeNull()
+  })
+})
+
+describe("importKey", () => {
+  it("tells a round's imports apart by the files skipped, which the round leaves out (D-105)", () => {
+    const file = {
+      kind: "file" as const,
+      source: { kind: "upload" as const, upload_id: "a" },
+      profile: { kind: "named" as const, name: "ninjatrader" },
+      contract: null,
+      root: null,
+      time_zone: null,
+      differing: "refuse" as const,
+      bars_in_breaks: "refuse" as const,
+    }
+    const round: Asks = { ...ASKS, review: null, several: [file, file] }
+
+    expect(importKey(round, ["b"])).not.toBe(importKey(round, []))
+    expect(importKey(ASKS, ["b"])).toBe(importKey(ASKS, []))
+    expect(importKey({ ...ASKS, review: null }, [])).toBeNull()
   })
 })
 

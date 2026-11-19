@@ -73,10 +73,18 @@ export type InstrumentDraft =
   | Readonly<{ kind: "profile's" }>
   | Readonly<{ kind: "new"; fields: InstrumentFields }>
 
-export type DifferingRecords = components["schemas"]["DifferingRecords"]
+/** A kind of problem of a round that a correction fits, asked once for every file of the kind
+ * (D-106): bars in a break, or records that differ. */
+export type Correctable = "bars in breaks" | "differing"
+
+/** The answer for every file of a kind: the correction, or a skip. */
+export type Answer = "corrected" | "skipped"
 
 /** The wizard's draft: everything the trader chose and typed, from which each preview and the
- * import are asked. */
+ * import are asked; the files whose records that differ from the stored ones are taken in their
+ * place (ADR-0021) and those whose bars in a break are left out (ADR-0022), each as the trader
+ * chose it for that file, by its upload's id or its path; and the files of a round the trader
+ * skipped, which the round never sends (D-105). */
 export type Draft = Readonly<{
   reading: Reading
   source: Source
@@ -85,8 +93,9 @@ export type Draft = Readonly<{
   contract: string
   root: string
   instrument: InstrumentDraft
-  differing: DifferingRecords
+  recordsTaken: readonly string[]
   breaksLeftOut: readonly string[]
+  skipped: readonly string[]
 }>
 
 export type DraftChange =
@@ -100,8 +109,15 @@ export type DraftChange =
   | Readonly<{ kind: "root"; root: string }>
   | Readonly<{ kind: "instrument"; instrument: InstrumentDraft }>
   | Readonly<{ kind: "instrument fields"; fields: Partial<InstrumentFields> }>
-  | Readonly<{ kind: "differing"; differing: DifferingRecords }>
+  | Readonly<{ kind: "records taken"; files: readonly string[] }>
   | Readonly<{ kind: "bars in breaks"; files: readonly string[] }>
+  | Readonly<{ kind: "skipped"; files: readonly string[] }>
+  | Readonly<{
+      kind: "decided"
+      problem: Correctable
+      files: readonly string[]
+      answer: Answer
+    }>
 
 /** A new instrument's fields before the trader types them: futures in US dollars on the CME's
  * equity index calendar, expiring on the third Friday, as the most common product is. */
@@ -131,21 +147,24 @@ export function startingDraft(choice: PresetChoice): Draft {
     contract: "",
     root: "",
     instrument: { kind: "profile's" },
-    differing: "refuse",
+    recordsTaken: [],
     breaksLeftOut: [],
+    skipped: [],
   }
 }
 
-/** The draft after `change`: any change but the choice of what to do with differing records
- * refuses them again, since the trader chose to take them for the file the review showed, and
- * any change but those two leaves no file's bars in a break out any more, since the trader
- * approved that for the reading the review showed (ADR-0022); leaving out the bars of other
- * files reads them again, so it refuses differing records again too. */
+/** The draft after `change`. A change of what is read takes no file's records any more, leaves
+ * no file's bars in a break out, and skips no file, since the trader chose each for the reading
+ * the review showed (ADR-0021, ADR-0022, D-105); leaving out a file's bars, or putting them back,
+ * reads that file again, so its records are taken no more, the other files' staying taken
+ * (`withBarsLeftOut`); taking records and skipping keep the other decisions; and a round's box
+ * decides for every file of its kind at once (`decidedFor`, D-106). */
 export function drafted(draft: Draft, change: DraftChange): Draft {
   const refused = {
     ...draft,
-    differing: "refuse",
+    recordsTaken: [],
     breaksLeftOut: [],
+    skipped: [],
   } satisfies Draft
   switch (change.kind) {
     case "reading":
@@ -185,11 +204,71 @@ export function drafted(draft: Draft, change: DraftChange): Draft {
         ...refused,
         instrument: editedInstrument(draft.instrument, change.fields),
       }
-    case "differing":
-      return { ...draft, differing: change.differing }
+    case "records taken":
+      return { ...draft, recordsTaken: change.files }
     case "bars in breaks":
-      return { ...draft, differing: "refuse", breaksLeftOut: change.files }
+      return withBarsLeftOut(draft, change.files)
+    case "skipped":
+      return { ...draft, skipped: change.files }
+    case "decided":
+      return decidedFor(draft, change)
   }
+}
+
+/** The draft once a round's box is answered for every file of its kind, `files` (D-106). The
+ * correction goes to those not skipped, so that a skip made in a row stands, or where each is
+ * skipped, to them all, skipped no more: their bars left out, or their records taken. A skip
+ * skips them all and takes the correction back from each, its bars in again or its records
+ * refused, so that Do not skip in a row never brings back a correction unseen. */
+function decidedFor(
+  draft: Draft,
+  { problem, files, answer }: Extract<DraftChange, { kind: "decided" }>
+): Draft {
+  if (answer === "skipped") {
+    const skipped = [...without(draft.skipped, files), ...files]
+    return problem === "differing"
+      ? { ...draft, skipped, recordsTaken: without(draft.recordsTaken, files) }
+      : withBarsLeftOut(
+          { ...draft, skipped },
+          without(draft.breaksLeftOut, files)
+        )
+  }
+  const kept = without(files, draft.skipped)
+  const chosen = kept.length > 0 ? kept : files
+  const skipped = without(draft.skipped, chosen)
+  return problem === "differing"
+    ? {
+        ...draft,
+        skipped,
+        recordsTaken: [...without(draft.recordsTaken, chosen), ...chosen],
+      }
+    : withBarsLeftOut({ ...draft, skipped }, [
+        ...without(draft.breaksLeftOut, chosen),
+        ...chosen,
+      ])
+}
+
+/** The draft with the bars in a break of the files `breaksLeftOut` left out: a file whose bars go
+ * out or come back in is read again, so its records are taken no more, since the trader chose to
+ * take them for the reading the review showed (ADR-0022). */
+function withBarsLeftOut(
+  draft: Draft,
+  breaksLeftOut: readonly string[]
+): Draft {
+  const changed = (file: string) =>
+    breaksLeftOut.includes(file) !== draft.breaksLeftOut.includes(file)
+  return {
+    ...draft,
+    breaksLeftOut,
+    recordsTaken: draft.recordsTaken.filter((file) => !changed(file)),
+  }
+}
+
+function without(
+  files: readonly string[],
+  gone: readonly string[]
+): readonly string[] {
+  return files.filter((file) => !gone.includes(file))
 }
 
 /** A new profile's fields, from the profile it is copied from, under a name of the trader's

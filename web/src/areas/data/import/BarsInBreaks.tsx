@@ -1,9 +1,10 @@
-import { type Dispatch, type ReactNode, useState } from "react"
+import type { Dispatch, ReactNode } from "react"
 import type { BreaksSeen } from "@/api/imports"
-import { Button } from "@/ui/button"
 import { counted, formatCount } from "@/ui/figures"
-import { InlineConfirmation } from "@/ui/inline-confirmation"
+import { Options } from "./Decision"
+import { allCorrected, BARS_MESSAGE } from "./import-decisions"
 import type { Draft, DraftChange } from "./import-draft"
+import { barsLine, listedDates } from "./import-outcomes"
 
 type BarsInBreaksProps = Readonly<{ breaks: BreaksSeen; children?: ReactNode }>
 
@@ -12,7 +13,7 @@ type BarsInBreaksProps = Readonly<{ breaks: BreaksSeen; children?: ReactNode }>
  * Patterns, Review), each line a label and its counts: the bars and the trade dates of the
  * breaks they lie in, the sessions beside them, the sessions ending a bar early that go with
  * them where there are any (D-104), and the records leaving them out leaves out; at its foot,
- * where the review shows one file, what to do with them (`LeaveOutBars`). */
+ * where the review shows one file, what to do with them (`BarsChoice`). */
 export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
   return (
     <div
@@ -21,11 +22,11 @@ export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
     >
       <p className="font-medium text-foreground">Bars in a break</p>
       <ul className="flex flex-col gap-1 text-foreground-secondary">
-        <li>{breaksLine(breaks)}</li>
-        <li>{`Sessions beside: ${listed(breaks.sessions, breaks.sessions_total)}`}</li>
+        <li>{`Breaks: ${barsLine(breaks)}`}</li>
+        <li>{`Sessions beside: ${listedDates(breaks.sessions, breaks.sessions_total)}`}</li>
         {breaks.ending_a_bar_early_total > 0 && (
           <li>
-            {`Sessions ending a bar early: ${listed(breaks.ending_a_bar_early, breaks.ending_a_bar_early_total)}`}
+            {`Sessions ending a bar early: ${listedDates(breaks.ending_a_bar_early, breaks.ending_a_bar_early_total)}`}
           </li>
         )}
         <li>{`Records: ${formatCount(breaks.records)} in all, those bars among them`}</li>
@@ -35,97 +36,62 @@ export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
   )
 }
 
-function breaksLine(breaks: BreaksSeen): string {
-  const bars = counted(breaks.bars, "bar")
-  const dates = listed(breaks.breaks, breaks.breaks_total)
-  return breaks.breaks_total === 1
-    ? `Breaks: ${bars} in the break after the trade date ${dates}`
-    : `Breaks: ${bars} in ${formatCount(breaks.breaks_total)} breaks, after the trade dates ${dates}`
-}
-
-function listed(dates: readonly string[], total: number): string {
-  const more = total - dates.length
-  return more > 0
-    ? `${dates.join(", ")}, and ${formatCount(more)} more`
-    : dates.join(", ")
-}
-
-type LeaveOutBarsProps = Readonly<{
+type BarsChoiceProps = Readonly<{
   files: readonly string[]
-  records: number | null
+  records: number
+  current: boolean
   draft: Draft
   change: Dispatch<DraftChange>
 }>
 
-/** Where bars in a break refuse a file (ADR-0022): what they mean and what to check first, then
- * Leave out the bars in a break behind an inline confirmation that counts the records that go,
- * `records`, or for several files (D-102) the files, since two files of one contract share
- * sessions; once approved for every one of `files`, what is left out and the way back, which
- * takes the focus from the confirm it replaces and, pressed, gives it to the trigger again. The
- * trigger starts its own line, so that Keep takes its place, as Take the file's records does. */
-export function LeaveOutBars({
+/** Where bars in a break refuse the one file the review shows (ADR-0022; D-106): what they mean
+ * and what to check, then the choice, the file imported without them, which counts the
+ * `records` that go, or not imported, chosen at the start, since it is what happens if nothing
+ * is chosen, the first waiting while the review shown is not the draft's latest, unless it is
+ * chosen, so that it is never chosen for a reading not shown yet; once they are left out, what
+ * the calendar check lists. A round asks it under its rows instead (`RoundDecisions`). */
+export function BarsChoice({
   files,
   records,
+  current,
   draft,
   change,
-}: LeaveOutBarsProps) {
-  const [takenBack, setTakenBack] = useState(false)
-  const offered = files.filter((file) => !draft.breaksLeftOut.includes(file))
-  if (offered.length === 0) {
-    return (
-      <div className="flex flex-col items-start gap-3" data-testid="leave-out">
-        <p className="text-foreground-secondary">
-          {records === null
-            ? `The bars in a break of ${counted(files.length, "file")} and the sessions their rows list are left out of the import, so each file's calendar check may list those sessions as having no prints.`
-            : "These bars and the sessions above are left out of the import, so the calendar check may list those sessions as having no prints."}
-        </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          autoFocus
-          onClick={() => {
-            setTakenBack(true)
-            change({
-              kind: "bars in breaks",
-              files: draft.breaksLeftOut.filter(
-                (file) => !files.includes(file)
-              ),
-            })
-          }}
-        >
-          Leave nothing out
-        </Button>
-      </div>
-    )
-  }
+}: BarsChoiceProps) {
+  const others = draft.breaksLeftOut.filter((file) => !files.includes(file))
+  const leftOut = allCorrected(files, draft.breaksLeftOut)
   return (
-    <div className="flex flex-col items-start gap-3" data-testid="leave-out">
-      <p className="text-foreground-secondary">
-        {records === null
-          ? "Where a file's break holds a bar closing at the next session's open, the platform stamped that stretch early, and its own chart draws it so too. Compare those sessions with another source's bars: leaving them out imports the rest of each file, and keeping them keeps those files out."
-          : "A bar closing at the next session's open marks a stretch the platform stamped early, and its own chart draws it so too. Compare these sessions with another source's bars: leaving them out imports the rest of the file, and keeping them keeps the file out."}
-      </p>
-      <InlineConfirmation
-        trigger={
-          records === null
-            ? "Leave out the files' bars in a break"
-            : "Leave out the bars in a break"
-        }
-        confirm={
-          records === null
-            ? `Leave them out of ${counted(offered.length, "file")}`
-            : `Leave out ${counted(records, "record")}`
-        }
-        align="start"
-        focused={takenBack}
-        onConfirm={() => {
-          setTakenBack(false)
+    <div className="flex flex-col gap-3">
+      <p className="text-foreground-secondary">{BARS_MESSAGE}</p>
+      <Options
+        label="Bars in a break"
+        options={[
+          {
+            value: "leave-out",
+            label: "Import the file without those bars",
+            description: `FEAT leaves out ${counted(records, "record")}, those bars and the sessions listed above, and imports the rest of the file.`,
+            disabled: !current && !leftOut,
+          },
+          {
+            value: "refuse",
+            label: "Do not import the file",
+            description:
+              "It stays refused for these bars, and nothing is written.",
+          },
+        ]}
+        value={leftOut ? "leave-out" : "refuse"}
+        onChange={(chosen) =>
           change({
             kind: "bars in breaks",
-            files: [...draft.breaksLeftOut, ...offered],
+            files: chosen === "leave-out" ? [...others, ...files] : others,
           })
-        }}
+        }
+        testId="bars-choice"
       />
+      {leftOut && (
+        <p className="text-xs text-muted-foreground">
+          The calendar check may list the sessions left out as having no prints.
+        </p>
+      )}
     </div>
   )
 }

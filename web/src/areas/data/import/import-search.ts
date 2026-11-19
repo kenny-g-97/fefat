@@ -1,10 +1,24 @@
 import { z } from "zod"
 import type { ListedProfile } from "@/api/imports"
 import { datasetSearch } from "../chart-search"
+import type { Card } from "./import-draft"
+
+/** The import wizard's steps in their order, a card each and the review last (web/DESIGN.md,
+ * Patterns, Import wizard; D-105), as the address names them. */
+export const STEPS = [
+  "file",
+  "layout",
+  "instrument",
+  "review",
+] as const satisfies readonly (Card | "review")[]
+
+export type Step = (typeof STEPS)[number]
 
 /** The import page's search parameters (step 5.12): the preset a source's Import names, the
  * page it was opened from, which its back link leads to, and for a dataset's Import more data
- * the dataset's instrument and provider; a value the page cannot read is left out. */
+ * the dataset's instrument and provider; and the wizard's step shown, so that the browser's
+ * Back moves between steps (D-105), File where it names none. A value the page cannot read is
+ * left out. */
 export const importSearch = datasetSearch.extend({
   preset: z
     .string()
@@ -12,6 +26,7 @@ export const importSearch = datasetSearch.extend({
     .optional()
     .catch(undefined),
   from: z.enum(["dataset", "sources"]).optional().catch(undefined),
+  step: z.enum(STEPS).optional().catch(undefined),
 })
 
 export type ImportSearch = z.infer<typeof importSearch>

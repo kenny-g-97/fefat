@@ -26,6 +26,17 @@ describe("presetChoice", () => {
   })
 })
 
+describe("importSearch", () => {
+  it("reads the step shown from the address, and any value it cannot read as none (D-105)", () => {
+    for (const step of ["file", "layout", "instrument", "review"]) {
+      expect(importSearch.parse({ step }).step).toBe(step)
+    }
+    expect(importSearch.parse({ step: "summary" }).step).toBeUndefined()
+    expect(importSearch.parse({ step: 2 }).step).toBeUndefined()
+    expect(importSearch.parse({ preset: "ninjatrader" }).step).toBeUndefined()
+  })
+})
+
 describe("backOf", () => {
   it("leads back to where the page was opened from, the Data page by default", () => {
     expect(backOf(importSearch.parse({}))).toEqual({ kind: "data" })

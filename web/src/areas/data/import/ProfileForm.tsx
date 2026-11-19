@@ -37,7 +37,7 @@ const STAMPS: readonly Option<ProfileFields["stamp"]>[] = [
 type ProfileFormProps = Readonly<{
   fields: ProfileFields
   change: Dispatch<DraftChange>
-  offsets: FileSeen["offsets"]
+  offsets: Readonly<FileSeen["offsets"]>
 }>
 
 /** A new profile's fields (plan call 10): its name and provider, the file's delimiter and

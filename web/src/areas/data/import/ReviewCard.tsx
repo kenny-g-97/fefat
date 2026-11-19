@@ -2,60 +2,46 @@ import { type Dispatch, useRef } from "react"
 import { ApiProblem } from "@/api/problems"
 import { Button } from "@/ui/button"
 import { Panel } from "@/ui/panel"
-import type { Card, ChosenUploads, Draft, DraftChange } from "./import-draft"
+import type { ChosenUploads, Draft, DraftChange } from "./import-draft"
 import type { LatestPreview } from "./import-preview"
 import type { Asks } from "./import-request"
-import {
-  type FileReviews,
-  filesImporting,
-  filesRequest,
-  reviewedFiles,
-} from "./import-reviews"
-import { importKey, importRequest, useImportRun } from "./import-run"
+import type { ReviewedFile } from "./import-round"
+import type { ImportRun } from "./import-run"
+import { STEP_NAMES } from "./import-steps"
 import { BatchReview, FileReview } from "./FileReview"
 import { FilesReview } from "./FilesReview"
-import { Run } from "./Run"
-
-const CARD_NAMES: Readonly<Record<Card, string>> = {
-  file: "File",
-  layout: "Layout",
-  instrument: "Instrument",
-}
+import { ImportJob } from "./Run"
 
 type ReviewCardProps = Readonly<{
   draft: Draft
   change: Dispatch<DraftChange>
   asks: Asks
   review: LatestPreview
-  reviews: FileReviews
+  files: Readonly<{ reviewed: readonly ReviewedFile[]; tryAgain: () => void }>
+  run: ImportRun
   zone: string | null
   onReviewLeft: (files: ChosenUploads) => void
 }>
 
-/** The wizard's last card (web/DESIGN.md, Patterns, Review): what is still missing, by card;
+/** The wizard's last step (web/DESIGN.md, Patterns, Review): what is still missing, by step;
  * else what the import would do, read against the store as each change is made, the last
  * answer kept and marked while a newer one is read, or for several files each file's review
- * (`FilesReview`), until the import of what it shows wrote; then Import, and its job. */
+ * (`FilesReview`), until the import of what it shows wrote; then the import's job, which the
+ * wizard runs, Import standing under the card (D-105). */
 export function ReviewCard({
   draft,
   change,
   asks,
   review,
-  reviews,
+  files,
+  run,
   zone,
   onReviewLeft,
 }: ReviewCardProps) {
   const several = asks.several.length > 0
-  const round = several ? filesRequest(asks.several, reviews.states) : null
-  const run = useImportRun(
-    importKey(asks),
-    several ? round : importRequest(asks, review)
-  )
   const focused = useRef<HTMLDivElement>(null)
-  const uploads = draft.source.kind === "uploads" ? draft.source.uploads : []
-  const reviewed = several ? reviewedFiles(uploads, reviews.states) : []
   const reading = several
-    ? reviews.states.some((state) => state.kind === "reading")
+    ? files.reviewed.some(({ state }) => state.kind === "reading")
     : review.reading
   return (
     <Panel
@@ -77,7 +63,7 @@ export function ReviewCard({
             {asks.missing.map((missing) => (
               <li key={`${missing.card} ${missing.text}`}>
                 <span className="font-medium text-foreground">
-                  {CARD_NAMES[missing.card]}
+                  {STEP_NAMES[missing.card]}
                 </span>
                 : {missing.text}
               </li>
@@ -86,8 +72,8 @@ export function ReviewCard({
         )}
         {asks.missing.length === 0 && !run.imported && several && (
           <FilesReview
-            files={reviewed}
-            tryAgain={reviews.tryAgain}
+            files={files.reviewed}
+            tryAgain={files.tryAgain}
             draft={draft}
             change={change}
             zone={zone}
@@ -96,18 +82,20 @@ export function ReviewCard({
         {asks.missing.length === 0 && !run.imported && !several && (
           <Answer draft={draft} change={change} review={review} zone={zone} />
         )}
-        <Run
-          run={run}
-          reading={reading}
-          importing={several ? filesImporting(reviews.states) : null}
-          files={{
-            reviewed,
-            onReviewLeft: (files) => {
-              onReviewLeft(files)
-              focused.current?.focus()
-            },
-          }}
-        />
+        {run.job !== undefined && (
+          <ImportJob
+            job={run.job}
+            sent={run.sent}
+            files={{
+              reviewed: files.reviewed,
+              skipped: draft.skipped.length,
+              onReviewLeft: (left) => {
+                onReviewLeft(left)
+                focused.current?.focus()
+              },
+            }}
+          />
+        )}
       </div>
     </Panel>
   )
@@ -143,10 +131,21 @@ function Answer({ draft, change, review, zone }: AnswerProps) {
         </p>
       )}
       {answer?.kind === "file" && (
-        <FileReview seen={answer} draft={draft} change={change} zone={zone} />
+        <FileReview
+          seen={answer}
+          current={review.current}
+          draft={draft}
+          change={change}
+          zone={zone}
+        />
       )}
       {answer?.kind === "databento" && (
-        <BatchReview seen={answer} draft={draft} change={change} />
+        <BatchReview
+          seen={answer}
+          current={review.current}
+          draft={draft}
+          change={change}
+        />
       )}
     </div>
   )

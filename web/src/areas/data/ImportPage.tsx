@@ -1,19 +1,28 @@
 import { useQuery } from "@tanstack/react-query"
-import { useSearch } from "@tanstack/react-router"
+import { useNavigate, useSearch } from "@tanstack/react-router"
 import { importProfilesQuery } from "@/api/imports"
 import { Page } from "@/ui/page"
 import { BackLink } from "@/ui/text-link"
-import { type Back, backOf } from "./import/import-search"
+import { type Back, backOf, type Step } from "./import/import-search"
 import { ImportWizard } from "./import/ImportWizard"
 import { QueryBody } from "./QueryBody"
 
-/** The import page (step 5.12; web/DESIGN.md, Patterns, Import wizard): one page of four cards,
- * the file, its layout, its instrument, and the review with Import, which leads back to the page
- * it was opened from. The profiles load first; a preset in the address starts the draft, and a
- * new one starts it anew. */
+/** The import page (step 5.12; web/DESIGN.md, Patterns, Import wizard): the wizard's four steps,
+ * the file, its layout, its instrument, and the review with Import, one at a time beside their
+ * list (D-105), which leads back to the page it was opened from. The profiles load first; a
+ * preset in the address starts the draft, and a new one starts it anew, while the step shown is
+ * the address's too, so that the browser's Back moves between steps and the draft stays. */
 export function ImportPage() {
   const search = useSearch({ from: "/_shell/data/import" })
+  const navigate = useNavigate({ from: "/data/import" })
   const profiles = useQuery(importProfilesQuery)
+  const onStep = (step: Step) =>
+    void navigate({
+      search: (previous) => ({
+        ...previous,
+        step: step === "file" ? undefined : step,
+      }),
+    })
   return (
     <Page
       title="Import"
@@ -26,6 +35,8 @@ export function ImportPage() {
             key={search.preset ?? ""}
             profiles={listed}
             preset={search.preset}
+            step={search.step}
+            onStep={onStep}
           />
         )}
       </QueryBody>

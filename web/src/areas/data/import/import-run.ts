@@ -52,11 +52,14 @@ export function useImportRun(ask: string | null, request: ImportAsked | null) {
 
 export type ImportRun = ReturnType<typeof useImportRun>
 
-/** The draft's asks as JSON, which tell its import apart: its files' reviews, where several
- * are chosen, else its review. */
-export function importKey(asks: Asks): string | null {
+/** The draft's asks as JSON, which tell its import apart: its files' reviews with the files
+ * skipped, which a round leaves out (D-105), where several are chosen, else its review. */
+export function importKey(
+  asks: Asks,
+  skipped: readonly string[]
+): string | null {
   if (asks.several.length > 0) {
-    return JSON.stringify(asks.several)
+    return JSON.stringify({ several: asks.several, skipped })
   }
   return asks.review === null ? null : JSON.stringify(asks.review)
 }
