@@ -162,9 +162,9 @@ def validate_calendar(
     the instrument table is refused, since its calendar is unknown."""
     instruments = instrument_table(store.folder)
     reports: list[CalendarReport] = []
-    for dataset, partitions in _checked_datasets(store):
+    for dataset, partitions in checked_datasets(store):
         sessions = instruments.sessions_of(dataset.root, cache_folder)
-        rows = pl.concat([_dated_rows(store, partition) for partition in partitions])
+        rows = pl.concat([dated_rows(store, partition) for partition in partitions])
         reports.append(check_records(dataset, rows, sessions, tolerance))
     return CalendarReport(
         days_checked=sum(report.days_checked for report in reports),
@@ -204,7 +204,7 @@ def _intraday_bars(dataset: Dataset) -> bool:
     return isinstance(schema_name, BarSchemaName) and schema_name.timeframe.unit is not TimeUnit.DAY
 
 
-def _checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]:
+def checked_datasets(store: Store) -> Iterator[tuple[Dataset, list[Partition]]]:
     """The store's bar and tick datasets with their partitions; the listing is sorted by path,
     so each dataset's partitions come together."""
     checked = (
@@ -243,7 +243,7 @@ def _beside_their_sessions(prints: pl.DataFrame, table: SessionTable) -> pl.Data
     return prints.join(sessions, on="trade_date", how="full", coalesce=True).sort("trade_date")
 
 
-def _dated_rows(store: Store, partition: Partition) -> pl.LazyFrame:
+def dated_rows(store: Store, partition: Partition) -> pl.LazyFrame:
     """A partition's rows with their trade date: a bar's own, a tick's its partition's."""
     rows = store.scan_partition(partition)
     if partition.dataset.schema_name.kind is SchemaKind.OHLCV:
