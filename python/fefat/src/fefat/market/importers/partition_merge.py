@@ -18,7 +18,12 @@ contract load as two series, and one that overlaps the stored records in time wi
 record at one of their instants, as prints stamped finer than a second do when they are read
 under another time zone or stamping rule, which would store them twice. Bars, and prints stamped
 to the second, read a bar or whole hours off land on the stored instants instead and read as
-differing, which the import's default refuses.
+differing, which the import's default refuses. A third, since step 5.16: a file's bar dated
+otherwise than the stored bars around its instant, or a daily bar whose trade date the store
+holds at another open, since under one session calendar a bar's trade date follows from its
+instant, and such a bar was dated under another one; a merge would keep one session under two
+trade dates (ADR-0024). A merge also carries the stored partitions of its contract beside it
+(`StoredNeighbour`), which `fefat.market.importers.stored_neighbours` reads.
 
 Where a file gives its prints no sequence (`RecordIdentity.numbered_by_place`), the comparison
 leaves `sequence` out, a print's sequence is its place in its instant, and a print added to an
@@ -39,7 +44,8 @@ import polars as pl
 
 from fefat.market.calendar import utc_text
 from fefat.market.importers.canonical import DAY_COUNTS
-from fefat.market.layout import Partition
+from fefat.market.layout import Dataset, Partition
+from fefat.market.schema import BarSchemaName, TimeUnit
 
 PLACE = "_place"
 """The column of a record's position among the records of its instant, counted from 0."""
@@ -78,10 +84,24 @@ class RecordIdentity:
 
 
 @dataclass(frozen=True)
+class StoredNeighbour:
+    """A stored partition of a contract beside a file's partition of it, the nearest below or
+    above by key (step 5.16, ADR-0024): its records, read lazily, their instrument ids, and the
+    first and last instant of their clock."""
+
+    partition: Partition
+    rows: pl.LazyFrame
+    instrument_ids: frozenset[int]
+    first: int
+    last: int
+
+
+@dataclass(frozen=True)
 class PartitionMerge:
     """A file's rows of one partition read against the rows the store holds of it: the stored
     rows, the file's rows the store lacks, how many of the file's it already holds, and the
-    file's rows at the instants the two dispute, each frame with its records' `PLACE`."""
+    file's rows at the instants the two dispute, each frame with its records' `PLACE`; and the
+    stored partitions of its contract beside it, none until the partition buffers add them."""
 
     partition: Partition
     clock: str
@@ -89,6 +109,7 @@ class PartitionMerge:
     added: pl.DataFrame
     held: int
     differing: pl.DataFrame
+    neighbours: tuple[StoredNeighbour, ...] = ()
 
     def changes(self, differing: DifferingRecords) -> bool:
         """Whether an import under `differing` writes the partition: it adds records, or takes
@@ -146,6 +167,7 @@ def merged_partition(
         return PartitionMerge(partition, clock, new.clear(), new, 0, new.clear())
     kept = _placed(stored, clock)
     _require_the_instruments_held(partition, kept, new)
+    _require_one_dating(partition, kept, new, clock)
     places = [clock, PLACE]
     stored_too = new.join(kept.select(places), on=places, how="semi", maintain_order="left")
     if stored_too.is_empty():
@@ -188,6 +210,85 @@ def _require_the_instruments_held(
             "ids loads as two series, so the file is refused, and nothing was written. Name its "
             "instruments as the files before it did."
         )
+
+
+def _require_one_dating(
+    partition: Partition, kept: pl.DataFrame, new: pl.DataFrame, clock: str
+) -> None:
+    """Refuse bars the store dates otherwise (ADR-0024): a file's bar dated before the stored bar
+    at or before its instant, or after the one at or after it, and a daily bar whose trade date
+    the store holds at another open; under one calendar a bar's trade date follows from its
+    instant and never decreases along the clock. Prints take their partition's trade date."""
+    if "trade_date" not in new.columns:
+        return
+    stored = kept.select(clock, "trade_date").sort(clock)
+    beside = (
+        new.select(clock, "trade_date")
+        .sort(clock)
+        .join_asof(stored.rename({"trade_date": "before"}), on=clock, strategy="backward")
+        .join_asof(stored.rename({"trade_date": "after"}), on=clock, strategy="forward")
+    )
+    otherwise = beside.filter(
+        (pl.col("before") > pl.col("trade_date")) | (pl.col("after") < pl.col("trade_date"))
+    )
+    if not otherwise.is_empty():
+        instant, dated, before, after = otherwise.row(0)
+        held = before if before is not None and before > dated else after
+        raise ValueError(
+            f"Expected the bars of {partition.relative_path()} on the trade dates the store "
+            f"gives their instants, got {otherwise.height:,} dated otherwise, the first opening "
+            f"at {utc_text(instant)} on {dated}, where the store's bars beside it are on {held}: "
+            "the session calendar changed between the two imports, and a merge would keep one "
+            f"session under two trade dates. {refused_for_another_dating(partition.dataset)}"
+        )
+    if _daily(partition):
+        _require_one_open(partition, kept, new, clock)
+
+
+def _require_one_open(
+    partition: Partition, kept: pl.DataFrame, new: pl.DataFrame, clock: str
+) -> None:
+    """Refuse a file's daily bar whose trade date the store holds at another open, as a change
+    of the calendar that moves a session's open gives: the day's bar would be kept twice."""
+    moved = (
+        new.select(clock, "trade_date")
+        .join(kept.select("trade_date", stored_open=clock), on="trade_date")
+        .filter(pl.col(clock) != pl.col("stored_open"))
+    )
+    if moved.is_empty():
+        return
+    opened, dated, stored_open = moved.row(0)
+    raise ValueError(
+        f"Expected the daily bars of {partition.relative_path()} at the opens the store gives "
+        f"their trade dates, got {moved.height:,} at others, the first of {dated} opening at "
+        f"{utc_text(opened)}, where the store's opens at {utc_text(stored_open)}: the session "
+        "calendar changed between the two imports, and a merge would keep that session's bar "
+        f"twice. {refused_for_another_dating(partition.dataset)}"
+    )
+
+
+def _daily(partition: Partition) -> bool:
+    schema_name = partition.dataset.schema_name
+    return isinstance(schema_name, BarSchemaName) and schema_name.timeframe.unit is TimeUnit.DAY
+
+
+def deleted_and_imported_again(dataset: Dataset) -> str:
+    """How a dataset is put right whose stored records refuse a file that no option lets in:
+    its provider's data of its root deleted (step 5.18), and its files imported again."""
+    return (
+        "delete the stored data, on the instrument's page in the app or with fefat data delete "
+        f"{dataset.provider} {dataset.root}, and import its files again"
+    )
+
+
+def refused_for_another_dating(dataset: Dataset) -> str:
+    """The end of a refusal of records the store dates otherwise (ADR-0024): the check that
+    lists the stored records the calendar dates otherwise now, and how to date them again."""
+    return (
+        "The file is refused whatever the import is told, and nothing was written. fefat data "
+        f"verify-trade-dates {dataset.root} lists the stored records the calendar dates "
+        f"otherwise now; to date them again, {deleted_and_imported_again(dataset)}."
+    )
 
 
 def _require_no_overlap(

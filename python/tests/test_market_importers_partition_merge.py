@@ -408,3 +408,44 @@ def test_a_partition_numbered_by_its_files_rows_keeps_the_order_of_its_sequence(
     assert merged.select("ts_recv", "price").equals(prints(*stream).select("ts_recv", "price"))
     assert merged.equals(merged.sort("ts_recv", "sequence", maintain_order=True))
     assert not merged.select(pl.struct("ts_recv", "sequence").is_duplicated().any()).item()
+
+
+@pytest.mark.parametrize(
+    "incoming",
+    [bars((2, 11), day=date(2026, 3, 31)), bars((3, 12), day=date(2026, 3, 31))],
+    ids=["at an instant the store holds", "between instants the store holds"],
+)
+def test_a_bar_the_store_dates_otherwise_is_refused_whatever_the_import_is_told(
+    incoming: pl.DataFrame,
+) -> None:
+    # Done means 3: under one calendar a bar's trade date follows from its instant, so a file's
+    # bar dated otherwise than the stored bars around it was dated under another calendar, and
+    # a merge would keep one session under two trade dates.
+    stored = pl.concat([bars((1, 10), (2, 11)), bars((5, 14), (6, 15))])
+
+    with pytest.raises(
+        ValueError, match="on the trade dates the store gives their instants, got 1"
+    ):
+        merged_partition(MARCH, stored, incoming, BY_OPEN)
+
+
+DAILY = Partition(
+    dataset=Dataset(provider="ninjatrader", schema_name=parse_schema_name("ohlcv-1d"), root="ES"),
+    contract="ESM2026",
+    key=None,
+)
+
+
+def daily_bar(opened: int, day: date) -> pl.DataFrame:
+    """A session's daily bar opening at `opened`, in nanoseconds since the epoch."""
+    return bars((0, 10), day=day).with_columns(ts_open=pl.lit(opened), ts_close=pl.lit(opened + 1))
+
+
+def test_a_daily_bar_whose_trade_date_the_store_holds_at_another_open_is_refused() -> None:
+    # The design review of the plan: a daily bar opens at its session's open, so a calendar
+    # change that moves the open of a trade date stores that day's bar twice, at both opens,
+    # though it lies between the stored bars around it.
+    stored = pl.concat([daily_bar(100, date(2026, 3, 30)), daily_bar(300, date(2026, 3, 31))])
+
+    with pytest.raises(ValueError, match="at the opens the store gives their trade dates, got 1"):
+        merged_partition(DAILY, stored, daily_bar(200, date(2026, 3, 31)), BY_OPEN)

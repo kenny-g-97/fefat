@@ -340,3 +340,75 @@ def test_a_session_is_new_to_the_contract_that_lacked_it(tmp_path: Path) -> None
     assert merge.new_sessions == (DayRecords(trade_date=monday, records=2),)
     assert merge.extended_sessions == (DayRecords(trade_date=monday, records=1),)
     assert (merge.records_added, merge.records_held) == (3, 2)
+
+
+FEBRUARY = Partition(dataset=MARCH.dataset, contract="ESH2026", key=YearMonth(year=2026, month=2))
+FEBRUARY_BARS = march_bars(utc(2026, 2, 27, 14, 30)).with_columns(
+    trade_date=pl.lit(date(2026, 2, 27))
+)
+
+
+def opening_at(bars: pl.DataFrame, opened: int) -> pl.DataFrame:
+    """`bars`, one, opening at `opened` and keeping its trade date, as a file dated under
+    another calendar gives."""
+    return bars.with_columns(
+        ts_open=pl.lit(opened), ts_close=pl.lit(opened + NANOSECONDS_PER_MINUTE)
+    )
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [dict([(APRIL, APRIL_BARS)]), dict([(FEBRUARY, FEBRUARY_BARS)])],
+    ids=["the month after", "the month before"],
+)
+def test_a_contracts_new_month_under_another_instrument_id_than_its_stored_ones_is_refused(
+    tmp_path: Path, rows: dict[Partition, pl.DataFrame]
+) -> None:
+    # Done means 2: the merge compared a file's ids within a stored partition alone, so a month
+    # the store lacked under another id was written beside March, and ESH2026 loaded as two
+    # series.
+    store = Store(tmp_path)
+    imported(store, in_march(MONDAY_BARS))
+    (partition, bars), *_ = rows.items()
+    renumbered = bars.with_columns(instrument_id=pl.lit(1009, dtype=pl.UInt32))
+
+    with pytest.raises(
+        ValueError, match="under the instrument_id that ESH2026 carries beside them, 1001, got 1009"
+    ):
+        tallied(store, dict([(partition, renumbered)]), TAKE_THE_FILE)
+
+    assert not store.has_partition(partition)
+
+
+def test_a_contracts_new_month_under_its_stored_instrument_id_is_written(tmp_path: Path) -> None:
+    store = Store(tmp_path)
+    imported(store, in_march(MONDAY_BARS))
+
+    imported(store, dict([(FEBRUARY, FEBRUARY_BARS), (APRIL, APRIL_BARS)]))
+
+    assert store.has_partition(FEBRUARY) and store.has_partition(APRIL)
+
+
+@pytest.mark.parametrize(
+    ("partition", "bars", "beside"),
+    [
+        (APRIL, opening_at(APRIL_BARS, utc(2026, 3, 30, 14, 31)), "after"),
+        (FEBRUARY, opening_at(FEBRUARY_BARS, utc(2026, 3, 30, 14, 30)), "before"),
+    ],
+    ids=["a month that starts before the stored one ends", "one that ends after it starts"],
+)
+def test_a_month_whose_records_run_into_the_stored_month_beside_it_is_refused(
+    tmp_path: Path, partition: Partition, bars: pl.DataFrame, beside: str
+) -> None:
+    # Done means 3: under one calendar a contract's months follow each other in time, so a
+    # file's month whose bars open at March's instants was dated under another calendar, and a
+    # merge would keep that stretch under two trade dates.
+    store = Store(tmp_path)
+    imported(store, in_march(MONDAY_BARS))
+
+    with pytest.raises(
+        ValueError, match=f"{beside} those the store holds of ESH2026 under 2026-03"
+    ):
+        tallied(store, dict([(partition, bars)]), TAKE_THE_FILE)
+
+    assert not store.has_partition(partition)

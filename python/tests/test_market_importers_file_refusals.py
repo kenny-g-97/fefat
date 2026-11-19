@@ -3,7 +3,7 @@ cannot place in time, products it cannot name, Databento's daily bars, times wri
 zone than the import's, and timing the calendar check cannot test."""
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -315,3 +315,36 @@ def test_a_daily_import_warns_that_each_bar_is_stored_as_its_whole_session(
     assert daily.reading.problems == ()
     assert DAILY_SESSION_ASSUMED in daily.reading.warnings
     assert DAILY_SESSION_ASSUMED not in minutes.reading.warnings
+
+
+def test_a_contracts_month_without_the_instrument_id_of_its_stored_months_is_refused(
+    tmp_path: Path,
+) -> None:
+    # Done means 2: the Databento sample's ESH2026 is stored under the vendor's id, 1001, and
+    # its sessions four weeks earlier, read with a copy of the preset that maps no id column,
+    # take the id of the contract's month, 202603. The merge compared ids within a stored
+    # partition alone, so February was written beside March, and ESH2026 loaded as two series.
+    imported(tmp_path, sample_request("databento-csv"))
+    before = store_files(tmp_path / "data")
+    header, *rows = sample_lines("databento-csv")
+    earlier = [
+        f"{date.fromisoformat(row[:10]) - timedelta(days=28)}{row[10:]}"
+        for row in rows
+        if row.endswith(",ESH6") and row[:10] <= "2026-03-06"
+    ]
+    path = written_export(
+        tmp_path / "february", "glbx-mdp3-20260204.ohlcv-1m.csv", [header, *earlier]
+    )
+    preset = PRESETS["databento-csv"]
+    without_ids = preset.model_copy(
+        update={"columns": preset.columns.model_copy(update={"instrument_id": None})}
+    )
+    request = FileImportRequest(path=path, profile=without_ids)
+    refusal = "under the instrument_id that ESH2026 carries beside them, 1001, got 202603"
+
+    with pytest.raises(ValueError, match=refusal):
+        previewed(tmp_path, request)
+    with pytest.raises(ValueError, match=refusal):
+        imported(tmp_path, request)
+
+    assert store_files(tmp_path / "data") == before
