@@ -36,8 +36,8 @@ test.use({
 // without them, choose back, choose again by the keys, and import (D-106). Then a round of two
 // such files and one without them (D-105): the two rows say on themselves, in the negative,
 // what stops them, and Import waits for a decision on them; the round's box asks it once for
-// both, counting a skip made in a row, and its answer for both turns them positive, and one job
-// imports the three.
+// both, counting a skip made in a row, which its correction leaves standing, and its answer for
+// both turns them positive, each row still offering its skip, and one job imports the three.
 
 test("a file with bars in a break imports without them once you choose so", async ({
   loggedIn: page,
@@ -127,6 +127,9 @@ test("a file with bars in a break imports without them once you choose so", asyn
   // is down.
   await page.keyboard.press("ArrowUp", { delay: 100 })
   await expect(leaveOut).toBeChecked()
+  // The radio the keys reached shows its ring, at 3 : 1 in both themes (the UI verifier).
+  expect(await lowContrastInEachTheme(page, "focus ring")).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await expect(verdict(page)).toHaveText(
     "It imports without its bars in a break",
     { timeout: READ_MS }
@@ -240,6 +243,43 @@ test("a round asks of its files' bars in a break in one box, then imports them w
     "Decide what to do with 1 file first"
   )
 
+  // A double click's second click, landing on an option that a change moved under the
+  // pointer, on its radio or anywhere on its row, chooses nothing (the design review).
+  await skipThem.dispatchEvent("click", { detail: 2 })
+  await decision
+    .getByTestId("decision-bars-options-skipped")
+    .dispatchEvent("click", { detail: 2 })
+  await expect(skipThem).not.toBeChecked()
+
+  // The correction lets in the file not skipped, and the skip made in the row stands (the step
+  // review), so Import names the two files it sends. While that file is read again, held here
+  // for two seconds, the rows keep their last reasons, so the box holds still under the pointer
+  // (the design review).
+  const other = rows.filter({ hasText: WITH_A_BREAK[2] })
+  let holding = true
+  await page.route("**/v1/imports/preview", async (route) => {
+    if (holding) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+    }
+    await route.continue()
+  })
+  await correct.click()
+  await expect(correct).toBeChecked()
+  await expect(
+    page
+      .getByTestId("import-review")
+      .getByText("Reading your latest change", { exact: true })
+  ).toBeVisible()
+  await expect(other.getByTestId("review-file-reason")).toBeVisible()
+  holding = false
+  await expect(rows.getByTestId("review-file-aside")).toHaveText(
+    ["Skipped", "Without bars in a break", "Imports"],
+    { timeout: READ_MS }
+  )
+  await expect(decision).toContainText("1 of these 2 files is skipped.")
+  await expect(run).toHaveText("Import 2 files")
+  await expect(run).toBeEnabled({ timeout: READ_MS })
+
   // Skip them keeps both out, leaving the file that imports.
   await skipThem.click()
   await expect(skipThem).toBeChecked()
@@ -252,7 +292,7 @@ test("a round asks of its files' bars in a break in one box, then imports them w
   await expect(run).toHaveText("Import 1 file")
   await expect(run).toBeEnabled()
 
-  // Import them without those bars, for both at once, the skip in the row among them.
+  // Import them without those bars, where both are skipped, lets both in at once.
   await correct.click()
   await expect(correct).toBeChecked()
   await expect(page.getByTestId("review-files-verdict")).toHaveText(
@@ -275,6 +315,20 @@ test("a round asks of its files' bars in a break in one box, then imports them w
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-several-left-out")
+
+  // The row of a file the box let in still offers its skip (the step review), which the box
+  // counts; the way back brings the file back without its bars, as the box chose.
+  await row.getByRole("button", { name: "Skip this file" }).click()
+  await expect(row.getByRole("button", { name: "Do not skip" })).toBeFocused()
+  await expect(decision).toContainText("1 of these 2 files is skipped.")
+  await expect(correct).toBeChecked()
+  await expect(run).toHaveText("Import 2 files")
+  await row.getByRole("button", { name: "Do not skip" }).click()
+  await expect(
+    row.getByRole("button", { name: "Skip this file" })
+  ).toBeFocused()
+  await expect(aside).toHaveText("Without bars in a break")
+  await expect(decision).not.toContainText("is skipped.")
 
   // One job imports the three, and sums what it left out.
   await expect(run).toHaveText("Import 3 files")
@@ -346,24 +400,38 @@ test("a file that cannot be read says why on its row, closed and open", async ({
     "Decide what to do with 1 file first"
   )
 
-  // No correction fits it, so its box under the rows offers the skip alone, and its way back,
-  // each taking the focus from the other (D-106).
+  // No correction fits it, so its box under the rows, a group named by its title and described
+  // by its message for a screen reader (the design review), offers the skip alone, and its way
+  // back, each taking the focus from the other (D-106).
   const decision = page.getByTestId("decision-other")
   await expect(decision).toContainText("1 file does not import as it is read")
-  await expect(decision).toContainText(
+  const message =
     "Its row says what stops it. Correct it under Layout or Instrument, which reads every file again, or skip the file."
-  )
+  await expect(decision).toContainText(message)
+  await expect(
+    page.getByRole("group", { name: "1 file does not import as it is read" })
+  ).toHaveAccessibleDescription(message)
   await expect(decision.getByRole("radio")).toHaveCount(0)
-  await decision.getByRole("button", { name: "Skip the 1 file" }).click()
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
+  const skip = decision.getByRole("button", { name: "Skip the file" })
+  // A double click's second click skips nothing (the design review).
+  await skip.dispatchEvent("click", { detail: 2 })
+  await expect(aside).toHaveText("Not read")
+  await skip.click()
   const wayBack = decision.getByRole("button", { name: "Do not skip it" })
   await expect(wayBack).toBeFocused()
   await expect(aside).toHaveText("Skipped")
+  // With no option to show it, the box says the file is skipped (the design review).
+  await expect(decision).toContainText("The file is skipped.")
   await expect(page.getByTestId("import-waits")).toHaveText("No file to import")
   await wayBack.click()
   await expect(
-    decision.getByRole("button", { name: "Skip the 1 file" })
+    decision.getByRole("button", { name: "Skip the file" })
   ).toBeFocused()
   await expect(aside).toHaveText("Not read")
+  await expect(decision).not.toContainText("The file is skipped.")
 
   // Open, the reason gives way to what the row discloses: why, and the skip.
   await row.locator("summary").first().click()

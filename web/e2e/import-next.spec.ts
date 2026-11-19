@@ -137,6 +137,9 @@ test("the next export imports by the profile alone, and a revised one replaces t
   await expect(account.getByTestId("records-choice-refuse")).toContainText(
     "It stays refused for these records, and nothing is written."
   )
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-records-choice")
   // Chosen, the file imports, its records in the stored one's place; chosen back, it differs
   // as before, and Import waits for it again.
@@ -246,11 +249,19 @@ test("a round waits for a decision on the file that differs, then imports the ot
   )
   await stepSays(page, "review", "incomplete", "1 file waits for your decision")
 
-  // Under the rows, the box of records that differ asks it, none chosen; the file's own box of
-  // counts holds no choice, since the round's answer is for every file of the kind (D-106).
+  // Under the rows, the box of records that differ asks it, none chosen, a group named by its
+  // title and described by its message (the design review); the file's own box of counts holds
+  // no choice, since the round's answer is for every file of the kind (D-106).
   const decision = page.getByTestId("decision-differing")
   await expect(decision).toContainText(
     "1 file holds records that differ from the ones FEAT holds"
+  )
+  await expect(
+    page.getByRole("group", {
+      name: "1 file holds records that differ from the ones FEAT holds",
+    })
+  ).toHaveAccessibleDescription(
+    "Where the file is an export, check its profile's time zone and bar stamping under Layout first. Where it holds a vendor's correction, its records should replace the stored ones."
   )
   const replace = decision.getByRole("radio", {
     name: "Import it and replace the stored records",
@@ -275,8 +286,8 @@ test("a round waits for a decision on the file that differs, then imports the ot
 
   // Replacing the stored records lets all three in; Skip it keeps the revised file out, and
   // Import names the two it sends.
-  // Each change of what is done with records that differ reads every file again, so Import
-  // waits for the readings.
+  // A change of what is done with a file's records reads that file again, so Import waits for
+  // its reading.
   await replace.click()
   await expect(replace).toBeChecked()
   await expect(revisedAside).toHaveText("Imports", { timeout: READ_MS })
