@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { drafted, NEW_INSTRUMENT, startingDraft } from "./import-draft"
+import {
+  type Draft,
+  drafted,
+  NEW_INSTRUMENT,
+  startingDraft,
+} from "./import-draft"
 import { IBKR, NINJATRADER } from "./import-fixtures.test-support"
 
 describe("drafted", () => {
@@ -62,6 +67,72 @@ describe("drafted", () => {
     expect(
       drafted(again, { kind: "source", source: { kind: "none" } }).skipped
     ).toEqual([])
+  })
+
+  it("decides the bars in a break of a kind's files: the correction lets them in without their bars, and a skip keeps them out with their bars in (D-106)", () => {
+    const before: Draft = {
+      ...startingDraft({ kind: "none" }),
+      skipped: ["a", "x"],
+      breaksLeftOut: ["y"],
+      differing: "take-file",
+    }
+
+    const corrected = drafted(before, {
+      kind: "decided",
+      problem: "bars in breaks",
+      files: ["a", "b"],
+      answer: "corrected",
+    })
+
+    expect(corrected.skipped).toEqual(["x"])
+    expect(corrected.breaksLeftOut).toEqual(["y", "a", "b"])
+    expect(corrected.differing).toBe("refuse")
+    const skipped = drafted(
+      { ...corrected, differing: "take-file" },
+      {
+        kind: "decided",
+        problem: "bars in breaks",
+        files: ["a", "b"],
+        answer: "skipped",
+      }
+    )
+    expect(skipped.skipped).toEqual(["x", "a", "b"])
+    expect(skipped.breaksLeftOut).toEqual(["y"])
+    expect(skipped.differing).toBe("take-file")
+  })
+
+  it("decides the records that differ of a kind's files: the correction takes them, and a skip refuses them again, the bars left out staying (D-106)", () => {
+    const before = {
+      ...startingDraft({ kind: "none" }),
+      skipped: ["a", "x"],
+      breaksLeftOut: ["y"],
+    }
+
+    const corrected = drafted(before, {
+      kind: "decided",
+      problem: "differing",
+      files: ["a"],
+      answer: "corrected",
+    })
+
+    expect(corrected.skipped).toEqual(["x"])
+    expect(corrected.differing).toBe("take-file")
+    expect(corrected.breaksLeftOut).toEqual(["y"])
+    const skipped = drafted(corrected, {
+      kind: "decided",
+      problem: "differing",
+      files: ["a", "b"],
+      answer: "skipped",
+    })
+    expect(skipped.skipped).toEqual(["x", "a", "b"])
+    expect(skipped.differing).toBe("refuse")
+    expect(skipped.breaksLeftOut).toEqual(["y"])
+    const reread = drafted(skipped, { kind: "time zone", timeZone: "UTC" })
+    expect([reread.skipped, reread.breaksLeftOut, reread.differing]).toEqual([
+      [],
+      [],
+      "refuse",
+    ])
   })
 
   it("copies a new profile from its base under a name of the trader's own", () => {

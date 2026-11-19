@@ -75,6 +75,13 @@ export type InstrumentDraft =
 
 export type DifferingRecords = components["schemas"]["DifferingRecords"]
 
+/** A kind of problem of a round that a correction fits, asked once for every file of the kind
+ * (D-106): bars in a break, or records that differ. */
+export type Correctable = "bars in breaks" | "differing"
+
+/** The answer for every file of a kind: the correction, or a skip. */
+export type Answer = "corrected" | "skipped"
+
 /** The wizard's draft: everything the trader chose and typed, from which each preview and the
  * import are asked, and the files of a round the trader skipped, which the round never sends
  * (D-105). */
@@ -105,6 +112,12 @@ export type DraftChange =
   | Readonly<{ kind: "differing"; differing: DifferingRecords }>
   | Readonly<{ kind: "bars in breaks"; files: readonly string[] }>
   | Readonly<{ kind: "skipped"; files: readonly string[] }>
+  | Readonly<{
+      kind: "decided"
+      problem: Correctable
+      files: readonly string[]
+      answer: Answer
+    }>
 
 /** A new instrument's fields before the trader types them: futures in US dollars on the CME's
  * equity index calendar, expiring on the third Friday, as the most common product is. */
@@ -146,7 +159,8 @@ export function startingDraft(choice: PresetChoice): Draft {
  * approved that for the reading the review showed (ADR-0022); leaving out the bars of other
  * files reads them again, so it refuses differing records again too. A change of what is read
  * skips no file any more, while the three decisions keep the files skipped (D-105), and a skip,
- * which reads nothing again, keeps the other two. */
+ * which reads nothing again, keeps the other two; a round's box decides for every file of its
+ * kind at once (`decidedFor`, D-106). */
 export function drafted(draft: Draft, change: DraftChange): Draft {
   const refused = {
     ...draft,
@@ -198,7 +212,37 @@ export function drafted(draft: Draft, change: DraftChange): Draft {
       return { ...draft, differing: "refuse", breaksLeftOut: change.files }
     case "skipped":
       return { ...draft, skipped: change.files }
+    case "decided":
+      return decidedFor(draft, change)
   }
+}
+
+/** The draft once a round's box is answered for every file of its kind, `files` (D-106): the
+ * correction lets each in, skipped no more, its bars left out, which reads it again and so
+ * refuses differing records again (ADR-0022), or its records taken, the bars left out staying;
+ * a skip keeps each out and takes the correction back, its bars in again or differing records
+ * refused, so that Do not skip in a row never brings a correction back unseen. */
+function decidedFor(
+  draft: Draft,
+  { problem, files, answer }: Extract<DraftChange, { kind: "decided" }>
+): Draft {
+  const others = (list: readonly string[]) =>
+    list.filter((file) => !files.includes(file))
+  const corrected = answer === "corrected"
+  const skipped = corrected
+    ? others(draft.skipped)
+    : [...others(draft.skipped), ...files]
+  if (problem === "differing") {
+    return { ...draft, skipped, differing: corrected ? "take-file" : "refuse" }
+  }
+  return corrected
+    ? {
+        ...draft,
+        skipped,
+        breaksLeftOut: [...others(draft.breaksLeftOut), ...files],
+        differing: "refuse",
+      }
+    : { ...draft, skipped, breaksLeftOut: others(draft.breaksLeftOut) }
 }
 
 /** A new profile's fields, from the profile it is copied from, under a name of the trader's
