@@ -1,8 +1,9 @@
 """Deleting a provider's data of a root over the API (step 5.18, ADR-0023): what a delete removes,
 with how many saved runs read the data, and the delete itself, through the SDK
 (`fefat.market.stored_deletion`). A delete is refused while a job is queued or running, since a
-job could read or write the data it removes, and while an import from a terminal writes or a file
-is held open; asking again once they are done finishes it."""
+job could read or write the data it removes, holds every new job back while it runs
+(`Jobs.held_back`), and is refused while an import from a terminal writes or a file is held open;
+asking again once they are done finishes it."""
 
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -76,19 +77,26 @@ class StoredDataDeletions:
         """Delete `provider`'s data of `root`; `DeletionRefusedError` while a job is queued or
         running, an import writes, or a file is held open, and `NoSuchStoredDataError` where the
         store holds none."""
-        under_way = self.jobs.under_way()
-        if under_way:
-            raise DeletionRefusedError(
-                f"Expected no job queued or running, got {counted(len(under_way), 'job')}: delete "
-                "once they end, or cancel them under Jobs, so that none reads or writes the data "
-                "a delete removes."
-            )
-        try:
-            delete_stored_data(self.store, self.reports_folder, self.cache_folder, provider, root)
-        except NoStoredDataError as refused:
-            raise NoSuchStoredDataError(str(refused)) from refused
-        except DeleteRefusedError as refused:
-            raise DeletionRefusedError(str(refused)) from refused
+        with self.jobs.held_back() as under_way:
+            if under_way:
+                raise DeletionRefusedError(_jobs_under_way(len(under_way)))
+            try:
+                delete_stored_data(
+                    self.store, self.reports_folder, self.cache_folder, provider, root
+                )
+            except NoStoredDataError as refused:
+                raise NoSuchStoredDataError(str(refused)) from refused
+            except DeleteRefusedError as refused:
+                raise DeletionRefusedError(str(refused)) from refused
+
+
+def _jobs_under_way(jobs: int) -> str:
+    waiting = "it ends, or cancel it" if jobs == 1 else "they end, or cancel them"
+    return (
+        f"Expected no job queued or running, got {counted(jobs, 'job')}: delete once {waiting} "
+        "in the jobs drawer at the top right, so that no job reads or writes the data a delete "
+        "removes."
+    )
 
 
 def _preview(planned: StoredDataDeletion, saved_runs: int) -> DeletionPreview:

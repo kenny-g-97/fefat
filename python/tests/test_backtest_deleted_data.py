@@ -38,7 +38,7 @@ def test_a_run_whose_data_was_deleted_is_counted_stands_and_refuses_to_be_read_a
     )
     delete_stored_data(store, paths.reports_dir, paths.cache_dir, "databento", "ES")
 
-    assert [each.hash for each in counted] == [run.hash]
+    assert [each.run_key for each in counted] == [run.hash]
     assert elsewhere == ((), ())
     refusal = re.escape(
         "got none: its data was deleted since the run. The run's record and results stand"
@@ -48,4 +48,6 @@ def test_a_run_whose_data_was_deleted_is_counted_stands_and_refuses_to_be_read_a
     with pytest.raises(ValueError, match=refusal):
         ff.backtest.fidelity_check(run)
     assert tree(run.folder) == saved
-    assert [each.hash for each in runs_that_read(paths.runs_dir, "databento", "ES")] == [run.hash]
+    assert [each.run_key for each in runs_that_read(paths.runs_dir, "databento", "ES")] == [
+        run.hash
+    ]

@@ -5,8 +5,10 @@ here for the server's streams. A queued job is cancelled at once; a running one 
 which its worker reads at its next report, or after which the reaper ends it, unless it has come
 past the point where it can stop, as an import that writes (step 5.12)."""
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+import threading
+from collections.abc import Callable, Generator, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -48,22 +50,45 @@ class JobPastStoppingError(ValueError):
 
 @dataclass(frozen=True)
 class Jobs:
-    """Starts, lists, reads, and cancels jobs, over their records and the dispatcher."""
+    """Starts, lists, reads, and cancels jobs, over their records and the dispatcher; `starting`
+    is held while a job is given to the dispatcher, and by a delete of stored data for as long as
+    it runs (`held_back`, step 5.18)."""
 
     records: JobRecords
     dispatcher: Dispatcher
     clock: Clock
+    starting: threading.Lock = field(default_factory=threading.Lock, compare=False, repr=False)
 
     def start(self, kind: JobKind, payload: Mapping[str, Any]) -> Job:
-        """Queue a job of `kind` with `payload`, and give it to the dispatcher."""
-        job = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
-        self.dispatcher.submit(job.id)
+        """Queue a job of `kind` with `payload`, and give it to the dispatcher, once no delete
+        holds the jobs back."""
+        with self.starting:
+            job = self.records.add(kind, payload, MAX_ATTEMPTS, self.clock())
+            self.dispatcher.submit(job.id)
         return job
 
     def submit(self, job_id: str) -> None:
         """Give the dispatcher the queued job `job_id`, which another area's records queued, as
-        the runs' records queue a run's job with its row (step 5.3)."""
-        self.dispatcher.submit(job_id)
+        the runs' records queue a run's job with its row (step 5.3), once no delete holds the
+        jobs back."""
+        with self.starting:
+            self.dispatcher.submit(job_id)
+
+    def queued_by[Queued](self, queue: Callable[[], Queued]) -> Queued:
+        """What `queue` gives, which writes a job queued in another area's records, as the runs'
+        records queue a run's job with its row (step 5.3), once no delete holds the jobs back:
+        the dispatcher's sweep gives a queued job to a worker by itself, so that a delete sees
+        such a job queued, and is refused, or holds it back until it ends (step 5.18)."""
+        with self.starting:
+            return queue()
+
+    @contextmanager
+    def held_back(self) -> Generator[tuple[Job, ...]]:
+        """Hold every job back from being given to the dispatcher until the block ends, as a
+        delete of stored data does while it removes what a job could read or write (step 5.18),
+        and give the jobs already queued or running."""
+        with self.starting:
+            yield self.under_way()
 
     def start_demo(self, seconds: int) -> Job:
         """Queue a demo job that counts `seconds`, and give it to the dispatcher."""

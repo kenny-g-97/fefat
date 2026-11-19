@@ -39,7 +39,8 @@ def pinned_snapshots(store: Store, run: "Run") -> dict[str, Snapshot]:
                 f"Expected the store's {dataset.schema_name} of {dataset.root} from "
                 f"{dataset.provider} as the run read it, snapshot {dataset.snapshot[:12]}, got "
                 "none: its data was deleted since the run. The run's record and results stand; "
-                "import the data again, then run the strategy again for a run on it."
+                "import the data again, then run the strategy again for a run on it. The store "
+                f"read: {store.folder}."
             )
         snapshot = store.snapshot(request)
         if snapshot.sha256 != dataset.snapshot:

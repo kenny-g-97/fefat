@@ -9,7 +9,8 @@ is still writing, `<key>.<random>.partial` (`fefat.backtest.artifacts.write_run`
 import re
 from pathlib import Path
 
-from fefat.backtest.artifacts import RECORD_FILE, OtherEngineRunError
+from fefat.backtest.artifacts import RECORD_FILE, OtherEngineRunError, read_record
+from fefat.backtest.record import RunRecord
 from fefat.backtest.runs import Run
 
 _RUN_KEY = re.compile(r"[0-9a-f]{64}")
@@ -40,15 +41,23 @@ def saved_runs_in(runs_dir: Path) -> tuple[Run, ...]:
     return tuple(runs)
 
 
-def runs_that_read(runs_dir: Path, provider: str, root: str) -> tuple[Run, ...]:
-    """The runs saved in `runs_dir` (`saved_runs_in`) that read `provider`'s data of `root`,
-    their own instrument's or another instrument's their features read (step 3.7): those that a
-    delete of that data leaves unable to be explained or checked again (step 5.18, ADR-0023)."""
-    return tuple(
-        run
-        for run in saved_runs_in(runs_dir)
-        if any((read.provider, read.root) == (provider, root) for read in run.record.datasets)
-    )
+def runs_that_read(runs_dir: Path, provider: str, root: str) -> tuple[RunRecord, ...]:
+    """The records of the runs saved in `runs_dir` that read `provider`'s data of `root`, their
+    own instrument's or another instrument's their features read (step 3.7), each run once by
+    its key: those that a delete of that data leaves unable to be explained or checked again
+    (step 5.18, ADR-0023). They are read from the folders' records, so that a folder copied by
+    hand counts as its run, and a record this engine cannot read, or that does not parse, is
+    passed over, as such a run can be neither explained nor checked again anyway; a delete
+    counts them first, so that no such folder stops it."""
+    read: dict[str, RunRecord] = {}
+    for folder in saved_run_folders(runs_dir):
+        try:
+            record = read_record(folder)
+        except ValueError:
+            continue
+        if any((each.provider, each.root) == (provider, root) for each in record.datasets):
+            read[record.run_key] = record
+    return tuple(read.values())
 
 
 def saved_run(runs_dir: Path, run_key: str) -> Run:

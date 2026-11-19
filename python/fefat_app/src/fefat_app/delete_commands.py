@@ -6,7 +6,8 @@
 It prints what a delete removes, as `fefat.market.stored_deletion` plans it, and how many saved
 runs read the data, which keep their records and results but can no longer be explained or
 checked again; it deletes only with `--yes`. A delete held up by a file that another program holds
-open is finished by running the command again once it is closed.
+open is finished by running the command again once it is closed. The command does not see the
+app's jobs: let a job of the app that reads the data end before deleting it from a terminal.
 """
 
 import argparse
@@ -45,10 +46,11 @@ def delete_a_provider_s_data(arguments: argparse.Namespace) -> int:
     provider: str = arguments.provider
     root: str = arguments.root
     confirmed: bool = arguments.yes
+    runs = len(runs_that_read(paths.runs_dir, provider, root))
     remove = delete_stored_data if confirmed else planned_deletion
     deletion = remove(store, paths.reports_dir, paths.cache_dir, provider, root)
     print(deletion.summary())
-    print(_runs_line(len(runs_that_read(paths.runs_dir, provider, root))))
+    print(_runs_line(runs))
     print(
         f"Deleted {root} from {provider}."
         if confirmed
