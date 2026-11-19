@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
+import { useNavigate, useRouter } from "@tanstack/react-router"
 import { deletionQuery, useStoredDataDeletion } from "@/api/catalog"
 import { InlineConfirmation } from "@/ui/inline-confirmation"
 import { Panel } from "@/ui/panel"
@@ -8,17 +8,20 @@ import { deletionWords } from "./deletion-words"
 import { QueryBody } from "./QueryBody"
 
 /** The last card of a dataset's page (step 5.18, ADR-0023; web/DESIGN.md, Patterns, Dataset
- * page): what a delete of the instrument's data from the provider removes and what stays, then
- * Delete, asked once in place (Inline confirmation), which leads back to the Data page once the
- * data is gone; a refusal says why under it, and Delete now pressed again finishes a delete that
- * a file held open stopped. */
+ * page): what Delete removes and what stays, then Delete, asked once in place (Inline
+ * confirmation), Deleting beside it while the request runs; once the data is gone, the Data page,
+ * which says what was deleted, with the focus on that line, unless the trader went elsewhere
+ * meanwhile. A refusal says why under it, and Delete now pressed again finishes a delete that a
+ * file held open stopped. */
 export function DeleteData({
   dataset,
 }: Readonly<{ dataset: ImportedDataset }>) {
   const preview = useQuery(deletionQuery(dataset.provider, dataset.root))
-  const navigate = useNavigate()
-  const deletion = useStoredDataDeletion(dataset.provider, dataset.root, () =>
-    navigate({ to: "/data" })
+  const router = useRouter()
+  const deletion = useStoredDataDeletion(
+    dataset.provider,
+    dataset.root,
+    useLeaving(dataset)
   )
   return (
     <Panel title="Delete this data">
@@ -35,12 +38,24 @@ export function DeleteData({
                 trigger="Delete"
                 confirm="Delete now"
                 pending={deletion.isPending}
-                onConfirm={() => deletion.mutate()}
+                size="default"
+                onConfirm={() => deletion.mutate(router.state.location.href)}
               />
+              {/* On the page from the start, so that a screen reader hears Deleting arrive. */}
+              <p
+                role="status"
+                className={
+                  deletion.isPending
+                    ? "text-xs text-muted-foreground"
+                    : "sr-only"
+                }
+              >
+                {deletion.isPending && "Deleting"}
+              </p>
               {deletion.error !== null && (
                 <p
                   role="alert"
-                  className="max-w-prose text-right text-negative"
+                  className="max-w-prose wrap-anywhere text-negative"
                 >
                   {deletion.error.message}
                 </p>
@@ -51,6 +66,26 @@ export function DeleteData({
       </QueryBody>
     </Panel>
   )
+}
+
+/** How the card leaves once its data is gone, from the address its delete was asked at: to the
+ * Data page, which says what was deleted and takes the focus to that line; unless the trader
+ * left that address while the delete ran, who stays where they went. The address comes with
+ * the delete, since the page re-renders at the next one as it leaves. */
+function useLeaving(
+  dataset: ImportedDataset
+): (askedFrom: string) => Promise<void> {
+  const router = useRouter()
+  const navigate = useNavigate()
+  return async (askedFrom) => {
+    if (router.state.location.href !== askedFrom) {
+      return
+    }
+    await navigate({
+      to: "/data",
+      state: { deleted: `${dataset.root} from ${dataset.provider}` },
+    })
+  }
 }
 
 /** A trade date, which a line never breaks inside, at the hyphens it would break at otherwise. */

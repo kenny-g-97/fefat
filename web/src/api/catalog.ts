@@ -73,30 +73,55 @@ export function deletionQuery(provider: string, root: string) {
   })
 }
 
-/** Delete a provider's data of a root (step 5.18, ADR-0023), then `leave` the page that showed
- * it and ask every read of the store again, so that no read of the data deleted is asked from a
- * page about it; a delete refused part way has removed some of it, so a refusal asks them again
- * at once. */
+/** Delete a provider's data of a root (step 5.18, ADR-0023), asked from the page at the address
+ * the mutation is given, then `leave` that page, take its datasets out of the catalog already
+ * read, so that no list shows it once it is gone, and ask every read of the store again, so that
+ * no read of the data deleted is asked from a page about it; a delete refused part way has
+ * removed some of it, so a refusal asks them again at once. */
 export function useStoredDataDeletion(
   provider: string,
   root: string,
-  leave: () => Promise<void>
+  leave: (askedFrom: string) => Promise<void>
 ) {
   return useMutation({
-    mutationFn: async () =>
+    mutationFn: async (_askedFrom: string) =>
       succeeded(
         await api.DELETE("/v1/stored-data/{provider}/{root}", {
           params: { path: { provider, root } },
         })
       ),
-    onSuccess: async () => {
-      await leave()
+    onSuccess: async (_answer, askedFrom) => {
+      await leave(askedFrom)
+      queryClient.setQueryData(catalogQuery.queryKey, (catalog) =>
+        catalog === undefined
+          ? undefined
+          : withoutStoredData(catalog, provider, root)
+      )
       readTheStoreAgain()
     },
     onError: () => {
       readTheStoreAgain()
     },
   })
+}
+
+/** `catalog` without `provider`'s datasets of `root`, as a delete of them leaves it until the
+ * catalog is read again (step 5.18). */
+export function withoutStoredData(
+  catalog: CatalogStatus,
+  provider: string,
+  root: string
+): CatalogStatus {
+  const kept = (dataset: StoredDataset) =>
+    dataset.provider !== provider || dataset.root !== root
+  return {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      datasets: product.datasets.filter(kept),
+    })),
+    unlisted: catalog.unlisted.filter(kept),
+  }
 }
 
 /** A catalog sync's payload, which the OpenAPI document does not type: its root, or none for

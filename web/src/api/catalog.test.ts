@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  type CatalogStatus,
   endedStoreWrites,
   isSyncing,
+  type StoredDataset,
   syncsUnderWay,
+  withoutStoredData,
   writeEndedSince,
 } from "./catalog"
 import type { Job } from "./jobs"
@@ -98,5 +101,53 @@ describe("syncsUnderWay", () => {
         { ...aSync("1", "queued", "MES"), payload: { roots: ["MES"] } },
       ])
     ).toThrow()
+  })
+})
+
+function stored(provider: string, root: string): StoredDataset {
+  return {
+    id: `${provider}:ohlcv-1m:${root}`,
+    provider,
+    root,
+    schema_name: "ohlcv-1m",
+    fidelity: "1m",
+    contracts: 1,
+    first_trade_date: "2026-03-05",
+    last_trade_date: "2026-03-09",
+    quality: "unchecked",
+    checked_through: null,
+    origin: "import",
+    licence_scope: "Synthetic",
+    last_import: null,
+  }
+}
+
+describe("withoutStoredData", () => {
+  it("takes one provider's datasets of one root out, of the products and of the rest", () => {
+    // Step 5.18: the catalog as a delete leaves it, so that the Data page never lists the
+    // deleted row again while the catalog is read anew.
+    const catalog: CatalogStatus = {
+      version: 1,
+      products: [
+        {
+          root: "MES",
+          history_from: "2019-05-06",
+          recommended_source: "Databento",
+          datasets: [
+            { ...stored("synthetic", "MES"), coverage: "partial" },
+            { ...stored("databento", "MES"), coverage: "complete" },
+          ],
+        },
+      ],
+      unlisted: [stored("synthetic", "MES"), stored("synthetic", "XES")],
+    }
+
+    const left = withoutStoredData(catalog, "synthetic", "MES")
+
+    expect(left.products[0].datasets.map((each) => each.provider)).toEqual([
+      "databento",
+    ])
+    expect(left.unlisted.map((each) => each.root)).toEqual(["XES"])
+    expect(left.version).toBe(1)
   })
 })

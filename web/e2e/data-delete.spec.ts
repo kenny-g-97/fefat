@@ -2,9 +2,10 @@ import type { Locator, Page } from "@playwright/test"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
 import { expect, test } from "./support/fixtures.ts"
-import { inBothThemes } from "./support/import-wizard.ts"
+import { inBothThemes, noSidewaysScroll } from "./support/import-wizard.ts"
 import { cancelActiveJobs, startDemoJobs } from "./support/jobs.ts"
 import { problemAnswer } from "./support/problems.ts"
+import { screenshot } from "./support/screenshots.ts"
 
 // The Delete card of step 5.18 (D-107, ADR-0023) against the seeded server: the end of a
 // dataset's page says what a delete of the instrument's data from the provider removes and how
@@ -19,6 +20,9 @@ test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
 const ES_PAGE = "/data/dataset?instrument=ES&provider=synthetic"
 const MES_PAGE = "/data/dataset?instrument=MES&provider=synthetic"
+/** A refusal of the shape a file held open gives, its path made up (D-80): a Windows path
+ * breaks at no space, so the card must break it anywhere. */
+const HELD_OPEN = String.raw`Expected to remove D:\TradingResearch\FEAT\store\databento\trades\root=MNQ\contract=MNQZ2026\date=2026-09-21, got "The process cannot access the file because it is being used by another process": close the programs that read it, such as a chart or a notebook, then delete again, which finishes the delete.`
 
 test.afterEach(async ({ page }) => {
   await cancelActiveJobs(page.request)
@@ -62,7 +66,7 @@ test("the card says what a delete removes, and Keep and a double click keep", as
     "1 saved run read this data: it keeps its results, but FEAT can no longer explain its trades or check it again."
   )
   await expect(card).toContainText(
-    / from \d{4}-\d\d-\d\d to \d{4}-\d\d-\d\d are deleted/
+    /Delete removes 1-minute bars, 1-second bars, and trades from \d{4}-\d\d-\d\d to \d{4}-\d\d-\d\d/
   )
   await expect(card).toContainText(
     "Your own files stay where you keep them, and can be imported again afterwards."
@@ -76,6 +80,17 @@ test("the card says what a delete removes, and Keep and a double click keep", as
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await keep.click()
   await expect(trigger).toBeFocused()
+  // From the keyboard, each of the card's buttons draws its focus ring.
+  await page.keyboard.press("Enter")
+  await expect(keep).toBeFocused()
+  expect(await lowContrastInEachTheme(page, "focus ring")).toEqual([])
+  await page.keyboard.press("Shift+Tab")
+  await expect(card.getByRole("button", { name: "Delete now" })).toBeFocused()
+  expect(await lowContrastInEachTheme(page, "focus ring")).toEqual([])
+  await page.keyboard.press("Tab")
+  await page.keyboard.press("Enter")
+  await expect(trigger).toBeFocused()
+  expect(await lowContrastInEachTheme(page, "focus ring")).toEqual([])
   // The second click lands on Keep, which took the trigger's place and gives the focus back.
   await trigger.dblclick()
   await expect(trigger).toBeFocused()
@@ -98,32 +113,80 @@ test("a job under way refuses the delete, and the refusal says why under the but
   await card.getByRole("button", { name: "Delete now" }).click()
 
   await expect(card.getByRole("alert")).toContainText(
-    "Expected no job queued or running, got 1 job"
+    "Expected no job queued or running, got 1 job: delete once it ends, or cancel it in the jobs drawer"
   )
   await expect(card.getByRole("button", { name: "Delete now" })).toBeEnabled()
   await expect(page).toHaveURL(MES_PAGE)
 })
 
-test("a delete that fails says what the server said", async ({
+test("Keep waits while a delete runs, and a refusal of a file held open stays in the card", async ({
   loggedIn: page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto(MES_PAGE)
   const card = deleteCard(page)
-  await page.route("**/v1/stored-data/synthetic/MES", (route) =>
-    route.request().method() === "DELETE"
-      ? route.fulfill(problemAnswer(409, "A file is held open, for this test."))
-      : route.continue()
-  )
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/v1/stored-data/synthetic/MES", async (route) => {
+    if (route.request().method() !== "DELETE") {
+      await route.continue()
+      return
+    }
+    await released
+    await route.fulfill(problemAnswer(409, HELD_OPEN))
+  })
 
   await card.getByRole("button", { name: "Delete", exact: true }).click()
   await card.getByRole("button", { name: "Delete now" }).click()
+  await expect(card.getByRole("button", { name: "Keep" })).toBeDisabled()
+  await expect(card.getByRole("button", { name: "Delete now" })).toBeDisabled()
+  await expect(card.getByRole("status")).toHaveText("Deleting")
+  release()
 
-  await expect(card.getByRole("alert")).toHaveText(
-    "A file is held open, for this test."
-  )
+  await expect(card.getByRole("alert")).toHaveText(HELD_OPEN)
+  await expect(card.getByRole("button", { name: "Delete now" })).toBeEnabled()
+  // The wait dropped the focus; the confirm takes it back, to be pressed again.
+  await expect(card.getByRole("button", { name: "Delete now" })).toBeFocused()
+  await noSidewaysScroll(page)
   await inBothThemes(page, "dataset-delete-refused")
   expect(await lowContrastInEachTheme(page)).toEqual([])
+})
+
+test("a delete that ends after the trader left its page leaves them where they went", async ({
+  loggedIn: page,
+}) => {
+  await page.goto(MES_PAGE)
+  const card = deleteCard(page)
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  // Answered by the test, so that the seeded MES stays for the last test.
+  await page.route("**/v1/stored-data/synthetic/MES", async (route) => {
+    if (route.request().method() !== "DELETE") {
+      await route.continue()
+      return
+    }
+    await released
+    await route.fulfill({ status: 204 })
+  })
+
+  await card.getByRole("button", { name: "Delete", exact: true }).click()
+  await card.getByRole("button", { name: "Delete now" }).click()
+  await page.getByRole("link", { name: "Home", exact: true }).click()
+  await expect(page).toHaveURL("/")
+  const answered = page.waitForResponse(
+    (response) =>
+      response.request().method() === "DELETE" &&
+      response.url().endsWith("/v1/stored-data/synthetic/MES")
+  )
+  release()
+  await answered
+  await page.waitForTimeout(1_000)
+
+  await expect(page).toHaveURL("/")
 })
 
 test("Delete now takes the data off the Data page for good", async ({
@@ -140,8 +203,15 @@ test("Delete now takes the data off the Data page for good", async ({
   await card.getByRole("button", { name: "Delete now" }).click()
 
   await expect(page).toHaveURL("/data")
+  await expect(
+    page.getByRole("status").filter({ hasText: "Deleted MES from synthetic." })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("status").filter({ hasText: "Deleted MES from synthetic." })
+  ).toBeFocused()
   await expect(importedRow(page, "ES")).toHaveCount(1)
   await expect(importedRow(page, "MES")).toHaveCount(0)
+  await screenshot(page, "data-after-delete")
   await page.reload()
   await expect(importedRow(page, "ES")).toHaveCount(1)
   await expect(importedRow(page, "MES")).toHaveCount(0)
