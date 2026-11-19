@@ -38,6 +38,7 @@ from fefat_app.services.imports import Imports
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
+from fefat_app.services.stored_data import StoredDataDeletions
 from fefat_app.services.strategies import SavedStrategies
 from fefat_app.uploads import UploadFolders
 from local_server import LOOPBACK, STARTED_AT, SettableClock, running_runners
@@ -108,6 +109,9 @@ def container(
             dispatcher=dispatcher,
             executor=warm_executor,
             catalog=MarketCatalog(store, paths.reports_dir, paths.cache_dir, jobs),
+            deletions=StoredDataDeletions(
+                store, paths.reports_dir, paths.cache_dir, paths.runs_dir, jobs
+            ),
             strategies=SavedStrategies(library, warm_executor, paths.strategies_dir),
             features=SavedFeatures(library, warm_executor, paths.features_dir),
             runs=Runs(

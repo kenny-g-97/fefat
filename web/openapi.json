@@ -1651,6 +1651,48 @@
         "title": "DayPnl",
         "type": "object"
       },
+      "DeletionPreview": {
+        "description": "What a delete of a provider's data of a root removes, as its dataset's page says it before\nit asks: how many of FEAT's copies of the files it was imported from go, so that those files\nimport again as new; the names of the files kept, since each also holds another root still\nstored; whether its quality report goes; and how many saved runs read the data, which keep\ntheir records and results but can no longer be explained or checked again.",
+        "properties": {
+          "imported_files": {
+            "title": "Imported Files",
+            "type": "integer"
+          },
+          "kept_files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kept Files",
+            "type": "array"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "quality_report": {
+            "title": "Quality Report",
+            "type": "boolean"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "saved_runs": {
+            "title": "Saved Runs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "provider",
+          "root",
+          "imported_files",
+          "kept_files",
+          "quality_report",
+          "saved_runs"
+        ],
+        "title": "DeletionPreview",
+        "type": "object"
+      },
       "DemoJobRequest": {
         "additionalProperties": false,
         "description": "How many seconds a demo job counts, one a second, from 1 to an hour.",
@@ -9712,6 +9754,185 @@
           }
         ],
         "summary": "Source Guide",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/stored-data/{provider}/{root}": {
+      "delete": {
+        "description": "Delete `provider`'s data of `root` (step 5.18, ADR-0023); refused with 404 where the\nstore holds no such data, and with 409 while a job is queued or running, an import\nwrites, or a file another program holds open stops it, which a delete asked again then\nfinishes.",
+        "operationId": "delete_instrument_data_v1_stored_data__provider___root__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "root",
+            "required": true,
+            "schema": {
+              "title": "Root",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Delete Instrument Data",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/v1/stored-data/{provider}/{root}/deletion": {
+      "get": {
+        "description": "What a delete of `provider`'s data of `root` removes, writing nothing, with how many\nsaved runs read the data (step 5.18); refused with 404 where the store holds no such\ndata.",
+        "operationId": "stored_data_deletion_v1_stored_data__provider___root__deletion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "root",
+            "required": true,
+            "schema": {
+              "title": "Root",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Stored Data Deletion",
         "tags": [
           "data"
         ]

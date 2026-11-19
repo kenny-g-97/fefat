@@ -669,6 +669,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/stored-data/{provider}/{root}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Instrument Data
+         * @description Delete `provider`'s data of `root` (step 5.18, ADR-0023); refused with 404 where the
+         *     store holds no such data, and with 409 while a job is queued or running, an import
+         *     writes, or a file another program holds open stops it, which a delete asked again then
+         *     finishes.
+         */
+        delete: operations["delete_instrument_data_v1_stored_data__provider___root__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stored-data/{provider}/{root}/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stored Data Deletion
+         * @description What a delete of `provider`'s data of `root` removes, writing nothing, with how many
+         *     saved runs read the data (step 5.18); refused with 404 where the store holds no such
+         *     data.
+         */
+        get: operations["stored_data_deletion_v1_stored_data__provider___root__deletion_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/strategies": {
         parameters: {
             query?: never;
@@ -1508,6 +1553,28 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+        };
+        /**
+         * DeletionPreview
+         * @description What a delete of a provider's data of a root removes, as its dataset's page says it before
+         *     it asks: how many of FEAT's copies of the files it was imported from go, so that those files
+         *     import again as new; the names of the files kept, since each also holds another root still
+         *     stored; whether its quality report goes; and how many saved runs read the data, which keep
+         *     their records and results but can no longer be explained or checked again.
+         */
+        DeletionPreview: {
+            /** Imported Files */
+            imported_files: number;
+            /** Kept Files */
+            kept_files: string[];
+            /** Provider */
+            provider: string;
+            /** Quality Report */
+            quality_report: boolean;
+            /** Root */
+            root: string;
+            /** Saved Runs */
+            saved_runs: number;
         };
         /**
          * DemoJobRequest
@@ -5608,6 +5675,122 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    delete_instrument_data_v1_stored_data__provider___root__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                root: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    stored_data_deletion_v1_stored_data__provider___root__deletion_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+                root: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionPreview"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
                 };
             };
         };
