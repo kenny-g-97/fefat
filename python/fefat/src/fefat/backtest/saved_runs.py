@@ -40,6 +40,17 @@ def saved_runs_in(runs_dir: Path) -> tuple[Run, ...]:
     return tuple(runs)
 
 
+def runs_that_read(runs_dir: Path, provider: str, root: str) -> tuple[Run, ...]:
+    """The runs saved in `runs_dir` (`saved_runs_in`) that read `provider`'s data of `root`,
+    their own instrument's or another instrument's their features read (step 3.7): those that a
+    delete of that data leaves unable to be explained or checked again (step 5.18, ADR-0023)."""
+    return tuple(
+        run
+        for run in saved_runs_in(runs_dir)
+        if any((read.provider, read.root) == (provider, root) for read in run.record.datasets)
+    )
+
+
 def saved_run(runs_dir: Path, run_key: str) -> Run:
     """The run saved under `run_key` in `runs_dir`, refused unless the key is a run key, so that
     no text reaches outside the folder, and unless its folder's record is that run's, as one

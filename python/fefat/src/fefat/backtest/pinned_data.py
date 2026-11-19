@@ -3,7 +3,8 @@ ADR-0019), or refused: `Run.explain`, the fidelity check, and the tick check rep
 its own records, so they first compare a snapshot of each dataset its record names with the
 hash the record pins. The data changes when a file is rewritten, removed, or merged into
 (ADR-0021); the refusal then names the files written since the run was saved, as their times
-tell it, and the run's record and results stand."""
+tell it, and the run's record and results stand. A dataset deleted since the run (step 5.18,
+ADR-0023) is refused in words that say so."""
 
 from typing import TYPE_CHECKING
 
@@ -33,6 +34,13 @@ def pinned_snapshots(store: Store, run: "Run") -> dict[str, Snapshot]:
     snapshots = {}
     for dataset in record.datasets:
         request = _request(dataset)
+        if not store.has_dataset_metadata(request.dataset):
+            raise ValueError(
+                f"Expected the store's {dataset.schema_name} of {dataset.root} from "
+                f"{dataset.provider} as the run read it, snapshot {dataset.snapshot[:12]}, got "
+                "none: its data was deleted since the run. The run's record and results stand; "
+                "import the data again, then run the strategy again for a run on it."
+            )
         snapshot = store.snapshot(request)
         if snapshot.sha256 != dataset.snapshot:
             raise ValueError(
