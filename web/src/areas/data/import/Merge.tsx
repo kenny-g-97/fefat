@@ -47,6 +47,7 @@ type RecordsChoiceProps = Readonly<{
   subject: "file" | "batch"
   files: readonly string[]
   disputed: number
+  current: boolean
   draft: Draft
   change: Dispatch<DraftChange>
 }>
@@ -54,16 +55,21 @@ type RecordsChoiceProps = Readonly<{
 /** Where the records of the one file or batch the review shows differ from the stored ones
  * (plan call 8; D-106), `files` by its upload's id or its path: the choice, imported with its
  * records in place of the `disputed` stored ones, over every dataset the import writes, which
- * cannot be undone once imported, or not imported, chosen at the start, since it is what happens
- * if nothing is chosen; a batch's box names it (`Decision`), the file's choice is named here. A
- * round asks it under its rows instead (`RoundDecisions`). */
+ * cannot be undone once imported, waiting while the review shown is not the draft's latest
+ * unless it is chosen, so that it is never chosen for a reading not shown yet, or not imported,
+ * chosen at the start, since it is what happens if nothing is chosen; a batch's box names it
+ * (`Decision`), the file's choice is named here. A round asks it under its rows instead
+ * (`RoundDecisions`). */
 export function RecordsChoice({
   subject,
   files,
   disputed,
+  current,
   draft,
   change,
 }: RecordsChoiceProps) {
+  const others = draft.recordsTaken.filter((file) => !files.includes(file))
+  const taken = allCorrected(files, draft.recordsTaken)
   return (
     <Options
       label={subject === "file" ? "Records that differ" : undefined}
@@ -72,6 +78,7 @@ export function RecordsChoice({
           value: "take-file",
           label: `Import the ${subject} and replace the stored records`,
           description: `The ${subject}'s records take the place of the ${counted(disputed, "stored record")} they differ from. Once imported, this cannot be undone.`,
+          disabled: !current && !taken,
         },
         {
           value: "refuse",
@@ -80,11 +87,11 @@ export function RecordsChoice({
             "It stays refused for these records, and nothing is written.",
         },
       ]}
-      value={allCorrected(files, draft.recordsTaken) ? "take-file" : "refuse"}
+      value={taken ? "take-file" : "refuse"}
       onChange={(chosen) =>
         change({
           kind: "records taken",
-          files: chosen === "take-file" ? files : [],
+          files: chosen === "take-file" ? [...others, ...files] : others,
         })
       }
       testId="records-choice"

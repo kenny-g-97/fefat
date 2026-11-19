@@ -328,7 +328,7 @@ describe("filesRequest", () => {
     })
   })
 
-  it("takes the records that differ where a file it sends was chosen to take them, as any other it sends holds none (the ponytail review)", () => {
+  it("takes the records that differ where a file it sends was chosen to take them, and sends those files last, so that no other file of the round writes over the records they replace (the ponytail review)", () => {
     const taking = [asked("a"), asked("b", "refuse", "take-file"), asked("c")]
     const importing = [
       answered("imports"),
@@ -338,6 +338,11 @@ describe("filesRequest", () => {
 
     expect(filesRequest(taking, importing, [])).toMatchObject({
       differing: "take-file",
+      sources: [
+        { kind: "upload", upload_id: "a" },
+        { kind: "upload", upload_id: "c" },
+        { kind: "upload", upload_id: "b" },
+      ],
     })
     expect(filesRequest(taking, importing, ["b"])).toMatchObject({
       differing: "refuse",

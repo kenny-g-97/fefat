@@ -1,6 +1,5 @@
 import type { FileSeen } from "@/api/imports"
 import { counted, formatCount } from "@/ui/figures"
-import type { DecisionOption } from "./Decision"
 import type { Answer, Correctable, Draft } from "./import-draft"
 import { type Outcome, outcomeOf, shownState } from "./import-reviews"
 import { filesToDecide, type ReviewedFile } from "./import-round"
@@ -10,20 +9,34 @@ import { filesToDecide, type ReviewedFile } from "./import-round"
  * taking them corrects, and the files no correction fits, refused or not read. */
 export type Problem = Correctable | "not correctable"
 
+/** An option of a decision: its value, its label, named by what happens to the files, what it
+ * does, and whether it waits, as a correction does while its files are read again. */
+export type DecisionOption<Value extends string> = Readonly<{
+  value: Value
+  label: string
+  description: string
+  disabled?: boolean
+}>
+
 /** A box under a round's rows: its kind, its files by their uploads' ids, skipped or not, how
- * many of them are skipped, and its answer, none until one is given, a skip alone for the files
- * no correction fits. */
+ * many of them are skipped, how many of the others carry its correction, whether a file its
+ * correction would reach, not carrying it yet, is read again, and its answer, none until one is
+ * given, a skip alone for the files no correction fits. */
 export type RoundDecision =
   | Readonly<{
       problem: Correctable
       files: readonly string[]
       skipped: number
+      corrected: number
+      reading: boolean
       answer: Answer | null
     }>
   | Readonly<{
       problem: "not correctable"
       files: readonly string[]
       skipped: number
+      corrected: number
+      reading: boolean
       answer: "skipped" | null
     }>
 
@@ -72,28 +85,49 @@ export function roundDecisions(
   const others = filesToDecide(files, []).flatMap(({ upload, state }) =>
     explained(upload.id, outcomeOf(shownState(state))) ? [] : [upload.id]
   )
+  const round: Round = {
+    skipped: draft.skipped,
+    readAgain: files.flatMap(({ upload, state }) =>
+      state.kind === "reading" ? [upload.id] : []
+    ),
+  }
   return [
-    decisionOf("bars in breaks", bars, draft.skipped, draft.breaksLeftOut),
-    decisionOf("differing", differing, draft.skipped, draft.recordsTaken),
-    decisionOf("not correctable", others, draft.skipped, []),
+    decisionOf("bars in breaks", bars, round, draft.breaksLeftOut),
+    decisionOf("differing", differing, round, draft.recordsTaken),
+    decisionOf("not correctable", others, round, []),
   ].filter((decision) => decision.files.length > 0)
 }
+
+/** The files of a round the trader skipped, and those read again after a change. */
+type Round = Readonly<{
+  skipped: readonly string[]
+  readAgain: readonly string[]
+}>
 
 function decisionOf(
   problem: Problem,
   files: readonly string[],
-  skipped: readonly string[],
+  round: Round,
   corrected: readonly string[]
 ): RoundDecision {
-  const kept = files.filter((file) => !skipped.includes(file))
-  const count = files.length - kept.length
+  const kept = files.filter((file) => !round.skipped.includes(file))
+  // The files the correction would reach, as `decidedFor` gives it: those not skipped, or all.
+  const reached = kept.length > 0 ? kept : files
+  const counts = {
+    files,
+    skipped: files.length - kept.length,
+    corrected: kept.filter((file) => corrected.includes(file)).length,
+    reading: reached.some(
+      (file) => round.readAgain.includes(file) && !corrected.includes(file)
+    ),
+  }
   if (kept.length === 0) {
-    return { problem, files, skipped: count, answer: "skipped" }
+    return { problem, ...counts, answer: "skipped" }
   }
-  if (problem === "not correctable" || !allCorrected(kept, corrected)) {
-    return { problem, files, skipped: count, answer: null }
+  if (problem === "not correctable" || counts.corrected < kept.length) {
+    return { problem, ...counts, answer: null }
   }
-  return { problem, files, skipped: count, answer: "corrected" }
+  return { problem, ...counts, answer: "corrected" }
 }
 
 /** Whether each of `files`, one or more, carries the correction `corrected` holds: its bars left
@@ -107,8 +141,11 @@ export function allCorrected(
 
 /** What a box says (web/DESIGN.md, Patterns, Decision): its title, what its files share and
  * what to check, its options, each its answer named by what happens to the files, then what it
- * does, none for the files no correction fits, and its notes: how many of its files are skipped,
- * where some are and some not, or that they are, where no option shows it, and, once the bars
+ * does, the correction waiting while a file it would reach is read again unless it is chosen, so
+ * that none is chosen for a reading not shown yet, none for the files no correction fits, and its
+ * notes:
+ * how many of its files are skipped, where some are and some not, or that they are, where no
+ * option shows it; how many keep the correction, where the box has no answer; and, once the bars
  * are left out, what the calendar check lists. */
 export type DecisionWords = Readonly<{
   title: string
@@ -119,12 +156,16 @@ export type DecisionWords = Readonly<{
 
 export function decisionWords(decision: RoundDecision): DecisionWords {
   const files = decision.files.length
+  const waits = decision.reading && decision.answer !== "corrected"
   const asked = {
     "bars in breaks": barsWords,
     differing: differingWords,
     "not correctable": notCorrectableWords,
   }[decision.problem](files)
-  return { ...asked, notes: notesOf(decision) }
+  const options = asked.options.map((option) =>
+    option.value === "corrected" ? { ...option, disabled: waits } : option
+  )
+  return { ...asked, options, notes: notesOf(decision) }
 }
 
 function notesOf(decision: RoundDecision): string[] {
@@ -142,13 +183,24 @@ function notesOf(decision: RoundDecision): string[] {
               : `These ${counted(files, "file")} are skipped.`,
           ]
         : []
+  const kept = decision.corrected
+  const keeps =
+    decision.answer === null && kept > 0
+      ? [
+          `${formatCount(kept)} of these ${counted(files, "file")} ${
+            decision.problem === "differing"
+              ? `${kept === 1 ? "replaces" : "replace"} the stored records`
+              : `${kept === 1 ? "is" : "are"} imported without those bars`
+          }, as you chose.`,
+        ]
+      : []
   const leftOut =
     decision.problem === "bars in breaks" && decision.answer === "corrected"
       ? [
           `${files === 1 ? "The file's" : "Each file's"} calendar check may list the sessions left out as having no prints.`,
         ]
       : []
-  return [...skips, ...leftOut]
+  return [...skips, ...keeps, ...leftOut]
 }
 
 type AskedWords = Omit<DecisionWords, "notes">
@@ -157,7 +209,7 @@ function barsWords(files: number): AskedWords {
   const one = files === 1
   return {
     title: `${counted(files, "file")} ${one ? "holds" : "hold"} bars in a break`,
-    message: `${one ? "This file holds" : "These files hold"} bars at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early. Its own chart shows the same times, so check the sessions ${one ? "its row lists" : "each file's row lists"} against another source if you can.`,
+    message: `${one ? "This file holds bars" : "These files hold bars"} ${BREAKS_SIGN}, so check the sessions ${one ? "its row lists" : "each file's row lists"} against another source if you can.`,
     options: [
       {
         value: "corrected",
@@ -179,9 +231,7 @@ function differingWords(files: number): AskedWords {
   const one = files === 1
   return {
     title: `${counted(files, "file")} ${one ? "holds" : "hold"} records that differ from the ones FEAT holds`,
-    message: one
-      ? RECORDS_MESSAGE.file
-      : "Where the files are exports, check their profile's time zone and bar stamping under Layout first. Where they hold a vendor's correction, their records should replace the stored ones.",
+    message: one ? RECORDS_MESSAGE.file : RECORDS_MESSAGE.files,
     options: [
       {
         value: "corrected",
@@ -226,14 +276,20 @@ export function skipAction(decision: RoundDecision): string {
     : `Skip the ${other}${formatCount(left)} files`
 }
 
-/** What bars in a break mean and what to check, where the review shows one file, whose box
- * lists the sessions beside them (ADR-0022). */
-export const BARS_MESSAGE =
-  "These bars are stamped at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early. Its own chart shows the same times, so check these sessions against another source if you can."
+/** What bars in a break are a sign of (ADR-0022), as every message about them says it. */
+const BREAKS_SIGN =
+  "at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early. Its own chart shows the same times"
 
-/** What to check first where records differ from the stored ones, for one file or a batch. */
+/** What bars in a break mean and what to check, where the review shows one file, whose box
+ * lists the sessions beside them. */
+export const BARS_MESSAGE = `These bars are stamped ${BREAKS_SIGN}, so check these sessions against another source if you can.`
+
+/** What to check first where records differ from the stored ones, for one file, several, or a
+ * batch. */
 export const RECORDS_MESSAGE = {
   file: "Where the file is an export, check its profile's time zone and bar stamping under Layout first. Where it holds a vendor's correction, its records should replace the stored ones.",
+  files:
+    "Where the files are exports, check their profile's time zone and bar stamping under Layout first. Where they hold a vendor's correction, their records should replace the stored ones.",
   batch:
     "Where the batch holds a vendor's correction, its records should replace the stored ones.",
 } as const

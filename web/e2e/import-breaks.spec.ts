@@ -115,12 +115,24 @@ test("a file with bars in a break imports without them once you choose so", asyn
   await inBothThemes(page, "import-left-out")
 
   // Choosing the other line refuses the file again, and the keys choose as the pointer does,
-  // the radio keeping the focus through the file's reading; chosen once more, it imports.
+  // the radio keeping the focus through the file's reading; chosen once more, it imports. While
+  // the file is read again, held here for two seconds, the correction waits for its new review,
+  // so that it is never chosen for a reading not shown yet (the ponytail review).
+  let holding = true
+  await page.route("**/v1/imports/preview", async (route) => {
+    if (holding) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+    }
+    await route.continue()
+  })
   await refuse.click()
+  await expect(leaveOut).toBeDisabled()
+  holding = false
   await expect(verdict(page)).toHaveText(
     "It would be refused for its bars in a break",
     { timeout: READ_MS }
   )
+  await expect(leaveOut).toBeEnabled()
   await expect(page.getByTestId("import-run")).toBeDisabled()
   await expect(refuse).toBeFocused()
   // Held as a person holds a key: the group chooses the radio its arrow moves to while the key
@@ -214,6 +226,13 @@ test("a round asks of its files' bars in a break in one box, then imports them w
   await expect(
     decision.getByTestId("decision-bars-options-skipped")
   ).toContainText("None of these 2 files is imported.")
+  // The radio list is named by the box's title and described by its message for a screen
+  // reader (the code and design reviews).
+  await expect(
+    decision.getByRole("radiogroup", { name: "2 files hold bars in a break" })
+  ).toHaveAccessibleDescription(
+    /^These files hold bars at times when the market is closed/
+  )
   await expect(page.getByTestId("decision-other")).toHaveCount(0)
   await page.emulateMedia({ reducedMotion: "reduce" })
   expect(await lowContrastInEachTheme(page)).toEqual([])
@@ -235,8 +254,12 @@ test("a round asks of its files' bars in a break in one box, then imports them w
     row.getByTestId("review-mismatches").locator("summary svg")
   ).toHaveCSS("rotate", "none")
 
-  // A skip in a row stays in the box, which counts it; the other file still waits.
-  await row.getByRole("button", { name: "Skip this file" }).click()
+  // A skip in a row stays in the box, which counts it; the other file still waits. A double
+  // click's second click on the row's skip skips nothing (the design review).
+  const skipRow = row.getByRole("button", { name: "Skip this file" })
+  await skipRow.dispatchEvent("click", { detail: 2 })
+  await expect(aside).toHaveText("Bars in a break")
+  await skipRow.click()
   await expect(row.getByRole("button", { name: "Do not skip" })).toBeFocused()
   await expect(decision).toContainText("1 of these 2 files is skipped.")
   await expect(page.getByTestId("import-waits")).toHaveText(
@@ -280,9 +303,27 @@ test("a round asks of its files' bars in a break in one box, then imports them w
   await expect(run).toHaveText("Import 2 files")
   await expect(run).toBeEnabled({ timeout: READ_MS })
 
-  // Skip them keeps both out, leaving the file that imports.
+  // Do not skip in the row brings that file back as it was, its bars in, so the box has no
+  // answer, and its note says which file keeps the correction (the design review).
+  await row.getByRole("button", { name: "Do not skip" }).click()
+  await expect(
+    row.getByRole("button", { name: "Skip this file" })
+  ).toBeFocused()
+  await expect(correct).not.toBeChecked()
+  await expect(decision).toContainText(
+    "1 of these 2 files is imported without those bars, as you chose."
+  )
+  await expect(page.getByTestId("import-waits")).toHaveText(
+    "Decide what to do with 1 file first"
+  )
+
+  // Skip them keeps both out, leaving the file that imports; while the files are read again,
+  // held here, the correction, which would let them all back in, waits (the ponytail review).
+  holding = true
   await skipThem.click()
   await expect(skipThem).toBeChecked()
+  await expect(correct).toBeDisabled()
+  holding = false
   await expect(rows.getByTestId("review-file-aside")).toHaveText([
     "Skipped",
     "Skipped",
@@ -292,9 +333,26 @@ test("a round asks of its files' bars in a break in one box, then imports them w
   await expect(run).toHaveText("Import 1 file")
   await expect(run).toBeEnabled()
 
-  // Import them without those bars, where both are skipped, lets both in at once.
+  // Import them without those bars, where both are skipped, lets both in at once. While they
+  // are read again, held for two seconds, a row skipped before shows no reason, as it showed
+  // none, so that the box holds still (the design review).
+  await expect(
+    page
+      .getByTestId("import-review")
+      .getByText("Reading your latest change", { exact: true })
+  ).toHaveCount(0, { timeout: READ_MS })
+  holding = true
   await correct.click()
   await expect(correct).toBeChecked()
+  await expect(
+    page
+      .getByTestId("import-review")
+      .getByText("Reading your latest change", { exact: true })
+  ).toBeVisible()
+  await expect(other.getByTestId("review-file-reason")).toHaveCount(0, {
+    timeout: 1_000,
+  })
+  holding = false
   await expect(page.getByTestId("review-files-verdict")).toHaveText(
     "1 of 3 files import as they are",
     { timeout: READ_MS }

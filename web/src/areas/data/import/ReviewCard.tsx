@@ -131,10 +131,21 @@ function Answer({ draft, change, review, zone }: AnswerProps) {
         </p>
       )}
       {answer?.kind === "file" && (
-        <FileReview seen={answer} draft={draft} change={change} zone={zone} />
+        <FileReview
+          seen={answer}
+          current={review.current}
+          draft={draft}
+          change={change}
+          zone={zone}
+        />
       )}
       {answer?.kind === "databento" && (
-        <BatchReview seen={answer} draft={draft} change={change} />
+        <BatchReview
+          seen={answer}
+          current={review.current}
+          draft={draft}
+          change={change}
+        />
       )}
     </div>
   )

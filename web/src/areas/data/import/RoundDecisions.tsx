@@ -40,6 +40,7 @@ export function RoundDecisions({
         title={words.title}
         message={words.message}
         notes={words.notes}
+        holds={decision.problem === "not correctable" ? "action" : "options"}
         testId={testId}
       >
         {decision.problem === "not correctable" ? (

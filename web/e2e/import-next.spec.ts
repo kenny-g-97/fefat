@@ -149,12 +149,25 @@ test("the next export imports by the profile alone, and a revised one replaces t
     timeout: READ_MS,
   })
   await expect(page.getByTestId("import-run")).toBeEnabled()
+  // While the file is read again, held here for two seconds, the option that replaces the
+  // stored records waits for its new review, so that it is never chosen for a reading not shown
+  // yet (the ponytail review).
+  let holding = true
+  await page.route("**/v1/imports/preview", async (route) => {
+    if (holding) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+    }
+    await route.continue()
+  })
   await refuse.click()
   await expect(refuse).toBeChecked()
+  await expect(take).toBeDisabled()
+  holding = false
   await expect(verdict(page)).toHaveText(
     "Its records differ from the ones FEAT holds",
     { timeout: READ_MS }
   )
+  await expect(take).toBeEnabled()
   await expect(refuse).toBeFocused()
   await expect(page.getByTestId("import-run")).toBeDisabled()
 
@@ -249,15 +262,15 @@ test("a round waits for a decision on the file that differs, then imports the ot
   )
   await stepSays(page, "review", "incomplete", "1 file waits for your decision")
 
-  // Under the rows, the box of records that differ asks it, none chosen, a group named by its
-  // title and described by its message (the design review); the file's own box of counts holds
-  // no choice, since the round's answer is for every file of the kind (D-106).
+  // Under the rows, the box of records that differ asks it, none chosen, its radio list named by
+  // its title and described by its message (the design and code reviews); the file's own box of
+  // counts holds no choice, since the round's answer is for every file of the kind (D-106).
   const decision = page.getByTestId("decision-differing")
   await expect(decision).toContainText(
     "1 file holds records that differ from the ones FEAT holds"
   )
   await expect(
-    page.getByRole("group", {
+    page.getByRole("radiogroup", {
       name: "1 file holds records that differ from the ones FEAT holds",
     })
   ).toHaveAccessibleDescription(

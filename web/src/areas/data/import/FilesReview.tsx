@@ -1,4 +1,4 @@
-import type { Dispatch } from "react"
+import { type Dispatch, useState } from "react"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
 import { type AsideTone, DisclosureRow } from "../DisclosureRow"
@@ -193,8 +193,9 @@ type FileRowProps = Readonly<{
 /** A file's row: its name, its records, and its outcome in its sign's colour, with what stops
  * it under its name, where something does (D-105), opening to its own review, or for a file not
  * read to why, which ends on Skip this file where the file `decides`; a skipped row reads
- * Skipped, quiet; and while it is read again after a change, its last review and what stopped
- * it, marked as one to read again, so that the boxes under the rows hold still. */
+ * Skipped, quiet; and while it is read again after a change, its last review, marked as one to
+ * read again, under the reason it drew before the change, none where it was skipped, so that
+ * the boxes under the rows hold still. */
 function FileRow({
   file,
   skipped,
@@ -206,7 +207,12 @@ function FileRow({
   const { upload, state } = file
   const shown = shownState(state)
   const aside = skipped ? SKIPPED : asideOf(state, outcomeOf(shown))
-  const reason = skipped ? null : whyNot(shown, zone)
+  const settled = skipped ? null : whyNot(state, zone)
+  const [drawn, setDrawn] = useState(settled)
+  if (state.kind !== "reading" && drawn !== settled) {
+    setDrawn(settled)
+  }
+  const reason = skipped || state.kind !== "reading" ? settled : drawn
   const skip = (
     <SkipFile
       file={upload.id}
@@ -229,6 +235,7 @@ function FileRow({
         <div className="flex flex-col gap-4 pb-4">
           <FileReview
             seen={seen}
+            current={state.kind !== "reading"}
             draft={draft}
             change={change}
             zone={zone}

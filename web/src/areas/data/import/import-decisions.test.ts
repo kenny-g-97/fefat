@@ -72,6 +72,19 @@ function read(
   })
 }
 
+/** A file of the round read again after a change, its last review `verdict`. */
+function readAgain(
+  id: string,
+  verdict: FileSeen["verdict"],
+  merge: FileSeen["merge"] = null,
+  breaks: FileSeen["breaks_with_bars"] = null
+): ReviewedFile {
+  return file(id, {
+    kind: "reading",
+    last: seenFile(`ES ${id}.Last.txt`, verdict, merge, breaks),
+  })
+}
+
 function draftWith(
   decisions: Partial<Pick<Draft, "skipped" | "breaksLeftOut" | "recordsTaken">>
 ): Draft {
@@ -82,14 +95,24 @@ function ids(files: number): string[] {
   return Array.from({ length: files }, (_, index) => `f${index}`)
 }
 
-/** A box a correction fits, of `files` files, `skipped` of them skipped. */
+/** A box a correction fits, of `files` files: how many are skipped, how many of the others carry
+ * the correction, whether one of those is read again, and its answer. */
 function decision(
   problem: Correctable,
   files: number,
-  skipped = 0,
-  answer: Answer | null = null
+  {
+    skipped = 0,
+    corrected = 0,
+    reading = false,
+    answer = null,
+  }: Readonly<{
+    skipped?: number
+    corrected?: number
+    reading?: boolean
+    answer?: Answer | null
+  }> = {}
 ): RoundDecision {
-  return { problem, files: ids(files), skipped, answer }
+  return { problem, files: ids(files), skipped, corrected, reading, answer }
 }
 
 /** The box of `files` files no correction fits, `skipped` of them skipped. */
@@ -98,6 +121,8 @@ function notCorrectable(files: number, skipped = 0): RoundDecision {
     problem: "not correctable",
     files: ids(files),
     skipped,
+    corrected: 0,
+    reading: false,
     answer: skipped === files ? "skipped" : null,
   }
 }
@@ -115,12 +140,28 @@ describe("roundDecisions", () => {
     ]
 
     expect(roundDecisions(files, draftWith({}))).toEqual([
-      { problem: "bars in breaks", files: ["d"], skipped: 0, answer: null },
-      { problem: "differing", files: ["c"], skipped: 0, answer: null },
+      {
+        problem: "bars in breaks",
+        files: ["d"],
+        skipped: 0,
+        corrected: 0,
+        reading: false,
+        answer: null,
+      },
+      {
+        problem: "differing",
+        files: ["c"],
+        skipped: 0,
+        corrected: 0,
+        reading: false,
+        answer: null,
+      },
       {
         problem: "not correctable",
         files: ["b", "e"],
         skipped: 0,
+        corrected: 0,
+        reading: false,
         answer: null,
       },
     ])
@@ -128,8 +169,6 @@ describe("roundDecisions", () => {
   })
 
   it("asks nothing until every file is read, a file read again counting by its last review", () => {
-    const refused = seenFile("ES b.Last.txt", "refused")
-
     expect(
       roundDecisions(
         [read("a", "refused"), file("b", { kind: "reading", last: null })],
@@ -138,7 +177,7 @@ describe("roundDecisions", () => {
     ).toEqual([])
     expect(
       roundDecisions(
-        [read("a", "refused"), file("b", { kind: "reading", last: refused })],
+        [read("a", "refused"), readAgain("b", "refused")],
         draftWith({})
       )
     ).toEqual([
@@ -146,6 +185,8 @@ describe("roundDecisions", () => {
         problem: "not correctable",
         files: ["a", "b"],
         skipped: 0,
+        corrected: 0,
+        reading: true,
         answer: null,
       },
     ])
@@ -159,10 +200,7 @@ describe("roundDecisions", () => {
       read("b", "imports", null, LEFT_OUT),
       read("c", "refused", null, BREAKS),
       read("d", "imports"),
-      file("e", {
-        kind: "reading",
-        last: seenFile("ES e.Last.txt", "bars_in_breaks", null, BREAKS),
-      }),
+      readAgain("e", "bars_in_breaks", null, BREAKS),
     ]
 
     expect(roundDecisions(files, draftWith({ breaksLeftOut: ["b"] }))).toEqual([
@@ -170,9 +208,18 @@ describe("roundDecisions", () => {
         problem: "bars in breaks",
         files: ["a", "b", "e"],
         skipped: 0,
+        corrected: 1,
+        reading: true,
         answer: null,
       },
-      { problem: "not correctable", files: ["c"], skipped: 0, answer: null },
+      {
+        problem: "not correctable",
+        files: ["c"],
+        skipped: 0,
+        corrected: 0,
+        reading: false,
+        answer: null,
+      },
     ])
   })
 
@@ -188,13 +235,24 @@ describe("roundDecisions", () => {
         problem: "bars in breaks",
         files: ["a"],
         skipped: 0,
+        corrected: 1,
+        reading: false,
         answer: "corrected",
       },
-      { problem: "differing", files: ["b"], skipped: 0, answer: null },
+      {
+        problem: "differing",
+        files: ["b"],
+        skipped: 0,
+        corrected: 0,
+        reading: false,
+        answer: null,
+      },
       {
         problem: "not correctable",
         files: ["a", "b"],
         skipped: 0,
+        corrected: 0,
+        reading: false,
         answer: null,
       },
     ])
@@ -212,12 +270,16 @@ describe("roundDecisions", () => {
         problem: "bars in breaks",
         files: ["a", "b"],
         skipped: 1,
+        corrected: 0,
+        reading: false,
         answer: null,
       },
       {
         problem: "not correctable",
         files: ["c"],
         skipped: 1,
+        corrected: 0,
+        reading: false,
         answer: "skipped",
       },
     ])
@@ -267,6 +329,45 @@ describe("roundDecisions", () => {
     expect(differingAnswer(draftWith({ skipped: ["c"] }))).toEqual([null])
   })
 
+  it("counts the files of a box that carry its correction, skipped ones aside, and marks a box whose files not skipped are read again (the design and ponytail reviews)", () => {
+    const files = [
+      read("a", "imports", null, LEFT_OUT),
+      readAgain("b", "bars_in_breaks", null, BREAKS),
+      readAgain("c", "bars_in_breaks", null, BREAKS),
+    ]
+    const box = (draft: Draft) => {
+      const [bars] = roundDecisions(files, draft)
+      return [bars?.corrected, bars?.reading]
+    }
+
+    expect(box(draftWith({ breaksLeftOut: ["a"] }))).toEqual([1, true])
+    expect(
+      box(draftWith({ breaksLeftOut: ["a", "b"], skipped: ["b", "c"] }))
+    ).toEqual([1, false])
+  })
+
+  it("holds a box's correction back only for the files it would reach that do not carry it yet, all of them where each is skipped (the ponytail review)", () => {
+    // d read again with its records just taken, y settled and differing: the box asks y without
+    // holding back the option d's answer chose.
+    const joined = [
+      readAgain("d", "differing", MERGE),
+      read("y", "differing", MERGE, LEFT_OUT),
+    ]
+    const records = roundDecisions(
+      joined,
+      draftWith({ breaksLeftOut: ["y"], recordsTaken: ["d"] })
+    ).find((box) => box.problem === "differing")
+
+    expect([records?.answer, records?.reading]).toEqual([null, false])
+    // Each skipped and one read again: the correction, which would let them all in, waits.
+    const skipped = [
+      read("a", "bars_in_breaks", null, BREAKS),
+      readAgain("b", "bars_in_breaks", null, BREAKS),
+    ]
+    const [bars] = roundDecisions(skipped, draftWith({ skipped: ["a", "b"] }))
+    expect([bars?.answer, bars?.reading]).toEqual(["skipped", true])
+  })
+
   it("leaves a file that comes to differ once its bars are left out unanswered, though the box's other files were answered (the ponytail review)", () => {
     const files = [
       read("d", "imports", MERGE),
@@ -283,9 +384,18 @@ describe("roundDecisions", () => {
         problem: "bars in breaks",
         files: ["y"],
         skipped: 0,
+        corrected: 1,
+        reading: false,
         answer: "corrected",
       },
-      { problem: "differing", files: ["d", "y"], skipped: 0, answer: null },
+      {
+        problem: "differing",
+        files: ["d", "y"],
+        skipped: 0,
+        corrected: 1,
+        reading: false,
+        answer: null,
+      },
     ])
   })
 
@@ -297,9 +407,18 @@ describe("roundDecisions", () => {
         problem: "bars in breaks",
         files: ["a"],
         skipped: 0,
+        corrected: 1,
+        reading: false,
         answer: "corrected",
       },
-      { problem: "differing", files: ["a"], skipped: 0, answer: null },
+      {
+        problem: "differing",
+        files: ["a"],
+        skipped: 0,
+        corrected: 0,
+        reading: false,
+        answer: null,
+      },
     ])
   })
 })
@@ -324,6 +443,7 @@ describe("decisionWords", () => {
           label: "Import them without those bars",
           description:
             "FEAT leaves out those bars and the sessions that go with them, and imports the rest of each file. Each file's row lists what goes.",
+          disabled: false,
         },
         {
           value: "skipped",
@@ -343,6 +463,7 @@ describe("decisionWords", () => {
           label: "Import it without those bars",
           description:
             "FEAT leaves out those bars and the sessions that go with them, and imports the rest of the file. Its row lists what goes.",
+          disabled: false,
         },
         {
           value: "skipped",
@@ -365,6 +486,7 @@ describe("decisionWords", () => {
           label: "Import them and replace the stored records",
           description:
             "The files' records take the place of the stored ones they differ from. Once imported, this cannot be undone.",
+          disabled: false,
         },
         {
           value: "skipped",
@@ -385,6 +507,7 @@ describe("decisionWords", () => {
           label: "Import it and replace the stored records",
           description:
             "The file's records take the place of the stored ones they differ from. Once imported, this cannot be undone.",
+          disabled: false,
         },
         {
           value: "skipped",
@@ -394,6 +517,27 @@ describe("decisionWords", () => {
       ],
       notes: [],
     })
+  })
+
+  it("holds a box's correction back while its files are read again, unless it is chosen, so that none is chosen for a reading not shown yet (the ponytail review)", () => {
+    const correction = (box: RoundDecision) =>
+      decisionWords(box).options.find((option) => option.value === "corrected")
+        ?.disabled
+
+    expect(correction(decision("differing", 2, { reading: true }))).toBe(true)
+    expect(
+      correction(
+        decision("differing", 2, {
+          reading: true,
+          corrected: 2,
+          answer: "corrected",
+        })
+      )
+    ).toBe(false)
+    expect(correction(decision("bars in breaks", 2, { reading: true }))).toBe(
+      true
+    )
+    expect(correction(decision("bars in breaks", 2))).toBe(false)
   })
 
   it("words the box of the files no correction fits, which offers a skip alone", () => {
@@ -417,22 +561,47 @@ describe("decisionWords", () => {
     expect(decisionWords(notCorrectable(3, 1)).notes).toEqual([
       "1 of these 3 files is skipped.",
     ])
-    expect(decisionWords(decision("differing", 3, 2)).notes).toEqual([
-      "2 of these 3 files are skipped.",
-    ])
-    expect(decisionWords(decision("differing", 3, 3, "skipped")).notes).toEqual(
-      []
-    )
     expect(
-      decisionWords(decision("bars in breaks", 3, 1, "corrected")).notes
+      decisionWords(decision("differing", 3, { skipped: 2 })).notes
+    ).toEqual(["2 of these 3 files are skipped."])
+    expect(
+      decisionWords(decision("differing", 3, { skipped: 3, answer: "skipped" }))
+        .notes
+    ).toEqual([])
+    expect(
+      decisionWords(
+        decision("bars in breaks", 3, {
+          skipped: 1,
+          corrected: 2,
+          answer: "corrected",
+        })
+      ).notes
     ).toEqual([
       "1 of these 3 files is skipped.",
       "Each file's calendar check may list the sessions left out as having no prints.",
     ])
     expect(
-      decisionWords(decision("bars in breaks", 1, 0, "corrected")).notes
+      decisionWords(
+        decision("bars in breaks", 1, { corrected: 1, answer: "corrected" })
+      ).notes
     ).toEqual([
       "The file's calendar check may list the sessions left out as having no prints.",
+    ])
+  })
+
+  it("says how many files keep the correction where the box has no answer, so that one cleared by a file joining it says why (the design review)", () => {
+    expect(
+      decisionWords(decision("differing", 2, { corrected: 1 })).notes
+    ).toEqual(["1 of these 2 files replaces the stored records, as you chose."])
+    expect(
+      decisionWords(decision("differing", 3, { corrected: 2 })).notes
+    ).toEqual(["2 of these 3 files replace the stored records, as you chose."])
+    expect(
+      decisionWords(decision("bars in breaks", 3, { skipped: 1, corrected: 1 }))
+        .notes
+    ).toEqual([
+      "1 of these 3 files is skipped.",
+      "1 of these 3 files is imported without those bars, as you chose.",
     ])
   })
 

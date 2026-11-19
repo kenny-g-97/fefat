@@ -22,6 +22,7 @@ const SIGN_TEXT = {
 
 type FileReviewProps = Readonly<{
   seen: FileSeen
+  current: boolean
   draft: Draft
   change: Dispatch<DraftChange>
   zone: string | null
@@ -32,10 +33,12 @@ type FileReviewProps = Readonly<{
  * the calendar with what it points at and the time zone the file is read in, the problems, the
  * warnings, the calendar's check, the first records as stored, and what the file adds to the
  * data FEAT holds; where the file is reviewed `alone`, each box ends on its choice, the bars in
- * a break or the records that differ, while a round of several files asks them under its rows,
- * once for every file of a kind (D-106). */
+ * a break or the records that differ, which wait while the review shown is not the draft's
+ * latest, while a round of several files asks them under its rows, once for every file of a kind
+ * (D-106). */
 export function FileReview({
   seen,
+  current,
   draft,
   change,
   zone,
@@ -68,6 +71,7 @@ export function FileReview({
             <BarsChoice
               files={filesOf(draft.source)}
               records={seen.breaks_with_bars.records}
+              current={current}
               draft={draft}
               change={change}
             />
@@ -98,6 +102,7 @@ export function FileReview({
                 subject="file"
                 files={filesOf(draft.source)}
                 disputed={seen.merge.stored_records_disputed}
+                current={current}
                 draft={draft}
                 change={change}
               />
@@ -112,12 +117,19 @@ export function FileReview({
 /** What a Databento batch's import would do: the verdict, the batch's account in counts and
  * dates, what its files add to each dataset, and, where records differ in any, what to do with
  * them, for every dataset at once, in a box of its own under theirs (D-106), the stored records
- * that give way counted over all of them. */
+ * that give way counted over all of them, the choice waiting while the review shown is not the
+ * draft's latest. */
 export function BatchReview({
   seen,
+  current,
   draft,
   change,
-}: Readonly<{ seen: BatchSeen; draft: Draft; change: Dispatch<DraftChange> }>) {
+}: Readonly<{
+  seen: BatchSeen
+  current: boolean
+  draft: Draft
+  change: Dispatch<DraftChange>
+}>) {
   const differing = seen.merges.some((merge) => merge.records_differing > 0)
   const disputed = seen.merges.reduce(
     (total, merge) => total + merge.stored_records_disputed,
@@ -144,12 +156,14 @@ export function BatchReview({
         <Decision
           title="Records that differ"
           message={RECORDS_MESSAGE.batch}
+          holds="options"
           testId="batch-decision"
         >
           <RecordsChoice
             subject="batch"
             files={filesOf(draft.source)}
             disputed={disputed}
+            current={current}
             draft={draft}
             change={change}
           />

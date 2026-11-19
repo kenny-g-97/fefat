@@ -101,7 +101,11 @@ export function filesImporting(
  * a decision, a correction that lets it import or a skip (D-105), and none where no file
  * imports. A skipped file is never sent, even once a later choice lets it import, and its read
  * holds nothing back. The round takes records that differ where a file it sends was asked to
- * take them, since any other file whose records differ is refused and waits (ADR-0021, D-106). */
+ * take them, as the server applies one choice to every file of a round, importing them in the
+ * order sent; those files go last, so that no other file of the round writes over the records
+ * they replace. Two other files of one contract that disagree on sessions FEAT does not hold yet
+ * still settle by their order (BACKLOG.md, a later file of a round over an earlier one's
+ * records; ADR-0021, D-106). */
 export function filesRequest(
   asks: readonly FileImportAsked[],
   states: readonly FileState[],
@@ -121,21 +125,24 @@ export function filesRequest(
   if (kept.some(({ state }) => waitsForDecision(outcomeOf(state)))) {
     return null
   }
-  const sent = kept
+  const importing = kept
     .filter(({ state }) => imports(outcomeOf(state)))
     .map(({ ask }) => ask)
-  if (sent.length === 0) {
+  if (importing.length === 0) {
     return null
   }
+  const taking = (ask: FileImportAsked) => ask.differing === "take-file"
+  const sent = [
+    ...importing.filter((ask) => !taking(ask)),
+    ...importing.filter(taking),
+  ]
   return {
     kind: "files",
     sources: sent.map((ask) => ask.source),
     profile: first.profile,
     root: first.root,
     time_zone: first.time_zone,
-    differing: sent.some((ask) => ask.differing === "take-file")
-      ? "take-file"
-      : "refuse",
+    differing: sent.some(taking) ? "take-file" : "refuse",
     leaving_out_bars_in_breaks: sent
       .filter((ask) => ask.bars_in_breaks === "leave-out")
       .map((ask) => ask.source),

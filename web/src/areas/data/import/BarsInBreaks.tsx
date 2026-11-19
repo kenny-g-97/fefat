@@ -39,6 +39,7 @@ export function BarsInBreaks({ breaks, children }: BarsInBreaksProps) {
 type BarsChoiceProps = Readonly<{
   files: readonly string[]
   records: number
+  current: boolean
   draft: Draft
   change: Dispatch<DraftChange>
 }>
@@ -46,9 +47,17 @@ type BarsChoiceProps = Readonly<{
 /** Where bars in a break refuse the one file the review shows (ADR-0022; D-106): what they mean
  * and what to check, then the choice, the file imported without them, which counts the
  * `records` that go, or not imported, chosen at the start, since it is what happens if nothing
- * is chosen; once they are left out, what the calendar check lists. A round asks it under its
- * rows instead (`RoundDecisions`). */
-export function BarsChoice({ files, records, draft, change }: BarsChoiceProps) {
+ * is chosen, the first waiting while the review shown is not the draft's latest, unless it is
+ * chosen, so that it is never chosen for a reading not shown yet; once they are left out, what
+ * the calendar check lists. A round asks it under its rows instead (`RoundDecisions`). */
+export function BarsChoice({
+  files,
+  records,
+  current,
+  draft,
+  change,
+}: BarsChoiceProps) {
+  const others = draft.breaksLeftOut.filter((file) => !files.includes(file))
   const leftOut = allCorrected(files, draft.breaksLeftOut)
   return (
     <div className="flex flex-col gap-3">
@@ -60,6 +69,7 @@ export function BarsChoice({ files, records, draft, change }: BarsChoiceProps) {
             value: "leave-out",
             label: "Import the file without those bars",
             description: `FEAT leaves out ${counted(records, "record")}, those bars and the sessions listed above, and imports the rest of the file.`,
+            disabled: !current && !leftOut,
           },
           {
             value: "refuse",
@@ -72,7 +82,7 @@ export function BarsChoice({ files, records, draft, change }: BarsChoiceProps) {
         onChange={(chosen) =>
           change({
             kind: "bars in breaks",
-            files: chosen === "leave-out" ? files : [],
+            files: chosen === "leave-out" ? [...others, ...files] : others,
           })
         }
         testId="bars-choice"
