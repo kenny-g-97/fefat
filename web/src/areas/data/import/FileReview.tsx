@@ -5,11 +5,13 @@ import { counted, formatCount } from "@/ui/figures"
 import { datasetName } from "../datasets"
 import { DisclosureRow } from "../DisclosureRow"
 import type { Draft, DraftChange } from "./import-draft"
-import { BarsInBreaks, LeaveOutBars } from "./BarsInBreaks"
+import { BarsChoice, BarsInBreaks } from "./BarsInBreaks"
+import { Decision } from "./Decision"
 import { FirstRecords } from "./FirstRecords"
+import { correctsBars, differs, RECORDS_MESSAGE } from "./import-decisions"
 import { filesOf } from "./import-request"
 import { OUTCOME_SIGNS, offsetLine, VERDICTS } from "./import-outcomes"
-import { Merge, TakeRecords } from "./Merge"
+import { Merge, RecordsChoice } from "./Merge"
 
 /** A verdict's colour, its sign's (D-105): heading text where it is no error. */
 const SIGN_TEXT = {
@@ -29,8 +31,9 @@ type FileReviewProps = Readonly<{
 /** What a file's import would do: the verdict, what was read and left out, each offset from
  * the calendar with what it points at and the time zone the file is read in, the problems, the
  * warnings, the calendar's check, the first records as stored, and what the file adds to the
- * data FEAT holds, with what to do with records that differ where the file is reviewed `alone`,
- * a round of several files asking it once for them all (D-102). */
+ * data FEAT holds; where the file is reviewed `alone`, each box ends on its choice, the bars in
+ * a break or the records that differ, while a round of several files asks them under its rows,
+ * once for every file of a kind (D-106). */
 export function FileReview({
   seen,
   draft,
@@ -61,16 +64,14 @@ export function FileReview({
       ))}
       {seen.breaks_with_bars !== null && (
         <BarsInBreaks breaks={seen.breaks_with_bars}>
-          {alone &&
-            (seen.breaks_with_bars.left_out ||
-              seen.verdict === "bars_in_breaks") && (
-              <LeaveOutBars
-                files={filesOf(draft.source)}
-                records={seen.breaks_with_bars.records}
-                draft={draft}
-                change={change}
-              />
-            )}
+          {alone && correctsBars(seen) && (
+            <BarsChoice
+              files={filesOf(draft.source)}
+              records={seen.breaks_with_bars.records}
+              draft={draft}
+              change={change}
+            />
+          )}
         </BarsInBreaks>
       )}
       <Listed
@@ -88,12 +89,18 @@ export function FileReview({
       <FirstRecords records={seen.first_records} />
       {seen.merge !== null && (
         <Merge merge={seen.merge}>
-          {alone && seen.merge.records_differing > 0 && (
-            <TakeRecords
-              disputed={seen.merge.stored_records_disputed}
-              draft={draft}
-              change={change}
-            />
+          {alone && differs(seen) && (
+            <div className="flex flex-col gap-4">
+              <p className="text-foreground-secondary">
+                {RECORDS_MESSAGE.file}
+              </p>
+              <RecordsChoice
+                subject="file"
+                disputed={seen.merge.stored_records_disputed}
+                draft={draft}
+                change={change}
+              />
+            </div>
           )}
         </Merge>
       )}
@@ -103,7 +110,8 @@ export function FileReview({
 
 /** What a Databento batch's import would do: the verdict, the batch's account in counts and
  * dates, what its files add to each dataset, and, where records differ in any, what to do with
- * them, for every dataset at once, the stored records that give way counted over all of them. */
+ * them, for every dataset at once, in a box of its own under theirs (D-106), the stored records
+ * that give way counted over all of them. */
 export function BatchReview({
   seen,
   draft,
@@ -132,7 +140,18 @@ export function BatchReview({
         <Merge key={datasetName(merge.dataset)} merge={merge} />
       ))}
       {differing && (
-        <TakeRecords disputed={disputed} draft={draft} change={change} />
+        <Decision
+          title="Records that differ"
+          message={RECORDS_MESSAGE.batch}
+          testId="batch-decision"
+        >
+          <RecordsChoice
+            subject="batch"
+            disputed={disputed}
+            draft={draft}
+            change={change}
+          />
+        </Decision>
       )}
     </div>
   )

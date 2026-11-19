@@ -10,17 +10,11 @@ import {
   shownState,
   tallyOf,
 } from "./import-reviews"
-import {
-  filesToDecide,
-  filesWithBarsInBreaks,
-  notSkipped,
-  type ReviewedFile,
-} from "./import-round"
-import { LeaveOutBars } from "./BarsInBreaks"
+import { filesToDecide, notSkipped, type ReviewedFile } from "./import-round"
 import { OUTCOME_NAMES, OUTCOME_SIGNS, whyNot } from "./import-outcomes"
 import { FileReview } from "./FileReview"
-import { TakeRecords } from "./Merge"
-import { SkipFile, SkipFiles } from "./SkipFiles"
+import { RoundDecisions } from "./RoundDecisions"
+import { SkipFile } from "./SkipFiles"
 
 /** What the files of each outcome but `imports` would do, as the headline's lines say it, for
  * one file and for several. */
@@ -78,11 +72,11 @@ type FilesReviewProps = Readonly<{
 /** What the import of several files would do (web/DESIGN.md, Patterns, Review, several
  * files; D-102): how many are read, then how many import as they are, with a line for each
  * other outcome and for the files skipped, and Try again, which reads the failed files again; a
- * row per file, which opens to its own review; where records differ in any, what to do with
- * them, for every file at once, with no count of the stored records that give way, since two
- * files of one contract dispute the same ones: each file's own box counts its own, and the sum
- * is the import's to give; and a decision on each file that does not import (D-105), a skip for
- * those left at once, the corrections and the skips leaving the skipped files out. */
+ * row per file, which opens to its own review; and once each file is read, a decision on each
+ * that does not import (D-105), a box for each kind of problem, answered once for every file of
+ * the kind (D-106), with no count of the stored records that give way, since two files of one
+ * contract dispute the same ones: each file's own box counts its own, and the sum is the
+ * import's to give. */
 export function FilesReview({
   files,
   tryAgain,
@@ -97,15 +91,7 @@ export function FilesReview({
   const read = files.filter(
     ({ state }) => shownState(state).kind !== "reading"
   ).length
-  const withBreaks = filesWithBarsInBreaks(files, skipped)
   const toDecide = filesToDecide(files, skipped).map(({ upload }) => upload.id)
-  const merges = shown.flatMap((state) =>
-    state.kind === "answered" &&
-    state.answer.kind === "file" &&
-    state.answer.merge !== null
-      ? [state.answer.merge]
-      : []
-  )
   return (
     <div className="flex flex-col gap-4">
       {read < files.length ? (
@@ -149,19 +135,8 @@ export function FilesReview({
           />
         ))}
       </div>
-      {withBreaks.length > 0 && (
-        <LeaveOutBars
-          files={withBreaks}
-          records={null}
-          draft={draft}
-          change={change}
-        />
-      )}
-      {merges.some((merge) => merge.records_differing > 0) && (
-        <TakeRecords disputed={null} draft={draft} change={change} />
-      )}
       {read === files.length && (
-        <SkipFiles toDecide={toDecide} draft={draft} change={change} />
+        <RoundDecisions files={files} draft={draft} change={change} />
       )}
     </div>
   )

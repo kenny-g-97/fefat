@@ -81,29 +81,6 @@ export function leadAnswer(
     : null
 }
 
-/** The files whose reviews, or last reviews while they are read again, find bars in a break
- * that leaving out would let them import, or that are left out already, by their uploads'
- * ids (ADR-0022): those the round's Leave out the files' bars in a break names, the skipped
- * ones aside (D-105). */
-export function filesWithBarsInBreaks(
-  files: readonly ReviewedFile[],
-  skipped: readonly string[]
-): string[] {
-  return notSkipped(files, skipped)
-    .filter(({ state }) => {
-      const shown = shownState(state)
-      if (shown.kind !== "answered" || shown.answer.kind !== "file") {
-        return false
-      }
-      const breaks = shown.answer.breaks_with_bars
-      return (
-        breaks !== null &&
-        (breaks.left_out || shown.answer.verdict === "bars_in_breaks")
-      )
-    })
-    .map(({ upload }) => upload.id)
-}
-
 /** How many files Import sends, by each file's review or, while it is read again, its last
  * one, so that Import's name holds still through a change, the skipped ones aside; none where
  * none imports. */

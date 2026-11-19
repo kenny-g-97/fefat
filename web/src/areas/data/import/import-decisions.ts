@@ -201,3 +201,10 @@ export function skipAction(decision: RoundDecision): string {
   }
   return decision.files.length === 1 ? "Do not skip it" : "Do not skip them"
 }
+
+/** What to check first where records differ from the stored ones, for one file or a batch. */
+export const RECORDS_MESSAGE = {
+  file: "Where the file is an export, check its profile's time zone and bar stamping under Layout first. Where it holds a vendor's correction, its records should replace the stored ones.",
+  batch:
+    "Where the batch holds a vendor's correction, its records should replace the stored ones.",
+} as const
