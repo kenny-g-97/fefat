@@ -33,11 +33,12 @@ const sentRound = z.looseObject({
 // has, since it reads the profile and the dataset the first import kept. The seed's second
 // export, which shares two sessions with the first, typed as a path, imports by the saved
 // profile's name alone; the third, the first revised, its last bar one lot more, dropped on the
-// drop target, differs from what FEAT holds, and Take the file's records asks before anything is
-// taken. Then a round of several files (D-102): the seed's two more contracts and the revised
-// export, chosen at once, are each reviewed, and Import waits until the revised file has a
-// decision (D-105), skipped under the rows or in its own row; the two that import go in one job,
-// and the file left is reviewed again. Its first test types a path of this machine, so its
+// drop target, differs from what FEAT holds, and its box of counts ends on the choice, the file
+// not imported chosen at the start (D-106). Then a round of several files (D-102): the seed's
+// two more contracts and the revised export, chosen at once, are each reviewed, and Import
+// waits until the revised file has a decision (D-105), in the box of records that differ under
+// the rows or a skip in its own row; the two that import go in one job, and the file left is
+// reviewed again. Its first test types a path of this machine, so its
 // screenshots mask the path and the roots, and its clip stays in test-results, never copied out
 // (D-80); the round chooses its files through the picker alone, so its clip, the click path of
 // your check of the decisions, shows none, and is kept.
@@ -47,7 +48,7 @@ test.use({
   actionTimeout: 15_000,
 })
 
-test("the next export imports by the profile alone, and a revised one asks before its records are taken", async ({
+test("the next export imports by the profile alone, and a revised one replaces the stored records only once you choose so", async ({
   loggedIn: page,
 }) => {
   test.setTimeout(10 * 60_000)
@@ -123,29 +124,35 @@ test("the next export imports by the profile alone, and a revised one asks befor
     page.getByRole("button", { name: "Skip this file" })
   ).toHaveCount(0)
   await expect(account).toContainText("1 differing")
-  await page.getByRole("button", { name: "Take the file's records" }).click()
-  await expect(
-    page.getByRole("button", { name: "Replace 1 stored record" })
-  ).toBeVisible()
-  const keep = page.getByRole("button", { name: "Keep", exact: true })
-  await expect(keep).toBeFocused()
-  await inBothThemes(page, "import-take-records")
-  await keep.click()
-  const take = page.getByRole("button", { name: "Take the file's records" })
-  await expect(take).toBeFocused()
-  // Taken, the way back takes the focus from the confirm it replaces, and pressed, gives it
-  // to the trigger again (step 5.15); the file, read again, differs as before, and Import
-  // stays disabled for it.
+  // The choice under the counts, the file not imported chosen at the start, the other option
+  // counting the stored record that gives way and saying that it cannot be undone (D-106).
+  const take = account.getByRole("radio", {
+    name: "Import the file and replace the stored records",
+  })
+  const refuse = account.getByRole("radio", { name: "Do not import the file" })
+  await expect(refuse).toBeChecked()
+  await expect(account.getByTestId("records-choice-take-file")).toContainText(
+    "The file's records take the place of the 1 stored record they differ from. Once imported, this cannot be undone."
+  )
+  await expect(account.getByTestId("records-choice-refuse")).toContainText(
+    "It stays refused for these records, and nothing is written."
+  )
+  await inBothThemes(page, "import-records-choice")
+  // Chosen, the file imports, its records in the stored one's place; chosen back, it differs
+  // as before, and Import waits for it again.
   await take.click()
-  await page.getByRole("button", { name: "Replace 1 stored record" }).click()
-  const stored = page.getByRole("button", { name: "Keep the stored records" })
-  await expect(stored).toBeFocused()
-  await stored.click()
-  await expect(take).toBeFocused()
+  await expect(take).toBeChecked()
+  await expect(verdict(page)).toHaveText("It imports as it is", {
+    timeout: READ_MS,
+  })
+  await expect(page.getByTestId("import-run")).toBeEnabled()
+  await refuse.click()
+  await expect(refuse).toBeChecked()
   await expect(verdict(page)).toHaveText(
     "Its records differ from the ones FEAT holds",
     { timeout: READ_MS }
   )
+  await expect(refuse).toBeFocused()
   await expect(page.getByTestId("import-run")).toBeDisabled()
 
   // The dataset the imports wrote, on its own page.
@@ -209,7 +216,9 @@ test("a round waits for a decision on the file that differs, then imports the ot
     { timeout: READ_MS }
   )
   await expect(
-    page.getByText("1 file holds records that differ from the ones FEAT holds")
+    page
+      .getByTestId("review-files-headline")
+      .getByText("1 file holds records that differ from the ones FEAT holds")
   ).toBeVisible()
   const rows = page.getByTestId("review-file")
   await expect(rows).toHaveCount(3)
@@ -237,46 +246,77 @@ test("a round waits for a decision on the file that differs, then imports the ot
   )
   await stepSays(page, "review", "incomplete", "1 file waits for your decision")
 
-  // The round's records that differ are taken for every file at once, behind a confirmation
-  // that counts nothing, since two files of one contract dispute the same stored records.
+  // Under the rows, the box of records that differ asks it, none chosen; the file's own box of
+  // counts holds no choice, since the round's answer is for every file of the kind (D-106).
+  const decision = page.getByTestId("decision-differing")
+  await expect(decision).toContainText(
+    "1 file holds records that differ from the ones FEAT holds"
+  )
+  const replace = decision.getByRole("radio", {
+    name: "Import it and replace the stored records",
+  })
+  const skipIt = decision.getByRole("radio", { name: "Skip it" })
+  await expect(replace).not.toBeChecked()
+  await expect(skipIt).not.toBeChecked()
+  await expect(
+    decision.getByTestId("decision-differing-options-corrected")
+  ).toContainText(
+    "The file's records take the place of the stored ones they differ from. Once imported, this cannot be undone."
+  )
   await revisedRow.locator("summary").first().click()
   await expect(revisedRow.getByTestId("merge-account")).toContainText(
     "1 differing"
   )
-  await page.getByRole("button", { name: "Take the files' records" }).click()
-  await expect(
-    page.getByRole("button", { name: "Replace the stored records" })
-  ).toBeVisible()
-  await page.getByRole("button", { name: "Keep", exact: true }).click()
+  await expect(revisedRow.getByTestId("records-choice")).toHaveCount(0)
   await page.emulateMedia({ reducedMotion: "reduce" })
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-several-review")
 
-  // Skip the 1 file, under the rows: Import names the two it sends; Skip none takes it back.
-  const skipAll = page.getByRole("button", { name: "Skip the 1 file" })
-  await skipAll.click()
-  const skipNone = page.getByRole("button", { name: "Skip none" })
-  await expect(skipNone).toBeFocused()
+  // Replacing the stored records lets all three in; Skip it keeps the revised file out, and
+  // Import names the two it sends.
+  // Each change of what is done with records that differ reads every file again, so Import
+  // waits for the readings.
+  await replace.click()
+  await expect(replace).toBeChecked()
+  await expect(revisedAside).toHaveText("Imports", { timeout: READ_MS })
+  await expect(run).toHaveText("Import 3 files")
+  await expect(run).toBeEnabled({ timeout: READ_MS })
+  await skipIt.click()
+  await expect(skipIt).toBeChecked()
   await expect(revisedAside).toHaveText("Skipped")
   await expect(reason).toHaveCount(0)
   await expect(page.getByText("1 file is skipped, as you chose")).toBeVisible()
   await expect(run).toHaveText("Import 2 files")
-  await expect(run).toBeEnabled()
+  await expect(run).toBeEnabled({ timeout: READ_MS })
+  // A skipped file's reading holds nothing back, so the skipped file may still be read.
+  await expect(
+    page.getByText("Reading your latest change", { exact: true })
+  ).toHaveCount(0, { timeout: READ_MS })
   await expect(page.getByTestId("import-waits")).toHaveCount(0)
   await stepSays(page, "review", "complete", "2 files to import")
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-several-skipped")
-  await skipNone.click()
-  await expect(skipAll).toBeFocused()
-  await expect(run).toBeDisabled()
 
-  // Skip this file, in its own row, the way back taking the focus.
-  await revisedRow.getByRole("button", { name: "Skip this file" }).click()
+  // Do not skip in the row brings the file back without the records it no longer replaces, so
+  // it waits for the box again; Skip this file keeps it out once more, the way back taking the
+  // focus each time.
+  await revisedRow.getByRole("button", { name: "Do not skip" }).click()
+  const skipRow = revisedRow.getByRole("button", { name: "Skip this file" })
+  await expect(skipRow).toBeFocused()
+  await expect(skipIt).not.toBeChecked()
+  await expect(replace).not.toBeChecked()
+  await expect(run).toBeDisabled()
+  await expect(page.getByTestId("import-waits")).toHaveText(
+    "Decide what to do with 1 file first",
+    { timeout: READ_MS }
+  )
+  await skipRow.click()
   await expect(
     revisedRow.getByRole("button", { name: "Do not skip" })
   ).toBeFocused()
+  await expect(skipIt).toBeChecked()
   await expect(run).toHaveText("Import 2 files")
   await expect(run).toBeEnabled()
 

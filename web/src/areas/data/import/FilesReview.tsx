@@ -162,7 +162,7 @@ function Headline({ outcomes, files, skipped }: HeadlineProps) {
           `${counted(skipped, "file")} ${skipped === 1 ? "is" : "are"} skipped, as you chose`,
         ]
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" data-testid="review-files-headline">
       <p
         data-testid="review-files-verdict"
         className="text-base font-semibold text-foreground"

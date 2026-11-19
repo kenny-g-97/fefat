@@ -31,13 +31,15 @@ test.use({
 
 // Step 5.15 (ADR-0022): the seed's exports under `breaks`, chosen through the picker so that no
 // path of this machine shows. One file whose break after 02-03 holds nine bars, the last
-// closing at the next open, is refused for them alone, its verdict in the negative; you leave
-// them out behind an inline confirmation, take it back, approve again, and import. Then a round
-// of two such files and one without them (D-105): the two rows say on themselves, in the
-// negative, what stops them, and Import waits for a decision on them; one approval for both
-// turns them positive, and one job imports the three.
+// closing at the next open, is refused for them alone, its verdict in the negative; its box of
+// counts ends on the choice, the file not imported chosen at the start, and you import it
+// without them, choose back, choose again by the keys, and import (D-106). Then a round of two
+// such files and one without them (D-105): the two rows say on themselves, in the negative,
+// what stops them, and Import waits for a decision on them; the round's box asks it once for
+// both, counting a skip made in a row, and its answer for both turns them positive, and one job
+// imports the three.
 
-test("a file with bars in a break imports without them once you approve", async ({
+test("a file with bars in a break imports without them once you choose so", async ({
   loggedIn: page,
 }) => {
   test.setTimeout(10 * 60_000)
@@ -73,49 +75,63 @@ test("a file with bars in a break imports without them once you approve", async 
     "It would be refused for its bars in a break"
   )
 
-  // Leaving them out asks first, counting the records that go.
-  const offer = page.getByRole("button", {
-    name: "Leave out the bars in a break",
+  // The choice under the counts, each option saying what it does, the one that imports
+  // nothing chosen at the start, since it is what happens if nothing is chosen (D-106).
+  const leaveOut = box.getByRole("radio", {
+    name: "Import the file without those bars",
   })
-  await offer.click()
-  const confirm = page.getByRole("button", { name: "Leave out 2,769 records" })
-  await expect(confirm).toBeVisible()
-  await expect(
-    page.getByRole("button", { name: "Keep", exact: true })
-  ).toBeFocused()
-  await inBothThemes(page, "import-leave-out")
-  await confirm.click()
+  const refuse = box.getByRole("radio", { name: "Do not import the file" })
+  await expect(refuse).toBeChecked()
+  await expect(leaveOut).not.toBeChecked()
+  await expect(box.getByTestId("bars-choice-leave-out")).toContainText(
+    "FEAT leaves out 2,769 records, those bars and the sessions listed above, and imports the rest of the file."
+  )
+  await expect(box.getByTestId("bars-choice-refuse")).toContainText(
+    "It stays refused for these bars, and nothing is written."
+  )
+  await page.emulateMedia({ reducedMotion: "reduce" })
+  expect(await lowContrastInEachTheme(page)).toEqual([])
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
+  await inBothThemes(page, "import-bars-choice")
+
+  // A press anywhere on an option's row chooses it, its description too; the file then imports
+  // without those bars, and the box says what the calendar check lists.
+  await box
+    .getByTestId("bars-choice-leave-out")
+    .getByText("imports the rest of the file")
+    .click()
+  await expect(leaveOut).toBeChecked()
   await expect(verdict(page)).toHaveText(
     "It imports without its bars in a break",
     { timeout: READ_MS }
   )
   await expect.poll(() => signOf(verdict(page))).toBe("positive")
-  // The way back takes the focus from the confirm it replaces.
-  const wayBack = page.getByRole("button", { name: "Leave nothing out" })
-  await expect(wayBack).toBeFocused()
-  const leaveOut = page.getByTestId("leave-out")
-  await expect(leaveOut).toContainText(
-    "These bars and the sessions above are left out of the import, so the calendar check may list those sessions as having no prints."
+  await expect(box).toContainText(
+    "The calendar check may list the sessions left out as having no prints."
   )
   await expect(
     page.getByText("Reading your latest change", { exact: true })
   ).toHaveCount(0, { timeout: READ_MS })
   await inBothThemes(page, "import-left-out")
 
-  // The way back refuses the file again and gives the focus to the offer; approved once more,
-  // it imports.
-  await wayBack.click()
+  // Choosing the other line refuses the file again, and the keys choose as the pointer does,
+  // the radio keeping the focus through the file's reading; chosen once more, it imports.
+  await refuse.click()
   await expect(verdict(page)).toHaveText(
     "It would be refused for its bars in a break",
     { timeout: READ_MS }
   )
-  await expect(offer).toBeFocused()
-  await offer.click()
-  await confirm.click()
+  await expect(page.getByTestId("import-run")).toBeDisabled()
+  await expect(refuse).toBeFocused()
+  // Held as a person holds a key: the group chooses the radio its arrow moves to while the key
+  // is down.
+  await page.keyboard.press("ArrowUp", { delay: 100 })
+  await expect(leaveOut).toBeChecked()
   await expect(verdict(page)).toHaveText(
     "It imports without its bars in a break",
     { timeout: READ_MS }
   )
+  await expect(leaveOut).toBeFocused()
   await page.getByTestId("import-run").click()
   await expect(page.getByTestId("import-left-out")).toHaveText(
     "Left out 2,769 records, the bars in a break and the sessions the review listed, as you approved.",
@@ -125,7 +141,7 @@ test("a file with bars in a break imports without them once you approve", async 
   expect(errors).toEqual([])
 })
 
-test("a round waits on its files' bars in a break, then leaves them out with one approval", async ({
+test("a round asks of its files' bars in a break in one box, then imports them without those bars", async ({
   loggedIn: page,
 }) => {
   test.setTimeout(10 * 60_000)
@@ -178,34 +194,36 @@ test("a round waits on its files' bars in a break, then leaves them out with one
     "Decide what to do with 2 files first"
   )
   await stepSays(page, "review", "incomplete", "2 files wait for your decision")
+
+  // Under the rows, one box asks it of both, its options saying what each does, none chosen
+  // (D-106).
+  const decision = page.getByTestId("decision-bars")
+  await expect(decision).toContainText("2 files hold bars in a break")
+  await expect(decision).toContainText(
+    "These files hold bars at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early."
+  )
+  const correct = decision.getByRole("radio", {
+    name: "Import them without those bars",
+  })
+  const skipThem = decision.getByRole("radio", { name: "Skip them" })
+  await expect(correct).not.toBeChecked()
+  await expect(skipThem).not.toBeChecked()
+  await expect(
+    decision.getByTestId("decision-bars-options-skipped")
+  ).toContainText("None of these 2 files is imported.")
+  await expect(page.getByTestId("decision-other")).toHaveCount(0)
   await page.emulateMedia({ reducedMotion: "reduce" })
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
   await inBothThemes(page, "import-several-refused")
 
-  // Skip the 2 files leaves the file that imports, and Skip none takes the skips back (D-105).
-  const skipAll = page.getByRole("button", { name: "Skip the 2 files" })
-  await skipAll.click()
-  const skipNone = page.getByRole("button", { name: "Skip none" })
-  await expect(skipNone).toBeFocused()
-  await expect(rows.getByTestId("review-file-aside")).toHaveText([
-    "Skipped",
-    "Skipped",
-    "Imports",
-  ])
-  await expect(run).toHaveText("Import 1 file")
-  await expect(run).toBeEnabled()
-  await skipNone.click()
-  await expect(skipAll).toBeFocused()
-  await expect(run).toBeDisabled()
-
   // The row's own summary; its review holds the calendar check's, which lists those bars, and
-  // whose chevron stays closed while the row it stands in is open.
+  // whose chevron stays closed while the row it stands in is open; the choice is the box's.
   await row.locator("summary").first().click()
   await expect(row.getByTestId("breaks-account")).toContainText(
     "Records: 2,769 in all, those bars among them"
   )
-  await expect(row.getByTestId("leave-out")).toHaveCount(0)
+  await expect(row.getByTestId("bars-choice")).toHaveCount(0)
   await expect(row.locator("summary").first().locator("svg")).toHaveCSS(
     "rotate",
     "90deg"
@@ -214,16 +232,29 @@ test("a round waits on its files' bars in a break, then leaves them out with one
     row.getByTestId("review-mismatches").locator("summary svg")
   ).toHaveCSS("rotate", "none")
 
-  // One approval for the round, counting files, since two files of one contract share sessions.
-  await page
-    .getByRole("button", { name: "Leave out the files' bars in a break" })
-    .click()
-  const confirm = page.getByRole("button", {
-    name: "Leave them out of 2 files",
-  })
-  await expect(confirm).toBeVisible()
-  await inBothThemes(page, "import-several-leave-out")
-  await confirm.click()
+  // A skip in a row stays in the box, which counts it; the other file still waits.
+  await row.getByRole("button", { name: "Skip this file" }).click()
+  await expect(row.getByRole("button", { name: "Do not skip" })).toBeFocused()
+  await expect(decision).toContainText("1 of these 2 files is skipped.")
+  await expect(page.getByTestId("import-waits")).toHaveText(
+    "Decide what to do with 1 file first"
+  )
+
+  // Skip them keeps both out, leaving the file that imports.
+  await skipThem.click()
+  await expect(skipThem).toBeChecked()
+  await expect(rows.getByTestId("review-file-aside")).toHaveText([
+    "Skipped",
+    "Skipped",
+    "Imports",
+  ])
+  await expect(decision).not.toContainText("is skipped.")
+  await expect(run).toHaveText("Import 1 file")
+  await expect(run).toBeEnabled()
+
+  // Import them without those bars, for both at once, the skip in the row among them.
+  await correct.click()
+  await expect(correct).toBeChecked()
   await expect(page.getByTestId("review-files-verdict")).toHaveText(
     "1 of 3 files import as they are",
     { timeout: READ_MS }
@@ -233,14 +264,12 @@ test("a round waits on its files' bars in a break, then leaves them out with one
   await expect(
     page.getByText("2 files import without their bars in a break")
   ).toBeVisible({ timeout: READ_MS })
-  await expect(
-    page.getByRole("button", { name: "Leave nothing out" })
-  ).toBeFocused()
+  await expect(correct).toBeFocused()
   await expect(aside).toHaveText("Without bars in a break")
   await expect.poll(() => signOf(aside)).toBe("positive")
   await expect(reason).toHaveCount(0)
-  await expect(page.getByTestId("leave-out")).toContainText(
-    "The bars in a break of 2 files and the sessions their rows list are left out of the import, so each file's calendar check may list those sessions as having no prints."
+  await expect(decision).toContainText(
+    "Each file's calendar check may list the sessions left out as having no prints."
   )
   await expect(page.getByTestId("import-waits")).toHaveCount(0)
   expect(await lowContrastInEachTheme(page)).toEqual([])
@@ -316,6 +345,25 @@ test("a file that cannot be read says why on its row, closed and open", async ({
   await expect(page.getByTestId("import-waits")).toHaveText(
     "Decide what to do with 1 file first"
   )
+
+  // No correction fits it, so its box under the rows offers the skip alone, and its way back,
+  // each taking the focus from the other (D-106).
+  const decision = page.getByTestId("decision-other")
+  await expect(decision).toContainText("1 file does not import as it is read")
+  await expect(decision).toContainText(
+    "Its row says what stops it. Correct it under Layout or Instrument, which reads every file again, or skip the file."
+  )
+  await expect(decision.getByRole("radio")).toHaveCount(0)
+  await decision.getByRole("button", { name: "Skip the 1 file" }).click()
+  const wayBack = decision.getByRole("button", { name: "Do not skip it" })
+  await expect(wayBack).toBeFocused()
+  await expect(aside).toHaveText("Skipped")
+  await expect(page.getByTestId("import-waits")).toHaveText("No file to import")
+  await wayBack.click()
+  await expect(
+    decision.getByRole("button", { name: "Skip the 1 file" })
+  ).toBeFocused()
+  await expect(aside).toHaveText("Not read")
 
   // Open, the reason gives way to what the row discloses: why, and the skip.
   await row.locator("summary").first().click()
