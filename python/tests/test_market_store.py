@@ -669,6 +669,10 @@ def test_another_name_of_the_raw_manifest_is_refused(tmp_path: Path) -> None:
             imported_on=date(2026, 10, 13),
             roots=(),
         )
+    # A delete's removal of a raw copy (step 5.18) is refused it too.
+    with pytest.raises(ValueError, match="another name of the raw manifest"):
+        store.raw.remove("vendor/alias.json")
+    assert (tmp_path / "raw" / "vendor" / "alias.json").is_file()
 
 
 def test_a_broken_raw_manifest_is_refused_with_its_path(tmp_path: Path) -> None:

@@ -103,7 +103,8 @@ class Store:
         against the store, and copies its original under `raw`, before it takes the lock, so
         that a refused file takes no lock, and once it holds it checks again where another
         import wrote meanwhile, so that no partition of a file refused there is written; readers
-        take no lock."""
+        take no lock. A delete of a provider's data of a root holds the same file, waiting a few
+        seconds at most (`fefat.market.stored_deletion`, step 5.18)."""
         return held_alone(self._folder / IMPORT_LOCK_FILE_NAME, IMPORT_LOCK_WAIT)
 
     def list_partitions(self, dataset: Dataset | None = None) -> tuple[PartitionFile, ...]:

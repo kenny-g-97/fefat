@@ -9,6 +9,7 @@
     fefat data import file <path> --profile <name> [--contract] [--root] [--time-zone]
         [--preview] [--differing {refuse,take-file}]
     fefat data profiles [<name>]
+    fefat data delete <provider> <root> [--yes]
     fefat cache build --root <root> --year <year> [--provider <provider>]
     fefat cache status [--root <root>]
     fefat cache features [--prune [--older-than <days>]]
@@ -39,7 +40,9 @@ for later imports, and writes its product's quality report. Both imports merge a
 data the store holds; with `--preview` they print what the import would add, and write
 nothing, and `--differing take-file` lets a file's records stand where the store holds them
 with other values (`fefat_app.import_commands`). `profiles` lists the presets and your saved
-profiles, or prints one as YAML to copy into a profile of your own.
+profiles, or prints one as YAML to copy into a profile of your own. `delete` prints what a
+delete of a provider's data of a root would remove, with the saved runs that read it, and
+deletes it with `--yes` (`fefat_app.delete_commands`, step 5.18).
 
 `cache build` builds the engine's cache of a product's trade dates in a year, `cache status`
 lists it, and `cache features` lists the feature cache or prunes what was not used for a while
@@ -92,6 +95,7 @@ from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
 from fefat_app.cache_commands import add_the_cache_commands
 from fefat_app.database_commands import add_the_database_commands
+from fefat_app.delete_commands import add_the_delete_command
 from fefat_app.import_commands import add_the_import_commands
 from fefat_app.password_commands import add_the_password_commands
 from fefat_app.secret_commands import add_the_secret_commands
@@ -155,6 +159,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profiles.add_argument("name", nargs="?", help="a preset or saved profile to print as YAML")
     profiles.set_defaults(run=print_the_profiles)
+    delete = data_commands.add_parser(
+        "delete", help="delete a provider's data of a product, with FEAT's copies of its files"
+    )
+    add_the_delete_command(delete)
     cache = commands.add_parser("cache", help="the engine's and the features' caches")
     add_the_cache_commands(cache)
     secrets = commands.add_parser(

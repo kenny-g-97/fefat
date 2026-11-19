@@ -19,4 +19,9 @@ declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router
   }
+  /** What a page leaves the next one in the browser's history: the data a delete removed,
+   * "MES from synthetic", which the Data page says it deleted (step 5.18). */
+  interface HistoryState {
+    deleted?: string
+  }
 }

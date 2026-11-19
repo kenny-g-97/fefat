@@ -7,6 +7,7 @@ version, a version file the index cannot follow, and code the SDK refuses are re
 
 import os
 import shutil
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -225,3 +226,25 @@ def test_an_unknown_version_a_file_replaced_and_refused_code_are_refused(
     assert (refused.value.line, str(refused.value)) == (9, "ValueError: no such column")
     assert dispatcher.calls == []
     assert runs.newest() == ()
+
+
+def test_a_runs_job_is_queued_only_once_no_delete_holds_the_jobs_back(
+    engine: Engine, workspace: LibraryTables
+) -> None:
+    # Step 5.18's reviews: the dispatcher's sweep gives a queued job to a worker by itself, so a
+    # run's job is written queued only while no delete of stored data holds the jobs back.
+    executor, dispatcher = LookingUp(to_make()), RecordingDispatcher()
+    runs = runs_over(engine, workspace, executor, dispatcher)
+    submitter = threading.Thread(target=runs.submit, args=(asked(workspace, lookback=24),))
+
+    with runs.jobs.held_back() as under_way:
+        submitter.start()
+        submitter.join(timeout=0.5)
+        waited = submitter.is_alive()
+        queued_meanwhile = JobTables(engine).with_status(JobStatus.QUEUED)
+    submitter.join(timeout=10)
+
+    assert under_way == ()
+    assert waited
+    assert queued_meanwhile == ()
+    assert len(JobTables(engine).with_status(JobStatus.QUEUED)) == 1

@@ -3,12 +3,15 @@ login, a session's or an API token's, over `fefat_app.services.catalog`: `GET /v
 `GET /v1/datasets/{dataset_id}/quality`, `GET /v1/catalog`, `GET /v1/sources`,
 `GET /v1/instruments`, `GET /v1/market/bars`, and from step 5.4 `GET /v1/market/bars/span`, each
 reading the store in the data folder as it is asked; and `POST /v1/catalog/sync`, which starts
-the quality report of a product, or of every product, as a job."""
+the quality report of a product, or of every product, as a job; and from step 5.18
+`GET /v1/stored-data/{provider}/{root}/deletion`, what a delete of a provider's data of a
+root removes, and `DELETE /v1/stored-data/{provider}/{root}`, the delete
+(`fefat_app.services.stored_data`, ADR-0023)."""
 
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict
 
 from fefat.market.layout import DatasetOrigin
@@ -34,6 +37,11 @@ from fefat_app.services.market_bars import (
     BarsSpan,
     NoSuchInstrumentError,
     SeriesRequest,
+)
+from fefat_app.services.stored_data import (
+    DeletionPreview,
+    DeletionRefusedError,
+    NoSuchStoredDataError,
 )
 
 router = APIRouter(prefix=API_PREFIX, tags=["data"], dependencies=[Depends(the_identity)])
@@ -89,6 +97,38 @@ def dataset_quality(dataset_id: str, container: ContainerDependency) -> DatasetQ
         return container.catalog.dataset_quality(dataset_id)
     except NoSuchDatasetError as refused:
         raise HTTPException(404, str(refused)) from refused
+
+
+@router.get("/stored-data/{provider}/{root}/deletion", responses=problem_responses(401, 404, 422))
+def stored_data_deletion(
+    provider: str, root: str, container: ContainerDependency
+) -> DeletionPreview:
+    """What a delete of `provider`'s data of `root` removes, writing nothing, with how many
+    saved runs read the data (step 5.18); refused with 404 where the store holds no such
+    data."""
+    try:
+        return container.deletions.preview(provider, root)
+    except NoSuchStoredDataError as refused:
+        raise HTTPException(404, str(refused)) from refused
+
+
+@router.delete(
+    "/stored-data/{provider}/{root}",
+    status_code=204,
+    responses=problem_responses(401, 403, 404, 409, 422),
+)
+def delete_instrument_data(provider: str, root: str, container: ContainerDependency) -> Response:
+    """Delete `provider`'s data of `root` (step 5.18, ADR-0023); refused with 404 where the
+    store holds no such data, and with 409 while a job is queued or running, an import
+    writes, or a file another program holds open stops it, which a delete asked again then
+    finishes."""
+    try:
+        container.deletions.delete(provider, root)
+    except NoSuchStoredDataError as refused:
+        raise HTTPException(404, str(refused)) from refused
+    except DeletionRefusedError as refused:
+        raise HTTPException(409, str(refused)) from refused
+    return Response(status_code=204)
 
 
 @router.get("/catalog", responses=problem_responses(401))

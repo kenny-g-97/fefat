@@ -20,6 +20,7 @@ import {
   standing,
 } from "./datasets"
 import { DatasetTable } from "./DatasetTable"
+import { DeleteData } from "./DeleteData"
 import { QualityPanel } from "./QualityPanel"
 import { QueryBody } from "./QueryBody"
 import { SpecificationPanel } from "./SpecificationPanel"
@@ -27,8 +28,9 @@ import { SpecificationPanel } from "./SpecificationPanel"
 /** A dataset's page (step 5.4; web/DESIGN.md, Patterns, Dataset page): an instrument's data
  * from one provider, the two named in the address, as a row of the Data page's list opens it:
  * what the store holds of it, with its chart; its quality, which Check quality checks again as
- * a job, a catalog sync of the instrument and so of every provider's data of it; and the
- * instrument's specification. Import more data leads to the import page with the provider as
+ * a job, a catalog sync of the instrument and so of every provider's data of it; the
+ * instrument's specification; and, last, what a delete of the data removes, with Delete (step
+ * 5.18). Import more data leads to the import page with the provider as
  * its preset, step 5.12's wizard. An address that names no data FEAT holds says so. */
 export function DatasetPage() {
   const shown = useSearch({ from: "/_shell/data/dataset" })
@@ -111,6 +113,7 @@ function ShownDataset({ shown }: Readonly<{ shown: DatasetSearch }>) {
                 standing={standing(dataset, syncs)}
               />
               <SpecificationPanel root={dataset.root} />
+              <DeleteData dataset={dataset} />
             </div>
           )
         }

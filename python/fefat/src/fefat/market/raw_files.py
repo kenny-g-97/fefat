@@ -1,17 +1,20 @@
 """The vendors' original files under the store's `raw` folder, which never change, and their
 manifest (ADR-0019, `fefat.market.raw_manifest`): a file is copied in once its copy has the
 SHA-256 stated, recorded with its size, SHA-256, and vendor details, and read back only while its
-bytes are the ones recorded. A store's are `Store.raw`:
+bytes are the ones recorded; from step 5.18 a delete of the data it was imported into removes it
+and its entry (`fefat.market.stored_deletion`, ADR-0023). A store's are `Store.raw`:
 
     store.raw.write(path, source, sha256)
     store.raw.record(path, provider=..., vendor_version=..., downloaded_on=..., batch_job=...,
                      imported_on=..., roots=...)
     store.raw.read(path)
+    store.raw.remove(path)
+    store.raw.forget(paths)
 """
 
 import hashlib
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import date
 from pathlib import Path, PurePosixPath
 
@@ -121,6 +124,25 @@ class RawFiles:
                 f"{raw_file.model_dump_json()}."
             )
         return recorded
+
+    def remove(self, path: str) -> None:
+        """Remove the vendor's file at `raw/<path>`, for a delete of the data it was imported
+        into (step 5.18, ADR-0023), passing over a file already gone; its entry stays until
+        `forget`. The manifest itself, under another name, is refused."""
+        try:
+            file = self._vendor_file(checked_raw_path(path))
+        except FileNotFoundError:
+            return
+        file.unlink(missing_ok=True)
+
+    def forget(self, paths: Collection[str]) -> None:
+        """Remove the entries of `paths` from the raw manifest in one write, for a delete of the
+        data their files were imported into (step 5.18, ADR-0023); a manifest that names none of
+        them is left as it is."""
+        manifest = self.manifest()
+        files = tuple(file for file in manifest.files if file.path not in paths)
+        if len(files) < len(manifest.files):
+            write_atomically(self._manifest_path(), json_writer(RawManifest(files=files)))
 
     def _vendor_file(self, relative: str) -> Path:
         """The vendor's file under `raw`, refused when it is missing or when it is the manifest

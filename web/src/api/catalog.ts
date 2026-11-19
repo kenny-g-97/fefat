@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react"
 import { z } from "zod"
 import { api, queryClient } from "./client"
 import { isActive, type Job, jobsQuery } from "./jobs"
-import { answer } from "./problems"
+import { answer, succeeded } from "./problems"
 import type { components } from "./schema"
 
 export type CatalogStatus = components["schemas"]["CatalogStatus"]
@@ -11,6 +11,7 @@ export type StoredDataset = components["schemas"]["StoredDataset"]
 export type InstrumentVersion = components["schemas"]["InstrumentVersion"]
 export type Source = components["schemas"]["Source"]
 export type MonthCoverage = components["schemas"]["MonthCoverage"]
+export type DeletionPreview = components["schemas"]["DeletionPreview"]
 
 /** The catalog's products with the datasets that cover them, then the datasets of the roots it
  * does not list, the trader's own. */
@@ -57,6 +58,72 @@ export function useCatalogSync() {
   })
 }
 
+/** What a delete of a provider's data of a root removes, which its dataset's page says before
+ * it asks (step 5.18, ADR-0023): FEAT's copies of the files it came from, those kept since they
+ * also hold another instrument, its quality report, and the saved runs that read it. */
+export function deletionQuery(provider: string, root: string) {
+  return queryOptions({
+    queryKey: ["stored-data", provider, root],
+    queryFn: async () =>
+      answer(
+        await api.GET("/v1/stored-data/{provider}/{root}/deletion", {
+          params: { path: { provider, root } },
+        })
+      ),
+  })
+}
+
+/** Delete a provider's data of a root (step 5.18, ADR-0023), asked from the page at the address
+ * the mutation is given, then `leave` that page, take its datasets out of the catalog already
+ * read, so that no list shows it once it is gone, and ask every read of the store again, so that
+ * no read of the data deleted is asked from a page about it; a delete refused part way has
+ * removed some of it, so a refusal asks them again at once. */
+export function useStoredDataDeletion(
+  provider: string,
+  root: string,
+  leave: (askedFrom: string) => Promise<void>
+) {
+  return useMutation({
+    mutationFn: async (_askedFrom: string) =>
+      succeeded(
+        await api.DELETE("/v1/stored-data/{provider}/{root}", {
+          params: { path: { provider, root } },
+        })
+      ),
+    onSuccess: async (_answer, askedFrom) => {
+      await leave(askedFrom)
+      queryClient.setQueryData(catalogQuery.queryKey, (catalog) =>
+        catalog === undefined
+          ? undefined
+          : withoutStoredData(catalog, provider, root)
+      )
+      readTheStoreAgain()
+    },
+    onError: () => {
+      readTheStoreAgain()
+    },
+  })
+}
+
+/** `catalog` without `provider`'s datasets of `root`, as a delete of them leaves it until the
+ * catalog is read again (step 5.18). */
+export function withoutStoredData(
+  catalog: CatalogStatus,
+  provider: string,
+  root: string
+): CatalogStatus {
+  const kept = (dataset: StoredDataset) =>
+    dataset.provider !== provider || dataset.root !== root
+  return {
+    ...catalog,
+    products: catalog.products.map((product) => ({
+      ...product,
+      datasets: product.datasets.filter(kept),
+    })),
+    unlisted: catalog.unlisted.filter(kept),
+  }
+}
+
 /** A catalog sync's payload, which the OpenAPI document does not type: its root, or none for
  * every product. */
 const syncPayload = z.object({ root: z.string().nullable() })
@@ -94,15 +161,24 @@ const STORE_WRITERS: ReadonlySet<Job["kind"]> = new Set([
   "import",
 ])
 
-/** What a job that writes the store makes stale: the catalog, the datasets' quality, the
- * instruments, the chart's spans and bars, and the import profiles. */
+/** What a job that writes the store makes stale, and a delete: the catalog, the datasets'
+ * quality, the instruments, the chart's spans and bars, the import profiles, and what a delete
+ * would remove. */
 const STORE_READS = [
   catalogQuery.queryKey,
   ["datasets"],
   instrumentsQuery.queryKey,
   ["market"],
   ["import-profiles"],
+  ["stored-data"],
 ]
+
+/** Ask again, on every page, each read of the store (`STORE_READS`). */
+function readTheStoreAgain(): void {
+  for (const queryKey of STORE_READS) {
+    void queryClient.invalidateQueries({ queryKey })
+  }
+}
 
 /** Read again, on every page, what a catalog sync or an import among `jobs` wrote, once it
  * ends: a job another read of the jobs lists as ended for the first time, so that one which
@@ -119,9 +195,7 @@ export function useStoreReadAfterWrites(
     const earlier = before.current
     before.current = ended
     if (earlier !== undefined && writeEndedSince(earlier, ended)) {
-      for (const queryKey of STORE_READS) {
-        void queryClient.invalidateQueries({ queryKey })
-      }
+      readTheStoreAgain()
     }
   }, [ended])
 }

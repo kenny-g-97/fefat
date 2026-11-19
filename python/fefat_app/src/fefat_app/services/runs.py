@@ -90,7 +90,9 @@ class Runs:
             settings=answer.settings,
             request_key=answer.request_key,
         )
-        submitted = self.records.submitted(new, MAX_ATTEMPTS, self.clock())
+        submitted = self.jobs.queued_by(
+            lambda: self.records.submitted(new, MAX_ATTEMPTS, self.clock())
+        )
         if submitted.queued_job_id is not None:
             self.jobs.submit(submitted.queued_job_id)
         return submitted.run

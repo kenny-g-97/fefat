@@ -32,6 +32,7 @@ from fefat_app.services.imports import Imports
 from fefat_app.services.jobs import Jobs
 from fefat_app.services.logins import LoginAttempts, Logins
 from fefat_app.services.runs import Runs
+from fefat_app.services.stored_data import StoredDataDeletions
 from fefat_app.services.strategies import SavedStrategies
 from fefat_app.uploads import UploadFolders
 
@@ -42,7 +43,8 @@ class Container:
     `FEFAT_HOME` and the data, the credential store, the logins, the API tokens, the trader's
     preferences, the jobs, and their dispatcher, which the server starts and closes, the
     executor of the trader's code, whose warm runner `opened_container` ends, the data
-    catalog over the store in the data folder (step 5.1), the library's strategies and
+    catalog over the store in the data folder (step 5.1) and the deletes of its data
+    (step 5.18), the library's strategies and
     features over their index (step 5.2), the runs (step 5.3), and the import wizard over the
     workspace's uploads (step 5.12)."""
 
@@ -56,6 +58,7 @@ class Container:
     dispatcher: Dispatcher
     executor: Executor
     catalog: MarketCatalog
+    deletions: StoredDataDeletions
     strategies: SavedStrategies
     features: SavedFeatures
     runs: Runs
@@ -85,6 +88,7 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
     jobs = Jobs(job_records, dispatcher, clock)
     executor = SubprocessExecutor(paths, warm_previews=True)
     library = LibraryTables(engine, paths)
+    store = Store(paths.data_dir)
     return Container(
         settings=settings,
         paths=paths,
@@ -95,7 +99,10 @@ def build_container(engine: Engine, settings: Settings, paths: FefatPaths) -> Co
         jobs=jobs,
         dispatcher=dispatcher,
         executor=executor,
-        catalog=MarketCatalog(Store(paths.data_dir), paths.reports_dir, paths.cache_dir, jobs),
+        catalog=MarketCatalog(store, paths.reports_dir, paths.cache_dir, jobs),
+        deletions=StoredDataDeletions(
+            store, paths.reports_dir, paths.cache_dir, paths.runs_dir, jobs
+        ),
         strategies=SavedStrategies(library, executor, paths.strategies_dir),
         features=SavedFeatures(library, executor, paths.features_dir),
         runs=Runs(RunTables(engine, paths), library, executor, jobs, paths.strategies_dir, clock),
