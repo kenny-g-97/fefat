@@ -6,6 +6,7 @@ and no file outside the pair's removed, whatever text names it."""
 
 import hashlib
 import json
+import os
 import re
 import shutil
 from datetime import date, timedelta
@@ -13,11 +14,11 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import pytest
-from databento_dbn import OHLCVMsg, RType, Schema
+from databento_dbn import OHLCVMsg, RType, Schema, StatMsg, StatType, StatUpdateAction
 
 import fefat.market.raw_files
 import fefat.market.stored_deletion
-from dbn_files import dbn_content, mapping, utc
+from dbn_files import dbn_content, mapping, utc, write_dbn
 from export_samples import (
     IMPORTED_ON,
     PRESETS,
@@ -33,6 +34,7 @@ from fefat.market.layout import Dataset
 from fefat.market.quality import assess_quality
 from fefat.market.quality_report import write_quality_report
 from fefat.market.schema import parse_schema_name
+from fefat.market.status import dataset_status
 from fefat.market.store import IMPORT_LOCK_FILE_NAME, Store
 from fefat.market.store_files import held_alone, write_atomically
 from fefat.market.stored_deletion import (
@@ -48,6 +50,7 @@ ES_EXPORT = f"user/{EXPORT_SHA256}/ES 03-26.Last.txt"
 MES_EXPORT = f"user/{EXPORT_SHA256}/MES 03-26.Last.txt"
 ES_FROM_NINJATRADER = (
     "data/ninjatrader/ohlcv-1m/root=ES/",
+    "data/ninjatrader/trades/root=ES/",
     f"data/raw/{ES_EXPORT}",
     "data/reports/ninjatrader/ES/",
     "cache/engine/ninjatrader/ES/",
@@ -103,7 +106,9 @@ def cached_month(folders: Folders, provider: str, root: str) -> None:
 def two_roots_and_another_provider(folder: Path) -> Folders:
     """ES and MES from ninjatrader, imported from one export's bytes under two names, so that both
     copies share a folder under `raw`, and the fixtures' 1-minute bars from synthetic, ES among
-    them: each pair with its quality report, and the two of ninjatrader with a cached month."""
+    them: each pair with its quality report, and the two of ninjatrader with a cached month; ES
+    from ninjatrader also holds the fixtures' trades, a second kind of data, and beside them lie
+    what a delete keeps, ES's saved specification and a file of the features' cache."""
     folders = folders_in(folder)
     store, cache = folders.store, folders.cache
     import_file(
@@ -128,6 +133,15 @@ def two_roots_and_another_provider(folder: Path) -> Folders:
         write_quality_report(assess_quality(store, provider, root, cache), folders.reports)
     cached_month(folders, "ninjatrader", "ES")
     cached_month(folders, "ninjatrader", "MES")
+    shutil.copytree(
+        SYNTHETIC / "trades" / "root=ES", store.folder / "ninjatrader" / "trades" / "root=ES"
+    )
+    saved = store.folder / "instruments" / "ES.json"
+    saved.parent.mkdir(parents=True)
+    saved.write_text('{"root": "ES"}\n', encoding="utf-8")
+    features = folders.cache / "features" / "bars" / "index.json"
+    features.parent.mkdir(parents=True)
+    features.write_text("{}\n", encoding="utf-8")
     return folders
 
 
@@ -141,7 +155,8 @@ def test_a_delete_removes_what_its_plan_says_and_leaves_every_other_file_as_it_w
     # Done means 1. MES's copy shares its folder under raw with ES's and stays with its entry.
     folders = two_roots_and_another_provider(tmp_path)
     es = Dataset(provider="ninjatrader", schema_name=parse_schema_name("ohlcv-1m"), root="ES")
-    partitions = len(folders.store.list_partitions(es))
+    trades = es.model_copy(update={"schema_name": parse_schema_name("trades")})
+    partitions = len(folders.store.list_partitions(es)) + len(folders.store.list_partitions(trades))
     before = tree(tmp_path)
 
     plan = folders.plan("ninjatrader", "ES")
@@ -152,7 +167,7 @@ def test_a_delete_removes_what_its_plan_says_and_leaves_every_other_file_as_it_w
     gone = gone_with(before, ES_FROM_NINJATRADER)
     assert planned == before
     assert deleted == plan
-    assert plan.datasets == (es,)
+    assert plan.datasets == (es, trades)
     assert (plan.partitions, plan.raw_files, plan.side_files, plan.kept_files) == (
         partitions,
         (ES_EXPORT,),
@@ -161,7 +176,7 @@ def test_a_delete_removes_what_its_plan_says_and_leaves_every_other_file_as_it_w
     )
     assert plan.quality_report and plan.engine_cache
     assert plan.summary().splitlines() == [
-        f"ES from ninjatrader: {partitions} partition of ohlcv-1m.",
+        f"ES from ninjatrader: {partitions} partitions of ohlcv-1m, trades.",
         "Raw copies that go, with their entries in the raw manifest, so that their files import "
         "again as new: 1 imported file.",
         "Its quality report goes.",
@@ -319,6 +334,7 @@ HELD_UP_AT = {
     "a raw copy": f"data/raw/{ES_EXPORT}",
     "the raw manifest": "data/raw/MANIFEST.json",
     "a partition": "data/ninjatrader/ohlcv-1m/root=ES/contract=ESH2026",
+    "a partition of the second kind": "data/ninjatrader/trades/root=ES/contract=ESH2026",
     "dataset.json": "data/ninjatrader/ohlcv-1m/root=ES/dataset.json",
 }
 """Each place a delete removes or rewrites, in its order (ADR-0023), relative to the test's
@@ -425,3 +441,97 @@ def test_a_delete_waits_for_an_import_s_writes_and_is_refused_past_its_wait(
 
     assert held == before
     assert ("synthetic", "ES") in folders.pairs()
+
+
+def test_a_file_that_vanishes_during_a_delete_is_passed_over_and_the_rest_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The data-layer review: another process can remove or rename a file the delete's walk
+    # listed, as a digest's write renames its temporary file; rmtree then stops at the file it
+    # cannot find, and the delete must not take the rest of the tree for gone.
+    folders = two_roots_and_another_provider(tmp_path)
+    unlink = os.unlink
+    vanished: list[str] = []
+
+    def unlinking(path: Any, *arguments: Any, **named: Any) -> None:
+        unlink(path, *arguments, **named)
+        if not vanished and Path(str(path)).name == "part.parquet":
+            vanished.append(str(path))
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+
+    with monkeypatch.context() as patched:
+        patched.setattr(os, "unlink", unlinking)
+        folders.delete("ninjatrader", "ES")
+
+    assert vanished
+    assert ("ninjatrader", "ES") not in folders.pairs()
+    assert not (folders.store.folder / "ninjatrader" / "ohlcv-1m" / "root=ES").exists()
+    assert not (folders.store.folder / "ninjatrader" / "trades" / "root=ES").exists()
+
+
+def statistics_beside_the_bars(folder: Path) -> Folders:
+    """The fixtures' batch download of ES's 1-minute bars from databento, and a file of ES's
+    statistics from databento beside them, whose folder sorts after the bars'."""
+    folders = folders_in(folder)
+    import_databento(BATCH, folders.store, folders.cache, imported_on=IMPORTED_ON)
+    monday = utc(2026, 3, 9, 14, 30)
+    statistic = StatMsg(publisher_id=1, instrument_id=1001, ts_event=monday, ts_recv=monday + 3, ts_ref=utc(2026, 3, 9), price=6_751_000_000_000, quantity=0, stat_type=StatType(3), sequence=21, update_action=StatUpdateAction(1), stat_flags=1)  # fmt: skip
+    esh6 = [mapping("ESH6", 1001, date(2025, 3, 21), date(2026, 3, 21))]
+    content = dbn_content(Schema("statistics"), esh6, [statistic])
+    statistics = write_dbn(folder / "files" / "es.statistics.dbn", content)
+    import_databento(statistics, folders.store, folders.cache, imported_on=IMPORTED_ON)
+    return folders
+
+
+def catalog_pairs(folders: Folders) -> set[tuple[str, str]]:
+    """The pairs the Data page lists: those with a dataset of trades, TBBO, or bars."""
+    status = dataset_status(folders.store, folders.reports)
+    return set(zip(status.get_column("provider"), status.get_column("root"), strict=True))
+
+
+def test_the_records_of_other_kinds_go_before_the_bars_so_a_refusal_leaves_the_row_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Done means 4 and the data-layer review: the Data page lists a pair by its trades, TBBO, and
+    # bars alone, so the statistics beside them must not be the records a refusal leaves.
+    folders = statistics_beside_the_bars(tmp_path)
+    held = tmp_path / "data/databento/statistics/root=ES/contract=ESH2026"
+    assert held.is_dir()
+
+    with monkeypatch.context() as patched:
+        held_open(patched, held)
+        with pytest.raises(DeleteRefusedError, match=re.escape(str(held))):
+            folders.delete("databento", "ES")
+    listed = catalog_pairs(folders)
+    folders.delete("databento", "ES")
+
+    assert ("databento", "ES") in listed
+    assert folders.pairs() == []
+    assert catalog_pairs(folders) == set()
+
+
+@pytest.mark.parametrize("side_file", ["condition.json", "metadata.json"])
+def test_a_side_file_held_open_is_removed_when_the_delete_is_asked_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, side_file: str
+) -> None:
+    # Done means 4 and the reviews: a batch's side files keep their entries until they are gone,
+    # so asking again finds them; condition.json, which the quality reports read through the
+    # manifest, goes last, so that no entry of it is left without its file.
+    folders = folders_in(tmp_path)
+    import_databento(BATCH, folders.store, folders.cache, imported_on=IMPORTED_ON)
+    raw = folders.store.folder / "raw"
+    held = raw / "databento" / JOB / side_file
+
+    with monkeypatch.context() as patched:
+        held_open(patched, held)
+        with pytest.raises(DeleteRefusedError, match=re.escape(str(held))):
+            folders.delete("databento", "ES")
+    recorded = {file.path for file in folders.store.raw.manifest().files}
+    condition = f"databento/{JOB}/condition.json"
+    condition_kept = (raw / condition).is_file()
+    folders.delete("databento", "ES")
+
+    assert condition in recorded and condition_kept
+    assert folders.store.raw.manifest().files == ()
+    assert not (raw / "databento").exists()
+    assert folders.pairs() == []

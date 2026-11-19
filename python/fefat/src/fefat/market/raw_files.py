@@ -129,14 +129,10 @@ class RawFiles:
         """Remove the vendor's file at `raw/<path>`, for a delete of the data it was imported
         into (step 5.18, ADR-0023), passing over a file already gone; its entry stays until
         `forget`. The manifest itself, under another name, is refused."""
-        relative = checked_raw_path(path)
-        file = self._folder / relative
-        manifest = self._manifest_path()
-        if file.is_file() and manifest.is_file() and file.samefile(manifest):
-            raise ValueError(
-                f"Expected a vendor's file inside the raw folder, got {relative!r}, another name "
-                "of the raw manifest."
-            )
+        try:
+            file = self._vendor_file(checked_raw_path(path))
+        except FileNotFoundError:
+            return
         file.unlink(missing_ok=True)
 
     def forget(self, paths: Collection[str]) -> None:
