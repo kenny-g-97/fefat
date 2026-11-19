@@ -51,7 +51,7 @@ export function BarsChoice({ files, records, draft, change }: BarsChoiceProps) {
   const others = draft.breaksLeftOut.filter((file) => !files.includes(file))
   const leftOut = files.every((file) => draft.breaksLeftOut.includes(file))
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <p className="text-foreground-secondary">
         These bars are stamped at times when the market is closed, the last one
         closing at the next session's open: a sign that the platform stamped a

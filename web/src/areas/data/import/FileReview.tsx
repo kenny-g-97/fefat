@@ -90,7 +90,7 @@ export function FileReview({
       {seen.merge !== null && (
         <Merge merge={seen.merge}>
           {alone && differs(seen) && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               <p className="text-foreground-secondary">
                 {RECORDS_MESSAGE.file}
               </p>

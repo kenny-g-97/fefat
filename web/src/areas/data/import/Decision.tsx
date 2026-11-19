@@ -105,11 +105,13 @@ export function Decision({
         <p className="text-foreground-secondary">{message}</p>
       </div>
       {children}
-      {notes.map((note) => (
-        <p key={note} className="text-xs text-muted-foreground">
-          {note}
-        </p>
-      ))}
+      {notes.length > 0 && (
+        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+          {notes.map((note) => (
+            <p key={note}>{note}</p>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
