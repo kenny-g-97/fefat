@@ -16,8 +16,10 @@ export function DeleteData({
   dataset,
 }: Readonly<{ dataset: ImportedDataset }>) {
   const preview = useQuery(deletionQuery(dataset.provider, dataset.root))
-  const deletion = useStoredDataDeletion(dataset.provider, dataset.root)
   const navigate = useNavigate()
+  const deletion = useStoredDataDeletion(dataset.provider, dataset.root, () =>
+    navigate({ to: "/data" })
+  )
   return (
     <Panel title="Delete this data">
       <QueryBody query={preview}>
@@ -25,7 +27,7 @@ export function DeleteData({
           <div data-testid="delete-data" className="flex flex-col gap-4">
             <div className="flex max-w-prose flex-col gap-2 text-foreground-secondary">
               {deletionWords(dataset, shown).map((sentence) => (
-                <p key={sentence}>{sentence}</p>
+                <Sentence key={sentence} words={sentence} />
               ))}
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -33,11 +35,7 @@ export function DeleteData({
                 trigger="Delete"
                 confirm="Delete now"
                 pending={deletion.isPending}
-                onConfirm={() =>
-                  deletion.mutate(undefined, {
-                    onSuccess: () => void navigate({ to: "/data" }),
-                  })
-                }
+                onConfirm={() => deletion.mutate()}
               />
               {deletion.error !== null && (
                 <p
@@ -52,5 +50,25 @@ export function DeleteData({
         )}
       </QueryBody>
     </Panel>
+  )
+}
+
+/** A trade date, which a line never breaks inside, at the hyphens it would break at otherwise. */
+const TRADE_DATE = /(\d{4}-\d{2}-\d{2})/
+
+/** A sentence of the card, each trade date in it kept whole. */
+function Sentence({ words }: Readonly<{ words: string }>) {
+  return (
+    <p>
+      {words.split(TRADE_DATE).map((part, index) =>
+        index % 2 === 1 ? (
+          <span key={index} className="whitespace-nowrap">
+            {part}
+          </span>
+        ) : (
+          part
+        )
+      )}
+    </p>
   )
 }

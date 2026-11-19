@@ -26,7 +26,8 @@ export function deletionWords(
 }
 
 function whatGoes(dataset: ImportedDataset, preview: DeletionPreview): string {
-  const records = `${LISTED.format(dataset.kinds)} from ${dataset.from} to ${dataset.to}`
+  const kinds = LISTED.format(dataset.kinds.map(inSentence))
+  const records = capitalized(`${kinds} from ${dataset.from} to ${dataset.to}`)
   const besides = [
     ...(preview.imported_files === 0
       ? []
@@ -36,6 +37,18 @@ function whatGoes(dataset: ImportedDataset, preview: DeletionPreview): string {
   return besides.length === 0
     ? `${records} are deleted.`
     : `${records} are deleted, with ${LISTED.format(besides)}.`
+}
+
+/** A kind of data as a sentence names it after its start: Trades as trades, while TBBO and
+ * 1-minute bars stay as they are. */
+function inSentence(kind: string): string {
+  return kind === kind.toUpperCase()
+    ? kind
+    : `${kind.charAt(0).toLowerCase()}${kind.slice(1)}`
+}
+
+function capitalized(sentence: string): string {
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}`
 }
 
 function importedFiles(files: number): string {

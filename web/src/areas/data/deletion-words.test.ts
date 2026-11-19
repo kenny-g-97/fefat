@@ -71,6 +71,14 @@ describe("deletionWords", () => {
     ])
   })
 
+  it("names a kind inside the sentence in lower case, but an acronym as it is", () => {
+    const held = { ...ES, kinds: ["1-minute bars", "TBBO", "Trades"] }
+
+    expect(deletionWords(held, aPreview({}))[0]).toBe(
+      "1-minute bars, TBBO, and trades from 2019-03-01 to 2026-06-19 are deleted."
+    )
+  })
+
   it("says the data alone where FEAT holds no copy and no report, and no saved run", () => {
     expect(deletionWords(ES, aPreview({}))).toEqual([
       "1-minute bars from 2019-03-01 to 2026-06-19 are deleted.",

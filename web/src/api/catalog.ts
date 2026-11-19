@@ -73,9 +73,15 @@ export function deletionQuery(provider: string, root: string) {
   })
 }
 
-/** Delete a provider's data of a root (step 5.18, ADR-0023); every read of the store is asked
- * again either way, since a delete refused part way has removed some of it. */
-export function useStoredDataDeletion(provider: string, root: string) {
+/** Delete a provider's data of a root (step 5.18, ADR-0023), then `leave` the page that showed
+ * it and ask every read of the store again, so that no read of the data deleted is asked from a
+ * page about it; a delete refused part way has removed some of it, so a refusal asks them again
+ * at once. */
+export function useStoredDataDeletion(
+  provider: string,
+  root: string,
+  leave: () => Promise<void>
+) {
   return useMutation({
     mutationFn: async () =>
       succeeded(
@@ -83,7 +89,11 @@ export function useStoredDataDeletion(provider: string, root: string) {
           params: { path: { provider, root } },
         })
       ),
-    onSettled: () => {
+    onSuccess: async () => {
+      await leave()
+      readTheStoreAgain()
+    },
+    onError: () => {
       readTheStoreAgain()
     },
   })
