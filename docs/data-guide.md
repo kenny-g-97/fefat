@@ -238,6 +238,19 @@ The app's import wizard runs the same imports as `fefat data import`, with the s
 
 **Import** starts the import as a job, which the jobs drawer and the review's card follow: it reads the file, writes the partitions, then writes the product's quality report. Once it has started writing it runs to its end, and Cancel no longer stops it, since a half-written import is finished only by importing the file again. The card ends on what was imported, with links to the dataset's page and its chart, and says that a new profile was kept for your next import, which then names it alone, or why it was not, though your records are imported. With several files, Import takes those whose own review says they import as they are, in one job, and writes each product's quality report once, at its end; the card then counts the files imported and lists each file left out with why, and Review the files left reads those and the files not imported again.
 
+## Deleting an instrument's data
+
+An instrument's data from one provider, a row of the Data page's list, can be deleted whole. At the end of its page, the card Delete this data says what goes: the kinds of data and their dates, FEAT's copies of the files they were imported from, and the quality report, and how many saved runs read the data. Delete then asks once more in its place, Delete now beside Keep, so that a double click keeps; once the data is gone you are back on the Data page. From a terminal:
+
+```powershell
+fefat data delete ninjatrader ES          # what a delete would remove; nothing is deleted
+fefat data delete ninjatrader ES --yes    # delete it
+```
+
+A delete removes every dataset of the instrument from that provider, of every kind, FEAT's copies under `raw\` of the files they were imported from with their entries in the raw manifest, the quality report, and the engine's cache of it. Your own files stay where you keep them, and import again afterwards as new files, under any settings: this is how a file imported with the wrong root, time zone, or profile comes in again, since a file is imported once, as its first import read it. The instrument from other providers, its saved specification, and your saved runs stay. A saved run that read the data keeps its record and its results, but explaining its trades and checking it again are refused, since its data is gone.
+
+A delete takes the whole row, never one file: an import merges each file into the partitions it shares with the others, so to take one file's records out, delete the row and import the other files again. A Databento batch that holds several products stays in `raw\` until the last of them is deleted, and importing it again adds nothing until then; the card and the command name such files. A delete is refused while a job is queued or running, or an import from a terminal writes, and while a chart, a notebook, or another program holds one of its files open: close it, and press Delete now again, or run the command again, which finishes the delete.
+
 ## Checking coverage and quality
 
 ```text

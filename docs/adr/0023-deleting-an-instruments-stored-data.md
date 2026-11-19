@@ -23,6 +23,7 @@ A merge leaves one file's records inseparable from another's in the shared parti
 - A Databento batch that fed several roots stays in `raw` until the last of them is deleted, and until then importing it again is a file imported before, which writes nothing: the deleted root comes back only from another file (`BACKLOG.md`).
 - A run read again after a delete is refused, as after a merge; running its strategy again on data imported anew gives a new run.
 - The lock keeps a delete and an import's writes apart; a reader takes none, so the server refuses a delete while any job runs, and a notebook reading the pair meanwhile may meet a missing file. A quality report written from a terminal in the same moment as a delete can be left behind with no data, and is replaced by the next report of the pair (`BACKLOG.md`).
+- The features' cache keeps its entries, keyed by the snapshots they read, which a read of data imported anew matches only where its files are the same bytes; `fefat cache features --prune` removes those no read used for a while.
 - The code is `fefat.market.stored_deletion`, `fefat.backtest.saved_runs` and `pinned_data`, `fefat data delete`, the catalog's service and routes, and the dataset's page.
 
 ## How we would know it is wrong
