@@ -86,8 +86,12 @@ class Record:
     trade_date: date
 
     def price(self, unit: int) -> int:
-        """A price on ES's tick, made up from the record's instant and place."""
-        return FIVE_THOUSAND + TICK * ((self.instant // unit + self.place) % 40)
+        """A price on ES's tick, made up from the record's instant and place, which comes back
+        at a place no sooner than 4,001 units later: at the 40 units it came back after before
+        step 5.16, prints a day apart were alike, and two files that overlap read as a file
+        read a day off (ADR-0024)."""
+        steps = self.instant // unit * 7_919 + self.place * 104_729
+        return FIVE_THOUSAND + TICK * (steps % 4_001)
 
 
 @dataclass(frozen=True)

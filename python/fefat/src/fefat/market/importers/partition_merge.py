@@ -18,12 +18,13 @@ contract load as two series, and one that overlaps the stored records in time wi
 record at one of their instants, as prints stamped finer than a second do when they are read
 under another time zone or stamping rule, which would store them twice. Bars, and prints stamped
 to the second, read a bar or whole hours off land on the stored instants instead and read as
-differing, which the import's default refuses. A third, since step 5.16: a file's bar dated
-otherwise than the stored bars around its instant, or a daily bar whose trade date the store
-holds at another open, since under one session calendar a bar's trade date follows from its
-instant, and such a bar was dated under another one; a merge would keep one session under two
-trade dates (ADR-0024). A merge also carries the stored partitions of its contract beside it
-(`StoredNeighbour`), which `fefat.market.importers.stored_neighbours` reads.
+differing, which the import's default refuses, and the offset rule whatever the import is told
+(`fefat.market.importers.stored_offset`, step 5.16). A third: a file's bar dated otherwise than
+the stored bars around its instant, or a daily bar whose trade date the store holds at another
+open, since under one session calendar a bar's trade date follows from its instant, and such a
+bar was dated under another one; a merge would keep one session under two trade dates (ADR-0024).
+A merge also carries the stored partitions of its contract beside it (`StoredNeighbour`), which
+`fefat.market.importers.stored_neighbours` reads and the offset rule compares against.
 
 Where a file gives its prints no sequence (`RecordIdentity.numbered_by_place`), the comparison
 leaves `sequence` out, a print's sequence is its place in its instant, and a print added to an
@@ -321,13 +322,15 @@ def whole_at_the_files_edges(
     part of: the file's first instant of the merge's contract, since a file that starts inside
     an instant reads like one that revises it, and its last where the store holds more prints
     than the file, which taking the file's would drop though the file never held them."""
-    edges = _edge_instants(partitions, clock)
+    edges = files_edges(partitions, clock)
     for merge in merges:
-        _require_whole_edge_instants(merge, *edges[merge.partition.contract])
+        refusal = edge_refusal(merge, edges)
+        if refusal is not None:
+            raise ValueError(refusal)
         yield merge
 
 
-def _edge_instants(
+def files_edges(
     partitions: Mapping[Partition, pl.DataFrame], clock: str
 ) -> dict[str, tuple[int, int]]:
     """The first and the last instant of each contract's records among a file's partitions."""
@@ -340,11 +343,16 @@ def _edge_instants(
     return edges
 
 
-def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -> None:
+def edge_refusal(merge: PartitionMerge, edges: Mapping[str, tuple[int, int]]) -> str | None:
+    """Why the merge of a file of prints numbered by their place, whose contracts' first and
+    last instants are `edges` (`files_edges`), is refused whatever the import is told
+    (`whole_at_the_files_edges`); none where it disputes no instant the file may hold part of.
+    The file import's check holds it back until the offset rule has spoken (ADR-0024)."""
+    first, last = edges[merge.partition.contract]
     instant, held = pl.col(merge.clock), merge.partition.relative_path()
     at_first = merge.differing.filter(instant == first).height
     if at_first:
-        raise ValueError(
+        return (
             f"Expected the file to start on a whole instant, since its prints carry no sequence "
             f"of their own and are told apart by their place in their instant, got {at_first:,} "
             f"at its first instant, {utc_text(first)}, that differ from the prints {held} holds "
@@ -356,7 +364,7 @@ def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -
     at_last = merge.differing.filter(instant == last).height
     stored = merge.kept.filter(instant == last).height if at_last else 0
     if stored > at_last:
-        raise ValueError(
+        return (
             f"Expected the file to hold its last instant, {utc_text(last)}, whole where its "
             f"prints differ from the ones {held} holds there, got {at_last:,} prints where the "
             f"store holds {stored:,}: taking a file that stops inside an instant would drop "
@@ -364,6 +372,7 @@ def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -
             "nothing was written. End the file at a later instant, so that it holds this one "
             "whole, or leave its records of this instant out."
         )
+    return None
 
 
 def _per_trade_date(rows: pl.DataFrame, partition: Partition) -> pl.DataFrame:

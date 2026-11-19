@@ -26,7 +26,7 @@ anywhere.
 """
 
 import hashlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path, PurePosixPath
@@ -56,8 +56,9 @@ from fefat.market.importers.partition_buffers import (
 )
 from fefat.market.importers.partition_merge import (
     DifferingRecords,
-    PartitionMerge,
     RecordIdentity,
+    edge_refusal,
+    files_edges,
     whole_at_the_files_edges,
 )
 from fefat.market.importers.profile_contracts import ImportFacts
@@ -225,28 +226,39 @@ class _FileMerge:
         """What the file adds to its dataset under `on_differing`, nothing written; a file the
         store cannot take is refused here, as is, whatever `on_differing` says, a file that
         shares no bar with the back-adjusted series the store holds of its dataset
-        (`require_one_price_basis`)."""
+        (`require_one_price_basis`). Prints numbered by their place that dispute an instant
+        their file may hold part of (`partition_merge.edge_refusal`) are refused once the tally
+        has spoken, since a file read hours off disputes every one of its seconds, and its
+        offset is what to fix (ADR-0024)."""
         tally = MergeTally(on_differing)
-        for merge in self._merges():
+        numbered_by_place = self.identity.numbered_by_place
+        edges = files_edges(self.partitions, self.identity.clock) if numbered_by_place else None
+        at_an_edge: str | None = None
+        for merge in self._buffers().rest():
             tally.add(merge)
+            if at_an_edge is None and edges is not None:
+                at_an_edge = edge_refusal(merge, edges)
         (added,) = tally.datasets()
+        if at_an_edge is not None:
+            raise ValueError(at_an_edge)
         adjusted = self.metadata.series is SeriesKind.CONTINUOUS_BACK_ADJUSTED
         if adjusted and self.store.list_partitions(added.dataset):
             require_one_price_basis(added)
         return added
 
     def write(self, differing: DifferingRecords) -> None:
-        """Write the partitions the file changes."""
-        write_merges(self.store, self._merges(), self.metadata, differing)
+        """Write the partitions the file changes; prints numbered by their place are refused
+        where they dispute an instant their file may hold part of, as the check found first."""
+        merges = self._buffers().rest()
+        if self.identity.numbered_by_place:
+            merges = whole_at_the_files_edges(merges, self.partitions, self.identity.clock)
+        write_merges(self.store, merges, self.metadata, differing)
 
-    def _merges(self) -> Iterator[PartitionMerge]:
-        """Each partition's merge, in both passes; prints numbered by their place are refused
-        where they dispute an instant their file may hold part of (`partition_merge`)."""
+    def _buffers(self) -> PartitionBuffers:
+        """The file's partitions in buffers of their own, which merge each in both passes."""
         buffers = PartitionBuffers(self.store, self.identity, self.metadata)
         buffers.add(self.partitions)
-        if not self.identity.numbered_by_place:
-            return buffers.rest()
-        return whole_at_the_files_edges(buffers.rest(), self.partitions, self.identity.clock)
+        return buffers
 
 
 def _raw_path(request: FileImportRequest, sha256: str) -> PurePosixPath:

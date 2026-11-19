@@ -15,7 +15,9 @@ ones, since snapshots pin it (D-11); an import that counts sizes in another unit
 dataset's, or holds another series kind (step 1.10), is refused, whether or not it adds a
 record. Each merge carries its contract's stored partitions beside it, which hold a partition
 new to the store to the contract's instrument id and every partition to their order in time
-(`fefat.market.importers.stored_neighbours`, step 5.16, ADR-0024).
+(`fefat.market.importers.stored_neighbours`), and the tally refuses, as it is read, a file whose
+records are the stored ones at another offset (`fefat.market.importers.stored_offset`, step
+5.16, ADR-0024).
 """
 
 from collections.abc import Iterable, Iterator, Mapping
@@ -35,6 +37,7 @@ from fefat.market.importers.partition_merge import (
 )
 from fefat.market.importers.report import DIFFERING_ADVICE, DatasetMerge, DayRecords
 from fefat.market.importers.stored_neighbours import StoredNeighbours
+from fefat.market.importers.stored_offset import offset_evidence, require_no_offset_from_the_store
 from fefat.market.layout import Dataset, DatasetMetadata, Partition, SizeUnit, YearMonth
 from fefat.market.store import Store
 
@@ -142,6 +145,7 @@ class _PartitionCounts:
     new_days: pl.DataFrame
     extended_days: pl.DataFrame
     differing_days: pl.DataFrame
+    offset_evidence: pl.DataFrame
 
 
 class MergeTally:
@@ -167,12 +171,18 @@ class MergeTally:
             new_days=gaining.filter(~on_a_held_day),
             extended_days=gaining.filter(on_a_held_day),
             differing_days=merge.differing_days(),
+            offset_evidence=offset_evidence(merge),
         )
         self._counted.setdefault(merge.partition.dataset, []).append(counts)
 
     def datasets(self) -> tuple[DatasetMerge, ...]:
-        """What the file adds to each dataset it reaches, sorted by the dataset's folder."""
+        """What the file adds to each dataset it reaches, sorted by the dataset's folder; a file
+        whose records in one of them are the stored ones at another offset is refused here,
+        whatever the import is told (`require_no_offset_from_the_store`)."""
         by_folder = sorted(self._counted, key=lambda dataset: dataset.relative_folder().as_posix())
+        for dataset in by_folder:
+            evidence = (each.offset_evidence for each in self._counted[dataset])
+            require_no_offset_from_the_store(dataset, evidence)
         return tuple(self._dataset_merge(dataset) for dataset in by_folder)
 
     def _dataset_merge(self, dataset: Dataset) -> DatasetMerge:
