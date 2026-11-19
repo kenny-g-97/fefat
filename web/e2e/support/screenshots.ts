@@ -8,6 +8,7 @@ const SAVED_PROJECTS: ReadonlySet<string> = new Set([
   "desktop-import",
   "desktop-import-next",
   "desktop-import-breaks",
+  "desktop-delete",
 ])
 
 /** Save the page as `test-results/screenshots/<name>.png`, which the ui-verifier reads and the
