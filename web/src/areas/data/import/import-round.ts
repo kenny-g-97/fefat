@@ -100,7 +100,8 @@ export function filesImporting(
  * none until every review of a file not skipped is read and each file that does not import has
  * a decision, a correction that lets it import or a skip (D-105), and none where no file
  * imports. A skipped file is never sent, even once a later choice lets it import, and its read
- * holds nothing back. */
+ * holds nothing back. The round takes records that differ where a file it sends was asked to
+ * take them, since any other file whose records differ is refused and waits (ADR-0021, D-106). */
 export function filesRequest(
   asks: readonly FileImportAsked[],
   states: readonly FileState[],
@@ -132,7 +133,9 @@ export function filesRequest(
     profile: first.profile,
     root: first.root,
     time_zone: first.time_zone,
-    differing: first.differing,
+    differing: sent.some((ask) => ask.differing === "take-file")
+      ? "take-file"
+      : "refuse",
     leaving_out_bars_in_breaks: sent
       .filter((ask) => ask.bars_in_breaks === "leave-out")
       .map((ask) => ask.source),

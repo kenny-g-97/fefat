@@ -37,7 +37,8 @@ function listed(...keys: string[]): ReviewsChange {
 
 function asked(
   uploadId: string,
-  barsInBreaks: FileImportAsked["bars_in_breaks"] = "refuse"
+  barsInBreaks: FileImportAsked["bars_in_breaks"] = "refuse",
+  differing: FileImportAsked["differing"] = "refuse"
 ): FileImportAsked {
   return {
     kind: "file",
@@ -46,7 +47,7 @@ function asked(
     contract: null,
     root: null,
     time_zone: null,
-    differing: "refuse",
+    differing,
     bars_in_breaks: barsInBreaks,
   }
 }
@@ -324,6 +325,22 @@ describe("filesRequest", () => {
         { kind: "upload", upload_id: "c" },
       ],
       leaving_out_bars_in_breaks: [{ kind: "upload", upload_id: "a" }],
+    })
+  })
+
+  it("takes the records that differ where a file it sends was chosen to take them, as any other it sends holds none (the ponytail review)", () => {
+    const taking = [asked("a"), asked("b", "refuse", "take-file"), asked("c")]
+    const importing = [
+      answered("imports"),
+      answered("imports"),
+      answered("imports"),
+    ]
+
+    expect(filesRequest(taking, importing, [])).toMatchObject({
+      differing: "take-file",
+    })
+    expect(filesRequest(taking, importing, ["b"])).toMatchObject({
+      differing: "refuse",
     })
   })
 

@@ -1,6 +1,7 @@
-import { type MouseEvent, useId } from "react"
+import { useId } from "react"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
+import { firstClick } from "./first-click"
 import type { Draft } from "./import-draft"
 import type { ImportRun } from "./import-run"
 import type { Step } from "./import-search"
@@ -95,14 +96,4 @@ function ImportWaits({
       {reason}
     </p>
   )
-}
-
-/** A press that acts on the first click alone, the keyboard's included, whose click counts
- * none. */
-function firstClick(act: () => void) {
-  return (event: MouseEvent) => {
-    if (event.detail <= 1) {
-      act()
-    }
-  }
 }

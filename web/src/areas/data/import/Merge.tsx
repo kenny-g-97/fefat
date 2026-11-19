@@ -3,6 +3,7 @@ import type { MergeSeen } from "@/api/imports"
 import { counted, formatCount } from "@/ui/figures"
 import { datasetName } from "../datasets"
 import { Options } from "./Decision"
+import { allCorrected } from "./import-decisions"
 import type { Draft, DraftChange } from "./import-draft"
 
 type MergeProps = Readonly<{ merge: MergeSeen; children?: ReactNode }>
@@ -44,25 +45,28 @@ export function Merge({ merge, children }: MergeProps) {
 
 type RecordsChoiceProps = Readonly<{
   subject: "file" | "batch"
+  files: readonly string[]
   disputed: number
   draft: Draft
   change: Dispatch<DraftChange>
 }>
 
 /** Where the records of the one file or batch the review shows differ from the stored ones
- * (plan call 8; D-106): the choice, imported with its records in place of the `disputed`
- * stored ones, over every dataset the import writes, which cannot be undone once imported, or
- * not imported, chosen at the start, since it is what happens if nothing is chosen. A round asks
- * it under its rows instead (`RoundDecisions`). */
+ * (plan call 8; D-106), `files` by its upload's id or its path: the choice, imported with its
+ * records in place of the `disputed` stored ones, over every dataset the import writes, which
+ * cannot be undone once imported, or not imported, chosen at the start, since it is what happens
+ * if nothing is chosen; a batch's box names it (`Decision`), the file's choice is named here. A
+ * round asks it under its rows instead (`RoundDecisions`). */
 export function RecordsChoice({
   subject,
+  files,
   disputed,
   draft,
   change,
 }: RecordsChoiceProps) {
   return (
     <Options
-      label="Records that differ"
+      label={subject === "file" ? "Records that differ" : undefined}
       options={[
         {
           value: "take-file",
@@ -76,8 +80,13 @@ export function RecordsChoice({
             "It stays refused for these records, and nothing is written.",
         },
       ]}
-      value={draft.differing}
-      onChange={(differing) => change({ kind: "differing", differing })}
+      value={allCorrected(files, draft.recordsTaken) ? "take-file" : "refuse"}
+      onChange={(chosen) =>
+        change({
+          kind: "records taken",
+          files: chosen === "take-file" ? files : [],
+        })
+      }
       testId="records-choice"
     />
   )

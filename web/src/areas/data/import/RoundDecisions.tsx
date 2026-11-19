@@ -1,15 +1,14 @@
 import type { Dispatch } from "react"
 import { Button } from "@/ui/button"
 import { Decision, Options } from "./Decision"
+import { firstClick } from "./first-click"
 import { useFocusAfterPress } from "./focus-after-press"
 import {
   decisionWords,
   type RoundDecision,
-  roundDecisions,
   skipAction,
 } from "./import-decisions"
 import type { Draft, DraftChange } from "./import-draft"
-import type { ReviewedFile } from "./import-round"
 
 /** Each kind's box, by its test id. */
 const TEST_IDS: Readonly<Record<RoundDecision["problem"], string>> = {
@@ -19,58 +18,47 @@ const TEST_IDS: Readonly<Record<RoundDecision["problem"], string>> = {
 }
 
 type RoundDecisionsProps = Readonly<{
-  files: readonly ReviewedFile[]
+  decisions: readonly RoundDecision[]
   draft: Draft
   change: Dispatch<DraftChange>
 }>
 
-/** Under a round's rows, once each file is read (web/DESIGN.md, Patterns, Review; D-106): a
- * box for each kind of problem the round's files share, bars in a break, then records that
- * differ, then the files no correction fits, each answered once for every file of its kind. */
-export function RoundDecisions({ files, draft, change }: RoundDecisionsProps) {
-  return roundDecisions(files, draft).map((decision) => {
+/** Under a round's rows (web/DESIGN.md, Patterns, Review; D-106): a box for each kind of problem
+ * the round's files share, bars in a break, then records that differ, then the files no
+ * correction fits, each answered once for every file of its kind (`roundDecisions`). */
+export function RoundDecisions({
+  decisions,
+  draft,
+  change,
+}: RoundDecisionsProps) {
+  return decisions.map((decision) => {
     const words = decisionWords(decision)
     const testId = TEST_IDS[decision.problem]
-    const problem = decision.problem
-    if (problem === "not correctable") {
-      return (
-        <Decision
-          key={problem}
-          title={words.title}
-          message={words.message}
-          notes={words.notes}
-          testId={testId}
-        >
-          <SkipAll decision={decision} draft={draft} change={change} />
-        </Decision>
-      )
-    }
     return (
       <Decision
-        key={problem}
+        key={decision.problem}
         title={words.title}
         message={words.message}
         notes={words.notes}
         testId={testId}
       >
-        <Options
-          label={words.title}
-          options={words.options.map(({ answer, label, description }) => ({
-            value: answer,
-            label,
-            description,
-          }))}
-          value={decision.answer}
-          onChange={(answer) =>
-            change({
-              kind: "decided",
-              problem,
-              files: decision.files,
-              answer,
-            })
-          }
-          testId={`${testId}-options`}
-        />
+        {decision.problem === "not correctable" ? (
+          <SkipAll decision={decision} draft={draft} change={change} />
+        ) : (
+          <Options
+            options={words.options}
+            value={decision.answer}
+            onChange={(answer) =>
+              change({
+                kind: "decided",
+                problem: decision.problem,
+                files: decision.files,
+                answer,
+              })
+            }
+            testId={`${testId}-options`}
+          />
+        )}
       </Decision>
     )
   })
@@ -83,8 +71,9 @@ type SkipAllProps = Readonly<{
 }>
 
 /** The one action of the box of the files no correction fits: Skip for those not skipped yet,
- * then the way back for them all, each taking the focus from the other it replaces. A skip asks
- * for no confirmation, since it writes nothing and one click takes it back. */
+ * then the way back for them all, each taking the focus from the other it replaces, and acting
+ * on a double click's first click alone. A skip asks for no confirmation, since it writes
+ * nothing and one click takes it back. */
 function SkipAll({ decision, draft, change }: SkipAllProps) {
   const [button, focusNext] = useFocusAfterPress()
   const kept = decision.files.filter((file) => !draft.skipped.includes(file))
@@ -95,7 +84,7 @@ function SkipAll({ decision, draft, change }: SkipAllProps) {
       variant="ghost"
       size="sm"
       className="self-start"
-      onClick={() => {
+      onClick={firstClick(() => {
         focusNext()
         change({
           kind: "skipped",
@@ -104,7 +93,7 @@ function SkipAll({ decision, draft, change }: SkipAllProps) {
               ? [...draft.skipped, ...kept]
               : draft.skipped.filter((file) => !decision.files.includes(file)),
         })
-      }}
+      })}
     >
       {skipAction(decision)}
     </Button>

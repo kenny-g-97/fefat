@@ -2,6 +2,7 @@ import type { Dispatch } from "react"
 import { Button } from "@/ui/button"
 import { counted } from "@/ui/figures"
 import { type AsideTone, DisclosureRow } from "../DisclosureRow"
+import { roundDecisions } from "./import-decisions"
 import type { Draft, DraftChange } from "./import-draft"
 import {
   type FileState,
@@ -72,11 +73,12 @@ type FilesReviewProps = Readonly<{
 /** What the import of several files would do (web/DESIGN.md, Patterns, Review, several
  * files; D-102): how many are read, then how many import as they are, with a line for each
  * other outcome and for the files skipped, and Try again, which reads the failed files again; a
- * row per file, which opens to its own review; and once each file is read, a decision on each
- * that does not import (D-105), a box for each kind of problem, answered once for every file of
- * the kind (D-106), with no count of the stored records that give way, since two files of one
- * contract dispute the same ones: each file's own box counts its own, and the sum is the
- * import's to give. */
+ * row per file, which opens to its own review, ending on its skip where the file waits for a
+ * decision or stands in a box; and once each file is read, a decision on each that does not
+ * import (D-105), a box for each kind of problem, answered once for every file of the kind
+ * (D-106), with no count of the stored records that give way, since two files of one contract
+ * dispute the same ones: each file's own box counts its own, and the sum is the import's to
+ * give. */
 export function FilesReview({
   files,
   tryAgain,
@@ -92,6 +94,8 @@ export function FilesReview({
     ({ state }) => shownState(state).kind !== "reading"
   ).length
   const toDecide = filesToDecide(files, skipped).map(({ upload }) => upload.id)
+  const decisions = roundDecisions(files, draft)
+  const boxed = decisions.flatMap((decision) => decision.files)
   return (
     <div className="flex flex-col gap-4">
       {read < files.length ? (
@@ -127,7 +131,8 @@ export function FilesReview({
             skipped={skipped.includes(file.upload.id)}
             decides={
               skipped.includes(file.upload.id) ||
-              toDecide.includes(file.upload.id)
+              toDecide.includes(file.upload.id) ||
+              boxed.includes(file.upload.id)
             }
             draft={draft}
             change={change}
@@ -135,9 +140,7 @@ export function FilesReview({
           />
         ))}
       </div>
-      {read === files.length && (
-        <RoundDecisions files={files} draft={draft} change={change} />
-      )}
+      <RoundDecisions decisions={decisions} draft={draft} change={change} />
     </div>
   )
 }
@@ -189,9 +192,9 @@ type FileRowProps = Readonly<{
 
 /** A file's row: its name, its records, and its outcome in its sign's colour, with what stops
  * it under its name, where something does (D-105), opening to its own review, or for a file not
- * read to why, which ends on Skip this file where the file waits for a decision; a skipped row
- * reads Skipped, quiet; and while it is read again after a change, its last review, marked as
- * one to read again. */
+ * read to why, which ends on Skip this file where the file `decides`; a skipped row reads
+ * Skipped, quiet; and while it is read again after a change, its last review and what stopped
+ * it, marked as one to read again, so that the boxes under the rows hold still. */
 function FileRow({
   file,
   skipped,
@@ -203,7 +206,7 @@ function FileRow({
   const { upload, state } = file
   const shown = shownState(state)
   const aside = skipped ? SKIPPED : asideOf(state, outcomeOf(shown))
-  const reason = skipped ? null : whyNot(state, zone)
+  const reason = skipped ? null : whyNot(shown, zone)
   const skip = (
     <SkipFile
       file={upload.id}

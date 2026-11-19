@@ -96,6 +96,7 @@ export function FileReview({
               </p>
               <RecordsChoice
                 subject="file"
+                files={filesOf(draft.source)}
                 disputed={seen.merge.stored_records_disputed}
                 draft={draft}
                 change={change}
@@ -147,6 +148,7 @@ export function BatchReview({
         >
           <RecordsChoice
             subject="batch"
+            files={filesOf(draft.source)}
             disputed={disputed}
             draft={draft}
             change={change}

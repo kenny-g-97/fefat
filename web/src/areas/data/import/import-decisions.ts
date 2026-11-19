@@ -1,7 +1,8 @@
 import type { FileSeen } from "@/api/imports"
 import { counted, formatCount } from "@/ui/figures"
+import type { DecisionOption } from "./Decision"
 import type { Answer, Correctable, Draft } from "./import-draft"
-import { shownState } from "./import-reviews"
+import { type Outcome, outcomeOf, shownState } from "./import-reviews"
 import { filesToDecide, type ReviewedFile } from "./import-round"
 
 /** A kind of problem a round's files share, each asked in a box of its own under the round's
@@ -10,13 +11,21 @@ import { filesToDecide, type ReviewedFile } from "./import-round"
 export type Problem = Correctable | "not correctable"
 
 /** A box under a round's rows: its kind, its files by their uploads' ids, skipped or not, how
- * many of them are skipped, and its answer, none until one is given. */
-export type RoundDecision = Readonly<{
-  problem: Problem
-  files: readonly string[]
-  skipped: number
-  answer: Answer | null
-}>
+ * many of them are skipped, and its answer, none until one is given, a skip alone for the files
+ * no correction fits. */
+export type RoundDecision =
+  | Readonly<{
+      problem: Correctable
+      files: readonly string[]
+      skipped: number
+      answer: Answer | null
+    }>
+  | Readonly<{
+      problem: "not correctable"
+      files: readonly string[]
+      skipped: number
+      answer: "skipped" | null
+    }>
 
 /** Whether leaving out a file's bars in a break lets it import, or left them out already
  * (ADR-0022). */
@@ -32,15 +41,20 @@ export function differs(seen: FileSeen): boolean {
   return seen.merge !== null && seen.merge.records_differing > 0
 }
 
-/** The boxes a round asks once its files are read, in their order, each kind by its files'
+/** The boxes a round asks once every file is read, in their order, each kind by its files'
  * reviews or, while they are read again, their last ones (D-106). A file read without its bars
- * that then differs stands in both of the first two boxes; a skipped file stays in its box. A
- * box is answered skipped where each of its files is skipped, corrected where each of the
- * others carries the correction, as the draft holds it, and not at all otherwise. */
+ * that then differs stands in both of the first two boxes; a file its box's correction leaves
+ * refused stands in the box of the files no correction fits as well, so that its skip is
+ * offered; a skipped file stays in its box. A box is answered skipped where each of its files is
+ * skipped, corrected where each of the others carries the correction, its bars left out or its
+ * records taken as the draft holds them for that file, and not at all otherwise. */
 export function roundDecisions(
   files: readonly ReviewedFile[],
   draft: Draft
 ): readonly RoundDecision[] {
+  if (files.some(({ state }) => shownState(state).kind === "reading")) {
+    return []
+  }
   const fitting = (fits: (seen: FileSeen) => boolean) =>
     files.flatMap(({ upload, state }) => {
       const shown = shownState(state)
@@ -52,20 +66,16 @@ export function roundDecisions(
     })
   const bars = fitting(correctsBars)
   const differing = fitting(differs)
-  const others = filesToDecide(files, [])
-    .map(({ upload }) => upload.id)
-    .filter((file) => !bars.includes(file) && !differing.includes(file))
+  const explained = (file: string, outcome: Outcome | null) =>
+    (outcome === "bars_in_breaks" && bars.includes(file)) ||
+    (outcome === "differing" && differing.includes(file))
+  const others = filesToDecide(files, []).flatMap(({ upload, state }) =>
+    explained(upload.id, outcomeOf(shownState(state))) ? [] : [upload.id]
+  )
   return [
-    decisionOf("bars in breaks", bars, draft.skipped, (file) =>
-      draft.breaksLeftOut.includes(file)
-    ),
-    decisionOf(
-      "differing",
-      differing,
-      draft.skipped,
-      () => draft.differing === "take-file"
-    ),
-    decisionOf("not correctable", others, draft.skipped, () => false),
+    decisionOf("bars in breaks", bars, draft.skipped, draft.breaksLeftOut),
+    decisionOf("differing", differing, draft.skipped, draft.recordsTaken),
+    decisionOf("not correctable", others, draft.skipped, []),
   ].filter((decision) => decision.files.length > 0)
 }
 
@@ -73,33 +83,37 @@ function decisionOf(
   problem: Problem,
   files: readonly string[],
   skipped: readonly string[],
-  carriesTheCorrection: (file: string) => boolean
+  corrected: readonly string[]
 ): RoundDecision {
   const kept = files.filter((file) => !skipped.includes(file))
-  const answer =
-    kept.length === 0
-      ? "skipped"
-      : kept.every(carriesTheCorrection)
-        ? "corrected"
-        : null
-  return { problem, files, skipped: files.length - kept.length, answer }
+  const count = files.length - kept.length
+  if (kept.length === 0) {
+    return { problem, files, skipped: count, answer: "skipped" }
+  }
+  if (problem === "not correctable" || !allCorrected(kept, corrected)) {
+    return { problem, files, skipped: count, answer: null }
+  }
+  return { problem, files, skipped: count, answer: "corrected" }
 }
 
-/** An option of a box: its answer, named by what happens to the files, then what it does. */
-export type OptionWords = Readonly<{
-  answer: Answer
-  label: string
-  description: string
-}>
+/** Whether each of `files`, one or more, carries the correction `corrected` holds: its bars left
+ * out, or its records taken. */
+export function allCorrected(
+  files: readonly string[],
+  corrected: readonly string[]
+): boolean {
+  return files.length > 0 && files.every((file) => corrected.includes(file))
+}
 
 /** What a box says (web/DESIGN.md, Patterns, Decision): its title, what its files share and
- * what to check, its options, none for the files no correction fits, and its notes: how many
- * of its files are skipped, where some are and some not, and, once the bars are left out, what
- * the calendar check lists. */
+ * what to check, its options, each its answer named by what happens to the files, then what it
+ * does, none for the files no correction fits, and its notes: how many of its files are skipped,
+ * where some are and some not, or that they are, where no option shows it, and, once the bars
+ * are left out, what the calendar check lists. */
 export type DecisionWords = Readonly<{
   title: string
   message: string
-  options: readonly OptionWords[]
+  options: readonly DecisionOption<Answer>[]
   notes: readonly string[]
 }>
 
@@ -121,7 +135,13 @@ function notesOf(decision: RoundDecision): string[] {
       ? [
           `${formatCount(skipped)} of these ${counted(files, "file")} ${skipped === 1 ? "is" : "are"} skipped.`,
         ]
-      : []
+      : decision.problem === "not correctable" && skipped === files
+        ? [
+            files === 1
+              ? "The file is skipped."
+              : `These ${counted(files, "file")} are skipped.`,
+          ]
+        : []
   const leftOut =
     decision.problem === "bars in breaks" && decision.answer === "corrected"
       ? [
@@ -137,15 +157,15 @@ function barsWords(files: number): AskedWords {
   const one = files === 1
   return {
     title: `${counted(files, "file")} ${one ? "holds" : "hold"} bars in a break`,
-    message: `${one ? "This file holds" : "These files hold"} bars at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early. Its own chart shows the same times, so check those sessions against another source if you can.`,
+    message: `${one ? "This file holds" : "These files hold"} bars at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early. Its own chart shows the same times, so check the sessions ${one ? "its row lists" : "each file's row lists"} against another source if you can.`,
     options: [
       {
-        answer: "corrected",
+        value: "corrected",
         label: `Import ${one ? "it" : "them"} without those bars`,
         description: `FEAT leaves out those bars and the sessions that go with them, and imports the rest of ${one ? "the file. Its row lists what goes." : "each file. Each file's row lists what goes."}`,
       },
       {
-        answer: "skipped",
+        value: "skipped",
         label: one ? "Skip it" : "Skip them",
         description: one
           ? "The file is not imported."
@@ -160,16 +180,16 @@ function differingWords(files: number): AskedWords {
   return {
     title: `${counted(files, "file")} ${one ? "holds" : "hold"} records that differ from the ones FEAT holds`,
     message: one
-      ? "Where the file is an export, check its profile's time zone and bar stamping under Layout first. Where it holds a vendor's correction, its records should replace the stored ones."
+      ? RECORDS_MESSAGE.file
       : "Where the files are exports, check their profile's time zone and bar stamping under Layout first. Where they hold a vendor's correction, their records should replace the stored ones.",
     options: [
       {
-        answer: "corrected",
+        value: "corrected",
         label: `Import ${one ? "it" : "them"} and replace the stored records`,
         description: `${one ? "The file's" : "The files'"} records take the place of the stored ones they differ from. Once imported, this cannot be undone.`,
       },
       {
-        answer: "skipped",
+        value: "skipped",
         label: one ? "Skip it" : "Skip them",
         description: one
           ? "The file is not imported, and the stored records stay."
@@ -192,15 +212,24 @@ function notCorrectableWords(files: number): AskedWords {
   }
 }
 
-/** The button of the box of the files no correction fits: Skip for those not skipped yet, and
- * once each is, the way back for them all. */
+/** The button of the box of the files no correction fits: Skip for those not skipped yet, the
+ * others where some are, and once each is, the way back for them all. */
 export function skipAction(decision: RoundDecision): string {
-  const left = decision.files.length - decision.skipped
-  if (left > 0) {
-    return `Skip the ${counted(left, "file")}`
+  const files = decision.files.length
+  const left = files - decision.skipped
+  if (left === 0) {
+    return files === 1 ? "Do not skip it" : "Do not skip them"
   }
-  return decision.files.length === 1 ? "Do not skip it" : "Do not skip them"
+  const other = decision.skipped > 0 ? "other " : ""
+  return left === 1
+    ? `Skip the ${other}file`
+    : `Skip the ${other}${formatCount(left)} files`
 }
+
+/** What bars in a break mean and what to check, where the review shows one file, whose box
+ * lists the sessions beside them (ADR-0022). */
+export const BARS_MESSAGE =
+  "These bars are stamped at times when the market is closed, the last one closing at the next session's open: a sign that the platform stamped a stretch of bars early. Its own chart shows the same times, so check these sessions against another source if you can."
 
 /** What to check first where records differ from the stored ones, for one file or a batch. */
 export const RECORDS_MESSAGE = {

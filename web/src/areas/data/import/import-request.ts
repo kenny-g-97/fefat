@@ -56,6 +56,7 @@ export function asksOf(
     ...first,
     source: each,
     contract: null,
+    differing: recordsOf(draft, each),
     bars_in_breaks: barsInBreaksOf(draft, each),
   }))
   return { ...asks, review: null, several }
@@ -76,7 +77,7 @@ function batchAsks(draft: Draft, source: AskedSource | undefined): Asks {
   const review: ReviewAsked = {
     kind: "databento",
     source,
-    differing: draft.differing,
+    differing: recordsOf(draft, source),
   }
   return { table: null, review, several: [], missing: [] }
 }
@@ -181,7 +182,7 @@ function fileFields(
     source,
     contract: blankAsNull(draft.contract),
     root: blankAsNull(draft.root),
-    differing: draft.differing,
+    differing: recordsOf(draft, source),
     bars_in_breaks: barsInBreaksOf(draft, source),
   }
 }
@@ -195,13 +196,22 @@ function barsInBreaksOf(
   return draft.breaksLeftOut.includes(fileOf(source)) ? "leave-out" : "refuse"
 }
 
+/** Whether the import takes the records of the file or batch `source` that differ from the
+ * stored ones in their place, as the trader chose for that file (ADR-0021, D-106). */
+function recordsOf(
+  draft: Draft,
+  source: AskedSource
+): FileImportAsked["differing"] {
+  return draft.recordsTaken.includes(fileOf(source)) ? "take-file" : "refuse"
+}
+
 /** The file `source` names, by its upload's id or its path. */
 export function fileOf(source: AskedSource): string {
   return source.kind === "upload" ? source.upload_id : source.path
 }
 
 /** The files `source` names, each by its upload's id or its path, as the draft names the
- * files whose bars in a break are left out. */
+ * files whose records are taken or whose bars in a break are left out. */
 export function filesOf(source: Source): readonly string[] {
   return sourcesOf(source).map(fileOf)
 }

@@ -2,6 +2,7 @@ import type { Dispatch, ReactNode } from "react"
 import type { BreaksSeen } from "@/api/imports"
 import { counted, formatCount } from "@/ui/figures"
 import { Options } from "./Decision"
+import { allCorrected, BARS_MESSAGE } from "./import-decisions"
 import type { Draft, DraftChange } from "./import-draft"
 import { barsLine, listedDates } from "./import-outcomes"
 
@@ -48,16 +49,10 @@ type BarsChoiceProps = Readonly<{
  * is chosen; once they are left out, what the calendar check lists. A round asks it under its
  * rows instead (`RoundDecisions`). */
 export function BarsChoice({ files, records, draft, change }: BarsChoiceProps) {
-  const others = draft.breaksLeftOut.filter((file) => !files.includes(file))
-  const leftOut = files.every((file) => draft.breaksLeftOut.includes(file))
+  const leftOut = allCorrected(files, draft.breaksLeftOut)
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-foreground-secondary">
-        These bars are stamped at times when the market is closed, the last one
-        closing at the next session's open: a sign that the platform stamped a
-        stretch of bars early. Its own chart shows the same times, so check
-        these sessions against another source if you can.
-      </p>
+      <p className="text-foreground-secondary">{BARS_MESSAGE}</p>
       <Options
         label="Bars in a break"
         options={[
@@ -77,7 +72,7 @@ export function BarsChoice({ files, records, draft, change }: BarsChoiceProps) {
         onChange={(chosen) =>
           change({
             kind: "bars in breaks",
-            files: chosen === "leave-out" ? [...others, ...files] : others,
+            files: chosen === "leave-out" ? files : [],
           })
         }
         testId="bars-choice"
