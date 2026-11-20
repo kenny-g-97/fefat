@@ -139,7 +139,7 @@ def save(name: str, code: str, *, hypothesis: str, changelog: str = "") -> Strat
     writing nothing; the name and the hypothesis are checked before the code runs (module
     docstring)."""
     strategies_dir = resolve_paths(os.environ).strategies_dir
-    folder = _folder_in(strategies_dir, name)
+    folder = strategy_folder(strategies_dir, name)
     stated = _stated(hypothesis)
     definition = from_source(code)
     strategy = definition.with_defaults
@@ -239,7 +239,7 @@ def load_in(strategies_dir: Path, name: str, version: int) -> StrategyVersion:
     """The saved version `version` of the strategy `name` in `strategies_dir`, refused when its
     file holds another strategy or version, or when its content no longer gives its hash; its
     code is read, never run."""
-    path = _folder_in(strategies_dir, name) / f"v{version}.json"
+    path = strategy_folder(strategies_dir, name) / f"v{version}.json"
     if not path.is_file():
         raise FileNotFoundError(
             f"Expected version {version} of strategy {name} at {path}, got no such file."
@@ -296,7 +296,7 @@ def diff(name: str, earlier: int, later: int) -> str:
     )
 
 
-def _folder_in(strategies_dir: Path, name: str) -> Path:
+def strategy_folder(strategies_dir: Path, name: str) -> Path:
     """The folder of the strategy `name`'s versions in `strategies_dir`, refused unless `name` is
     a strategy's (`STRATEGY_NAME`) and no name Windows keeps for a device, so that no name reaches
     outside the folder of strategies."""
