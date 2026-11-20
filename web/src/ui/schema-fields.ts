@@ -182,10 +182,23 @@ function parameterField(
       ? typeof initial === "string"
       : typeof initial === "number"
   return fits
-    ? { kind: type, name, initial: String(initial), description }
+    ? { kind: type, name, initial: shownDefault(type, initial), description }
     : unreadable(
         `Expected a default of type ${type} for ${name}, got ${String(initial)}.`
       )
+}
+
+/** A default as the code writes it: a float that is whole keeps its point, `30.0`, which JSON's
+ * `30` hides, so that a float and a whole number never look alike. */
+function shownDefault(
+  type: "integer" | "number" | "string",
+  initial: ParameterValue
+): string {
+  return type === "number" &&
+    typeof initial === "number" &&
+    Number.isInteger(initial)
+    ? initial.toFixed(1)
+    : String(initial)
 }
 
 /** The values a `Literal`'s property offers: its `enum`'s, or its one `const`'s; null for a

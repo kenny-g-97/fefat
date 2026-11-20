@@ -70,7 +70,7 @@ describe("parameterFields", () => {
           {
             kind: "number",
             name: "oversold",
-            initial: "30",
+            initial: "30.0",
             description: null,
           },
           {
