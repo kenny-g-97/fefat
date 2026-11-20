@@ -16,7 +16,8 @@ export type StrategyVerdict =
   | components["schemas"]["RefusedCode"]
 type NewStrategy = components["schemas"]["NewStrategy"]
 type NewVersion = components["schemas"]["NewStrategyVersionRequest"]
-type MarkAsked = components["schemas"]["AbandonedMarkRequest"]
+/** Where a strategy broke and its lesson, as a mark asks them. */
+export type MarkAsked = components["schemas"]["AbandonedMarkRequest"]
 
 /** The saved strategies by name, each with its versions, its abandoned mark, and when it last
  * ran; the server indexes the library first, so a version a notebook saved is listed (step

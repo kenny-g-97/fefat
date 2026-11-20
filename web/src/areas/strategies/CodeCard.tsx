@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router"
+import { useLocation, useNavigate } from "@tanstack/react-router"
 import { ApiProblem } from "@/api/problems"
 import {
   type IndexedStrategy,
@@ -18,20 +18,26 @@ import {
   type SaveRefusal,
 } from "./code-notes"
 import { CodeVerdict } from "./CodeVerdict"
-import { SaveVersion } from "./SaveVersion"
+import { type DraftState, SaveVersion } from "./SaveVersion"
 import { forgetDraft, useStrategyDraft } from "./strategy-drafts"
 
 type CodeCardProps = Readonly<{
   strategy: IndexedStrategy
   version: SavedStrategyVersion
+  editorFocusRequests: number
 }>
 
 /** A version's code in the editor (web/DESIGN.md, Patterns, Strategy page), the draft kept in this
  * browser until it is saved or discarded: Validate builds the code in the server's executor and
  * underlines its refusal at its line, the saved code shows its version's warnings, and Save as
- * new version saves the draft with its hypothesis and changelog, then opens the version saved. */
-export function CodeCard({ strategy, version }: CodeCardProps) {
-  const { draft, change, discard } = useStrategyDraft(
+ * new version saves the draft with its hypothesis and changelog, then opens the version saved,
+ * which says so. Validate waits while a save runs, since it would take the save's answer back. */
+export function CodeCard({
+  strategy,
+  version,
+  editorFocusRequests,
+}: CodeCardProps) {
+  const { draft, change, discard, discarded, undoDiscard } = useStrategyDraft(
     strategy.name,
     version.version,
     { code: version.code, hypothesis: version.hypothesis, changelog: "" }
@@ -39,6 +45,7 @@ export function CodeCard({ strategy, version }: CodeCardProps) {
   const validation = useStrategyValidation()
   const save = useVersionSave(strategy.id)
   const navigate = useNavigate()
+  const opened = useLocation({ select: (location) => location.state.saved })
   const verdict =
     validation.status === "success"
       ? { code: validation.variables, answer: validation.data }
@@ -51,6 +58,16 @@ export function CodeCard({ strategy, version }: CodeCardProps) {
     verdict.answer.verdict === "valid"
       ? verdict.answer
       : null
+  const state = draftState(
+    draft.code !== version.code,
+    save.isPending,
+    discarded,
+    opened !== undefined &&
+      opened.strategy === strategy.name &&
+      opened.version === version.version
+      ? version.version
+      : null
+  )
   const saveVersion = () => {
     validation.reset()
     save.mutate(
@@ -65,6 +82,7 @@ export function CodeCard({ strategy, version }: CodeCardProps) {
           void navigate({
             to: "/strategies/strategy",
             search: { name: saved.name, version: saved.version },
+            state: { saved: { strategy: saved.name, version: saved.version } },
           })
         },
       }
@@ -73,25 +91,21 @@ export function CodeCard({ strategy, version }: CodeCardProps) {
   return (
     <Panel
       title="Code"
-      description={`Version ${version.version}, saved ${formatInstant(version.created_at)}`}
+      description={`Version ${version.version} of ${strategy.versions.length}, saved ${formatInstant(version.created_at)}`}
       action={
         <IdentityChip testId="version-hash">
           {version.hash.slice(0, 12)}
         </IdentityChip>
       }
     >
-      <div className="flex flex-col gap-3">
-        <CodeEditor
-          label={`Code of ${strategy.name}`}
-          code={draft.code}
-          onChange={(code) => change({ ...draft, code })}
-          notes={editorNotes(lines)}
-        />
-        <p className="text-xs text-muted-foreground">
-          Tab indents. Press Escape, then Tab, to leave the editor.
-        </p>
-      </div>
-      <div className="flex items-start justify-between gap-4">
+      <CodeEditor
+        label={`Code of ${strategy.name}`}
+        code={draft.code}
+        onChange={(code) => change({ ...draft, code })}
+        notes={editorNotes(lines)}
+        focusRequests={editorFocusRequests}
+      />
+      <div className="flex items-baseline justify-between gap-4">
         <CodeVerdict
           lines={lines}
           valid={valid}
@@ -100,7 +114,7 @@ export function CodeCard({ strategy, version }: CodeCardProps) {
         />
         <Button
           variant="ghost"
-          disabled={validation.isPending}
+          disabled={validation.isPending || save.isPending}
           onClick={() => {
             save.reset()
             validation.mutate(draft.code)
@@ -111,17 +125,43 @@ export function CodeCard({ strategy, version }: CodeCardProps) {
       </div>
       <SaveVersion
         draft={draft}
-        edited={draft.code !== version.code}
-        saving={save.isPending}
+        state={state}
         refused={
-          save.error === null || refusal !== null ? null : save.error.message
+          save.error === null ||
+          refusal !== null ||
+          save.variables?.code !== draft.code
+            ? null
+            : save.error.message
         }
         onChange={change}
         onDiscard={discard}
+        onUndoDiscard={undoDiscard}
         onSave={saveVersion}
       />
     </Panel>
   )
+}
+
+/** Where the draft stands: saving, edited, just discarded, the version a save just opened,
+ * `opened`, or the version's own code. */
+function draftState(
+  edited: boolean,
+  saving: boolean,
+  discarded: boolean,
+  opened: number | null
+): DraftState {
+  if (saving) {
+    return { kind: "saving" }
+  }
+  if (edited) {
+    return { kind: "edited" }
+  }
+  if (discarded) {
+    return { kind: "discarded" }
+  }
+  return opened === null
+    ? { kind: "unchanged" }
+    : { kind: "saved", version: opened }
 }
 
 /** A save the SDK refused at a line of the code it was given, which the editor underlines; a

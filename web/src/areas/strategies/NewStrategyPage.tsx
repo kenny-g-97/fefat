@@ -40,6 +40,9 @@ export function NewStrategyPage() {
   )
 }
 
+/** The template chosen and the create, which outlives a change of template, so the choice waits
+ * while a create runs: the strategy's page opens once it is saved, and a refusal stays with the
+ * template it refused. */
 function TemplateCard({
   templates,
 }: Readonly<{ templates: readonly StrategyTemplate[] }>) {
@@ -48,6 +51,7 @@ function TemplateCard({
     throw new Error("Expected the templates FEAT ships, got none.")
   }
   const [chosen, setChosen] = useState(first.name)
+  const creation = useStrategyCreation()
   const template = templates.find((each) => each.name === chosen)
   if (template === undefined) {
     throw new Error(`Expected the template ${chosen} among FEAT's, got none.`)
@@ -66,7 +70,11 @@ function TemplateCard({
               label: templateLabel(each.name),
             }))}
             value={template.name}
-            onChange={setChosen}
+            disabled={creation.isPending}
+            onChange={(name) => {
+              creation.reset()
+              setChosen(name)
+            }}
             testId="template-choice"
           />
         </div>
@@ -77,7 +85,11 @@ function TemplateCard({
           label={`Code of the ${templateLabel(template.name).toLowerCase()} template`}
           code={template.code}
         />
-        <CreateForm key={template.name} template={template} />
+        <CreateForm
+          key={template.name}
+          template={template}
+          creation={creation}
+        />
       </div>
     </Panel>
   )
@@ -85,9 +97,13 @@ function TemplateCard({
 
 const newStrategyForm = z.object({ name: strategyName })
 
-function CreateForm({ template }: Readonly<{ template: StrategyTemplate }>) {
+type CreateFormProps = Readonly<{
+  template: StrategyTemplate
+  creation: ReturnType<typeof useStrategyCreation>
+}>
+
+function CreateForm({ template, creation }: CreateFormProps) {
   const strategies = useQuery(strategiesQuery)
-  const creation = useStrategyCreation()
   const navigate = useNavigate()
   const form = useForm({
     resolver: zodResolver(newStrategyForm),

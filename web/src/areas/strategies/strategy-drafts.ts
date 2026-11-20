@@ -34,8 +34,9 @@ export function storedDraft(text: string | null): StrategyDraft | null {
 }
 
 /** The draft of version `version` of the strategy `name`: what this browser kept of it, or else
- * the version as `saved`, and the ways to change it and to discard it. A draft is kept while its
- * code differs from the version's, and forgotten once it does not and once discarded; a save
+ * the version as `saved`, and the ways to change it, to discard it, and to undo the discard
+ * until the next change, the discarded draft held in the page meanwhile. A draft is kept while
+ * its code differs from the version's, and forgotten once it does not and once discarded; a save
  * forgets it (`forgetDraft`). A browser that refuses its storage keeps the draft for the visit. */
 export function useStrategyDraft(
   name: string,
@@ -47,7 +48,9 @@ export function useStrategyDraft(
     const kept = keptText(key)
     return kept === null ? saved : kept
   })
+  const [discarded, setDiscarded] = useState<StrategyDraft | null>(null)
   const change = (next: StrategyDraft) => {
+    setDiscarded(null)
     setDraft(next)
     if (next.code === saved.code) {
       forgetDraft(name, version)
@@ -56,10 +59,17 @@ export function useStrategyDraft(
     keep(key, next)
   }
   const discard = () => {
+    setDiscarded(draft)
     forgetDraft(name, version)
     setDraft(saved)
   }
-  return { draft, change, discard }
+  const undoDiscard = () => {
+    if (discarded === null) {
+      throw new Error("Expected a draft discarded to bring back, got none.")
+    }
+    change(discarded)
+  }
+  return { draft, change, discard, discarded: discarded !== null, undoDiscard }
 }
 
 /** Forget the draft of version `version` of the strategy `name`, as its save does. */

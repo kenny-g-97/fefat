@@ -1,17 +1,24 @@
-import { type FormEvent, useRef, useState } from "react"
+import { type FormEvent, useEffect, useRef, useState } from "react"
 import { Button } from "@/ui/button"
-import { InlineConfirmation } from "@/ui/inline-confirmation"
 import { Input } from "@/ui/input"
 import { Label } from "@/ui/label"
 import type { StrategyDraft } from "./strategy-drafts"
 
+/** Where the draft stands, which the line before the buttons says. */
+export type DraftState =
+  | Readonly<{ kind: "saving" }>
+  | Readonly<{ kind: "edited" }>
+  | Readonly<{ kind: "discarded" }>
+  | Readonly<{ kind: "saved"; version: number }>
+  | Readonly<{ kind: "unchanged" }>
+
 type SaveVersionProps = Readonly<{
   draft: StrategyDraft
-  edited: boolean
-  saving: boolean
+  state: DraftState
   refused: string | null
   onChange: (draft: StrategyDraft) => void
   onDiscard: () => void
+  onUndoDiscard: () => void
   onSave: () => void
 }>
 
@@ -20,16 +27,17 @@ const FORM = "save-version"
 /** Save as new version, under the editor in the code's card (web/DESIGN.md, Patterns, Strategy
  * page): the hypothesis, one sentence stating the edge (D-29), and the changelog, the draft's
  * words, kept with its code in the browser, so they live in the draft rather than in
- * react-hook-form, as the import wizard's fields do; Discard draft, asked once in place, since
- * typed code cannot be brought back; and the save, which waits while the code is the version's,
- * saying so, and while it runs. A refusal that names no line of the code stands under it. */
+ * react-hook-form, as the import wizard's fields do; Discard draft, which acts at once and gives
+ * way to Undo discard until the next change, in the same button, so that the focus stays on it;
+ * and the save, which waits while the code is the version's, saying so, and while it runs. A
+ * refusal that names no line of the code stands under it. */
 export function SaveVersion({
   draft,
-  edited,
-  saving,
+  state,
   refused,
   onChange,
   onDiscard,
+  onUndoDiscard,
   onSave,
 }: SaveVersionProps) {
   const [missing, setMissing] = useState(false)
@@ -95,21 +103,16 @@ export function SaveVersion({
         </div>
       </form>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <p
-          data-testid="draft-state"
-          className="mr-auto text-xs text-muted-foreground"
-        >
-          {draftState(edited, saving)}
-        </p>
-        {edited && !saving && (
-          <InlineConfirmation
-            trigger="Discard draft"
-            confirm="Discard"
-            size="default"
-            onConfirm={onDiscard}
-          />
+        <DraftLine state={state} />
+        {(state.kind === "edited" || state.kind === "discarded") && (
+          <Button
+            variant="ghost"
+            onClick={state.kind === "edited" ? onDiscard : onUndoDiscard}
+          >
+            {state.kind === "edited" ? "Discard draft" : "Undo discard"}
+          </Button>
         )}
-        <Button type="submit" form={FORM} disabled={!edited || saving}>
+        <Button type="submit" form={FORM} disabled={state.kind !== "edited"}>
           Save as new version
         </Button>
       </div>
@@ -122,11 +125,41 @@ export function SaveVersion({
   )
 }
 
-function draftState(edited: boolean, saving: boolean): string {
-  if (saving) {
-    return "Saving"
-  }
-  return edited
-    ? "Draft, not saved"
-    : "Change the code to save it as a new version"
+const DRAFT_LINES: Readonly<
+  Record<Exclude<DraftState["kind"], "saved">, string>
+> = {
+  saving: "Saving",
+  edited: "Draft, not saved",
+  discarded: "Draft discarded",
+  unchanged: "Change the code to save it as a new version",
+}
+
+/** The draft's state before the buttons, in a status region; a version a save just opened says
+ * so and takes the focus, so that a screen reader hears it on arrival, as the Data page's line
+ * after a delete does. */
+function DraftLine({ state }: Readonly<{ state: DraftState }>) {
+  const line = useRef<HTMLParagraphElement>(null)
+  const saved = state.kind === "saved"
+  useEffect(() => {
+    if (saved) {
+      line.current?.focus()
+    }
+  }, [saved])
+  return (
+    <p
+      ref={line}
+      role="status"
+      tabIndex={saved ? -1 : undefined}
+      data-testid="draft-state"
+      className={
+        saved
+          ? "mr-auto text-foreground-secondary"
+          : "mr-auto text-xs text-muted-foreground"
+      }
+    >
+      {state.kind === "saved"
+        ? `Saved as version ${state.version}.`
+        : DRAFT_LINES[state.kind]}
+    </p>
+  )
 }

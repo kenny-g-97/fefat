@@ -11,11 +11,12 @@ import {
 
 // Step 5.5, the Strategies section: a strategy made from a template, its code changed,
 // validated in the server's executor, and saved as version 2 (Done means 1, the builder's check,
-// recorded as a clip); a syntax error underlined at its line; the server's verdict alone drawn on
-// the code (Done means 4); every parameter type of the templates at its default, with its
-// refusals (Done means 2); the abandoned mark; a draft kept through a reload; and the editor's and
-// the chart's code loaded with the pages that show them alone (Done means 3). Each test names a
-// strategy of its own, since they share the seeded home.
+// recorded as a clip); a syntax error underlined at its line by Validate and by a save; the
+// server's verdict alone drawn on the code (Done means 4); every parameter type of the templates
+// at its default, with its refusals (Done means 2); the abandoned mark, made and reopened; a
+// draft kept through a reload, discarded, and brought back; and the editor's and the chart's code
+// loaded with the pages that show them alone (Done means 3). Each test names a strategy of its
+// own, since they share the seeded home.
 
 test.use({ video: { mode: "on", size: { width: 1280, height: 800 } } })
 
@@ -61,16 +62,28 @@ test("a strategy made from a template takes a wider stop as its version 2", asyn
     "Created from the breakout template"
   )
   await expect(codeEditor(page)).toContainText("stop_atr: float = 2.0")
-  await expect(page.getByTestId("draft-state")).toHaveText(
-    "Change the code to save it as a new version"
-  )
+  // The version saved says so and takes the focus, so that a screen reader hears it on arrival.
+  const draftState = page.getByTestId("draft-state")
+  await expect(draftState).toHaveText("Saved as version 2.")
+  await expect(draftState).toBeFocused()
+  const code = page.getByRole("region", { name: "Code", exact: true })
+  await expect(code).toContainText("Version 2 of 2")
   await screenshot(page, "strategy-saved-v2")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "strategy-saved-v2-light")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
+
+  // The save forgot version 1's draft, so version 1 shows its own code.
+  await versions.nth(1).click()
+  await expect(page).toHaveURL(/name=wider_stop&version=1/)
+  await expect(code).toContainText("Version 1 of 2")
+  await expect(codeEditor(page)).toContainText("stop_atr: float = 1.5")
+  await expect(draftState).toHaveText(
+    "Change the code to save it as a new version"
+  )
 })
 
-test("a syntax error is underlined at its line, and nothing before Validate", async ({
+test("a syntax error is underlined at its line by Validate or a save, and nothing before", async ({
   loggedIn: page,
 }) => {
   await strategyFromTemplate(page.request, "syntax_check", "breakout")
@@ -104,6 +117,29 @@ test("a syntax error is underlined at its line, and nothing before Validate", as
   await expect(codeEditor(page)).toContainText('close = pl.col("close")')
   await expect(page.locator(".cm-lintRange")).toHaveCount(0)
   await expect(page.getByTestId("code-line")).toHaveCount(0)
+
+  // A save builds the code in the executor too: its refusal stands at its own line, another
+  // than the verdict's, and nothing is saved.
+  const entry = 'long_entry=close > pl.col("highest"),'
+  const unsaved = breakout.code.replace(entry, "long_entry=close > ,")
+  const entryLine = lineHolding(unsaved, "long_entry=close > ,")
+  await writeCode(page, unsaved)
+  await expect(page.locator(".cm-lintRange")).toHaveCount(0)
+  await page.getByRole("button", { name: "Save as new version" }).click()
+
+  await expect(
+    editorLine(page, entryLine).locator(".cm-lintRange-error")
+  ).toHaveText("long_entry=close > ,")
+  await expect(page.getByTestId("code-line")).toHaveText(
+    `Line ${entryLine}: SyntaxError: invalid syntax`
+  )
+  await expect(page).toHaveURL(/name=syntax_check$/)
+  await expect(page.getByTestId("version-row")).toHaveCount(1)
+  await editorLine(page, entryLine).click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Backspace")
+  await expect(page.locator(".cm-lintRange")).toHaveCount(0)
+  await expect(page.getByTestId("code-line")).toHaveCount(0)
 })
 
 test("Tab indents in the editor, and Escape then Tab leaves it", async ({
@@ -114,6 +150,9 @@ test("Tab indents in the editor, and Escape then Tab leaves it", async ({
   const editor = codeEditor(page)
   const frame = page.locator('[data-slot="code-editor"] .cm-editor')
   await expect(editor).toContainText("def strategy(")
+  await expect(editor).toHaveAccessibleDescription(
+    "Tab indents. Press Escape, then Tab, to leave the editor."
+  )
   await editor.click()
   // The focus shows on the editor's frame, the accent's 1 px ring, as a field's does.
   await expect(frame).toHaveCSS(
@@ -207,6 +246,9 @@ test("each template's parameters show at their defaults, and a value of another 
   )
   await expect(codeEditor(page)).toContainText("def strategy(")
   await screenshot(page, "strategy-parameters-refused")
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "strategy-parameters-refused-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
 })
 
 test("a strategy marked abandoned keeps its lesson, shows on the list, and reopens", async ({
@@ -227,7 +269,12 @@ test("a strategy marked abandoned keeps its lesson, shows on the list, and reope
   const marked = page.getByRole("region", { name: "Abandoned" })
   await expect(marked).toContainText("An oversold RSI alone is no edge.")
   await expect(abandon).toHaveCount(0)
+  // The mark stands first on the page, far from the form that made it, so it takes the focus.
+  await expect(page.getByTestId("abandoned-panel")).toBeFocused()
   await screenshot(page, "strategy-abandoned")
+  await page.evaluate(() => document.documentElement.classList.remove("dark"))
+  await screenshot(page, "strategy-abandoned-light")
+  await page.evaluate(() => document.documentElement.classList.add("dark"))
   await page.goto("/strategies")
   await expect(
     page
@@ -237,13 +284,17 @@ test("a strategy marked abandoned keeps its lesson, shows on the list, and reope
   ).toHaveText("Abandoned")
   await screenshot(page, "strategies-list-abandoned")
   await page.goto("/strategies/strategy?name=faded_idea")
+  // Reopen takes the mark's words with it, so it asks once in place.
   await marked.getByRole("button", { name: "Reopen" }).click()
+  await expect(abandon).toHaveCount(0)
+  await marked.getByRole("button", { name: "Reopen now" }).click()
 
   await expect(abandon).toBeVisible()
   await expect(marked).toHaveCount(0)
+  await expect(codeEditor(page)).toBeFocused()
 })
 
-test("a draft outlives a reload and leaves once discarded", async ({
+test("a draft outlives a reload, and a discard acts at once until undone", async ({
   loggedIn: page,
 }) => {
   await strategyFromTemplate(page.request, "kept_draft", "breakout")
@@ -253,15 +304,25 @@ test("a draft outlives a reload and leaves once discarded", async ({
   await writeCode(page, widerStop(breakout.code))
 
   await page.reload()
+  const draftState = page.getByTestId("draft-state")
   await expect(codeEditor(page)).toContainText("stop_atr: float = 2.0")
-  await expect(page.getByTestId("draft-state")).toHaveText("Draft, not saved")
+  await expect(draftState).toHaveText("Draft, not saved")
   await page.getByRole("button", { name: "Discard draft" }).click()
-  await page.getByRole("button", { name: "Discard", exact: true }).click()
 
+  // The same button turns to Undo discard, keeping the focus, until the next change.
   await expect(codeEditor(page)).toContainText("stop_atr: float = 1.5")
+  await expect(draftState).toHaveText("Draft discarded")
+  const undo = page.getByRole("button", { name: "Undo discard" })
+  await expect(undo).toBeFocused()
+  await undo.click()
+  await expect(codeEditor(page)).toContainText("stop_atr: float = 2.0")
+  await expect(draftState).toHaveText("Draft, not saved")
+  await page.reload()
+  await expect(codeEditor(page)).toContainText("stop_atr: float = 2.0")
+  await page.getByRole("button", { name: "Discard draft" }).click()
   await page.reload()
   await expect(codeEditor(page)).toContainText("stop_atr: float = 1.5")
-  await expect(page.getByTestId("draft-state")).toHaveText(
+  await expect(draftState).toHaveText(
     "Change the code to save it as a new version"
   )
 })

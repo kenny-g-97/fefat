@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
 import { useSearch } from "@tanstack/react-router"
+import { useState } from "react"
 import {
   type IndexedStrategy,
   strategiesQuery,
   strategyVersionQuery,
+  useAbandonment,
+  useReopening,
 } from "@/api/strategies"
 import { Page } from "@/ui/page"
 import { QueryBody } from "@/ui/query-body"
@@ -55,27 +58,59 @@ export function StrategyPage() {
   )
 }
 
+/** The cards of one version, drawn together once the version is read. The focus follows the
+ * mark: a mark just made takes it, where the page shows it first, and a reopen gives it to the
+ * editor, since the panel that held it is gone. */
 function ShownVersion({
   strategy,
   number,
 }: Readonly<{ strategy: IndexedStrategy; number: number }>) {
   const version = useQuery(strategyVersionQuery(strategy.id, number))
+  const abandonment = useAbandonment(strategy.id)
+  const reopening = useReopening(strategy.id)
+  const [marked, setMarked] = useState(false)
+  const [editorFocusRequests, setEditorFocusRequests] = useState(0)
   return (
-    <div className="flex flex-col gap-6">
-      {strategy.abandoned !== null && (
-        <AbandonedPanel strategy={strategy} mark={strategy.abandoned} />
+    <QueryBody query={version}>
+      {(saved) => (
+        <div className="flex flex-col gap-6">
+          {strategy.abandoned !== null && (
+            <AbandonedPanel
+              mark={strategy.abandoned}
+              arrived={marked}
+              reopening={reopening.isPending}
+              refusal={reopening.error}
+              onReopen={() =>
+                reopening.mutate(undefined, {
+                  onSuccess: () => {
+                    setMarked(false)
+                    setEditorFocusRequests((requests) => requests + 1)
+                  },
+                })
+              }
+            />
+          )}
+          <CodeCard
+            strategy={strategy}
+            version={saved}
+            editorFocusRequests={editorFocusRequests}
+          />
+          <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
+            <VersionsCard strategy={strategy} shown={number} />
+            <ParametersCard version={saved} />
+          </div>
+          {strategy.abandoned === null && (
+            <AbandonCard
+              marking={abandonment.isPending}
+              refusal={abandonment.error}
+              onMark={(mark) =>
+                abandonment.mutate(mark, { onSuccess: () => setMarked(true) })
+              }
+            />
+          )}
+        </div>
       )}
-      <QueryBody query={version}>
-        {(saved) => <CodeCard strategy={strategy} version={saved} />}
-      </QueryBody>
-      <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
-        <VersionsCard strategy={strategy} shown={number} />
-        <QueryBody query={version}>
-          {(saved) => <ParametersCard version={saved} />}
-        </QueryBody>
-      </div>
-      {strategy.abandoned === null && <AbandonCard strategy={strategy} />}
-    </div>
+    </QueryBody>
   )
 }
 
