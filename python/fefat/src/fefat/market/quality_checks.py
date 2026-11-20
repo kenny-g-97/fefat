@@ -34,6 +34,13 @@ RECORD_FINDINGS = {
     "non_positive_prices": QualityFinding.NON_POSITIVE_PRICES,
 }
 """The counts of `checked_records` that are findings, with the finding each counts."""
+OUT_OF_SESSION = (
+    pl.col("open").is_null()
+    | (pl.col("instant") < pl.col("open"))
+    | (pl.col("instant") >= pl.col("next_open"))
+)
+"""Whether a record's `instant` lies outside the session of its trade date, which opens at
+`open`, and the break after it, which ends at `next_open`, the open of the session after it."""
 
 
 def checked_records(
@@ -71,14 +78,11 @@ def checked_records(
         .agg(halt_prints=pl.len().cast(pl.Int64))
     )
     allowed = pl.Series(NEGATIVE_PRICES_ALLOWED.get(root, ()), dtype=pl.Date).implode()
-    outside = (
-        pl.col("open").is_null() | (instant < pl.col("open")) | (instant >= pl.col("next_open"))
-    )
     counted = marked.group_by(keys).agg(
         instrument_ids=pl.col("instrument_id").unique(),
         records=pl.len().cast(pl.Int64),
         duplicates=_count(pl.col("repeated")),
-        out_of_session=_count(outside),
+        out_of_session=_count(OUT_OF_SESSION),
         break_prints=_count((instant >= pl.col("close")) & (instant < pl.col("next_open"))),
         clock_decreases=_count(pl.col("decreased")),
         non_positive_prices=_count(pl.col("non_positive") & ~pl.col("trade_date").is_in(allowed)),

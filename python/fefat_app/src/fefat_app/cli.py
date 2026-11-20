@@ -10,6 +10,7 @@
         [--preview] [--differing {refuse,take-file}]
     fefat data profiles [<name>]
     fefat data delete <provider> <root> [--yes]
+    fefat data verify-trade-dates [<root>]
     fefat cache build --root <root> --year <year> [--provider <provider>]
     fefat cache status [--root <root>]
     fefat cache features [--prune [--older-than <days>]]
@@ -42,7 +43,10 @@ nothing, and `--differing take-file` lets a file's records stand where the store
 with other values (`fefat_app.import_commands`). `profiles` lists the presets and your saved
 profiles, or prints one as YAML to copy into a profile of your own. `delete` prints what a
 delete of a provider's data of a root would remove, with the saved runs that read it, and
-deletes it with `--yes` (`fefat_app.delete_commands`, step 5.18).
+deletes it with `--yes` (`fefat_app.delete_commands`, step 5.18). `verify-trade-dates` lists the
+stored records the session calendars date otherwise now, as a calendar corrected since their
+import leaves them, of a product or of every product (`fefat.market.trade_date_check`, step
+5.16).
 
 `cache build` builds the engine's cache of a product's trade dates in a year, `cache status`
 lists it, and `cache features` lists the feature cache or prunes what was not used for a while
@@ -65,7 +69,8 @@ request refuse it from then on (`fefat_app.token_commands`).
 
 A command exits with 0 when it succeeds, and with 1 and the reason when it refuses its input,
 a preview too when it would refuse the file; `verify-bars` also exits with 1 when it finds
-bars that differ, or nothing to compare, and `quality` when a report holds findings. A command
+bars that differ, or nothing to compare, `verify-trade-dates` when it lists a record, and
+`quality` when a report holds findings. A command
 line that names no command, or a date that is no date, exits with 2 and the usage, as
 `argparse` does.
 """
@@ -90,9 +95,11 @@ from fefat.market.importers.profiles import (
 )
 from fefat.market.quality import assess_quality, reported_products
 from fefat.market.quality_report import MARKDOWN_FILE_NAME, QualityStatus, write_quality_report
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.sources import SOURCE_GUIDE, Source
 from fefat.market.status import CoverageStatus, product_status
 from fefat.market.store import Store
+from fefat.market.trade_date_check import verify_trade_dates
 from fefat_app.cache_commands import add_the_cache_commands
 from fefat_app.database_commands import add_the_database_commands
 from fefat_app.delete_commands import add_the_delete_command
@@ -135,6 +142,14 @@ def build_parser() -> argparse.ArgumentParser:
         "trade_date", type=date.fromisoformat, help="the trade date, such as 2026-09-21"
     )
     verify.set_defaults(run=verify_bars_of_a_trade_date)
+    trade_dates = data_commands.add_parser(
+        "verify-trade-dates",
+        help="list the stored records the session calendars date otherwise now",
+    )
+    trade_dates.add_argument(
+        "root", nargs="?", help="the product, such as MES; every product when left out"
+    )
+    trade_dates.set_defaults(run=verify_the_trade_dates)
     listing = data_commands.add_parser(
         "catalog", help="list each dataset in the store with its coverage and quality"
     )
@@ -216,6 +231,15 @@ def verify_bars_of_a_trade_date(arguments: argparse.Namespace) -> int:
     print(report.summary())
     verified = report.comparisons_run() > 0 and report.difference_count() == 0
     return EXIT_OK if verified else EXIT_REFUSED
+
+
+def verify_the_trade_dates(arguments: argparse.Namespace) -> int:
+    paths = resolve_paths(os.environ)
+    store = Store(paths.data_dir)
+    root: str | None = arguments.root
+    report = verify_trade_dates(store, paths.cache_dir, instrument_table(store.folder), root)
+    print(report.summary())
+    return EXIT_REFUSED if report.dated_otherwise else EXIT_OK
 
 
 def print_the_catalog(arguments: argparse.Namespace) -> int:

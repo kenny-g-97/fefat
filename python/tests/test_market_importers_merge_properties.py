@@ -21,7 +21,7 @@ from databento_dbn import F_LAST, Action, OHLCVMsg, RType, Schema, Side, TradeMs
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from dbn_files import SymbolMapping, dbn_content, mapping, utc, write_dbn
+from dbn_files import Interval, SymbolMapping, dbn_content, mapping, utc, write_dbn
 from export_samples import (
     PRESETS,
     SAMPLES,
@@ -86,8 +86,11 @@ class Record:
     trade_date: date
 
     def price(self, unit: int) -> int:
-        """A price on ES's tick, made up from the record's instant and place."""
-        return FIVE_THOUSAND + TICK * ((self.instant // unit + self.place) % 40)
+        """A price on ES's tick, made up from the record's instant and place, which comes back
+        at a place no sooner than 4,001 units later, so that prints a day apart differ: two
+        files that overlap would otherwise read as a file read a day off (ADR-0024)."""
+        steps = self.instant // unit * 7_919 + self.place * 104_729
+        return FIVE_THOUSAND + TICK * (steps % 4_001)
 
 
 @dataclass(frozen=True)
@@ -904,3 +907,40 @@ def test_a_back_adjusted_series_takes_its_last_bar_from_a_file_that_shares_its_o
     assert (merge.records_added, merge.records_held, merge.records_differing) == (0, 99, 1)
     (month,) = (file.partition for file in store.list_partitions())
     assert store.scan_partition(month).collect().item(-1, "volume") == int(volume) + 1
+
+
+@pytest.mark.parametrize(
+    ("switched_on", "earlier", "later", "refusal"),
+    [
+        (
+            date(2026, 2, 1),
+            utc(2026, 1, 12, 14, 30),
+            utc(2026, 2, 10, 14, 30),
+            "under the instrument_id this file gives ESH2026 before them, 1001, got 1009",
+        ),
+        (
+            date(2026, 2, 16),
+            utc(2026, 2, 10, 14, 30),
+            utc(2026, 2, 17, 14, 30),
+            "under one instrument_id, got 1001, 1009",
+        ),
+    ],
+    ids=["in two months", "in one month"],
+)
+def test_a_databento_file_that_gives_a_contract_new_to_the_store_two_ids_is_refused(
+    tmp_path: Path, switched_on: date, earlier: int, later: int, refusal: str
+) -> None:
+    # Done means 2, from the plan's design review: with no stored partition beside them, a
+    # file whose symbology names ESH2026 by one id and then another wrote it under both, and
+    # one cut short while it wrote was refused when run again, its first months then stored.
+    intervals = [
+        Interval(date(2025, 3, 21), switched_on, "1001"),
+        Interval(switched_on, date(2026, 3, 21), "1009"),
+    ]
+    bars = [*es_bars(earlier), *es_bars(later, instrument_id=1009)]
+    source = march_file(tmp_path, "two-ids", bars, [SymbolMapping("ESH6", intervals)])
+
+    with pytest.raises(ValueError, match=refusal):
+        through_databento(source, Store(tmp_path / "data"), tmp_path / "cache")
+
+    assert tree(tmp_path / "data") == {}

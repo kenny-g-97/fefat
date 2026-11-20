@@ -1,6 +1,7 @@
 """Market data: the canonical store, its schemas, and its layout (ADR-0019); instrument
 specifications, contract identity, and fee tables; session calendars and trade dates; the
-quality report of each dataset; deleting a provider's data of a root (step 5.18,
+quality report of each dataset; the check of stored trade dates after a calendar changes
+(step 5.16, `verify_trade_dates`); deleting a provider's data of a root (step 5.18,
 `delete_stored_data`); the data API, `load`, `datasets`, and `roll_calendar`
 (`fefat.market.api`); and
 the know-how FEFAT ships instead of data (D-37), the product catalog (`CATALOG`,
@@ -42,6 +43,7 @@ from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.status import CoverageStatus, dataset_status, product_status
 from fefat.market.store import Store
 from fefat.market.stored_deletion import StoredDataDeletion, delete_stored_data, planned_deletion
+from fefat.market.trade_date_check import TradeDateReport, verify_trade_dates
 
 __all__ = [
     "CATALOG",
@@ -84,6 +86,7 @@ __all__ = [
     "Store",
     "StoredDataDeletion",
     "TickFidelity",
+    "TradeDateReport",
     "Weekday",
     "YearMonth",
     "assess_quality",
@@ -100,5 +103,6 @@ __all__ = [
     "roll_calendar",
     "sessions_of",
     "validate_calendar",
+    "verify_trade_dates",
     "write_quality_report",
 ]

@@ -37,4 +37,4 @@ If a range imported as one file and as two files that overlap, in either order, 
 
 ## Status
 
-Accepted; recorded in step 5.14. It supersedes "the first import stands" (D-49, D-50) for a partition's records, which still holds for one file imported twice, and amends [ADR-0019](0019-canonical-market-data-store.md), whose partitions later imports now merge into.
+Accepted; recorded in step 5.14. It supersedes "the first import stands" (D-49, D-50) for a partition's records, which still holds for one file imported twice, and amends [ADR-0019](0019-canonical-market-data-store.md), whose partitions later imports now merge into. Amended by D-108 (step 5.16, [ADR-0024](0024-another-offset-id-or-trade-date-refuses-a-file.md)): records that are the stored ones at another offset refuse a file whatever the import is told, as do a partition new to the store under another `instrument_id` than its contract's and a record the store holds under another trade date.

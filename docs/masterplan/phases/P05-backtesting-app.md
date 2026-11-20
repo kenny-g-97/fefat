@@ -783,6 +783,8 @@ Not in this step: bars in a break and the correction a trader approves for them 
 
 2026-11-18 (D-105, your check of step 5.15's pull request): this step runs after the new step 5.17, which lays the import wizard out as a stepper, so that the refusals this step words for the app land on the wizard's new pages; its row stands after 5.17's in `PROGRESS.md`, which the step runner's `next` reads from the top (D-98).
 
+2026-11-19 (D-108, your answers at the step's plan, ADR-0024): a file whose records are the stored ones at another offset is refused, with no option that lifts it, rather than flagged in the preview, and so are a contract's new partition under another `instrument_id` and a record the store holds under another trade date; the check for a calendar change is `fefat data verify-trade-dates [<root>]`, which lists the records the calendar dates otherwise, dated again by deleting the provider's data of the root and importing its files again (step 5.18); the wizard shows the importers' sentences for these refusals, so nothing changes under `web/` or in the API; and the stretch stamped an hour late on the autumn clock-change Sundays stays in `BACKLOG.md`, aimed at the Phase 5 exit.
+
 ### 5.17 Import wizard as a stepper
 
 Depends on: 5.12, 5.15 · Plan mode: required · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default

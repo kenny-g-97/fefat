@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -12,11 +13,19 @@ import pytest
 import yaml
 
 import fefat as ff
-from export_samples import sample_lines, with_a_lot_more_in_the_last_bar, written_export
+from export_samples import (
+    IMPORTED_ON,
+    a_new_product_profile,
+    five_minute_file,
+    sample_lines,
+    with_a_lot_more_in_the_last_bar,
+    written_export,
+)
 from fefat.config import resolve_paths
 from fefat.features.examples import rsi
 from fefat.market import instruments
 from fefat.market.calendar import sessions_of
+from fefat.market.importers.file_import import FileImportRequest, import_file
 from fefat.market.importers.profiles import preset_profiles
 from fefat.market.layout import (
     Dataset,
@@ -26,6 +35,7 @@ from fefat.market.layout import (
     SizeUnit,
     YearMonth,
 )
+from fefat.market.saved_instruments import instrument_table
 from fefat.market.schema import parse_schema_name, polars_schema
 from fefat.market.sources import SOURCE_GUIDE
 from fefat.market.store import Store
@@ -248,6 +258,42 @@ def test_verifying_bars_of_a_store_without_them_prints_the_reason_and_exits_with
 
     assert code == 1
     assert "fefat: Expected trades or bars of ES in the store, got none" in capsys.readouterr().err
+
+
+def test_verifying_trade_dates_lists_the_records_a_changed_calendar_dates_otherwise(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Done means 3: the check lists nothing in a store its calendars dated, and exits with 0;
+    # once XES's saved hours open an hour later, as a hand edit or an update would leave them,
+    # it lists each session's first hour, now in the break before the open, with the trade date
+    # the calendar gives it, and exits with 1.
+    store = Store(resolve_paths(os.environ).data_dir)
+    request = FileImportRequest(path=five_minute_file(tmp_path), profile=a_new_product_profile())
+    import_file(
+        request,
+        store,
+        resolve_paths(os.environ).cache_dir,
+        imported_on=IMPORTED_ON,
+        instruments=instrument_table(store.folder),
+    )
+    saved = store.folder / "instruments" / "XES.json"
+    specification = json.loads(saved.read_bytes())
+
+    clean = main(["data", "verify-trade-dates"])
+    printed = capsys.readouterr().out
+    specification["calendar"]["hours"]["opens_at"] = "18:00:00"
+    saved.write_bytes(json.dumps(specification).encode())
+    changed = main(["data", "verify-trade-dates", "XES"])
+    listed = capsys.readouterr().out
+
+    assert clean == 0
+    assert printed.rstrip().endswith("Dated otherwise than the calendar dates them now: none.")
+    assert changed == 1
+    assert (
+        "tradingview/ohlcv-5m/root=XES XESH2026 2026-03-05: 12 records from "
+        "2026-03-04T23:00:00Z to 2026-03-04T23:55:00Z, which the calendar dates 2026-03-04 now"
+    ) in listed
+    assert "fefat data delete tradingview XES" in listed
 
 
 def fixtures_in_the_data_folder() -> Path:

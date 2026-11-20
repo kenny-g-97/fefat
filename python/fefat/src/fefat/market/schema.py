@@ -223,6 +223,12 @@ def parse_schema_name(text: str) -> RecordSchemaName | BarSchemaName:
     raise ValueError(f"Expected a schema name ({names}, or ohlcv-<count><s|m|h|d>), got {text!r}.")
 
 
+def holds_daily_bars(schema_name: RecordSchemaName | BarSchemaName) -> bool:
+    """Whether the schema holds daily bars, each its session's whole and dated by the date it
+    names."""
+    return isinstance(schema_name, BarSchemaName) and schema_name.timeframe.unit is TimeUnit.DAY
+
+
 def _parsed_when_text(value: object) -> object:
     return parse_schema_name(value) if isinstance(value, str) else value
 

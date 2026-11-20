@@ -18,7 +18,13 @@ contract load as two series, and one that overlaps the stored records in time wi
 record at one of their instants, as prints stamped finer than a second do when they are read
 under another time zone or stamping rule, which would store them twice. Bars, and prints stamped
 to the second, read a bar or whole hours off land on the stored instants instead and read as
-differing, which the import's default refuses.
+differing, which the import's default refuses, and the offset rule whatever the import is told
+(`fefat.market.importers.stored_offset`, step 5.16). A third: a file's bar dated otherwise than
+the stored bars around its instant, or a daily bar whose trade date the store holds at another
+open, since under one session calendar a bar's trade date follows from its instant, and such a
+bar was dated under another one; a merge would keep one session under two trade dates (ADR-0024).
+A merge also carries the stored partitions of its contract beside it (`StoredNeighbour`), which
+`fefat.market.importers.stored_neighbours` reads and the offset rule compares against.
 
 Where a file gives its prints no sequence (`RecordIdentity.numbered_by_place`), the comparison
 leaves `sequence` out, a print's sequence is its place in its instant, and a print added to an
@@ -39,7 +45,8 @@ import polars as pl
 
 from fefat.market.calendar import utc_text
 from fefat.market.importers.canonical import DAY_COUNTS
-from fefat.market.layout import Partition
+from fefat.market.layout import Dataset, Partition
+from fefat.market.schema import holds_daily_bars
 
 PLACE = "_place"
 """The column of a record's position among the records of its instant, counted from 0."""
@@ -78,10 +85,24 @@ class RecordIdentity:
 
 
 @dataclass(frozen=True)
+class StoredNeighbour:
+    """A stored partition of a contract beside a file's partition of it, the nearest below or
+    above by key (step 5.16, ADR-0024): its records, read lazily, their instrument ids, and the
+    first and last instant of their clock."""
+
+    partition: Partition
+    rows: pl.LazyFrame
+    instrument_ids: frozenset[int]
+    first: int
+    last: int
+
+
+@dataclass(frozen=True)
 class PartitionMerge:
     """A file's rows of one partition read against the rows the store holds of it: the stored
     rows, the file's rows the store lacks, how many of the file's it already holds, and the
-    file's rows at the instants the two dispute, each frame with its records' `PLACE`."""
+    file's rows at the instants the two dispute, each frame with its records' `PLACE`; and the
+    stored partitions of its contract beside it, none until the partition buffers add them."""
 
     partition: Partition
     clock: str
@@ -89,6 +110,7 @@ class PartitionMerge:
     added: pl.DataFrame
     held: int
     differing: pl.DataFrame
+    neighbours: tuple[StoredNeighbour, ...] = ()
 
     def changes(self, differing: DifferingRecords) -> bool:
         """Whether an import under `differing` writes the partition: it adds records, or takes
@@ -146,6 +168,7 @@ def merged_partition(
         return PartitionMerge(partition, clock, new.clear(), new, 0, new.clear())
     kept = _placed(stored, clock)
     _require_the_instruments_held(partition, kept, new)
+    _require_one_dating(partition, kept, new, clock)
     places = [clock, PLACE]
     stored_too = new.join(kept.select(places), on=places, how="semi", maintain_order="left")
     if stored_too.is_empty():
@@ -179,15 +202,104 @@ def _require_the_instruments_held(
     partition: Partition, kept: pl.DataFrame, new: pl.DataFrame
 ) -> None:
     held = set(kept.get_column("instrument_id").unique().to_list())
-    others = sorted(set(new.get_column("instrument_id").unique().to_list()) - held)
+    others = set(new.get_column("instrument_id").unique().to_list()) - held
     if others:
         raise ValueError(
             f"Expected the records of {partition.relative_path()} under the instrument_id it "
-            f"holds, {', '.join(str(each) for each in sorted(held))}, got "
-            f"{', '.join(str(each) for each in others)} from this file: one contract under two "
-            "ids loads as two series, so the file is refused, and nothing was written. Name its "
-            "instruments as the files before it did."
+            f"holds, {listed_ids(held)}, got {listed_ids(others)} from this file: "
+            f"{two_series(partition.dataset)}"
         )
+
+
+def _require_one_dating(
+    partition: Partition, kept: pl.DataFrame, new: pl.DataFrame, clock: str
+) -> None:
+    """Refuse bars the store dates otherwise (ADR-0024): a file's bar dated before the stored bar
+    at or before its instant, or after the one at or after it, and a daily bar whose trade date
+    the store holds at another open; under one calendar a bar's trade date follows from its
+    instant and never decreases along the clock. Prints take their partition's trade date."""
+    if "trade_date" not in new.columns:
+        return
+    stored = kept.select(clock, "trade_date").sort(clock)
+    beside = (
+        new.select(clock, "trade_date")
+        .sort(clock)
+        .join_asof(stored.rename({"trade_date": "before"}), on=clock, strategy="backward")
+        .join_asof(stored.rename({"trade_date": "after"}), on=clock, strategy="forward")
+    )
+    otherwise = beside.filter(
+        (pl.col("before") > pl.col("trade_date")) | (pl.col("after") < pl.col("trade_date"))
+    )
+    if not otherwise.is_empty():
+        instant, dated, before, after = otherwise.row(0)
+        held = before if before is not None and before > dated else after
+        raise ValueError(
+            f"Expected the bars of {partition.relative_path()} on the trade dates the store "
+            f"gives their instants, got {otherwise.height:,} dated otherwise, the first opening "
+            f"at {utc_text(instant)} on {dated}, where the store's bars beside it are on {held}: "
+            "the session calendar changed between the two imports, and a merge would keep one "
+            f"session under two trade dates. {refused_for_another_dating(partition.dataset)}"
+        )
+    if holds_daily_bars(partition.dataset.schema_name):
+        _require_one_open(partition, kept, new, clock)
+
+
+def _require_one_open(
+    partition: Partition, kept: pl.DataFrame, new: pl.DataFrame, clock: str
+) -> None:
+    """Refuse a file's daily bar whose trade date the store holds at another open, as a change
+    of the calendar that moves a session's open gives: the day's bar would be kept twice."""
+    moved = (
+        new.select(clock, "trade_date")
+        .join(kept.select("trade_date", stored_open=clock), on="trade_date")
+        .filter(pl.col(clock) != pl.col("stored_open"))
+    )
+    if moved.is_empty():
+        return
+    opened, dated, stored_open = moved.row(0)
+    raise ValueError(
+        f"Expected the daily bars of {partition.relative_path()} at the opens the store gives "
+        f"their trade dates, got {moved.height:,} at others, the first of {dated} opening at "
+        f"{utc_text(opened)}, where the store's opens at {utc_text(stored_open)}: the session "
+        "calendar changed between the two imports, and a merge would keep that session's bar "
+        f"twice. {refused_for_another_dating(partition.dataset)}"
+    )
+
+
+def listed_ids(ids: Iterable[int]) -> str:
+    """Instrument ids as a refusal names them, in order."""
+    return ", ".join(str(each) for each in sorted(ids))
+
+
+def two_series(dataset: Dataset) -> str:
+    """The end of a refusal of records under another instrument_id than their contract's stored
+    ones (ADR-0021, ADR-0024): why, and the two ways to import them."""
+    return (
+        "one contract under two ids loads as two series, so the file is refused whatever the "
+        "import is told, and nothing was written. An export names its instruments by its own "
+        "instrument_id column or, without one, by the contract's month: import it as the "
+        f"contract's earlier files were, or {deleted_and_imported_again(dataset)}, all of them "
+        "one way."
+    )
+
+
+def deleted_and_imported_again(dataset: Dataset) -> str:
+    """How a dataset is put right whose stored records refuse a file that no option lets in:
+    its provider's data of its root deleted (step 5.18), and its files imported again."""
+    return (
+        "delete the stored data, on the instrument's page in the app or with fefat data delete "
+        f"{dataset.provider} {dataset.root}, and import its files again"
+    )
+
+
+def refused_for_another_dating(dataset: Dataset) -> str:
+    """The end of a refusal of records the store dates otherwise (ADR-0024): the check that
+    lists the stored records the calendar dates otherwise now, and how to date them again."""
+    return (
+        "The file is refused whatever the import is told, and nothing was written. fefat data "
+        f"verify-trade-dates {dataset.root} lists the stored records the calendar dates "
+        f"otherwise now; to date them again, {deleted_and_imported_again(dataset)}."
+    )
 
 
 def _require_no_overlap(
@@ -220,13 +332,15 @@ def whole_at_the_files_edges(
     part of: the file's first instant of the merge's contract, since a file that starts inside
     an instant reads like one that revises it, and its last where the store holds more prints
     than the file, which taking the file's would drop though the file never held them."""
-    edges = _edge_instants(partitions, clock)
+    edges = files_edges(partitions, clock)
     for merge in merges:
-        _require_whole_edge_instants(merge, *edges[merge.partition.contract])
+        refusal = edge_refusal(merge, edges)
+        if refusal is not None:
+            raise ValueError(refusal)
         yield merge
 
 
-def _edge_instants(
+def files_edges(
     partitions: Mapping[Partition, pl.DataFrame], clock: str
 ) -> dict[str, tuple[int, int]]:
     """The first and the last instant of each contract's records among a file's partitions."""
@@ -239,11 +353,16 @@ def _edge_instants(
     return edges
 
 
-def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -> None:
+def edge_refusal(merge: PartitionMerge, edges: Mapping[str, tuple[int, int]]) -> str | None:
+    """Why the merge of a file of prints numbered by their place, whose contracts' first and
+    last instants are `edges` (`files_edges`), is refused whatever the import is told
+    (`whole_at_the_files_edges`); none where it disputes no instant the file may hold part of.
+    The file import's check holds it back until the offset rule has spoken (ADR-0024)."""
+    first, last = edges[merge.partition.contract]
     instant, held = pl.col(merge.clock), merge.partition.relative_path()
     at_first = merge.differing.filter(instant == first).height
     if at_first:
-        raise ValueError(
+        return (
             f"Expected the file to start on a whole instant, since its prints carry no sequence "
             f"of their own and are told apart by their place in their instant, got {at_first:,} "
             f"at its first instant, {utc_text(first)}, that differ from the prints {held} holds "
@@ -255,7 +374,7 @@ def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -
     at_last = merge.differing.filter(instant == last).height
     stored = merge.kept.filter(instant == last).height if at_last else 0
     if stored > at_last:
-        raise ValueError(
+        return (
             f"Expected the file to hold its last instant, {utc_text(last)}, whole where its "
             f"prints differ from the ones {held} holds there, got {at_last:,} prints where the "
             f"store holds {stored:,}: taking a file that stops inside an instant would drop "
@@ -263,6 +382,7 @@ def _require_whole_edge_instants(merge: PartitionMerge, first: int, last: int) -
             "nothing was written. End the file at a later instant, so that it holds this one "
             "whole, or leave its records of this instant out."
         )
+    return None
 
 
 def _per_trade_date(rows: pl.DataFrame, partition: Partition) -> pl.DataFrame:
