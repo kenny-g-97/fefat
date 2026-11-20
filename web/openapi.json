@@ -1,6 +1,56 @@
 {
   "components": {
     "schemas": {
+      "AbandonedMark": {
+        "additionalProperties": false,
+        "description": "Where a strategy broke, the lesson it taught, and when it was marked abandoned; the folder\nits file stands in names the strategy.",
+        "properties": {
+          "abandoned_at": {
+            "format": "date-time",
+            "title": "Abandoned At",
+            "type": "string"
+          },
+          "breaking_point": {
+            "minLength": 1,
+            "title": "Breaking Point",
+            "type": "string"
+          },
+          "lesson": {
+            "minLength": 1,
+            "title": "Lesson",
+            "type": "string"
+          }
+        },
+        "required": [
+          "breaking_point",
+          "lesson",
+          "abandoned_at"
+        ],
+        "title": "AbandonedMark",
+        "type": "object"
+      },
+      "AbandonedMarkRequest": {
+        "additionalProperties": false,
+        "description": "Where a strategy broke and the lesson it taught (step 5.5, D-29).",
+        "properties": {
+          "breaking_point": {
+            "minLength": 1,
+            "title": "Breaking Point",
+            "type": "string"
+          },
+          "lesson": {
+            "minLength": 1,
+            "title": "Lesson",
+            "type": "string"
+          }
+        },
+        "required": [
+          "breaking_point",
+          "lesson"
+        ],
+        "title": "AbandonedMarkRequest",
+        "type": "object"
+      },
       "ApiToken": {
         "description": "An API token of a notebook or a script, by its name, kept only as its SHA-256, which\nnames it, with when it was made and last used.",
         "properties": {
@@ -3011,14 +3061,36 @@
         "type": "object"
       },
       "IndexedStrategy": {
-        "description": "A saved strategy as the index holds it: its row's id, its name, its kind, and its versions\nin order.",
+        "description": "A saved strategy as the index holds it: its row's id, its name, its kind, its versions in\norder, its abandoned mark where it holds one (step 5.5), and when its newest saved run was\nmade, None before its first.",
         "properties": {
+          "abandoned": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AbandonedMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
           },
           "kind": {
             "$ref": "#/components/schemas/StrategyKind"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
           },
           "name": {
             "title": "Name",
@@ -3036,7 +3108,9 @@
           "id",
           "name",
           "kind",
-          "versions"
+          "versions",
+          "abandoned",
+          "last_run_at"
         ],
         "title": "IndexedStrategy",
         "type": "object"
@@ -9940,7 +10014,7 @@
     },
     "/v1/strategies": {
       "get": {
-        "description": "The saved strategies by name, each with its versions in order.",
+        "description": "The saved strategies by name, each with its versions in order, its abandoned mark, and\nwhen its newest saved run was made; the library is indexed first, so that a version a\nnotebook saved is listed, and refused with 409 where its files cannot be followed.",
         "operationId": "saved_strategies_v1_strategies_get",
         "responses": {
           "200": {
@@ -9966,6 +10040,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
           }
         },
         "security": [
@@ -10211,6 +10295,112 @@
         ]
       }
     },
+    "/v1/strategies/{strategy_id}/abandon": {
+      "post": {
+        "description": "Mark the strategy abandoned, with where it broke and its lesson, kept as a file beside its\nversions, which stay as they are; refused with 409 where it is abandoned already.",
+        "operationId": "abandon_strategy_v1_strategies__strategy_id__abandon_post",
+        "parameters": [
+          {
+            "description": "A strategy's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "description": "A strategy's id in the index, a UUIDv7.",
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbandonedMarkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexedStrategy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Abandon Strategy",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
     "/v1/strategies/{strategy_id}/diff": {
       "get": {
         "description": "The unified diff of the code of versions `from` and `to` of the strategy.",
@@ -10316,6 +10506,102 @@
           }
         ],
         "summary": "Strategy Diff",
+        "tags": [
+          "strategies"
+        ]
+      }
+    },
+    "/v1/strategies/{strategy_id}/reopen": {
+      "post": {
+        "description": "Take back the strategy's abandoned mark; refused with 409 where it holds none.",
+        "operationId": "reopen_strategy_v1_strategies__strategy_id__reopen_post",
+        "parameters": [
+          {
+            "description": "A strategy's id in the index, a UUIDv7.",
+            "in": "path",
+            "name": "strategy_id",
+            "required": true,
+            "schema": {
+              "description": "A strategy's id in the index, a UUIDv7.",
+              "title": "Strategy Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexedStrategy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "Session": []
+          },
+          {
+            "CsrfToken": []
+          }
+        ],
+        "summary": "Reopen Strategy",
         "tags": [
           "strategies"
         ]

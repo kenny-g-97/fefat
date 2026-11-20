@@ -4,14 +4,18 @@ templates, `POST /v1/strategies/validate`, which builds the code in the executor
 verdict, `POST /v1/strategies` and `POST /v1/strategies/{strategy_id}/versions`, which save a
 version in the executor, 201 where they wrote one and the second 200 where the same code was saved
 with the same words, and the versions, a version, and the diff of two. The literal routes come
-before those of a strategy's id, so that no id is read from `templates` or `validate`."""
+before those of a strategy's id, so that no id is read from `templates` or `validate`. From step
+5.5 the list indexes the library first, refused with 409 where its files cannot be followed, and
+`POST /v1/strategies/{strategy_id}/abandon` and `.../reopen` mark a strategy abandoned and take
+the mark back, each answering the strategy as the list shows it."""
 
 from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from fefat.strategy.abandoned_marks import AlreadyAbandonedError, NotAbandonedError
 from fefat.strategy.starting_points import StrategyTemplate
 from fefat.strategy.versions import STRATEGY_NAME
 from fefat_app.execution import RefusedCode, ValidStrategy
@@ -68,10 +72,28 @@ class NewStrategy(NewStrategyVersionRequest):
     name: str = Field(pattern=STRATEGY_NAME)
 
 
-@router.get("/strategies", responses=problem_responses(401))
+Words = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+"""A text of a sentence or more, the spaces around it dropped."""
+
+
+class AbandonedMarkRequest(BaseModel):
+    """Where a strategy broke and the lesson it taught (step 5.5, D-29)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    breaking_point: Words
+    lesson: Words
+
+
+@router.get("/strategies", responses=problem_responses(401, 409))
 def saved_strategies(container: ContainerDependency) -> tuple[IndexedStrategy, ...]:
-    """The saved strategies by name, each with its versions in order."""
-    return container.strategies.strategies()
+    """The saved strategies by name, each with its versions in order, its abandoned mark, and
+    when its newest saved run was made; the library is indexed first, so that a version a
+    notebook saved is listed, and refused with 409 where its files cannot be followed."""
+    try:
+        return container.strategies.strategies()
+    except LibraryRefusedError as refused:
+        raise HTTPException(409, str(refused)) from refused
 
 
 @router.get("/strategies/templates", responses=problem_responses(401))
@@ -165,6 +187,37 @@ def strategy_diff(
     except NoSuchStrategyError as unknown:
         raise HTTPException(404, str(unknown)) from unknown
     except LibraryRefusedError as refused:
+        raise HTTPException(409, str(refused)) from refused
+
+
+@router.post(
+    "/strategies/{strategy_id}/abandon", responses=problem_responses(401, 403, 404, 409, 422)
+)
+def abandon_strategy(
+    strategy_id: StrategyId, request: AbandonedMarkRequest, container: ContainerDependency
+) -> IndexedStrategy:
+    """Mark the strategy abandoned, with where it broke and its lesson, kept as a file beside its
+    versions, which stay as they are; refused with 409 where it is abandoned already."""
+    return _marked(
+        lambda: container.strategies.abandon(strategy_id, request.breaking_point, request.lesson)
+    )
+
+
+@router.post(
+    "/strategies/{strategy_id}/reopen", responses=problem_responses(401, 403, 404, 409, 422)
+)
+def reopen_strategy(strategy_id: StrategyId, container: ContainerDependency) -> IndexedStrategy:
+    """Take back the strategy's abandoned mark; refused with 409 where it holds none."""
+    return _marked(lambda: container.strategies.reopen(strategy_id))
+
+
+def _marked(mark: Callable[[], IndexedStrategy]) -> IndexedStrategy:
+    """The strategy `mark` marks or reopens; its refusals as problems."""
+    try:
+        return mark()
+    except NoSuchStrategyError as unknown:
+        raise HTTPException(404, str(unknown)) from unknown
+    except (AlreadyAbandonedError, NotAbandonedError, LibraryRefusedError) as refused:
         raise HTTPException(409, str(refused)) from refused
 
 
