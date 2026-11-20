@@ -222,6 +222,24 @@ a:not([data-slot="button"]):active {
   color: var(--card);
 }
 
+/* A text of several lines is a field too (step 5.5): the control surface, the field border, and
+   the field's focus, refused or not, growing with its text from three lines. */
+[data-slot="textarea"] {
+  min-height: 5rem;
+  padding: 0.5rem 1rem;
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+[data-slot="textarea"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
+}
+
+[data-slot="textarea"][aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 1px var(--negative);
+}
+
 /* A search field is the field in every browser: Chrome's own clear button, white on the dark
    theme and blue on the light one, is no colour of the palette, and Escape clears the field. */
 [data-slot="input"]::-webkit-search-cancel-button {
@@ -497,7 +515,15 @@ a[data-slot="row-link"]:active {
 @media (forced-colors: active) {
   :focus-visible,
   [data-slot="input"]:focus-visible,
+  [data-slot="textarea"]:focus-visible,
   [data-slot="select-trigger"]:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* The code editor shows its focus on its frame, the text inside it holding the focus; its
+     theme's rule weighs less than this one (src/ui/code-editor-look.ts). */
+  [data-slot="code-editor"] .cm-editor.cm-focused {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
