@@ -112,8 +112,14 @@ test("Tab indents in the editor, and Escape then Tab leaves it", async ({
   await strategyFromTemplate(page.request, "tab_keys", "breakout")
   await page.goto("/strategies/strategy?name=tab_keys")
   const editor = codeEditor(page)
+  const frame = page.locator('[data-slot="code-editor"] .cm-editor')
   await expect(editor).toContainText("def strategy(")
   await editor.click()
+  // The focus shows on the editor's frame, the accent's 1 px ring, as a field's does.
+  await expect(frame).toHaveCSS(
+    "box-shadow",
+    "rgb(252, 115, 77) 0px 0px 0px 1px"
+  )
 
   await page.keyboard.press("Tab")
   await expect(editor).toBeFocused()
@@ -122,6 +128,11 @@ test("Tab indents in the editor, and Escape then Tab leaves it", async ({
 
   await expect(page.getByRole("button", { name: "Validate" })).toBeFocused()
   await expect(page.getByTestId("draft-state")).toHaveText("Draft, not saved")
+  await expect(frame).toHaveCSS("box-shadow", "none")
+  // A contrast theme of Windows drops the ring, so the frame takes the system's outline there.
+  await page.emulateMedia({ forcedColors: "active" })
+  await editor.click()
+  await expect(frame).toHaveCSS("outline-style", "solid")
 })
 
 test("the editor draws the server's verdict alone, at its line or listed without one", async ({
