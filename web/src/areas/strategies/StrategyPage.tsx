@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { useSearch } from "@tanstack/react-router"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import {
   type IndexedStrategy,
   strategiesQuery,
@@ -60,7 +60,8 @@ export function StrategyPage() {
 
 /** The cards of one version, drawn together once the version is read. The focus follows the
  * mark: a mark just made takes it, where the page shows it first, and a reopen gives it to the
- * editor, since the panel that held it is gone. */
+ * Code card, which stands where the mark stood, rather than to the editor, where the next Tab
+ * would indent the code. */
 function ShownVersion({
   strategy,
   number,
@@ -69,7 +70,7 @@ function ShownVersion({
   const abandonment = useAbandonment(strategy.id)
   const reopening = useReopening(strategy.id)
   const [marked, setMarked] = useState(false)
-  const [editorFocusRequests, setEditorFocusRequests] = useState(0)
+  const codeCard = useRef<HTMLElement>(null)
   return (
     <QueryBody query={version}>
       {(saved) => (
@@ -84,17 +85,13 @@ function ShownVersion({
                 reopening.mutate(undefined, {
                   onSuccess: () => {
                     setMarked(false)
-                    setEditorFocusRequests((requests) => requests + 1)
+                    codeCard.current?.focus()
                   },
                 })
               }
             />
           )}
-          <CodeCard
-            strategy={strategy}
-            version={saved}
-            editorFocusRequests={editorFocusRequests}
-          />
+          <CodeCard ref={codeCard} strategy={strategy} version={saved} />
           <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
             <VersionsCard strategy={strategy} shown={number} />
             <ParametersCard version={saved} />

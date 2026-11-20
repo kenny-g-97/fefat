@@ -61,6 +61,32 @@ export async function writeCode(page: Page, code: string): Promise<void> {
   await page.keyboard.insertText(code)
 }
 
+const keptDraft = z.object({ code: z.string() })
+
+/** The code of the draft this browser keeps for version `version` of the strategy `name`; null
+ * where it keeps none. */
+export async function keptDraftCode(
+  page: Page,
+  name: string,
+  version: number
+): Promise<string | null> {
+  const kept = await page.evaluate(
+    (key) => localStorage.getItem(key),
+    `fefat_strategy_draft:${name}:${version}`
+  )
+  return kept === null ? null : keptDraft.parse(JSON.parse(kept)).code
+}
+
+/** Let the page draw twice, so that whatever an effect does after a change has been done. */
+export async function settled(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => done()))
+      )
+  )
+}
+
 /** The line of `code`, counting from 1, that holds `text`. */
 export function lineHolding(code: string, text: string): number {
   const index = code.split("\n").findIndex((line) => line.includes(text))

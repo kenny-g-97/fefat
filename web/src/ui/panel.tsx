@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react"
+import { type ReactNode, type Ref, useId } from "react"
 import { cn } from "cn"
 
 type PanelProps = Readonly<{
@@ -6,21 +6,29 @@ type PanelProps = Readonly<{
   description?: ReactNode
   action?: ReactNode
   className?: string
+  ref?: Ref<HTMLElement>
+  tabIndex?: number
   children: ReactNode
 }>
 
 /** A card (web/DESIGN.md, Patterns): a region named by its title at 16 px, with an optional
- * one-line description and action, then its content, on the card surface with a hairline. */
+ * one-line description and action, then its content, on the card surface with a hairline. A
+ * card its page focuses, as the result of an action shown away from its button, takes `ref` and
+ * a `tabIndex` of -1, so that the region a screen reader names is what takes the focus. */
 export function Panel({
   title,
   description,
   action,
   className,
+  ref,
+  tabIndex,
   children,
 }: PanelProps) {
   const heading = useId()
   return (
     <section
+      ref={ref}
+      tabIndex={tabIndex}
       aria-labelledby={heading}
       className={cn(
         "flex flex-col gap-5 rounded-xl border bg-card p-6 shadow-raised",

@@ -15,7 +15,7 @@ export type CodeEditorProps = Readonly<{
   code: string
   onChange?: (code: string) => void
   notes?: readonly CodeNote[]
-  focusRequests?: number
+  waiting?: boolean
 }>
 
 /** CodeMirror's chunk, loaded with the first editor a page shows; a chunk a rebuild of the web
@@ -26,9 +26,9 @@ const CodeMirrorEditor = lazyRouteComponent(
 
 /** Python code in CodeMirror 6 (web/DESIGN.md, Patterns, Code editor), named for a screen reader
  * by `label`: editable where the page takes its `onChange`, else read-only, with its `notes`
- * underlined at their lines, and the focus given to it each time `focusRequests` grows. An
- * editable editor says under it how to leave it by the keys, which its text names as its
- * description. CodeMirror's code loads with the first page that shows an editor, the code
+ * underlined at their lines; an editable one `waiting`, as while its page saves the code, takes
+ * no change and keeps its look. An editable editor says under it how to leave it by the keys,
+ * which its text names as its description. CodeMirror's code loads with the first page that shows an editor, the code
  * standing as plain text in the editor's own box meanwhile; the strategy page uses it (step
  * 5.5), and the feature lab and the builder of Phase 6 after it. */
 export function CodeEditor(props: CodeEditorProps) {

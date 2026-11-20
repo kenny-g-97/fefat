@@ -64,8 +64,7 @@ export function useStrategyCreation() {
   return useMutation({
     mutationFn: async (asked: NewStrategy) =>
       answer(await api.POST("/v1/strategies", { body: asked })),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: strategiesQuery.queryKey }),
+    onSuccess: rememberSaved,
   })
 }
 
@@ -80,9 +79,18 @@ export function useVersionSave(strategyId: string) {
           body: asked,
         })
       ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: strategiesQuery.queryKey }),
+    onSuccess: rememberSaved,
   })
+}
+
+/** Keep the version a create or a save answered as its own read would give it, since a version
+ * never changes, so that the page that opens it draws at once; then read the list again. */
+async function rememberSaved(saved: SavedStrategyVersion): Promise<void> {
+  queryClient.setQueryData(
+    strategyVersionQuery(saved.strategy_id, saved.version).queryKey,
+    saved
+  )
+  await queryClient.invalidateQueries({ queryKey: strategiesQuery.queryKey })
 }
 
 /** Mark the strategy `strategyId` abandoned with where it broke and its lesson (D-29). */

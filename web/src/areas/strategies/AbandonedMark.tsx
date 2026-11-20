@@ -28,52 +28,47 @@ export function AbandonedPanel({
   refusal,
   onReopen,
 }: AbandonedPanelProps) {
-  const shown = useRef<HTMLDivElement>(null)
+  const shown = useRef<HTMLElement>(null)
   useEffect(() => {
     if (arrived) {
       shown.current?.focus()
     }
   }, [arrived])
   return (
-    <div
+    <Panel
       ref={shown}
       tabIndex={-1}
-      data-testid="abandoned-panel"
-      className="rounded-xl"
+      title="Abandoned"
+      description={`Marked on ${formatInstant(mark.abandoned_at)}; Reopen drops these words, the versions stay`}
+      action={
+        <div className="-my-2">
+          <InlineConfirmation
+            trigger="Reopen"
+            confirm="Reopen now"
+            size="default"
+            pending={reopening}
+            onConfirm={onReopen}
+          />
+        </div>
+      }
     >
-      <Panel
-        title="Abandoned"
-        description={`Marked on ${formatInstant(mark.abandoned_at)}; its versions stay as they are, and Reopen takes the mark back with its words`}
-        action={
-          <div className="-my-2">
-            <InlineConfirmation
-              trigger="Reopen"
-              confirm="Reopen now"
-              size="default"
-              pending={reopening}
-              onConfirm={onReopen}
-            />
-          </div>
-        }
+      <dl
+        data-testid="abandoned-mark"
+        className="grid max-w-3xl grid-cols-[9rem_minmax(0,1fr)] gap-x-4 gap-y-3"
       >
-        <dl
-          data-testid="abandoned-mark"
-          className="grid max-w-3xl grid-cols-[9rem_minmax(0,1fr)] gap-x-4 gap-y-3"
-        >
-          <dt className="text-foreground-secondary">Where it broke</dt>
-          <dd className="whitespace-pre-wrap text-foreground">
-            {mark.breaking_point}
-          </dd>
-          <dt className="text-foreground-secondary">Lesson</dt>
-          <dd className="whitespace-pre-wrap text-foreground">{mark.lesson}</dd>
-        </dl>
-        {refusal !== null && (
-          <p role="alert" className="text-negative">
-            {refusal.message}
-          </p>
-        )}
-      </Panel>
-    </div>
+        <dt className="text-foreground-secondary">Where it broke</dt>
+        <dd className="whitespace-pre-wrap text-foreground">
+          {mark.breaking_point}
+        </dd>
+        <dt className="text-foreground-secondary">Lesson</dt>
+        <dd className="whitespace-pre-wrap text-foreground">{mark.lesson}</dd>
+      </dl>
+      {refusal !== null && (
+        <p role="alert" className="text-negative">
+          {refusal.message}
+        </p>
+      )}
+    </Panel>
   )
 }
 

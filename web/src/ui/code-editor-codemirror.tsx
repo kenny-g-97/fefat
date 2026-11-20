@@ -3,6 +3,7 @@ import {
   history,
   historyKeymap,
   indentWithTab,
+  isolateHistory,
 } from "@codemirror/commands"
 import { python } from "@codemirror/lang-python"
 import {
@@ -11,12 +12,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language"
 import { linter, setDiagnostics } from "@codemirror/lint"
-import {
-  Annotation,
-  Compartment,
-  EditorState,
-  Transaction,
-} from "@codemirror/state"
+import { Annotation, Compartment, EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers } from "@codemirror/view"
 import { useEffect, useEffectEvent, useRef } from "react"
 import { lineSpan } from "./code-diagnostics"
@@ -36,13 +32,14 @@ const editing = new Compartment()
  * leaves the editor, CodeMirror's own way out; no search, completion, or folding, and the
  * browser's own caret, which no animation of the app's makes blink. The notes the page gives
  * stand on their lines, without CodeMirror's tooltip, since the page lists them; a change the
- * page makes stays out of the undo history, so that undo never brings back what it replaced. */
+ * page makes, such as a draft discarded, is an undo step of its own, so that Ctrl+Z takes back
+ * that change alone. */
 export default function CodeMirrorEditor({
   label,
   code,
   onChange,
   notes = [],
-  focusRequests = 0,
+  waiting = false,
   describedBy,
 }: CodeMirrorEditorProps) {
   const host = useRef<HTMLDivElement>(null)
@@ -54,8 +51,8 @@ export default function CodeMirrorEditor({
     EditorState.create({
       doc: code,
       extensions: [
-        ...common,
-        editing.of(editingMode(editable)),
+        ...codeEditing,
+        editing.of(editingMode(editable, waiting)),
         named.of(naming(label, describedBy)),
         EditorView.updateListener.of((update) => {
           const byHand = update.transactions.some(
@@ -87,11 +84,11 @@ export default function CodeMirrorEditor({
   useEffect(() => {
     view.current?.dispatch({
       effects: [
-        editing.reconfigure(editingMode(editable)),
+        editing.reconfigure(editingMode(editable, waiting)),
         named.reconfigure(naming(label, describedBy)),
       ],
     })
-  }, [editable, label, describedBy])
+  }, [editable, waiting, label, describedBy])
 
   useEffect(() => {
     const current = view.current
@@ -100,7 +97,7 @@ export default function CodeMirrorEditor({
     }
     current.dispatch({
       changes: { from: 0, to: current.state.doc.length, insert: code },
-      annotations: [fromThePage.of(true), Transaction.addToHistory.of(false)],
+      annotations: [fromThePage.of(true), isolateHistory.of("full")],
     })
   }, [code])
 
@@ -121,16 +118,10 @@ export default function CodeMirrorEditor({
     current.dispatch(setDiagnostics(current.state, marked))
   }, [notes, code])
 
-  useEffect(() => {
-    if (focusRequests > 0) {
-      view.current?.focus()
-    }
-  }, [focusRequests])
-
   return <div ref={host} />
 }
 
-const common = [
+const codeEditing = [
   lineNumbers(),
   history(),
   bracketMatching(),
@@ -142,10 +133,10 @@ const common = [
   linter(null, { tooltipFilter: () => [] }),
 ]
 
-function editingMode(editable: boolean) {
+function editingMode(editable: boolean, waiting: boolean) {
   return [
     EditorView.editable.of(editable),
-    EditorState.readOnly.of(!editable),
+    EditorState.readOnly.of(!editable || waiting),
     EditorView.editorAttributes.of({ "data-editable": String(editable) }),
   ]
 }

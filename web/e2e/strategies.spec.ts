@@ -3,7 +3,9 @@ import { screenshot } from "./support/screenshots.ts"
 import {
   codeEditor,
   editorLine,
+  keptDraftCode,
   lineHolding,
+  settled,
   strategyFromTemplate,
   templateNamed,
   writeCode,
@@ -68,6 +70,14 @@ test("a strategy made from a template takes a wider stop as its version 2", asyn
   await expect(draftState).toBeFocused()
   const code = page.getByRole("region", { name: "Code", exact: true })
   await expect(code).toContainText("Version 2 of 2")
+  // It takes the focus once, on arrival: a change made and taken back leaves the focus in place.
+  await editorLine(page, 9).click()
+  await page.keyboard.press("End")
+  await page.keyboard.type("x")
+  await page.keyboard.press("Backspace")
+  await expect(draftState).toHaveText("Saved as version 2.")
+  await settled(page)
+  await expect(codeEditor(page)).toBeFocused()
   await screenshot(page, "strategy-saved-v2")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "strategy-saved-v2-light")
@@ -270,7 +280,7 @@ test("a strategy marked abandoned keeps its lesson, shows on the list, and reope
   await expect(marked).toContainText("An oversold RSI alone is no edge.")
   await expect(abandon).toHaveCount(0)
   // The mark stands first on the page, far from the form that made it, so it takes the focus.
-  await expect(page.getByTestId("abandoned-panel")).toBeFocused()
+  await expect(marked).toBeFocused()
   await screenshot(page, "strategy-abandoned")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
   await screenshot(page, "strategy-abandoned-light")
@@ -291,7 +301,11 @@ test("a strategy marked abandoned keeps its lesson, shows on the list, and reope
 
   await expect(abandon).toBeVisible()
   await expect(marked).toHaveCount(0)
-  await expect(codeEditor(page)).toBeFocused()
+  // The Code card takes the focus where the mark stood, so the next Tab enters the editor
+  // rather than indenting its code.
+  await expect(
+    page.getByRole("region", { name: "Code", exact: true })
+  ).toBeFocused()
 })
 
 test("a draft outlives a reload, and a discard acts at once until undone", async ({
@@ -299,12 +313,21 @@ test("a draft outlives a reload, and a discard acts at once until undone", async
 }) => {
   await strategyFromTemplate(page.request, "kept_draft", "breakout")
   const breakout = await templateNamed(page.request, "breakout")
+  const wider = widerStop(breakout.code)
   await page.goto("/strategies/strategy?name=kept_draft")
   await expect(codeEditor(page)).toContainText("def strategy(")
-  await writeCode(page, widerStop(breakout.code))
+  await writeCode(page, wider)
+  const draftState = page.getByTestId("draft-state")
+
+  // Ctrl+Z in the editor undoes a discard alone, the draft's code coming back whole.
+  await page.getByRole("button", { name: "Discard draft" }).click()
+  await expect(draftState).toHaveText("Draft discarded")
+  await codeEditor(page).click()
+  await page.keyboard.press("ControlOrMeta+Z")
+  await expect(draftState).toHaveText("Draft, not saved")
+  await expect.poll(() => keptDraftCode(page, "kept_draft", 1)).toBe(wider)
 
   await page.reload()
-  const draftState = page.getByTestId("draft-state")
   await expect(codeEditor(page)).toContainText("stop_atr: float = 2.0")
   await expect(draftState).toHaveText("Draft, not saved")
   await page.getByRole("button", { name: "Discard draft" }).click()
@@ -325,6 +348,83 @@ test("a draft outlives a reload, and a discard acts at once until undone", async
   await expect(draftState).toHaveText(
     "Change the code to save it as a new version"
   )
+})
+
+test("while a save runs the code waits, and a refusal at no line leaves with its code", async ({
+  loggedIn: page,
+}) => {
+  await strategyFromTemplate(page.request, "held_save", "breakout")
+  const breakout = await templateNamed(page.request, "breakout")
+  await page.goto("/strategies/strategy?name=held_save")
+  await expect(codeEditor(page)).toContainText("def strategy(")
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/v1/strategies/*/versions", async (route) => {
+    await released
+    await route.fulfill({
+      status: 400,
+      contentType: "application/problem+json",
+      json: {
+        title: "Bad Request",
+        status: 400,
+        detail: "Refused for this test, at no line of the code.",
+        instance: "/v1/strategies",
+        request_id: "spec",
+        line: null,
+      },
+    })
+  })
+  await writeCode(page, widerStop(breakout.code))
+  await page.getByRole("button", { name: "Save as new version" }).click()
+
+  // Validate would take the save's answer back, and words typed now would be lost once the
+  // save opened the version it saved, so all of them wait.
+  await expect(page.getByRole("button", { name: "Validate" })).toBeDisabled()
+  await expect(codeEditor(page)).toHaveAttribute("aria-readonly", "true")
+  await expect(page.getByLabel("Changelog")).toBeDisabled()
+  release()
+  const refused = page
+    .getByRole("alert")
+    .filter({ hasText: "Refused for this test" })
+  await expect(refused).toHaveText(
+    "Refused for this test, at no line of the code."
+  )
+  await expect(codeEditor(page)).not.toHaveAttribute("aria-readonly")
+  await editorLine(page, 9).click()
+  await page.keyboard.press("End")
+  await page.keyboard.type(" ")
+  await expect(refused).toHaveCount(0)
+})
+
+test("while a create runs the template waits, and the strategy opens once saved", async ({
+  loggedIn: page,
+}) => {
+  await page.goto("/strategies/new")
+  await expect(
+    page.locator('[data-slot="code-editor"] .cm-content')
+  ).toContainText("def strategy(")
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/v1/strategies", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    await released
+    await route.continue()
+  })
+  await page.getByLabel("Name").fill("held_create")
+  await page.getByRole("button", { name: "Create strategy" }).click()
+
+  // Another template would draw another form, whose create would never hear the answer.
+  const templates = page.getByTestId("template-choice").getByRole("button")
+  await expect(templates.first()).toBeDisabled()
+  release()
+  await expect(page).toHaveURL(/name=held_create&version=1/)
 })
 
 test("the editor's code and the chart's load with the pages that show them alone", async ({

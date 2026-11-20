@@ -29,8 +29,8 @@ const FORM = "save-version"
  * words, kept with its code in the browser, so they live in the draft rather than in
  * react-hook-form, as the import wizard's fields do; Discard draft, which acts at once and gives
  * way to Undo discard until the next change, in the same button, so that the focus stays on it;
- * and the save, which waits while the code is the version's, saying so, and while it runs. A
- * refusal that names no line of the code stands under it. */
+ * and the save, which waits while the code is the version's, saying so, and while it runs, as the
+ * words do then. A refusal that names no line of the code stands under it. */
 export function SaveVersion({
   draft,
   state,
@@ -42,6 +42,7 @@ export function SaveVersion({
 }: SaveVersionProps) {
   const [missing, setMissing] = useState(false)
   const hypothesis = useRef<HTMLInputElement>(null)
+  const saving = state.kind === "saving"
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (draft.hypothesis.trim() === "") {
@@ -71,6 +72,7 @@ export function SaveVersion({
             id="version-hypothesis"
             value={draft.hypothesis}
             autoComplete="off"
+            disabled={saving}
             aria-invalid={missing}
             aria-describedby="version-hypothesis-note"
             onChange={(event) => {
@@ -96,6 +98,7 @@ export function SaveVersion({
             value={draft.changelog}
             placeholder="What changed, such as a wider stop"
             autoComplete="off"
+            disabled={saving}
             onChange={(event) =>
               onChange({ ...draft, changelog: event.target.value })
             }
@@ -135,13 +138,15 @@ const DRAFT_LINES: Readonly<
 }
 
 /** The draft's state before the buttons, in a status region; a version a save just opened says
- * so and takes the focus, so that a screen reader hears it on arrival, as the Data page's line
- * after a delete does. */
+ * so and takes the focus once, on arrival, so that a screen reader hears it, as the Data page's
+ * line after a delete does, and a change taken back later leaves the focus where it is. */
 function DraftLine({ state }: Readonly<{ state: DraftState }>) {
   const line = useRef<HTMLParagraphElement>(null)
+  const announced = useRef(false)
   const saved = state.kind === "saved"
   useEffect(() => {
-    if (saved) {
+    if (saved && !announced.current) {
+      announced.current = true
       line.current?.focus()
     }
   }, [saved])

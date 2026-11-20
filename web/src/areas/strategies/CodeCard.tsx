@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from "@tanstack/react-router"
+import type { Ref } from "react"
 import { ApiProblem } from "@/api/problems"
 import {
   type IndexedStrategy,
@@ -24,19 +25,17 @@ import { forgetDraft, useStrategyDraft } from "./strategy-drafts"
 type CodeCardProps = Readonly<{
   strategy: IndexedStrategy
   version: SavedStrategyVersion
-  editorFocusRequests: number
+  ref?: Ref<HTMLElement>
 }>
 
 /** A version's code in the editor (web/DESIGN.md, Patterns, Strategy page), the draft kept in this
  * browser until it is saved or discarded: Validate builds the code in the server's executor and
  * underlines its refusal at its line, the saved code shows its version's warnings, and Save as
  * new version saves the draft with its hypothesis and changelog, then opens the version saved,
- * which says so. Validate waits while a save runs, since it would take the save's answer back. */
-export function CodeCard({
-  strategy,
-  version,
-  editorFocusRequests,
-}: CodeCardProps) {
+ * which says so. While a save runs, Validate, which would take its answer back, and the code and
+ * its words, whose changes the version it opens would drop, wait. The card takes the focus its
+ * page gives it (`ref`). */
+export function CodeCard({ strategy, version, ref }: CodeCardProps) {
   const { draft, change, discard, discarded, undoDiscard } = useStrategyDraft(
     strategy.name,
     version.version,
@@ -90,6 +89,8 @@ export function CodeCard({
   }
   return (
     <Panel
+      ref={ref}
+      tabIndex={-1}
       title="Code"
       description={`Version ${version.version} of ${strategy.versions.length}, saved ${formatInstant(version.created_at)}`}
       action={
@@ -103,7 +104,7 @@ export function CodeCard({
         code={draft.code}
         onChange={(code) => change({ ...draft, code })}
         notes={editorNotes(lines)}
-        focusRequests={editorFocusRequests}
+        waiting={save.isPending}
       />
       <div className="flex items-baseline justify-between gap-4">
         <CodeVerdict
