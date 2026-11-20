@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
 from fefat.strategy.abandoned_marks import AlreadyAbandonedError, NotAbandonedError
 from fefat.strategy.starting_points import StrategyTemplate
@@ -72,7 +72,21 @@ class NewStrategy(NewStrategyVersionRequest):
     name: str = Field(pattern=STRATEGY_NAME)
 
 
-Words = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+def _stripped_as_python_does(text: str) -> str:
+    """`text` without the spaces around it as Python's strip, the SDK's, sees spaces, which takes
+    more characters for one than Pydantic's does, such as a unit separator; refused where nothing
+    is left."""
+    stripped = text.strip()
+    if not stripped:
+        raise ValueError(f"Expected a sentence or more, got only spaces: {text!r}.")
+    return stripped
+
+
+Words = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+    AfterValidator(_stripped_as_python_does),
+]
 """A text of a sentence or more, the spaces around it dropped."""
 
 
@@ -212,16 +226,14 @@ def reopen_strategy(strategy_id: StrategyId, container: ContainerDependency) -> 
 
 
 def _marked(mark: Callable[[], IndexedStrategy]) -> IndexedStrategy:
-    """The strategy `mark` marks or reopens; its refusals as problems, the SDK's refusal of the
-    words last, 422, such as a text the schema keeps and Python's strip leaves empty."""
+    """The strategy `mark` marks or reopens; its refusals as problems, the words the schema
+    refused before it (`Words`)."""
     try:
         return mark()
     except NoSuchStrategyError as unknown:
         raise HTTPException(404, str(unknown)) from unknown
     except (AlreadyAbandonedError, NotAbandonedError, LibraryRefusedError) as refused:
         raise HTTPException(409, str(refused)) from refused
-    except ValueError as refused:
-        raise HTTPException(422, str(refused)) from refused
 
 
 def _answered(

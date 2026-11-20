@@ -356,8 +356,8 @@ def test_a_mark_of_no_strategy_or_without_its_words_is_refused(
         client.post(
             f"/v1/strategies/{strategy_id}/abandon", json={**MARK, "lesson": "  "}, headers=csrf
         ),
-        # Python's strip takes a unit separator for a space, the schema's does not (the ponytail
-        # review): the SDK's refusal of the text left empty is the request's too.
+        # Python's strip takes a unit separator for a space where Pydantic's does not (the ponytail
+        # review), so the schema strips as the SDK does and refuses the field, as it documents.
         client.post(
             f"/v1/strategies/{strategy_id}/abandon",
             json={**MARK, "breaking_point": "\u001f"},
@@ -367,7 +367,9 @@ def test_a_mark_of_no_strategy_or_without_its_words_is_refused(
     ]
 
     assert [answer.status_code for answer in answers] == [404, 404, 422, 422, 403]
-    assert "Expected where the strategy broke" in answers[3].json()["detail"]
+    [refused] = answers[3].json()["errors"]
+    assert refused["location"] == ["body", "breaking_point"]
+    assert "Expected a sentence or more" in refused["message"]
     assert not (resolve_paths(os.environ).strategies_dir / "breakout" / "abandoned.json").exists()
 
 
