@@ -7,22 +7,30 @@ export type FieldRefusal = Readonly<{
 }>
 
 /** A request the server refused: its status, the detail of its problem as the message, and,
- * for a request its schema refused (422), each part refused, such as a profile's field. */
+ * for a request its schema refused (422), each part refused, such as a profile's field; for the
+ * trader's code the SDK refused (`RefusedCodeProblem`, 400), the line of the code it is at, null
+ * where it names none and for every other problem. */
 export class ApiProblem extends Error {
   readonly status: number
   readonly refusedFields: readonly FieldRefusal[]
+  readonly line: number | null
 
   constructor(
     status: number,
     detail: string,
-    refusedFields: readonly FieldRefusal[] = []
+    refusedFields: readonly FieldRefusal[] = [],
+    line: number | null = null
   ) {
     super(detail)
     this.name = "ApiProblem"
     this.status = status
     this.refusedFields = refusedFields
+    this.line = line
   }
 }
+
+/** A refused code's line (`fefat_app.http.problems.RefusedCodeProblem`). */
+const refusedCode = z.object({ line: z.number().int().min(1).nullable() })
 
 /** A validation problem's errors (`fefat_app.http.problems.ValidationProblem`). */
 const validationErrors = z.object({
@@ -75,9 +83,11 @@ function problemOf({ error, response }: ApiResult<unknown>): ApiProblem {
       ? error.detail
       : `The server answered ${response.status} ${response.statusText}.`
   const refused = validationErrors.safeParse(error)
+  const code = refusedCode.safeParse(error)
   return new ApiProblem(
     response.status,
     detail,
-    refused.success ? refused.data.errors : []
+    refused.success ? refused.data.errors : [],
+    code.success ? code.data.line : null
   )
 }
