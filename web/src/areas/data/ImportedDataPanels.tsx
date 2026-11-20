@@ -21,7 +21,7 @@ import {
   NO_FILTERS,
 } from "./imported-filters"
 import { ImportedHead, ImportedRow } from "./ImportedRow"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 
 /** The data the trader imported, an instrument's from one provider in each row, which opens its
  * dataset's page, under its search and its dropdowns, and under it the catalog's products that
