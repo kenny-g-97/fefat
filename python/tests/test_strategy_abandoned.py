@@ -95,6 +95,23 @@ def test_a_name_that_is_no_strategys_is_refused(name: str) -> None:
         abandon_in(strategies_dir(), name, breaking_point=BROKE, lesson=LESSON)
 
 
+def test_a_mark_a_reopening_removes_after_the_listing_is_passed_over(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    abandon_in(strategies_dir(), "breakout", breaking_point=BROKE, lesson=LESSON)
+    reading = Path.read_bytes
+
+    def reopened_first(path: Path) -> bytes:
+        if path.name == "abandoned.json":
+            reopen_in(strategies_dir(), "breakout")
+        return reading(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reopened_first)
+
+    assert abandoned_marks_in(strategies_dir()) == {}
+
+
 def test_a_mark_changed_by_hand_into_no_mark_is_refused_with_its_file() -> None:
     ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
     mark_file = strategies_dir() / "breakout" / "abandoned.json"

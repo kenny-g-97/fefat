@@ -95,9 +95,16 @@ def abandoned_marks_in(strategies_dir: Path) -> dict[str, AbandonedMark]:
         if strategies_dir.is_dir()
         else []
     )
-    return {name: _read_mark(strategies_dir, name) for name in marked}
+    read = {name: _read_mark(strategies_dir, name) for name in marked}
+    return {name: mark for name, mark in read.items() if mark is not None}
 
 
-def _read_mark(strategies_dir: Path, name: str) -> AbandonedMark:
+def _read_mark(strategies_dir: Path, name: str) -> AbandonedMark | None:
+    """The mark of the strategy `name`; None where a reopening removed it since the folders were
+    listed, which that reopening's own indexing then reads."""
     path = strategy_folder(strategies_dir, name) / MARK_FILE
-    return parsed_json(AbandonedMark, path.read_bytes(), str(path))
+    try:
+        content = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    return parsed_json(AbandonedMark, content, str(path))

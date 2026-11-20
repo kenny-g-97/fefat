@@ -103,6 +103,7 @@ def test_a_feature_version_never_saved_is_refused_at_the_line_that_reads_it() ->
     [
         ('pl.col("close")', 'pl.col("clsoe") > 0', 11, '"clsoe"'),
         ('pl.col("clsoe")', 'pl.col("read") > 0', 10, '"clsoe"'),
+        ('pl.col("close").alias("signal")', 'pl.col("signal") > 0', 11, '"signal"'),
         ('pl.col("close")', 'pl.col("cl" + "soe") > 0', DEFINED_ON, '"clsoe"'),
         ('pl.col("close")', 'pl.col("close")', DEFINED_ON, "Boolean"),
     ],

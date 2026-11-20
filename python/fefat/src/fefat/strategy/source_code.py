@@ -331,22 +331,36 @@ def _line_in(error: BaseException, filename: str) -> int | None:
 
 
 def _named_column_line(error: BaseException, text: str) -> int | None:
-    """The first line of the code that writes, as a text, the column Polars could not find, as
-    `pl.col("clsoe")` writes it, since the frame is built in FEFAT's code, past the code's own
-    lines; None for another error, a message in another wording, or a name the code builds."""
+    """The first line of the code that reads the column Polars could not find, as
+    `pl.col("clsoe")` reads it, else the first that writes its name as a text, since the frame is
+    built in FEFAT's code, past the code's own lines; None for another error, a message in another
+    wording, or a name the code builds. The code compiled before the frame was built, so it
+    parses."""
     if not isinstance(error, pl.exceptions.ColumnNotFoundError):
         return None
     named = _MISSING_COLUMN.search(str(error))
     if named is None:
         return None
-    try:
-        nodes = ast.walk(ast.parse(text))
-    except SyntaxError:
-        return None
-    lines = [
+    nodes = list(ast.walk(ast.parse(text)))
+    calls = [node for node in nodes if isinstance(node, ast.Call)]
+    read = [call.lineno for call in calls if _reads_column(call, named[1])]
+    if read:
+        return min(read)
+    written = [
         node.lineno for node in nodes if isinstance(node, ast.Constant) and node.value == named[1]
     ]
-    return min(lines, default=None)
+    return min(written, default=None)
+
+
+def _reads_column(call: ast.Call, name: str) -> bool:
+    """Whether `call` calls `col` with `name` first, as `pl.col("close")` does."""
+    if not call.args:
+        return False
+    called = call.func.attr if isinstance(call.func, ast.Attribute) else None
+    if isinstance(call.func, ast.Name):
+        called = call.func.id
+    first = call.args[0]
+    return called == "col" and isinstance(first, ast.Constant) and first.value == name
 
 
 def _strategy_line(text: str) -> int | None:
