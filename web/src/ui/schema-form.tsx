@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { type ReactNode, useState } from "react"
 import { Input } from "./input"
 import { Label } from "./label"
 import { RadioChoice } from "./radio-choice"
@@ -49,8 +49,11 @@ export function SchemaForm({ schema, idPrefix, onChange }: SchemaFormProps) {
   if (reading.fields.length === 0) {
     return <p className="text-foreground-secondary">It takes no parameters.</p>
   }
+  // Other fields start afresh at their defaults, as a schema the page changes in place may give.
+  const drawn = reading.fields.map((field) => `${field.name}:${field.kind}`)
   return (
     <SchemaFields
+      key={drawn.join(" ")}
       fields={reading.fields}
       idPrefix={idPrefix}
       onChange={onChange}
@@ -110,13 +113,15 @@ function ParameterInput({
 }: ParameterInputProps) {
   if (field.kind === "boolean") {
     return (
-      <RadioChoice
-        id={id}
-        label={field.name}
-        options={FLAGS}
-        value={value === true ? "true" : "false"}
-        onChange={(chosen) => onEnter(chosen === "true")}
-      />
+      <Described description={field.description}>
+        <RadioChoice
+          id={id}
+          label={field.name}
+          options={FLAGS}
+          value={value === true ? "true" : "false"}
+          onChange={(chosen) => onEnter(chosen === "true")}
+        />
+      </Described>
     )
   }
   if (field.kind === "choice") {
@@ -125,30 +130,34 @@ function ParameterInput({
       label: String(option),
     }))
     const chosen = (text: string) => onEnter(optionOf(field.options, text))
-    return options.length <= 3 ? (
-      <RadioChoice
-        id={id}
-        label={field.name}
-        options={options}
-        value={String(value)}
-        onChange={chosen}
-      />
-    ) : (
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={id}>{field.name}</Label>
-        <Select value={String(value)} onValueChange={chosen}>
-          <SelectTrigger id={id} className="w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper">
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    return (
+      <Described description={field.description}>
+        {options.length <= 3 ? (
+          <RadioChoice
+            id={id}
+            label={field.name}
+            options={options}
+            value={String(value)}
+            onChange={chosen}
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={id}>{field.name}</Label>
+            <Select value={String(value)} onValueChange={chosen}>
+              <SelectTrigger id={id} className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </Described>
     )
   }
   const read = typedValue(field.kind, String(value), field.initial)
@@ -181,6 +190,22 @@ function ParameterInput({
           {refusal}
         </p>
       )}
+    </div>
+  )
+}
+
+/** A choice with the parameter's description under it, where it has one. */
+function Described({
+  description,
+  children,
+}: Readonly<{ description: string | null; children: ReactNode }>) {
+  if (description === null) {
+    return children
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {children}
+      <p className="text-xs text-muted-foreground">{description}</p>
     </div>
   )
 }
