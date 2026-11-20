@@ -224,13 +224,18 @@ a:not([data-slot="button"]):active {
 
 /* A text of several lines is a field too (step 5.5): the control surface, the field border, and
    the field's focus, refused or not, growing with its text from three lines, so it needs no
-   grip to resize it. */
+   grip to resize it where the browser grows it. */
 [data-slot="textarea"] {
   min-height: 5rem;
   padding: 0.5rem 1rem;
   background-color: var(--muted);
   color: var(--foreground);
-  resize: none;
+}
+
+@supports (field-sizing: content) {
+  [data-slot="textarea"] {
+    resize: none;
+  }
 }
 
 [data-slot="textarea"]:focus-visible {

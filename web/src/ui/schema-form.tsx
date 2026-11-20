@@ -49,11 +49,10 @@ export function SchemaForm({ schema, idPrefix, onChange }: SchemaFormProps) {
   if (reading.fields.length === 0) {
     return <p className="text-foreground-secondary">It takes no parameters.</p>
   }
-  // Other fields start afresh at their defaults, as a schema the page changes in place may give.
-  const drawn = reading.fields.map((field) => `${field.name}:${field.kind}`)
+  // Other fields, defaults, or choices start afresh, as a schema the page changes in place gives.
   return (
     <SchemaFields
-      key={drawn.join(" ")}
+      key={JSON.stringify(reading.fields)}
       fields={reading.fields}
       idPrefix={idPrefix}
       onChange={onChange}
