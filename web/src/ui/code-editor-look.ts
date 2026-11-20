@@ -6,9 +6,11 @@ import { tags } from "@lezer/highlight"
  * every colour CodeMirror's own theme sets for a light page is set here, its caret, gutter,
  * bracket match, selection, underlines, and focus. A read-only editor is a box of code on the
  * control surface with a hairline; an editable one is a field, in the field border, its focus the
- * accent's border with a 1 px ring of the accent. Errors take a wavy underline in the negative
- * and warnings a dotted one in body text, as text decorations, where CodeMirror draws a red and
- * an orange squiggle as images. */
+ * accent's border with a 1 px ring of the accent. A bracket and its match beside the cursor take
+ * the hover step with a hairline, and a bracket that closes nothing the negative's text and
+ * outline, a mark and not a fill. Errors take a wavy underline in the negative and warnings a
+ * dotted one in body text, as text decorations, where CodeMirror draws a red and an orange
+ * squiggle as images. */
 export const codeTheme = EditorView.theme({
   "&": {
     color: "var(--foreground)",
@@ -40,13 +42,18 @@ export const codeTheme = EditorView.theme({
     borderRight: "1px solid var(--border)",
     borderRadius: "0.75rem 0 0 0.75rem",
   },
-  ".cm-lineNumbers .cm-gutterElement": { padding: "0 0.75rem 0 1rem" },
+  ".cm-lineNumbers .cm-gutterElement": {
+    minWidth: "3rem",
+    padding: "0 0.75rem 0 1rem",
+  },
   ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
     backgroundColor: "var(--accent)",
     outline: "1px solid var(--input)",
   },
   ".cm-nonmatchingBracket, &.cm-focused .cm-nonmatchingBracket": {
-    backgroundColor: "var(--negative-soft)",
+    backgroundColor: "transparent",
+    color: "var(--negative)",
+    outline: "1px solid var(--negative)",
   },
   ".cm-lintRange": { backgroundImage: "none", paddingBottom: "0" },
   ".cm-lintRange-error": {

@@ -1,4 +1,6 @@
-import { lazy, Suspense } from "react"
+import { lazyRouteComponent } from "@tanstack/react-router"
+import { cn } from "cn"
+import { Suspense, useId } from "react"
 
 /** A note on a line of the code, which the editor underlines: an error in the negative, a
  * warning dotted in body text. */
@@ -13,41 +15,77 @@ export type CodeEditorProps = Readonly<{
   code: string
   onChange?: (code: string) => void
   notes?: readonly CodeNote[]
+  focusRequests?: number
 }>
 
-const CodeMirrorEditor = lazy(() => import("./code-editor-codemirror"))
+/** CodeMirror's chunk, loaded with the first editor a page shows; a chunk a rebuild of the web
+ * app has replaced reloads the page once, where React's `lazy` would keep its first failure. */
+const CodeMirrorEditor = lazyRouteComponent(
+  () => import("./code-editor-codemirror")
+)
 
 /** Python code in CodeMirror 6 (web/DESIGN.md, Patterns, Code editor), named for a screen reader
  * by `label`: editable where the page takes its `onChange`, else read-only, with its `notes`
- * underlined at their lines. CodeMirror's code loads with the first page that shows an editor,
- * the code standing as plain text meanwhile; the strategy page uses it (step 5.5), and the
- * feature lab and the builder of Phase 6 after it. */
+ * underlined at their lines, and the focus given to it each time `focusRequests` grows. An
+ * editable editor says under it how to leave it by the keys, which its text names as its
+ * description. CodeMirror's code loads with the first page that shows an editor, the code
+ * standing as plain text in the editor's own box meanwhile; the strategy page uses it (step
+ * 5.5), and the feature lab and the builder of Phase 6 after it. */
 export function CodeEditor(props: CodeEditorProps) {
+  const hint = useId()
+  const editable = props.onChange !== undefined
   return (
-    <div data-slot="code-editor">
-      <Suspense fallback={<CodeText label={props.label} code={props.code} />}>
-        <CodeMirrorEditor {...props} />
+    <div data-slot="code-editor" className="flex flex-col gap-3">
+      <Suspense
+        fallback={
+          <CodeText label={props.label} code={props.code} editable={editable} />
+        }
+      >
+        <CodeMirrorEditor {...props} describedBy={editable ? hint : null} />
       </Suspense>
+      {editable && (
+        <p id={hint} className="text-xs text-muted-foreground">
+          Tab indents. Press Escape, then Tab, to leave the editor.
+        </p>
+      )}
     </div>
   )
 }
 
-/** The code as the editor shows it, with its line numbers, while CodeMirror loads. */
-function CodeText({ label, code }: Readonly<{ label: string; code: string }>) {
+/** The code as the editor shows it, in the editor's box with its gutter of line numbers, while
+ * CodeMirror loads, so that nothing moves once it has. */
+function CodeText({
+  label,
+  code,
+  editable,
+}: Readonly<{ label: string; code: string; editable: boolean }>) {
+  const lines = code.split("\n")
   return (
     <div
       role="region"
       aria-label={label}
-      className="overflow-x-auto rounded-xl border bg-muted py-2 text-sm leading-5"
+      className={cn(
+        "flex overflow-x-auto rounded-xl border bg-muted text-sm leading-5",
+        editable && "border-input"
+      )}
     >
-      {code.split("\n").map((line, index) => (
-        <div key={index} className="flex">
-          <span className="w-12 shrink-0 pr-3 text-right text-muted-foreground select-none">
+      <div
+        aria-hidden="true"
+        className="box-content min-w-12 shrink-0 border-r py-2 text-right text-muted-foreground select-none"
+      >
+        {lines.map((_, index) => (
+          <div key={index} className="pr-3 pl-4">
             {index + 1}
-          </span>
-          <span className="px-4 whitespace-pre">{line}</span>
-        </div>
-      ))}
+          </div>
+        ))}
+      </div>
+      <div className="py-2">
+        {lines.map((line, index) => (
+          <div key={index} className="h-5 px-4 whitespace-pre">
+            {line}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
