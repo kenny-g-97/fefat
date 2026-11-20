@@ -83,11 +83,15 @@ export default function CodeMirrorEditor({
     })
   }, [code])
 
+  const shownNotes = useRef<string | null>(null)
   useEffect(() => {
     const current = view.current
-    if (current === null) {
+    // A page draws its notes anew at each render: the same notes on the same code stay put.
+    const shown = `${JSON.stringify(notes)}\n${code}`
+    if (current === null || shownNotes.current === shown) {
       return
     }
+    shownNotes.current = shown
     const doc = current.state.doc
     const marked = notes.map((note) => ({
       ...lineSpan(doc, note.line),
@@ -95,7 +99,7 @@ export default function CodeMirrorEditor({
       message: note.message,
     }))
     current.dispatch(setDiagnostics(current.state, marked))
-  }, [notes])
+  }, [notes, code])
 
   return <div ref={host} />
 }
