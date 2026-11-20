@@ -112,6 +112,27 @@ def test_a_mark_a_reopening_removes_after_the_listing_is_passed_over(
     assert abandoned_marks_in(strategies_dir()) == {}
 
 
+def test_a_reopening_tries_again_while_a_read_holds_the_mark_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Windows refuses to remove a file another handle holds open, as an indexing's read does.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    abandon_in(strategies_dir(), "breakout", breaking_point=BROKE, lesson=LESSON)
+    removing = Path.unlink
+    held = [PermissionError(32, "The file is being used by another process")]
+
+    def held_once(path: Path, missing_ok: bool = False) -> None:
+        if path.name == "abandoned.json" and held:
+            raise held.pop()
+        removing(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held_once)
+
+    reopen_in(strategies_dir(), "breakout")
+
+    assert (held, abandoned_marks_in(strategies_dir())) == ([], {})
+
+
 def test_a_mark_changed_by_hand_into_no_mark_is_refused_with_its_file() -> None:
     ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
     mark_file = strategies_dir() / "breakout" / "abandoned.json"

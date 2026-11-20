@@ -21,7 +21,12 @@ from pydantic import AwareDatetime, Field
 
 from fefat.features.versions import version_numbers
 from fefat.market.schema import FrozenModel
-from fefat.market.store_files import create_atomically, json_writer, parsed_json
+from fefat.market.store_files import (
+    create_atomically,
+    json_writer,
+    parsed_json,
+    retried_while_held_open,
+)
 from fefat.strategy.versions import strategy_folder
 
 MARK_FILE = "abandoned.json"
@@ -76,9 +81,10 @@ def abandon_in(
 
 def reopen_in(strategies_dir: Path, name: str) -> None:
     """Remove the mark of the strategy `name` in `strategies_dir`, refused with
-    `NotAbandonedError` where it holds none."""
+    `NotAbandonedError` where it holds none; tried again while a read holds the file open, which
+    Windows refuses a removal for."""
     try:
-        (strategy_folder(strategies_dir, name) / MARK_FILE).unlink()
+        retried_while_held_open((strategy_folder(strategies_dir, name) / MARK_FILE).unlink)
     except FileNotFoundError as error:
         raise NotAbandonedError(
             f"Expected strategy {name} abandoned, to reopen it, got it not abandoned."
