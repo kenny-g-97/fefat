@@ -2,7 +2,6 @@
 
     fefat data import databento <folder-or-file> [--preview] [--differing {refuse,take-file}]
     fefat data verify-bars <root> <trade-date>
-    fefat data verify-trade-dates [<root>]
     fefat data catalog
     fefat data quality [<root>]
     fefat data sources
@@ -11,6 +10,7 @@
         [--preview] [--differing {refuse,take-file}]
     fefat data profiles [<name>]
     fefat data delete <provider> <root> [--yes]
+    fefat data verify-trade-dates [<root>]
     fefat cache build --root <root> --year <year> [--provider <provider>]
     fefat cache status [--root <root>]
     fefat cache features [--prune [--older-than <days>]]
@@ -28,10 +28,7 @@
 The first imports a Databento batch download, or a single DBN file, into the store in
 `FEFAT_DATA_DIR` (`fefat.config.resolve_paths`) and prints what it imported; the second
 rebuilds a trade date's bars from the finer data in the store and prints how they compare with
-the stored ones (`fefat.market.bars_check`); `verify-trade-dates` lists the stored records the
-session calendars date otherwise now, as a calendar corrected since their import leaves them, of
-a product or of every product (`fefat.market.trade_date_check`, step 5.16); the third prints each
-dataset in the store with
+the stored ones (`fefat.market.bars_check`); the third prints each dataset in the store with
 its trade dates, contracts, fidelity, and quality (`fefat.market.api.datasets`); the fourth
 writes the quality report of a product, or of every product, under `FEFAT_DATA_DIR/reports/`
 and prints its summary (`fefat.market.quality`); the fifth prints the source guide, each
@@ -46,7 +43,10 @@ nothing, and `--differing take-file` lets a file's records stand where the store
 with other values (`fefat_app.import_commands`). `profiles` lists the presets and your saved
 profiles, or prints one as YAML to copy into a profile of your own. `delete` prints what a
 delete of a provider's data of a root would remove, with the saved runs that read it, and
-deletes it with `--yes` (`fefat_app.delete_commands`, step 5.18).
+deletes it with `--yes` (`fefat_app.delete_commands`, step 5.18). `verify-trade-dates` lists the
+stored records the session calendars date otherwise now, as a calendar corrected since their
+import leaves them, of a product or of every product (`fefat.market.trade_date_check`, step
+5.16).
 
 `cache build` builds the engine's cache of a product's trade dates in a year, `cache status`
 lists it, and `cache features` lists the feature cache or prunes what was not used for a while

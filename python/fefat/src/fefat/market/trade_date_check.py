@@ -28,7 +28,8 @@ from fefat.market.calendar_check import checked_datasets, dated_rows
 from fefat.market.importers.partition_merge import deleted_and_imported_again
 from fefat.market.instruments import InstrumentTable
 from fefat.market.layout import Dataset, Partition
-from fefat.market.schema import BarSchemaName, FrozenModel, SchemaKind, TimeUnit
+from fefat.market.quality_checks import OUT_OF_SESSION
+from fefat.market.schema import FrozenModel, SchemaKind, holds_daily_bars
 from fefat.market.store import Store
 
 PARTITIONS_A_QUERY = 200
@@ -40,7 +41,8 @@ class DatedOtherwise(FrozenModel):
     """Records of a dataset's contract stored under a trade date whose session, with the break
     after it, does not hold them under the calendar as it is now, or daily bars that do not open
     at that session's open: how many, the first and last of their instants, in nanoseconds since
-    the Unix epoch, UTC, and the trade date the calendar gives the first of them now."""
+    the Unix epoch, UTC, and the trade date the calendar gives the first of them now, a daily
+    bar's own where that date still has a session."""
 
     dataset: Dataset
     contract: str
@@ -53,13 +55,14 @@ class DatedOtherwise(FrozenModel):
     def describe(self) -> str:
         """One line: where the records are stored, how many, when, and how the calendar dates
         them now."""
+        first, last = utc_text(self.first_instant), utc_text(self.last_instant)
         held = (
             f"{self.dataset.relative_folder()} {self.contract} {self.stored_trade_date}: "
-            f"{counted(self.records, 'record')} from {utc_text(self.first_instant)} to "
-            f"{utc_text(self.last_instant)}"
+            f"{counted(self.records, 'record')} "
+            + (f"at {first}" if first == last else f"from {first} to {last}")
         )
         if self.trade_date_now == self.stored_trade_date:
-            return f"{held}, which open otherwise than the session the calendar gives them now"
+            return f"{held}, while the calendar opens that date otherwise now"
         return f"{held}, which the calendar dates {self.trade_date_now} now"
 
 
@@ -83,10 +86,11 @@ class TradeDateReport(FrozenModel):
         if not found:
             return f"{heading} none."
         records = counted(sum(each.records for each in found), "record")
+        dates = counted(len({each.stored_trade_date for each in found}), "stored trade date")
         datasets = {(each.dataset.provider, each.dataset.root): each.dataset for each in found}
         return "\n".join(
             [
-                f"{heading} {records} on {counted(len(found), 'stored trade date')}:",
+                f"{heading} {records} on {dates}:",
                 *(f"  {each.describe()}" for each in found),
                 *(
                     f"To date them again, {deleted_and_imported_again(dataset)}."
@@ -126,10 +130,26 @@ def _dated_otherwise(
     store: Store, dataset: Dataset, partitions: Sequence[Partition], sessions: SessionTable
 ) -> tuple[int, list[DatedOtherwise]]:
     """How many records `partitions` hold, and those of them dated otherwise, per contract and
-    stored trade date: outside the session of their trade date and the break after it, as the
-    quality report's out-of-session finding reads them, or, of daily bars, at another open."""
+    stored trade date, with the trade date the calendar gives them now."""
+    rows = _stored_dates(store, dataset, partitions)
+    stored = pl.col("stored_trade_date")
+    first, last, records = (
+        rows.select(stored.min(), stored.max().alias("last"), pl.len()).collect().row(0)
+    )
+    if not records:
+        return 0, []
+    bounds = sessions.between_with_next_opens(first, last)
+    outside = _outside_their_sessions(dataset, rows, bounds)
+    if outside.is_empty():
+        return records, []
+    return records, _dated_now(dataset, outside, sessions)
+
+
+def _stored_dates(store: Store, dataset: Dataset, partitions: Sequence[Partition]) -> pl.LazyFrame:
+    """Each stored record's contract, its instant on the dataset's clock, and its stored trade
+    date."""
     clock = "ts_open" if dataset.schema_name.kind is SchemaKind.OHLCV else "ts_recv"
-    rows = pl.concat(
+    return pl.concat(
         [
             dated_rows(store, partition).select(
                 contract=pl.lit(partition.contract),
@@ -139,32 +159,45 @@ def _dated_otherwise(
             for partition in partitions
         ]
     )
-    stored = pl.col("stored_trade_date")
-    first, last, records = (
-        rows.select(stored.min(), stored.max().alias("last"), pl.len()).collect().row(0)
-    )
-    if not records:
-        return 0, []
-    bounds = sessions.between_with_next_opens(first, last).select(
-        "open", "next_open", stored_trade_date="trade_date"
-    )
+
+
+def _outside_their_sessions(
+    dataset: Dataset, rows: pl.LazyFrame, bounds: pl.DataFrame
+) -> pl.DataFrame:
+    """Per contract and stored trade date, the records outside that date's session and the break
+    after it, as the quality report's out-of-session finding reads them, or, of daily bars, at
+    another open than the session's, with whether the date has a session now. `bounds` are the
+    sessions of `SessionTable.between_with_next_opens`."""
     instant = pl.col("instant")
-    outside = (
-        pl.col("open").is_null() | (instant < pl.col("open")) | (instant >= pl.col("next_open"))
-    )
-    if _daily(dataset):
+    outside = OUT_OF_SESSION
+    if holds_daily_bars(dataset.schema_name):
         outside = pl.col("open").is_null() | (instant != pl.col("open"))
-    grouped = (
-        rows.join(bounds.lazy(), on="stored_trade_date", how="left")
+    sessions = bounds.select("open", "next_open", stored_trade_date="trade_date")
+    return (
+        rows.join(sessions.lazy(), on="stored_trade_date", how="left")
         .filter(outside)
         .group_by("contract", "stored_trade_date")
-        .agg(records=pl.len(), first_instant=instant.min(), last_instant=instant.max())
+        .agg(
+            records=pl.len(),
+            first_instant=instant.min(),
+            last_instant=instant.max(),
+            has_session=pl.col("open").is_not_null().first(),
+        )
         .collect()
     )
-    if grouped.is_empty():
-        return records, []
-    now = sessions.assign_trade_dates_or_previous(grouped, "first_instant")
-    return records, [
+
+
+def _dated_now(
+    dataset: Dataset, outside: pl.DataFrame, sessions: SessionTable
+) -> list[DatedOtherwise]:
+    """The records of `_outside_their_sessions` with the trade date the calendar gives the first
+    of them now; a daily bar whose date still has a session keeps that date, since a daily bar
+    is dated by the date it names, and only opens otherwise."""
+    now = sessions.assign_trade_dates_or_previous(outside, "first_instant")
+    if holds_daily_bars(dataset.schema_name):
+        named = pl.when(pl.col("has_session")).then(pl.col("stored_trade_date"))
+        now = now.with_columns(trade_date=named.otherwise(pl.col("trade_date")))
+    return [
         DatedOtherwise(
             dataset=dataset,
             contract=row["contract"],
@@ -176,8 +209,3 @@ def _dated_otherwise(
         )
         for row in now.sort("contract", "stored_trade_date").iter_rows(named=True)
     ]
-
-
-def _daily(dataset: Dataset) -> bool:
-    schema_name = dataset.schema_name
-    return isinstance(schema_name, BarSchemaName) and schema_name.timeframe.unit is TimeUnit.DAY
