@@ -212,13 +212,16 @@ def reopen_strategy(strategy_id: StrategyId, container: ContainerDependency) -> 
 
 
 def _marked(mark: Callable[[], IndexedStrategy]) -> IndexedStrategy:
-    """The strategy `mark` marks or reopens; its refusals as problems."""
+    """The strategy `mark` marks or reopens; its refusals as problems, the SDK's refusal of the
+    words last, 422, such as a text the schema keeps and Python's strip leaves empty."""
     try:
         return mark()
     except NoSuchStrategyError as unknown:
         raise HTTPException(404, str(unknown)) from unknown
     except (AlreadyAbandonedError, NotAbandonedError, LibraryRefusedError) as refused:
         raise HTTPException(409, str(refused)) from refused
+    except ValueError as refused:
+        raise HTTPException(422, str(refused)) from refused
 
 
 def _answered(

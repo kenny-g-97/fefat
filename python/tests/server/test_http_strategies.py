@@ -9,7 +9,7 @@ and a save build the code in a runner too (its Done means 4)."""
 
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi.routing import APIRoute
@@ -22,9 +22,11 @@ from fefat.backtest import saved_runs_in
 from fefat.config import resolve_paths
 from fefat_app.container import Container
 from fefat_app.database.models import StrategyVersionRow
+from fefat_app.database.run_records import RunTables
 from fefat_app.database.workspace_index import index_workspace
 from fefat_app.http import strategies
 from fefat_app.http.problems import PROBLEM_MEDIA_TYPE
+from fefat_app.runs import NewRun
 from local_server import logged_in
 from strategy_code import BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
@@ -269,13 +271,27 @@ def test_a_version_a_notebook_saved_is_listed_without_a_save_through_the_app(
 def test_the_list_names_each_strategys_last_saved_run(
     client: TestClient, container: Container, engine: Engine, breakout_workspace: Path
 ) -> None:
-    # Step 5.5: the list shows when each strategy last ran, from the saved runs the index holds.
+    # Step 5.5: the list shows when each strategy last ran, from the saved runs the index holds;
+    # a submission still waiting on its job, made after, is no run yet.
     logged_in(client, container)
     paths = resolve_paths(os.environ)
     shutil.copytree(breakout_workspace, paths.workspace_dir)
     index_workspace(engine, paths)
     ff.strategy.save("unrun", BREAKOUT, hypothesis=HYPOTHESIS)
     (run,) = saved_runs_in(paths.runs_dir)
+    (breakout,) = [
+        each for each in client.get("/v1/strategies").json() if each["name"] == "breakout"
+    ]
+    waiting = NewRun(
+        strategy_version_id=breakout["versions"][0]["id"],
+        payload={"spec": "the backtest's"},
+        parameters={"lookback": 12, "stop_atr": 1.5},
+        start=run.record.window.start,
+        end=run.record.window.end,
+        settings=run.config,
+        request_key=None,
+    )
+    RunTables(engine, paths).submitted(waiting, 3, run.saved_at + timedelta(days=1))
 
     listed = {each["name"]: each for each in client.get("/v1/strategies").json()}
 
@@ -340,10 +356,18 @@ def test_a_mark_of_no_strategy_or_without_its_words_is_refused(
         client.post(
             f"/v1/strategies/{strategy_id}/abandon", json={**MARK, "lesson": "  "}, headers=csrf
         ),
+        # Python's strip takes a unit separator for a space, the schema's does not (the ponytail
+        # review): the SDK's refusal of the text left empty is the request's too.
+        client.post(
+            f"/v1/strategies/{strategy_id}/abandon",
+            json={**MARK, "breaking_point": "\u001f"},
+            headers=csrf,
+        ),
         client.post(f"/v1/strategies/{strategy_id}/abandon", json=MARK),
     ]
 
-    assert [answer.status_code for answer in answers] == [404, 404, 422, 403]
+    assert [answer.status_code for answer in answers] == [404, 404, 422, 422, 403]
+    assert "Expected where the strategy broke" in answers[3].json()["detail"]
     assert not (resolve_paths(os.environ).strategies_dir / "breakout" / "abandoned.json").exists()
 
 

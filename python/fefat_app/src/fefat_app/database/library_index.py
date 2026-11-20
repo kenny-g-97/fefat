@@ -87,6 +87,9 @@ def _last_saved_runs(session: Session) -> dict[str, datetime]:
     """When each strategy's newest saved run was made, by the strategy's row: a run's row, once
     its folder is saved, keeps its submission's time, or its folder's where no submission made
     it (`fefat_app.database.run_records`)."""
+    # shortcut: the runs the index holds alone, so a run a notebook saved counts once a run's
+    # POST or `fefat db import-workspace` indexes it; index the run folders as step 5.6's runs
+    # page does, when it does.
     rows = session.execute(
         select(StrategyVersionRow.strategy_id, func.max(RunRow.created_at))
         .join(RunRow, RunRow.strategy_version_id == StrategyVersionRow.id)
