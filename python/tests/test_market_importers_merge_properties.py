@@ -87,9 +87,8 @@ class Record:
 
     def price(self, unit: int) -> int:
         """A price on ES's tick, made up from the record's instant and place, which comes back
-        at a place no sooner than 4,001 units later: at the 40 units it came back after before
-        step 5.16, prints a day apart were alike, and two files that overlap read as a file
-        read a day off (ADR-0024)."""
+        at a place no sooner than 4,001 units later, so that prints a day apart differ: two
+        files that overlap would otherwise read as a file read a day off (ADR-0024)."""
         steps = self.instant // unit * 7_919 + self.place * 104_729
         return FIVE_THOUSAND + TICK * (steps % 4_001)
 
@@ -917,7 +916,7 @@ def test_a_back_adjusted_series_takes_its_last_bar_from_a_file_that_shares_its_o
             date(2026, 2, 1),
             utc(2026, 1, 12, 14, 30),
             utc(2026, 2, 10, 14, 30),
-            "carries beside them, 1001, got 1009",
+            "under the instrument_id this file gives ESH2026 before them, 1001, got 1009",
         ),
         (
             date(2026, 2, 16),

@@ -40,6 +40,8 @@ from test_market_importers_merge_properties import (
     tree,
 )
 from test_market_importers_partition_buffers import (
+    APRIL,
+    MARCH,
     MINUTE_BARS,
     in_march,
     tallied,
@@ -317,6 +319,28 @@ def test_bars_new_to_the_store_that_are_its_bars_an_hour_away_refuse_a_file_from
         tallied(store, in_march(moved(session_bars(*range(10)), HOUR)), REFUSE)
 
     assert nine.records_added == 9
+
+
+def test_matches_in_two_of_a_files_months_add_up_to_refuse_it(tmp_path: Path) -> None:
+    # The ponytail review: the rule weighs a dataset over all of the file's partitions, so five
+    # bars an hour off in each of two months refuse the file as ten in one month do, while five
+    # alone are taken.
+    store = Store(tmp_path)
+    april = moved(session_bars(*range(30)), 48 * HOUR).with_columns(
+        trade_date=pl.lit(date(2026, 4, 1))
+    )
+    stored_in(store, dict([(MARCH, session_bars(*range(30))), (APRIL, april)]))
+    five_in_march = in_march(moved(session_bars(*range(5)), HOUR))
+    refusal = (
+        "got 10 of the 10 compared equal to the stored records 1 hour earlier, on 2 trade dates "
+        "from 2026-03-30"
+    )
+
+    (alone,) = tallied(store, five_in_march, REFUSE)
+    with pytest.raises(ValueError, match=refusal):
+        tallied(store, dict([*five_in_march.items(), (APRIL, moved(april.head(5), HOUR))]), REFUSE)
+
+    assert alone.records_added == 5
 
 
 def test_bars_fifteen_hours_off_are_refused_as_the_stored_ones(tmp_path: Path) -> None:

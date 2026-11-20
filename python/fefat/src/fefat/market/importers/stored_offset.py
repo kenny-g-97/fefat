@@ -28,7 +28,7 @@ from fefat.market.calendar import counted
 from fefat.market.calendar_offset import duration_text
 from fefat.market.importers.partition_merge import PLACE, PartitionMerge, deleted_and_imported_again
 from fefat.market.layout import Dataset
-from fefat.market.schema import BarSchemaName, SchemaKind, TimeUnit
+from fefat.market.schema import BarSchemaName, SchemaKind, holds_daily_bars
 
 OFFSET_SAMPLE = 2_000
 """At most this many of a partition's records the store does not hold are compared."""
@@ -56,9 +56,9 @@ def misread_offsets(dataset: Dataset) -> tuple[int, ...]:
     none for daily bars, dated by the date they name, nor for other records, such as funding
     rates, which repeat as a matter of course."""
     schema_name = dataset.schema_name
+    if holds_daily_bars(schema_name):
+        return ()
     if isinstance(schema_name, BarSchemaName):
-        if schema_name.timeframe.unit is TimeUnit.DAY:
-            return ()
         width = schema_name.timeframe.nominal_nanoseconds()
         bars = (-width, 0, width)
     elif schema_name.kind in (SchemaKind.TRADES, SchemaKind.TBBO):

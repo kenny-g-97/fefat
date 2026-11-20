@@ -375,7 +375,7 @@ def test_a_contracts_new_month_under_another_instrument_id_than_its_stored_ones_
     with pytest.raises(
         ValueError, match="under the instrument_id that ESH2026 carries beside them, 1001, got 1009"
     ):
-        tallied(store, dict([(partition, renumbered)]), TAKE_THE_FILE)
+        imported(store, dict([(partition, renumbered)]), differing=TAKE_THE_FILE)
 
     assert not store.has_partition(partition)
 
@@ -409,6 +409,6 @@ def test_a_month_whose_records_run_into_the_stored_month_beside_it_is_refused(
     with pytest.raises(
         ValueError, match=f"{beside} those the store holds of ESH2026 under 2026-03"
     ):
-        tallied(store, dict([(partition, bars)]), TAKE_THE_FILE)
+        imported(store, dict([(partition, bars)]), differing=TAKE_THE_FILE)
 
     assert not store.has_partition(partition)

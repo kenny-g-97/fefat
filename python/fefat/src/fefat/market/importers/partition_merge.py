@@ -46,7 +46,7 @@ import polars as pl
 from fefat.market.calendar import utc_text
 from fefat.market.importers.canonical import DAY_COUNTS
 from fefat.market.layout import Dataset, Partition
-from fefat.market.schema import BarSchemaName, TimeUnit
+from fefat.market.schema import holds_daily_bars
 
 PLACE = "_place"
 """The column of a record's position among the records of its instant, counted from 0."""
@@ -202,14 +202,12 @@ def _require_the_instruments_held(
     partition: Partition, kept: pl.DataFrame, new: pl.DataFrame
 ) -> None:
     held = set(kept.get_column("instrument_id").unique().to_list())
-    others = sorted(set(new.get_column("instrument_id").unique().to_list()) - held)
+    others = set(new.get_column("instrument_id").unique().to_list()) - held
     if others:
         raise ValueError(
             f"Expected the records of {partition.relative_path()} under the instrument_id it "
-            f"holds, {', '.join(str(each) for each in sorted(held))}, got "
-            f"{', '.join(str(each) for each in others)} from this file: one contract under two "
-            "ids loads as two series, so the file is refused, and nothing was written. Name its "
-            "instruments as the files before it did."
+            f"holds, {listed_ids(held)}, got {listed_ids(others)} from this file: "
+            f"{two_series(partition.dataset)}"
         )
 
 
@@ -242,7 +240,7 @@ def _require_one_dating(
             "the session calendar changed between the two imports, and a merge would keep one "
             f"session under two trade dates. {refused_for_another_dating(partition.dataset)}"
         )
-    if _daily(partition):
+    if holds_daily_bars(partition.dataset.schema_name):
         _require_one_open(partition, kept, new, clock)
 
 
@@ -268,9 +266,21 @@ def _require_one_open(
     )
 
 
-def _daily(partition: Partition) -> bool:
-    schema_name = partition.dataset.schema_name
-    return isinstance(schema_name, BarSchemaName) and schema_name.timeframe.unit is TimeUnit.DAY
+def listed_ids(ids: Iterable[int]) -> str:
+    """Instrument ids as a refusal names them, in order."""
+    return ", ".join(str(each) for each in sorted(ids))
+
+
+def two_series(dataset: Dataset) -> str:
+    """The end of a refusal of records under another instrument_id than their contract's stored
+    ones (ADR-0021, ADR-0024): why, and the two ways to import them."""
+    return (
+        "one contract under two ids loads as two series, so the file is refused whatever the "
+        "import is told, and nothing was written. An export names its instruments by its own "
+        "instrument_id column or, without one, by the contract's month: import it as the "
+        f"contract's earlier files were, or {deleted_and_imported_again(dataset)}, all of them "
+        "one way."
+    )
 
 
 def deleted_and_imported_again(dataset: Dataset) -> str:

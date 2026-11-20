@@ -1,9 +1,10 @@
 """The stored partitions beside each of a file's partitions (step 5.16, ADR-0024): of its
 contract, the nearest below and the nearest above it by key, as the store listed the contract's
-dataset when one pass over the file first reached it, so that a pass never takes a partition it
-wrote itself for a neighbour. Each is read once a pass, for its instrument ids and the first and
-last instant of its clock, and lazily for its records, which the offset rule compares
-(`fefat.market.importers.stored_offset`).
+dataset when one pass over the file first reached it, so that a partition new to the store is
+never a neighbour, and one the write pass rewrites before reading it beside the next has only
+gained the file's own records, which leave the rules' verdict as the check pass gave it. Each is
+read once a pass, for its instrument ids and the first and last instant of its clock, and lazily
+for its records, which the offset rule compares (`fefat.market.importers.stored_offset`).
 
 Two refusals, whatever the import is told. A partition new to the store under another
 `instrument_id` than its contract's stored partitions beside it and the file's earlier
@@ -15,31 +16,21 @@ writes a file.
 """
 
 import bisect
-import itertools
-from dataclasses import dataclass
 
 import polars as pl
 
 from fefat.market.calendar import utc_text
 from fefat.market.importers.partition_merge import (
     StoredNeighbour,
-    deleted_and_imported_again,
+    listed_ids,
     refused_for_another_dating,
+    two_series,
 )
 from fefat.market.layout import Dataset, Partition
 from fefat.market.store import Store
 
 type Beside = tuple[StoredNeighbour | None, StoredNeighbour | None]
 """A partition's stored neighbours below and above it, None where the store holds none."""
-
-
-@dataclass(frozen=True)
-class _ListedContract:
-    """A contract's stored partitions with a key, in the order of their keys, beside the keys as
-    text, which sorts as they do: a trade date or a month written in ISO 8601."""
-
-    partitions: tuple[Partition, ...]
-    keys: tuple[str, ...]
 
 
 class StoredNeighbours:
@@ -49,7 +40,7 @@ class StoredNeighbours:
     def __init__(self, store: Store, clock: str) -> None:
         self._store = store
         self._clock = clock
-        self._listed: dict[Dataset, dict[str, _ListedContract]] = {}
+        self._listed: dict[Dataset, dict[str, list[Partition]]] = {}
         self._read: dict[Partition, StoredNeighbour | None] = {}
         self._file_ids: dict[tuple[Dataset, str], frozenset[int]] = {}
 
@@ -74,31 +65,22 @@ class StoredNeighbours:
         if partition.key is None or listed is None:
             return None, None
         key = str(partition.key)
-        lower = bisect.bisect_left(listed.keys, key)
-        upper = bisect.bisect_right(listed.keys, key)
-        below = self._neighbour(listed.partitions[lower - 1]) if lower > 0 else None
-        above = self._neighbour(listed.partitions[upper]) if upper < len(listed.keys) else None
+        lower = bisect.bisect_left(listed, key, key=_key_text)
+        upper = bisect.bisect_right(listed, key, key=_key_text)
+        below = self._neighbour(listed[lower - 1]) if lower > 0 else None
+        above = self._neighbour(listed[upper]) if upper < len(listed) else None
         return below, above
 
-    def _listed_of(self, dataset: Dataset) -> dict[str, _ListedContract]:
+    def _listed_of(self, dataset: Dataset) -> dict[str, list[Partition]]:
         """The dataset's stored partitions with a key by contract, listed once a pass: the
-        store's listing is sorted by path, so a contract's partitions come together in the order
-        of their keys."""
+        store's listing is sorted by path, so a contract's partitions come in the order of their
+        keys."""
         if dataset not in self._listed:
-            keyed = (
-                file.partition
-                for file in self._store.list_partitions(dataset)
-                if file.partition.key is not None
-            )
-            by_contract = itertools.groupby(keyed, key=lambda partition: partition.contract)
-            self._listed[dataset] = {
-                contract: _ListedContract(
-                    partitions=tuple(partitions),
-                    keys=tuple(str(partition.key) for partition in partitions),
-                )
-                for contract, grouped in by_contract
-                for partitions in [tuple(grouped)]
-            }
+            by_contract: dict[str, list[Partition]] = {}
+            for file in self._store.list_partitions(dataset):
+                if file.partition.key is not None:
+                    by_contract.setdefault(file.partition.contract, []).append(file.partition)
+            self._listed[dataset] = by_contract
         return self._listed[dataset]
 
     def _neighbour(self, partition: Partition) -> StoredNeighbour | None:
@@ -135,21 +117,27 @@ class StoredNeighbours:
         """Refuse a partition new to the store whose records carry another id than its
         contract's stored partitions beside it and the file's earlier partitions of it, or two
         where there are none."""
-        stored = (neighbour.instrument_ids for neighbour in nearest if neighbour is not None)
-        seen = self._file_ids.get((partition.dataset, partition.contract), frozenset())
-        expected = seen.union(*stored)
+        held = (neighbour.instrument_ids for neighbour in nearest if neighbour is not None)
+        stored = frozenset[int]().union(*held)
+        earlier = self._file_ids.get((partition.dataset, partition.contract), frozenset())
+        others = ids - stored - earlier
         path = partition.relative_path()
-        if not expected and len(ids) > 1:
-            raise ValueError(
-                f"Expected the records of {path} under one instrument_id, got {_listed(ids)}: "
-                f"{_two_series(partition.dataset)}"
-            )
-        others = ids - expected
-        if expected and others:
+        if stored and others:
             raise ValueError(
                 f"Expected the records of {path} under the instrument_id that "
-                f"{partition.contract} carries beside them, {_listed(expected)}, got "
-                f"{_listed(others)} from this file: {_two_series(partition.dataset)}"
+                f"{partition.contract} carries beside them, {listed_ids(stored | earlier)}, got "
+                f"{listed_ids(others)} from this file: {two_series(partition.dataset)}"
+            )
+        if earlier and others:
+            raise ValueError(
+                f"Expected the records of {path} under the instrument_id this file gives "
+                f"{partition.contract} before them, {listed_ids(earlier)}, got "
+                f"{listed_ids(others)}: {_named_twice(partition.contract)}"
+            )
+        if not stored and not earlier and len(ids) > 1:
+            raise ValueError(
+                f"Expected the records of {path} under one instrument_id, got {listed_ids(ids)}: "
+                f"{_named_twice(partition.contract)}"
             )
 
     def _require_between(self, partition: Partition, rows: pl.DataFrame, nearest: Beside) -> None:
@@ -173,17 +161,18 @@ class StoredNeighbours:
             )
 
 
-def _listed(ids: frozenset[int]) -> str:
-    return ", ".join(str(each) for each in sorted(ids))
+def _key_text(partition: Partition) -> str:
+    """A partition's key as text, which sorts as the keys do: a trade date or a month written in
+    ISO 8601."""
+    return str(partition.key)
 
 
-def _two_series(dataset: Dataset) -> str:
+def _named_twice(contract: str) -> str:
     return (
         "one contract under two ids loads as two series, so the file is refused whatever the "
-        "import is told, and nothing was written. An export names its instruments by its own "
-        "instrument_id column or, without one, by the contract's month: import it as the "
-        f"contract's earlier files were, or {deleted_and_imported_again(dataset)}, all of them "
-        "one way."
+        f"import is told, and nothing was written. The download names two instruments "
+        f"{contract}, as a symbol listed again a decade later can: leave the other instrument's "
+        "records out of it."
     )
 
 

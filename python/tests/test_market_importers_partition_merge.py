@@ -412,8 +412,16 @@ def test_a_partition_numbered_by_its_files_rows_keeps_the_order_of_its_sequence(
 
 @pytest.mark.parametrize(
     "incoming",
-    [bars((2, 11), day=date(2026, 3, 31)), bars((3, 12), day=date(2026, 3, 31))],
-    ids=["at an instant the store holds", "between instants the store holds"],
+    [
+        bars((2, 11), day=date(2026, 3, 31)),
+        bars((3, 12), day=date(2026, 3, 31)),
+        bars((7, 16), day=date(2026, 3, 29)),
+    ],
+    ids=[
+        "at an instant the store holds",
+        "between instants the store holds",
+        "after them on an earlier date",
+    ],
 )
 def test_a_bar_the_store_dates_otherwise_is_refused_whatever_the_import_is_told(
     incoming: pl.DataFrame,
