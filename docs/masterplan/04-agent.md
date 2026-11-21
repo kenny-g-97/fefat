@@ -2,6 +2,8 @@
 
 The agent is Claude, embedded in FEFAT, working only through FEFAT's own tools. It writes features and strategies, analyses backtests, ingests alternative data, and sets up prop simulations — and never changes anything without a decision from you.
 
+> **Changed by D-111 (2026-11-21, [ADR-0025](../adr/0025-agent-on-sign-in-with-chatgpt-and-an-mcp-server.md)); this document is rewritten at the Phase 8 kickoff.** The agent's model calls go to OpenAI's Responses API with the token of Sign in with ChatGPT, so the trader's ChatGPT plan pays, and an OpenAI API key is the fallback: read §1, §6, and §9 below as the earlier design wherever they name Claude, the Messages API, or a Claude API key. FEAT also serves the tools of §3 as an MCP server to programs on the same computer (Claude Desktop, Claude Code, Codex, Cursor, VS Code). §2 to §5 and §7 stand: one registry, proposals for every write, skills as files.
+
 ## 1. Runtime: a tool loop on the Messages API
 
 - **Library:** the official `anthropic` Python SDK (1.x). The loop uses the SDK's beta tool runner (`client.beta.messages.tool_runner` with `@beta_tool` functions) or an equivalent manual loop; both are documented in the `claude-api` skill bundled with Claude Code, which every agent step must read before writing code. That reference is authoritative over anything recalled from training.
