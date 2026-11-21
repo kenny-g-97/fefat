@@ -8,6 +8,7 @@ an upload, a profile, or a path that is not the wizard's to read is refused."""
 
 import gzip
 import os
+import re
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -37,6 +38,12 @@ DEADLINE_SECONDS = 240
 NINJATRADER_SAMPLE = SAMPLES["ninjatrader"][0]
 OCTETS = {"Content-Type": "application/octet-stream"}
 ES_MINUTES = {"provider": "ninjatrader", "schema_name": "ohlcv-1m", "root": "ES"}
+GENERATED_BY_THE_LOG = re.compile(
+    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}|request_id=[0-9a-f]+|duration_ms=[0-9.]+",
+    re.MULTILINE,
+)
+"""Each log line's time, request id, and duration: the server makes them, they quote no request,
+and a short cell of a file, such as a volume of 248, can turn up in them by chance."""
 
 
 @pytest.fixture
@@ -453,7 +460,7 @@ def test_what_a_preview_quotes_of_a_file_stays_out_of_the_servers_log(
 
     first_row = table.json()["rows"][0]
     assert first_row[0] == "20260304 230100"
-    logged = server_log.read_text(encoding="utf-8")
+    logged = GENERATED_BY_THE_LOG.sub("", server_log.read_text(encoding="utf-8"))
     assert "/v1/imports/preview" in logged
     assert all(cell not in logged for cell in first_row if cell is not None)
     assert NINJATRADER_SAMPLE.name not in logged
