@@ -130,7 +130,7 @@ test("a syntax error is underlined at its line by Validate or a save, and nothin
 
   // A save builds the code in the executor too: its refusal stands at its own line, another
   // than the verdict's, and nothing is saved.
-  const entry = 'long_entry=close > pl.col("highest"),'
+  const entry = 'long_entry=(close > pl.col("highest")) & has_stop,'
   const unsaved = breakout.code.replace(entry, "long_entry=close > ,")
   const entryLine = lineHolding(unsaved, "long_entry=close > ,")
   await writeCode(page, unsaved)

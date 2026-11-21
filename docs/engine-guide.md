@@ -9,11 +9,12 @@ import polars as pl
 import fefat as ff
 
 close = pl.col("close")
+has_stop = pl.col("atr") > 0
 strategy = ff.SignalStrategy(
     instrument="MES",
     timeframe="5m",
     features={"highest": close.rolling_max(12).shift(1), "atr": (pl.col("high") - pl.col("low")).rolling_mean(14)},
-    long_entry=close > pl.col("highest"),
+    long_entry=(close > pl.col("highest")) & has_stop,
     short_entry=pl.lit(False),
     execution=ff.Execution(
         entry=ff.Market(),
@@ -80,7 +81,7 @@ run = ff.backtest.run(version.strategy(stop_atr=2.0), "2026-03-05", "2026-03-09"
 
 ### The templates
 
-`ff.strategy.templates()` gives three strategies to start from, kept in `python/fefat/src/fefat/strategy/starting_points/`, which the app offers as templates: this guide's breakout, a mean reversion reading the RSI, and a breakout in the morning's entry window, closed by a flat-by time. Each states its hypothesis in its docstring, and together their parameters take every type the app's form renders.
+`ff.strategy.templates()` gives three strategies to start from, kept in `python/fefat/src/fefat/strategy/starting_points/`, which the app offers as templates: this guide's breakout, a mean reversion reading the RSI, and a breakout in the morning's entry window, closed by a flat-by time. Each states its hypothesis in its docstring, and together their parameters take every type the app's form renders. The two breakouts compute their ATR as a plain expression, which has no value on a window's first 13 bars, so each entry also asks for an ATR above zero (`has_stop`): their stop is a multiple of it, and the engine refuses a stop it cannot read (F-RND-01).
 
 ```python
 """A five-minute close above the highest close of the hour before it starts a move that reaches
@@ -93,6 +94,7 @@ import fefat as ff
 
 def strategy(lookback: int = 12, stop_atr: float = 1.5) -> ff.SignalStrategy:
     close = pl.col("close")
+    has_stop = pl.col("atr") > 0
     return ff.SignalStrategy(
         instrument="MES",
         timeframe="5m",
@@ -100,7 +102,7 @@ def strategy(lookback: int = 12, stop_atr: float = 1.5) -> ff.SignalStrategy:
             "highest": close.rolling_max(lookback).shift(1),
             "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
         },
-        long_entry=close > pl.col("highest"),
+        long_entry=(close > pl.col("highest")) & has_stop,
         short_entry=pl.lit(False),
         execution=ff.Execution(
             entry=ff.Market(),
@@ -149,6 +151,7 @@ def strategy(
     side: Literal["long", "short", "both"] = "both", flat_by: str = "15:05"
 ) -> ff.SignalStrategy:
     close = pl.col("close")
+    has_stop = pl.col("atr") > 0
     return ff.SignalStrategy(
         instrument="MES",
         timeframe="5m",
@@ -157,8 +160,8 @@ def strategy(
             "lowest": close.rolling_min(12).shift(1),
             "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
         },
-        long_entry=close > pl.col("highest") if side != "short" else pl.lit(False),
-        short_entry=close < pl.col("lowest") if side != "long" else pl.lit(False),
+        long_entry=(close > pl.col("highest")) & has_stop if side != "short" else pl.lit(False),
+        short_entry=(close < pl.col("lowest")) & has_stop if side != "long" else pl.lit(False),
         execution=ff.Execution(
             entry=ff.Market(),
             stop=ff.Stop(atr=1.5),

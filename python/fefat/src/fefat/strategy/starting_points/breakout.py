@@ -8,6 +8,7 @@ import fefat as ff
 
 def strategy(lookback: int = 12, stop_atr: float = 1.5) -> ff.SignalStrategy:
     close = pl.col("close")
+    has_stop = pl.col("atr") > 0
     return ff.SignalStrategy(
         instrument="MES",
         timeframe="5m",
@@ -15,7 +16,7 @@ def strategy(lookback: int = 12, stop_atr: float = 1.5) -> ff.SignalStrategy:
             "highest": close.rolling_max(lookback).shift(1),
             "atr": (pl.col("high") - pl.col("low")).rolling_mean(14),
         },
-        long_entry=close > pl.col("highest"),
+        long_entry=(close > pl.col("highest")) & has_stop,
         short_entry=pl.lit(False),
         execution=ff.Execution(
             entry=ff.Market(),
