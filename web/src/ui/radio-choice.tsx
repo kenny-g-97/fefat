@@ -17,8 +17,8 @@ type RadioChoiceProps<Value extends string> = Readonly<{
   refusal?: string | null
 }>
 
-/** A choice of two or three short options in a form (web/DESIGN.md, Patterns, Import wizard):
- * its label, in a field label's type and line, over a row of radios 24 px apart, each with its
+/** A choice of two or three short options in a form (web/DESIGN.md, Patterns, Import wizard and
+ * Schema form): its label, in a field label's type and line, over a row of radios 24 px apart, each with its
  * own label, on a 40 px line beside the form's fields, where a toolbar's would be a segmented
  * control; a refusal of the choice turns the label to the negative and stands under the radios,
  * as a field's does (Forms), within 288 px, the width of the bar's timestamp's radios. */

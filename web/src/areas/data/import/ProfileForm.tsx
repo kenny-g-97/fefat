@@ -5,7 +5,7 @@ import { Choice, Picker } from "../Picker"
 import type { DraftChange, ProfileFields } from "./import-draft"
 import { DELIMITERS, delimiterName, described } from "./import-profile"
 import { offsetRefusal } from "./import-request"
-import { type Choice as Option, RadioChoice } from "./RadioChoice"
+import { type Choice as Option, RadioChoice } from "@/ui/radio-choice"
 
 /** The timeframes a profile reads: ticks, or bars of a second to a day; the chart's list has no
  * second and no ticks, so the wizard keeps its own. */

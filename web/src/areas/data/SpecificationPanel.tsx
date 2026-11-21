@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 
 const KINDS: Readonly<Record<InstrumentVersion["kind"], string>> = {
   futures: "Futures",

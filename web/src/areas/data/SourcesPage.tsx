@@ -3,7 +3,7 @@ import { sourcesQuery } from "@/api/catalog"
 import { Page } from "@/ui/page"
 import { Panel } from "@/ui/panel"
 import { BackLink } from "@/ui/text-link"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 import { SourceRow } from "./SourceRow"
 
 /** The source guide FEAT ships, on a page of its own (`GET /v1/sources`): every source of

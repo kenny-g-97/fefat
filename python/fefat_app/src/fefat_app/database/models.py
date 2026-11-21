@@ -229,7 +229,8 @@ class ImportProfileRow(Base):
 
 class StrategyRow(Base):
     """A saved strategy by its name in a workspace, with its kind; its latest version is its
-    highest number (D-85, step 5.2)."""
+    highest number (D-85, step 5.2); and its abandoned mark as its folder's file holds it, or
+    None, which every indexing writes (step 5.5), the one column a row's life changes."""
 
     __tablename__ = "strategies"
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
@@ -240,6 +241,7 @@ class StrategyRow(Base):
     kind: Mapped[StrategyKind] = mapped_column(
         Enum(StrategyKind, native_enum=False, length=16, values_callable=_values)
     )
+    abandoned_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(UtcInstant, default=_now)
 
 

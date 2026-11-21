@@ -96,15 +96,22 @@ def write_atomically(path: Path, write: Callable[[Path], object]) -> None:
     program holds open, as a notebook's scan or a chart's read does, so the replace is tried
     again for `REPLACE_SECONDS` before the refusal comes through (step 5.12)."""
     with _flushed_beside(path, write) as temporary:
-        deadline = time.monotonic() + REPLACE_SECONDS
-        while True:
-            try:
-                temporary.replace(path)
-                return
-            except PermissionError:
-                if time.monotonic() > deadline:
-                    raise
-                time.sleep(REPLACE_PAUSE_SECONDS)
+        retried_while_held_open(lambda: temporary.replace(path))
+
+
+def retried_while_held_open(act: Callable[[], object]) -> None:
+    """Do `act`, a replace or a removal of a file, trying again for `REPLACE_SECONDS` while
+    Windows refuses it because another handle holds the file open, as another program's read or
+    another thread's does, before the refusal comes through (steps 5.12 and 5.5)."""
+    deadline = time.monotonic() + REPLACE_SECONDS
+    while True:
+        try:
+            act()
+            return
+        except PermissionError:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(REPLACE_PAUSE_SECONDS)
 
 
 def create_atomically(path: Path, write: Callable[[Path], object]) -> None:

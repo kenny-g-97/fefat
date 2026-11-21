@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/ui/table"
 import { Picker } from "../Picker"
-import { picked } from "./choices"
+import { picked } from "@/ui/choices"
 import { BAR_ROLES, ROLE_LABELS, type Role, TICK_ROLES } from "./import-roles"
 
 /** What stands over each of a file's columns: its own name, before a profile reads it; the

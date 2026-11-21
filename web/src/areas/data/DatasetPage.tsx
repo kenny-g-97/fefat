@@ -22,7 +22,7 @@ import {
 import { DatasetTable } from "./DatasetTable"
 import { DeleteData } from "./DeleteData"
 import { QualityPanel } from "./QualityPanel"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 import { SpecificationPanel } from "./SpecificationPanel"
 
 /** A dataset's page (step 5.4; web/DESIGN.md, Patterns, Dataset page): an instrument's data

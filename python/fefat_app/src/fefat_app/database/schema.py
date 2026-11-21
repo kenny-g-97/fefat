@@ -15,10 +15,12 @@ as a session's last-seen time, through `not_waiting`, is refused at once with SQ
 error while another writer holds the database (step 4.2: the server reads at every request).
 
 Foreign keys are on for every connection, and SQLite ignores turning them off inside a
-transaction, so a later migration that rebuilds a table another references in batch mode
-defers them instead (`PRAGMA defer_foreign_keys=ON`); and since a rebuilt table loses its
-triggers, a migration that rebuilds one of the tables that index a file makes its triggers
-again (the first migration, `v0001_app_state`)."""
+transaction. So a migration never rebuilds in batch mode a table whose rows others reference:
+the rebuild drops the old table under them, which SQLite counts against the commit, deferred
+foreign keys (`PRAGMA defer_foreign_keys=ON`) included, and the commit fails; such a table takes
+and drops a column in place instead, `recreate="never"` (step 5.5, migration `0007`). Since a
+rebuilt table loses its triggers, a migration that rebuilds one of the tables that index a file
+makes its triggers again (the first migration, `v0001_app_state`)."""
 
 from collections.abc import Generator
 from contextlib import contextmanager

@@ -3,9 +3,13 @@ the API, each saved in the executor as a notebook saves it, and their diff (Done
 version with a syntax error refused with its line (Done means 2); the templates listed (Done
 means 3); a version never changed through the API; a feature version never saved refused at its
 line; and validation run in a runner, never in the server's process (the step's Prompt and If it
-fails)."""
+fails). From step 5.5: the list indexes the library first and names each strategy's last saved
+run and its abandoned mark, which a strategy takes and gives back through the API; and a create
+and a save build the code in a runner too (its Done means 4)."""
 
 import os
+import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi.routing import APIRoute
@@ -14,16 +18,34 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 import fefat as ff
+from fefat.backtest import saved_runs_in
 from fefat.config import resolve_paths
 from fefat_app.container import Container
 from fefat_app.database.models import StrategyVersionRow
+from fefat_app.database.run_records import RunTables
+from fefat_app.database.workspace_index import index_workspace
 from fefat_app.http import strategies
 from fefat_app.http.problems import PROBLEM_MEDIA_TYPE
+from fefat_app.runs import NewRun
 from local_server import logged_in
 from strategy_code import BREAKOUT, HYPOTHESIS, WITH_A_SLOT
 
 WIDER_STOP = BREAKOUT.replace("stop_atr: float = 1.5", "stop_atr: float = 2.0")
 FIRST = {"name": "breakout", "code": BREAKOUT, "hypothesis": HYPOTHESIS, "changelog": "Guide's."}
+MARK = {
+    "breaking_point": "Past 2024 the breakouts ran on no more.",
+    "lesson": "An hour's range is too short a base for a breakout.",
+}
+"""Where a strategy broke and its lesson, as the strategy page sends them (step 5.5)."""
+MARKS_ITS_PROCESS = """\
+import os
+from pathlib import Path
+
+with Path({path!r}).open("a", encoding="utf-8") as written:
+    written.write(str(os.getpid()) + " ")
+"""
+"""Code that writes the id of the process that runs it into the file `path`, before a strategy's
+code."""
 
 
 def created(client: TestClient, csrf: dict[str, str]) -> str:
@@ -208,6 +230,164 @@ def test_validation_runs_in_a_runner_never_in_the_servers_process(
     assert validated.json()["verdict"] == "valid"
     assert validated.json()["parameter_schema"]["properties"]["lookback"]["default"] == 12
     assert int(process.read_text()) != os.getpid()
+
+
+def test_a_create_and_a_save_run_the_code_in_a_runner_never_in_the_servers_process(
+    client: TestClient, container: Container, tmp_path: Path
+) -> None:
+    # Done means 4 of step 5.5: the strategy page's Create strategy and Save as new version build
+    # the trader's code in the executor's runner alone, as its Validate does (above).
+    csrf = logged_in(client, container)
+    processes = tmp_path / "processes"
+    code = MARKS_ITS_PROCESS.format(path=str(processes)) + BREAKOUT
+    second = {"code": code.replace("= 1.5", "= 2.0"), "hypothesis": HYPOTHESIS, "changelog": ""}
+
+    made = client.post("/v1/strategies", json={**FIRST, "code": code}, headers=csrf)
+    strategy_id = made.json()["strategy_id"]
+    saved = client.post(f"/v1/strategies/{strategy_id}/versions", json=second, headers=csrf)
+
+    ran_in = {int(each) for each in processes.read_text(encoding="utf-8").split()}
+    assert (made.status_code, saved.status_code) == (201, 201)
+    assert ran_in
+    assert os.getpid() not in ran_in
+
+
+def test_a_version_a_notebook_saved_is_listed_without_a_save_through_the_app(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.5 (from `BACKLOG.md`, D-95): the list indexes the library before it reads the index.
+    logged_in(client, container)
+    before = client.get("/v1/strategies").json()
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS, changelog="From a notebook.")
+
+    listed = client.get("/v1/strategies").json()
+
+    assert before == []
+    assert [(each["name"], each["versions"][0]["changelog"]) for each in listed] == [
+        ("breakout", "From a notebook.")
+    ]
+
+
+def test_the_list_names_each_strategys_last_saved_run(
+    client: TestClient, container: Container, engine: Engine, breakout_workspace: Path
+) -> None:
+    # Step 5.5: the list shows when each strategy last ran, from the saved runs the index holds;
+    # a submission still waiting on its job, made after, is no run yet.
+    logged_in(client, container)
+    paths = resolve_paths(os.environ)
+    shutil.copytree(breakout_workspace, paths.workspace_dir)
+    index_workspace(engine, paths)
+    ff.strategy.save("unrun", BREAKOUT, hypothesis=HYPOTHESIS)
+    (run,) = saved_runs_in(paths.runs_dir)
+    (breakout,) = [
+        each for each in client.get("/v1/strategies").json() if each["name"] == "breakout"
+    ]
+    waiting = NewRun(
+        strategy_version_id=breakout["versions"][0]["id"],
+        payload={"spec": "the backtest's"},
+        parameters={"lookback": 12, "stop_atr": 1.5},
+        start=run.record.window.start,
+        end=run.record.window.end,
+        settings=run.config,
+        request_key=None,
+    )
+    RunTables(engine, paths).submitted(waiting, 3, run.saved_at + timedelta(days=1))
+
+    listed = {each["name"]: each for each in client.get("/v1/strategies").json()}
+
+    assert datetime.fromisoformat(listed["breakout"]["last_run_at"]) == run.saved_at
+    assert listed["unrun"]["last_run_at"] is None
+    assert (listed["breakout"]["abandoned"], listed["unrun"]["abandoned"]) == (None, None)
+
+
+def test_the_list_is_refused_while_the_library_holds_a_file_it_cannot_follow(
+    client: TestClient, container: Container
+) -> None:
+    csrf = logged_in(client, container)
+    created(client, csrf)
+    (resolve_paths(os.environ).strategies_dir / "breakout" / "v1.json").unlink()
+
+    listed = client.get("/v1/strategies")
+
+    assert listed.status_code == 409
+    assert "by hand" in listed.json()["detail"]
+
+
+def test_a_strategy_is_marked_abandoned_and_reopened_through_the_api(
+    client: TestClient, container: Container
+) -> None:
+    # Step 5.5 (D-29): the library keeps its failures; a mark labels a strategy, blocks nothing,
+    # and can be taken back.
+    csrf = logged_in(client, container)
+    strategy_id = created(client, csrf)
+    mark_file = resolve_paths(os.environ).strategies_dir / "breakout" / "abandoned.json"
+    second = {"code": WIDER_STOP, "hypothesis": HYPOTHESIS, "changelog": ""}
+
+    abandoned = client.post(f"/v1/strategies/{strategy_id}/abandon", json=MARK, headers=csrf)
+    listed = client.get("/v1/strategies").json()
+    again = client.post(f"/v1/strategies/{strategy_id}/abandon", json=MARK, headers=csrf)
+    saved = client.post(f"/v1/strategies/{strategy_id}/versions", json=second, headers=csrf)
+    marked_file = mark_file.exists()
+    reopened = client.post(f"/v1/strategies/{strategy_id}/reopen", headers=csrf)
+    reopened_again = client.post(f"/v1/strategies/{strategy_id}/reopen", headers=csrf)
+
+    mark = abandoned.json()["abandoned"]
+    assert abandoned.status_code == 200
+    assert (mark["breaking_point"], mark["lesson"]) == (MARK["breaking_point"], MARK["lesson"])
+    assert (listed[0]["abandoned"], marked_file) == (mark, True)
+    assert again.status_code == 409
+    assert "abandoned already" in again.json()["detail"]
+    assert saved.status_code == 201
+    assert (reopened.status_code, reopened.json()["abandoned"]) == (200, None)
+    assert not mark_file.exists()
+    assert reopened_again.status_code == 409
+    assert "not abandoned" in reopened_again.json()["detail"]
+
+
+def test_a_mark_of_no_strategy_or_without_its_words_is_refused(
+    client: TestClient, container: Container
+) -> None:
+    csrf = logged_in(client, container)
+    strategy_id = created(client, csrf)
+
+    answers = [
+        client.post("/v1/strategies/not-an-id/abandon", json=MARK, headers=csrf),
+        client.post("/v1/strategies/not-an-id/reopen", headers=csrf),
+        client.post(
+            f"/v1/strategies/{strategy_id}/abandon", json={**MARK, "lesson": "  "}, headers=csrf
+        ),
+        # Python's strip takes a unit separator for a space where Pydantic's does not (the ponytail
+        # review), so the schema strips as the SDK does and refuses the field, as it documents.
+        client.post(
+            f"/v1/strategies/{strategy_id}/abandon",
+            json={**MARK, "breaking_point": "\u001f"},
+            headers=csrf,
+        ),
+        client.post(f"/v1/strategies/{strategy_id}/abandon", json=MARK),
+    ]
+
+    assert [answer.status_code for answer in answers] == [404, 404, 422, 422, 403]
+    [refused] = answers[3].json()["errors"]
+    assert refused["location"] == ["body", "breaking_point"]
+    assert "Expected a sentence or more" in refused["message"]
+    assert not (resolve_paths(os.environ).strategies_dir / "breakout" / "abandoned.json").exists()
+
+
+def test_a_mark_is_refused_before_it_is_written_while_the_library_cannot_be_followed(
+    client: TestClient, container: Container
+) -> None:
+    # As a save is: the index refuses the library's files before the mark is written.
+    csrf = logged_in(client, container)
+    strategy_id = created(client, csrf)
+    folder = resolve_paths(os.environ).strategies_dir / "breakout"
+    (folder / "v1.json").unlink()
+    ff.strategy.save("breakout", WIDER_STOP, hypothesis=HYPOTHESIS)
+
+    refused = client.post(f"/v1/strategies/{strategy_id}/abandon", json=MARK, headers=csrf)
+
+    assert refused.status_code == 409
+    assert "by hand" in refused.json()["detail"]
+    assert not (folder / "abandoned.json").exists()
 
 
 def test_the_strategies_need_a_login_and_an_api_token_is_one(
