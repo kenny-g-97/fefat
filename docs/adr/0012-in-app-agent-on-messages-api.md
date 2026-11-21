@@ -20,4 +20,4 @@ If the Agent SDK ran on Windows with the customer's own key, or if proposals cou
 
 ## Status
 
-Accepted; recorded in step 0.7.
+Accepted; recorded in step 0.7. Partly superseded: the Messages API and the Claude API key are superseded by [ADR-0025](0025-agent-on-sign-in-with-chatgpt-and-an-mcp-server.md) (D-111, 2026-11-21), under which the agent's model calls go to OpenAI's Responses API on the trader's ChatGPT plan and FEAT also serves its tools as an MCP server. The registry, the proposals, the skills as files, and the `AgentRuntime` seam stand.
