@@ -723,7 +723,9 @@ export interface paths {
         };
         /**
          * Saved Strategies
-         * @description The saved strategies by name, each with its versions in order.
+         * @description The saved strategies by name, each with its versions in order, its abandoned mark, and
+         *     when its newest saved run was made; the library is indexed first, so that a version a
+         *     notebook saved is listed, and refused with 409 where its files cannot be followed.
          */
         get: operations["saved_strategies_v1_strategies_get"];
         put?: never;
@@ -783,6 +785,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/strategies/{strategy_id}/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Abandon Strategy
+         * @description Mark the strategy abandoned, with where it broke and its lesson, kept as a file beside its
+         *     versions, which stay as they are; refused with 409 where it is abandoned already.
+         */
+        post: operations["abandon_strategy_v1_strategies__strategy_id__abandon_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/strategies/{strategy_id}/diff": {
         parameters: {
             query?: never;
@@ -797,6 +820,26 @@ export interface paths {
         get: operations["strategy_diff_v1_strategies__strategy_id__diff_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/strategies/{strategy_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen Strategy
+         * @description Take back the strategy's abandoned mark; refused with 409 where it holds none.
+         */
+        post: operations["reopen_strategy_v1_strategies__strategy_id__reopen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -918,6 +961,32 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AbandonedMark
+         * @description Where a strategy broke, the lesson it taught, and when it was marked abandoned; the folder
+         *     its file stands in names the strategy.
+         */
+        AbandonedMark: {
+            /**
+             * Abandoned At
+             * Format: date-time
+             */
+            abandoned_at: string;
+            /** Breaking Point */
+            breaking_point: string;
+            /** Lesson */
+            lesson: string;
+        };
+        /**
+         * AbandonedMarkRequest
+         * @description Where a strategy broke and the lesson it taught (step 5.5, D-29).
+         */
+        AbandonedMarkRequest: {
+            /** Breaking Point */
+            breaking_point: string;
+            /** Lesson */
+            lesson: string;
+        };
         /**
          * ApiToken
          * @description An API token of a notebook or a script, by its name, kept only as its SHA-256, which
@@ -2130,13 +2199,17 @@ export interface components {
         };
         /**
          * IndexedStrategy
-         * @description A saved strategy as the index holds it: its row's id, its name, its kind, and its versions
-         *     in order.
+         * @description A saved strategy as the index holds it: its row's id, its name, its kind, its versions in
+         *     order, its abandoned mark where it holds one (step 5.5), and when its newest saved run was
+         *     made, None before its first.
          */
         IndexedStrategy: {
+            abandoned: components["schemas"]["AbandonedMark"] | null;
             /** Id */
             id: string;
             kind: components["schemas"]["StrategyKind"];
+            /** Last Run At */
+            last_run_at: string | null;
             /** Name */
             name: string;
             /** Versions */
@@ -5822,6 +5895,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     create_strategy_v1_strategies_post: {
@@ -5973,6 +6055,78 @@ export interface operations {
             };
         };
     };
+    abandon_strategy_v1_strategies__strategy_id__abandon_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A strategy's id in the index, a UUIDv7. */
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AbandonedMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedStrategy"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
     strategy_diff_v1_strategies__strategy_id__diff_get: {
         parameters: {
             query: {
@@ -6001,6 +6155,74 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+        };
+    };
+    reopen_strategy_v1_strategies__strategy_id__reopen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A strategy's id in the index, a UUIDv7. */
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedStrategy"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -99,19 +99,24 @@ def test_a_feature_version_never_saved_is_refused_at_the_line_that_reads_it() ->
 
 
 @pytest.mark.parametrize(
-    ("entry", "said"),
+    ("feature", "entry", "line", "said"),
     [
-        ('pl.col("clsoe") > 0', '"clsoe"'),
-        ('pl.col("close")', "Boolean"),
+        ('pl.col("close")', 'pl.col("clsoe") > 0', 11, '"clsoe"'),
+        ('pl.col("clsoe")', 'pl.col("read") > 0', 10, '"clsoe"'),
+        ('pl.col("close").alias("signal")', 'pl.col("signal") > 0', 11, '"signal"'),
+        ('pl.col("close")', 'pl.col("cl" + "soe") > 0', DEFINED_ON, '"clsoe"'),
+        ('pl.col("close")', 'pl.col("close")', DEFINED_ON, "Boolean"),
     ],
 )
 def test_a_signal_frame_that_bars_cannot_give_is_refused_before_a_version_exists(
-    entry: str, said: str
+    feature: str, entry: str, line: int, said: str
 ) -> None:
-    # A column no bar holds, and a signal that is no boolean, fail on bars with no rows.
-    refused = refusal(WITH_A_SLOT.format(feature='pl.col("close")', entry=entry))
+    # A column no bar holds, and a signal that is no boolean, fail on bars with no rows: a column
+    # at the first line that writes its name (step 5.5, from `BACKLOG.md`), else, as a signal of
+    # another type, at the line that defines `strategy`.
+    refused = refusal(WITH_A_SLOT.format(feature=feature, entry=entry))
 
-    assert refused.line == 6
+    assert refused.line == line
     assert said in str(refused)
 
 

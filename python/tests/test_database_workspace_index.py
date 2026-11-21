@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import yaml
 from sqlalchemy import Engine, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 import fefat as ff
@@ -26,6 +26,12 @@ from fefat.features.versions import saved_versions_in, validation_file
 from fefat.market.importers.profiles import ProfileKind, preset_profiles
 from fefat.market.store_files import json_writer, write_atomically
 from fefat.strategy import StrategyKind
+from fefat.strategy.abandoned_marks import (
+    AbandonedMark,
+    abandon_in,
+    abandoned_marks_in,
+    reopen_in,
+)
 from fefat.strategy.versions import saved_versions_in as saved_strategy_versions_in
 from fefat_app.database import version_index
 from fefat_app.database.models import (
@@ -483,6 +489,60 @@ def test_the_library_is_read_before_the_index_takes_the_write_lock(
 
     assert read == [paths().features_dir, paths().strategies_dir]
     assert row_counts(engine)["strategy_versions"] == 1
+
+
+def abandoned_column(engine: Engine) -> dict[str, object]:
+    """Each strategy's abandoned mark as its row holds it, by its name."""
+    with Session(engine) as session:
+        return {row.name: row.abandoned_json for row in session.scalars(select(StrategyRow))}
+
+
+def test_an_abandoned_mark_is_indexed_as_its_file_stands_and_kept_by_a_rebuild(
+    engine: Engine,
+) -> None:
+    # Step 5.5 (D-29): the mark is a file beside the versions, which every indexing reads into
+    # its strategy's row as the file stands now, a rebuild's too.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    ff.strategy.save("oversold", OVERSOLD, hypothesis=HYPOTHESIS)
+    mark = abandon_in(
+        paths().strategies_dir,
+        "breakout",
+        breaking_point="Past 2024 it ran on no more.",
+        lesson="An hour is too short a base.",
+    )
+
+    index_library(engine, paths())
+    marked = abandoned_column(engine)
+    index_workspace(engine, paths(), rebuild=True)
+    rebuilt = abandoned_column(engine)
+    reopen_in(paths().strategies_dir, "breakout")
+    index_library(engine, paths())
+
+    assert marked == rebuilt == {"breakout": mark.model_dump(mode="json"), "oversold": None}
+    assert abandoned_column(engine) == {"breakout": None, "oversold": None}
+
+
+def test_the_marks_are_read_under_the_write_lock(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The plan's review: an indexing that read the marks before it took the lock could write back
+    # a mark another request removed while it waited for the lock, or clear one written then.
+    ff.strategy.save("breakout", BREAKOUT, hypothesis=HYPOTHESIS)
+    refused: list[str] = []
+
+    def while_another_writes(strategies_dir: Path) -> dict[str, AbandonedMark]:
+        try:
+            with not_waiting(engine).begin() as connection:
+                connection.exec_driver_sql("SELECT 1")
+        except OperationalError as busy:
+            refused.append(str(busy.orig))
+        return abandoned_marks_in(strategies_dir)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(version_index, "abandoned_marks_in", while_another_writes)
+        index_library(engine, paths())
+
+    assert refused == ["database is locked"]
 
 
 def test_a_version_file_copied_by_hand_under_another_number_is_refused(engine: Engine) -> None:

@@ -11,6 +11,8 @@ const PATHS = [
   "/",
   "/lab",
   "/strategies",
+  "/strategies/new",
+  "/strategies/strategy?name=demo",
   "/runs",
   "/prop",
   "/agent",

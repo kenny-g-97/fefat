@@ -1,7 +1,8 @@
 """The app's database of step 4.1 (`01-architecture.md` section 5, D-83, D-85): `fefat.sqlite` in
 WAL mode with foreign keys on; its schema made and emptied by the migrations that ship in the
 package (Done means 1), alike with the models, with the login sessions and API tokens of step
-4.2 (D-86), the strategies' tables of step 5.2 (D-93), and the runs of step 5.3; and the rows
+4.2 (D-86), the strategies' tables of step 5.2 (D-93), the runs of step 5.3, and a strategy's
+abandoned mark of step 5.5, which a downgrade drops in place, its versions kept; and the rows
 that index a file insert-only, an update or a delete of one refused (Done means 2, ADR-0020), a
 run's once its folder is saved."""
 
@@ -62,7 +63,7 @@ INDEX_TABLES = [
     "strategy_versions",
     "strategy_version_features",
 ]
-LATEST_REVISION = "0006"
+LATEST_REVISION = "0007"
 SAVED_AT = datetime(2026, 11, 6, 12, 30, tzinfo=UTC)
 
 

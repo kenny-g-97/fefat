@@ -1,16 +1,17 @@
 """The saved features and strategies as the app serves them (step 5.2, D-84, ADR-0020): each as the
 index holds it, with its row's id, its name, and its versions' numbers, hashes, and times, a
 strategy's versions with their instrument, timeframe, hypothesis, and changelog, which the API's
-lists read from the database, a version's whole record being read from its file through the SDK;
-the diff of two versions' code; and what a save gives. Frozen models, as at every boundary, kept
-apart from the port in `fefat_app.ports`, which would otherwise pass 400 lines, as
-`fefat_app.execution` is."""
+lists read from the database, a version's whole record being read from its file through the SDK,
+and from step 5.5 a strategy's abandoned mark and when it last ran; the diff of two versions'
+code; and what a save gives. Frozen models, as at every boundary, kept apart from the port in
+`fefat_app.ports`, which would otherwise pass 400 lines, as `fefat_app.execution` is."""
 
 from dataclasses import dataclass
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from fefat.strategy import StrategyKind
+from fefat.strategy.abandoned_marks import AbandonedMark
 
 
 class IndexedVersion(BaseModel):
@@ -46,8 +47,9 @@ class IndexedFeature(BaseModel):
 
 
 class IndexedStrategy(BaseModel):
-    """A saved strategy as the index holds it: its row's id, its name, its kind, and its versions
-    in order."""
+    """A saved strategy as the index holds it: its row's id, its name, its kind, its versions in
+    order, its abandoned mark where it holds one (step 5.5), and when its newest saved run was
+    made, None before its first."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -55,6 +57,8 @@ class IndexedStrategy(BaseModel):
     name: str
     kind: StrategyKind
     versions: tuple[IndexedStrategyVersion, ...]
+    abandoned: AbandonedMark | None
+    last_run_at: AwareDatetime | None
 
 
 class VersionDiff(BaseModel):

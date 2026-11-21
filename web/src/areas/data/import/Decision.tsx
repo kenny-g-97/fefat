@@ -1,7 +1,7 @@
 import { cn } from "cn"
 import { createContext, type ReactNode, useContext, useId } from "react"
 import { RadioGroup, RadioGroupItem } from "@/ui/radio-group"
-import { picked } from "./choices"
+import { picked } from "@/ui/choices"
 import { stopLaterClick } from "./first-click"
 import type { DecisionOption } from "./import-decisions"
 

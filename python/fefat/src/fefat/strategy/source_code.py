@@ -5,7 +5,8 @@ in the signature, as a feature's are (`fefat.features.definition`); builds the s
 defaults; and builds its signal frame on bars that hold no rows, so that a column no bar holds, or
 a signal that is no boolean, is refused before a version exists. A refusal is a
 `StrategyCodeError` with the line of the code it is at: a syntax error's, the innermost of the
-code's lines that ran into the error, or else the line that defines `strategy`.
+code's lines that ran into the error, the first line that writes the name of a column Polars
+could not find, as `pl.col("clsoe")` does (step 5.5), or else the line that defines `strategy`.
 
     definition = ff.strategy.from_source(code)
     definition.parameter_schema  # the JSON schema of the strategy's parameters
@@ -23,6 +24,7 @@ import hashlib
 import inspect
 import json
 import linecache
+import re
 import sys
 import traceback
 import typing
@@ -52,6 +54,8 @@ FUNCTION_NAME = "strategy"
 """The function of a strategy's code that gives its `SignalStrategy`."""
 _PARAMETERS_CONFIG = ConfigDict(frozen=True, extra="forbid", strict=True)
 _NAMED = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+_MISSING_COLUMN = re.compile(r'unable to find column "([^"]+)"')
+"""How Polars names the column it could not find (`pl.exceptions.ColumnNotFoundError`)."""
 
 
 class StrategyCodeError(ValueError):
@@ -102,6 +106,8 @@ def from_source(code: str) -> StrategyDefinition:
         raise
     except (Exception, SystemExit) as error:
         line = _line_in(error, filename)
+        if line is None:
+            line = _named_column_line(error, text)
         if line is None:
             line = _strategy_line(text)
         raise StrategyCodeError(_described(error), line) from error
@@ -322,6 +328,39 @@ def _line_in(error: BaseException, filename: str) -> int | None:
     frames = traceback.extract_tb(error.__traceback__)
     lines = [frame.lineno for frame in frames if frame.filename == filename]
     return lines[-1] if lines else None
+
+
+def _named_column_line(error: BaseException, text: str) -> int | None:
+    """The first line of the code that reads the column Polars could not find, as
+    `pl.col("clsoe")` reads it, else the first that writes its name as a text, since the frame is
+    built in FEFAT's code, past the code's own lines; None for another error, a message in another
+    wording, or a name the code builds. The code compiled before the frame was built, so it
+    parses."""
+    if not isinstance(error, pl.exceptions.ColumnNotFoundError):
+        return None
+    named = _MISSING_COLUMN.search(str(error))
+    if named is None:
+        return None
+    nodes = list(ast.walk(ast.parse(text)))
+    calls = [node for node in nodes if isinstance(node, ast.Call)]
+    read = [call.lineno for call in calls if _reads_column(call, named[1])]
+    if read:
+        return min(read)
+    written = [
+        node.lineno for node in nodes if isinstance(node, ast.Constant) and node.value == named[1]
+    ]
+    return min(written, default=None)
+
+
+def _reads_column(call: ast.Call, name: str) -> bool:
+    """Whether `call` calls `col` with `name` first, as `pl.col("close")` does."""
+    if not call.args:
+        return False
+    called = call.func.attr if isinstance(call.func, ast.Attribute) else None
+    if isinstance(call.func, ast.Name):
+        called = call.func.id
+    first = call.args[0]
+    return called == "col" and isinstance(first, ast.Constant) and first.value == name
 
 
 def _strategy_line(text: str) -> int | None:

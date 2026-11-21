@@ -20,8 +20,10 @@ declare module "@tanstack/react-router" {
     router: typeof router
   }
   /** What a page leaves the next one in the browser's history: the data a delete removed,
-   * "MES from synthetic", which the Data page says it deleted (step 5.18). */
+   * "MES from synthetic", which the Data page says it deleted (step 5.18); and the strategy
+   * version a save opened, which its page says it saved (step 5.5). */
   interface HistoryState {
     deleted?: string
+    saved?: Readonly<{ strategy: string; version: number }>
   }
 }

@@ -10,9 +10,15 @@ such as one changed after it was written, or one deleted, copied, or replaced by
 indexed, stops the indexing with the reason, and no row is added. The version files are read
 before the indexing's first statement, which takes SQLite's write lock, so that a save through
 the app holds up no other writer while they are read; a rebuild, which empties the index first,
-reads them under the lock."""
+reads them under the lock.
+
+From step 5.5 each strategy's abandoned mark, a file beside its versions that the app writes and
+removes, is read into its row as it stands at each indexing; the marks are read under the lock,
+a small file each, so that an indexing never writes back a mark that another request removed, or
+clears one it wrote, while the indexing waited for the lock."""
 
 from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Literal
 
 from sqlalchemy import Engine, select
@@ -20,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from fefat.config import WORKSPACE_FOLDER, FefatPaths
 from fefat.features.versions import FeatureVersion, saved_versions_in
+from fefat.strategy.abandoned_marks import abandoned_marks_in
 from fefat.strategy.versions import StrategyVersion
 from fefat.strategy.versions import saved_versions_in as saved_strategy_versions_in
 from fefat_app.database.models import (
@@ -54,15 +61,18 @@ def index_library(engine: Engine, paths: FefatPaths) -> None:
 
 
 def index_versions(session: Session, paths: FefatPaths) -> tuple[int, int]:
-    """Index the feature versions, then the strategy versions that pin them; how many of each
-    were added. The files are read first (module docstring)."""
+    """Index the feature versions, then the strategy versions that pin them, then the strategies'
+    abandoned marks; how many versions of each were added. The version files are read first
+    (module docstring)."""
     features = saved_versions_in(paths.features_dir)
     strategies = saved_strategy_versions_in(paths.strategies_dir)
     workspace_id = _default_workspace(session)
-    return (
+    added = (
         _index_feature_versions(session, workspace_id, features),
         _index_strategy_versions(session, workspace_id, strategies),
     )
+    _index_abandoned_marks(session, workspace_id, paths.strategies_dir)
+    return added
 
 
 def _default_workspace(session: Session) -> str:
@@ -247,6 +257,23 @@ def _strategy_version_row(strategy_id: str, record: StrategyVersion) -> Strategy
         changelog=record.changelog,
         created_at=record.created_at,
     )
+
+
+def _index_abandoned_marks(session: Session, workspace_id: str, strategies_dir: Path) -> None:
+    """Each strategy's abandoned mark as its folder holds it now, or None, read under the write
+    lock that the indexing's first statement took (module docstring), each row written only where
+    its mark changed; a mark in a folder the index holds no strategy of, which only a copy by hand
+    makes, is passed over, as it labels nothing the app lists."""
+    marks = {
+        name: mark.model_dump(mode="json")
+        for name, mark in abandoned_marks_in(strategies_dir).items()
+    }
+    rows = session.scalars(select(StrategyRow).where(StrategyRow.workspace_id == workspace_id))
+    for row in rows.all():
+        held = marks.get(row.name)
+        if row.abandoned_json != held:
+            row.abandoned_json = held
+    session.flush()
 
 
 def _feature_versions(

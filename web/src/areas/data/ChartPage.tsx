@@ -19,7 +19,7 @@ import { ChartView } from "./ChartView"
 import { chartRoots, latestVersion, rootProviders } from "./chart-panes"
 import type { ChartSearch } from "./chart-search"
 import { fidelityLabel } from "./datasets"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 
 /** The chart viewer (step 5.4): a series of the store's bars, chosen in the toolbar and kept in
  * the address, drawn by `PriceChart` a window at a time as the trader scrolls back, with the

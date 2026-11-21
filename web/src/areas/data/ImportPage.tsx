@@ -5,7 +5,7 @@ import { Page } from "@/ui/page"
 import { BackLink } from "@/ui/text-link"
 import { type Back, backOf, type Step } from "./import/import-search"
 import { ImportWizard } from "./import/ImportWizard"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 
 /** The import page (step 5.12; web/DESIGN.md, Patterns, Import wizard): the wizard's four steps,
  * the file, its layout, its instrument, and the review with Import, one at a time beside their

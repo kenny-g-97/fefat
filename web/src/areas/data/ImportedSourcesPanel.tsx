@@ -7,7 +7,7 @@ import { DisclosureRow } from "./DisclosureRow"
 import { type DrawnRow, drawnRow } from "./imported-filters"
 import { ImportedRow } from "./ImportedRow"
 import { type ImportedSource, importedSources } from "./imported-sources"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 
 /** The sources the trader imported from (web/DESIGN.md, Patterns, Disclosure row): the guide's
  * sources whose presets the imported data is stored under, and the providers it lists under

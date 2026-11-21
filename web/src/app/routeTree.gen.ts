@@ -17,12 +17,14 @@ import { Route as ShellLabRouteImport } from './routes/_shell/lab'
 import { Route as ShellPropRouteImport } from './routes/_shell/prop'
 import { Route as ShellRunsRouteImport } from './routes/_shell/runs'
 import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
-import { Route as ShellStrategiesRouteImport } from './routes/_shell/strategies'
 import { Route as ShellDataIndexRouteImport } from './routes/_shell/data/index'
 import { Route as ShellDataChartRouteImport } from './routes/_shell/data/chart'
 import { Route as ShellDataDatasetRouteImport } from './routes/_shell/data/dataset'
 import { Route as ShellDataImportRouteImport } from './routes/_shell/data/import'
 import { Route as ShellDataSourcesRouteImport } from './routes/_shell/data/sources'
+import { Route as ShellStrategiesIndexRouteImport } from './routes/_shell/strategies/index'
+import { Route as ShellStrategiesNewRouteImport } from './routes/_shell/strategies/new'
+import { Route as ShellStrategiesStrategyRouteImport } from './routes/_shell/strategies/strategy'
 
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
@@ -63,11 +65,6 @@ const ShellSettingsRoute = ShellSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellStrategiesRoute = ShellStrategiesRouteImport.update({
-  id: '/strategies',
-  path: '/strategies',
-  getParentRoute: () => ShellRoute,
-} as any)
 const ShellDataIndexRoute = ShellDataIndexRouteImport.update({
   id: '/data/',
   path: '/data/',
@@ -93,6 +90,21 @@ const ShellDataSourcesRoute = ShellDataSourcesRouteImport.update({
   path: '/data/sources',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellStrategiesIndexRoute = ShellStrategiesIndexRouteImport.update({
+  id: '/strategies/',
+  path: '/strategies/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellStrategiesNewRoute = ShellStrategiesNewRouteImport.update({
+  id: '/strategies/new',
+  path: '/strategies/new',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellStrategiesStrategyRoute = ShellStrategiesStrategyRouteImport.update({
+  id: '/strategies/strategy',
+  path: '/strategies/strategy',
+  getParentRoute: () => ShellRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
@@ -102,12 +114,14 @@ export interface FileRoutesByFullPath {
   '/prop': typeof ShellPropRoute
   '/runs': typeof ShellRunsRoute
   '/settings': typeof ShellSettingsRoute
-  '/strategies': typeof ShellStrategiesRoute
   '/data/chart': typeof ShellDataChartRoute
   '/data/dataset': typeof ShellDataDatasetRoute
   '/data/import': typeof ShellDataImportRoute
   '/data/sources': typeof ShellDataSourcesRoute
+  '/strategies/new': typeof ShellStrategiesNewRoute
+  '/strategies/strategy': typeof ShellStrategiesStrategyRoute
   '/data/': typeof ShellDataIndexRoute
+  '/strategies/': typeof ShellStrategiesIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -116,13 +130,15 @@ export interface FileRoutesByTo {
   '/prop': typeof ShellPropRoute
   '/runs': typeof ShellRunsRoute
   '/settings': typeof ShellSettingsRoute
-  '/strategies': typeof ShellStrategiesRoute
   '/': typeof ShellIndexRoute
   '/data/chart': typeof ShellDataChartRoute
   '/data/dataset': typeof ShellDataDatasetRoute
   '/data/import': typeof ShellDataImportRoute
   '/data/sources': typeof ShellDataSourcesRoute
+  '/strategies/new': typeof ShellStrategiesNewRoute
+  '/strategies/strategy': typeof ShellStrategiesStrategyRoute
   '/data': typeof ShellDataIndexRoute
+  '/strategies': typeof ShellStrategiesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -133,13 +149,15 @@ export interface FileRoutesById {
   '/_shell/prop': typeof ShellPropRoute
   '/_shell/runs': typeof ShellRunsRoute
   '/_shell/settings': typeof ShellSettingsRoute
-  '/_shell/strategies': typeof ShellStrategiesRoute
   '/_shell/': typeof ShellIndexRoute
   '/_shell/data/chart': typeof ShellDataChartRoute
   '/_shell/data/dataset': typeof ShellDataDatasetRoute
   '/_shell/data/import': typeof ShellDataImportRoute
   '/_shell/data/sources': typeof ShellDataSourcesRoute
+  '/_shell/strategies/new': typeof ShellStrategiesNewRoute
+  '/_shell/strategies/strategy': typeof ShellStrategiesStrategyRoute
   '/_shell/data/': typeof ShellDataIndexRoute
+  '/_shell/strategies/': typeof ShellStrategiesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -151,12 +169,14 @@ export interface FileRouteTypes {
     | '/prop'
     | '/runs'
     | '/settings'
-    | '/strategies'
     | '/data/chart'
     | '/data/dataset'
     | '/data/import'
     | '/data/sources'
+    | '/strategies/new'
+    | '/strategies/strategy'
     | '/data/'
+    | '/strategies/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -165,13 +185,15 @@ export interface FileRouteTypes {
     | '/prop'
     | '/runs'
     | '/settings'
-    | '/strategies'
     | '/'
     | '/data/chart'
     | '/data/dataset'
     | '/data/import'
     | '/data/sources'
+    | '/strategies/new'
+    | '/strategies/strategy'
     | '/data'
+    | '/strategies'
   id:
     | '__root__'
     | '/_shell'
@@ -181,13 +203,15 @@ export interface FileRouteTypes {
     | '/_shell/prop'
     | '/_shell/runs'
     | '/_shell/settings'
-    | '/_shell/strategies'
     | '/_shell/'
     | '/_shell/data/chart'
     | '/_shell/data/dataset'
     | '/_shell/data/import'
     | '/_shell/data/sources'
+    | '/_shell/strategies/new'
+    | '/_shell/strategies/strategy'
     | '/_shell/data/'
+    | '/_shell/strategies/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -253,13 +277,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellSettingsRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/strategies': {
-      id: '/_shell/strategies'
-      path: '/strategies'
-      fullPath: '/strategies'
-      preLoaderRoute: typeof ShellStrategiesRouteImport
-      parentRoute: typeof ShellRoute
-    }
     '/_shell/data/': {
       id: '/_shell/data/'
       path: '/data'
@@ -295,6 +312,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellDataSourcesRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/strategies/': {
+      id: '/_shell/strategies/'
+      path: '/strategies'
+      fullPath: '/strategies/'
+      preLoaderRoute: typeof ShellStrategiesIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/strategies/new': {
+      id: '/_shell/strategies/new'
+      path: '/strategies/new'
+      fullPath: '/strategies/new'
+      preLoaderRoute: typeof ShellStrategiesNewRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/strategies/strategy': {
+      id: '/_shell/strategies/strategy'
+      path: '/strategies/strategy'
+      fullPath: '/strategies/strategy'
+      preLoaderRoute: typeof ShellStrategiesStrategyRouteImport
+      parentRoute: typeof ShellRoute
+    }
   }
 }
 
@@ -304,13 +342,15 @@ interface ShellRouteChildren {
   ShellPropRoute: typeof ShellPropRoute
   ShellRunsRoute: typeof ShellRunsRoute
   ShellSettingsRoute: typeof ShellSettingsRoute
-  ShellStrategiesRoute: typeof ShellStrategiesRoute
   ShellIndexRoute: typeof ShellIndexRoute
   ShellDataChartRoute: typeof ShellDataChartRoute
   ShellDataDatasetRoute: typeof ShellDataDatasetRoute
   ShellDataImportRoute: typeof ShellDataImportRoute
   ShellDataSourcesRoute: typeof ShellDataSourcesRoute
+  ShellStrategiesNewRoute: typeof ShellStrategiesNewRoute
+  ShellStrategiesStrategyRoute: typeof ShellStrategiesStrategyRoute
   ShellDataIndexRoute: typeof ShellDataIndexRoute
+  ShellStrategiesIndexRoute: typeof ShellStrategiesIndexRoute
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
@@ -319,13 +359,15 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellPropRoute: ShellPropRoute,
   ShellRunsRoute: ShellRunsRoute,
   ShellSettingsRoute: ShellSettingsRoute,
-  ShellStrategiesRoute: ShellStrategiesRoute,
   ShellIndexRoute: ShellIndexRoute,
   ShellDataChartRoute: ShellDataChartRoute,
   ShellDataDatasetRoute: ShellDataDatasetRoute,
   ShellDataImportRoute: ShellDataImportRoute,
   ShellDataSourcesRoute: ShellDataSourcesRoute,
+  ShellStrategiesNewRoute: ShellStrategiesNewRoute,
+  ShellStrategiesStrategyRoute: ShellStrategiesStrategyRoute,
   ShellDataIndexRoute: ShellDataIndexRoute,
+  ShellStrategiesIndexRoute: ShellStrategiesIndexRoute,
 }
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)

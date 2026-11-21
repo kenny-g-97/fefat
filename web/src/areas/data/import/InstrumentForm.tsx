@@ -2,7 +2,7 @@ import type { Dispatch } from "react"
 import type { components } from "@/api/schema"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "../Picker"
-import { picked } from "./choices"
+import { picked } from "@/ui/choices"
 import type {
   DraftChange,
   InstrumentFields,
