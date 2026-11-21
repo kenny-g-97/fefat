@@ -6,7 +6,7 @@ import { Choice } from "../Picker"
 import { type Draft, type DraftChange, NEW_INSTRUMENT } from "./import-draft"
 import { listedProfile } from "./import-request"
 import { InstrumentForm } from "./InstrumentForm"
-import { type Choice as Option, RadioChoice } from "./RadioChoice"
+import { type Choice as Option, RadioChoice } from "@/ui/radio-choice"
 
 const INSTRUMENTS: readonly Option<Draft["instrument"]["kind"]>[] = [
   { value: "profile's", label: "As the profile and the file name" },

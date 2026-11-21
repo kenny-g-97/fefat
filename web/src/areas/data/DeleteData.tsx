@@ -5,7 +5,7 @@ import { InlineConfirmation } from "@/ui/inline-confirmation"
 import { Panel } from "@/ui/panel"
 import type { ImportedDataset } from "./datasets"
 import { deletionWords } from "./deletion-words"
-import { QueryBody } from "./QueryBody"
+import { QueryBody } from "@/ui/query-body"
 
 /** The last card of a dataset's page (step 5.18, ADR-0023; web/DESIGN.md, Patterns, Dataset
  * page): what Delete removes and what stays, then Delete, asked once in place (Inline

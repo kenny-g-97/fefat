@@ -6,7 +6,12 @@ templates; and a strategy's code validated and a version saved, each in the exec
 a strategy a notebook saved is seen and a library the index cannot follow refuses the save before
 anything is written, and again once a version is saved; a refusal of the code writes no version,
 so it comes back as it is, with its line, and the next indexing reads any feature its pins
-saved."""
+saved.
+
+From step 5.5 the list indexes the library first too, so that a version a notebook saved is
+listed; and a strategy is marked abandoned, with where it broke and its lesson, or reopened,
+through the SDK's file beside its versions (`fefat.strategy.abandoned_marks`), which runs no code
+of the trader's, the library indexed before and after as around a save."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -14,6 +19,7 @@ from pathlib import Path
 
 from fefat.features.versions import code_diff
 from fefat.strategy import StrategyLintFinding, StrategyVersion, lint
+from fefat.strategy.abandoned_marks import abandon_in, reopen_in
 from fefat.strategy.starting_points import StrategyTemplate, templates
 from fefat.strategy.versions import load_in
 from fefat_app.execution import RefusedCode, StrategySaveSpec, ValidStrategy
@@ -73,8 +79,27 @@ class SavedStrategies:
     strategies_dir: Path
 
     def strategies(self) -> tuple[IndexedStrategy, ...]:
-        """The saved strategies by name, each with its versions in order."""
+        """The saved strategies by name, each with its versions in order, the library indexed
+        first; refused with `LibraryRefusedError` where its files cannot be followed."""
+        self.index.refresh()
         return self.index.strategies()
+
+    def abandon(self, strategy_id: str, breaking_point: str, lesson: str) -> IndexedStrategy:
+        """Mark the strategy `strategy_id` abandoned with where it broke and its lesson; refused
+        with `AlreadyAbandonedError` where a mark stands (`fefat.strategy.abandoned_marks`)."""
+        self.index.refresh()
+        name = self._strategy(strategy_id).name
+        abandon_in(self.strategies_dir, name, breaking_point=breaking_point, lesson=lesson)
+        self.index.refresh()
+        return self._strategy(strategy_id)
+
+    def reopen(self, strategy_id: str) -> IndexedStrategy:
+        """Remove the abandoned mark of the strategy `strategy_id`; refused with
+        `NotAbandonedError` where it holds none."""
+        self.index.refresh()
+        reopen_in(self.strategies_dir, self._strategy(strategy_id).name)
+        self.index.refresh()
+        return self._strategy(strategy_id)
 
     def versions(self, strategy_id: str) -> tuple[IndexedStrategyVersion, ...]:
         """The versions of the strategy `strategy_id`, in order."""

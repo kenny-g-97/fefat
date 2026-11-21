@@ -1,12 +1,12 @@
 # Phase 6 — Feature lab and strategy builder
 
-**Goal.** The hybrid workflow you chose: features written in a code editor with an instant chart and statistics preview, leak results shown in the app, analytics pages, a combination builder, and a no-code strategy builder that generates the Python definition and runs a backtest.
+**Goal.** The hybrid workflow you chose: features written in a code editor with an instant chart and statistics preview, leak results shown in the app, analytics pages, a combination builder, a no-code strategy builder that generates the Python definition and runs a backtest, and an export of a builder-made strategy to NinjaTrader 8, TradingView, and MetaTrader 5, to backtest it there (D-110).
 
-**You get.** Write a feature, preview it in a second, save a version, combine it, build a strategy from two features in a form, look at the generated code, run it.
+**You get.** Write a feature, preview it in a second, save a version, combine it, build a strategy from two features in a form, look at the generated code, run it. Export it as a script for NinjaTrader 8, TradingView, or MetaTrader 5, and compare that platform's backtest with FEAT's.
 
 **Depends on.** Phase 5.
 
-**Open decisions for the kickoff.** The default preview instrument and range; whether the builder's first release needs every execution-template option or a curated subset.
+**Open decisions for the kickoff.** The default preview instrument and range; whether the builder's first release needs every execution-template option or a curated subset; which indicators and execution options the first exports cover (those of the templates and the cross-check first, or all 32 indicators); whether MQL4 joins step 6.12 once you can open MetaTrader 4 (D-110).
 
 ## Kickoff
 
@@ -244,6 +244,10 @@ Not in this step: the strategy builder.
 
 - If the generated code differs between the dialog and the SDK, the dialog is generating code itself; it must call the SDK through the API.
 
+#### Amendment
+
+2026-11-21 (D-110, your check of step 5.5's pull request): you asked to make new strategies by using and combining features from the feature library. A combination saved here is a library feature like any other, so step 6.7's rules can pick it. Its stored description (`fefat.features.combinations`), a tree of named operators over library features, is what the exports of steps 6.10 to 6.12 translate.
+
 ### 6.7 Rule builder
 
 Depends on: 6.6, 5.5 · Plan mode: required · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: hard
@@ -281,6 +285,10 @@ Not in this step: the execution template form (6.8).
 #### If it fails
 
 - Signal counts that differ between the preview and a later backtest usually mean the preview used a different range or fidelity; the preview must state its range.
+
+#### Amendment
+
+2026-11-21 (D-110, your check of step 5.5's pull request): this step is the revisit of step 5.5's Strategies pages you asked for once the Feature Lab exists. Read those pages and `web/DESIGN.md`'s Strategy page pattern first, and say in the plan what changes on them. New strategies are made here by using and combining features from the feature library, step 6.6's combinations among them, so New strategy offers to start from the library's features beside the templates. `builder_spec` names each feature by its library name, version, and parameters and holds no free Python, since steps 6.10 to 6.12 translate it into other platforms' languages.
 
 ### 6.8 Execution-template form and code generation
 
@@ -320,6 +328,10 @@ Not in this step: running (already exists), the agent.
 
 - If the form shows raw schema keys instead of labels, the Rust `schemars` attributes need `description` and `title`; fix at the source so the SDK docs improve too.
 
+#### Amendment
+
+2026-11-21 (D-110, your check of step 5.5's pull request): a version saved with its `builder_spec` is what the exports of steps 6.10 to 6.12 read. An ejected code version cannot be exported, so Eject to code says so before you choose it, and the ejected version's page says so after.
+
 ### 6.9 Builder-to-backtest end to end
 
 Depends on: 6.8 · Plan mode: skip · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: no · Model hint: default
@@ -355,6 +367,153 @@ Not in this step: new features.
 #### If it fails
 
 - Report the exact page and element; the fix belongs to that step's component.
+
+### 6.10 NinjaScript export
+
+Depends on: 6.8 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: hard
+
+#### Purpose
+
+Export a builder-made strategy as a NinjaScript strategy, backtest it in NinjaTrader 8, and compare its trades with FEAT's run of the same version.
+
+#### Prerequisites
+
+- Step 6.8 merged: a strategy version saved with its `builder_spec`.
+- The Phase 6 kickoff's answer on which indicators and execution options the first exports cover.
+- For Your checks: NinjaTrader 8 with the instrument's data, and the same bars imported into FEAT from NinjaTrader.
+
+#### Prompt
+
+```text
+Masterplan step 6.10 — NinjaScript export.
+
+Read D-110, docs/spec/fill-semantics.md, docs/validation/nautilus-comparison.md (its NinjaTrader 8 section and difference classes), python/tests/external/README.md (the NinjaTrader runbook), python/tests/external/ninjatrader/FefatCrossCheck.cs, fefat.features.combine and fefat.features.combinations, fefat.indicators, strategy_spec.schema.json, and the `builder_spec` schema of step 6.7.
+
+Build the export's core and its first target. An export is for backtesting on the other platform, to cross-check FEAT's results: it writes a file, places no orders, and connects to nothing.
+
+1. SDK: `ff.strategy.export(version, target)` gives the script's file name, its text, and notes on what differs on the target. It reads a builder-made version's `builder_spec` alone, runs none of the trader's code, and gives the same text for the same version each time. The script's header names the strategy, its version, and its hash. Text from the strategy, such as its hypothesis, is escaped for the target's comments and strings, since the trader compiles the file.
+2. Translations: one table per target of each indicator, each combination node, and each execution option the kickoff chose. An indicator is written out as FEAT defines it (seed, smoothing, warm-up) wherever the platform's built-in differs, so that its values match after the warm-up.
+3. Refusals: a code version, a custom Python feature, a node or option without a translation, and higher-timeframe or cross-instrument nodes are refused by name, all of them at once, and no partial script is written.
+4. App: `GET /v1/strategies/{id}/versions/{n}/export?target=ninjascript`, and an Export card on the strategy page with the target, the script read-only, Copy, Download, and the notes. A code version's card says why it cannot be exported. Steps 6.11 and 6.12 add a target and nothing else to the card.
+5. Notes, in the script and on the page: NinjaTrader's fills along a bar's path and its limit fills on a gap (step 2.14's classes `bar_path` and `gap_limit_clamped`), its commission template, its session template and time zone, and its contract rolls.
+6. The comparison: reuse `fefat_xcheck`'s reader of NinjaTrader's Trades export, its matching of trades, and its difference classes, with FEAT's run of the same version on the same bars under the compatibility profile of scripts/xcheck.py. Write its report under docs/validation/.
+7. docs/engine-guide.md gains a section "Exporting a strategy".
+
+Not in this step: Pine Script (6.11), MQL5 (6.12), MQL4, code strategies, custom Python features, and live trading.
+```
+
+#### Done means
+
+1. The same version exports the same text twice, and golden scripts for fixed specs hold that text (test).
+2. Every indicator, combination node, and execution option either translates or is refused by name, and text from the strategy cannot break out of a comment or a string (tests).
+3. The exported script compiles in NinjaTrader 8, and its Strategy Analyzer trades match FEAT's run of the same version apart from the documented classes (the report under `docs/validation/`, with no `unknown` difference).
+4. The Export card passes Playwright with screenshots, an exported strategy and a refused one among them.
+5. `docs/engine-guide.md` says how to export a strategy, what an export covers, and what differs on NinjaTrader 8.
+
+#### Your checks
+
+- Export a builder-made strategy, save the file into `Documents\NinjaTrader 8\bin\Custom\Strategies\`, compile it in the NinjaScript Editor (F5), and run it in Strategy Analyzer on the same instrument and dates as FEAT's run. Export the Trades tab and run the comparison: its report counts the trades that match and names a class for each that differs.
+
+#### If it fails
+
+- If NinjaTrader refuses to compile the file, delete it and compile again: your other strategies keep running on the last good build. The fix belongs in the target's translation table.
+- A trade that differs with no class is a bug in the translation or a rule the notes do not name: find which before widening a class.
+- Indicator values that differ after the warm-up usually mean the script used the platform's built-in where FEAT's definition differs.
+
+### 6.11 Pine Script export
+
+Depends on: 6.10 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: default
+
+#### Purpose
+
+Export a builder-made strategy as a Pine Script strategy, backtest it in TradingView's Strategy Tester, and compare its trades with FEAT's run on the same bars.
+
+#### Prerequisites
+
+- Step 6.10 merged.
+- For Your checks: TradingView in your browser. Exporting a chart's bars needed a paid plan, Essential or above, when the data-source research was done; the step's plan gives the free route first and the monthly cost of any plan the check needs.
+
+#### Prompt
+
+```text
+Masterplan step 6.11 — Pine Script export.
+
+Read D-110, step 6.10's export core and report, and docs/masterplan/appendix/research-data-sources.md (TradingView). First look up TradingView's current Pine Script reference (the language version, `strategy()`, its order functions, and a script's limits) and what the Strategy Tester and the chart's export offer on each plan, since both change. Recommend the free route for the check first, say what it cannot prove (it may compare a shorter window by hand), and give the monthly cost of any paid plan the check would need.
+
+Add the `pinescript` target to step 6.10's core:
+
+1. Its translation table for the same indicators, combination nodes, and execution options, with the same refusals by name, and text from the strategy escaped for Pine's comments and strings.
+2. The notes, in the script and on the page: the Strategy Tester's own assumption about the path inside a bar, its fills of limit and stop orders, its commission and slippage settings, the chart's session and time zone, and that a continuous chart symbol rolls on TradingView's schedule rather than FEAT's.
+3. The comparison runs on TradingView's own bars: the trader exports the chart's bars, imports them with the wizard's TradingView preset, runs the same version in FEAT, and compares with the Strategy Tester's list of trades. A difference FEAT's classes do not cover gets a class of its own, named for the rule that explains it.
+4. The Export card offers Pine Script with no other change to it, and the engine guide's "Exporting a strategy" says what differs on TradingView.
+
+Not in this step: MQL5 (6.12), MQL4, code strategies, custom Python features, alerts or webhooks, and live trading.
+```
+
+#### Done means
+
+1. The same version exports the same text twice, and golden scripts for fixed specs hold that text (test).
+2. Every indicator, combination node, and execution option either translates or is refused by name, and text from the strategy cannot break out of a comment or a string (tests).
+3. The exported script compiles in the Pine Editor, and the Strategy Tester's trades match FEAT's run on the same bars apart from the documented classes (the report under `docs/validation/`, with no `unknown` difference), on the route the step's plan settled with you.
+4. The Export card offers Pine Script (Playwright, with a screenshot).
+5. `docs/engine-guide.md` says what differs on TradingView.
+
+#### Your checks
+
+- Export a builder-made strategy as Pine Script, paste it into TradingView's Pine Editor, add it to a chart of the same instrument and timeframe, and compare its list of trades with FEAT's as the step's report says.
+
+#### If it fails
+
+- If the Pine Editor refuses the script, the language may have moved on: read the current reference and fix the target's table.
+- Trades all off by the same number of bars or hours usually mean another session or time zone on the chart; the notes must name the chart settings the script expects.
+
+### 6.12 MQL5 export
+
+Depends on: 6.10 · Plan mode: required · Reviews: step-reviewer, engine-accuracy-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: default
+
+#### Purpose
+
+Export a builder-made strategy as an Expert Advisor for MetaTrader 5, backtest it in the Strategy Tester, and compare its trades with FEAT's run on the same bars.
+
+#### Prerequisites
+
+- Step 6.10 merged.
+- For Your checks: MetaTrader 5 with a demo account, both free, at a broker that lists a symbol you want to test.
+
+#### Prompt
+
+```text
+Masterplan step 6.12 — MQL5 export.
+
+Read D-110, step 6.10's export core and report, docs/data-guide.md (import profiles, and a product FEAT does not know), and MetaQuotes' current MQL5 reference for Expert Advisors (`OnTick`, detecting a new bar, `CTrade`, and the Strategy Tester's tick modes).
+
+Add the `mql5` target to step 6.10's core:
+
+1. Its translation table for the same indicators, combination nodes, and execution options, with the same refusals by name, and text from the strategy escaped for MQL5's comments and strings. The Expert Advisor decides once per bar close. Tick size and tick value are read from the chart's symbol, and time rules take the broker's server time zone as an input.
+2. The notes, in the script and on the page: the Strategy Tester's tick model, the broker's spread and commission, the account's netting or hedging mode, the broker's server time, and that a broker's symbol, such as a CFD, may not be the contract the strategy names.
+3. FEAT has no MetaTrader preset: add one for MetaTrader 5's export of a symbol's bars, its layout read from a real file kept outside the repository and tested on a generated one, so that the wizard imports them. A symbol FEAT does not know needs a profile carrying its instrument, as the data guide says.
+4. The comparison runs on the broker's bars: the trader exports them from MetaTrader 5, imports them into FEAT, runs the same version, and compares with the Strategy Tester's trades. A difference FEAT's classes do not cover gets a class of its own, named for the rule that explains it.
+5. The Export card offers MQL5 with no other change to it, and the engine guide's "Exporting a strategy" says what differs on MetaTrader 5.
+
+Not in this step: MQL4 (`BACKLOG.md`), code strategies, custom Python features, and live trading.
+```
+
+#### Done means
+
+1. The same version exports the same text twice, and golden scripts for fixed specs hold that text (test).
+2. Every indicator, combination node, and execution option either translates or is refused by name, and text from the strategy cannot break out of a comment or a string (tests).
+3. The exported Expert Advisor compiles in MetaEditor, and the Strategy Tester's trades match FEAT's run on the same bars apart from the documented classes (the report under `docs/validation/`, with no `unknown` difference).
+4. The wizard imports a MetaTrader 5 export of bars through its new preset (test on a generated file), and the Export card offers MQL5 (Playwright, with a screenshot).
+5. `docs/engine-guide.md` says what differs on MetaTrader 5.
+
+#### Your checks
+
+- Export a builder-made strategy as MQL5, save it into MetaTrader 5's `MQL5\Experts` folder, compile it in MetaEditor, run it in the Strategy Tester on the symbol and dates of the bars you imported, and compare its trades with FEAT's as the step's report says.
+
+#### If it fails
+
+- Trades off by a constant number of hours usually mean the broker's server time zone input, or its clock change, is wrong.
+- Positions that stack or reverse differently usually mean the account's netting or hedging mode differs from what the Expert Advisor expects.
 
 ## Phase exit
 

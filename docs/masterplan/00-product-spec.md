@@ -62,7 +62,7 @@ FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in th
 | In | Later (phase) | Not planned |
 | --- | --- | --- |
 | CME futures (ES, NQ, CL, GC and micros) and crypto (spot and perpetuals) as catalog products, filled from the sources you connect | Event strategies (P9), alternative data (P10), research tools (P11), phone polish (P12, deferred by D-54), hardening (P13), desktop packaging (P14) | Live or paper trading, broker connections |
-| Signal strategies, backtests, feature lab, strategy builder, prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute or market data for other users |
+| Signal strategies, backtests, feature lab, strategy builder, export of a builder-made strategy to NinjaTrader 8, TradingView, and MetaTrader 5 for backtesting there (D-110), prop simulator on saved backtests and imported trade logs, in-app agent | Cloud sync for phone access while the PC is off (backlog) | Hosting compute or market data for other users |
 | One user, one PC, used from the browser on it | Machine-learning models on features (backlog) | Order-book (L2) strategies, tick-reactive scalping |
 | Connectors for Databento and the crypto archives, import presets for common exports, and a guide to well-known sources | More catalog products, connectors, presets, and prop firms | Social features, strategy marketplace |
 
@@ -98,6 +98,7 @@ FEAT ("feature engineering for algorithmic trading"; FEFAT in the code and in th
 | Signal frame | The table of boolean/number columns a signal strategy produces for every bar (`long_entry`, `stop_price`, …). |
 | Execution template | The declarative part of a signal strategy: order types, stops, targets, trailing, time rules, filters, sizing. |
 | Strategy version | An immutable snapshot of a strategy's code, builder spec, parameter schema, and pinned feature versions. |
+| Strategy export | A script for another platform (NinjaScript, Pine Script, or MQL5), written from a builder-made strategy version's rules, to backtest it there and compare with FEAT's run; it places no orders (D-110). |
 | Run | One backtest: a strategy version plus parameters, data snapshot, engine version, and configuration, with its artifacts. |
 | Data snapshot | A content-hashed manifest of the exact data partitions a run used. |
 | Leak (look-ahead) | A feature value at time t that depends on information available only after t. |
