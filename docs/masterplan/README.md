@@ -50,7 +50,7 @@ The session protocol, reviews, verification approach, and test-data policy are i
 | P3 Features | Feature library, leak detector, indicators, analytics, from notebooks | 8 | |
 | P4 Local app | Local server, login, web shell, jobs, executor; phone access deferred (D-54) | 6 | the demo job in the browser at 4.4 (step 46) |
 | P5 Backtesting in the app | Data catalog and import wizard, strategy versions, runs, results, trade review chart | 14 | web MVP at 5.13 (step 61) |
-| P6 Feature lab and builder | Editor with live preview; no-code strategy builder | 9 | |
+| P6 Feature lab and builder | Editor with live preview; no-code strategy builder; strategy export to NinjaTrader 8, TradingView, and MetaTrader 5 | 12 | |
 | P7 Prop simulator | Rule presets, replay of saved backtests and imported trade logs, prop strategies, Monte Carlo, pages | 11 | step 81 |
 | P8 In-app agent | Chat, tools, skills, proposals, evals, safety tests | 11 | step 92 |
 | P9 Event strategies | Python `on_bar` strategies and their editor | 6 | |

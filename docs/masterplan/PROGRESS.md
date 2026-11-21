@@ -39,6 +39,7 @@ Phase kickoffs and exits are tracked in the second table.
 - 2026-11-17 — The plan of step 5.15 (D-104, ADR-0022): the bars that refuse six of your NinjaTrader files are the edge of stretches stamped early, so the correction you approve leaves out those bars, every record of the sessions on both sides of each such break, and of the sessions joined to those by breaks with bars, only where what remains can still be timed; a session counts as stamped a bar early only by its whole signature, so that a session missing its last minutes reads as bars in a break; and stray bars in other breaks stay. Done means 6 and 7 and Your checks of step 5.15 amended; a line of `BACKLOG.md` aimed at step 5.16 records the autumn clock-change sessions your exports hold an hour late.
 - 2026-11-18 — The import wizard becomes a stepper (D-105, from your check of step 5.15's pull request): its four cards as four steps listed down the left of the page, one to a page with Back and Continue, each marked complete or not and opened from the list; Import under the last step, waiting for every step and, in a round, for your decision on each file that does not import, Skip among them; and a file that imports reads Imports in green, the design brief's second exception to colour meaning sign. New step 5.17, whose row stands after 5.15's, so that it runs before 5.16; steps 5.12 and 5.16 gain an Amendment each, and the Phase 4 design brief a dated line. No step ID changed.
 - 2026-11-19 — Deleting an instrument's stored data (D-107, ADR-0023, your request after checking step 5.17's pull request): a new step 5.18 deletes one provider's data of a root from the instrument's page, after a confirmation that says what goes and counts the saved runs that read it, and from the command line. Its row stands after 5.17's, so that it runs before 5.16. No step ID changed.
+- 2026-11-21 — The builder's revisit and strategy export (D-110, from your check of step 5.5's pull request): the Feature Lab comes first, then the rule builder (6.7) revisits the Strategies pages and makes new strategies from the library's features and their combinations. Three new steps after 6.9 export a builder-made strategy to backtest it on another platform: 6.10 NinjaScript, 6.11 Pine Script, and 6.12 MQL5, with MQL4 waiting in `BACKLOG.md`. No step ID changed.
 
 ## Steps
 
@@ -120,6 +121,9 @@ Phase kickoffs and exits are tracked in the second table.
 | 6.7 | Rule builder | P6 | todo | | | |
 | 6.8 | Execution-template form and code generation | P6 | todo | | | |
 | 6.9 | Builder-to-backtest end to end | P6 | todo | | | |
+| 6.10 | NinjaScript export | P6 | todo | | | |
+| 6.11 | Pine Script export | P6 | todo | | | |
+| 6.12 | MQL5 export | P6 | todo | | | |
 | 7.1 | Rule schema, preset format, refresh skill | P7 | todo | | | |
 | 7.2 | Account state machine, reference implementation, first three presets | P7 | todo | | | |
 | 7.3 | Backtest-file replay: drawdowns, daily loss, flat-by, limits | P7 | todo | | | |
