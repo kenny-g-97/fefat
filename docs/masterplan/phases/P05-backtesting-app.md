@@ -19,7 +19,7 @@
 - "Playwright passes on both projects" reads as the desktop project at 1280 by 800, with the dev-proxy project keeping its own specs; no step has a phone layout (D-54); screenshots are copied to `docs/validation/screenshots/<step>/`.
 - The harness's seed (`scripts/e2e_server.py`) grows with the steps: step 5.3 adds the demo strategy and its first run, which later specs call `demo-run-01`.
 
-**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3 and 5.7 to 5.10; `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, and 5.17 (D-105), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
+**Skills.** `software-design-principles` for every step; `designing-architecture` for each new seam: the catalog service (5.1), the strategy library and its index (5.2), the backtest job, the runs' index, and the executor's backtest kind (5.3), and uploads with the import job (5.12); `backtest-expert` for 5.3 and 5.7 to 5.10; `frontend-design:frontend-design`, `unslop`, and `contemporary-typeui` with `web/DESIGN.md` for the steps that build screens, 5.4 to 5.10, 5.12, 5.13, 5.17 (D-105), and 5.19 (D-112), each ending with unslop's audit and the Contemporary skill's checklist (D-77, D-88).
 
 **Open decisions for the kickoff** (settled 2026-11-10, D-93)**.** Which of your real strategies to seed as the demo (a simple one you understand well); the metrics you want on the KPI cards first.
 
@@ -314,6 +314,8 @@ Not in this step: results views.
 2026-10-12 (D-37): the launch form picks a dataset by origin and provider instead of platform or imported data.
 
 2026-11-10 (Phase 5 kickoff, D-93): the dialog may be Radix's modal dialog (D-93). It shows the instrument and the timeframe that the version's strategy names, rather than picking them, picks the dataset by provider where several hold the instrument, every one an import until the connectors (D-38), and names a contract for a run of one contract; the coverage and the estimate come from step 5.1's datasets. From `BACKLOG.md`: a Stress action submits, beside the base run, the variants the run's settings already express, more ticks of slippage, each a run of its own, while worst-case fills, commissions at 1.5 times, and the entry a bar late wait for step 11.6; Home shows the recent runs with their robustness verdict, in two column stacks, so that the running-jobs card grows alone, showing three jobs, then a line counting the rest; and the jobs, now that backtests run for minutes: Run again on an ended job's row, a row reading Reconnecting while its stream waits, rows that hold still under the pointer, a failure dot on the jobs button until the drawer opens, with a polite live region saying each followed job's end and a job's error in your words with what to do, the list asked again when the window gets the focus, and one stream of every job's events per tab, or a list that gives each job's last event id, its login checked at each read; and the design review's two open choices, the drawer closing at any click outside or staying open beside the work, and a `title` on the top bar's icon buttons. Done means 1's two projects read as the phase's header says.
+
+2026-11-21 (the step's plan, D-112): your answers. The jobs of the kickoff's Amendment above, from "and the jobs, now that backtests run for minutes" to the design review's two open choices, move to a new step 5.19, which runs right after this one, since they change the shell rather than the runs' pages and no Done means here needs them; until then the Runs list is live through today's streams, four jobs at a time. The parameters live in the Run backtest dialog, the strategy page's Parameters card turning read-only and Run backtest becoming the page header's primary button. The date range is two typed trade dates, checked against the coverage, with no new dependency. And the breakout and the entry window gate their entry on the ATR having a value, where `BACKLOG.md` asked for `ff.indicators.atr`, whose 350 bars of warm-up the three sessions of the seeded ES cannot give: an entry there would still be refused; the true ATR goes back to `BACKLOG.md` for step 5.13.
 
 ### 5.7 Results: metrics, equity, distributions
 
@@ -891,6 +893,52 @@ Not in this step: deleting one imported file or a range of dates, several instru
 #### If it fails
 
 - A delete refused for a file held open means that a chart, a notebook, or another program reads it: close it and press Delete now again, which finishes the delete. Anything else a delete left behind, or anything it removed that it should not have, is for Claude Code, with the instrument, the provider, and the refusal's words.
+
+### 5.19 Job feedback and one stream per tab
+
+Depends on: 5.6 · Plan mode: optional · Reviews: step-reviewer, ui-verifier, design-reviewer · Security: yes · Model hint: default
+
+#### Purpose
+
+A job that runs for minutes tells you how it ended wherever you are in the app, and one stream per tab carries every job's progress.
+
+#### Prerequisites
+
+- Step 5.6 merged: its Runs list and run page follow the jobs this step makes live.
+
+#### Prompt
+
+```text
+Masterplan step 5.19 — Job feedback and one stream per tab.
+
+Read docs/masterplan/01-architecture.md §6 (Streams), web/DESIGN.md (Top bar, Jobs drawer, Running jobs card), and `web/src/api/jobs.ts`. These were written into step 5.6 by the Phase 5 kickoff (D-93) and moved here at its plan (D-112):
+
+1. Follow every job's events through one stream per tab, or give each job's last event id with the list, so that a reload replays nothing and a fifth active job is live too. The stream checks its login at each read, and ends when the session or the token does and after its job's last status.
+2. An ended job's row that did not succeed offers Run again with the same inputs, a backtest through its run, which is the undo of a Cancel.
+3. A row reads Reconnecting while its stream waits to reconnect.
+4. The drawer's rows hold still while the pointer is over the list, so that a double click on one job's Cancel never lands on the next.
+5. The jobs button carries a failure dot until the drawer opens, its label naming the failure; a polite live region in the shell says each followed job's end; and a job's error reads in your words with what to do, where the reaper and the executor write for a developer, a runner's error keeping its line breaks.
+6. The list is asked again when the window gets the focus, so that a job a notebook or another tab started shows.
+7. Ask the builder the design review's two open choices at the plan: the drawer closing at any click outside or staying open beside the work, and a `title` on the top bar's icon buttons.
+
+Tests: a stream opened anew replays no event; a stream ends within a read of its session's logout; Run again of a cancelled backtest queues a run of the same request.
+
+Not in this step: notifications outside the app (5.11), older jobs in pages.
+```
+
+#### Done means
+
+1. A reload while a job runs shows no figure of an earlier attempt, and five active jobs all move (test).
+2. A stream ends once its session is logged out or its token revoked (test).
+3. Playwright passes on both projects with screenshots: the failure dot until the drawer opens, Reconnecting, and Run again.
+
+#### Your checks
+
+- Cancel a running backtest and press Run again in the drawer: it runs to its end, and the Runs list shows it.
+
+#### If it fails
+
+- A bar that jumps back after a reload means the stream started from its first event: fix where the stream starts, not the bar.
 
 ## Phase exit
 
