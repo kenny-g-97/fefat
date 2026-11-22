@@ -18,7 +18,7 @@ import { ChartToolbar } from "./ChartToolbar"
 import { ChartView } from "./ChartView"
 import { chartRoots, latestVersion, rootProviders } from "./chart-panes"
 import type { ChartSearch } from "./chart-search"
-import { fidelityLabel } from "./datasets"
+import { fidelityLabel } from "@/ui/figures"
 import { QueryBody } from "@/ui/query-body"
 
 /** The chart viewer (step 5.4): a series of the store's bars, chosen in the toolbar and kept in

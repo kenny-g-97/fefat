@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui/table"
-import { Picker } from "../Picker"
+import { Picker } from "@/ui/picker"
 import { picked } from "@/ui/choices"
 import { BAR_ROLES, ROLE_LABELS, type Role, TICK_ROLES } from "./import-roles"
 

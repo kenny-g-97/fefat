@@ -7,7 +7,7 @@ import type {
 } from "@/api/imports"
 import { KeptField } from "@/ui/kept-field"
 import { Panel } from "@/ui/panel"
-import { Choice } from "../Picker"
+import { Choice } from "@/ui/picker"
 import { TableState } from "./FileCard"
 import type { Draft, DraftChange, ProfileDraft } from "./import-draft"
 import type { LatestPreview } from "./import-preview"

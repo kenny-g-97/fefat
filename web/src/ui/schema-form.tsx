@@ -23,7 +23,12 @@ import {
 type SchemaFormProps = Readonly<{
   schema: unknown
   idPrefix: string
-  onChange?: (values: Readonly<Record<string, ParameterValue>> | null) => void
+  entered?: EnteredValues
+  columns?: boolean
+  onChange?: (
+    values: Readonly<Record<string, ParameterValue>> | null,
+    entered: EnteredValues
+  ) => void
 }>
 
 const FLAGS = [
@@ -34,10 +39,18 @@ const FLAGS = [
 /** A form drawn from a JSON schema of parameters (web/DESIGN.md, Patterns, Schema form): a field
  * for each parameter, named as the code writes it, at its default, a number or a word typed and
  * checked when the field is left, a flag or one of a few values a radio group, more values a
- * select; `onChange` gets the values as a run would take them, or null while one is refused. The
- * strategy page draws a version's parameters with it (step 5.5); the builder's execution template,
- * the combinations, and the prop rules of Phases 6 and 7 after it. */
-export function SchemaForm({ schema, idPrefix, onChange }: SchemaFormProps) {
+ * select; `onChange` gets the values as a run would take them, or null while one is refused, and
+ * the texts as typed, which `entered` gives back to a form drawn anew, as a dialog reopened is;
+ * `columns` sets its fields two to a row. The Run backtest dialog draws a version's parameters
+ * with it (step 5.6); the builder's execution template, the combinations, and the prop rules of
+ * Phases 6 and 7 after it. */
+export function SchemaForm({
+  schema,
+  idPrefix,
+  entered,
+  columns = false,
+  onChange,
+}: SchemaFormProps) {
   const reading = parameterFields(schema)
   if (reading.kind === "unreadable") {
     return (
@@ -55,6 +68,8 @@ export function SchemaForm({ schema, idPrefix, onChange }: SchemaFormProps) {
       key={JSON.stringify(reading.fields)}
       fields={reading.fields}
       idPrefix={idPrefix}
+      given={entered}
+      columns={columns}
       onChange={onChange}
     />
   )
@@ -63,21 +78,35 @@ export function SchemaForm({ schema, idPrefix, onChange }: SchemaFormProps) {
 type SchemaFieldsProps = Readonly<{
   fields: readonly ParameterField[]
   idPrefix: string
-  onChange?: (values: Readonly<Record<string, ParameterValue>> | null) => void
+  given: EnteredValues | undefined
+  columns: boolean
+  onChange?: SchemaFormProps["onChange"]
 }>
 
-function SchemaFields({ fields, idPrefix, onChange }: SchemaFieldsProps) {
-  const [entered, setEntered] = useState<EnteredValues>(() =>
-    defaultEntries(fields)
+function SchemaFields({
+  fields,
+  idPrefix,
+  given,
+  columns,
+  onChange,
+}: SchemaFieldsProps) {
+  const [entered, setEntered] = useState<EnteredValues>(
+    () => new Map([...defaultEntries(fields), ...(given ?? [])])
   )
   const [left, setLeft] = useState<ReadonlySet<string>>(() => new Set())
   const enter = (name: string, value: ParameterValue) => {
     const next = new Map(entered).set(name, value)
     setEntered(next)
-    onChange?.(parameterValues(fields, next))
+    onChange?.(parameterValues(fields, next), next)
   }
   return (
-    <div className="flex flex-col gap-5">
+    <div
+      className={
+        columns
+          ? "grid grid-cols-2 items-start gap-x-4 gap-y-5"
+          : "flex flex-col gap-5"
+      }
+    >
       {fields.map((field) => (
         <ParameterInput
           key={field.name}
