@@ -95,17 +95,20 @@ export function ticksRefusal(text: string): string | null {
 }
 
 /** What the estimate is asked of the draft: the choices that change what the run reads, each
- * date only once it is one. */
+ * date only once it is one, and neither of a window that ends before it starts, which its field
+ * refuses and the server would too. */
 export function estimateAsked(
   versionId: string,
   draft: RunDraft
 ): RunEstimateRequest {
+  const from =
+    draft.from !== null && isTradeDate(draft.from) ? draft.from : null
+  const to = draft.to !== null && isTradeDate(draft.to) ? draft.to : null
+  const backwards = from !== null && to !== null && to < from
   return {
     strategy_version_id: versionId,
-    ...(draft.from !== null && isTradeDate(draft.from)
-      ? { start: draft.from }
-      : {}),
-    ...(draft.to !== null && isTradeDate(draft.to) ? { end: draft.to } : {}),
+    ...(from === null || backwards ? {} : { start: from }),
+    ...(to === null || backwards ? {} : { end: to }),
     settings: {
       ...(draft.provider === null ? {} : { provider: draft.provider }),
       ...(draft.contract === null ? {} : { contract: draft.contract }),

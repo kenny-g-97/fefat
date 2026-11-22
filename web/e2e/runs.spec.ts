@@ -459,6 +459,8 @@ test("the dialog refuses a date the data does not hold, and a window without dat
   await dialog.getByLabel("To", { exact: true }).blur()
   await expect(dialog).toContainText("Choose an end on or after 2026-03-09.")
   await expect(launch).toBeDisabled()
+  // The field says it: a window that runs backwards is not sent for the server to refuse too.
+  await expect(dialog.getByTestId("run-estimate-refusal")).toHaveCount(0)
   await dialog.getByTestId("run-whole-range").click()
   await expect(launch).toBeEnabled()
 
@@ -492,6 +494,14 @@ test("what the dialog holds outlives closing it, and a refusal of the data stand
   await page.getByTestId("run-backtest").click()
 
   await expect(dialog.getByLabel("lookback")).toHaveValue("24")
+  await dialog.getByLabel("lookback").fill("many")
+  await page.keyboard.press("Escape")
+  await page.getByTestId("run-backtest").click()
+  await expect(dialog).toContainText("Type a whole number, such as 12.")
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Correct the parameter refused above"
+  )
+  await dialog.getByLabel("lookback").fill("24")
   await expect(
     dialog.getByLabel("Slippage on market orders, ticks")
   ).toHaveValue("3")

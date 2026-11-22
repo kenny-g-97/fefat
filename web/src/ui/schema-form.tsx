@@ -93,7 +93,10 @@ function SchemaFields({
   const [entered, setEntered] = useState<EnteredValues>(
     () => new Map([...defaultEntries(fields), ...(given ?? [])])
   )
-  const [left, setLeft] = useState<ReadonlySet<string>>(() => new Set())
+  // Texts given back were typed and left before, so that one refused says why at once.
+  const [left, setLeft] = useState<ReadonlySet<string>>(
+    () => new Set(given === undefined ? [] : given.keys())
+  )
   const enter = (name: string, value: ParameterValue) => {
     const next = new Map(entered).set(name, value)
     setEntered(next)

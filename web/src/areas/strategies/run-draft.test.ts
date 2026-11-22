@@ -109,6 +109,18 @@ describe("estimateAsked", () => {
   })
 })
 
+describe("estimateAsked of a window that runs backwards", () => {
+  it("asks for neither date, which its field refuses", () => {
+    expect(
+      estimateAsked("v1", {
+        ...UNTOUCHED,
+        from: "2026-03-09",
+        to: "2026-03-06",
+      })
+    ).toEqual({ strategy_version_id: "v1", settings: {} })
+  })
+})
+
 describe("feeTableOf", () => {
   it("names the table chosen or the default, and none that does not price the root", () => {
     expect(feeTableOf(UNTOUCHED, ESTIMATE)).toBe("retail-default")
