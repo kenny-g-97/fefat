@@ -108,9 +108,10 @@ export function RunRow({ run }: Readonly<{ run: ListedRun }>) {
         ) : (
           <SubmittedFigures run={run} />
         )}
-        {run.state === "saved" && (
+        {!isActive(run) && (
           <ArrowRight
             aria-hidden="true"
+            data-testid="run-arrow"
             className="size-4 justify-self-end text-foreground-secondary"
           />
         )}

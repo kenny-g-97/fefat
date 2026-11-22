@@ -85,7 +85,7 @@ function RunList({ filters }: Readonly<{ filters: RunsSearch }>) {
   return (
     <div className="flex flex-col gap-1">
       <RunHead />
-      <ul className="-mx-0 flex flex-col gap-1">
+      <ul className="flex flex-col gap-1">
         {listed.map((run) => (
           <RunRow key={run.id} run={liveRun(run, jobs.data)} />
         ))}

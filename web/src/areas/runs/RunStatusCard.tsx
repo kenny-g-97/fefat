@@ -36,7 +36,7 @@ export function RunStatusCard({ run, cached }: RunStatusCardProps) {
         {cached && (
           <span
             data-testid="run-cached"
-            className="rounded-xl bg-accent px-2 py-0.5 text-xs font-semibold text-foreground"
+            className="rounded-xl border border-transparent bg-accent px-2 py-0.5 text-xs font-semibold text-foreground"
           >
             Cached
           </span>
@@ -58,9 +58,8 @@ export function RunStatusCard({ run, cached }: RunStatusCardProps) {
               {run.run_key.slice(0, KEY_DIGITS)}
             </IdentityChip>
           </p>
-          <p className="text-xs text-muted-foreground">
-            Its metrics, equity curve, and trades will appear here. Not built
-            yet
+          <p className="text-foreground-secondary">
+            Its metrics, equity curve, and trades will appear here
           </p>
         </div>
       ) : (

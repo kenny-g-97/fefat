@@ -120,7 +120,7 @@ function RunDates({ draft, estimate, onChange }: RunDataFieldsProps) {
         </Choice>
         <Button
           variant="ghost"
-          className="mt-6"
+          className="mt-5.5"
           data-testid="run-whole-range"
           onClick={() => onChange({ ...draft, from: null, to: null })}
         >

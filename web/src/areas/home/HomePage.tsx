@@ -18,7 +18,7 @@ type Start = Readonly<{ label: string; to: LinkProps["to"]; icon: LucideIcon }>
 const STARTS: readonly Start[] = [
   { label: "Build a strategy", to: "/strategies", icon: Workflow },
   { label: "Open the feature lab", to: "/lab", icon: FlaskConical },
-  { label: "Run a backtest", to: "/runs", icon: ChartLine },
+  { label: "Run a backtest", to: "/strategies", icon: ChartLine },
   { label: "Import data", to: "/data/import", icon: Database },
 ]
 

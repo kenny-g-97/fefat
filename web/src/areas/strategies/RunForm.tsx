@@ -55,7 +55,7 @@ export function RunForm({ version, draft, onChange }: RunFormProps) {
       />
     ) : (
       <p role="status" className="min-h-24 text-foreground-secondary">
-        Reading what this run would read
+        Counting what this run would read
       </p>
     )
   }

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test"
+import type { Locator, Page } from "@playwright/test"
 import { z } from "zod"
 import { consoleErrors } from "./support/console.ts"
 import { lowContrastInEachTheme } from "./support/contrast.ts"
@@ -95,6 +95,14 @@ async function openTheDialog(page: Page) {
   const dialog = page.getByRole("dialog", { name: "Run backtest" })
   await expect(dialog.getByTestId("run-coverage")).toBeVisible()
   return dialog
+}
+
+async function boxOf(drawn: Locator) {
+  const box = await drawn.boundingBox()
+  if (box === null) {
+    throw new Error("Expected a drawn element, got none.")
+  }
+  return box
 }
 
 /** A submission of the seeded strategy waiting on `jobId`, as the list and its page give it. */
@@ -330,6 +338,27 @@ test("a running row follows its job live, a reload keeps it, and Cancel stops it
   )
 })
 
+test("a run that ended without a result still opens from its row", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  const failed = {
+    ...aSubmittedRow(seeded, "job-ended"),
+    status: "failed",
+    error: "Expected a level the store holds.",
+  }
+  await page.route(THE_LIST, (route) =>
+    route.fulfill({ json: { runs: [failed], next_cursor: null } })
+  )
+
+  await page.goto("/runs")
+
+  const row = page.getByTestId("run-row")
+  await expect(row).toContainText(failed.error)
+  await expect(row.getByTestId("run-arrow")).toBeVisible()
+  await expect(page.getByTestId("run-cancel")).toHaveCount(0)
+})
+
 test("a saved run's page shows its status, its key, and every setting", async ({
   loggedIn: page,
 }) => {
@@ -407,11 +436,18 @@ test("the dialog shows what the data holds and what the run would read", async (
   )
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
   await expect(dialog.getByLabel("Contract")).toBeFocused()
+  // Whole range stands level with the dates, and a parameter fills its column as a select does.
+  const from = await boxOf(dialog.getByLabel("From", { exact: true }))
+  const wholeRange = await boxOf(dialog.getByTestId("run-whole-range"))
+  expect(wholeRange.y).toBeCloseTo(from.y, 0)
+  const fidelity = await boxOf(dialog.getByLabel("Fidelity"))
+  const lookback = await boxOf(dialog.getByLabel("lookback"))
+  expect(lookback.width).toBeCloseTo(fidelity.width, 0)
   expect(await lowContrastInEachTheme(page)).toEqual([])
   await page.evaluate(() => document.documentElement.classList.add("dark"))
-  await screenshot(page, "run-dialog")
+  await screenshot(page, "run-dialog", [], "window")
   await page.evaluate(() => document.documentElement.classList.remove("dark"))
-  await screenshot(page, "run-dialog-light")
+  await screenshot(page, "run-dialog-light", [], "window")
   await page.evaluate(() => document.documentElement.classList.add("dark"))
 
   await page.keyboard.press("Escape")
@@ -599,6 +635,9 @@ test("a submission whose row gave way opens the run its job names", async ({
 
   await expect(page).toHaveURL(`/runs/run?key=${seeded.run_key}`)
   await expect(page.getByTestId("run-cached")).toHaveText("Cached")
+  const cached = await boxOf(page.getByTestId("run-cached"))
+  const status = await boxOf(page.getByTestId("run-page-status"))
+  expect(cached.height).toBeCloseTo(status.height, 0)
 })
 
 test("Home shows the newest runs with their verdict and three jobs, then a count", async ({

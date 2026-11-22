@@ -41,9 +41,9 @@ const FLAGS = [
  * checked when the field is left, a flag or one of a few values a radio group, more values a
  * select; `onChange` gets the values as a run would take them, or null while one is refused, and
  * the texts as typed, which `entered` gives back to a form drawn anew, as a dialog reopened is;
- * `columns` sets its fields two to a row. The Run backtest dialog draws a version's parameters
- * with it (step 5.6); the builder's execution template, the combinations, and the prop rules of
- * Phases 6 and 7 after it. */
+ * `columns` sets its fields two to a row, each filling its column. The Run backtest dialog draws
+ * a version's parameters with it (step 5.6); the builder's execution template, the combinations,
+ * and the prop rules of Phases 6 and 7 after it. */
 export function SchemaForm({
   schema,
   idPrefix,
@@ -117,6 +117,7 @@ function SchemaFields({
           id={`${idPrefix}-${field.name}`}
           value={enteredValue(entered, field.name)}
           left={left.has(field.name)}
+          width={columns ? "w-full" : "w-48"}
           onEnter={(value) => enter(field.name, value)}
           onLeave={() => setLeft(new Set(left).add(field.name))}
         />
@@ -130,6 +131,7 @@ type ParameterInputProps = Readonly<{
   id: string
   value: ParameterValue
   left: boolean
+  width: string
   onEnter: (value: ParameterValue) => void
   onLeave: () => void
 }>
@@ -139,6 +141,7 @@ function ParameterInput({
   id,
   value,
   left,
+  width,
   onEnter,
   onLeave,
 }: ParameterInputProps) {
@@ -175,7 +178,7 @@ function ParameterInput({
           <div className="flex flex-col gap-2">
             <Label htmlFor={id}>{field.name}</Label>
             <Select value={String(value)} onValueChange={chosen}>
-              <SelectTrigger id={id} className="w-48">
+              <SelectTrigger id={id} className={width}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper">
@@ -209,7 +212,7 @@ function ParameterInput({
         spellCheck={false}
         aria-invalid={refusal !== null}
         aria-describedby={refusal === null ? undefined : `${id}-refusal`}
-        className="w-48"
+        className={width}
         onChange={(event) => onEnter(event.target.value)}
         onBlur={onLeave}
       />
