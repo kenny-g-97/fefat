@@ -15,7 +15,7 @@ import { SectionFailure } from "@/ui/section-failure"
 import { BackLink } from "@/ui/text-link"
 import { RunParametersCard, RunSettingsCard } from "./RunSettingsCards"
 import { RunStatusCard } from "./RunStatusCard"
-import { runLine } from "./run-words"
+import { foundWords, runLine } from "./run-words"
 
 /** Back to the list, as the row that opened this run had it filtered. */
 function BackToRuns() {
@@ -123,10 +123,14 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
   const cachedRun = useLocation({
     select: (location) => location.state.cachedRun,
   })
+  const askedVersion = useLocation({
+    select: (location) => location.state.askedVersion,
+  })
   const addressedById = useSearch({
     from: "/_shell/runs/run",
     select: (search) => search.key === undefined,
   })
+  const cached = shown.state === "saved" && cachedRun === shown.run_key
   const savedKey = run.state === "saved" ? run.run_key : null
   useEffect(() => {
     if (savedKey !== null && addressedById) {
@@ -148,7 +152,8 @@ function ShownRun({ run }: Readonly<{ run: ListedRun }>) {
         <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-6">
           <RunStatusCard
             run={shown}
-            cached={shown.state === "saved" && cachedRun === shown.run_key}
+            cached={cached}
+            found={foundWords(shown, cached, askedVersion)}
           />
           <RunParametersCard run={shown} />
         </div>

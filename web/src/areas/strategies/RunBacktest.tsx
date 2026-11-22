@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { X } from "lucide-react"
 import { useState } from "react"
-import type { RunEstimated } from "@/api/runs"
+import type { RunEstimateAnswer } from "@/api/runs"
 import { type IndexedStrategy, strategyVersionQuery } from "@/api/strategies"
 import { Button } from "@/ui/button"
 import {
@@ -16,16 +16,16 @@ import { type RunDraft, UNTOUCHED } from "./run-draft"
 import { RunForm } from "./RunForm"
 
 /** Run backtest, the strategy page's primary action, and its dialog (web/DESIGN.md, Patterns, Run
- * backtest dialog), for the version the page shows: what the trader chose, and the last estimate
- * it was read against, stay while the page does, so that closing the dialog to read the code
- * loses nothing, and a dialog opened on a refused choice can still change it. */
+ * backtest dialog), for the version the page shows: what the trader chose, and the estimate's
+ * last answer, stay while the page does, so that closing the dialog to read the code loses
+ * nothing, and a dialog opened on a refused choice can still change it. */
 export function RunBacktest({
   strategy,
   number,
 }: Readonly<{ strategy: IndexedStrategy; number: number }>) {
   const version = useQuery(strategyVersionQuery(strategy.id, number))
   const [draft, setDraft] = useState<RunDraft>(UNTOUCHED)
-  const [lastEstimate, setLastEstimate] = useState<RunEstimated | null>(null)
+  const [lastAnswer, setLastAnswer] = useState<RunEstimateAnswer | null>(null)
   return (
     <Dialog>
       {/* A trigger's asChild gives the Button the trigger's own data-slot; this Button keeps the
@@ -63,8 +63,8 @@ export function RunBacktest({
           <RunForm
             version={version.data}
             draft={draft}
-            lastEstimate={lastEstimate}
-            onEstimated={setLastEstimate}
+            lastAnswer={lastAnswer}
+            onAnswered={setLastAnswer}
             onChange={setDraft}
           />
           <DialogClose asChild>

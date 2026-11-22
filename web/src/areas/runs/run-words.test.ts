@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest"
-import { parameterWords, runDetail, tradedWords } from "./run-words"
+import {
+  foundWords,
+  parameterWords,
+  runDetail,
+  runLine,
+  tradedWords,
+} from "./run-words"
 
 const VERSION = {
   strategy_id: "strategy-1",
   name: "demo",
   version_id: "version-1",
   version: 2,
-  instrument: "MNQ",
+  instrument: "ES",
   timeframe: "5m",
 }
 
 describe("tradedWords", () => {
-  it("names the instrument and the bars of a run of a saved version", () => {
+  it("names what the run trades, whatever its version's code names", () => {
     expect(
       tradedWords({ strategy: VERSION, settings: { instrument: "MNQ" } })
     ).toBe("MNQ in 5m bars")
@@ -56,6 +62,55 @@ describe("runDetail", () => {
         parameters: {},
       })
     ).toBe("")
+  })
+})
+
+describe("runLine", () => {
+  const dates = { start: "2026-03-06", end: "2026-03-09" }
+
+  it("names the version, what the run trades, and its dates", () => {
+    expect(
+      runLine({
+        ...dates,
+        strategy: VERSION,
+        settings: { instrument: "MNQ" },
+      })
+    ).toBe("Version 2, MNQ in 5m bars, 2026-03-06 to 2026-03-09")
+  })
+
+  it("names what a run of no saved version trades, where it knows", () => {
+    expect(
+      runLine({ ...dates, strategy: null, settings: { instrument: "MNQ" } })
+    ).toBe("No saved version, MNQ, 2026-03-06 to 2026-03-09")
+    expect(
+      runLine({ ...dates, strategy: null, settings: { instrument: null } })
+    ).toBe("No saved version, 2026-03-06 to 2026-03-09")
+  })
+})
+
+describe("foundWords", () => {
+  const FOUND = "FEAT found this run saved and opened it."
+
+  it("says a cached run was found, under the version launched or an unknown one", () => {
+    expect(foundWords({ strategy: VERSION }, true, "version-1")).toBe(FOUND)
+    expect(foundWords({ strategy: VERSION }, true, undefined)).toBe(FOUND)
+  })
+
+  it("says nothing of a run of the version launched that was not found", () => {
+    expect(foundWords({ strategy: VERSION }, false, "version-1")).toBeNull()
+    expect(foundWords({ strategy: VERSION }, false, undefined)).toBeNull()
+  })
+
+  it("names where the run stands when another version was launched", () => {
+    expect(foundWords({ strategy: VERSION }, true, "version-9")).toBe(
+      "FEAT found this run saved under demo, version 2, whose code gives the same signals, and opened it."
+    )
+    expect(foundWords({ strategy: VERSION }, false, "version-9")).toBe(
+      "FEAT followed this run under demo, version 2, whose code gives the same signals, rather than run it twice."
+    )
+    expect(foundWords({ strategy: null }, true, "version-9")).toBe(
+      "FEAT found this run saved with no version in the library, whose code gives the same signals, and opened it."
+    )
   })
 })
 

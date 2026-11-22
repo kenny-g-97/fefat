@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { RunEstimated } from "@/api/runs"
 import {
   estimateAsked,
+  estimateWords,
   feeTableOf,
   instrumentChoices,
   instrumentChosen,
@@ -9,6 +10,7 @@ import {
   readWords,
   runReadiness,
   shownDates,
+  stressedSearch,
   ticksRefusal,
   tradeDateRefusal,
   UNTOUCHED,
@@ -114,17 +116,28 @@ describe("estimateAsked", () => {
 })
 
 describe("the instrument a run trades", () => {
-  it("is asked of the estimate and sent with the run once chosen", () => {
+  it("is asked of the estimate once chosen, and every run names the one read", () => {
     const moved = { ...UNTOUCHED, instrument: "MES" }
 
     expect(estimateAsked("v1", moved).settings).toEqual({ instrument: "MES" })
-    const ready = runReadiness("v1", moved, ESTIMATE, true)
-    const plain = runReadiness("v1", UNTOUCHED, ESTIMATE, true)
+    const ready = runReadiness(
+      "v1",
+      moved,
+      { ...ESTIMATE, instrument: "MES" },
+      true
+    )
+    const own = runReadiness("v1", UNTOUCHED, ESTIMATE, true)
     expect(ready.kind === "ready" && ready.request.settings?.instrument).toBe(
       "MES"
     )
-    expect(plain.kind === "ready" && plain.request.settings).not.toHaveProperty(
-      "instrument"
+    // Named at the code's own too, so that a parameter of the code cannot trade another.
+    expect(own.kind === "ready" && own.request.settings?.instrument).toBe("ES")
+  })
+
+  it("says what the run trades beside what it reads, where the code names another", () => {
+    expect(estimateWords(ESTIMATE, "ES")).toBe("2 sessions, 2,760 bars")
+    expect(estimateWords({ ...ESTIMATE, instrument: "MNQ" }, "ES")).toBe(
+      "Trades MNQ, not the code's ES: 2 sessions, 2,760 bars"
     )
   })
 
@@ -169,6 +182,21 @@ describe("the instrument a run trades", () => {
     ])
     expect(instrumentChoices(["ES"], "ES", "NQ")).toEqual(["ES", "NQ"])
     expect(instrumentChoices([], "MES", "MES")).toEqual(["MES"])
+  })
+})
+
+describe("stressedSearch", () => {
+  const of = (name: string) => ({ strategy: { name } })
+
+  it("filters the list by the strategy while every run stands under it", () => {
+    expect(stressedSearch([of("demo"), of("demo")], "demo")).toEqual({
+      strategy: "demo",
+    })
+  })
+
+  it("leaves the filter out where a run found saved stands elsewhere", () => {
+    expect(stressedSearch([of("demo"), of("other")], "demo")).toEqual({})
+    expect(stressedSearch([of("demo"), { strategy: null }], "demo")).toEqual({})
   })
 })
 
@@ -239,6 +267,7 @@ describe("runReadiness", () => {
         end: "2026-03-09",
         settings: {
           ...THE_RUNS_OWN,
+          instrument: "ES",
           provider: "synthetic",
           fee_table: "retail-default",
         },
@@ -267,6 +296,7 @@ describe("runReadiness", () => {
         end: "2026-03-09",
         settings: {
           ...THE_RUNS_OWN,
+          instrument: "ES",
           provider: "synthetic",
           contract: "ESH2026",
           fidelity: "1m",
@@ -331,6 +361,13 @@ describe("runReadiness", () => {
       { ...ESTIMATE, fee_tables: [] },
       true,
       "Choose a fee table that prices ES",
+    ],
+    [
+      "a fidelity left from another instrument's data",
+      { ...UNTOUCHED, fidelity: "tbbo" },
+      ESTIMATE,
+      true,
+      "Choose a fidelity the data holds",
     ],
     [
       "ticks that are no number",

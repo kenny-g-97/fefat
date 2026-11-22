@@ -28,13 +28,12 @@ type TradedRun = Readonly<{
   settings: Pick<ListedRun["settings"], "instrument">
 }>
 
-/** What a run trades: `MNQ in 5m bars`; the instrument alone for a run of no saved version, whose
- * timeframe the list does not hold, and nothing for one saved before a run named its instrument. */
+/** What a run trades, as its settings name it: `MNQ in 5m bars`; the instrument alone for a run
+ * of no saved version, whose timeframe the list does not hold, and nothing for one saved before a
+ * run named its instrument. */
 export function tradedWords({ strategy, settings }: TradedRun): string {
-  if (strategy === null) {
-    return settings.instrument ?? ""
-  }
-  return `${strategy.instrument} in ${strategy.timeframe} bars`
+  const traded = settings.instrument ?? ""
+  return strategy === null ? traded : `${traded} in ${strategy.timeframe} bars`
 }
 
 /** A row's line under its figures: what the run trades, since two runs of one version can differ
@@ -48,10 +47,35 @@ export function runDetail(
 }
 
 /** What a run's page says of it under its title: its version, what it trades, and its dates. */
-export function runLine(run: ListedRun): string {
-  const dates = `${run.start} to ${run.end}`
-  if (run.strategy === null) {
-    return `No saved version, ${dates}`
+export function runLine(
+  run: TradedRun & Pick<ListedRun, "start" | "end">
+): string {
+  const version =
+    run.strategy === null
+      ? "No saved version"
+      : `Version ${run.strategy.version}`
+  return [version, tradedWords(run), `${run.start} to ${run.end}`]
+    .filter((words) => words !== "")
+    .join(", ")
+}
+
+/** How a launch came to the run its page shows, or null where nothing needs saying: that FEAT
+ * found it saved, `cached`, and, where it stands under another version than the one launched,
+ * `askedVersion`, which one, since two versions whose code gives the same signals on one
+ * instrument are one run (D-11, D-114). */
+export function foundWords(
+  { strategy }: Pick<ListedRun, "strategy">,
+  cached: boolean,
+  askedVersion: string | undefined
+): string | null {
+  if (askedVersion === undefined || strategy?.version_id === askedVersion) {
+    return cached ? "FEAT found this run saved and opened it." : null
   }
-  return `Version ${run.strategy.version}, ${tradedWords(run)}, ${dates}`
+  const under =
+    strategy === null
+      ? "with no version in the library"
+      : `under ${strategy.name}, version ${strategy.version}`
+  return cached
+    ? `FEAT found this run saved ${under}, whose code gives the same signals, and opened it.`
+    : `FEAT followed this run ${under}, whose code gives the same signals, rather than run it twice.`
 }

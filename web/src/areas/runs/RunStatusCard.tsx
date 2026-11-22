@@ -14,13 +14,18 @@ import { TextLink } from "@/ui/text-link"
 
 const KEY_DIGITS = 12
 
-type RunStatusCardProps = Readonly<{ run: ListedRun; cached: boolean }>
+type RunStatusCardProps = Readonly<{
+  run: ListedRun
+  cached: boolean
+  found: string | null
+}>
 
-/** Where a run stands (web/DESIGN.md, Patterns, Run page): its badge, then while its job is under
- * way its bar, its last message, and Cancel; once it ended without a run, why, with the way back
- * to its version; once saved, when it was asked for, its run key, and Cached where the run opened
- * from a request FEAT had already run. */
-export function RunStatusCard({ run, cached }: RunStatusCardProps) {
+/** Where a run stands (web/DESIGN.md, Patterns, Run page): its badge, Cached where the run opened
+ * from a request FEAT had already run, and the line `found` holds on how the launch came to this
+ * run; then while its job is under way its bar, its last message, and Cancel; once it ended
+ * without a run, why, with the way back to its version; once saved, when it was asked for and its
+ * run key. */
+export function RunStatusCard({ run, cached, found }: RunStatusCardProps) {
   const cancelling =
     run.state === "submitted" &&
     run.status === "running" &&
@@ -42,13 +47,13 @@ export function RunStatusCard({ run, cached }: RunStatusCardProps) {
           </span>
         )}
       </div>
+      {found !== null && (
+        <p data-testid="run-found" className="text-foreground-secondary">
+          {found}
+        </p>
+      )}
       {run.state === "saved" ? (
         <div className="flex flex-col gap-2">
-          {cached && (
-            <p className="text-foreground-secondary">
-              FEAT found this run saved and opened it.
-            </p>
-          )}
           <p className="text-foreground-secondary">
             {`Created ${formatInstant(run.created_at)}`}
           </p>

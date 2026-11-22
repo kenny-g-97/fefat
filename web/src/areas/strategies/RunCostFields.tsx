@@ -28,6 +28,8 @@ export function RunCostFields({
   onChange,
 }: RunCostFieldsProps) {
   const feeTable = feeTableOf(draft, estimate)
+  const level = draft.fidelity === null ? AUTO : draft.fidelity
+  const held = level === AUTO || estimate.levels.includes(level)
   return (
     <>
       <div className="grid grid-cols-2 items-start gap-4">
@@ -36,7 +38,8 @@ export function RunCostFields({
             <Picker
               id="run-fidelity"
               className="w-full"
-              value={draft.fidelity === null ? AUTO : draft.fidelity}
+              value={held ? level : ""}
+              placeholder="Choose a level"
               options={[
                 { value: AUTO, label: "Auto" },
                 ...estimate.levels.map((level) => ({
@@ -56,9 +59,11 @@ export function RunCostFields({
             data-testid="run-fidelity-note"
             className="text-xs text-muted-foreground"
           >
-            {draft.fidelity === null
-              ? `Each date fills on the finest data it holds, down to ${levelInASentence(estimate.settings.fidelity)}`
-              : "Each date fills on this level, or the next coarser it holds"}
+            {!held
+              ? "The data does not hold the level chosen"
+              : draft.fidelity === null
+                ? `Each date fills on the finest data it holds, down to ${levelInASentence(estimate.settings.fidelity)}`
+                : "Each date fills on this level, or the next coarser it holds"}
           </p>
         </div>
         {estimate.fee_tables.length === 0 ? (

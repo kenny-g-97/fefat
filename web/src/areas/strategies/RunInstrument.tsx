@@ -1,11 +1,6 @@
 import { IdentityChip } from "@/ui/identity-chip"
 import { Choice, Picker } from "@/ui/picker"
-import {
-  chosenInstrument,
-  instrumentChoices,
-  instrumentChosen,
-  type RunDraft,
-} from "./run-draft"
+import { instrumentChoices, instrumentChosen, type RunDraft } from "./run-draft"
 
 type RunInstrumentProps = Readonly<{
   draft: RunDraft
@@ -23,7 +18,7 @@ export function RunInstrument({
   own,
   onChange,
 }: RunInstrumentProps) {
-  const chosen = chosenInstrument(draft, own)
+  const chosen = draft.instrument === null ? own : draft.instrument
   const choices = instrumentChoices(held, own, chosen)
   if (choices.length === 1) {
     return (

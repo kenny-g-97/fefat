@@ -130,6 +130,7 @@ function aSubmittedRow(
       replay: "skipping",
       provider: seeded.settings.provider,
       contract: null,
+      instrument: "ES",
     },
     strategy: {
       strategy_id: "strategy-1",
@@ -390,6 +391,14 @@ test("a saved run's page shows its status, its key, and every setting", async ({
     "text-align",
     "right"
   )
+  // The two columns keep one pitch, whichever holds more rows.
+  const secondLeft = await boxOf(
+    settings.locator("dl").first().locator("dt").nth(1)
+  )
+  const secondRight = await boxOf(
+    settings.locator("dl").last().locator("dt").nth(1)
+  )
+  expect(Math.abs(secondRight.y - secondLeft.y)).toBeLessThanOrEqual(2)
   // A run's row keeps the time it was asked for, which is not when it was saved.
   await expect(page.getByText(/^Created /)).toBeVisible()
   const parameters = page.getByRole("region", { name: "Parameters" })
@@ -464,6 +473,9 @@ test("the dialog shows what the data holds and what the run would read", async (
   const fidelity = await boxOf(dialog.getByLabel("Fidelity"))
   const lookback = await boxOf(dialog.getByLabel("lookback"))
   expect(lookback.width).toBeCloseTo(fidelity.width, 0)
+  // The dates stand on the columns of the row above them.
+  const instrument = await boxOf(dialog.getByLabel("Instrument"))
+  expect(from.width).toBeCloseTo(instrument.width, 0)
   // At the window's full height the pinned foot covers no field.
   const foot = await boxOf(dialog.locator("footer"))
   expect(lookback.y + lookback.height).toBeLessThan(foot.y)
@@ -486,6 +498,9 @@ test("the dialog shows what the data holds and what the run would read", async (
   const focused = await boxOf(dialog.getByLabel("lookback"))
   const pinned = await boxOf(dialog.locator("footer"))
   expect(focused.y + focused.height).toBeLessThanOrEqual(pinned.y)
+  // A tall window keeps the dialog near its top, so that a long form gets its height.
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  expect((await boxOf(dialog)).y).toBeLessThanOrEqual(32)
   await page.setViewportSize({ width: 1280, height: 800 })
 
   // Asked for more contrast, the scrim is solid.
@@ -750,6 +765,7 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   loggedIn: page,
 }) => {
   // D-114: the seed holds ES, which demo's code names, and MES and the perpetual beside it.
+  const errors = consoleErrors(page)
   const asked: z.infer<typeof estimateAsked>[] = []
   await page.route("**/v1/runs/estimate", async (route) => {
     asked.push(estimateAsked.parse(route.request().postDataJSON()))
@@ -785,6 +801,10 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   await expect(dialog.getByLabel("Contract")).toHaveText("Spliced")
   await expect(written).toBeVisible()
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  // The choice outlives the dialog's closing, so the line beside Run says it.
+  await expect(dialog.getByTestId("run-estimate")).toContainText(
+    "Trades MES, not the code's ES: "
+  )
 
   // A perpetual has no contract to choose, and the fee table follows it.
   await dialog.getByLabel("Instrument").click()
@@ -795,8 +815,8 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   await expect(dialog.getByLabel("Contract")).toHaveCount(0)
   await expect(dialog.getByLabel("Fee table")).toHaveText("binance-default")
 
-  // The code's own instrument, chosen again, is the setting a run leaves out. Its estimate is the
-  // first one, still fresh, so what the run sends is what shows it.
+  // The code's own instrument, chosen again: its estimate is the first one, still fresh, and the
+  // run names it, so that a parameter of the code cannot trade another than the dialog shows.
   await dialog.getByLabel("Instrument").click()
   await page.getByRole("option", { name: "ES", exact: true }).click()
   await expect(dialog.getByTestId("run-coverage")).toContainText(
@@ -804,6 +824,12 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
   )
   await expect(dialog.getByLabel("Fee table")).toHaveText("retail-default")
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  await expect(dialog.getByTestId("run-estimate")).not.toContainText("Trades")
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth
+    )
+  ).toBe(true)
   const seeded = await theSeededRun(page)
   const sent: unknown[] = []
   await page.route(THE_LIST, async (route) => {
@@ -819,7 +845,8 @@ test("the dialog chooses the instrument a run trades, and reads that instrument'
 
   await expect(page).toHaveURL(`/runs/run?key=${seeded.run_key}`)
   expect(sent).toHaveLength(1)
-  expect(estimateAsked.parse(sent[0]).settings.instrument).toBeUndefined()
+  expect(estimateAsked.parse(sent[0]).settings.instrument).toBe("ES")
+  expect(errors).toEqual([])
 })
 
 test("a press on Run while the estimate is read is kept, and sends the new date", async ({
@@ -913,6 +940,113 @@ test("a press kept for the estimate is given up when the draft changes or the di
   release()
   await page.waitForTimeout(500)
   expect(sent).toEqual([])
+})
+
+test("a press given up when its read fails stays given up after Try again", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  const dialog = await openTheDialog(page)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  const sent: unknown[] = []
+  await page.route(THE_LIST, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    sent.push(route.request().postDataJSON())
+    await route.fulfill({ json: { state: "saved", run_key: seeded.run_key } })
+  })
+  let failing = true
+  let release = () => {}
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route("**/v1/runs/estimate", async (route) => {
+    if (!failing) {
+      await route.fallback()
+      return
+    }
+    await released
+    await route.fulfill(
+      problemAnswer(500, "The estimate failed, for this test.")
+    )
+  })
+
+  await dialog.getByLabel("To", { exact: true }).fill("2026-03-06")
+  await dialog.getByTestId("run-launch").click()
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Looking the run up"
+  )
+  release()
+  const tryAgain = dialog.getByRole("button", { name: "Try again" })
+  await expect(tryAgain).toBeVisible()
+  failing = false
+  await tryAgain.click()
+
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  await page.waitForTimeout(500)
+  expect(sent).toEqual([])
+  await expect(page).toHaveURL(/\/strategies\/strategy/)
+})
+
+test("a fidelity the data does not hold waits, and says so", async ({
+  loggedIn: page,
+}) => {
+  // As after a choice from another instrument's list, made while its answer was read.
+  await page.route("**/v1/runs/estimate", async (route) => {
+    const asked = estimateAsked.parse(route.request().postDataJSON())
+    if (asked.settings.fidelity !== "1m") {
+      await route.fallback()
+      return
+    }
+    const body = estimateAnswer.parse(await (await route.fetch()).json())
+    await route.fulfill({ json: { ...body, levels: ["trades"] } })
+  })
+  const dialog = await openTheDialog(page)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "1-minute bars" }).click()
+
+  await expect(dialog.getByLabel("Fidelity")).toHaveText("Choose a level")
+  await expect(dialog.getByTestId("run-fidelity-note")).toHaveText(
+    "The data does not hold the level chosen"
+  )
+  await expect(dialog.getByTestId("run-waiting")).toHaveText(
+    "Choose a fidelity the data holds"
+  )
+  await expect(dialog.getByTestId("run-launch")).toBeDisabled()
+
+  await dialog.getByLabel("Fidelity").click()
+  await page.getByRole("option", { name: "Auto" }).click()
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+})
+
+test("a launch that joins another version's run under way says which", async ({
+  loggedIn: page,
+}) => {
+  const seeded = await theSeededRun(page)
+  const row = aSubmittedRow(seeded, "job-of-the-other")
+  await page.route(THE_LIST, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({ status: 202, json: row })
+  })
+  await page.route("**/v1/runs/run-live", (route) =>
+    route.fulfill({ json: row })
+  )
+  const dialog = await openTheDialog(page)
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+
+  await dialog.getByTestId("run-launch").click()
+
+  await expect(page).toHaveURL(/\/runs\/run\?id=run-live/)
+  await expect(page.getByTestId("run-found")).toHaveText(
+    "FEAT followed this run under demo, version 1, whose code gives the same signals, rather than run it twice."
+  )
 })
 
 test("ticks typed while an estimate is read stay, and the other side follows the fidelity", async ({

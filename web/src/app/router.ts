@@ -30,6 +30,7 @@ declare module "@tanstack/react-router" {
     deleted?: string
     saved?: Readonly<{ strategy: string; version: number }>
     cachedRun?: string
+    askedVersion?: string
     stressed?: string
     runsFilters?: RunFilters
   }

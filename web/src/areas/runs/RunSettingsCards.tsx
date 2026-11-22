@@ -19,7 +19,7 @@ function Facts({
   figures?: boolean
 }>) {
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2">
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] content-start gap-x-6 gap-y-2">
       {facts.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-foreground-secondary">{label}</dt>

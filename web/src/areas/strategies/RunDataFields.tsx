@@ -108,7 +108,7 @@ function RunDates({ draft, estimate, onChange }: RunDatesProps) {
     (fromRefusal === null ? windowRefusal(dates.from, dates.to) : null)
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-[1fr_1fr_auto] items-start gap-4">
+      <div className="grid grid-cols-3 items-start gap-4">
         <Choice id="run-from" label="From" refusal={fromRefusal}>
           <KeptField
             id="run-from"
@@ -129,7 +129,7 @@ function RunDates({ draft, estimate, onChange }: RunDatesProps) {
         </Choice>
         <Button
           variant="ghost"
-          className="mt-5.5"
+          className="mt-5.5 justify-self-start"
           data-testid="run-whole-range"
           onClick={() => onChange({ ...draft, from: null, to: null })}
         >

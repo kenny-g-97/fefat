@@ -1,6 +1,8 @@
-import type { Page } from "@playwright/test"
+import type { Locator, Page } from "@playwright/test"
+import { z } from "zod"
 import { consoleErrors } from "./support/console.ts"
 import { expect, test } from "./support/fixtures.ts"
+import { problemAnswer } from "./support/problems.ts"
 import { screenshot } from "./support/screenshots.ts"
 import { strategyFromTemplate } from "./support/strategies.ts"
 
@@ -19,6 +21,18 @@ async function openTheDialog(page: Page) {
   const dialog = page.getByRole("dialog", { name: "Run backtest" })
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
   return dialog
+}
+
+const estimateAsked = z.looseObject({
+  settings: z.looseObject({ instrument: z.string().optional() }),
+})
+
+async function topOf(drawn: Locator) {
+  const box = await drawn.boundingBox()
+  if (box === null) {
+    throw new Error("Expected a drawn element, got none.")
+  }
+  return box.y
 }
 
 test("a run launched from the strategy page reaches 100% and lands on its page", async ({
@@ -144,14 +158,16 @@ test("a strategy written for data FEAT lacks runs on the instrument chosen", asy
   loggedIn: page,
 }) => {
   // D-114: the template names MES, gone by now, and the run trades ES, as if the code named it.
+  const errors = consoleErrors(page)
   await strategyFromTemplate(page.request, "written_for_mes", "breakout")
   await page.goto("/strategies/strategy?name=written_for_mes")
   await page.getByTestId("run-backtest").click()
   const dialog = page.getByRole("dialog", { name: "Run backtest" })
-  await expect(dialog.getByRole("alert")).toContainText(
-    "FEAT holds no data of MES."
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "FEAT holds no data of MES. Choose one it holds, or import MES's bars or ticks."
   )
   await expect(dialog.getByLabel("Instrument")).toBeFocused()
+  const topWithoutData = await topOf(dialog.getByLabel("Instrument"))
   await page.mouse.move(700, 36)
   await screenshot(page, "run-dialog-no-data", [], "window")
 
@@ -160,6 +176,19 @@ test("a strategy written for data FEAT lacks runs on the instrument chosen", asy
 
   await expect(dialog.getByTestId("run-launch")).toBeEnabled()
   await expect(dialog.getByLabel("Instrument")).toBeFocused()
+  // The form grows below the field, which stays under the pointer.
+  expect(await topOf(dialog.getByLabel("Instrument"))).toBeCloseTo(
+    topWithoutData,
+    0
+  )
+  await expect(dialog.getByTestId("run-estimate")).toContainText(
+    "Trades ES, not the code's MES: "
+  )
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth
+    )
+  ).toBe(true)
   await expect(
     dialog.getByText("Version 1 of written_for_mes, written for MES in 5m bars")
   ).toBeVisible()
@@ -189,5 +218,111 @@ test("a strategy written for data FEAT lacks runs on the instrument chosen", asy
   const row = page.getByTestId("run-row").filter({ hasText: "written_for_mes" })
   await expect(row.getByTestId("run-parameters")).toContainText(
     "ES in 5m bars, lookback 7"
+  )
+  expect(errors).toEqual([])
+})
+
+test("a launch that finds the run saved under another version says which", async ({
+  loggedIn: page,
+}) => {
+  // The template on ES at the lookback of this file's first test is the run demo made there.
+  await page.goto("/strategies/strategy?name=written_for_mes")
+  await page.getByTestId("run-backtest").click()
+  const dialog = page.getByRole("dialog", { name: "Run backtest" })
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "ES", exact: true }).click()
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  await dialog.getByLabel("lookback").fill("6")
+  await dialog.getByLabel("lookback").blur()
+
+  await dialog.getByTestId("run-launch").click()
+
+  await expect(page).toHaveURL(/key=[0-9a-f]{64}/, { timeout: RUN_TIMEOUT })
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("demo")
+  await expect(page.getByTestId("run-cached")).toHaveText("Cached")
+  await expect(
+    page.getByText(
+      "FEAT found this run saved under demo, version 1, whose code gives the same signals, and opened it."
+    )
+  ).toBeVisible()
+})
+
+test("an instrument the server refuses, where the code's has no data, can be changed", async ({
+  loggedIn: page,
+}) => {
+  await strategyFromTemplate(page.request, "refused_choice", "breakout")
+  await page.route("**/v1/runs/estimate", async (route) => {
+    const asked = estimateAsked.parse(route.request().postDataJSON())
+    if (asked.settings.instrument === "BTCUSDT-PERP") {
+      await route.fulfill(
+        problemAnswer(400, "Expected an instrument it can read, got this one.")
+      )
+      return
+    }
+    await route.fallback()
+  })
+  await page.goto("/strategies/strategy?name=refused_choice")
+  await page.getByTestId("run-backtest").click()
+  const dialog = page.getByRole("dialog", { name: "Run backtest" })
+  await expect(dialog.getByRole("alert")).toContainText(
+    "FEAT holds no data of MES."
+  )
+
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "BTCUSDT-PERP" }).click()
+
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Expected an instrument it can read, got this one."
+  )
+  await expect(dialog.getByLabel("Instrument")).toHaveText("BTCUSDT-PERP")
+
+  // Closed and opened on the refused choice, the field still stands.
+  await page.keyboard.press("Escape")
+  await expect(dialog).toHaveCount(0)
+  await page.getByTestId("run-backtest").click()
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "Expected an instrument it can read, got this one."
+  )
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "ES", exact: true }).click()
+
+  await expect(dialog.getByTestId("run-launch")).toBeEnabled()
+  await expect(dialog.getByRole("alert")).toHaveCount(0)
+})
+
+test("an instrument whose data has gone can still be changed back", async ({
+  loggedIn: page,
+}) => {
+  // The store answers it holds nothing at all: the code's own and the choice stay offered.
+  await strategyFromTemplate(page.request, "emptied_store", "breakout")
+  await page.route("**/v1/runs/estimate", async (route) => {
+    const asked = estimateAsked.parse(route.request().postDataJSON())
+    if (asked.settings.instrument !== "ES") {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      json: {
+        state: "no_data",
+        instrument: "ES",
+        timeframe: "5m",
+        instruments: [],
+      },
+    })
+  })
+  await page.goto("/strategies/strategy?name=emptied_store")
+  await page.getByTestId("run-backtest").click()
+  const dialog = page.getByRole("dialog", { name: "Run backtest" })
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "ES", exact: true }).click()
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "FEAT holds no data of ES. Import its bars or ticks, then run this strategy."
+  )
+
+  await dialog.getByLabel("Instrument").click()
+  await page.getByRole("option", { name: "MES", exact: true }).click()
+
+  await expect(dialog.getByRole("alert")).toContainText(
+    "FEAT holds no data of MES."
   )
 })

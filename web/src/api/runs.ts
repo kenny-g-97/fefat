@@ -19,6 +19,10 @@ export type SavedRun = components["schemas"]["SavedRun"]
 export type ListedRun = SubmittedRun | SavedRun
 /** What a run would read, before anything runs. */
 export type RunEstimated = components["schemas"]["RunEstimated"]
+/** An estimate where the store holds none of the instrument, with the instruments it holds. */
+export type NoDataToEstimate = components["schemas"]["NoDataToEstimate"]
+/** What `POST /v1/runs/estimate` answers, told apart by its `state`. */
+export type RunEstimateAnswer = RunEstimated | NoDataToEstimate
 /** What `POST /v1/runs` takes. */
 export type RunSubmission = components["schemas"]["RunSubmission"]
 /** What `POST /v1/runs/estimate` takes. */

@@ -127,11 +127,6 @@ export function estimateAsked(
   }
 }
 
-/** The instrument the draft trades: the one chosen, or the one the code names, `own`. */
-export function chosenInstrument(draft: RunDraft, own: string): string {
-  return draft.instrument === null ? own : draft.instrument
-}
-
 /** What the Instrument field offers, by name: the instruments the store holds, with the one the
  * code names and the one chosen, which it may not hold. */
 export function instrumentChoices(
@@ -212,8 +207,30 @@ export function readWords({
   ].join(", ")
 }
 
+/** The line beside Run: what the run would read, after what it trades where that is not what the
+ * code names, `own`, since the choice outlives the dialog's closing. */
+export function estimateWords(estimate: RunEstimated, own: string): string {
+  const read = readWords(estimate)
+  return estimate.instrument === own
+    ? read
+    : `Trades ${estimate.instrument}, not the code's ${own}: ${read}`
+}
+
+/** The Runs list's filter after a stress: the strategy, unless a run found saved stands under
+ * another, or none, which that filter would hide. */
+export function stressedSearch(
+  runs: readonly Readonly<{ strategy: Readonly<{ name: string }> | null }>[],
+  name: string
+): Readonly<{ strategy?: string }> {
+  return runs.every((run) => run.strategy?.name === name)
+    ? { strategy: name }
+    : {}
+}
+
 /** What the draft sends, once the estimate read for it holds a window with sessions, or why it
- * waits. */
+ * waits. A fidelity the data does not hold, chosen from another instrument's while its estimate
+ * was read, waits: a run under it would fall back to a coarser level at that fidelity's slippage,
+ * none on TBBO. */
 export function runReadiness(
   versionId: string,
   draft: RunDraft,
@@ -222,6 +239,9 @@ export function runReadiness(
 ): RunReadiness {
   if (!latest) {
     return { kind: "reading" }
+  }
+  if (draft.fidelity !== null && !estimate.levels.includes(draft.fidelity)) {
+    return { kind: "waiting", why: "Choose a fidelity the data holds" }
   }
   const window = windowOf(draft, estimate)
   if (window === null) {
@@ -260,8 +280,9 @@ export function runReadiness(
 }
 
 /** The settings a run is sent with: those the dialog does not offer as the estimate applied
- * them, and the choices the trader made; slippage only once a side of it is typed, so that the
- * run's own default for its fidelity stands until then. */
+ * them, the instrument the estimate read, also the code's own, so that a parameter of the code
+ * cannot trade another than the dialog shows, and the choices the trader made; slippage only
+ * once a side of it is typed, so that the run's own default for its fidelity stands until then. */
 function settingsAsked(
   draft: RunDraft,
   estimate: RunEstimated,
@@ -275,9 +296,9 @@ function settingsAsked(
     roll_handling: estimate.settings.roll_handling,
     capital: estimate.settings.capital,
     replay: estimate.settings.replay,
+    instrument: estimate.instrument,
     provider: estimate.settings.provider,
     fee_table: feeTable,
-    ...(draft.instrument === null ? {} : { instrument: draft.instrument }),
     ...(draft.contract === null ? {} : { contract: draft.contract }),
     ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
     ...(typed

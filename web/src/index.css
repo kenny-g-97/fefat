@@ -363,7 +363,8 @@ main[tabindex="-1"]:focus-visible {
    hairline and the middle shadow, over a scrim of the page's own colour, at most 40 rem wide and
    scrolling inside the window; it fades in 150 ms, as feedback to the click that opened it, and
    out the same way, which reduced motion stops. Its form takes the focus once drawn, the dialog
-   holding it unseen until then. */
+   holding it unseen until then. Its top stays put, so that a form growing as an answer arrives
+   grows downward and leaves the field in use under the pointer. */
 [data-slot="dialog-overlay"] {
   background-color: color-mix(in srgb, var(--background) 72%, transparent);
 }
@@ -375,8 +376,11 @@ main[tabindex="-1"]:focus-visible {
 }
 
 [data-slot="dialog-content"] {
+  --dialog-top: clamp(1rem, calc(50dvh - 23rem), 2rem);
+  top: var(--dialog-top);
+  translate: -50% 0;
   max-width: min(40rem, calc(100% - 2rem));
-  max-height: calc(100dvh - 2rem);
+  max-height: calc(100dvh - var(--dialog-top) - 1rem);
   overflow-y: auto;
   gap: 1.25rem;
   border-radius: var(--radius-lg);
