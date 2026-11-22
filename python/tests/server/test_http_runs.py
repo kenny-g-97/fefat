@@ -109,6 +109,37 @@ def test_a_run_asked_for_twice_is_one_run_whose_stages_reach_its_stream(
     assert worker not in noted
 
 
+def test_a_run_trades_the_instrument_its_settings_name(
+    client: TestClient, container: Container
+) -> None:
+    # D-114, through the pool and the executor: a version written for MES, which the store does
+    # not hold, runs on ES, and stays that version's run.
+    store_with("ohlcv-1m")
+    csrf = logged_in(client, container)
+    code = ES_BREAKOUT.replace('instrument="ES"', 'instrument="MES"')
+    saved = client.post(
+        "/v1/strategies",
+        json={"name": "written_for_mes", "code": code, "hypothesis": HYPOTHESIS},
+        headers=csrf,
+    )
+    body = {
+        "strategy_version_id": saved.json()["id"],
+        **WINDOW,
+        "settings": {"instrument": "ES"},
+    }
+
+    asked = client.post("/v1/runs", json=body, headers=csrf)
+    run = ended(client, asked.json()["id"])
+
+    assert (asked.status_code, asked.json()["strategy"]["instrument"]) == (202, "ES")
+    assert (run["status"], run["strategy"]["name"]) == ("succeeded", "written_for_mes")
+    assert (run["strategy"]["instrument"], run["settings"]["instrument"]) == ("ES", "ES")
+    record = json.loads(
+        (resolve_paths(os.environ).runs_dir / run["run_key"] / "run.json").read_text()
+    )
+    assert (record["instrument"]["root"], record["strategy"]["spec"]["instrument"]) == ("ES", "ES")
+
+
 def test_an_unknown_version_and_a_window_ending_before_it_starts_are_refused(
     client: TestClient, container: Container
 ) -> None:

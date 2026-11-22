@@ -104,7 +104,8 @@ class RunToMake(BaseModel):
 
 class RunStrategy(BaseModel):
     """The saved strategy version a run names, as the index holds it: the strategy's row's id and
-    name, the version's row's id and number, and the instrument and the timeframe it trades."""
+    name, the version's row's id and number, the instrument the run trades, the version's own
+    unless its settings name another (D-114), and the timeframe."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -215,22 +216,25 @@ class EstimateState(StrEnum):
 
 
 class NoDataToEstimate(BaseModel):
-    """A run's estimate where the store holds none of the version's instrument."""
+    """A run's estimate where the store holds none of the instrument it would trade, with the
+    version's timeframe and the `instruments` the store holds, which it could trade instead."""
 
     model_config = ConfigDict(frozen=True)
 
     state: Literal[EstimateState.NO_DATA] = EstimateState.NO_DATA
     instrument: str
     timeframe: str
+    instruments: tuple[str, ...]
 
 
 class RunEstimated(WindowEstimate):
     """What a run of the version would read, before anything runs (`WindowEstimate`), with the
-    version's instrument and timeframe."""
+    instrument it would trade, the version's timeframe, and the `instruments` the store holds."""
 
     state: Literal[EstimateState.ESTIMATED] = EstimateState.ESTIMATED
     instrument: str
     timeframe: str
+    instruments: tuple[str, ...]
 
 
 RunEstimate = Annotated[NoDataToEstimate | RunEstimated, Field(discriminator="state")]

@@ -19,6 +19,7 @@ const ESTIMATE: RunEstimated = {
   state: "estimated",
   instrument: "ES",
   timeframe: "5m",
+  instruments: ["ES", "MES"],
   providers: ["synthetic"],
   contracts: ["ESH2026", "ESM2026"],
   levels: ["1m"],

@@ -1098,7 +1098,7 @@ export interface components {
         /**
          * AppliedRunConfig
          * @description A run's settings with every default applied (D-51), as its record keeps them: those of
-         *     `RunConfig`, each given.
+         *     `RunConfig`, each given, its `instrument` none only in a record written before D-114.
          */
         AppliedRunConfig: {
             /** Capital */
@@ -1109,6 +1109,8 @@ export interface components {
             fee_table: string;
             /** Fidelity */
             fidelity: string;
+            /** Instrument */
+            instrument?: string | null;
             /** Latency Ms */
             latency_ms: number;
             limit_fill: components["schemas"]["LimitFill"];
@@ -1752,14 +1754,17 @@ export interface components {
         /**
          * EstimateSettings
          * @description The settings that change what a run reads, each left out taking the run's default: the
-         *     finest data it fills on, the provider whose data it reads, and the one contract it reads in
-         *     place of the roll calendar's fronts.
+         *     finest data it fills on, the provider whose data it reads, the one contract it reads in
+         *     place of the roll calendar's fronts, and the instrument it trades in place of the one its
+         *     strategy names (D-114).
          */
         EstimateSettings: {
             /** Contract */
             contract?: string | null;
             /** Fidelity */
             fidelity?: string | null;
+            /** Instrument */
+            instrument?: string | null;
             /** Provider */
             provider?: string | null;
         };
@@ -2649,11 +2654,14 @@ export interface components {
         };
         /**
          * NoDataToEstimate
-         * @description A run's estimate where the store holds none of the version's instrument.
+         * @description A run's estimate where the store holds none of the instrument it would trade, with the
+         *     version's timeframe and the `instruments` the store holds, which it could trade instead.
          */
         NoDataToEstimate: {
             /** Instrument */
             instrument: string;
+            /** Instruments */
+            instruments: string[];
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -3096,10 +3104,11 @@ export interface components {
          *     (F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of
          *     `fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;
          *     `capital`, in the instrument's currency; `replay`, skipping what no order can act on or in
-         *     full, which give the same fills (`02` §4); `provider`, as `load` takes it; and `contract`,
-         *     one contract of the strategy's root read unspliced, as `load` reads a contract, so that the
-         *     run crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll
-         *     calendar's fronts.
+         *     full, which give the same fills (`02` §4); `provider`, as `load` takes it; `contract`, one
+         *     contract of the root it trades read unspliced, as `load` reads a contract, so that the run
+         *     crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll calendar's
+         *     fronts; and `instrument`, the root it trades, as if the strategy's code named it, while a
+         *     feature keeps reading the instrument it declares (D-114), by default the one the code names.
          */
         RunConfig: {
             /**
@@ -3113,6 +3122,8 @@ export interface components {
             fee_table?: string | null;
             /** Fidelity */
             fidelity?: string | null;
+            /** Instrument */
+            instrument?: string | null;
             /**
              * Latency Ms
              * @default 100
@@ -3145,7 +3156,7 @@ export interface components {
         /**
          * RunEstimated
          * @description What a run of the version would read, before anything runs (`WindowEstimate`), with the
-         *     version's instrument and timeframe.
+         *     instrument it would trade, the version's timeframe, and the `instruments` the store holds.
          */
         RunEstimated: {
             /** Bars */
@@ -3157,6 +3168,8 @@ export interface components {
             held: components["schemas"]["fefat__backtest__record__Window"] | null;
             /** Instrument */
             instrument: string;
+            /** Instruments */
+            instruments: string[];
             /** Levels */
             levels: string[];
             /** Providers */
@@ -3196,7 +3209,8 @@ export interface components {
         /**
          * RunStrategy
          * @description The saved strategy version a run names, as the index holds it: the strategy's row's id and
-         *     name, the version's row's id and number, and the instrument and the timeframe it trades.
+         *     name, the version's row's id and number, the instrument the run trades, the version's own
+         *     unless its settings name another (D-114), and the timeframe.
          */
         RunStrategy: {
             /** Instrument */

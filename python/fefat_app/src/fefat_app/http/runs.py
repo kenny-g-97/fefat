@@ -26,6 +26,7 @@ from pydantic import (
 from fefat.backtest import RunConfig
 from fefat.market.contracts import parse_contract_name
 from fefat.market.fidelity import FidelityText
+from fefat.strategy.spec import InstrumentRoot
 from fefat_app.http.api_prefix import API_PREFIX
 from fefat_app.http.dependencies import ContainerDependency, the_identity
 from fefat_app.http.problems import CodeRefused, code_refusal_responses, problem_responses
@@ -96,14 +97,16 @@ class RunSubmission(BaseModel):
 
 class EstimateSettings(BaseModel):
     """The settings that change what a run reads, each left out taking the run's default: the
-    finest data it fills on, the provider whose data it reads, and the one contract it reads in
-    place of the roll calendar's fronts."""
+    finest data it fills on, the provider whose data it reads, the one contract it reads in
+    place of the roll calendar's fronts, and the instrument it trades in place of the one its
+    strategy names (D-114)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     fidelity: FidelityText | None = None
     provider: str | None = None
     contract: str | None = None
+    instrument: InstrumentRoot | None = None
 
     @field_validator("contract")
     @classmethod
@@ -183,6 +186,7 @@ def estimate_run(request: RunEstimateRequest, container: ContainerDependency) ->
                 fidelity=request.settings.fidelity,
                 provider=request.settings.provider,
                 contract=request.settings.contract,
+                instrument=request.settings.instrument,
             ),
         )
 

@@ -310,8 +310,15 @@ def _saved_row(session: Session, row: RunRow) -> SavedRun:
     return _saved(row, _run_strategy(session, row.strategy_version_id), _key_metrics(row))
 
 
-def _head(row: RunRow) -> dict[str, Any]:
-    """What a run's row holds in either state."""
+def _head(row: RunRow, strategy: RunStrategy | None) -> dict[str, Any]:
+    """What a run's row holds in either state, its settings and its version each naming the
+    instrument it trades: its settings' where they name one, else its version's, for a row
+    written before D-114."""
+    settings = AppliedRunConfig.model_validate(row.settings_json)
+    if strategy is not None:
+        traded = strategy.instrument if settings.instrument is None else settings.instrument
+        settings = settings.model_copy(update={"instrument": traded})
+        strategy = strategy.model_copy(update={"instrument": traded})
     return {
         "id": row.id,
         "created_at": row.created_at,
@@ -319,7 +326,8 @@ def _head(row: RunRow) -> dict[str, Any]:
         "parameters": row.parameters_json,
         "start": row.window_start,
         "end": row.window_end,
-        "settings": AppliedRunConfig.model_validate(row.settings_json),
+        "settings": settings,
+        "strategy": strategy,
     }
 
 
@@ -330,8 +338,7 @@ def _submitted(row: RunRow, job: JobRow | None, strategy: RunStrategy | None) ->
     if strategy is None:
         raise ValueError(f"Expected the strategy version of the unsaved run {row.id}, got none.")
     return SubmittedRun(
-        **_head(row),
-        strategy=strategy,
+        **_head(row, strategy),
         status=job.status,
         progress=job.progress,
         message=job.message,
@@ -346,8 +353,7 @@ def _saved(row: RunRow, strategy: RunStrategy | None, metrics: KeyMetrics) -> Sa
     if row.run_key is None:
         raise ValueError(f"Expected the run key of the saved run {row.id}, got none.")
     return SavedRun(
-        **_head(row),
-        strategy=strategy,
+        **_head(row, strategy),
         job_id=row.job_id,
         run_key=row.run_key,
         key_metrics=metrics,

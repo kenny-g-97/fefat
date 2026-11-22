@@ -163,7 +163,7 @@
       },
       "AppliedRunConfig": {
         "additionalProperties": false,
-        "description": "A run's settings with every default applied (D-51), as its record keeps them: those of\n`RunConfig`, each given.",
+        "description": "A run's settings with every default applied (D-51), as its record keeps them: those of\n`RunConfig`, each given, its `instrument` none only in a record written before D-114.",
         "properties": {
           "capital": {
             "title": "Capital",
@@ -187,6 +187,18 @@
           "fidelity": {
             "title": "Fidelity",
             "type": "string"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
           },
           "latency_ms": {
             "minimum": 0.0,
@@ -1871,7 +1883,7 @@
       },
       "EstimateSettings": {
         "additionalProperties": false,
-        "description": "The settings that change what a run reads, each left out taking the run's default: the\nfinest data it fills on, the provider whose data it reads, and the one contract it reads in\nplace of the roll calendar's fronts.",
+        "description": "The settings that change what a run reads, each left out taking the run's default: the\nfinest data it fills on, the provider whose data it reads, the one contract it reads in\nplace of the roll calendar's fronts, and the instrument it trades in place of the one its\nstrategy names (D-114).",
         "properties": {
           "contract": {
             "anyOf": [
@@ -1894,6 +1906,18 @@
               }
             ],
             "title": "Fidelity"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
           },
           "provider": {
             "anyOf": [
@@ -4074,11 +4098,18 @@
         "type": "object"
       },
       "NoDataToEstimate": {
-        "description": "A run's estimate where the store holds none of the version's instrument.",
+        "description": "A run's estimate where the store holds none of the instrument it would trade, with the\nversion's timeframe and the `instruments` the store holds, which it could trade instead.",
         "properties": {
           "instrument": {
             "title": "Instrument",
             "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Instruments",
+            "type": "array"
           },
           "state": {
             "const": "no_data",
@@ -4093,7 +4124,8 @@
         },
         "required": [
           "instrument",
-          "timeframe"
+          "timeframe",
+          "instruments"
         ],
         "title": "NoDataToEstimate",
         "type": "object"
@@ -4905,7 +4937,7 @@
       },
       "RunConfig": {
         "additionalProperties": false,
-        "description": "A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its\nfinest level at or coarser than it (D-58), the finest the store holds when left out;\n`latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market\nand stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity\nsetting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`\n(F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of\n`fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;\n`capital`, in the instrument's currency; `replay`, skipping what no order can act on or in\nfull, which give the same fills (`02` \u00a74); `provider`, as `load` takes it; and `contract`,\none contract of the strategy's root read unspliced, as `load` reads a contract, so that the\nrun crosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll\ncalendar's fronts.",
+        "description": "A backtest's settings: `fidelity`, the finest data it fills on, each trade date on its\nfinest level at or coarser than it (D-58), the finest the store holds when left out;\n`latency_ms` from a decision to its orders' activation (F-ACT-01); `slippage_ticks` of market\nand stop orders, by default none on TBBO and one on every other fidelity, the run's fidelity\nsetting deciding, whatever level a date falls back to (F-SLP-01); `limit_fill`\n(F-LMT-01, F-LMT-02); `roll_handling` (F-ROL-02, F-ROL-04); `fee_table`, a table of\n`fefat.market.fees`, by default `retail-default` for futures and `binance-default` for crypto;\n`capital`, in the instrument's currency; `replay`, skipping what no order can act on or in\nfull, which give the same fills (`02` \u00a74); `provider`, as `load` takes it; `contract`, one\ncontract of the root it trades read unspliced, as `load` reads a contract, so that the run\ncrosses no roll and needs no roll calendar (step 2.14, D-59), by default the roll calendar's\nfronts; and `instrument`, the root it trades, as if the strategy's code named it, while a\nfeature keeps reading the instrument it declares (D-114), by default the one the code names.",
         "properties": {
           "capital": {
             "anyOf": [
@@ -4952,6 +4984,18 @@
               }
             ],
             "title": "Fidelity"
+          },
+          "instrument": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument"
           },
           "latency_ms": {
             "default": 100,
@@ -5040,7 +5084,7 @@
       },
       "RunEstimated": {
         "additionalProperties": false,
-        "description": "What a run of the version would read, before anything runs (`WindowEstimate`), with the\nversion's instrument and timeframe.",
+        "description": "What a run of the version would read, before anything runs (`WindowEstimate`), with the\ninstrument it would trade, the version's timeframe, and the `instruments` the store holds.",
         "properties": {
           "bars": {
             "minimum": 0.0,
@@ -5074,6 +5118,13 @@
           "instrument": {
             "title": "Instrument",
             "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Instruments",
+            "type": "array"
           },
           "levels": {
             "items": {
@@ -5135,7 +5186,8 @@
           "bars",
           "ticks",
           "instrument",
-          "timeframe"
+          "timeframe",
+          "instruments"
         ],
         "title": "RunEstimated",
         "type": "object"
@@ -5192,7 +5244,7 @@
         "type": "object"
       },
       "RunStrategy": {
-        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, the version's row's id and number, and the instrument and the timeframe it trades.",
+        "description": "The saved strategy version a run names, as the index holds it: the strategy's row's id and\nname, the version's row's id and number, the instrument the run trades, the version's own\nunless its settings name another (D-114), and the timeframe.",
         "properties": {
           "instrument": {
             "title": "Instrument",

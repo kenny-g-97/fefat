@@ -14,7 +14,7 @@ from datetime import date
 from pydantic import JsonValue
 
 from fefat.backtest import RunConfig
-from fefat.backtest.estimates import estimated
+from fefat.backtest.estimates import estimated, held_instruments
 from fefat.config import FefatPaths
 from fefat.market.schema import Timeframe
 from fefat.reference.settings import SlippageTicks
@@ -167,26 +167,26 @@ class Runs:
     def estimate(
         self, version_id: str, start: date | None, end: date | None, settings: RunConfig
     ) -> RunEstimate:
-        """What a run of the version `version_id` would read from `start` to `end` under
-        `settings`, before anything runs and without its code (`fefat.backtest.estimates`);
+        """What a run of the version `version_id`, on the instrument `settings` names or else its
+        own (D-114), would read from `start` to `end` under `settings`, before anything runs and
+        without its code (`fefat.backtest.estimates`), with the instruments the store holds;
         refused with `NoSuchStrategyError`, `LibraryRefusedError`, or `EstimateRefusedError`."""
         self.index.refresh()
         _, version = self._version(version_id)
+        traded = version.instrument if settings.instrument is None else settings.instrument
         try:
+            instruments = held_instruments(self.paths)
             found = estimated(
-                version.instrument,
-                Timeframe.parse(version.timeframe),
-                start,
-                end,
-                settings,
-                self.paths,
+                traded, Timeframe.parse(version.timeframe), start, end, settings, self.paths
             )
         except ValueError as refused:
             raise EstimateRefusedError(str(refused)) from refused
         if found is None:
-            return NoDataToEstimate(instrument=version.instrument, timeframe=version.timeframe)
+            return NoDataToEstimate(
+                instrument=traded, timeframe=version.timeframe, instruments=instruments
+            )
         return RunEstimated(
-            **dict(found), instrument=version.instrument, timeframe=version.timeframe
+            **dict(found), instrument=traded, timeframe=version.timeframe, instruments=instruments
         )
 
     def _version(self, version_id: str) -> tuple[IndexedStrategy, IndexedStrategyVersion]:

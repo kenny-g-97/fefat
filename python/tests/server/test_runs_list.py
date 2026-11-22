@@ -14,6 +14,7 @@ from typing import Any, NoReturn
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx2 import Response
 from sqlalchemy import Engine
 
 import fefat as ff
@@ -161,6 +162,31 @@ def test_a_listed_run_carries_its_jobs_progress_or_its_key_metrics(
         run.metrics.drawdown.max_drawdown,
         run.metrics.robustness.verdict,
     )
+
+
+def test_a_run_names_the_instrument_it_trades_or_else_its_versions(
+    records: RunTables, engine: Engine
+) -> None:
+    # D-114: a list and a run's page name what it trades; a row written before the setting names
+    # none of its own, and shows its version's.
+    applied = the_run().config
+    moved = a_submission(engine, "d" * 64).model_copy(
+        update={"settings": applied.model_copy(update={"instrument": "BTCUSDT-PERP"})}
+    )
+    older = a_submission(engine, "e" * 64).model_copy(
+        update={"settings": applied.model_copy(update={"instrument": None})}
+    )
+
+    made = records.submitted(moved, 3, STARTED_AT).run
+    before = records.submitted(older, 3, STARTED_AT).run
+
+    listed = {run.id: run for run in page_of(records)}
+    for run, traded in ((made, "BTCUSDT-PERP"), (before, "ES")):
+        shown = records.by_id(run.id)
+        assert isinstance(shown, SubmittedRun)
+        assert (run.strategy.instrument, run.settings.instrument) == (traded, traded)
+        assert (shown.strategy.instrument, shown.settings.instrument) == (traded, traded)
+        assert listed[run.id] == run
 
 
 def test_a_run_is_read_by_its_id_or_its_key(records: RunTables) -> None:
@@ -354,6 +380,7 @@ def test_an_estimate_names_what_a_run_would_read(client: TestClient, container: 
     estimate = answered.json()
     assert (answered.status_code, estimate["state"]) == (200, "estimated")
     assert (estimate["instrument"], estimate["timeframe"]) == ("ES", "5m")
+    assert estimate["instruments"] == ["BTCUSDT-PERP", "ES"]
     assert estimate["providers"] == ["synthetic"]
     assert estimate["contracts"] == ["ESH2026", "ESM2026"]
     assert estimate["levels"] == ["1m"]
@@ -391,7 +418,49 @@ def test_an_instrument_the_store_does_not_hold_has_no_estimate(
         "/v1/runs/estimate", json={"strategy_version_id": saved["id"]}, headers=csrf
     )
 
-    assert answered.json() == {"state": "no_data", "instrument": "MES", "timeframe": "5m"}
+    assert answered.json() == {
+        "state": "no_data",
+        "instrument": "MES",
+        "timeframe": "5m",
+        "instruments": ["BTCUSDT-PERP", "ES"],
+    }
+
+
+def test_an_estimate_follows_the_instrument_asked_for(
+    client: TestClient, container: Container
+) -> None:
+    # D-114: a version written for an instrument the store does not hold can read one it does.
+    csrf = logged_in(client, container)
+    store_with("ohlcv-1m")
+    saved = client.post(
+        "/v1/strategies",
+        json={
+            "name": "not_held",
+            "code": ES_BREAKOUT.replace('instrument="ES"', 'instrument="MES"'),
+            "hypothesis": HYPOTHESIS,
+        },
+        headers=csrf,
+    ).json()
+
+    def asked_on(instrument: str) -> Response:
+        return client.post(
+            "/v1/runs/estimate",
+            json={"strategy_version_id": saved["id"], "settings": {"instrument": instrument}},
+            headers=csrf,
+        )
+
+    held, not_held, empty = asked_on("ES"), asked_on("NQ"), asked_on("")
+
+    estimate = held.json()
+    assert (estimate["state"], estimate["instrument"], estimate["timeframe"]) == (
+        "estimated",
+        "ES",
+        "5m",
+    )
+    assert estimate["settings"]["instrument"] == "ES"
+    assert estimate["contracts"] == ["ESH2026", "ESM2026"]
+    assert (not_held.json()["state"], not_held.json()["instrument"]) == ("no_data", "NQ")
+    assert empty.status_code == 422
 
 
 def test_the_document_tells_a_runs_states_apart_by_state() -> None:
