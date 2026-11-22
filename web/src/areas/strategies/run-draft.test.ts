@@ -3,6 +3,8 @@ import type { RunEstimated } from "@/api/runs"
 import {
   estimateAsked,
   feeTableOf,
+  instrumentChoices,
+  instrumentChosen,
   isTradeDate,
   readWords,
   runReadiness,
@@ -108,6 +110,65 @@ describe("estimateAsked", () => {
       start: "2026-03-06",
       settings: { provider: "synthetic", contract: "ESH2026", fidelity: "1m" },
     })
+  })
+})
+
+describe("the instrument a run trades", () => {
+  it("is asked of the estimate and sent with the run once chosen", () => {
+    const moved = { ...UNTOUCHED, instrument: "MES" }
+
+    expect(estimateAsked("v1", moved).settings).toEqual({ instrument: "MES" })
+    const ready = runReadiness("v1", moved, ESTIMATE, true)
+    const plain = runReadiness("v1", UNTOUCHED, ESTIMATE, true)
+    expect(ready.kind === "ready" && ready.request.settings?.instrument).toBe(
+      "MES"
+    )
+    expect(plain.kind === "ready" && plain.request.settings).not.toHaveProperty(
+      "instrument"
+    )
+  })
+
+  it("sets what the data decides back, and keeps the dates and the ticks", () => {
+    const draft = {
+      ...UNTOUCHED,
+      provider: "vendor",
+      contract: "ESH2026",
+      fidelity: "1m",
+      feeTable: "prop-topstep",
+      from: "2026-03-06",
+      to: "2026-03-09",
+      slippage: { market: "2", stop: null },
+    }
+
+    expect(instrumentChosen(draft, "MES", "ES")).toEqual({
+      ...draft,
+      instrument: "MES",
+      provider: null,
+      contract: null,
+      fidelity: null,
+      feeTable: null,
+    })
+  })
+
+  it("is left out again once the code's own is chosen", () => {
+    expect(
+      instrumentChosen({ ...UNTOUCHED, instrument: "MES" }, "ES", "ES")
+        .instrument
+    ).toBeNull()
+  })
+
+  it("offers those held with the code's own and the one chosen, by name", () => {
+    expect(instrumentChoices(["ES", "MES"], "MES", "MES")).toEqual([
+      "ES",
+      "MES",
+    ])
+    expect(instrumentChoices(["BTCUSDT-PERP", "ES"], "MES", "MES")).toEqual([
+      "BTCUSDT-PERP",
+      "ES",
+      "MES",
+    ])
+    expect(instrumentChoices(["ES"], "ES", "NQ")).toEqual(["ES", "NQ"])
+    expect(instrumentChoices([], "MES", "MES")).toEqual(["MES"])
   })
 })
 

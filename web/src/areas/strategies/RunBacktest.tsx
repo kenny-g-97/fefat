@@ -57,7 +57,7 @@ export function RunBacktest({
               Run backtest
             </DialogTitle>
             <DialogDescription className="text-foreground-secondary">
-              {`Version ${version.data.version} of ${version.data.name}: ${version.data.instrument} in ${version.data.timeframe} bars`}
+              {`Version ${version.data.version} of ${version.data.name}, written for ${version.data.instrument} in ${version.data.timeframe} bars`}
             </DialogDescription>
           </header>
           <RunForm

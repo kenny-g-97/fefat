@@ -16,7 +16,9 @@ import { SchemaForm } from "@/ui/schema-form"
 import { SectionFailure } from "@/ui/section-failure"
 import { TextLink } from "@/ui/text-link"
 import {
+  chosenInstrument,
   estimateAsked,
+  instrumentChoices,
   type RunDraft,
   type RunReadiness,
   readWords,
@@ -24,6 +26,7 @@ import {
 } from "./run-draft"
 import { RunCostFields } from "./RunCostFields"
 import { RunDataFields } from "./RunDataFields"
+import { RunInstrument } from "./RunInstrument"
 import { hasKeptDraft } from "./strategy-drafts"
 
 type RunFormProps = Readonly<{
@@ -55,12 +58,13 @@ export function RunForm({
   }, [estimated, onEstimated])
   if (answer?.state === "no_data") {
     return (
-      <div className="flex flex-col items-start gap-3">
-        <p role="alert" className="text-foreground-secondary">
-          {`FEAT holds no data of ${answer.instrument}. Import its bars or ticks, then run this strategy.`}
-        </p>
-        <TextLink to="/data/import">Import data</TextLink>
-      </div>
+      <NoDataOfTheInstrument
+        instrument={answer.instrument}
+        held={answer.instruments}
+        own={version.instrument}
+        draft={draft}
+        onChange={onChange}
+      />
     )
   }
   const known = estimated === null ? lastEstimate : estimated
@@ -89,6 +93,53 @@ export function RunForm({
   )
 }
 
+/** The form's first field takes the focus once it is drawn (web/DESIGN.md, Patterns, Dialog). */
+function useFirstFieldFocused() {
+  const form = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    form.current?.querySelector<HTMLElement>("input, button")?.focus()
+  }, [])
+  return form
+}
+
+/** Where the store holds none of the instrument: one sentence over a link to Import data, and,
+ * where it holds another, the field that chooses it, so that a template written for one market
+ * can run on the market a trader has. */
+function NoDataOfTheInstrument({
+  instrument,
+  held,
+  own,
+  draft,
+  onChange,
+}: Readonly<{
+  instrument: string
+  held: readonly string[]
+  own: string
+  draft: RunDraft
+  onChange: (draft: RunDraft) => void
+}>) {
+  const form = useFirstFieldFocused()
+  const choices = instrumentChoices(held, own, chosenInstrument(draft, own))
+  return (
+    <div ref={form} className="flex flex-col items-start gap-3">
+      {choices.length > 1 && (
+        <div className="grid w-full grid-cols-3 gap-4">
+          <RunInstrument
+            draft={draft}
+            held={held}
+            own={own}
+            onChange={onChange}
+          />
+        </div>
+      )}
+      <p role="alert" className="text-foreground-secondary">
+        {`FEAT holds no data of ${instrument}. Import its bars or ticks, then run this strategy.`}
+      </p>
+      <TextLink to="/data/import">Import data</TextLink>
+    </div>
+  )
+}
+
 type FilledFormProps = Readonly<{
   version: SavedStrategyVersion
   draft: RunDraft
@@ -111,10 +162,7 @@ function FilledForm({
   const [draftKept] = useState(() =>
     hasKeptDraft(version.name, version.version, version.code)
   )
-  const form = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    form.current?.querySelector<HTMLElement>("input, button")?.focus()
-  }, [])
+  const form = useFirstFieldFocused()
   return (
     <div ref={form} className="flex flex-col gap-5">
       {draftKept && (
@@ -122,7 +170,12 @@ function FilledForm({
           {`Your draft is not saved: this runs version ${version.version} as saved.`}
         </p>
       )}
-      <RunDataFields draft={draft} estimate={estimate} onChange={onChange} />
+      <RunDataFields
+        draft={draft}
+        estimate={estimate}
+        own={version.instrument}
+        onChange={onChange}
+      />
       <RunCostFields draft={draft} estimate={estimate} onChange={onChange} />
       <section aria-label="Parameters" className="flex flex-col gap-3">
         <h3 className="text-sm leading-none font-medium text-foreground">

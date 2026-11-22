@@ -7,11 +7,12 @@ import { counted } from "@/ui/figures"
 import type { EnteredValues, ParameterValue } from "@/ui/schema-fields"
 
 /** What the trader chose in the Run backtest dialog (web/DESIGN.md, Patterns, Run backtest
- * dialog); a choice left at null is the run's default, which the estimate names, each side of
- * the slippage on its own. Dates and ticks are texts as typed, read once kept; `parameters` is
- * null while a field is refused, and `entered` holds the fields' texts for a dialog opened
- * again. */
+ * dialog); a choice left at null is the run's default, which the estimate names, the instrument
+ * the one the code names, each side of the slippage on its own. Dates and ticks are texts as
+ * typed, read once kept; `parameters` is null while a field is refused, and `entered` holds the
+ * fields' texts for a dialog opened again. */
 export type RunDraft = Readonly<{
+  instrument: string | null
   provider: string | null
   contract: string | null
   fidelity: string | null
@@ -25,6 +26,7 @@ export type RunDraft = Readonly<{
 
 /** A draft that asks for nothing but the run's defaults. */
 export const UNTOUCHED: RunDraft = {
+  instrument: null,
   provider: null,
   contract: null,
   fidelity: null,
@@ -117,10 +119,44 @@ export function estimateAsked(
     ...(from === null || backwards ? {} : { start: from }),
     ...(to === null || backwards ? {} : { end: to }),
     settings: {
+      ...(draft.instrument === null ? {} : { instrument: draft.instrument }),
       ...(draft.provider === null ? {} : { provider: draft.provider }),
       ...(draft.contract === null ? {} : { contract: draft.contract }),
       ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
     },
+  }
+}
+
+/** The instrument the draft trades: the one chosen, or the one the code names, `own`. */
+export function chosenInstrument(draft: RunDraft, own: string): string {
+  return draft.instrument === null ? own : draft.instrument
+}
+
+/** What the Instrument field offers, by name: the instruments the store holds, with the one the
+ * code names and the one chosen, which it may not hold. */
+export function instrumentChoices(
+  held: readonly string[],
+  own: string,
+  chosen: string
+): readonly string[] {
+  return [...new Set([...held, own, chosen])].sort()
+}
+
+/** The draft once the run trades `chosen`, left out where it is the code's `own`. Another
+ * instrument has its own providers, contracts, levels, and fees, so those go back to its
+ * defaults; the dates and the ticks stay, a date refused where its data does not hold it. */
+export function instrumentChosen(
+  draft: RunDraft,
+  chosen: string,
+  own: string
+): RunDraft {
+  return {
+    ...draft,
+    instrument: chosen === own ? null : chosen,
+    provider: null,
+    contract: null,
+    fidelity: null,
+    feeTable: null,
   }
 }
 
@@ -241,6 +277,7 @@ function settingsAsked(
     replay: estimate.settings.replay,
     provider: estimate.settings.provider,
     fee_table: feeTable,
+    ...(draft.instrument === null ? {} : { instrument: draft.instrument }),
     ...(draft.contract === null ? {} : { contract: draft.contract }),
     ...(draft.fidelity === null ? {} : { fidelity: draft.fidelity }),
     ...(typed

@@ -1,6 +1,5 @@
 import type { RunEstimated } from "@/api/runs"
 import { Button } from "@/ui/button"
-import { IdentityChip } from "@/ui/identity-chip"
 import { KeptField } from "@/ui/kept-field"
 import { Choice, Picker } from "@/ui/picker"
 import {
@@ -9,29 +8,39 @@ import {
   tradeDateRefusal,
   windowRefusal,
 } from "./run-draft"
+import { OnlyChoice, RunInstrument } from "./RunInstrument"
 
 /** The contract select's first choice: the roll calendar's fronts. No contract name holds
  * parentheses. */
 const SPLICED = "(spliced)"
 
-type RunDataFieldsProps = Readonly<{
+type RunDatesProps = Readonly<{
   draft: RunDraft
   estimate: RunEstimated
   onChange: (draft: RunDraft) => void
 }>
 
-/** Which data the run reads: the provider, where several hold the instrument, the contract, and
- * the trade dates, typed and checked against what the data holds, never read through the
- * browser's clock (`run-draft.ts`). */
+type RunDataFieldsProps = RunDatesProps & Readonly<{ own: string }>
+
+/** Which data the run reads: the instrument it trades, `own` being the one its code names; the
+ * provider, where several hold it; the contract; and the trade dates, typed and checked against
+ * what the data holds, never read through the browser's clock (`run-draft.ts`). */
 export function RunDataFields({
   draft,
   estimate,
+  own,
   onChange,
 }: RunDataFieldsProps) {
   const { providers, contracts, settings } = estimate
   return (
     <>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
+        <RunInstrument
+          draft={draft}
+          held={estimate.instruments}
+          own={own}
+          onChange={onChange}
+        />
         {providers.length > 1 ? (
           <Choice id="run-provider" label="Data">
             <Picker
@@ -47,16 +56,9 @@ export function RunDataFields({
             />
           </Choice>
         ) : (
-          <div className="flex flex-col gap-2">
-            <span className="text-sm leading-none font-medium text-foreground">
-              Data
-            </span>
-            <span className="flex h-10 items-center">
-              <IdentityChip testId="run-provider">
-                {settings.provider}
-              </IdentityChip>
-            </span>
-          </div>
+          <OnlyChoice label="Data" testId="run-provider">
+            {settings.provider}
+          </OnlyChoice>
         )}
         {contracts.length > 0 && (
           <Choice id="run-contract" label="Contract">
@@ -83,7 +85,7 @@ export function RunDataFields({
   )
 }
 
-function RunDates({ draft, estimate, onChange }: RunDataFieldsProps) {
+function RunDates({ draft, estimate, onChange }: RunDatesProps) {
   const { held } = estimate
   const dates = shownDates(draft, estimate)
   // The estimate's own contract: its dates are that series', while a newer answer is read too.
